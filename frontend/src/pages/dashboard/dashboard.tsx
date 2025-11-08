@@ -129,7 +129,7 @@ export default function Dashboard() {
                     outerRadius={120}
                     label
                   >
-                    {statusData.map((entry, index) => (
+                    {statusData.map((_, index) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={COLORS[index % COLORS.length]}

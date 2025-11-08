@@ -1,27 +1,28 @@
 import {
   LayoutDashboard,
   Map,
+  TreePine,
   Layers,
   Image,
   BarChart3,
   ClipboardList,
   FileText,
-  History,
   Users,
   LogOut,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
-
+//  { name: "General Map", icon: <Map size={20} />, path: "/general-map" },
 const menuItems = [
   { name: "Dashboard", icon: <LayoutDashboard size={20} />, path: "/dashboard" },
-  { name: "General Map", icon: <Map size={20} />, path: "/general-map" },
-  { name: "Site & Dataset Management", icon: <Layers size={20} />, path: "/site-management" },
+ 
   { name: "Image Analysis", icon: <Image size={20} />, path: "/image-analysis" },
-  { name: "Analysis / Results", icon: <BarChart3 size={20} />, path: "/analysis-results" },
+  { name: "Site & Dataset Management", icon: <Layers size={20} />, path: "/site-management" },
+ 
+  { name: "Analysis", icon: <BarChart3 size={20} />, path: "/analysis" },
   { name: "Monitoring", icon: <ClipboardList size={20} />, path: "/monitoring" },
+  { name: "Official Planting Sites", icon: <TreePine size={20} />, path: "/official-planting-sites" },
   { name: "Reports", icon: <FileText size={20} />, path: "/reports" },
-  { name: "History", icon: <History size={20} />, path: "/history" },
   { name: "Account Management", icon: <Users size={20} />, path: "/account-management" },
 ];
 

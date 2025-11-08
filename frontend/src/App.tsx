@@ -1,8 +1,12 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Login from "./pages/auth/login";
 import Dashboard from "./pages/dashboard/dashboard";
-import Sidebar from "./components/layout/sidebar";
-import GenralMap from "./pages/general map/GeneralMap";4
+import Sidebar from "./components/layout/Sidebar";
+import Analysis from "./pages/analysis/analysis";
+import ImageAnalysis from "./pages/analysis/image analysis";
+// import GenralMap from "./pages/general map/GeneralMap";
+import OfficailPlantingSites from "./pages/approved/OfficialPlantingSites";
+import Monitoring from "./pages/monitoring/monitoring";
 import SiteDatasetMangement from "./pages/site & dataset management/SiteDatasetMangement";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
@@ -27,10 +31,10 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
 
         {/* Final System Modules */}
-        <Route
+        {/* <Route
           path="/general-map"
           element={<GenralMap />}
-        />
+        /> */}
         <Route
           path="/site-management"
           element={<SiteDatasetMangement />}
@@ -38,26 +42,27 @@ export default function App() {
         
         <Route
           path="/image-analysis"
-          element={<Placeholder title="Image Analysis" />}
+          element={<ImageAnalysis/>}
         />
         <Route
           path="/analysis"
-          element={<Placeholder title="Analysis / Results" />}
+          element={<Analysis />}
         />
         <Route
           path="/monitoring"
-          element={<Placeholder title="Monitoring" />}
+          element={<Monitoring />}
         />
+        <Route path="/official-planting-sites" element={<OfficailPlantingSites />}/>
         <Route
           path="/reports"
           element={<Placeholder title="Reports & Dashboard" />}
         />
-        <Route
+        {/* <Route
           path="/history"
           element={<Placeholder title="History / Recordkeeping" />}
-        />
+        /> */}
         <Route
-          path="/account"
+          path="/account-management"
           element={<Placeholder title="Account Management" />}
         />
       </Routes>
