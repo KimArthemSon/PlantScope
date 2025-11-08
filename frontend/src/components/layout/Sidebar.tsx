@@ -20,7 +20,7 @@ const menuItems = [
   { name: "Image Analysis", icon: <Image size={20} />, path: "/image-analysis" },
   { name: "Analysis / Results", icon: <BarChart3 size={20} />, path: "/analysis-results" },
   { name: "Monitoring", icon: <ClipboardList size={20} />, path: "/monitoring" },
-  { name: "Reports & Dashboard", icon: <FileText size={20} />, path: "/reports" },
+  { name: "Reports", icon: <FileText size={20} />, path: "/reports" },
   { name: "History", icon: <History size={20} />, path: "/history" },
   { name: "Account Management", icon: <Users size={20} />, path: "/account-management" },
 ];
@@ -29,7 +29,7 @@ export default function Sidebar() {
   const location = useLocation();
 
   return (
-    <div className="sticky top-0 h-screen w-64 bg-gradient-to-b from-[#052e87] to-[#057501] text-white flex flex-col justify-between shadow-2xl">
+    <div className="sticky top-0 h-screen w-64 bg-linear-to-b from-[#052e87] to-[#057501] text-white flex flex-col justify-between shadow-2xl">
       {/* Header */}
       <div>
         <div className="p-6 flex flex-col items-center border-b border-white/20">
@@ -47,7 +47,7 @@ export default function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="mt-6 flex flex-col space-y-1">
+        <nav className="mt-3 flex flex-col space-y-1">
           {menuItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
