@@ -6,8 +6,10 @@ import Analysis from "./pages/analysis/analysis";
 import ImageAnalysis from "./pages/analysis/image analysis";
 // import GenralMap from "./pages/general map/GeneralMap";
 import OfficailPlantingSites from "./pages/approved/OfficialPlantingSites";
-import Monitoring from "./pages/monitoring/monitoring";
+import SiteVerification from "./pages/siteVerification/siteVerification";
 import SiteDatasetMangement from "./pages/site & dataset management/SiteDatasetMangement";
+import SatelliteImageAnalysis from "./pages/sateliteImageAnalysis/sateliteImageAnalysis";
+import FieldGatherer from "./pages/fieldGatherer/fieldGatherer";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -35,6 +37,14 @@ export default function App() {
           path="/general-map"
           element={<GenralMap />}
         /> */}
+         <Route
+          path="/satellite-analysis"
+          element={<SatelliteImageAnalysis />}
+        />
+         <Route
+          path="/field-data"
+          element={<FieldGatherer />}
+        />
         <Route
           path="/site-management"
           element={<SiteDatasetMangement />}
@@ -49,8 +59,8 @@ export default function App() {
           element={<Analysis />}
         />
         <Route
-          path="/monitoring"
-          element={<Monitoring />}
+          path="/site-verification"
+          element={<SiteVerification />}
         />
         <Route path="/official-planting-sites" element={<OfficailPlantingSites />}/>
         <Route

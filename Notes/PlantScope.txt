@@ -59,3 +59,9 @@ Provide a full-cycle, data-driven approach for reforestation planning, prioritiz
 
 This structure ensures every module has a clear, concise purpose while maintaining the cyclical, collaborative nature of your reforestation workflow between Admins and Field Officers. The **Official Planting Sites** module acts as the “official seal” — transforming analyzed and monitored areas into validated, actionable planting zones.
 
+
+to learn
+https://www.youtube.com/watch?v=-ebSObtqo60
+QGIS
+Image classification
+

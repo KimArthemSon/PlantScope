@@ -7,17 +7,17 @@ import {
   CheckCircle,
   Filter,
   Search,
-  Check,
+//   Check,
   X,
   XCircle,
 } from "lucide-react";
 
-export default function Monitoring() {
+export default function SiteVerification() {
   const [selectedSite, setSelectedSite] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [officerFilter, setOfficerFilter] = useState("");
-  const [barangayFilter, setBarangayFilter] = useState("");
+  const [barangayFilter, _] = useState("");
 
   // Mock data
   const [assignedSites, setAssignedSites] = useState([

@@ -205,7 +205,7 @@ export default function Analysis() {
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie data={pieData} dataKey="value" nameKey="name" label outerRadius={80}>
-                  {pieData.map((entry, index) => (
+                  {pieData.map((_, index) => (
                     <Cell key={index} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>

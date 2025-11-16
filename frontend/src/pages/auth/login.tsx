@@ -2,11 +2,12 @@ import logo from "../../assets/logo.png";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import MessageAlert from "../../components/alert/messageAlert"; 
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
-
+  const [isShow, setIsShow] = useState();
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     navigate("/dashboard");
@@ -19,7 +20,7 @@ export default function Login() {
         <div className="absolute top-[-6rem] -right-20 w-96 h-96 bg-emerald-500 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-[-6rem] -left-20 w-80 h-80 bg-green-500 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
-
+      
       {/* Floating Card */}
       <div className="relative z-10 w-full max-w-5xl bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row transition-transform duration-500 hover:scale-[1.005]">
         {/* LEFT – Welcome Section */}

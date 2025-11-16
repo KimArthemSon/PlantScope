@@ -85,9 +85,6 @@ export default function SiteDatasetManagement() {
             <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md transition">
               <FileDown size={18} /> Export Excel
             </button>
-            <button onClick={() => (window.location.href = "/add-site")} className="flex items-center gap-2 bg-[#052e87] hover:bg-[#0342b5] text-white px-4 py-2 rounded-md transition">
-              <Plus size={18} /> Add New Site
-            </button>
           </div>
         </div>
 

@@ -1,26 +1,25 @@
 import {
   LayoutDashboard,
-  Map,
-  TreePine,
+  Satellite,
   Layers,
-  Image,
   BarChart3,
   ClipboardList,
+  CheckCircle,
+  TreePine,
   FileText,
   Users,
   LogOut,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
-//  { name: "General Map", icon: <Map size={20} />, path: "/general-map" },
+
 const menuItems = [
   { name: "Dashboard", icon: <LayoutDashboard size={20} />, path: "/dashboard" },
- 
-  { name: "Image Analysis", icon: <Image size={20} />, path: "/image-analysis" },
+  { name: "Satellites Image Analysis", icon: <Satellite size={20} />, path: "/satellite-analysis" },
+  { name: "Field Data Gatherer", icon: <ClipboardList size={20} />, path: "/field-data" },
   { name: "Site & Dataset Management", icon: <Layers size={20} />, path: "/site-management" },
- 
   { name: "Analysis", icon: <BarChart3 size={20} />, path: "/analysis" },
-  { name: "Monitoring", icon: <ClipboardList size={20} />, path: "/monitoring" },
+  { name: "Site Verification", icon: <CheckCircle size={20} />, path: "/site-verification" },
   { name: "Official Planting Sites", icon: <TreePine size={20} />, path: "/official-planting-sites" },
   { name: "Reports", icon: <FileText size={20} />, path: "/reports" },
   { name: "Account Management", icon: <Users size={20} />, path: "/account-management" },
@@ -30,7 +29,7 @@ export default function Sidebar() {
   const location = useLocation();
 
   return (
-    <div className="sticky top-0 h-screen w-64 bg-linear-to-b from-[#052e87] to-[#057501] text-white flex flex-col justify-between shadow-2xl">
+    <div className="sticky top-0 h-screen w-64 bg-gradient-to-b from-[#052e87] to-[#057501] text-white flex flex-col justify-between shadow-2xl">
       {/* Header */}
       <div>
         <div className="p-6 flex flex-col items-center border-b border-white/20">
