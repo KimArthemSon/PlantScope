@@ -1,114 +1,150 @@
 import logo from "../../assets/logo.png";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
+import "../../global css/login.css";
 import { useNavigate } from "react-router-dom";
-import MessageAlert from "../../components/alert/messageAlert"; 
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const navigate = useNavigate();
-  const [isShow, setIsShow] = useState();
-  const handleLogin = (e: React.FormEvent) => {
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/dashboard");
+
+    if (!username || !password) {
+      alert("Please enter username and password");
+      return;
+    }
+    console.log("Logging in with:", username, password);
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/login/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+
+        body: JSON.stringify({ email: username, password: password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`Welcome ${data.username}! Login successful.`);
+        if (data.token) {
+          localStorage.setItem("token", data.token);
+        }
+        navigate("/dashboard");
+      } else {
+        alert(data.detail || "Login failed. Please check your credentials.");
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      alert("An error occurred. Please try again later.");
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-700 relative overflow-hidden p-6">
-      {/* Background Blobs */}
-      <div className="absolute inset-0 opacity-30 pointer-events-none">
-        <div className="absolute top-[-6rem] -right-20 w-96 h-96 bg-emerald-500 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-[-6rem] -left-20 w-80 h-80 bg-green-500 rounded-full blur-3xl animate-pulse delay-1000"></div>
-      </div>
-      
-      {/* Floating Card */}
-      <div className="relative z-10 w-full max-w-5xl bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row transition-transform duration-500 hover:scale-[1.005]">
-        {/* LEFT – Welcome Section */}
-        <div className="flex-1 flex flex-col justify-center items-center p-8 md:p-12 text-center bg-gradient-to-br from-emerald-50 to-green-50">
-          <div className="mb-6">
-            <div className="w-24 h-24 mx-auto bg-white/30 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/40 shadow-lg">
+    <div className="min-h-screen bg-[linear-gradient(135deg,#4CAF50_75%,#FFFFFF_25%)] flex items-center justify-center p-4">
+      <div className="w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row bg-white">
+        {/* Left Panel */}
+        <div className="flex-1 p-8 md:p-12 bg-gradient-to-br from-green-600 to-green-700 text-white flex flex-col items-center justify-center space-y-6">
+          <div className="logo-container mb-6">
+            <div className="radar-ring"></div>
+            <div className="w-32 h-32 mx-auto rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-lg animate-bounce-logo">
               <img
                 src={logo}
                 alt="PlantScope Logo"
-                className="w-16 h-16 object-contain"
+                className="w-24 h-24 object-contain"
               />
             </div>
           </div>
+          <h1 className="text-3xl font-bold text-center">PLANTSCOPE</h1>
 
-          <h1 className="text-4xl md:text-5xl font-bold text-emerald-800 mb-2 tracking-tight">
-            WELCOME
-          </h1>
-          <h2 className="text-2xl md:text-3xl font-semibold text-emerald-700 mb-6">
-            To PlantScope
-          </h2>
-
-          <p className="text-sm md:text-base text-emerald-800 max-w-md mx-auto leading-relaxed">
-            PlantScope is a GIS-enabled system designed to prioritize and monitor
-            reforestation activities in Ormoc City. Explore, map, and restore — all
-            in one platform.
+          <p className="text-sm text-green-200 text-center">
+            • Reforestation • Sustainability • Data-Driven Planning
           </p>
+          <div className="mt-1 space-y-4 text-left w-full max-w-sm">
+            <p className="flex items-center gap-3 text-sm text-green-100">
+              <span className="w-6 h-6 flex items-center justify-center bg-[#04de71] text-white rounded-full text-base">
+                ✓
+              </span>
+              Prioritize reforestation sites
+            </p>
+
+            <p className="flex items-center gap-3 text-sm text-green-100">
+              <span className="w-6 h-6 flex items-center justify-center bg-[#04de71] text-white rounded-full text-base">
+                ✓
+              </span>
+              Data-driven planning tools
+            </p>
+
+            <p className="flex items-center gap-3 text-sm text-green-100">
+              <span className="w-6 h-6 flex items-center justify-center bg-[#04de71] text-white rounded-full text-base">
+                ✓
+              </span>
+              GIS-enabled mapping system
+            </p>
+          </div>
         </div>
 
-        {/* RIGHT – Login Form */}
-        <div className="flex-1 flex flex-col justify-center p-8 md:p-12 bg-white">
-          <div className="max-w-sm mx-auto w-full">
-            <h2 className="text-2xl md:text-3xl font-bold text-emerald-800 mb-2">
-              Login
+        {/* Right Panel - Login Form */}
+        <div className="flex-1 p-8 md:p-12 flex flex-col justify-center border-2 border-green-400 rounded-tr-3xl rounded-br-3xl">
+          <div className="max-w-md mx-auto w-full">
+            <h2 className="text-2xl font-bold text-gray-800 mb-1">
+              Welcome Back
             </h2>
-            <p className="text-sm text-gray-600 mb-8">
-              Sign in to access your dashboard and manage reforestation data.
+            <p className="text-sm text-gray-500 mb-8">
+              Sign in to manage reforestation data
             </p>
 
             <form onSubmit={handleLogin} className="space-y-6">
               {/* Username */}
               <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Username
                 </label>
                 <input
                   type="text"
                   placeholder="Enter your username"
-                  className="w-full px-4 py-3 text-base border border-gray-300 rounded-xl 
-                             focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-gray-50 
-                             transition-all duration-200"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full pl-3 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
                 />
               </div>
 
               {/* Password */}
-              <div className="relative">
-                <label className="block text-sm font-semibold text-gray-800 mb-1">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Password
                 </label>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  className="w-full px-4 py-3 pr-12 text-base border border-gray-300 rounded-xl 
-                             focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-gray-50 
-                             transition-all duration-200"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-[38px] text-gray-500 hover:text-emerald-600 transition-colors"
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-3 pr-10 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-green-600"
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
               </div>
 
-              {/* Submit */}
+              {/* Login Button */}
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-emerald-600 to-green-700 text-white py-3 rounded-xl 
-                           font-bold text-lg hover:from-emerald-700 hover:to-green-800 transform 
-                           hover:scale-[1.02] transition-all shadow-md focus:ring-2 focus:ring-emerald-400"
+                className="mt-[2rem] w-full bg-gradient-to-r from-green-700 cursor-pointer to-green-800 text-white py-3 rounded-lg font-semibold text-lg hover:from-green-800 hover:to-green-900 transform hover:scale-[1.01] transition-all shadow-md flex items-center justify-center gap-2"
               >
                 Login
               </button>
             </form>
-
-            <p className="text-center mt-10 text-xs text-gray-400">
-              ~ phoebe Designs
-            </p>
           </div>
         </div>
       </div>

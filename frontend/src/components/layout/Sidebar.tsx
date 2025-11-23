@@ -10,7 +10,7 @@ import {
   Users,
   LogOut,
 } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom"; 
 import logo from "../../assets/logo.png";
 
 const menuItems = [
