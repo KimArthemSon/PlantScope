@@ -1,0 +1,67 @@
+PlantScope 
+chatgpt title: PlantScope
+PlantScope: A GIS-Enabled Site Prioritization and Monitoring System for Data-Driven Reforestation in Ormoc City, Leyte 
+npm install leaflet react-leaflet
+
+Absolutely! Based on your system flowchart and the existing module descriptions, here’s a clear, one-sentence explanation for **every module**, including the new **Official Planting Sites** module — keeping the tone consistent with your original documentation.
+
+---
+
+🌿 **PlantScope: A GIS-Enabled Site Prioritization & Monitoring System**
+
+Purpose:  
+Provide a full-cycle, data-driven approach for reforestation planning, prioritization, monitoring, and evaluation in Ormoc City, Leyte.
+
+---
+
+### 🔄 Module Explanations (One Sentence Each)
+
+1. **Login / User Management**  
+   → Secure entry point that authenticates users and assigns role-based permissions (Admin, Analyst, Field Officer) to control system access.
+
+2. **Dashboard (Overview)**  
+   → Centralized visual hub displaying real-time metrics, charts, and key performance indicators (e.g., total sites, project status, health trends) for quick decision-making.
+
+3. **Site & Dataset Management (Data Entry)**  
+   → Core data repository where users create, update, or import geotagged reforestation site records with environmental attributes (soil, slope, vegetation) via map or search.
+
+4. **Image Analysis (Intelligence Core)**  
+   → AI-powered engine that processes satellite/drone imagery to detect land cover changes, degradation, and vegetation health, feeding outputs into analysis modules.
+
+5. **Analysis & Results (Decision Support)**  
+   → Applies multi-criteria spatial analysis (MCA) using GIS layers (slope, rainfall, soil) to generate priority maps and suitability rankings for optimal planting zones.
+
+6. **Monitoring (Field & Temporal Tracking)**  
+   → Tracks active reforestation progress through field officer uploads (photos, notes, GPS), updating live dashboards and feeding data back into historical archives.
+
+7. **Official Planting Sites (New Module)**  
+   → Finalizes and locks approved planting locations after analysis and monitoring, serving as the authoritative record of implemented reforestation zones for reporting and compliance.
+
+8. **Reports (Evaluation & Visualization)**  
+   → Generates dynamic, exportable summaries (PDF/Excel) with charts and insights for stakeholders, linking current data to historical trends for impact assessment.
+
+9. **History (Archival & Comparison)**  
+   → Archives past reports, imagery, and site data to enable temporal change detection (before/after) and feed long-term insights back into image analysis and monitoring cycles.
+
+10. **Logout / End**  
+    → Securely terminates user session and exits the system, ensuring data integrity and access control after workflow completion.
+
+---
+
+### 🔁 Workflow Notes from Flowchart
+
+- **Admin Path**: Starts at Login → Dashboard → Site & Dataset → Analysis → Monitoring → Official Planting Sites → Report → Logout.
+- **Field Officer Path**: Starts at Login → Dashboard → Monitoring Sites → Feedback → Loop back to Monitoring (via connector B) → Logout.
+- **Connector A**: Links Admin’s Monitoring module to Field Officer’s Login point — implying Field Officers are assigned or synced to monitor specific sites identified by Admins.
+- **Connector B**: Creates a feedback loop from Field Officer’s Feedback → Admin’s Monitoring, enabling real-time updates and adjustments based on ground truth.
+
+---
+
+This structure ensures every module has a clear, concise purpose while maintaining the cyclical, collaborative nature of your reforestation workflow between Admins and Field Officers. The **Official Planting Sites** module acts as the “official seal” — transforming analyzed and monitored areas into validated, actionable planting zones.
+
+
+to learn
+https://www.youtube.com/watch?v=-ebSObtqo60
+QGIS
+Image classification
+

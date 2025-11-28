@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ormoc Barangays with Coordinates</title>
+</head>
+<body>
+    <h1>Barangays in Ormoc City (Console Output)</h1>
+    <p>Open your browser console to see the results.</p>
+
+  <script>
+async function loadBarangays() {
+    const query = `
+        [out:json];
+        area[wikidata="Q71218"];
+        (
+          node["place"="suburb"](area);
+          node["place"="village"](area);
+        );
+        out;
+    `;
+
+    const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+
+    try {
+        const res = await fetch(url);
+
+        // Overpass sometimes returns HTML error page
+        const text = await res.text();
+
+        if (text.startsWith("<")) {
+            console.error("Overpass error:", text);
+            return;
+        }
+
+        const json = JSON.parse(text);
+
+        console.log("=== Working Barangay List ===");
+        json.elements.forEach(b => {
+            console.log({
+                name: b.tags.name,
+                lat: b.lat,
+                lon: b.lon
+            });
+        });
+
+    } catch (err) {
+        console.error("Error:", err);
+    }
+}
+
+loadBarangays();
+</script>
+</body>
+</html>

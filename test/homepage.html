@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PlantScope</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+      @keyframes fadeUp {
+        0% {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .fade-up {
+        animation: fadeUp 1s ease-out forwards;
+      }
+      .fade-up-delay {
+        opacity: 0;
+        animation: fadeUp 1s ease-out forwards;
+        animation-delay: 0.3s;
+      }
+      .fade-up-delay-2 {
+        opacity: 0;
+        animation: fadeUp 1s ease-out forwards;
+        animation-delay: 0.6s;
+      }
+
+      /* Smaller, balanced logo */
+      .logo-container {
+        width: 8.5rem;
+        height: 8.5rem;
+        border-radius: 50%;
+        overflow: hidden;
+        background: #0f4a2f;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border: 3px solid rgba(124, 213, 106, 0.4);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        margin: 0 auto;
+      }
+      @media (min-width: 768px) {
+        .logo-container {
+          width: 10rem;
+          height: 10rem;
+        }
+      }
+      .logo-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+      }
+
+      /* Card styles (kept nice but not oversized) */
+      .card {
+        background: rgba(19, 79, 56, 0.35);
+        backdrop-filter: blur(8px);
+        padding: 2rem;
+        border-radius: 1rem;
+        text-align: center;
+        border: 2px solid rgba(75, 167, 78, 0.4);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+        transition: all 0.3s ease;
+      }
+      .card:hover {
+        transform: translateY(-8px);
+        background: rgba(19, 79, 56, 0.5);
+        border-color: #7cd56a;
+      }
+      .card-icon {
+        width: 4.5rem;
+        height: 4.5rem;
+        background: #4ba74e;
+        border-radius: 50%;
+        margin: 0 auto 1rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .card-icon svg {
+        width: 2.2rem;
+        height: 2.2rem;
+        color: white;
+      }
+      .card h3 {
+        font-size: 1.15rem;
+        font-weight: 600;
+        color: white;
+        margin-bottom: 0.5rem;
+      }
+      .card p {
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen bg-[#0F4A2F]">
+    <!-- Hero Section - Now perfectly balanced -->
+    <div
+      class="relative min-h-screen flex flex-col  overflow-hidden"
+    >
+      <div class="absolute inset-0">
+        <img
+          src="img/background.jpg"
+          alt="Forest"
+          class="w-full h-full object-cover"
+        />
+        <div
+          class="absolute inset-0 bg-gradient-to-b from-black/70 via-[#0F4A2F]/60 to-[#0F4A2F]/90"
+        ></div>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="relative z-10 px-6 py-5">
+        <div class="max-w-6xl mx-auto">
+          <ul
+            class="flex flex-wrap justify-center gap-6 md:gap-10 text-white/90 text-sm md:text-base font-medium"
+          >
+            <li class="hover:text-[#7CD56A] cursor-pointer transition">Home</li>
+            <li class="hover:text-[#7CD56A] cursor-pointer transition">
+              About
+            </li>
+            <li class="hover:text-[#7CD56A] cursor-pointer transition">
+              Service
+            </li>
+            <li class="hover:text-[#7CD56A] cursor-pointer transition">
+              Gallery
+            </li>
+            <li class="hover:text-[#7CD56A] cursor-pointer transition">Team</li>
+            <li class="hover:text-[#7CD56A] cursor-pointer transition">
+              Contact
+            </li>
+          </ul>
+        </div>
+      </nav>
+
+      <!-- Hero Content -->
+      <div class="relative z-10 text-center px-6 flex-1 flex items-center">
+        <div class="max-w-10xl mx-auto space-y-8">
+          <!-- Logo -->
+          <div class="fade-up">
+            <div class="logo-container">
+              <img src="img/logo.jpg" alt="PlantScope Logo" />
+            </div>
+          </div>
+
+          <!-- Title -->
+          <div class="fade-up-delay space-y-3">
+            <h1 class="text-3xl md:text-3xl font-bold text-white">
+              PlantScope
+            </h1>
+            <p
+              class="text-lg md:text-2xl text-[#7CD56A] font-medium tracking-wider"
+            >
+              <!-- Data-Driven Reforestation -->
+            </p>
+          </div>
+
+          <!-- Subtitle -->
+          <p
+            class="text-white/90 text-base md:text-lg leading-relaxed max-w-3xl mx-auto px-4 fade-up-delay"
+          >
+            A GIS-Enabled Site Identification and Prioritization System for
+            Sustainable Reforestation in Ormoc City, Leyte
+          </p>
+
+          <!-- Buttons -->
+          <div
+            class="flex flex-col sm:flex-row gap-4 justify-center fade-up-delay-2"
+          >
+            <button
+              class="px-8 py-3 bg-[#4BA74E] hover:bg-[#7CD56A] text-white font-semibold rounded-full transition shadow-lg"
+            >
+              Get Started
+            </button>
+            <button
+              class="px-8 py-3 bg-white/10 backdrop-blur border-2 border-white/30 hover:bg-white/20 text-white font-semibold rounded-full transition"
+            >
+              Learn More
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Features Cards Section -->
+    <div class="py-20 px-6 bg-[#0F4A2F]">
+      <div class="max-w-6xl mx-auto">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <!-- Card 1 -->
+          <div class="card fade-up">
+            <div class="card-icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
+                />
+              </svg>
+            </div>
+            <h3>GIS Technology</h3>
+            <p>
+              Advanced mapping and spatial analysis for optimal site selection
+            </p>
+          </div>
+
+          <!-- Card 2 -->
+          <div class="card fade-up-delay">
+            <div class="card-icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                />
+              </svg>
+            </div>
+            <h3>Data-Driven Insights</h3>
+            <p>
+              Evidence-based prioritization for maximum environmental impact
+            </p>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="card fade-up-delay-2">
+            <div class="card-icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </div>
+            <h3>Sustainability Focus</h3>
+            <p>Long-term planning for ecological restoration in Ormoc City</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-[#0F4A2F] py-10 border-t border-white/20">
+      <div class="text-center">
+        <p class="text-white font-semibold">Western Leyte College of Ormoc</p>
+        <p class="text-white/70 text-sm mt-1">
+          College of Information Communication Technology and Engineering
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
