@@ -1,56 +1,45 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ormoc Barangays with Coordinates</title>
+  <title>Polygon on OpenStreetMap</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    #map {
+      height: 500px;
+      width: 100%;
+    }
+  </style>
 </head>
 <body>
-    <h1>Barangays in Ormoc City (Console Output)</h1>
-    <p>Open your browser console to see the results.</p>
 
-  <script>
-async function loadBarangays() {
-    const query = `
-        [out:json];
-        area[wikidata="Q71218"];
-        (
-          node["place"="suburb"](area);
-          node["place"="village"](area);
-        );
-        out;
-    `;
+<h3>Polygon on OpenStreetMap</h3>
+<div id="map"></div>
 
-    const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+<script>
+// Initialize map
+var map = L.map('map').setView([11.004, 124.568], 14);
 
-    try {
-        const res = await fetch(url);
+// Add OSM tiles
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19
+}).addTo(map);
 
-        // Overpass sometimes returns HTML error page
-        const text = await res.text();
+// Your GeoJSON coordinates ([lng, lat])
+var coords = [
+  [124.568, 11.004],
+  [124.569, 11.005],
+  [124.570, 11.004],
+  [124.568, 11.004]
+];
 
-        if (text.startsWith("<")) {
-            console.error("Overpass error:", text);
-            return;
-        }
+// Convert to Leaflet format ([lat, lng])
+var polyCoords = coords.map(c => [c[1], c[0]]);
 
-        const json = JSON.parse(text);
-
-        console.log("=== Working Barangay List ===");
-        json.elements.forEach(b => {
-            console.log({
-                name: b.tags.name,
-                lat: b.lat,
-                lon: b.lon
-            });
-        });
-
-    } catch (err) {
-        console.error("Error:", err);
-    }
-}
-
-loadBarangays();
+// Add polygon
+L.polygon(polyCoords, { color: 'red' }).addTo(map).bindPopup("Your Polygon");
 </script>
+
 </body>
 </html>

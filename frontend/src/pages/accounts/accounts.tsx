@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import Sidebar from "../../components/layout/Sidebar";
 import { Trash2, Edit, Plus, X, Eye, EyeOff } from "lucide-react";
 import PlantScopeAlert from "../../components/alert/PlantScopeAlert";
+import NotFoundPage from "../../components/layout/NotFoundPage";
+import { useNavigate } from "react-router-dom";
 
 interface User {
   id: number;
@@ -21,7 +23,7 @@ export default function Accounts() {
     title: string;
     message: string;
   } | null>(null);
-
+  const navigate = useNavigate()
   // Form states
   const [formEmail, setFormEmail] = useState("");
   const [formUsername, setFormUsername] = useState("");
@@ -96,7 +98,8 @@ export default function Accounts() {
         user_role: formRole,
       }),
     });
-
+  const data = await response.json()
+  console.log(data);
     if (response.ok) {
       setShowAddModal(false);
       fetchUsers();
@@ -111,7 +114,7 @@ export default function Accounts() {
       setPSAlert({
         type: "failed",
         title: "Failed",
-        message: `Failed to Add user.`,
+        message: data.error,
       });
     }
   };
@@ -141,7 +144,7 @@ export default function Accounts() {
         body: JSON.stringify(body),
       }
     );
-
+  const data = await response.json()
     if (response.ok) {
       setEditingUser(null);
       fetchUsers();
@@ -156,7 +159,7 @@ export default function Accounts() {
       setPSAlert({
         type: "failed",
         title: "Failed",
-        message: `Failed to update user.`,
+        message: data.error,
       });
     }
   };
@@ -183,7 +186,46 @@ export default function Accounts() {
       u.username.toLowerCase().includes(search.toLowerCase()) ||
       u.user_role.toLowerCase().includes(search.toLowerCase())
   );
+ const [isAuthorize, setIsAuthorize] = useState(true);
 
+  useEffect(() => {
+      checkIfStillLogin()
+    }, []);
+  
+     const checkIfStillLogin = async () =>{
+  
+     const token = localStorage.getItem("token");
+
+     if(!token){
+      return;
+     }
+            try {
+        const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+          method: "POST",
+           headers: { Authorization: `Bearer ${token}` },
+        });
+  
+        const data = await response.json();
+  
+        if (response.ok) {     
+            
+            if (!(data.user_role === "CityENROHead")) {
+                 setIsAuthorize(false)    
+            }
+        } 
+  
+      } catch (error) {
+         setIsAuthorize(false)
+      }
+     } 
+  if (!localStorage.getItem('token')){
+     navigate("/Login");
+  }
+  if(!isAuthorize){
+      <NotFoundPage />
+  }
+
+ 
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />

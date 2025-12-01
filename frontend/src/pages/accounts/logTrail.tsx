@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Sidebar from "../../components/layout/Sidebar";
+import NotFoundPage from "../../components/layout/NotFoundPage";
 
 export default function LogTrail() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -36,7 +37,42 @@ export default function LogTrail() {
 
     fetchLogs();
   }, [token]);
+ const [isAuthorize, setIsAuthorize] = useState(true);
 
+  useEffect(() => {
+      checkIfStillLogin()
+    }, []);
+  
+     const checkIfStillLogin = async () =>{
+  
+     const token = localStorage.getItem("token");
+
+     if(!token){
+      return;
+     }
+            try {
+        const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+          method: "POST",
+           headers: { Authorization: `Bearer ${token}` },
+        });
+  
+        const data = await response.json();
+  
+        if (response.ok) {     
+            
+            if (!(data.user_role === "CityENROHead")) {
+                 setIsAuthorize(false)    
+            }
+        } 
+  
+      } catch (error) {
+         setIsAuthorize(false)
+      }
+     } 
+
+  if (!localStorage.getItem('token') || !isAuthorize){
+     return <NotFoundPage />
+  }
   return (
     <div className="flex">
       <Sidebar />

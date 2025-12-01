@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import SidebarAFA from "../../components/layout/SidebarAFA";
+import NotFoundPage from "../../components/layout/NotFoundPage";
 import {
   ClipboardList,
   MapPin,
@@ -11,6 +13,8 @@ import {
 } from "lucide-react";
 
 export default function DashboardAFA() {
+  
+ 
   const modules = [
     {
       title: "User Management",
@@ -62,7 +66,42 @@ export default function DashboardAFA() {
       onClick: () => console.log("Logout"),
     },
   ];
+  const[isAuthorize, setIsAuthorize] = useState(true);
 
+  useEffect(() => {
+        checkIfStillLogin()
+      }, []);
+    
+       const checkIfStillLogin = async () =>{
+    
+       const token = localStorage.getItem("token");
+  
+       if(!token){
+        return;
+       }
+              try {
+          const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+            method: "POST",
+             headers: { Authorization: `Bearer ${token}` },
+          });
+    
+          const data = await response.json();
+    
+          if (response.ok) {     
+              
+              if (!(data.user_role === "AFA")) {
+                   setIsAuthorize(false)    
+              }
+          } 
+    
+        } catch (error) {
+           setIsAuthorize(false)
+        }
+       } 
+  
+    if (!localStorage.getItem('token') || !isAuthorize){
+       return <NotFoundPage />
+    }
   return (
     <div className="flex min-h-screen bg-gray-50">
       <SidebarAFA />

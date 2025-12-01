@@ -69,7 +69,7 @@ export default function PlantScopeAlert({
         ${baseClasses}
         ${variant.container}
         ${variant.animation}
-        ${!isVisible ? "opacity-0 translate-y-4" : "opacity-100 translate-y-0"}
+        ${!isVisible ? "opacity-0 translate-y-4" : "opacity-100 translate-y-0 z-1000"}
       `
         .trim()
         .replace(/\s+/g, " ")}

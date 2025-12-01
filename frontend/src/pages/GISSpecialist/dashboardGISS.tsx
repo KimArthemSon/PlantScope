@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import NotFoundPage from "../../components/layout/NotFoundPage";
 import SidebarGISS from "../../components/layout/SidebarGISSpecialist";
 import {
   ClipboardList,
@@ -62,7 +64,42 @@ export default function DashboardGISS() {
       onClick: () => console.log("Logout"),
     },
   ];
-
+const[isAuthorize, setIsAuthorize] = useState(true);
+  
+    useEffect(() => {
+          checkIfStillLogin()
+        }, []);
+      
+         const checkIfStillLogin = async () =>{
+      
+         const token = localStorage.getItem("token");
+    
+         if(!token){
+          return;
+         }
+                try {
+            const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+              method: "POST",
+               headers: { Authorization: `Bearer ${token}` },
+            });
+      
+            const data = await response.json();
+      
+            if (response.ok) {     
+                
+                if (!(data.user_role === "GISSpecialist")) {
+                     setIsAuthorize(false)    
+                }
+            } 
+      
+          } catch (error) {
+             setIsAuthorize(false)
+          }
+         } 
+    
+      if (!localStorage.getItem('token') || !isAuthorize){
+         return <NotFoundPage />
+      }
   return (
     <div className="flex min-h-screen bg-gray-50">
       <SidebarGISS />
@@ -84,7 +121,7 @@ export default function DashboardGISS() {
             <div
               key={module.title}
               onClick={module.onClick}
-              className={`cursor-pointer bg-gradient-to-br ${module.color} text-white rounded-2xl shadow-lg p-6 hover:scale-105 hover:shadow-2xl transition transform duration-300 flex flex-col justify-between`}
+              className={`cursor-pointer bg-linear-to-br ${module.color} text-white rounded-2xl shadow-lg p-6 hover:scale-105 hover:shadow-2xl transition transform duration-300 flex flex-col justify-between`}
             >
               <div className="flex items-center gap-3 mb-4">
                 {module.icon}

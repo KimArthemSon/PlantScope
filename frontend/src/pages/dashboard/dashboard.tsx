@@ -1,4 +1,5 @@
 import Sidebar from "../../components/layout/Sidebar";
+import NotFoundPage from "../../components/layout/NotFoundPage";
 import {
   BarChart,
   Bar,
@@ -14,9 +15,12 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { useEffect, useState } from "react";
 
 export default function Dashboard() {
   // 📊 Sample data for charts (replace with real API later)
+  
+
   const prioritizationData = [
     { level: "High", count: 5 },
     { level: "Medium", count: 9 },
@@ -37,7 +41,43 @@ export default function Dashboard() {
     { name: "Completed", value: 6 },
     { name: "Pending", value: 4 },
   ];
+    const [isAuthorize, setIsAuthorize] = useState(true);
 
+  useEffect(() => {
+      checkIfStillLogin()
+    }, []);
+  
+     const checkIfStillLogin = async () =>{
+  
+     const token = localStorage.getItem("token");
+
+     if(!token){
+      return;
+     }
+            try {
+        const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+          method: "POST",
+           headers: { Authorization: `Bearer ${token}` },
+        });
+  
+        const data = await response.json();
+  
+        if (response.ok) {     
+            
+            if (!(data.user_role === "CityENROHead")) {
+                 setIsAuthorize(false)    
+            }
+        } 
+  
+      } catch (error) {
+         setIsAuthorize(false)
+      }
+     } 
+
+  if (!localStorage.getItem('token') || !isAuthorize){
+     return <NotFoundPage />
+  }
+ 
   const COLORS = ["#057501", "#34d399", "#a7f3d0"];
 
   return (

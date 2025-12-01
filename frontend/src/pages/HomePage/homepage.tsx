@@ -7,6 +7,7 @@ import "../../global css/homePage.css";
 import profile1 from "../../assets/PROFILE1.jpg";
 import profile2 from "../../assets/profile2.jpg"
 import profile3 from "../../assets/profile3.jpg"
+import profile4 from "../../assets/profile4.jpg"
 export default function App() {
   const [menuActive, setMenuActive] = useState(false);
   const [activeSection, setActiveSection] = useState("home");
@@ -88,7 +89,7 @@ export default function App() {
                 <p className="text-[#7CD56A] text-xl md:text-1xl tracking-wider fade-up-delay"></p>
 
                 <h2 className="text-1xl md:text-1xl font-bold leading-tight max-w-4xl mx-auto fade-up-delay-2">
-                  A GIS-Enabled Site Identification and Prioritization System
+                  A GIS-Enabled Site Identification and Monitoring System
                   <br />
                   for Data-Driven Reforestation in Ormoc City, Leyte
                 </h2>
@@ -802,8 +803,8 @@ export default function App() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="text-center p-8 bg-white/5 rounded-xl border border-white/10 hover:border-[#7CD56A] transition-all">
-                  <div className="w-24 h-24 bg-[#4BA74E] rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
-                    RD
+                  <div className="w-24 h-24 p-1 bg-[#4BA74E] rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                     <img src={profile4} alt="" className="w-full rounded-full h-full"/>
                   </div>
                   <h4 className="text-xl font-bold mb-1">Roel C. Daniot</h4>
                   <p className="text-[#7CD56A] mb-2 font-semibold">
@@ -847,7 +848,7 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
               <div className="stat-box">
                 <div className="text-4xl font-bold text-[#7CD56A] mb-2">
-                  2024-2025
+                  2025-2026
                 </div>
                 <p className="text-white/70">Development Period</p>
               </div>

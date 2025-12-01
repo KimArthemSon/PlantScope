@@ -8,7 +8,7 @@ import json
 import hashlib
 import jwt
 from datetime import datetime, timedelta
-
+import re
 
 JWT_SECRET = 'AKOANISECRET_super_secret_key_here'
 JWT_ALGORITHM = 'HS256'
@@ -27,7 +27,16 @@ def register_user(request):
         user_role = data.get('user_role', 'FieldOfficer')
     except KeyError:
         return JsonResponse({'error': 'Missing fields'}, status=400)
+    
 
+    password_regex = r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$'
+
+    if not re.match(password_regex, password):
+        return JsonResponse({
+            'error': 'Password must contain uppercase, lowercase, number, special character, and be at least 8 characters long.'
+        }, status=400)
+
+   
     if User.objects.filter(email=email).exists():
         return JsonResponse({'error': 'Email already exists'}, status=400)
 
@@ -152,14 +161,22 @@ def update_user(request, user_id):
         user.username = data.get('username', user.username)
         user.email = data.get('email', user.email)
         user.user_role = data.get('user_role', user.user_role)
+        password_regex = r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$'
 
+        
+        
         # 🔥 Update password only if provided and not empty
         if "password" in data and data["password"].strip() != "":
+            if not re.match(password_regex, data["password"]):
+                return JsonResponse({
+                'error': 'Password must contain uppercase, lowercase, number, special character, and be at least 8 characters long.'
+                }, status=400)
+            
             hashed_password = hashlib.sha256(data["password"].encode()).hexdigest()
             user.password = hashed_password
-
+        
         user.save()
-
+       
         return JsonResponse({'message': 'User updated successfully'})
 
     except Exception as e:
