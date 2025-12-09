@@ -1,0 +1,155 @@
+Here is a **professional, ENRO-style manual checklist** you can include in PlantScope.
+This is written exactly like a government field assessment form — clear, structured, and scorable.
+
+---
+
+# 🌳 **REFORESTATION SITE SUITABILITY CHECKLIST**
+
+### **(ENRO / DENR-Style Field Assessment)**
+
+**Purpose:** To evaluate if a site is suitable and prioritized for reforestation.
+
+---
+
+# ✅ **SECTION 1 — SITE INFORMATION**
+
+| Item                     | Details            |
+| ------------------------ | ------------------ |
+| Site Name                | __________________ |
+| Barangay                 | __________________ |
+| Coordinates / Polygon ID | __________________ |
+| Assessor                 | __________________ |
+| Date                     | __________________ |
+
+---
+
+# 🌿 **SECTION 2 — CANOPY COVER ASSESSMENT**
+
+**Method:** Visual estimate, drone image, or NDVI map.
+
+| Criterion             | Threshold                          | Score |
+| --------------------- | ---------------------------------- | ----- |
+| **>60%** canopy cover | Healthy forest, no planting needed | 0     |
+| **30–60%** canopy     | Partially degraded, possible ANR   | 1     |
+| **<30% canopy**       | Highly degraded → Reforestation    | 2     |
+
+**Score:** ______ / 2
+
+---
+
+# ⛰️ **SECTION 3 — SLOPE ASSESSMENT**
+
+**Method:** Slope map from DEM.
+
+| Slope Class | Interpretation                          | Score |
+| ----------- | --------------------------------------- | ----- |
+| **0–8%**    | Agricultural land, not priority         | 0     |
+| **8–18%**   | Increasing erosion risk                 | 1     |
+| **18–30%**  | Forestland → Suitable for reforestation | 2     |
+| **>30%**    | High-priority protection forest         | 3     |
+
+**Score:** ______ / 3
+
+---
+
+# 🟤 **SECTION 4 — SOIL EROSION RISK (RUSLE)**
+
+**Method:** RUSLE A-value (tons/ha/year)
+
+| RUSLE A Value | Meaning                                    | Score |
+| ------------- | ------------------------------------------ | ----- |
+| **<5**        | Minimal erosion                            | 0     |
+| **5–10**      | Moderate risk                              | 1     |
+| **>10**       | **High risk → Priority for reforestation** | 2     |
+
+**Score:** ______ / 2
+
+---
+
+# 🌧️ **SECTION 5 — FLOOD SUSCEPTIBILITY**
+
+**Method:** PHIVOLCS/MGB flood maps or flow accumulation.
+
+| Flood Risk         | Suitability                                | Score |
+| ------------------ | ------------------------------------------ | ----- |
+| **High flooding**  | Unsuitable unless mangroves                | 0     |
+| **Moderate**       | Limited suitability (use tolerant species) | 1     |
+| **Low flood risk** | Suitable for reforestation                 | 2     |
+
+**Score:** ______ / 2
+
+---
+
+# 🌲 **SECTION 6 — FOREST BIOMASS / DEGRADATION LEVEL**
+
+(From field survey or biomass model)
+
+| AGB Value      | Interpretation                      | Score |
+| -------------- | ----------------------------------- | ----- |
+| **>80 t/ha**   | Intact forest                       | 0     |
+| **50–80 t/ha** | Moderately degraded                 | 1     |
+| **<50 t/ha**   | **Degraded → Reforestation needed** | 2     |
+
+**Score:** ______ / 2
+
+---
+
+# 🛰️ **SECTION 7 — LAND COVER CHANGE TREND**
+
+**Method:** 3–5 year NDVI or land cover comparison.
+
+| Trend                       | Interpretation            | Score |
+| --------------------------- | ------------------------- | ----- |
+| Stable / no loss            | No action                 | 0     |
+| Slight decline              | Monitoring                | 1     |
+| Continuous decline (>1%/yr) | **Deforestation hotspot** | 2     |
+
+**Score:** ______ / 2
+
+---
+
+# 🧮 **SECTION 8 — TOTAL SUITABILITY SCORE**
+
+**Sum all scores (Max = 13)**
+**Total Score:** ______ / 13
+
+### **Interpretation**
+
+| Total Score | Recommendation                                    |
+| ----------- | ------------------------------------------------- |
+| **0–4**     | Not suitable for reforestation                    |
+| **5–8**     | Moderately suitable (ANR or assisted planting)    |
+| **9–13**    | **Highly suitable → Priority Reforestation Site** |
+
+---
+
+# 📌 **SECTION 9 — FINAL ASSESSMENT**
+
+✔ **Site Suitable for Reforestation:** Yes / No
+✔ **Priority Level:** Low / Medium / High
+✔ **Recommended Intervention:**
+
+* Assisted Natural Regeneration
+* Full Reforestation
+* Riparian Rehabilitation
+* Agroforestry
+* Mangrove Rehabilitation
+
+✔ **Notes / Observations:**
+
+---
+
+---
+
+---
+
+# Want this as a **PDF**?
+
+I can generate this into a:
+
+* **PDF (government format)**
+* **fillable checklist form**
+* **print-ready A4 document**
+
+Just tell me:
+👉 *“Generate PDF version”*

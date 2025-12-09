@@ -1,0 +1,170 @@
+Here is a **complete, clean, and easy-to-study RUSLE notes** with:
+✔ Meaning of RUSLE
+✔ Meaning of each variable (R, K, LS, C, P)
+✔ Where to get the data
+✔ How to use the formula
+✔ Example computation
+
+Perfect for your project or school notes.
+
+---
+
+# 📘 **RUSLE NOTES (Revised Universal Soil Loss Equation)**
+
+**RUSLE** is a model used to estimate **annual soil erosion** caused by rainfall and surface runoff.
+
+### **Main Formula:**
+
+[
+A = R \times K \times LS \times C \times P
+]
+
+Where:
+
+* **A = estimated soil loss** (tons / hectare / year)
+
+---
+
+# 📌 **1. R — Rainfall-Runoff Erosivity Factor**
+
+**Meaning:**
+Amount of rainfall energy that can cause soil erosion. More intense rainfall = higher R.
+
+**Where to Get:**
+
+* PAGASA rainfall data
+* WorldClim dataset (free online)
+* Research papers for R-factor maps of the Philippines
+* GIS rainfall raster dataset
+
+**Typical Values:**
+Philippines ranges from **400–1000 MJ·mm/ha/hr/yr**.
+
+---
+
+# 📌 **2. K — Soil Erodibility Factor**
+
+**Meaning:**
+How easily the soil becomes eroded. Depends on soil texture (clay, silt, sand), organic matter.
+
+**Where to Get:**
+
+* Bureau of Soils and Water Management (BSWM)
+* FAO SoilGrids (free online)
+* Field soil analysis
+* Soil texture maps
+
+**Typical Values:**
+0.02 (low erodibility) to 0.4 (high erodibility)
+
+---
+
+# 📌 **3. LS — Slope Length and Steepness Factor**
+
+**Meaning:**
+Measures how terrain affects erosion.
+
+* **Slope length (L):** longer slope = more erosion
+* **Slope steepness (S):** steeper slope = more erosion
+
+**Where to Get:**
+
+* **DEM (Digital Elevation Model):**
+
+  * SRTM 30m (free)
+  * ALOS PALSAR (12.5m)
+  * LiDAR (highest accuracy)
+
+**Computation:**
+Usually computed automatically using **QGIS** or **ArcGIS** from DEM.
+
+**Typical Values:**
+Flat (LS = 0.1) to very steep mountains (LS > 10)
+
+---
+
+# 📌 **4. C — Cover Management Factor**
+
+**Meaning:**
+Effect of vegetation or crops on erosion.
+
+* Forest = protects soil = low C
+* Bare land = high erosion = high C
+
+**Where to Get:**
+
+* Land Use / Land Cover map (LULC)
+* Satellite images (Sentinel-2, Landsat)
+* Field observation
+
+**Typical C Values:**
+
+| Land Cover   | C Value     |
+| ------------ | ----------- |
+| Dense forest | 0.001–0.005 |
+| Grassland    | 0.01–0.05   |
+| Cropland     | 0.1–0.5     |
+| Bare soil    | 0.5–1.0     |
+
+---
+
+# 📌 **5. P — Support Practice Factor**
+
+**Meaning:**
+Represents conservation practices reducing erosion.
+Examples: contouring, terracing, strip cropping.
+
+**Where to Get:**
+
+* Field observation
+* Local farmer interviews
+* Agricultural land-use maps
+
+**Typical P Values:**
+
+| Practice        | P Value |
+| --------------- | ------- |
+| Terracing       | 0.2–0.3 |
+| Contour farming | 0.5     |
+| No conservation | 1.0     |
+
+---
+
+# ⭐ **Putting It All Together (Example)**
+
+### **Given:**
+
+* R = 500
+* K = 0.25
+* LS = 3.0
+* C = 0.2
+* P = 0.5
+
+### **Formula:**
+
+[
+A = R \times K \times LS \times C \times P
+]
+
+### **Solution:**
+
+[
+A = 500 \times 0.25 \times 3.0 \times 0.2 \times 0.5
+]
+
+Step-by-step:
+
+* 500 × 0.25 = 125
+* 125 × 3 = 375
+* 375 × 0.2 = 75
+* 75 × 0.5 = **37.5 tons/ha/year**
+
+### **Final Estimated Erosion:**
+
+[
+A = \boxed{37.5 \text{ tons/ha/year}}
+]
+
+---
+
+# ✅ **Do you want this turned into a printable PDF or a school-style “handwritten” notes format?**

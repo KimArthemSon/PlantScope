@@ -1,0 +1,232 @@
+Perfect — let’s **focus on the theory only**, like how an environmental planner or a DENR forester would manually assess a site *without any algorithm or code*.
+We already covered **RUSLE**. Now we explain the *other indicators*, why they are used, and how they are evaluated in real-world reforestation projects.
+
+---
+
+# 🌳 **Site Suitability—The Real Manual/Scientific Process**
+
+Environmental specialists never decide reforestation using RUSLE alone.
+In the real world (DENR, FAO, USGS, academe), they check **multiple independent indicators**:
+
+1. **Vegetation Condition — Canopy Cover**
+2. **Soil Erosion Risk — RUSLE**
+3. **Topography — Slope**
+4. **Hydrology — Flood risk**
+5. **Forest Carbon / Biomass**
+6. **Land Cover Change Trend**
+
+These are all **scientifically recognized** variables in:
+
+* FAO Forest Restoration Diagnostic
+* DENR/ERDB forest assessment manuals
+* IPCC Land Use Change methodologies
+* USGS and NASA forest monitoring guidelines
+
+Below I explain each indicator as if you were a field assessor or GIS officer doing it manually.
+
+---
+
+# 1️⃣ **Canopy Cover (%)**
+
+### **Why it matters**
+
+* Low canopy means **the area has fewer trees** → ecologically degraded.
+* Healthy forests usually have **>40–60%** canopy cover (depending on forest type).
+* Below **30%**, the area often can’t perform ecological functions (soil protection, carbon storage).
+
+### **Manual evaluation**
+
+* Field officer looks upward and estimates percent cover with:
+
+  * **Densiometer**
+  * **Drone photo**
+  * **Satellite images (NDVI or SAVI)**
+
+### **When it indicates reforestation**
+
+| Canopy Cover | Interpretation                                     |
+| ------------ | -------------------------------------------------- |
+| **>60%**     | Healthy forest → No planting needed                |
+| **30–60%**   | Partially degraded → Assisted natural regeneration |
+| **<30%**     | Highly degraded → **Reforestation recommended**    |
+
+This is standard in FAO/UN REDD assessments.
+
+---
+
+# 2️⃣ **RUSLE (A = soil loss ton/ha/year)**
+
+You already understand this.
+It shows **soil degradation risk**.
+
+> **If A > 10–12 tons/ha/yr → site is considered erosion-prone.**
+> This is based on USDA/FAO soil tolerable loss values.
+
+---
+
+# 3️⃣ **Slope (%) or Degrees**
+
+### **Why slope matters**
+
+Steep slopes:
+
+* Lose soil faster
+* Are hard for natural regeneration
+* Need **reforestation to stabilize the land**
+
+DENR uses slope classes (from Bureau of Soils and Water Management guidelines):
+
+| Slope      | Interpretation                                             |
+| ---------- | ---------------------------------------------------------- |
+| **0–8%**   | Suitable for agriculture                                   |
+| **8–18%**  | Moderately steep, erosion begins                           |
+| **18–30%** | Forestlands start → reforestation recommended              |
+| **>30%**   | Protection forest, very steep → priority for reforestation |
+
+### **Manual process**
+
+A GIS specialist:
+
+* Opens a **DEM (Digital Elevation Model)** in QGIS
+* Computes slope using raster tools
+* Produces a slope map per site polygon
+
+If **>25% of the site is >25°**, that’s a red flag.
+
+---
+
+# 4️⃣ **Flood Risk**
+
+### **Why this matters**
+
+Some ecosystems **should not** be reforested (e.g., natural flood plains).
+But degraded *upland catchments* that cause flooding **must** be reforested.
+
+### **Manual method**
+
+Use hydrology layers:
+
+* Drainage map
+* Flow accumulation map
+* Flood susceptibility maps (PHIL-LIDAR, Mines and Geosciences Bureau)
+
+### **Interpretation**
+
+| Flood Risk | Reasoning                                            |
+| ---------- | ---------------------------------------------------- |
+| **High**   | Often unsuitable for tree survival unless mangroves  |
+| **Medium** | Trees may survive only if species are flood tolerant |
+| **Low**    | Suitable for reforestation                           |
+
+So this factor prevents planting in the wrong place.
+
+---
+
+# 5️⃣ **Carbon Stock / AGB (Above-ground biomass)**
+
+### **Why it matters**
+
+Low biomass = degraded land.
+
+Scientists use biomass to measure:
+
+* Forest health
+* Carbon sequestration
+* Degradation level
+
+### **Manual estimation**
+
+Forester measures:
+
+* Tree diameter (DBH)
+* Height
+* Wood density
+  Then uses **allometric equations** (IPCC Tier 2):
+
+```
+AGB = 0.0673 × (ρ × DBH² × H)^0.976
+```
+
+If forest has **<50 tons biomass per hectare**, it's considered *degraded*.
+
+### **Interpretation**
+
+| AGB            | Meaning                                         |
+| -------------- | ----------------------------------------------- |
+| **>80 t/ha**   | Intact forest                                   |
+| **50–80 t/ha** | Partially degraded                              |
+| **<50 t/ha**   | **Degraded → good candidate for reforestation** |
+
+---
+
+# 6️⃣ **Land Cover Trend (deforestation pattern)**
+
+### **Why it matters**
+
+If the area has been continuously losing forest over the years, it is:
+
+* High degradation zone
+* Priority for restoration
+
+### **Manual method (GIS)**
+
+GIS officer loads:
+
+* Sentinel-2 imagery (5-year archive)
+* Computes NDVI time series
+* Checks if vegetation is declining
+
+If **loss > 1% per year**, it's considered a deforestation hotspot.
+
+---
+
+# 📌 Why all these factors are needed (scientific justification)
+
+**Reforestation suitability is multi-dimensional.**
+No single factor can decide properly.
+
+RUSLE alone tells you:
+
+* *“Soil is eroding.”*
+  But NOT:
+* Is it forestland or farmland?
+* Will the trees survive? (flood, slope)
+* Is it deforesting due to humans?
+* Is there already enough canopy?
+* Is the biomass low or high?
+
+Therefore, environmental planners always use **multiple indicators**, not one.
+
+These factors come from:
+
+* FAO Restoration Opportunities Assessment Methodology (ROAM)
+* DENR Forest Management Bureau (FMB) guidelines
+* IPCC GHG forest assessment
+* USGS forest degradation frameworks
+
+---
+
+# 📘 Simple Summary (Human Logic)
+
+### **A site needs reforestation if:**
+
+1. **Few trees (low canopy)**
+2. **High soil erosion (RUSLE)**
+3. **Steep slopes**
+4. **Low biomass**
+5. **Continuous forest loss**
+6. **Low flood risk (or correct species for flood zones)**
+
+If **multiple indicators fail**, that’s when experts say:
+
+> “This site is degraded and a good candidate for reforestation.”
+
+---
+
+# 🧭 Want me to generate:
+
+* A **manual-style checklist** (like ENRO would use)?
+* A **decision tree diagram** showing how a forester decides?
+* A **PDF field guide** for PlantScope?
+
+Just tell me **which one**.

@@ -1,0 +1,160 @@
+Here is **exactly the part you need**:
+❗ *Where the Site input is stored*
+❗ *Where the results (RUSLE, evaluation) are stored and viewed*
+
+Nothing extra, only the needed ERD portion.
+
+---
+
+# ✅ **Where the SITE INPUT is Stored**
+
+### **1. Site Table — stores basic site information**
+
+This is where the user inputs:
+
+| Field               | Description                        |
+| ------------------- | ---------------------------------- |
+| name                | Site name (optional)               |
+| barangay            | Barangay where the site is located |
+| city                | Ormoc City                         |
+| province            | Leyte                              |
+| land_classification | Agricultural, Forestland, etc.     |
+| lot_no              | Lot number                         |
+| centroid_lat        | Approx. center latitude            |
+| centroid_lon        | Approx. center longitude           |
+
+### **2. SitePolygon Table — stores boundary points**
+
+This is where the polygon coordinates go:
+
+| Field     | Description                 |
+| --------- | --------------------------- |
+| site_id   | FK → Site                   |
+| point_no  | Order of the polygon points |
+| latitude  | Polygon point latitude      |
+| longitude | Polygon point longitude     |
+
+---
+
+# 📌 How the System Sees It
+
+### User enters:
+
+* Barangay
+* Coordinates
+* Land classification
+* Polygon points
+
+➡️ Stored in **Site** and **SitePolygon**
+
+---
+
+# ✅ **Where the ANALYSIS (RUSLE and final decision) is Stored**
+
+### **3. RusleFactor Table — stores the scientific input values**
+
+| Field | Description            |
+| ----- | ---------------------- |
+| R     | Rainfall erosivity     |
+| K     | Soil erodibility       |
+| LS    | Slope length–steepness |
+| C     | Cover factor           |
+| P     | Conservation practice  |
+
+These values are computed from:
+
+* DEM (for slope + LS)
+* Land cover (for C)
+* Soil type (for K)
+* Rainfall (for R)
+
+---
+
+### **4. RusleResult Table — stores computed erosion**
+
+| Field               | Description                        |
+| ------------------- | ---------------------------------- |
+| soil_loss           | tons/ha/year (computed R*K*LS*C*P) |
+| erosion_class       | Low / Moderate / High              |
+| needs_reforestation | Yes / No                           |
+
+---
+
+# 📌 How the System Sees It
+
+### System computes:
+
+`Soil Loss = R × K × LS × C × P`
+
+➡️ Stored in **RusleResult**
+
+Then front-end shows:
+
+* Soil loss value
+* Whether the site is classified as needing reforestation
+
+---
+
+# 🎯 **Simplified ERD (Only the Part You Asked For)**
+
+```
++--------------------+
+|       Site         |
++--------------------+
+| id (PK)            |
+| barangay           |
+| city               |
+| province           |
+| land_classification|
+| lot_no             |
+| centroid_lat       |
+| centroid_lon       |
++--------------------+
+           |
+           | 1-to-many
+           |
++-----------------------+
+|    SitePolygon        |
++-----------------------+
+| id (PK)               |
+| site_id (FK)          |
+| point_no              |
+| latitude              |
+| longitude             |
++-----------------------+
+
+
++-----------------------+
+|     RusleFactor       |
++-----------------------+
+| id (PK)               |
+| site_id (FK)          |
+| R                     |
+| K                     |
+| LS                    |
+| C                     |
+| P                     |
++-----------------------+
+           |
+           | 1-to-1
+           |
++-----------------------+
+|     RusleResult       |
++-----------------------+
+| id (PK)               |
+| site_id (FK)          |
+| soil_loss             |
+| erosion_class         |
+| needs_reforestation   |
++-----------------------+
+```
+
+---
+
+# If you want next:
+
+✅ Want the **Django models** for only these?
+✅ Want a **diagram image** instead of text?
+✅ Want sample test data?
+
+Just tell me!

@@ -1,0 +1,362 @@
+# Site Suitability algorithm — full package (score, code, schema, example)
+
+Below is a complete, ready-to-use **site suitability algorithm** you can plug into PlantScope. It:
+
+* defines required **inputs**
+* gives a **normalized scoring** method per indicator
+* provides **weights** and a tunable decision threshold
+* includes **Python (pandas) code** you can run now
+* shows a **worked example** (using your sample Site 1)
+* shows a simple **JSON input/output schema** and DB table layout
+
+Use it as-is or tweak thresholds/weights to match local expert guidance.
+
+---
+
+# 1) Concept (short)
+
+We compute a set of normalized sub-scores (range 0..1) for several indicators where **1 = worst / most in need of reforestation** and **0 = best**. We combine them with weights to produce a final `reforest_score` between 0 and 1. Higher score = higher priority.
+
+Default priority tiers (tunable):
+
+* **High priority:** score ≥ 0.6
+* **Medium priority:** 0.4 ≤ score < 0.6
+* **Low priority:** score < 0.4
+
+---
+
+# 2) Required input fields (per site)
+
+Minimal inputs your system must store / accept for the algorithm:
+
+* `site_id`
+* `canopy_pct` — canopy cover percent (0..100)
+* `rusle_A` — soil loss estimate (tons/ha/year) from RUSLE (A)
+* `frac_slope_gt25` — fraction (0..1) of site area steeper than 25°
+* `flood_risk` — categorical: `"Low" | "Medium" | "High"`
+* `agb_per_ha` — above-ground biomass (tons/ha), or carbon stock equivalent (t/ha)
+* `landcover_trend_pct_per_year` — percent change per year (negative = loss)
+* optionally: `legal_suitability_flag` (true if site legally allowed for planting)
+
+(You may also keep `R`, `K`, `LS`, `C`, `P` stored for transparency and auditing.)
+
+---
+
+# 3) How each sub-score is computed (normalization rules)
+
+All sub-scores range 0..1 where 1 = worst.
+
+1. **Canopy score (`s_canopy`)**
+
+```text
+s_canopy = max(0, (30 - canopy_pct) / 30)
+```
+
+* If `canopy_pct >= 30` → s_canopy = 0
+* If `canopy_pct = 0` → s_canopy = 1
+
+2. **Erosion score (`s_erosion`)**
+   Normalize RUSLE result `A`. Use a cap reference (e.g., 200 t/ha/yr → severe). You can adjust the cap.
+
+```text
+s_erosion = min(1, rusle_A / 200.0)
+```
+
+* If `rusle_A >= 200` → s_erosion = 1
+
+3. **Slope score (`s_slope`)**
+   Use fraction of site area > 25°:
+
+```text
+s_slope = frac_slope_gt25  # already 0..1
+```
+
+4. **Flood risk (`s_flood`)**
+   Map categories:
+
+```text
+s_flood = 1.0 if flood_risk == "High" else 0.5 if flood_risk == "Medium" else 0.0
+```
+
+5. **Carbon/biomass score (`s_carbon`)**
+   Lower carbon → worse:
+
+```text
+s_carbon = max(0, (50 - agb_per_ha) / 50.0)
+# if agb_per_ha >= 50 => s_carbon=0 ; if agb_per_ha=0 => s_carbon=1
+```
+
+6. **Trend score (`s_trend`)**
+   If losing forest (negative trend), penalize:
+
+```text
+s_trend = 1.0 if landcover_trend_pct_per_year <= -1.0 else 0.5 if landcover_trend_pct_per_year < 0 else 0.0
+```
+
+(You can tune -1%/yr threshold.)
+
+---
+
+# 4) Default weights (changeable)
+
+Suggested defaults (sum = 1.0):
+
+```text
+weights = {
+  "canopy": 0.25,
+  "erosion": 0.30,
+  "slope": 0.15,
+  "flood": 0.10,
+  "carbon": 0.15,
+  "trend": 0.05
+}
+```
+
+Rationale: erosion and canopy are strongest indicators; slope and carbon moderate; flood and trend smaller but important.
+
+---
+
+# 5) Final score and decision
+
+Compute:
+
+```text
+score = canopy*w_canopy + erosion*w_erosion + slope*w_slope + flood*w_flood + carbon*w_carbon + trend*w_trend
+```
+
+Decision interpretation (default):
+
+* `score >= 0.6` → **High priority (REFOREST)**
+* `0.4 <= score < 0.6` → **Medium priority**
+* `score < 0.4` → **Low priority**
+
+If `legal_suitability_flag == False` (not allowed to plant), final decision = **Not Allowed** regardless of score.
+
+---
+
+# 6) Worked example — Site 1 (your sample)
+
+Inputs (sample realistic values):
+
+```text
+canopy_pct = 15     # low cover
+rusle_A = 1334      # from earlier sample RUSLE (tons/ha/year)
+frac_slope_gt25 = 0.40
+flood_risk = "Low"
+agb_per_ha = 20     # low biomass
+landcover_trend_pct_per_year = -1.5  # losing 1.5%/yr
+```
+
+Compute subscores (using normalizations above):
+
+* s_canopy = (30-15)/30 = 0.5
+* s_erosion = min(1, 1334/200) = 1.0
+* s_slope = 0.40
+* s_flood = 0.0
+* s_carbon = (50 - 20)/50 = 0.6
+* s_trend = 1.0 (since <= -1.0)
+
+Apply default weights:
+
+```
+score = 0.25*0.5 + 0.30*1.0 + 0.15*0.4 + 0.10*0.0 + 0.15*0.6 + 0.05*1.0
+      = 0.125  + 0.30   + 0.06    + 0      + 0.09    + 0.05
+      = 0.625
+```
+
+**Result**: `score = 0.625` → **High priority: REFOREST THIS SITE**
+
+---
+
+# 7) Ready-to-run Python (pandas) function
+
+Copy/paste this into your backend (Django/Flask) or a notebook. It expects a pandas DataFrame or dict per site.
+
+```python
+# site_suitability.py
+from typing import Dict, Any
+
+DEFAULT_WEIGHTS = {
+  "canopy": 0.25,
+  "erosion": 0.30,
+  "slope": 0.15,
+  "flood": 0.10,
+  "carbon": 0.15,
+  "trend": 0.05
+}
+
+def compute_subscores(site: Dict[str, Any]) -> Dict[str, float]:
+    # inputs
+    canopy = float(site.get("canopy_pct", 0.0))
+    rusle_A = float(site.get("rusle_A", 0.0))
+    frac_slope = float(site.get("frac_slope_gt25", 0.0))
+    flood_risk = site.get("flood_risk", "Low")
+    agb = float(site.get("agb_per_ha", 0.0))
+    trend_pct = float(site.get("landcover_trend_pct_per_year", 0.0))
+
+    # subscores 0..1 (1 is worst)
+    s_canopy = max(0.0, (30.0 - canopy) / 30.0)    # 0 if canopy>=30
+    s_erosion = min(1.0, rusle_A / 200.0)          # cap at 200 t/ha -> 1.0
+    s_slope = min(1.0, max(0.0, frac_slope))      # expects 0..1
+    s_flood = 1.0 if flood_risk == "High" else 0.5 if flood_risk == "Medium" else 0.0
+    s_carbon = max(0.0, (50.0 - agb) / 50.0)
+    s_trend = 1.0 if trend_pct <= -1.0 else 0.5 if trend_pct < 0.0 else 0.0
+
+    return {
+        "s_canopy": s_canopy,
+        "s_erosion": s_erosion,
+        "s_slope": s_slope,
+        "s_flood": s_flood,
+        "s_carbon": s_carbon,
+        "s_trend": s_trend
+    }
+
+def compute_reforest_score(site: Dict[str, Any], weights: Dict[str,float]=None) -> Dict[str, Any]:
+    if weights is None:
+        weights = DEFAULT_WEIGHTS
+    subs = compute_subscores(site)
+    score = (
+        subs["s_canopy"] * weights["canopy"]
+      + subs["s_erosion"] * weights["erosion"]
+      + subs["s_slope"] * weights["slope"]
+      + subs["s_flood"] * weights["flood"]
+      + subs["s_carbon"] * weights["carbon"]
+      + subs["s_trend"] * weights["trend"]
+    )
+    # tiers
+    if site.get("legal_suitability_flag") is False:
+        recommendation = "NOT_ALLOWED"
+    else:
+        if score >= 0.6:
+            recommendation = "HIGH_PRIORITY_REFOREST"
+        elif score >= 0.4:
+            recommendation = "MEDIUM_PRIORITY"
+        else:
+            recommendation = "LOW_PRIORITY"
+
+    return {
+        "site_id": site.get("site_id"),
+        "score": round(score, 3),
+        "recommendation": recommendation,
+        "subscores": subs,
+        "weights_used": weights
+    }
+
+# Example:
+if __name__ == "__main__":
+    site1 = {
+        "site_id": 1,
+        "canopy_pct": 15,
+        "rusle_A": 1334,
+        "frac_slope_gt25": 0.40,
+        "flood_risk": "Low",
+        "agb_per_ha": 20,
+        "landcover_trend_pct_per_year": -1.5,
+        "legal_suitability_flag": True
+    }
+    print(compute_reforest_score(site1))
+```
+
+---
+
+# 8) JSON API input / output (example)
+
+**POST /api/sites/{id}/assess**
+
+**Request JSON**
+
+```json
+{
+  "site_id": 1,
+  "canopy_pct": 15,
+  "rusle_A": 1334,
+  "frac_slope_gt25": 0.4,
+  "flood_risk": "Low",
+  "agb_per_ha": 20,
+  "landcover_trend_pct_per_year": -1.5,
+  "legal_suitability_flag": true
+}
+```
+
+**Response JSON**
+
+```json
+{
+  "site_id": 1,
+  "score": 0.625,
+  "recommendation": "HIGH_PRIORITY_REFOREST",
+  "subscores": {
+    "s_canopy": 0.5,
+    "s_erosion": 1.0,
+    "s_slope": 0.4,
+    "s_flood": 0.0,
+    "s_carbon": 0.6,
+    "s_trend": 1.0
+  },
+  "weights_used": {
+    "canopy": 0.25,
+    "erosion": 0.30,
+    "slope": 0.15,
+    "flood": 0.10,
+    "carbon": 0.15,
+    "trend": 0.05
+  }
+}
+```
+
+---
+
+# 9) DB schema (simple) — store inputs + result
+
+**Table: site_indicators**
+
+```sql
+CREATE TABLE site_indicators (
+  site_id SERIAL PRIMARY KEY,
+  canopy_pct FLOAT,
+  rusle_A FLOAT,
+  frac_slope_gt25 FLOAT,
+  flood_risk VARCHAR(10),
+  agb_per_ha FLOAT,
+  landcover_trend_pct_per_year FLOAT,
+  legal_suitability_flag BOOLEAN DEFAULT TRUE,
+  reforest_score FLOAT,
+  recommendation VARCHAR(32),
+  computed_at TIMESTAMP DEFAULT now()
+);
+```
+
+**Table: rusle_factors** (store full R,K,LS,C,P too)
+
+```sql
+CREATE TABLE rusle_factors (
+  id SERIAL PRIMARY KEY,
+  site_id INTEGER REFERENCES site_indicators(site_id),
+  R FLOAT,
+  K FLOAT,
+  LS FLOAT,
+  C FLOAT,
+  P FLOAT
+);
+```
+
+---
+
+# 10) Tuning notes (how to adapt to your project)
+
+* **Weights**: change them based on local expert opinion (ENRO, AFA). For example, make slope more important for hill regions.
+* **Normalization caps**: e.g., `s_erosion` used `200 t/ha` cap. Adjust—maybe 100 in agro-ecological zones.
+* **Trend thresholds**: change `-1%` to `-0.5%` for sensitive regions.
+* **Add new indicators**: e.g., land tenure constraint (private/communal), protected status, proximity to water sources.
+* **Validation**: test against known sites (field-validated) and tune weights so predictions match on-ground decisions.
+
+---
+
+# 11) Next actions I can do for you (pick one)
+
+* a) Integrate the function into your Django view + serializer.
+* b) Provide a Jupyter notebook that computes scores for multiple sample sites (CSV) and visualizes results.
+* c) Create a front-end mockup (React) to show score + color-coded badge and allow experts to override weights.
+* d) Create an endpoint and DB migrations (Django models + migration SQL).
+
+Tell me which and I will generate it next.
