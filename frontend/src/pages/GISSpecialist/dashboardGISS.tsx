@@ -1,105 +1,58 @@
 import { useEffect, useState } from "react";
 import NotFoundPage from "../../components/layout/NotFoundPage";
 import SidebarGISS from "../../components/layout/SidebarGISSpecialist";
+import { BarChart3, Activity } from "lucide-react";
 import {
-  ClipboardList,
-  MapPin,
-  BarChart3,
-  FileText,
-  LogOut,
-  Activity,
-  Users,
-  PieChart,
-} from "lucide-react";
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 export default function DashboardGISS() {
-  const modules = [
-    {
-      title: "User Management",
-      icon: <Users size={24} />,
-      description: "Manage Field Officers and other users in the system.",
-      color: "from-blue-400 to-blue-600",
-      onClick: () => console.log("Navigate to User Management"),
-    },
-    {
-      title: "Site Overview",
-      icon: <MapPin size={24} />,
-      description: "View all reforestation sites and their status.",
-      color: "from-green-400 to-green-600",
-      onClick: () => console.log("Navigate to Site Overview"),
-    },
-    {
-      title: "Analytics Dashboard",
-      icon: <BarChart3 size={24} />,
-      description: "Track overall progress, statistics, and KPIs.",
-      color: "from-purple-400 to-purple-600",
-      onClick: () => console.log("Navigate to Analytics"),
-    },
-    {
-      title: "Reports",
-      icon: <FileText size={24} />,
-      description: "Generate detailed reports for analysis.",
-      color: "from-yellow-400 to-yellow-600",
-      onClick: () => console.log("Navigate to Reports"),
-    },
-    {
-      title: "Activity Log",
-      icon: <Activity size={24} />,
-      description: "Monitor login and logout activity of users.",
-      color: "from-pink-400 to-pink-600",
-      onClick: () => console.log("Navigate to Activity Log"),
-    },
-    {
-      title: "Statistics",
-      icon: <PieChart size={24} />,
-      description: "Visualize data and trends in reforestation progress.",
-      color: "from-indigo-400 to-indigo-600",
-      onClick: () => console.log("Navigate to Statistics"),
-    },
-    {
-      title: "Logout",
-      icon: <LogOut size={24} />,
-      description: "Sign out of your account safely.",
-      color: "from-red-400 to-red-600",
-      onClick: () => console.log("Logout"),
-    },
+  const [isAuthorize, setIsAuthorize] = useState(true);
+
+  const chartData = [
+    { month: "Jan", sites: 5 },
+    { month: "Feb", sites: 8 },
+    { month: "Mar", sites: 6 },
+    { month: "Apr", sites: 10 },
+    { month: "May", sites: 12 },
   ];
-const[isAuthorize, setIsAuthorize] = useState(true);
-  
-    useEffect(() => {
-          checkIfStillLogin()
-        }, []);
-      
-         const checkIfStillLogin = async () =>{
-      
-         const token = localStorage.getItem("token");
-    
-         if(!token){
-          return;
-         }
-                try {
-            const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
-              method: "POST",
-               headers: { Authorization: `Bearer ${token}` },
-            });
-      
-            const data = await response.json();
-      
-            if (response.ok) {     
-                
-                if (!(data.user_role === "GISSpecialist")) {
-                     setIsAuthorize(false)    
-                }
-            } 
-      
-          } catch (error) {
-             setIsAuthorize(false)
-          }
-         } 
-    
-      if (!localStorage.getItem('token') || !isAuthorize){
-         return <NotFoundPage />
+
+  useEffect(() => {
+    checkIfStillLogin();
+  }, []);
+
+  const checkIfStillLogin = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (!(data.user_role === "GISSpecialist")) {
+          setIsAuthorize(false);
+        }
       }
+    } catch (error) {
+      setIsAuthorize(false);
+    }
+  };
+
+  if (!localStorage.getItem("token") || !isAuthorize) {
+    return <NotFoundPage />;
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <SidebarGISS />
@@ -108,28 +61,61 @@ const[isAuthorize, setIsAuthorize] = useState(true);
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-green-700 mb-2">
-            Admin / AFA Dashboard
+            GIS Specialist Dashboard
           </h1>
           <p className="text-gray-600 text-lg">
-            Welcome back! Here’s an overview of your modules and actions.
+            Overview of GIS-related activities, site monitoring, and analytics.
           </p>
         </div>
 
-        {/* Grid Modules */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {modules.map((module) => (
-            <div
-              key={module.title}
-              onClick={module.onClick}
-              className={`cursor-pointer bg-linear-to-br ${module.color} text-white rounded-2xl shadow-lg p-6 hover:scale-105 hover:shadow-2xl transition transform duration-300 flex flex-col justify-between`}
-            >
-              <div className="flex items-center gap-3 mb-4">
-                {module.icon}
-                <h2 className="text-xl font-semibold">{module.title}</h2>
-              </div>
-              <p className="text-white/90 text-sm">{module.description}</p>
-            </div>
-          ))}
+        {/* Chart Section */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <BarChart3 size={26} className="text-green-600" />
+            <h2 className="text-2xl font-semibold text-gray-800">Sites Monitored Per Month</h2>
+          </div>
+
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData}>
+              <Line type="monotone" dataKey="sites" stroke="#16a34a" strokeWidth={3} />
+              <CartesianGrid stroke="#e5e7eb" />
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Stats Section */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-blue-600 text-white p-6 rounded-2xl shadow-md">
+            <h3 className="text-xl font-bold mb-2">Total Sites</h3>
+            <p className="text-4xl font-extrabold">42</p>
+          </div>
+
+          <div className="bg-purple-600 text-white p-6 rounded-2xl shadow-md">
+            <h3 className="text-xl font-bold mb-2">Active Monitoring Tasks</h3>
+            <p className="text-4xl font-extrabold">18</p>
+          </div>
+
+          <div className="bg-green-600 text-white p-6 rounded-2xl shadow-md">
+            <h3 className="text-xl font-bold mb-2">GIS Reports Generated</h3>
+            <p className="text-4xl font-extrabold">26</p>
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Activity size={26} className="text-pink-500" />
+            <h2 className="text-2xl font-semibold text-gray-800">Recent Activity</h2>
+          </div>
+
+          <ul className="text-gray-700 space-y-2">
+            <li>• Added new monitoring data for Site X.</li>
+            <li>• Updated site coordinates for Barangay Y.</li>
+            <li>• Generated GIS analysis report for Project Z.</li>
+          </ul>
         </div>
       </main>
     </div>

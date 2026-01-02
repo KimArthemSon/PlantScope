@@ -1,91 +1,58 @@
 import { useEffect, useState } from "react";
 import NotFoundPage from "../../components/layout/NotFoundPage";
 import SidebarFO from "../../components/layout/SidebarFO";
-import { ClipboardList, MapPin, BarChart3, FileText, LogOut, Activity } from "lucide-react";
+import { BarChart3, Activity } from "lucide-react";
+import {
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 export default function FieldOfficerDashboard() {
-  const modules = [
-    {
-      title: "Log In",
-      icon: <ClipboardList size={24} />,
-      description: "Access your account and authentication tools.",
-      color: "from-green-400 to-green-600",
-      onClick: () => console.log("Navigate to Log In"),
-    },
-    {
-      title: "Dashboard",
-      icon: <BarChart3 size={24} />,
-      description: "View overall statistics and activity summary.",
-      color: "from-blue-400 to-blue-600",
-      onClick: () => console.log("Navigate to Dashboard"),
-    },
-    {
-      title: "Field Survey Module",
-      icon: <MapPin size={24} />,
-      description: "Conduct on-site surveys and submit collected information.",
-      color: "from-purple-400 to-purple-600",
-      onClick: () => console.log("Navigate to Field Survey"),
-    },
-    {
-      title: "Reports",
-      icon: <FileText size={24} />,
-      description: "Generate and view field officer reports.",
-      color: "from-yellow-400 to-yellow-600",
-      onClick: () => console.log("Navigate to Reports"),
-    },
-    {
-      title: "Monitoring Module",
-      icon: <Activity size={24} />,
-      description: "Track reforestation progress and site conditions.",
-      color: "from-pink-400 to-pink-600",
-      onClick: () => console.log("Navigate to Monitoring"),
-    },
-    {
-      title: "Logout",
-      icon: <LogOut size={24} />,
-      description: "Sign out of your Field Officer account.",
-      color: "from-red-400 to-red-600",
-      onClick: () => console.log("Logout"),
-    },
+  const [isAuthorize, setIsAuthorize] = useState(true);
+
+  const chartData = [
+    { month: "Jan", surveys: 12 },
+    { month: "Feb", surveys: 18 },
+    { month: "Mar", surveys: 14 },
+    { month: "Apr", surveys: 20 },
+    { month: "May", surveys: 27 },
   ];
 
-const[isAuthorize, setIsAuthorize] = useState(true);
-  
-    useEffect(() => {
-          checkIfStillLogin()
-        }, []);
-      
-         const checkIfStillLogin = async () =>{
-      
-         const token = localStorage.getItem("token");
-    
-         if(!token){
-          return;
-         }
-                try {
-            const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
-              method: "POST",
-               headers: { Authorization: `Bearer ${token}` },
-            });
-      
-            const data = await response.json();
-      
-            if (response.ok) {     
-                
-                if (!(data.user_role === "FieldOfficer")) {
-                     setIsAuthorize(false)    
-                }
-            } 
-      
-          } catch (error) {
-             setIsAuthorize(false)
-          }
-         } 
-    
-      if (!localStorage.getItem('token') || !isAuthorize){
-         return <NotFoundPage />
+  useEffect(() => {
+    checkIfStillLogin();
+  }, []);
+
+  const checkIfStillLogin = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (!(data.user_role === "FieldOfficer")) {
+          setIsAuthorize(false);
+        }
       }
-      
+    } catch (error) {
+      setIsAuthorize(false);
+    }
+  };
+
+  if (!localStorage.getItem("token") || !isAuthorize) {
+    return <NotFoundPage />;
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <SidebarFO />
@@ -97,25 +64,58 @@ const[isAuthorize, setIsAuthorize] = useState(true);
             Field Officer Dashboard
           </h1>
           <p className="text-gray-600 text-lg">
-            Welcome back! Here are your modules and quick actions.
+            Overview of your field activity, surveys, and monitoring tasks.
           </p>
         </div>
 
-        {/* Grid Modules */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {modules.map((module) => (
-            <div
-              key={module.title}
-              onClick={module.onClick}
-              className={`cursor-pointer bg-linear-to-br ${module.color} text-white rounded-2xl shadow-lg p-6 hover:scale-105 hover:shadow-2xl transition transform duration-300 flex flex-col justify-between`}
-            >
-              <div className="flex items-center gap-3 mb-4">
-                {module.icon}
-                <h2 className="text-xl font-semibold">{module.title}</h2>
-              </div>
-              <p className="text-white/90 text-sm">{module.description}</p>
-            </div>
-          ))}
+        {/* Chart Section */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <BarChart3 size={26} className="text-green-600" />
+            <h2 className="text-2xl font-semibold text-gray-800">Monthly Surveys Completed</h2>
+          </div>
+
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData}>
+              <Line type="monotone" dataKey="surveys" stroke="#15803d" strokeWidth={3} />
+              <CartesianGrid stroke="#e5e7eb" />
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Stats Section */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-green-600 text-white p-6 rounded-2xl shadow-md">
+            <h3 className="text-xl font-bold mb-2">Total Surveys Submitted</h3>
+            <p className="text-4xl font-extrabold">128</p>
+          </div>
+
+          <div className="bg-blue-600 text-white p-6 rounded-2xl shadow-md">
+            <h3 className="text-xl font-bold mb-2">Active Assignments</h3>
+            <p className="text-4xl font-extrabold">6</p>
+          </div>
+
+          <div className="bg-purple-600 text-white p-6 rounded-2xl shadow-md">
+            <h3 className="text-xl font-bold mb-2">Sites Visited This Month</h3>
+            <p className="text-4xl font-extrabold">21</p>
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Activity size={26} className="text-pink-500" />
+            <h2 className="text-2xl font-semibold text-gray-800">Recent Activity</h2>
+          </div>
+
+          <ul className="text-gray-700 space-y-2">
+            <li>• Submitted monitoring update for Site A.</li>
+            <li>• Completed survey for Barangay San Mateo.</li>
+            <li>• Uploaded new site photos for Project 3.</li>
+          </ul>
         </div>
       </main>
     </div>
