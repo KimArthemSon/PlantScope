@@ -1,0 +1,47 @@
+/* sidebarScrollbar.css */
+.sidebar-scrollbar {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: #cccccc #0f4a2f;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  background-color: #0f4a2f;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #cccccc;
+  border-radius: 6px;
+  border: 2px solid #0f4a2f;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #b3b3b3;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-corner {
+  background-color: #0f4a2f;
+}
+
+/* Optional: Scrollbar arrows (WebKit only) */
+.sidebar-scrollbar::-webkit-scrollbar-button {
+  height: 12px;
+  background-color: #0f4a2f;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" fill="%23cccccc"><polygon points="0,4 4,0 8,4"/></svg>');
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" fill="%23cccccc"><polygon points="0,0 4,4 8,0"/></svg>');
+  background-repeat: no-repeat;
+  background-position: center;
+}

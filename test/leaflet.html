@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Polygon on OpenStreetMap</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    #map {
+      height: 500px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+<h3>Polygon on OpenStreetMap</h3>
+<div id="map"></div>
+
+<script>
+// Initialize map
+var map = L.map('map').setView([11.004, 124.568], 14);
+
+// Add OSM tiles
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19
+}).addTo(map);
+
+// Your GeoJSON coordinates ([lng, lat])
+var coords = [
+  [124.568, 11.004],
+  [124.569, 11.005],
+  [124.570, 11.004],
+  [124.568, 11.004]
+];
+
+// Convert to Leaflet format ([lat, lng])
+var polyCoords = coords.map(c => [c[1], c[0]]);
+
+// Add polygon
+L.polygon(polyCoords, { color: 'red' }).addTo(map).bindPopup("Your Polygon");
+</script>
+
+</body>
+</html>

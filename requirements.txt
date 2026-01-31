@@ -1,0 +1,8 @@
+django==4.2.*
+django-cors-headers
+djangorestframework
+psycopg2-binary
+djangorestframework-simplejwt
+Pillow
+earthengine-api
+geemap

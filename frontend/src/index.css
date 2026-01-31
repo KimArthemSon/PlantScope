@@ -1,0 +1,18 @@
+@import "tailwindcss";
+:root {
+  /* Base colors (RGB for alpha support) */
+  --clr-primary: 15 74 47;     /* #0F4A2F */ 
+  --clr-white: 255 255 255;   /* #FFFFFF */
+  --clr-black: 0 0 0;         /* #000000 */
+
+  /* Opacity-based variants */
+  --clr-primary-88: 15 74 47 / 0.88; /* #0F4A2FE0 btn */
+  --clr-primary-5: 15 74 47 / 0.05;  /* #0F4A2F0D  */
+}
+
+body {
+  font-family: "Poppins", sans-serif; 
+  font-family: 'Roboto', sans-serif;  
+  font-family: 'Nunito', sans-serif;
+  font-family: 'Work Sans', sans-serif;
+}

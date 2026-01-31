@@ -1,0 +1,43 @@
+# ======================
+# Python / Django
+# ======================
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.env
+*.log
+*.pot
+
+# Django migrations (optional: track only __init__.py)
+**/migrations/*.py
+!**/migrations/__init__.py
+
+# ======================
+# React frontend
+# ======================
+frontend/node_modules/
+frontend/build/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# ======================
+# React Native / Mobile
+# ======================
+mobile/node_modules/
+mobile/android/app/build/
+mobile/ios/build/
+mobile/ios/Pods/
+mobile/.expo/
+mobile/.env
+mobile/.env.local
+mobile/.env.*.local
+
+# ======================
+# IDE / OS
+# ======================
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini

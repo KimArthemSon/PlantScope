@@ -1,0 +1,35 @@
+PLANTSCOPE A GIS-Based Site Suitability Assessment and Reforestation Monitoring Systern with Geospatial Analytics for Ormoc City
+
+
+accounts
+
+
+{
+  "email": "head@gmail.com",
+  "username": "johndoe",
+  "password": "1234",
+  "user_role": "CityENROHead"
+}
+
+{
+  "email": "fieldOfficer@gmail.com",
+  "username": "Myane",
+  "password": "1234",
+  "user_role": "FieldOfficer"
+}
+
+{
+  "email": "AFA@gmail.com",
+  "username": "Myane",
+  "password": "1234",
+  "user_role": "AFA"
+}
+
+GISSpecialist@gmail.com
+1234
+
+/dashboard/
+/dashboard/AFA
+/dashboard/Field-Officer
+/dashboard/GISS
+

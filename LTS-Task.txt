@@ -1,0 +1,72 @@
+
+
+current todo
+folder structure clean
+tailwind setup right
+mobile setup / react native setup
+ - soil type
+ - tree species 
+ - land classification 
+   - add polygon coordinate 
+   - view polygon in map
+
+middleware ✔️
+View Profile (UI) ✔️
+ - get user ✔️
+list + filter + pagination +  search + entries ✔️
+Authorization ✔️
+Modal logout and delete ✔️
+loading ✔️
+show entries ✔️
+filter ✔️
+pagination ✔️
+
+done
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+continue
+
+cruds
+ - soil type ✔️wkn 
+ - tree species ✔️ ✔️wkn 
+ - land classification ✔️wkn 
+   - add polygon coordinate  ✔️wkn 
+   - view polygon in map  ✔️wkn 
+ - Site Selection + assignment ✔️ wk 1
+   - GEE satelite + potential ✔️ wk 1
+   - Save result gee ✔️ wk 1
+   - Assignment fieldOfficers ✔️ wk 1
+   - view feedback ✔️ wk 1
+ - Mobile data gathering ✔️ wk 1
+   - Map with boundary land classification ✔️ wk 1
+   - View assigned ✔️ wk 1
+     - check if inside boundary ✔️ wk 1
+       - download coordinates
+       - offline checking no map
+     - Add feedback ✔️ wk 1 (UI)
+ -Analysis + map assessment
+    - compile feedback
+    - run analysis 01 and 02
+    - Adjust polygon coordinates
+ - official
+ - Tree planting program
+   - View Request tree planting program / approved or reject -> assignd site 
+   - view Request Assistance
+   - view more activity
+ - Mobile tree growers
+   - HomePage
+   - login
+   - register
+   - Home
+     - with view map
+   - Add request / tree planting program or assistance
+     - first - add members
+     - attach maintenance plant
+     - other details
+   - view request
+     - add report status 
+     - view map
+
+      
+  
+

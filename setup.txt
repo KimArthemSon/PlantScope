@@ -1,0 +1,50 @@
+PLANTSCOPE A GIS-Based Site Suitability Assessment and Reforestation Monitoring System with Geospatial Analytics for Ormoc City
+
+versions
+Versions
+nvm
+python - 3.10.8
+djnago - 4.2
+node - v22.17.0
+npm - 10.x.x
+
+create new project
+React
+- npm create vite@latest frontend
+- Taiwlind
+  npm install -D tailwindcss postcss autoprefixer
+  npx tailwindcss init -p
+  npm install leaflet-draw
+  npm install @geoman-io/leaflet-geoman-free
+
+Django
+
+  ENV setup
+
+- python -m venv venv
+- venv\Scripts\activate 
+  Django Project
+- pip install django
+- django-admin startproject backend   
+pip install --upgrade pip 
+pip install django==4.2.*
+pip install django-cors-headers
+pip install djangorestframework
+pip install psycopg2-binary
+pip install djangorestframework-simplejwt
+python -m pip install Pillow
+pip install earthengine-api geemap
+pip install earthengine-api
+authenticate gee 
+
+python -c "import ee; ee.Authenticate()"
+
+
+
+lts
+python -m venv venv
+venv/Scripts/Activate / deactivate
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned (optional)
+pip install -r requirements.txt
+
+Remove-Item -Recurse -Force .git
