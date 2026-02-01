@@ -3,14 +3,14 @@ from django.db import models
 class User(models.Model):
     USER_ROLES = (
         ('CityENROHead', 'City ENRO Head'),
-        ('FieldOfficer', 'Field Officer'),
+        ('OnsiteInspector', 'Onsite Inspector'),
         ('GISSpecialist', 'GIS Specialist'),
         ('treeGrowers', 'Tree growers'),
     )
 
     email = models.EmailField(unique=True)
     password = models.CharField(max_length=128) 
-    user_role = models.CharField(max_length=30, choices=USER_ROLES, default='FieldOfficer')
+    user_role = models.CharField(max_length=30, choices=USER_ROLES, default='OnsiteInspector')
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Required for AbstractBaseUser

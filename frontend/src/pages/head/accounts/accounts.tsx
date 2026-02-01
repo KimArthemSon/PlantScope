@@ -16,7 +16,7 @@ interface Filter {
   role:
     | "ALL"
     | "CityENROHead"
-    | "FieldOfficer"
+    | "OnsiteInspector"
     | "GISSpecialist"
     | "treeGrowers";
   entries: number;
@@ -176,7 +176,7 @@ export default function Accounts() {
           >
             <option value="ALL">All</option>
             <option value="CityENROHead">City ENRO Head</option>
-            <option value="FieldOfficer">Field Officer</option>
+            <option value="OnsiteInspector">Onsite Inspector</option>
             <option value="GISSpecialist">GIS Specialist</option>
             <option value="treeGrowers">Tree Growers</option>
           </select>

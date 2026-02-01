@@ -24,6 +24,8 @@ urlpatterns = [
     path('api/',include('soils.urls')),
     path('api/',include('tree_species.urls')),
     path('api/',include('land_classifications.urls')),
+    path('api/',include('reforestation_areas.urls')),
+    path('api/',include('Field_assessment.urls')),
 ]
 
 if settings.DEBUG:
