@@ -67,7 +67,8 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # your React dev server
+    "http://localhost:5173",
+    "http://localhost:8081"  # your React dev server
 ]
 
 ROOT_URLCONF = 'backend.urls'
