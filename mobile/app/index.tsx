@@ -7,113 +7,88 @@ import {
   TouchableOpacity,
   Alert,
   StyleSheet,
-  useColorScheme,
 } from "react-native";
 
 export default function Index() {
-  const colorScheme = useColorScheme(); // dark/light mode
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
 
   const handleLoginAsync = async () => {
-    if (!email || !password) {
-      Alert.alert("Error", "Please enter email and password");
-      return;
-    }
+    router.push("/home");
+    // if (!email || !password) {
+    //   Alert.alert("Error", "Please enter email and password");
+    //   return;
+    // }
 
-    try {
-      const res = await fetch("http://127.0.0.1:8000/api/login/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+    // try {
+    //   const res = await fetch("http://127.0.0.1:8000/api/login/", {
+    //     method: "POST",
+    //     headers: { "Content-Type": "application/json" },
+    //     body: JSON.stringify({ email, password }),
+    //   });
 
-      if (!res.ok) {
-        Alert.alert("Error", "Wrong Credentials, Please try again!");
-        return;
-      }
-      const data = await res.json();
-      console.log(data.data);
-      if (data.user_role !== "OnsiteInspector") {
-        Alert.alert("Error", "Wrong Credentials, Please try again!");
-        return;
-      }
+    //   if (!res.ok) {
+    //     Alert.alert("Error", "Wrong Credentials, Please try again!");
+    //     return;
+    //   }
+    //   const data = await res.json();
+    //   if (data.user_role !== "OnsiteInspector") {
+    //     Alert.alert("Error", "Wrong Credentials, Please try again!");
+    //     return;
+    //   }
 
-      Alert.alert("Success", `Logged in as ${email}`);
-      setTimeout(() => {
-        router.push("/home"); // navigate to home screen
-      }, 500);
-    } catch (error) {
-      Alert.alert("Error", "Network error. Please try again later.");
-    }
+    //   Alert.alert("Success", `Logged in as ${email}`);
+    //   setTimeout(() => {
+    //     router.push("/home");
+    //   }, 500);
+    // } catch (error) {
+    //   Alert.alert("Error", "Network error. Please try again later.");
+    // }
   };
 
-  const isDark = colorScheme === "dark";
-
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: isDark ? "#121212" : "#fff" },
-      ]}
-    >
-      <Text style={[styles.title, { color: isDark ? "#fff" : "#000" }]}>
-        Log In
-      </Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>Log In</Text>
 
-      {/* Email Input */}
-      <TextInput
-        style={[
-          styles.input,
-          {
-            borderColor: isDark ? "#555" : "#ccc",
-            color: isDark ? "#fff" : "#000",
-          },
-        ]}
-        placeholder="Email"
-        placeholderTextColor={
-          isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.5)"
-        }
-        keyboardType="email-address"
-        autoCapitalize="none"
-        value={email}
-        onChangeText={setEmail}
-      />
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          placeholderTextColor="rgba(255,255,255,0.7)"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          value={email}
+          onChangeText={setEmail}
+        />
+      </View>
 
-      {/* Password Input */}
-      <TextInput
-        style={[
-          styles.input,
-          {
-            borderColor: isDark ? "#555" : "#ccc",
-            color: isDark ? "#fff" : "#000",
-          },
-        ]}
-        placeholder="Password"
-        placeholderTextColor={
-          isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.5)"
-        }
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          placeholderTextColor="rgba(255,255,255,0.7)"
+          secureTextEntry={!showPassword}
+          value={password}
+          onChangeText={setPassword}
+        />
+        <TouchableOpacity
+          style={styles.showPasswordBtn}
+          onPress={() => setShowPassword(!showPassword)}
+        >
+          <Text style={styles.showPasswordText}>
+            {showPassword ? "Hide" : "Show"}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      {/* Login Button */}
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: "#007AFF" }]}
-        onPress={handleLoginAsync}
-      >
+      <TouchableOpacity style={styles.button} onPress={handleLoginAsync}>
         <Text style={styles.buttonText}>Log In</Text>
       </TouchableOpacity>
 
-      {/* Forgot Password */}
       <TouchableOpacity>
-        <Text
-          style={{ color: isDark ? "#1E90FF" : "#007AFF", textAlign: "center" }}
-        >
-          Forgot Password?
-        </Text>
+        <Text style={styles.forgotText}>Forgot Password?</Text>
       </TouchableOpacity>
     </View>
   );
@@ -122,32 +97,66 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#0F4A2F",
     justifyContent: "center",
-    paddingHorizontal: 25,
+    paddingHorizontal: 30,
   },
   title: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: "bold",
-    marginBottom: 30,
+    color: "#fff",
     textAlign: "center",
+    marginBottom: 40,
+  },
+  inputContainer: {
+    position: "relative",
+    marginBottom: 20,
+    borderRadius: 15,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    paddingHorizontal: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5, // Android shadow
   },
   input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    marginBottom: 15,
+    color: "white",
     fontSize: 16,
+
+    // paddingVertical: 12,
+    padding: 20,
+  },
+  showPasswordBtn: {
+    position: "absolute",
+    right: 15,
+    top: 12,
+  },
+  showPasswordText: {
+    color: "#fff",
+    fontWeight: "600",
   },
   button: {
-    borderRadius: 12,
-    paddingVertical: 15,
-    marginBottom: 15,
+    backgroundColor: "#1ABC9C",
+    paddingVertical: 16,
+    borderRadius: 25,
+    marginTop: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 7,
+    elevation: 5,
   },
   buttonText: {
     color: "#fff",
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "bold",
     textAlign: "center",
+  },
+  forgotText: {
+    color: "#A9F5D0",
+    textAlign: "center",
+    marginTop: 15,
+    fontWeight: "500",
   },
 });
