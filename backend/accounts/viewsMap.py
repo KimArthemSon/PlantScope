@@ -4,15 +4,15 @@ from django.conf import settings
 
 # Initialize Earth Engine ONCE when the module loads (not per request)
 # This assumes you've run ee.Authenticate() locally already
-# try:
-#     # 🔑 Replace 'plant-scope-ee' with your actual Google Cloud Project ID
-#     ee.Initialize(project='plant-scope-ee')
-# except Exception as e:
-#     # Only for local dev: if not authenticated, guide user
-#     raise RuntimeError(
-#         "Earth Engine failed to initialize. "
-#         "Run this in terminal: python -c \"import ee; ee.Authenticate()\""
-#     ) from e
+try:
+    # 🔑 Replace 'plant-scope-ee' with your actual Google Cloud Project ID
+    ee.Initialize(project='plant-scope-ee')
+except Exception as e:
+    # Only for local dev: if not authenticated, guide user
+    raise RuntimeError(
+        "Earth Engine failed to initialize. "
+        "Run this in terminal: python -c \"import ee; ee.Authenticate()\""
+    ) from e
 
 
 def ndvi_canopy(request):
