@@ -69,11 +69,11 @@ export default function MaintenanceDropdown({
       {expanded && maintenanceOpen && (
         <div className="mt-2 ml-6 space-y-1">
           <Link
-            to="/maintenance/barangay"
+            to="/maintenance/barangays"
             className={`
               flex items-center gap-3 px-4 py-3 text-[.75rem] rounded-md
               ${
-                location.pathname === "/maintenance/barangay"
+                location.pathname === "/maintenance/barangays"
                   ? "bg-white/20 text-white"
                   : "text-white/70 hover:bg-white/10 hover:text-white"
               }

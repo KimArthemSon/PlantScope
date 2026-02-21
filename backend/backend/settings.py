@@ -49,9 +49,11 @@ INSTALLED_APPS = [
     'security',
     'soils',
     'tree_species',
+    'barangay',
     'land_classifications',
     'reforestation_areas',
-    'Field_assessment'
+    'Field_assessment',
+    'sites'
 ]
 
 MIDDLEWARE = [

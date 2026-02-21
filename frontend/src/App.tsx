@@ -3,6 +3,7 @@ import Login from "./pages/auth/login";
 import Dashboard from "./pages/dashboard/dashboard";
 import Sidebar from "./components/layout/Sidebar";
 import Analysis from "./pages/analysis/analysis";
+
 import ImageAnalysis from "./pages/analysis/image analysis";
 // import GenralMap from "./pages/general map/GeneralMap";
 import OfficailPlantingSites from "./pages/approved/OfficialPlantingSites";
@@ -15,6 +16,7 @@ import Privacy_policy from "./pages/HomePage/privacy_policy";
 import DashboardAFA from "./pages/AFA/dashboardAFA";
 import DashboardGISS from "./pages/GISSpecialist/dashboardGISS";
 import Accounts from "./pages/head/accounts/accounts";
+import Barangays from "./pages/head/maintain/barangay";
 import FieldOfficerDashboard from "./pages/FieldOfficer/FieldOfficerDashboard";
 import HomePage from "./pages/HomePage/homepage";
 import FieldGatherer from "./pages/fieldGatherer/fieldGatherer";
@@ -70,6 +72,7 @@ export default function App() {
             path="/maintenance/Classified_areas/"
             element={<Classified_areas />}
           />
+          <Route path="/maintenance/barangays/" element={<Barangays />} />
           <Route path="/maintenance/tree-species" element={<Tree_species />} />
           <Route path="/maintenance/soils" element={<Soils />} />
 
