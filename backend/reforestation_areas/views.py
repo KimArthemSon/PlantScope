@@ -14,6 +14,36 @@ from .models import Reforestation_areas, Potential_sites
 # =========================
 # GET REFORESTATION AREAS (LIST + SEARCH + PAGINATION)
 # =========================
+# =========================
+# GET LIST OF REFORESTATION AREAS
+# =========================
+
+
+@csrf_exempt
+def get_all_reforestation_areas(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    # Get all areas ordered by newest first
+    areas = Reforestation_areas.objects.all().order_by('-created_at')
+
+    data = []
+    for area in areas:
+        data.append({
+            'reforestation_area_id': area.reforestation_area_id,
+            'name': area.name,
+            'legality': area.legality,
+            'safety': area.safety,
+            'polygon_coordinate': area.polygon_coordinate,
+            'coordinate': area.coordinate,
+            'location': area.location,
+            'description': area.description,
+            'area_img': area.area_img.url if area.area_img else None,
+            'created_at': area.created_at,
+        })
+
+    return JsonResponse({'data': data}, status=200)
+
 @csrf_exempt
 def get_reforestation_areas(request):
     if request.method != 'GET':
@@ -38,9 +68,20 @@ def get_reforestation_areas(request):
     total = areas.count()
     total_page = math.ceil(total / entries) if total > 0 else 0
 
-    data = list(
-        areas[offset: offset + entries].values()
-    )
+    data = []
+    for area in areas[offset: offset + entries]:
+        data.append({
+            'reforestation_area_id': area.reforestation_area_id,
+            'name': area.name,
+            'legality': area.legality,
+            'safety': area.safety,
+            'polygon_coordinate': area.polygon_coordinate,
+            'coordinate': area.coordinate,
+            'location': area.location,
+            'description': area.description,
+            'area_img': area.area_img.url if area.area_img else None,
+            'created_at': area.created_at,
+        })
 
     return JsonResponse({
         'data': data,
@@ -89,27 +130,28 @@ def create_reforestation_areas(request):
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
 
     try:
-        data = json.loads(request.body)
+        name = request.POST['name'].strip()
+        legality = request.POST.get('legality', 'true').lower() == 'true'
+        safety = request.POST.get('safety', 'danger')
+        location = request.POST['location']
+        description = request.POST.get('description', '')
 
-        name = data['name'].strip()
-        legality = data.get('legality', True)
-        safety = data.get('safety', 'danger')
-        polygon_coordinate = data.get('polygon_coordinate')
-        coordinate = data.get('coordinate')
-        location = data['location']
-        description = data['description']
+        polygon_coordinate = request.POST.get('polygon_coordinate')
+        coordinate = request.POST.get('coordinate')
 
-    except (KeyError, json.JSONDecodeError):
-        return JsonResponse(
-            {'error': 'Missing or invalid fields'},
-            status=400
-        )
+        if polygon_coordinate:
+            polygon_coordinate = json.loads(polygon_coordinate)
+        if coordinate:
+            coordinate = json.loads(coordinate)
+
+        area_img = request.FILES.get('area_img')
+    except KeyError:
+        return JsonResponse({'error': 'Missing required fields'}, status=400)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON in coordinates'}, status=400)
 
     if Reforestation_areas.objects.filter(name__iexact=name).exists():
-        return JsonResponse(
-            {'error': 'Reforestation area with this name already exists'},
-            status=409
-        )
+        return JsonResponse({'error': 'Reforestation area with this name already exists'}, status=409)
 
     try:
         Reforestation_areas.objects.create(
@@ -119,13 +161,11 @@ def create_reforestation_areas(request):
             polygon_coordinate=polygon_coordinate,
             coordinate=coordinate,
             location=location,
-            description=description
+            description=description,
+            area_img=area_img
         )
     except IntegrityError:
-        return JsonResponse(
-            {'error': 'Reforestation area with this name already exists'},
-            status=409
-        )
+        return JsonResponse({'error': 'Reforestation area with this name already exists'}, status=409)
 
     return JsonResponse({'message': 'Successfully added'}, status=201)
 
@@ -135,39 +175,51 @@ def create_reforestation_areas(request):
 # =========================
 @csrf_exempt
 def update_reforestation_areas(request, reforestation_area_id):
-    if request.method != 'PUT':
+    if request.method not in ['PUT', 'POST']:  # Accept POST for form-data updates
         return JsonResponse({'error': 'Only PUT allowed'}, status=405)
-
-    try:
-        data = json.loads(request.body)
-
-        name = data['name'].strip()
-        legality = data.get('legality', True)
-        safety = data.get('safety', 'danger')
-        polygon_coordinate = data.get('polygon_coordinate')
-        coordinate = data.get('coordinate')
-        location = data['location']
-        description = data['description']
-
-    except (KeyError, json.JSONDecodeError):
-        return JsonResponse(
-            {'error': 'Missing or invalid fields'},
-            status=400
-        )
 
     area = get_object_or_404(
         Reforestation_areas,
         reforestation_area_id=reforestation_area_id
     )
 
-    if Reforestation_areas.objects.exclude(
-        reforestation_area_id=reforestation_area_id
-    ).filter(name__iexact=name).exists():
-        return JsonResponse(
-            {'error': 'Reforestation area with this name already exists'},
-            status=409
-        )
+    try:
+        if request.content_type.startswith('multipart/form-data'):
+            # FormData update
+            name = request.POST['name'].strip()
+            legality = request.POST.get('legality', 'true').lower() == 'true'
+            safety = request.POST.get('safety', 'danger')
+            location = request.POST['location']
+            description = request.POST.get('description', '')
 
+            polygon_coordinate = request.POST.get('polygon_coordinate')
+            coordinate = request.POST.get('coordinate')
+
+            if polygon_coordinate:
+                polygon_coordinate = json.loads(polygon_coordinate)
+            if coordinate:
+                coordinate = json.loads(coordinate)
+
+            area_img = request.FILES.get('area_img')
+            if area_img:
+                area.area_img = area_img
+        else:
+            # JSON update
+            data = json.loads(request.body)
+            name = data['name'].strip()
+            legality = data.get('legality', True)
+            safety = data.get('safety', 'danger')
+            polygon_coordinate = data.get('polygon_coordinate')
+            coordinate = data.get('coordinate')
+            location = data['location']
+            description = data['description']
+    except (KeyError, json.JSONDecodeError):
+        return JsonResponse({'error': 'Missing or invalid fields'}, status=400)
+
+    if Reforestation_areas.objects.exclude(reforestation_area_id=reforestation_area_id).filter(name__iexact=name).exists():
+        return JsonResponse({'error': 'Reforestation area with this name already exists'}, status=409)
+
+    # Update fields
     area.name = name
     area.legality = legality
     area.safety = safety
@@ -195,7 +247,6 @@ def delete_reforestation_areas(request, reforestation_area_id):
     area.delete()
 
     return JsonResponse({'message': 'Successfully deleted'}, status=200)
-
 
 # =====================================================
 # POTENTIAL SITES CRUD

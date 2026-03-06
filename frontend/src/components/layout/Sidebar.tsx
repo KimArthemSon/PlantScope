@@ -11,6 +11,7 @@ import {
   LogOut,
   ChevronLeft,
   Mountain,
+  Map,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
@@ -119,6 +120,30 @@ export default function Sidebar() {
 
             {/* Field Selection */}
             <Link
+              to="/NDVIMap"
+              className={`
+                flex flex-row items-center transition-all duration-200 rounded-md
+                px-6 py-3 justify-center
+                ${
+                  location.pathname === "/NDVIMap"
+                    ? "bg-white/25 text-white shadow-inner"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
+                }
+              `}
+            >
+              <span className="mr-auto">
+                <Map size={20} />
+              </span>
+              <span
+                className={`
+                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
+                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
+                `}
+              >
+                Map
+              </span>
+            </Link>
+            <Link
               to="/field-data"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
@@ -139,7 +164,7 @@ export default function Sidebar() {
                   ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
                 `}
               >
-                Field Selection
+                Reforestation Area
               </span>
             </Link>
 

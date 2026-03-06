@@ -2,7 +2,8 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-
+    
+    path('get_all_reforestation_areas/', views.get_all_reforestation_areas, name="get_all_reforestation_areas"),
     path('get_reforestation_areas/', views.get_reforestation_areas, name="get_reforestation_areas"),
     path('get_reforestation_area/<int:reforestation_area_id>/', views.get_reforestation_area, name="get_reforestation_area"),
     path('create_reforestation_areas/', views.create_reforestation_areas, name="create_reforestation_areas"),
