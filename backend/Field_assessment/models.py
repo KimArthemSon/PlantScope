@@ -67,7 +67,11 @@ class Field_assessment(models.Model):
         ('poor', 'Poor'),
         ('very_poor', 'Very Poor')
     )
-
+    legality_status = (
+        ('pending', 'Pending'),
+        ('legal', 'Legal'),
+        ('illegal', 'Illegal'),
+    )
     Accessibility_types = (
         ('very_good', 'Very Good'),
         ('good', 'Good'),
@@ -86,7 +90,7 @@ class Field_assessment(models.Model):
 
     # Info
     title = models.CharField(max_length=255)
-    legality = models.BooleanField()
+    legality =models.CharField(max_length=20,choices=legality_status, default='pending')
     safety = models.CharField(max_length=20, choices=Safety_types, default='moderate')
     
     coordinates = models.JSONField()

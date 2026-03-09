@@ -120,12 +120,12 @@ export default function Sidebar() {
 
             {/* Field Selection */}
             <Link
-              to="/NDVIMap"
+              to="/map"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/NDVIMap"
+                  location.pathname === "/map"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }
@@ -144,12 +144,12 @@ export default function Sidebar() {
               </span>
             </Link>
             <Link
-              to="/field-data"
+              to="/reforestation-areas"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/field-data"
+                  location.pathname === "/reforestation-areas"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }

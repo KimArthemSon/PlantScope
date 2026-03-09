@@ -11,15 +11,25 @@ class Reforestation_areas(models.Model):
         ('moderate', 'Moderate Risk'),
         ('danger', 'High Risk'),
     )
+    legality_status = (
+        ('pending', 'Pending'),
+        ('legal', 'Legal'),
+        ('illegal', 'Illegal'),
+    )
 
     reforestation_area_id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=100, unique=True)
-    legality = models.BooleanField(default=True)
 
     safety = models.CharField(
         max_length=20,
         choices=Safety_types,
         default='danger'
+    )
+    
+    legality = models.CharField(
+        max_length=20,
+        choices=legality_status,
+        default='pending'
     )
 
     polygon_coordinate = models.JSONField(null=True)

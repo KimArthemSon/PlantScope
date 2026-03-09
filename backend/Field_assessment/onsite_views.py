@@ -99,7 +99,7 @@ def create_field_assessment(request):
 
         # Required fields
         title = data.get("title")
-        legality = bool(data.get("legality", False))
+        legality = bool(data.get("legality", 'pending'))
         safety = data.get("safety", "moderate")
         barangay_id = data.get("barangay_id")
         coordinates = data.get("coordinates", {})

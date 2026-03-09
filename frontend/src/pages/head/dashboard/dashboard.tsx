@@ -1,5 +1,4 @@
-import Sidebar from "../../components/layout/Sidebar";
-import NotFoundPage from "../../components/layout/NotFoundPage";
+import NotFoundPage from "../../../components/layout/NotFoundPage";
 import {
   BarChart,
   Bar,
