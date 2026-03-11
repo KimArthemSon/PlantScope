@@ -12,6 +12,8 @@ import {
   ChevronLeft,
   Mountain,
   Map,
+  BarChart,
+  Layers2,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
@@ -174,7 +176,31 @@ export default function Sidebar() {
               maintenanceOpen={maintenanceOpen}
               setMaintenanceOpen={setMaintenanceOpen}
             />
-
+            {/* Analysis */}
+            <Link
+              to="/reforestation_area_site"
+              className={`
+                flex flex-row items-center transition-all duration-200 rounded-md
+                px-6 py-3 justify-center
+                ${
+                  location.pathname === "/reforestation_area_site"
+                    ? "bg-white/25 text-white shadow-inner"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
+                }
+              `}
+            >
+              <span className="mr-auto">
+                <Layers2 size={20} />
+              </span>
+              <span
+                className={`
+                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
+                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
+                `}
+              >
+                Sites
+              </span>
+            </Link>
             {/* Site */}
             <Link
               to="/site-management"
@@ -183,32 +209,6 @@ export default function Sidebar() {
                 px-6 py-3 justify-center
                 ${
                   location.pathname === "/site-management"
-                    ? "bg-white/25 text-white shadow-inner"
-                    : "text-white/80 hover:bg-white/10 hover:text-white"
-                }
-              `}
-            >
-              <span className="mr-auto">
-                <Layers size={20} />
-              </span>
-              <span
-                className={`
-                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
-                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
-                `}
-              >
-                Site
-              </span>
-            </Link>
-
-            {/* Analysis */}
-            <Link
-              to="/analysis"
-              className={`
-                flex flex-row items-center transition-all duration-200 rounded-md
-                px-6 py-3 justify-center
-                ${
-                  location.pathname === "/analysis"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }

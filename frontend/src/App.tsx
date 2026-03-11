@@ -27,6 +27,9 @@ import Classified_area_form from "./pages/head/maintain/classified_areas/classif
 import Classified_areas from "./pages/head/maintain/classified_areas/classified_areas";
 import Assign_onsite_inspector from "./pages/head/reforestation_areas/assigning";
 import Legality_and_Safety from "./pages/head/reforestation_areas/lagelity_and_safety";
+import Reforestation_area_site from "./pages/head/site/reforestation_area_site";
+import Add_site_multicriteria_analysis from "./pages/head/analysis/add_site_multicriteria_analysis";
+import Sites from "./pages/head/site/sites";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -85,6 +88,15 @@ export default function App() {
           <Route
             path="/maintenance/reforestation_area_form/:id"
             element={<Reforestation_area_form />}
+          />
+          <Route
+            path="/analysis/add-site-multicriteria-analysis/:id"
+            element={<Add_site_multicriteria_analysis />}
+          />
+          <Route path="/reforestation/site/:id" element={<Sites />} />
+          <Route
+            path="/reforestation_area_site"
+            element={<Reforestation_area_site />}
           />
 
           <Route path="/maintenance/barangays/" element={<Barangays />} />

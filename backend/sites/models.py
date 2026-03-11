@@ -11,8 +11,18 @@ class Sites(models.Model):
         on_delete=models.CASCADE,
         related_name='sites'
     )
+    
+    status_types = (
+        ('pending', 'Pending'),
+        ('rejected', 'Rejected'),
+        ('official', 'Official'),
+        ('re-analysis', 'Re-Analysis'),
+        ('completed', 'Completed'),
+    )
 
-    status = models.CharField(max_length=50)
+    name = models.CharField(max_length=100, default='')
+    isActive = models.BooleanField(default=True)
+    status = models.CharField(max_length=20, choices=status_types, default='pending')
     coordinates = models.JSONField()
     polygon_coordinates = models.JSONField()
     total_area_planted = models.FloatField()
@@ -53,6 +63,16 @@ class Site_data(models.Model):
         ('very_poor', 'Very Poor')
     )
 
+    Safety_types = (
+        ('safe', 'Low Risk'),
+        ('slightly', 'Slightly Unsafe'),
+        ('moderate', 'Moderate Risk'),
+        ('danger', 'High Risk')
+    )
+
+    Safety =  models.CharField(max_length=20, choices=Safety_types, default='safe')
+    isCurrent = models.BooleanField(default=True)
+    legality = models.BooleanField(default=True)
     soil_quality = models.CharField(max_length=20, choices=Soil_quality_types, default='moderate')
     ndvi = models.CharField(max_length=100)
     distance_to_water_source = models.FloatField()
@@ -84,5 +104,32 @@ class Site_details(models.Model):
         related_name='site_details_tree_species'
     )
 
-    tree_specie_id = models.CharField(max_length=50)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+
+class Site_multicriteria(models.Model):
+    site_multicriteria_id = models.BigAutoField(primary_key=True)
+
+    site_data = models.OneToOneField(
+        Site_data,
+        on_delete=models.CASCADE,
+        related_name='site_multicriteria'
+    )
+
+    status_types = (
+        ('pending', 'Pending'),
+        ('completed', 'Completed'),
+        ('rejected', 'Rejected'),
+    )
+
+    safety_status =  models.CharField(max_length=20, choices=status_types, default='pending')
+    legality_status = models.CharField(max_length=20, choices=status_types, default='pending')
+    soil_quality_status = models.CharField(max_length=20, choices=status_types, default='pending')
+    ndvi_status = models.CharField(max_length=20, choices=status_types, default='pending')
+    distance_to_water_source_status = models.CharField(max_length=20, choices=status_types, default='pending')
+    accessibility_status = models.CharField(max_length=20, choices=status_types, default='pending')
+    wildlife_status = models.CharField(max_length=20, choices=status_types, default='pending')
+    total_score = models.FloatField(default=0.00)
+    created_at = models.DateTimeField(auto_now_add=True)
+

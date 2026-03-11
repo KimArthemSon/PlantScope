@@ -27,7 +27,7 @@ urlpatterns = [
     path('api/',include('reforestation_areas.urls')),
     path('api/',include('Field_assessment.urls')),
     path('api/',include('barangay.urls')),
-    # path('api/',include('sites.urls')),
+    path('api/',include('sites.urls')),
 ]
 
 if settings.DEBUG:
