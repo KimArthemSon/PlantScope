@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   Delete,
   Info,
+  Leaf,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
@@ -61,9 +62,7 @@ export default function Barangays() {
     message: string;
   } | null>(null);
 
-  const [barangayIdDelete, setBarangayIdDelete] = useState<number | null>(
-    null
-  );
+  const [barangayIdDelete, setBarangayIdDelete] = useState<number | null>(null);
 
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
@@ -72,8 +71,7 @@ export default function Barangays() {
     "flex items-center border border-black rounded-md mt-2 p-1 " +
     "focus-within:border-green-700 focus-within:ring-2 " +
     "focus-within:ring-green-300 transition-all";
-  const inputField =
-    "flex-1 text-[1rem] p-2 ml-4 outline-none bg-transparent";
+  const inputField = "flex-1 text-[1rem] p-2 ml-4 outline-none bg-transparent";
 
   // ------------------ Fetch Barangays ------------------
   const fetchBarangays = async () => {
@@ -89,7 +87,7 @@ export default function Barangays() {
         `http://127.0.0.1:8000/api/get_barangays/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (!response.ok) throw new Error("Failed to fetch barangays.");
@@ -123,7 +121,7 @@ export default function Barangays() {
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
-      }
+      },
     );
     const data = await response.json();
     if (response.ok) {
@@ -156,7 +154,10 @@ export default function Barangays() {
 
       const res = await fetch("http://127.0.0.1:8000/api/create_barangay/", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           ...barangay,
           coordinate: JSON.parse(barangay.coordinate),
@@ -168,7 +169,11 @@ export default function Barangays() {
         setForm_loading(false);
         return;
       }
-      setPSAlert({ type: "success", title: "Success", message: "Barangay created successfully!" });
+      setPSAlert({
+        type: "success",
+        title: "Success",
+        message: "Barangay created successfully!",
+      });
       setForm_loading(false);
       setIsOpenAddEditModal(false);
       fetchBarangays();
@@ -187,12 +192,15 @@ export default function Barangays() {
         `http://127.0.0.1:8000/api/update_barangay/${editBarangayId}/`,
         {
           method: "PUT",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({
             ...barangay,
             coordinate: JSON.parse(barangay.coordinate),
           }),
-        }
+        },
       );
       const data = await res.json();
       if (!res.ok) {
@@ -200,7 +208,11 @@ export default function Barangays() {
         setForm_loading(false);
         return;
       }
-      setPSAlert({ type: "success", title: "Success", message: "Barangay updated successfully!" });
+      setPSAlert({
+        type: "success",
+        title: "Success",
+        message: "Barangay updated successfully!",
+      });
       setForm_loading(false);
       setIsOpenAddEditModal(false);
       fetchBarangays();
@@ -211,7 +223,7 @@ export default function Barangays() {
   };
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center">
+    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -226,22 +238,34 @@ export default function Barangays() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-
+      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
+        <div className="max-w-7xl mx-auto flex items-center justify-center">
+          <div className="flex items-center gap-3 mb-2">
+            <Leaf size={32} className="text-green-300" />
+            <h1 className="text-3xl md:text-4xl font-bold">
+              Barangays
+            </h1>
+          </div>
+          <div className="flex items-center mt-5 mb-10 ml-auto">
+            <button
+              onClick={() => {
+                setIsOpenAddEditModal(true);
+                setAction("Add");
+                setBarangay({
+                  name: "",
+                  description: "",
+                  coordinate: '{"lat":0,"lng":0}',
+                });
+              }}
+              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+            >
+              <Plus size={20} /> Add new Barangay
+            </button>
+          </div>
+        </div>
+      </header>
       <main className="flex-1 p-8 max-w-409">
         {/* Header */}
-        <div className="flex items-center mt-5 mb-10">
-          <h1 className="text-3xl font-bold text-green-700">Barangays</h1>
-          <button
-            onClick={() => {
-              setIsOpenAddEditModal(true);
-              setAction("Add");
-              setBarangay({ name: "", description: "", coordinate: '{"lat":0,"lng":0}' });
-            }}
-            className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
-          >
-            <Plus size={20} /> Add new Barangay
-          </button>
-        </div>
 
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
@@ -249,7 +273,11 @@ export default function Barangays() {
           <select
             value={filter.entries}
             onChange={(e) =>
-              setFilter((prev) => ({ ...prev, entries: Number(e.target.value), page: 1 }))
+              setFilter((prev) => ({
+                ...prev,
+                entries: Number(e.target.value),
+                page: 1,
+              }))
             }
             className="border border-black p-2 rounded-md text-[.8rem]"
           >
@@ -263,7 +291,13 @@ export default function Barangays() {
             type="text"
             placeholder="Search Barangays..."
             value={filter.search}
-            onChange={(e) => setFilter((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
+            onChange={(e) =>
+              setFilter((prev) => ({
+                ...prev,
+                search: e.target.value,
+                page: 1,
+              }))
+            }
             onKeyDown={(e) => e.key === "Enter" && fetchBarangays()}
             className="border border-gray-300 rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
@@ -277,7 +311,9 @@ export default function Barangays() {
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Name</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Description</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">
+                  Description
+                </th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Coordinate</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Created_at</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
@@ -290,10 +326,14 @@ export default function Barangays() {
                     key={b.barangay_id}
                     className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition`}
                   >
-                    <td className="py-3 px-5 text-[.9rem]">{index + 1 + (filter.page - 1) * filter.entries}</td>
+                    <td className="py-3 px-5 text-[.9rem]">
+                      {index + 1 + (filter.page - 1) * filter.entries}
+                    </td>
                     <td className="py-3 px-5">{b.name}</td>
                     <td className="py-3 px-5">{b.description}</td>
-                    <td className="py-3 px-5">{JSON.stringify(b.coordinate)}</td>
+                    <td className="py-3 px-5">
+                      {JSON.stringify(b.coordinate)}
+                    </td>
                     <td className="py-3 px-5 text-[.9rem]">{b.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
@@ -324,7 +364,10 @@ export default function Barangays() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="text-center py-5 text-gray-500 italic">
+                  <td
+                    colSpan={6}
+                    className="text-center py-5 text-gray-500 italic"
+                  >
                     No Barangays found.
                   </td>
                 </tr>
@@ -337,27 +380,35 @@ export default function Barangays() {
         <div className="flex items-center gap-1 mt-5 w-full">
           <button
             disabled={filter.page <= 1}
-            onClick={() => setFilter((prev) => ({ ...prev, page: prev.page - 1 }))}
+            onClick={() =>
+              setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
+            }
             className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer"
           >
             <ChevronLeft size={19} />
           </button>
 
-          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map((p) => (
-            <button
-              key={p}
-              onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
-              className={`px-2 py-1 border rounded-md cursor-pointer text-[.8rem] ${
-                p === filter.page ? "bg-green-600 text-white" : "text-gray-700 hover:bg-gray-100"
-              }`}
-            >
-              {p}
-            </button>
-          ))}
+          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map(
+            (p) => (
+              <button
+                key={p}
+                onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
+                className={`px-2 py-1 border rounded-md cursor-pointer text-[.8rem] ${
+                  p === filter.page
+                    ? "bg-green-600 text-white"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                {p}
+              </button>
+            ),
+          )}
 
           <button
             disabled={filter.page >= filter.total_page}
-            onClick={() => setFilter((prev) => ({ ...prev, page: prev.page + 1 }))}
+            onClick={() =>
+              setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
+            }
             className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 cursor-pointer"
           >
             <ChevronRight size={19} />
@@ -368,7 +419,9 @@ export default function Barangays() {
       {/* Add/Edit Modal */}
       <form
         className={`fixed inset-0 z-10 flex items-center justify-center bg-black/50 transition-opacity duration-300 ${
-          isOpenAddEditModal ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          isOpenAddEditModal
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
         }`}
         onSubmit={handleSubmit}
       >
@@ -379,8 +432,13 @@ export default function Barangays() {
           }`}
         >
           <div className="flex justify-items-start items-center gap-10 w-full bg-green-600 rounded-t-lg p-2">
-            <Delete size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
-            <h2 className="text-lg font-semibold text-white">{action} Barangay</h2>
+            <Delete
+              size={66}
+              className="text-white bg-green-500 p-3 rounded-full mb-2"
+            />
+            <h2 className="text-lg font-semibold text-white">
+              {action} Barangay
+            </h2>
           </div>
 
           <div className="flex flex-col p-6 w-full gap-5">
@@ -394,33 +452,49 @@ export default function Barangays() {
                   className={inputField}
                   placeholder="Ex: Barangay San Miguel"
                   value={barangay.name}
-                  onChange={(e) => setBarangay(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) =>
+                    setBarangay((prev) => ({ ...prev, name: e.target.value }))
+                  }
                 />
               </div>
             </div>
 
             <div className="flex flex-col">
-              <label className="font-bold text-[1rem] mr-auto">Description:</label>
+              <label className="font-bold text-[1rem] mr-auto">
+                Description:
+              </label>
               <div className={inputWrapper}>
                 <textarea
                   className="w-full min-h-50 outline-0 p-2"
                   placeholder="Description..."
                   required
                   value={barangay.description}
-                  onChange={(e) => setBarangay(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e) =>
+                    setBarangay((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
                 ></textarea>
               </div>
             </div>
 
             <div className="flex flex-col">
-              <label className="font-bold text-[1rem] mr-auto">Coordinate (JSON):</label>
+              <label className="font-bold text-[1rem] mr-auto">
+                Coordinate (JSON):
+              </label>
               <div className={inputWrapper}>
                 <textarea
                   className="w-full min-h-20 outline-0 p-2"
                   placeholder='{"lat": 0, "lng": 0}'
                   required
                   value={barangay.coordinate}
-                  onChange={(e) => setBarangay(prev => ({ ...prev, coordinate: e.target.value }))}
+                  onChange={(e) =>
+                    setBarangay((prev) => ({
+                      ...prev,
+                      coordinate: e.target.value,
+                    }))
+                  }
                 ></textarea>
               </div>
             </div>
@@ -431,7 +505,10 @@ export default function Barangays() {
               </button>
 
               <button
-                onClick={(e) => { e.preventDefault(); setIsOpenAddEditModal(false); }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setIsOpenAddEditModal(false);
+                }}
                 className="bg-white text-black px-4 py-2 rounded-md border w-[50%] border-black hover:border-green-600 hover:text-green-600 transition cursor-pointer"
               >
                 Cancel

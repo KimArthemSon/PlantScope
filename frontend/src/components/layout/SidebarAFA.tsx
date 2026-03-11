@@ -54,7 +54,7 @@ export default function SidebarAFA() {
   return (
     <div className="sticky top-0 h-screen w-[256px] bg-linear-to-b from-[#052e87] to-[#057501] text-white flex flex-col justify-between shadow-2xl">
       {/* Header */}
-      {isLogout && <Logout setIsLogout={setIsLogout}/>}
+      {/* {isLogout && <Logout setIsLogout={setIsLogout}/>} */}
       <div>
         <div className="p-6 flex flex-col items-center border-b border-white/20">
           <img

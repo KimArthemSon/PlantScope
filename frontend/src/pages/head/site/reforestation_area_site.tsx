@@ -9,6 +9,7 @@ import {
   CheckCheckIcon,
   VerifiedIcon,
   Eye,
+  Leaf,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -159,7 +160,7 @@ export default function Reforestation_area_site() {
   };
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center">
+    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -174,12 +175,18 @@ export default function Reforestation_area_site() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-
+      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-5 px-6 shadow-lg">
+        <div className="max-w-7xl mx-auto flex items-center">
+          <div className="flex items-center gap-3 mb-2" mr-auto>
+            <Leaf size={32} className="text-green-300" />
+            <h1 className="text-3xl md:text-4xl font-bold">
+              Reforestation Areas
+            </h1>
+          </div>
+        </div>
+      </header>
       <main className="flex-1 p-8 max-w-409">
         {/* HEADER */}
-        <div className="flex items-center mt-5 mb-10">
-          <h1 className="text-3xl font-bold text-green-700">Analysis</h1>
-        </div>
 
         {/* FILTERS */}
         <div className="flex items-center mb-7 gap-4">

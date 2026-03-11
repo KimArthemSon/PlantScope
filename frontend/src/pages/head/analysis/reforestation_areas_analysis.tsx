@@ -8,6 +8,7 @@ import {
   User,
   CheckCheckIcon,
   VerifiedIcon,
+  Eye,
   Leaf,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
@@ -37,14 +38,14 @@ interface Filter {
   safety: string;
 }
 
-export default function Reforestation_areas() {
+export default function Reforestation_area_analysis() {
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [filter, setFilter] = useState<Filter>({
     search: "",
     entries: 10,
     page: 1,
     total_page: 1,
-    legality: "All",
+    legality: "legal",
     safety: "All",
   });
 
@@ -184,10 +185,10 @@ export default function Reforestation_areas() {
           </div>
           <div className="flex items-center mt-5 mb-10 ml-auto">
             <button
-              onClick={() => navigate("/map")}
-              className="flex items-center gap-2 bg-white hover:bg-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem]"
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem]"
             >
-              <Plus size={20} /> Add new area
+              <ChevronLeft size={20} />
             </button>
           </div>
         </div>
@@ -214,25 +215,6 @@ export default function Reforestation_areas() {
             <option value={25}>25</option>
             <option value={50}>50</option>
             <option value={100}>100</option>
-          </select>
-
-          <label>Legality:</label>
-
-          <select
-            value={filter.legality}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                legality: e.target.value,
-                page: 1,
-              }))
-            }
-            className="border border-black p-2 rounded-md text-[.8rem]"
-          >
-            <option value="All">All</option>
-            <option value="legal">Legal</option>
-            <option value="pending">Pending</option>
-            <option value="illegal">Illegal</option>
           </select>
 
           <label>Safety:</label>
@@ -269,7 +251,7 @@ export default function Reforestation_areas() {
             onKeyDown={(e) => {
               if (e.key === "Enter") fetchAreas();
             }}
-            className="border border-gray-300 rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
         </div>
 
@@ -322,39 +304,22 @@ export default function Reforestation_areas() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/assign_onsite_inpsector/${area.reforestation_area_id}`,
-                            )
-                          }
-                          className="cursor-pointer"
-                        >
-                          <User size={18} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            navigate(
                               `/legality-and-safety/${area.reforestation_area_id}`,
                             )
                           }
                           className="cursor-pointer"
                         >
-                          <VerifiedIcon size={18} />
+                          <Eye size={18} />
                         </button>
                         <button
                           onClick={() =>
                             navigate(
-                              `/maintenance/reforestation_area_form/${area.reforestation_area_id}`,
+                              `/reforestation_analysis/site_analysis/${area.reforestation_area_id}`,
                             )
                           }
                           className="cursor-pointer"
                         >
-                          <Edit size={18} />
-                        </button>
-
-                        <button
-                          onClick={() => setDelete(area.reforestation_area_id)}
-                          className="text-red-500 cursor-pointer"
-                        >
-                          <Trash2 size={18} />
+                          <VerifiedIcon size={18} />
                         </button>
                       </div>
                     </td>

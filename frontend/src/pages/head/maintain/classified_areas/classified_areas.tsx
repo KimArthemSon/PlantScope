@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Trash2, Edit, Plus, ChevronRight, ChevronLeft } from "lucide-react";
+import {
+  Trash2,
+  Edit,
+  Plus,
+  ChevronRight,
+  ChevronLeft,
+  Leaf,
+} from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import { useNavigate } from "react-router-dom";
@@ -64,7 +71,7 @@ export default function Classified_areas() {
 
       const data = await response.json();
       setClassifiedAreas(data.data);
-      
+
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch (err) {
       setPSAlert({
@@ -85,7 +92,7 @@ export default function Classified_areas() {
     setClassifiedAreaIdDelete(id);
     setIsDeleteModalOpen(true);
   };
-  
+
   const handleDelete = async () => {
     if (!classifiedAreaIdDelete) return;
 
@@ -109,7 +116,7 @@ export default function Classified_areas() {
   };
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center">
+    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -123,20 +130,24 @@ export default function Classified_areas() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-
+      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
+        <div className="max-w-7xl mx-auto flex items-center justify-center">
+          <div className="flex items-center gap-3 mb-2">
+            <Leaf size={32} className="text-green-300" />
+            <h1 className="text-3xl md:text-4xl font-bold">Classified Areas</h1>
+          </div>
+          <div className="flex items-center mt-5 mb-10 ml-auto">
+            <button
+              onClick={() => navigate("/maintenance/classified_area_form/")}
+              className="flex items-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+            >
+              <Plus size={20} /> Add new classified area
+            </button>
+          </div>
+        </div>
+      </header>
       <main className="flex-1 p-8 max-w-409">
         {/* Header */}
-        <div className="flex items-center mt-5 mb-10">
-          <h1 className="text-3xl font-bold text-green-700">
-            Classified Areas
-          </h1>
-          <button
-            onClick={() => navigate("/maintenance/classified_area_form/")}
-            className="flex items-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
-          >
-            <Plus size={20} /> Add new classified area
-          </button>
-        </div>
 
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">

@@ -203,12 +203,12 @@ export default function Sidebar() {
             </Link>
             {/* Site */}
             <Link
-              to="/site-management"
+              to="/analysis"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/site-management"
+                  location.pathname === "/analysis"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }

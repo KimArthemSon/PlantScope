@@ -10,7 +10,6 @@ import {
   CloudLightningIcon,
   Map,
   Leaf,
-  Eye,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -38,7 +37,7 @@ interface Filter {
   status: string;
 }
 
-export default function SitesForArea() {
+export default function Sites_analysis() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
@@ -262,14 +261,18 @@ export default function SitesForArea() {
             <Leaf size={32} className="text-green-300" />
             <h1 className="text-3xl md:text-4xl font-bold">Sites</h1>
           </div>
-          <div className="flex items-center mt-5 mb-5 ml-auto">
+          <div className="flex items-center mt-5 mb-10 ml-auto gap-5">
             <button
-              onClick={() =>
-                navigate(`/reforestation_analysis/site_analysis/${id}`)
-              }
+              onClick={() => setIsCreateModalOpen(true)}
               className="flex items-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem]"
             >
               <Plus size={20} /> Add new site
+            </button>
+            <button
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem]"
+            >
+              <ChevronLeft size={20} />
             </button>
           </div>
         </div>
@@ -464,17 +467,34 @@ export default function SitesForArea() {
 
                       <td className="py-3 px-5 flex gap-2">
                         <button
-                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1"
+                          className="text-yellow-900 cursor-pointer border border-amber-500 rounded-full p-1"
+                          onClick={() =>
+                            navigate(
+                              "/analysis/multicriteria-analysis/" +
+                                site.site_id,
+                            )
+                          }
+                        >
+                          <CloudLightningIcon size={18} />
+                        </button>
+                        <button className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1">
+                          <Map size={18} />
+                        </button>
+                        <button
+                          className="cursor-pointer"
                           onClick={() => {
                             setUpdateSiteId(site.site_id);
                             setUpdateSiteName(site.name);
                             setIsUpdateModalOpen(true);
                           }}
                         >
-                          <Eye size={18} />
+                          <Edit size={18} />
                         </button>
-                        <button className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1">
-                          <Map size={18} />
+                        <button
+                          onClick={() => setDelete(site.site_id)}
+                          className="text-red-500 cursor-pointer"
+                        >
+                          <Trash2 size={18} />
                         </button>
                       </td>
                     </tr>

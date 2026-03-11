@@ -2,13 +2,11 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Login from "./pages/auth/login";
 import Dashboard from "./pages/head/dashboard/dashboard";
 import Sidebar from "./components/layout/Sidebar";
-import Analysis from "./pages/analysis/analysis";
+import Analysis from "./pages/head/analysis/analysis";
 import Reforestation_areas from "./pages/head/reforestation_areas/reforestation_area";
-import ImageAnalysis from "./pages/analysis/image analysis";
 // import GenralMap from "./pages/general map/GeneralMap";
 import OfficailPlantingSites from "./pages/approved/OfficialPlantingSites";
 import SiteVerification from "./pages/siteVerification/siteVerification";
-import SiteDatasetMangement from "./pages/site & dataset management/SiteDatasetMangement";
 import Land_classifications from "./pages/head/maintain/land_classification";
 import Soils from "./pages/head/maintain/soils";
 import Tree_species from "./pages/head/maintain/tree_species";
@@ -28,8 +26,10 @@ import Classified_areas from "./pages/head/maintain/classified_areas/classified_
 import Assign_onsite_inspector from "./pages/head/reforestation_areas/assigning";
 import Legality_and_Safety from "./pages/head/reforestation_areas/lagelity_and_safety";
 import Reforestation_area_site from "./pages/head/site/reforestation_area_site";
-import Add_site_multicriteria_analysis from "./pages/head/analysis/add_site_multicriteria_analysis";
 import Sites from "./pages/head/site/sites";
+import Reforestation_area_analysis from "./pages/head/analysis/reforestation_areas_analysis";
+import Sites_analysis from "./pages/head/analysis/site_analysis";
+import Multicriteria_analysis from "./pages/head/analysis/multicriteria_analysis";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -90,15 +90,22 @@ export default function App() {
             element={<Reforestation_area_form />}
           />
           <Route
-            path="/analysis/add-site-multicriteria-analysis/:id"
-            element={<Add_site_multicriteria_analysis />}
+            path="/analysis/multicriteria-analysis/:id"
+            element={<Multicriteria_analysis />}
           />
           <Route path="/reforestation/site/:id" element={<Sites />} />
+          <Route
+            path="/reforestation_analysis/site_analysis/:id"
+            element={<Sites_analysis />}
+          />
           <Route
             path="/reforestation_area_site"
             element={<Reforestation_area_site />}
           />
-
+          <Route
+            path="/reforestation_area_analysis"
+            element={<Reforestation_area_analysis />}
+          />
           <Route path="/maintenance/barangays/" element={<Barangays />} />
           <Route path="/maintenance/tree-species" element={<Tree_species />} />
           <Route path="/maintenance/soils" element={<Soils />} />
@@ -108,9 +115,8 @@ export default function App() {
             path="/reforestation-areas"
             element={<Reforestation_areas />}
           />
-          <Route path="/site-management" element={<SiteDatasetMangement />} />
+          <Route path="/analysis" element={<Analysis />} />
 
-          <Route path="/image-analysis" element={<ImageAnalysis />} />
           <Route path="/analysis" element={<Analysis />} />
           <Route path="/site-verification" element={<SiteVerification />} />
           <Route

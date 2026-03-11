@@ -24,6 +24,7 @@ import {
   Filter,
   FormInput,
   File,
+  AreaChart,
 } from "lucide-react";
 
 // Fix Leaflet marker icons
@@ -812,15 +813,14 @@ export default function Map() {
 
                     {area.area_img && (
                       <img
-                        src={
-                          typeof area.area_img === "string"
-                            ? "http://127.0.0.1:8000/api" + area.area_img // URL string from server
-                            : URL.createObjectURL(area.area_img) // temporary URL for File object
-                        }
+                        src={"http://127.0.0.1:8000" + area.area_img}
                         alt={area.name}
                         className="w-32 h-20 object-cover mt-1 rounded"
                       />
                     )}
+                    <button className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer">
+                      <AreaChart size={16} /> View Sites
+                    </button>
                   </div>
                 </Popup>
               </Marker>
