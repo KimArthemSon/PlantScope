@@ -269,7 +269,7 @@ export default function Reforestation_areas() {
             onKeyDown={(e) => {
               if (e.key === "Enter") fetchAreas();
             }}
-            className="border border-gray-300 rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
         </div>
 

@@ -3,6 +3,7 @@ import NotFoundPage from "../../../components/layout/NotFoundPage";
 import PlantScopeLoader from "../../../components/alert/PlantScopeLoader";
 import { useAuthorize } from "../../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
+import { Leaf } from "lucide-react";
 export default function LogTrail() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,9 +50,16 @@ export default function LogTrail() {
     return <NotFoundPage />;
   }
   return (
-    <div className="flex">
+    <div className="flex flex-col">
+      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-6 px-6 shadow-lg">
+        <div className="max-w-10xl mx-auto flex items-center">
+          <div className="flex items-center gap-3 mb-2">
+            <Leaf size={32} className="text-green-300" />
+            <h1 className="text-3xl md:text-4xl font-bold">Activity Log</h1>
+          </div>
+        </div>
+      </header>
       <div className="flex-1 p-8 min-h-screen">
-        <h1 className="text-3xl font-bold mb-6 text-green-700">Activity Log</h1>
 
         {loading && (
           <div className="text-green-600 text-lg animate-pulse">
@@ -66,14 +74,20 @@ export default function LogTrail() {
         )}
 
         {!loading && !error && (
-          <div className="overflow-x-auto shadow-lg rounded-xl border border-green-200">
-            <table className="min-w-full bg-white rounded-lg">
-              <thead className="bg-green-700 text-white">
+          <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200">
+            <table className="relative min-w-full bg-white rounded-sm">
+              <thead className="bg-[#0f4a2fe0] text-white">
                 <tr>
-                  <th className="py-3 px-5 text-left">User</th>
-                  <th className="py-3 px-5 text-left">Timestamp</th>
-                  <th className="py-3 px-5 text-left">IP Address</th>
-                  <th className="py-3 px-5 text-left">Event Type</th>
+                  <th className="py-3 px-5 text-left text-[.9rem]">User</th>
+                  <th className="py-3 px-5 text-left text-[.9rem]">
+                    Timestamp
+                  </th>
+                  <th className="py-3 px-5 text-left text-[.9rem]">
+                    IP Address
+                  </th>
+                  <th className="py-3 px-5 text-left text-[.9rem]">
+                    Event Type
+                  </th>
                 </tr>
               </thead>
 
@@ -85,7 +99,7 @@ export default function LogTrail() {
                       className="border-b hover:bg-green-50 transition-all"
                     >
                       {/* USER + ROLE */}
-                      <td className="py-3 px-5">
+                      <td className="py-3 px-5 text-[.9rem]">
                         <div className="font-semibold text-gray-800">
                           {log.email ?? "Unknown"}
                         </div>
@@ -95,15 +109,17 @@ export default function LogTrail() {
                       </td>
 
                       {/* TIMESTAMP */}
-                      <td className="py-3 px-5">
+                      <td className="py-3 px-5 text-[.9rem]">
                         {new Date(log.timestamp).toLocaleString()}
                       </td>
 
                       {/* IP ADDRESS */}
-                      <td className="py-3 px-5">{log.ip_address ?? "-"}</td>
+                      <td className="py-3 px-5 text-[.9rem]">
+                        {log.ip_address ?? "-"}
+                      </td>
 
                       {/* EVENT TYPE */}
-                      <td className="py-3 px-5">
+                      <td className="py-3 px-5 text-[.9rem]">
                         <span
                           className={`px-3 py-1 rounded-full text-sm ${
                             log.event_type === "SUCCESS"

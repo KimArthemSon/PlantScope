@@ -1,19 +1,12 @@
 import { useEffect, useState } from "react";
-import { Map, Clipboard, Info, Trash } from "lucide-react";
+import { Map, Clipboard, Info, Trash, Leaf } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import LoaderPending from "@/components/layout/loaderSmall";
 import GoToCenterButton from "@/components/helper/gotocenter";
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  Polygon,
-} from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polygon } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { useNavigate, useParams } from "react-router-dom";
 import { useRef } from "react";
-
 
 interface Polygon {
   coordinates: [number, number][];
@@ -65,7 +58,7 @@ export default function Classified_area_form() {
     "focus-within:border-green-700 focus-within:ring-2 " +
     "focus-within:ring-green-300 transition-all";
 
-  const inputField = "flex-1 text-[.8rem] p-2 ml-4 outline-none bg-transparent";
+  const inputField = "flex-1 text-[.8rem] p-2 outline-none bg-transparent";
   const navigate = useNavigate();
 
   // Default map center
@@ -260,7 +253,7 @@ export default function Classified_area_form() {
   }
 
   return (
-    <div className="flex flex-col flex-1 w-full min-w-150 h-full bg-gray-50 items-center p-10 pt-5">
+    <div className="flex flex-col flex-1 w-full min-w-150 h-full bg-gray-50 items-center">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -270,17 +263,22 @@ export default function Classified_area_form() {
         />
       )}
       {loading && <LoaderPending />}
-      <main className="flex flex-col w-full flex-1 max-w-700 max-h-400 gap-8 min-w-200">
-        <div>
-          <h1 className="text-3xl font-bold text-green-700">
-            {action} Classified Areas
-          </h1>
+      <header className="bg-gradient-to-r w-full from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
+        <div className="max-w-7xl mx-auto flex items-center justify-center">
+          <div className="flex items-center gap-3 mb-2">
+            <Leaf size={32} className="text-green-300" />
+            <h1 className="text-3xl md:text-4xl font-bold">
+              {action} Classified Areas
+            </h1>
+          </div>
+          <div className="flex items-center mt-5 mb-10 ml-auto"></div>
         </div>
-
+      </header>
+      <main className="flex flex-col w-full flex-1 max-w-700 max-h-400 gap-8 min-w-200 p-10 pb-5">
         <div className="flex gap-10 w-full h-full">
           {/* Left panel form */}
           <form
-            className="flex flex-col w-[35%] gap-5 min-w-100"
+            className="flex flex-col w-[45%] gap-5 min-w-100"
             onSubmit={hanle_submit}
           >
             {/* Name */}
@@ -356,13 +354,31 @@ export default function Classified_area_form() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="font-bold text-[1rem] mr-auto mb-1">
-                Polygon Coordinates
-              </label>
+            <div className="flex flex-col gap-2 max-h-50 overflow-y-auto">
+              <div className="flex mb-4 items-center">
+                <label className="font-bold text-[1rem] mr-auto mb-1">
+                  Polygon Coordinates
+                </label>
+                <button
+                  className="bg-[#0F4A2F] min-w-20 h-11 p-2 ml-auto rounded-lg text-white border border-[#0F4A2F] text-[.8rem] cursor-Map hover:text-[#0F4A2F] hover:bg-[#ffffff]"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (!mapRef.current) return;
+                    if (classified_area.polygon.coordinates.length === 0)
+                      return;
+
+                    mapRef.current.flyTo(
+                      classified_area.polygon.coordinates[0],
+                      16,
+                    );
+                  }}
+                >
+                  To Polygon
+                </button>
+              </div>
 
               {classified_area.polygon.coordinates.map((element, i) => (
-                <div key={i}>
+                <div key={i} className="p-1 min-w-110 w-full">
                   <div className="flex">
                     <h1 className="font-bold">No: {i + 1}</h1>
                     {classified_area.polygon.coordinates.length > 1 && (
@@ -487,63 +503,6 @@ export default function Classified_area_form() {
           {/* Right panel */}
           <div className="flex flex-col flex-1">
             {/* upper panel filter & tools */}
-            <div className="flex flex-row gap-2  items-center max-h-25 h-[20%]">
-              <div className="flex flex-col w-40">
-                <label className="font-bold text-[.8rem] mr-auto mb-1">
-                  Coordinate X:
-                </label>
-                <div className={inputWrapper}>
-                  <Map size={16} className="ml-4 text-green-700" />
-
-                  <input
-                    type="text"
-                    className={inputField}
-                    placeholder="Ex: 124.603"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col w-40">
-                <label className="font-bold text-[.8rem] mr-auto mb-1">
-                  Coordinate Y:
-                </label>
-                <div className={inputWrapper}>
-                  <Map size={16} className="ml-4 text-green-700" />
-                  <input
-                    type="text"
-                    className={inputField}
-                    placeholder="Ex: 10.9695"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col w-40">
-                <label className="font-bold text-[.8rem] mr-auto mb-1">
-                  Land Classification
-                </label>
-                <div className={inputWrapper}>
-                  <Map size={20} className="ml-4 text-green-700" />
-                  <select className={inputField}>
-                    <option value="">Land 1</option>
-                    <option value="">Land 2</option>
-                    <option value="">Land 3</option>
-                    <option value="">Land 4</option>
-                  </select>
-                </div>
-              </div>
-              <button
-                className="bg-[#0F4A2F] min-w-20 h-11 p-2 mt-auto mb-3 rounded-lg text-white border border-[#0F4A2F] text-[.8rem] cursor-Map hover:text-[#0F4A2F] hover:bg-[#ffffff]"
-                onClick={() => {
-                  if (!mapRef.current) return;
-                  if (classified_area.polygon.coordinates.length === 0) return;
-
-                  mapRef.current.flyTo(
-                    classified_area.polygon.coordinates[0],
-                    16,
-                  );
-                }}
-              >
-                To Polygon
-              </button>
-            </div>
             {/* lower panel map */}
             <div className="border border-black p-0 flex-1 rounded-lg overflow-hidden">
               <MapContainer

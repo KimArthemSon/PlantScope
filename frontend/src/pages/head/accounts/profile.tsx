@@ -10,6 +10,7 @@ import {
   CheckCheckIcon,
   CheckCircle2Icon,
   Eye,
+  EyeOff,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import profile_sample from "../../../assets/carlos.jpg";
@@ -55,6 +56,8 @@ export function Profile() {
     title: string;
     message: string;
   } | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
 
   const [passwordConstraints, setPasswordConstraints] =
     useState<PasswordConstraint>({
@@ -173,7 +176,11 @@ export function Profile() {
         passwordConstraints.symbol
       ) {
         setIsLoading(false);
-        alert("Bad password, please fix!");
+        setPSAlert({
+          type: "error",
+          title: "Bad password",
+          message: "Bad password, please fix!",
+        });
         return;
       }
     }
@@ -530,7 +537,7 @@ export function Profile() {
                 <Lock size={20} className="ml-4 text-green-700" />
                 <input
                   required={action === "Create"}
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   className={inputField}
                   placeholder="Password"
                   value={profile.password}
@@ -541,7 +548,18 @@ export function Profile() {
                     }))
                   }
                 />
-                <Eye size={20} className="ml-4 text-green-700" />
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowPassword(!showPassword);
+                  }}
+                >
+                  {showPassword ? (
+                    <EyeOff size={20} className="ml-4 text-green-700" />
+                  ) : (
+                    <Eye size={20} className="ml-4 text-green-700" />
+                  )}
+                </button>
               </div>
               <div className="p-2 flex flex-col gap-2">
                 <h1 className="font-bold">Password must contain: </h1>
@@ -637,7 +655,7 @@ export function Profile() {
                 <Unlock size={20} className="ml-4 text-green-700" />
                 <input
                   required={action === "Create"}
-                  type="password"
+                  type={showPasswordConfirm ? "text" : "password"}
                   className={inputField}
                   placeholder="Confirm password"
                   value={profile.confirm_pass}
@@ -648,6 +666,18 @@ export function Profile() {
                     }))
                   }
                 />
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowPasswordConfirm(!showPasswordConfirm);
+                  }}
+                >
+                  {showPasswordConfirm ? (
+                    <EyeOff size={20} className="ml-4 text-green-700" />
+                  ) : (
+                    <Eye size={20} className="ml-4 text-green-700" />
+                  )}
+                </button>
               </div>
             </div>
           </div>

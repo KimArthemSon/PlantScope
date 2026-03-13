@@ -25,7 +25,8 @@ interface Barangay {
 interface BarangayForm {
   name: string;
   description: string;
-  coordinate: string; // JSON as string for input simplicity
+  lat: number;
+  lng: number;
 }
 
 interface Filter {
@@ -40,7 +41,8 @@ export default function Barangays() {
   const [barangay, setBarangay] = useState<BarangayForm>({
     name: "",
     description: "",
-    coordinate: '{"lat":0,"lng":0}',
+    lat: 0,
+    lng: 0,
   });
 
   const [filter, setFilter] = useState<Filter>({
@@ -68,10 +70,11 @@ export default function Barangays() {
   const token = localStorage.getItem("token");
 
   const inputWrapper =
-    "flex items-center border border-black rounded-md mt-2 p-1 " +
+    "flex items-center border border-black rounded-md mt-2 " +
     "focus-within:border-green-700 focus-within:ring-2 " +
     "focus-within:ring-green-300 transition-all";
-  const inputField = "flex-1 text-[1rem] p-2 ml-4 outline-none bg-transparent";
+
+  const inputField = "flex-1 text-[.8rem] p-2 ml-4 outline-none bg-transparent";
 
   // ------------------ Fetch Barangays ------------------
   const fetchBarangays = async () => {
@@ -117,7 +120,7 @@ export default function Barangays() {
   const handleDelete = async () => {
     if (!barangayIdDelete) return;
     const response = await fetch(
-      `http://127.0.0.1:8000/api/delete_barangay/${barangayIdDelete}/`,
+      `http://127.0.0.1:8000/api/delete_barangay/${barangayIdDelete}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
@@ -159,16 +162,19 @@ export default function Barangays() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ...barangay,
-          coordinate: JSON.parse(barangay.coordinate),
+          name: barangay.name,
+          description: barangay.description,
+          coordinate: [barangay.lat, barangay.lng],
         }),
       });
+
       const data = await res.json();
       if (!res.ok) {
         setPSAlert({ type: "error", title: "Error", message: data.error });
         setForm_loading(false);
         return;
       }
+
       setPSAlert({
         type: "success",
         title: "Success",
@@ -189,7 +195,7 @@ export default function Barangays() {
       if (form_loading) return;
 
       const res = await fetch(
-        `http://127.0.0.1:8000/api/update_barangay/${editBarangayId}/`,
+        `http://127.0.0.1:8000/api/update_barangay/${editBarangayId}`,
         {
           method: "PUT",
           headers: {
@@ -197,17 +203,20 @@ export default function Barangays() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            ...barangay,
-            coordinate: JSON.parse(barangay.coordinate),
+            name: barangay.name,
+            description: barangay.description,
+            coordinate: [barangay.lat, barangay.lng],
           }),
         },
       );
+
       const data = await res.json();
       if (!res.ok) {
         setPSAlert({ type: "error", title: "Error", message: data.error });
         setForm_loading(false);
         return;
       }
+
       setPSAlert({
         type: "success",
         title: "Success",
@@ -238,12 +247,14 @@ export default function Barangays() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
+
       <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3 mb-2">
             <Leaf size={32} className="text-green-300" />
             <h1 className="text-3xl md:text-4xl font-bold">Barangays</h1>
           </div>
+
           <div className="flex items-center mt-5 mb-10 ml-auto">
             <button
               onClick={() => {
@@ -252,7 +263,8 @@ export default function Barangays() {
                 setBarangay({
                   name: "",
                   description: "",
-                  coordinate: '{"lat":0,"lng":0}',
+                  lat: 0,
+                  lng: 0,
                 });
               }}
               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
@@ -262,9 +274,8 @@ export default function Barangays() {
           </div>
         </div>
       </header>
-      <main className="flex-1 p-8 max-w-409">
-        {/* Header */}
 
+      <main className="flex-1 p-8 max-w-409">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
           <label>Show entries: </label>
@@ -317,6 +328,7 @@ export default function Barangays() {
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {barangays.length > 0 ? (
                 barangays.map((b, index) => (
@@ -330,9 +342,10 @@ export default function Barangays() {
                     <td className="py-3 px-5">{b.name}</td>
                     <td className="py-3 px-5">{b.description}</td>
                     <td className="py-3 px-5">
-                      {JSON.stringify(b.coordinate)}
+                      [{b.coordinate?.[0]}, {b.coordinate?.[1]}]
                     </td>
                     <td className="py-3 px-5 text-[.9rem]">{b.created_at}</td>
+
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
                         <button
@@ -340,16 +353,19 @@ export default function Barangays() {
                             setIsOpenAddEditModal(true);
                             setEditBarangayId(b.barangay_id);
                             setAction("Edit");
+
                             setBarangay({
                               name: b.name,
                               description: b.description,
-                              coordinate: JSON.stringify(b.coordinate),
+                              lat: b.coordinate?.[0] ?? 0,
+                              lng: b.coordinate?.[1] ?? 0,
                             });
                           }}
                           className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
                         >
                           <Edit size={18} />
                         </button>
+
                         <button
                           onClick={() => setDelete(b.barangay_id)}
                           className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
@@ -414,7 +430,7 @@ export default function Barangays() {
         </div>
       </main>
 
-      {/* Add/Edit Modal */}
+      {/* Modal */}
       <form
         className={`fixed inset-0 z-10 flex items-center justify-center bg-black/50 transition-opacity duration-300 ${
           isOpenAddEditModal
@@ -424,6 +440,7 @@ export default function Barangays() {
         onSubmit={handleSubmit}
       >
         {form_loading && <LoaderPending />}
+
         <div
           className={`flex flex-col items-center gap-2 bg-white rounded-lg p-0 w-100 text-center shadow-lg transform transition-all duration-300 ${
             isOpenAddEditModal ? "scale-100 opacity-100" : "scale-95 opacity-0"
@@ -440,14 +457,15 @@ export default function Barangays() {
           </div>
 
           <div className="flex flex-col p-6 w-full gap-5">
+            {/* Name */}
             <div className="flex flex-col">
-              <label className="font-bold text-[1rem] mr-auto">Name:</label>
+              <label className="font-bold text-[.8rem] mr-auto">Name:</label>
               <div className={inputWrapper}>
                 <Info size={20} className="ml-4 text-green-700" />
                 <input
                   required
                   type="text"
-                  className={inputField}
+                  className={inputField + "text-[.8rem]"}
                   placeholder="Ex: Barangay San Miguel"
                   value={barangay.name}
                   onChange={(e) =>
@@ -457,13 +475,14 @@ export default function Barangays() {
               </div>
             </div>
 
+            {/* Description */}
             <div className="flex flex-col">
-              <label className="font-bold text-[1rem] mr-auto">
+              <label className="font-bold text-[.8rem] mr-auto">
                 Description:
               </label>
               <div className={inputWrapper}>
                 <textarea
-                  className="w-full min-h-50 outline-0 p-2"
+                  className="w-full min-h-30 outline-0 p-2 text-[.8rem]"
                   placeholder="Description..."
                   required
                   value={barangay.description}
@@ -473,32 +492,56 @@ export default function Barangays() {
                       description: e.target.value,
                     }))
                   }
-                ></textarea>
+                />
               </div>
             </div>
 
+            {/* Latitude */}
             <div className="flex flex-col">
-              <label className="font-bold text-[1rem] mr-auto">
-                Coordinate (JSON):
+              <label className="font-bold text-[.8rem] mr-auto">
+                Latitude:
               </label>
               <div className={inputWrapper}>
-                <textarea
-                  className="w-full min-h-20 outline-0 p-2"
-                  placeholder='{"lat": 0, "lng": 0}'
-                  required
-                  value={barangay.coordinate}
+                <input
+                  type="number"
+                  step="any"
+                  className={inputField + "text-[.8rem]"}
+                  value={barangay.lat}
                   onChange={(e) =>
                     setBarangay((prev) => ({
                       ...prev,
-                      coordinate: e.target.value,
+                      lat: Number(e.target.value),
                     }))
                   }
-                ></textarea>
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Longitude */}
+            <div className="flex flex-col">
+              <label className="font-bold text-[.8rem] mr-auto">
+                Longitude:
+              </label>
+              <div className={inputWrapper}>
+                <input
+                  type="number"
+                  step="any"
+                  className={inputField + "text-[.8rem]"}
+                  value={barangay.lng}
+                  onChange={(e) =>
+                    setBarangay((prev) => ({
+                      ...prev,
+                      lng: Number(e.target.value),
+                    }))
+                  }
+                  required
+                />
               </div>
             </div>
 
             <div className="flex flex-cols items-center w-full gap-2">
-              <button className="bg-green-500 text-white px-4 py-2 w-[50%] rounded-md border border-green-600 hover:bg-white hover:text-green-600 transition cursor-pointer">
+              <button className="bg-green-500 text-white px-3 py-1 w-[50%] rounded-md border border-green-600 hover:bg-white hover:text-green-600 transition cursor-pointer">
                 Save
               </button>
 
@@ -507,7 +550,7 @@ export default function Barangays() {
                   e.preventDefault();
                   setIsOpenAddEditModal(false);
                 }}
-                className="bg-white text-black px-4 py-2 rounded-md border w-[50%] border-black hover:border-green-600 hover:text-green-600 transition cursor-pointer"
+                className="bg-white text-black px-3 py-1 rounded-md border w-[50%] border-black hover:border-green-600 hover:text-green-600 transition cursor-pointer"
               >
                 Cancel
               </button>

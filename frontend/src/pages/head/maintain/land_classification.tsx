@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
-import { useNavigate } from "react-router-dom";
 import LoaderPending from "@/components/layout/loaderSmall";
 interface Land_classifications {
   land_classification_id: number;
