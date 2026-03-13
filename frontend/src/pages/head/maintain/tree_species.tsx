@@ -261,7 +261,7 @@ export default function Tree_species() {
                   description: "",
                 });
               }}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <Plus size={20} /> Add new tree specie
             </button>
@@ -307,7 +307,7 @@ export default function Tree_species() {
                 fetchtree_species(); // call your fetch function on Enter
               }
             }}
-            className="border border-gray-300 rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
         </div>
 

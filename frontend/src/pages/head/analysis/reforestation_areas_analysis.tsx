@@ -186,7 +186,7 @@ export default function Reforestation_area_analysis() {
           <div className="flex items-center mt-5 mb-10 ml-auto">
             <button
               onClick={() => navigate(-1)}
-              className="flex items-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem]"
+               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <ChevronLeft size={20} />
             </button>

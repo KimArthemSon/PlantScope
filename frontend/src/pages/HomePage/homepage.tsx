@@ -102,9 +102,9 @@ export default function App() {
                 <p className="text-[#7CD56A] text-xl md:text-1xl tracking-wider fade-up-delay"></p>
 
                 <h2 className="text-1xl md:text-1xl font-bold leading-tight max-w-4xl mx-auto fade-up-delay-2">
-                  A GIS-Based Site Suitability Assessment and Reforestation
-                  Monitoring System <br />
-                  with Geospatial Analytics for Ormoc City
+                  A GIS-Based Site Suitability Assessment and <br/>
+                  Reforestation Monitoring Systern with Geospatial Analytics for <br/>
+                  Ormoc City
                 </h2>
                 <div className="flex flex-col sm:flex-row gap-6 justify-center pt-6 fade-up-delay-2">
                   <a

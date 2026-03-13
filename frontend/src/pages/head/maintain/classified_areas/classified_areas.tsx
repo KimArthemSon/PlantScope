@@ -139,7 +139,7 @@ export default function Classified_areas() {
           <div className="flex items-center mt-5 mb-10 ml-auto">
             <button
               onClick={() => navigate("/maintenance/classified_area_form/")}
-              className="flex items-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <Plus size={20} /> Add new classified area
             </button>
@@ -183,7 +183,7 @@ export default function Classified_areas() {
             onKeyDown={(e) => {
               if (e.key === "Enter") fetchClassifiedAreas();
             }}
-            className="border border-gray-300 rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
         </div>
 

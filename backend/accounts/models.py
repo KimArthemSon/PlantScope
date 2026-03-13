@@ -6,6 +6,7 @@ class User(models.Model):
         ('OnsiteInspector', 'Onsite Inspector'),
         ('GISSpecialist', 'GIS Specialist'),
         ('treeGrowers', 'Tree growers'),
+        ('DataManager', 'DataManager'),
     )
 
     email = models.EmailField(unique=True)

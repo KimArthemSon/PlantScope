@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Trash2, Edit, Plus, ChevronRight, ChevronLeft } from "lucide-react";
+import {
+  Trash2,
+  Edit,
+  Plus,
+  ChevronRight,
+  ChevronLeft,
+  Leaf,
+} from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import { useNavigate } from "react-router-dom";
@@ -18,7 +25,7 @@ interface Filter {
     | "CityENROHead"
     | "OnsiteInspector"
     | "GISSpecialist"
-    | "treeGrowers";
+    | "DataManager";
   entries: number;
   page: number;
   total_page: number;
@@ -115,7 +122,7 @@ export default function Accounts() {
   };
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center">
+    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -129,18 +136,22 @@ export default function Accounts() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-
-      <main className="flex-1 p-8 max-w-[1636px]">
-        {/* Header */}
-        <div className="flex items-center mt-5 mb-10">
-          <h1 className="text-3xl font-bold text-green-700">Accounts</h1>
+      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-6 px-6 shadow-lg">
+        <div className="max-w-10xl mx-auto flex items-center">
+          <div className="flex items-center gap-3 mb-2">
+            <Leaf size={32} className="text-green-300" />
+            <h1 className="text-3xl md:text-4xl font-bold">Accounts</h1>
+          </div>
           <button
             onClick={() => navigate("/account-management/profile/")}
-            className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+            className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
           >
             <Plus size={20} /> Add New Account
           </button>
         </div>
+      </header>
+      <main className="flex-1 p-8 max-w-[1636px]">
+        {/* Header */}
 
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
@@ -178,7 +189,7 @@ export default function Accounts() {
             <option value="CityENROHead">City ENRO Head</option>
             <option value="OnsiteInspector">Onsite Inspector</option>
             <option value="GISSpecialist">GIS Specialist</option>
-            <option value="treeGrowers">Tree Growers</option>
+            <option value="DataManager">Data Manager</option>
           </select>
 
           <input
@@ -197,7 +208,7 @@ export default function Accounts() {
                 fetchUsers(); // call your fetch function on Enter
               }
             }}
-            className="border border-gray-300 rounded-md p-2 w-80 text-[.8rem]"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem]"
           />
         </div>
 

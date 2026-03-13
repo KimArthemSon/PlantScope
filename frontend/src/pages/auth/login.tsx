@@ -55,7 +55,7 @@ export default function Login() {
           } else if (data.user_role === "AFA") {
             navigate("/dashboard/AFA");
           } else {
-            navigate("/dashboard/GISS");
+            // navigate("/dashboard/GISS");
           }
         }, 3000);
       }

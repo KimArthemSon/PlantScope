@@ -15,10 +15,10 @@ import {
   Cell,
 } from "recharts";
 import { useEffect, useState } from "react";
+import { ChevronLeft, Leaf } from "lucide-react";
 
 export default function Dashboard() {
   // 📊 Sample data for charts (replace with real API later)
-  
 
   const prioritizationData = [
     { level: "High", count: 5 },
@@ -40,55 +40,56 @@ export default function Dashboard() {
     { name: "Completed", value: 6 },
     { name: "Pending", value: 4 },
   ];
-    const [isAuthorize, setIsAuthorize] = useState(true);
+  const [isAuthorize, setIsAuthorize] = useState(true);
 
   useEffect(() => {
-      checkIfStillLogin()
-    }, []);
-  
-     const checkIfStillLogin = async () =>{
-  
-     const token = localStorage.getItem("token");
+    checkIfStillLogin();
+  }, []);
 
-     if(!token){
+  const checkIfStillLogin = async () => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
       return;
-     }
-            try {
-        const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
-          method: "POST",
-           headers: { Authorization: `Bearer ${token}` },
-        });
-  
-        const data = await response.json();
-  
-        if (response.ok) {     
-            
-            if (!(data.user_role === "CityENROHead")) {
-                 setIsAuthorize(false)    
-            }
-        } 
-  
-      } catch (error) {
-         setIsAuthorize(false)
-      }
-     } 
+    }
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-  if (!localStorage.getItem('token') || !isAuthorize){
-     return <NotFoundPage />
+      const data = await response.json();
+
+      if (response.ok) {
+        if (!(data.user_role === "CityENROHead")) {
+          setIsAuthorize(false);
+        }
+      }
+    } catch (error) {
+      setIsAuthorize(false);
+    }
+  };
+
+  if (!localStorage.getItem("token") || !isAuthorize) {
+    return <NotFoundPage />;
   }
- 
+
   const COLORS = ["#057501", "#34d399", "#a7f3d0"];
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden flex-col">
       {/* 🧭 Sidebar - Fixed / Sticky */}
-     
-        
-    
+
+      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-5 px-6 shadow-lg">
+        <div className="max-w-10xl mx-auto flex items-center">
+          <div className="flex items-center gap-3 mb-2">
+            <Leaf size={32} className="text-green-300" />
+            <h1 className="text-3xl md:text-4xl font-bold">Dashboard</h1>
+          </div>
+        </div>
+      </header>
       {/* 📊 Main Content */}
       <main className="flex-1 overflow-y-auto bg-gray-50 p-8">
-        <h1 className="text-3xl font-bold text-[#052e87] mb-6">Dashboard</h1>
-
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl shadow-sm border">

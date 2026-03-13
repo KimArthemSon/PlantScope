@@ -7,6 +7,9 @@ import {
   Cake,
   Map,
   UserX,
+  CheckCheckIcon,
+  CheckCircle2Icon,
+  Eye,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import profile_sample from "../../../assets/carlos.jpg";
@@ -16,9 +19,9 @@ import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 
 type UserRole =
   | "CityENROHead"
-  | "FieldOfficer"
+  | "OnsiteInspector"
   | "GISSpecialist"
-  | "treeGrowers";
+  | "DataManager";
 type Gender = "o" | "M" | "F";
 interface Profile {
   email: string;
@@ -35,6 +38,13 @@ interface Profile {
   contact: string;
   confirm_pass: string;
 }
+interface PasswordConstraint {
+  lower: boolean;
+  upper: boolean;
+  length: boolean;
+  number: boolean;
+  symbol: boolean;
+}
 
 export function Profile() {
   const { id } = useParams();
@@ -45,6 +55,15 @@ export function Profile() {
     title: string;
     message: string;
   } | null>(null);
+
+  const [passwordConstraints, setPasswordConstraints] =
+    useState<PasswordConstraint>({
+      lower: false,
+      upper: false,
+      length: false,
+      number: false,
+      symbol: false,
+    });
 
   const [profile, setProfile] = useState<Profile>({
     email: "",
@@ -99,7 +118,17 @@ export function Profile() {
   useEffect(() => {
     if (id) get_user();
   }, []);
+  useEffect(() => {
+    const password = profile.password;
 
+    setPasswordConstraints({
+      length: password.length >= 8,
+      lower: /[a-z]/.test(password),
+      upper: /[A-Z]/.test(password),
+      number: /\d/.test(password),
+      symbol: /[^A-Za-z0-9]/.test(password),
+    });
+  }, [profile.password]);
   const navigate = useNavigate();
   const inputWrapper =
     "flex items-center border border-black rounded-md mt-2 p-1 " +
@@ -132,9 +161,26 @@ export function Profile() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsLoading(true);
+    if (
+      (action == "Update" && profile.password.length != 0) ||
+      action == "Create"
+    ) {
+      if (
+        passwordConstraints.length ||
+        passwordConstraints.lower ||
+        passwordConstraints.upper ||
+        passwordConstraints.number ||
+        passwordConstraints.symbol
+      ) {
+        setIsLoading(false);
+        alert("Bad password, please fix!");
+        return;
+      }
+    }
+
     if (profile.password !== profile.confirm_pass) {
       alert("Password & Confirm Password is not match!");
-
+      setIsLoading(false);
       return;
     }
 
@@ -455,7 +501,28 @@ export function Profile() {
                 />
               </div>
             </div>
-
+            {/* ROLE */}
+            <div>
+              <label className="font-bold text-[1rem]">User role:</label>
+              <div className={inputWrapper}>
+                <Unlock size={20} className="ml-4 text-green-700" />
+                <select
+                  className={inputField}
+                  value={profile.user_role}
+                  onChange={(e) =>
+                    setProfile((prev) => ({
+                      ...prev,
+                      user_role: e.target.value as UserRole,
+                    }))
+                  }
+                >
+                  <option value="CityENROHead">City ENRO Head</option>
+                  <option value="FieldOfficer">OnsiteInspector</option>
+                  <option value="GISSpecialist">GIS Specialist</option>
+                  <option value="DataManager">Data Manager</option>
+                </select>
+              </div>
+            </div>
             {/* PASSWORD */}
             <div>
               <label className="font-bold text-[1rem]">Password:</label>
@@ -474,6 +541,85 @@ export function Profile() {
                     }))
                   }
                 />
+                <Eye size={20} className="ml-4 text-green-700" />
+              </div>
+              <div className="p-2 flex flex-col gap-2">
+                <h1 className="font-bold">Password must contain: </h1>
+                <div className="flex item-center gap-2">
+                  <CheckCircle2Icon
+                    size={20}
+                    className={
+                      passwordConstraints.length ? "text-green-700" : ""
+                    }
+                  />
+                  <p
+                    className={
+                      passwordConstraints.length ? "text-green-700" : ""
+                    }
+                  >
+                    At least 8 characters long
+                  </p>
+                </div>
+                <div className="flex item-center gap-2">
+                  <CheckCircle2Icon
+                    size={20}
+                    className={
+                      passwordConstraints.lower ? "text-green-700" : ""
+                    }
+                  />
+                  <p
+                    className={
+                      passwordConstraints.lower ? "text-green-700" : ""
+                    }
+                  >
+                    At least 1 Lowercase
+                  </p>
+                </div>
+                <div className="flex item-center gap-2">
+                  <CheckCircle2Icon
+                    size={20}
+                    className={
+                      passwordConstraints.upper ? "text-green-700" : ""
+                    }
+                  />
+                  <p
+                    className={
+                      passwordConstraints.upper ? "text-green-700" : ""
+                    }
+                  >
+                    At least 1 Upercase
+                  </p>
+                </div>
+                <div className="flex item-center gap-2">
+                  <CheckCircle2Icon
+                    size={20}
+                    className={
+                      passwordConstraints.number ? "text-green-700" : ""
+                    }
+                  />
+                  <p
+                    className={
+                      passwordConstraints.number ? "text-green-700" : ""
+                    }
+                  >
+                    At least 1 Number
+                  </p>
+                </div>
+                <div className="flex item-center gap-2">
+                  <CheckCircle2Icon
+                    size={20}
+                    className={
+                      passwordConstraints.symbol ? "text-green-700" : ""
+                    }
+                  />
+                  <p
+                    className={
+                      passwordConstraints.symbol ? "text-green-700" : ""
+                    }
+                  >
+                    At least 1 Symbol
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -502,28 +648,6 @@ export function Profile() {
                     }))
                   }
                 />
-              </div>
-            </div>
-
-            {/* ROLE */}
-            <div>
-              <label className="font-bold text-[1rem]">User role:</label>
-              <div className={inputWrapper}>
-                <Unlock size={20} className="ml-4 text-green-700" />
-                <select
-                  className={inputField}
-                  value={profile.user_role}
-                  onChange={(e) =>
-                    setProfile((prev) => ({
-                      ...prev,
-                      user_role: e.target.value as UserRole,
-                    }))
-                  }
-                >
-                  <option value="CityENROHead">City ENRO Head</option>
-                  <option value="FieldOfficer">Field Officer</option>
-                  <option value="GISSpecialist"> GIS Specialist</option>
-                </select>
               </div>
             </div>
           </div>

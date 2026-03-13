@@ -267,14 +267,14 @@ export default function SitesForArea() {
               onClick={() =>
                 navigate(`/reforestation_analysis/site_analysis/${id}`)
               }
-              className="flex items-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem]"
+               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <Plus size={20} /> Add new site
             </button>
           </div>
         </div>
       </header>
-      <main className="flex-1 p-8 max-w-7xl">
+      <main className="flex-1 p-8 max-w-10xl">
         {/* HEADER */}
 
         {/* CREATE SITE MODAL */}

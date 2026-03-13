@@ -242,9 +242,7 @@ export default function Barangays() {
         <div className="max-w-7xl mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3 mb-2">
             <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">
-              Barangays
-            </h1>
+            <h1 className="text-3xl md:text-4xl font-bold">Barangays</h1>
           </div>
           <div className="flex items-center mt-5 mb-10 ml-auto">
             <button
@@ -257,7 +255,7 @@ export default function Barangays() {
                   coordinate: '{"lat":0,"lng":0}',
                 });
               }}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <Plus size={20} /> Add new Barangay
             </button>
@@ -299,7 +297,7 @@ export default function Barangays() {
               }))
             }
             onKeyDown={(e) => e.key === "Enter" && fetchBarangays()}
-            className="border border-gray-300 rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
         </div>
 
