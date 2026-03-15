@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { X, Plus, Trash2, File } from "lucide-react";
+import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 
 interface Inspector {
   user_id: number;
@@ -22,6 +23,11 @@ export default function Assign_onsite_inspector() {
   const [searchAssigned, setSearchAssigned] = useState("");
   const [searchAvailable, setSearchAvailable] = useState("");
 
+  const [PSalert, setPSAlert] = useState<{
+    type: "success" | "failed" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
   // -------------------------
   // FETCH ASSIGNED
   // -------------------------
@@ -107,7 +113,11 @@ export default function Assign_onsite_inspector() {
     const data = await res.json();
 
     if (res.ok) {
-      alert("Assignments saved");
+      setPSAlert({
+        type: "success",
+        title: "Sucess",
+        message: "Assignments saved!",
+      });
     } else {
       alert(data.error || "Save failed");
     }
@@ -135,6 +145,14 @@ export default function Assign_onsite_inspector() {
   return (
     <div className="flex h-screen p-4 gap-4 bg-gray-100">
       {/* LEFT */}
+      {PSalert && (
+        <PlantScopeAlert
+          type={PSalert.type}
+          title={PSalert.title}
+          message={PSalert.message}
+          onClose={() => setPSAlert(null)}
+        />
+      )}
       <div className="w-1/2 bg-white rounded-lg shadow flex flex-col pb-4">
         <h2 className="text-lg font-bold text-white p-5 bg-green-700 rounded-md">
           Assigned Onsite Inspectors

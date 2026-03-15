@@ -22,7 +22,10 @@ interface ReforestationArea {
   safety: string;
   polygon_coordinate: any;
   coordinate: any;
-  location: string;
+  barangay: {
+    barangay_id: number;
+    name: string;
+  };
   description: string;
   area_img: string | null;
   created_at: string;
@@ -303,7 +306,7 @@ export default function Reforestation_areas() {
 
                     <td className="py-3 px-5">{area.name}</td>
 
-                    <td className="py-3 px-5">{area.location}</td>
+                    <td className="py-3 px-5">{area.barangay.name}</td>
 
                     <td className="py-3 px-5">
                       {area.legality === "legal"

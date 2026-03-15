@@ -1,4 +1,4 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, MapIcon } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -6,22 +6,27 @@ import { useNavigate, useParams } from "react-router-dom";
 interface SiteData {
   site_data_id: number;
   site_id: number;
+  // Site_data fields (actual values)
   Safety: string;
-  safety_status: string;
   legality: boolean;
-  legality_status: string;
+  slope: number;
   soil_quality: string;
-  soil_quality_status: string;
-  ndvi: string;
-  ndvi_status: string;
   distance_to_water_source: number;
-  distance_to_water_source_status: string;
   accessibility: string;
+  wildlife: string;
+  // Site_multicriteria fields (status + metrics)
+  safety_status: string;
+  legality_status: string;
+  slope_status: string;
+  soil_quality_status: string;
+  distance_to_water_source_status: string;
   accessibility_status: string;
   wildlife_status: string;
-  wildlife_status_multicriteria: string;
+  survival_rate: number;
   total_score: number;
+  remarks?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 interface CardProps {
@@ -30,6 +35,10 @@ interface CardProps {
   layerKey: string;
   modelField: string;
   options?: string[];
+  inputType?: "text" | "number" | "select" | "boolean";
+  min?: number;
+  max?: number;
+  step?: number;
   onSave: (
     layer: string,
     modelField: string,
@@ -37,187 +46,111 @@ interface CardProps {
   ) => Promise<void>;
   status?: string;
   icon?: string;
+  helpText?: string;
 }
+
+// ✅ Define discussion keys type for type-safe access
+type DiscussionKey =
+  | "legality"
+  | "slope"
+  | "safety"
+  | "soil_quality"
+  | "distance_to_water_source"
+  | "accessibility"
+  | "wildlife_status";
 
 interface FieldAssessment {
   id: number;
-  layer: string;
+  title: string;
+  description: string; // General feedback
+
+  // Inspector details from Assigned_onsite_inspector -> User
   inspector: {
     name: string;
     email: string;
     avatar: string;
     role: string;
   };
-  feedback: string;
-  description?: string;
-  rating?: number;
-  photos?: string[];
-  visited_at: string;
-  verified?: boolean;
+
+  // Status fields from Field_assessment
+  status: {
+    safety: string;
+    soil_quality: string;
+    legality: string;
+    accessibility: string;
+    wildlife_status: string;
+  };
+
+  // Technical data
+  slope: number;
+  coordinates: any; // JSONField
+  distance_to_water_source: string;
+
+  // ✅ Discussions with index signature for dynamic access
+  discussions: {
+    legality?: string;
+    slope?: string;
+    safety?: string;
+    soil_quality?: string;
+    distance_to_water_source?: string;
+    accessibility?: string;
+    wildlife_status?: string;
+    [key: string]: string | undefined; // ✅ Allows string indexing
+  };
+
+  // ✅ Photos can be string URLs or objects
+  photos: (
+    | string
+    | {
+        id: number;
+        url: string;
+        type:
+          | "all"
+          | "slope"
+          | "soil_quality"
+          | "accessibility"
+          | "wildlife_status"
+          | "safety"
+          | "legality";
+      }
+  )[];
+
+  created_at: string;
+  is_sent: boolean;
 }
 
-// ============ MOCK FIELD ASSESSMENTS (No Backend) ============
-const mockAssessments: FieldAssessment[] = [
-  {
-    id: 1,
-    layer: "safety",
-    inspector: {
-      name: "Maria Santos",
-      email: "maria.s@plantscope.gov",
-      avatar:
-        "https://ui-avatars.com/api/?name=Maria+Santos&background=0D9488&color=fff",
-      role: "Field Inspector",
-    },
-    feedback:
-      "Site perimeter is secure. No signs of unauthorized access or hazards detected.",
-    description:
-      "Conducted perimeter walk-through. All warning signs intact. Emergency access route clear.",
-    rating: 5,
-    visited_at: "2024-03-10",
-    verified: true,
-  },
-  {
-    id: 2,
-    layer: "safety",
-    inspector: {
-      name: "Juan Dela Cruz",
-      email: "juan.dc@plantscope.gov",
-      avatar:
-        "https://ui-avatars.com/api/?name=Juan+Dela+Cruz&background=059669&color=fff",
-      role: "Safety Officer",
-    },
-    feedback:
-      "Minor erosion observed on northern slope. Recommend monitoring after heavy rain.",
-    rating: 4,
-    visited_at: "2024-03-08",
-  },
-  {
-    id: 3,
-    layer: "legality",
-    inspector: {
-      name: "Atty. Elena Reyes",
-      email: "elena.reyes@plantscope.gov",
-      avatar:
-        "https://ui-avatars.com/api/?name=Elena+Reyes&background=7C3AED&color=fff",
-      role: "Legal Compliance Officer",
-    },
-    feedback:
-      "All land ownership documents verified. No conflicting claims found.",
-    description:
-      "Reviewed DENR clearance, LGU endorsement, and land title. All documents valid and current.",
-    rating: 5,
-    visited_at: "2024-03-12",
-    verified: true,
-  },
-  {
-    id: 4,
-    layer: "soil_quality",
-    inspector: {
-      name: "Dr. Roberto Lim",
-      email: "roberto.lim@plantscope.gov",
-      avatar:
-        "https://ui-avatars.com/api/?name=Roberto+Lim&background=047857&color=fff",
-      role: "Soil Scientist",
-    },
-    feedback:
-      "Soil pH: 6.2 (optimal). Organic matter: 3.8%. Good structure for reforestation.",
-    description:
-      "Collected 5 core samples. Lab results show adequate nitrogen (0.15%), phosphorus (12ppm), potassium (180ppm). Minor compaction in Zone B.",
-    rating: 5,
-    photos: [
-      "https://picsum.photos/seed/soil1/200/150",
-      "https://picsum.photos/seed/soil2/200/150",
-    ],
-    visited_at: "2024-03-11",
-    verified: true,
-  },
-  {
-    id: 5,
-    layer: "soil_quality",
-    inspector: {
-      name: "Ana Mercado",
-      email: "ana.m@plantscope.gov",
-      avatar:
-        "https://ui-avatars.com/api/?name=Ana+Mercado&background=10B981&color=fff",
-      role: "Field Technician",
-    },
-    feedback:
-      "Surface layer shows good moisture retention. Recommend mulching for seedling establishment.",
-    rating: 4,
-    visited_at: "2024-03-09",
-  },
-  {
-    id: 6,
-    layer: "ndvi",
-    inspector: {
-      name: "GIS Team - Plantscope",
-      email: "gis@plantscope.gov",
-      avatar:
-        "https://ui-avatars.com/api/?name=GIS+Team&background=0891B2&color=fff",
-      role: "Remote Sensing Analyst",
-    },
-    feedback:
-      "NDVI avg: 0.42 (moderate vegetation). Healthy canopy cover in 68% of site area.",
-    description:
-      "Analyzed Sentinel-2 imagery (2024-03-01). Cloud cover <5%. NDVI range: 0.18-0.71. Low values in recently cleared zones expected.",
-    rating: 4,
-    visited_at: "2024-03-13",
-    verified: true,
-  },
-  {
-    id: 7,
-    layer: "distance_to_water_source",
-    inspector: {
-      name: "Carlos Mendez",
-      email: "carlos.m@plantscope.gov",
-      avatar:
-        "https://ui-avatars.com/api/?name=Carlos+Mendez&background=0284C7&color=fff",
-      role: "Hydrology Specialist",
-    },
-    feedback:
-      "Nearest perennial stream: 120m. Seasonal creek at 45m (dry season may affect flow).",
-    description:
-      "GPS-mapped water sources. Stream flow measured at 2.3 L/s. Recommend rainwater harvesting system for dry months.",
-    rating: 4,
-    visited_at: "2024-03-07",
-  },
-  {
-    id: 8,
-    layer: "accessibility",
-    inspector: {
-      name: "Linda Torres",
-      email: "linda.t@plantscope.gov",
-      avatar:
-        "https://ui-avatars.com/api/?name=Linda+Torres&background=0369A1&color=fff",
-      role: "Logistics Coordinator",
-    },
-    feedback:
-      "Main access road passable for 4x4 vehicles. Foot trails need clearing for planting crews.",
-    description:
-      "Assessed 3 entry points. Primary gate functional. Secondary trail requires brush clearing (~200m). Equipment transport feasible with minor preparations.",
-    rating: 4,
-    visited_at: "2024-03-10",
-  },
-  {
-    id: 9,
-    layer: "wildlife",
-    inspector: {
-      name: "Dr. Sofia Alvarez",
-      email: "sofia.a@plantscope.gov",
-      avatar:
-        "https://ui-avatars.com/api/?name=Sofia+Alvarez&background=7E22CE&color=fff",
-      role: "Wildlife Biologist",
-    },
-    feedback:
-      "Low human disturbance. Observed 3 native bird species. No endangered species conflicts identified.",
-    description:
-      "Conducted dawn/dusk surveys. Signs of wild pig activity (manageable). Recommended buffer zone near nesting area (marked on map). Planting plan adjusted accordingly.",
-    rating: 5,
-    photos: ["https://picsum.photos/seed/wildlife1/200/150"],
-    visited_at: "2024-03-06",
-    verified: true,
-  },
-];
+interface BackendFeedbackEntry {
+  id: number;
+  assessment_id: number;
+  feedback: string;
+  inspector: {
+    name: string;
+    email: string;
+    avatar: string;
+    role: string;
+  };
+  created_at: string;
+}
+
+interface CriteriaSummary {
+  total_feedbacks: number;
+  recent_feedbacks: BackendFeedbackEntry[];
+}
+
+interface SiteAssessmentResponse {
+  success: boolean;
+  site_id: number;
+  reforestation_area_id: number;
+  total_assessments: number;
+  criteria_summary: {
+    safety: CriteriaSummary;
+    water_accessibility: CriteriaSummary;
+    accessibility: CriteriaSummary;
+    soil_quality: CriteriaSummary;
+    slope: CriteriaSummary;
+    legality: CriteriaSummary;
+  };
+}
 
 // ============ MAIN COMPONENT ============
 export default function MulticriteriaAnalysis() {
@@ -228,37 +161,59 @@ export default function MulticriteriaAnalysis() {
   const [siteData, setSiteData] = useState<SiteData | null>(null);
   const [selectedLayer, setSelectedLayer] = useState<string>("safety");
   const [loading, setLoading] = useState(true);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(false);
   const [notification, setNotification] = useState<{
     message: string;
     type: "success" | "error" | "info";
   } | null>(null);
 
+  // ✅ Field assessments from backend
+  const [fieldAssessments, setFieldAssessments] = useState<FieldAssessment[]>(
+    [],
+  );
+
+  // ✅ Updated layers: removed ndvi, added slope
   const layers = [
     { key: "safety", label: "Safety", icon: "🛡️" },
     { key: "legality", label: "Legality", icon: "⚖️" },
     { key: "soil_quality", label: "Soil Quality", icon: "🌱" },
-    { key: "ndvi", label: "NDVI Index", icon: "📊" },
+    { key: "slope", label: "Slope Analysis", icon: "📐" },
     { key: "distance_to_water_source", label: "Water Access", icon: "💧" },
     { key: "accessibility", label: "Accessibility", icon: "🚶" },
     { key: "wildlife", label: "Wildlife Impact", icon: "🦌" },
   ];
 
+  // ✅ Updated field options (no ndvi)
   const fieldOptions: Record<string, string[]> = {
     safety: ["safe", "slightly", "moderate", "danger"],
     soil_quality: ["very_good", "good", "moderate", "poor", "very_poor"],
     accessibility: ["very_good", "good", "moderate", "poor", "very_poor"],
     wildlife: ["very_good", "good", "moderate", "poor", "very_poor"],
-    legality: ["Legal", "Illegal"],
   };
 
+  // ✅ Updated mapping: layer key → model field name in Site_data
   const layerToModelField: Record<string, string> = {
     safety: "Safety",
     legality: "legality",
     soil_quality: "soil_quality",
-    ndvi: "ndvi",
+    slope: "slope",
     distance_to_water_source: "distance_to_water_source",
     accessibility: "accessibility",
-    wildlife: "wildlife_status",
+    wildlife: "wildlife",
+  };
+
+  // ✅ Input type configuration per layer
+  const layerInputConfig: Record<
+    string,
+    { type: string; min?: number; max?: number; step?: number }
+  > = {
+    safety: { type: "select" },
+    legality: { type: "boolean" },
+    soil_quality: { type: "select" },
+    slope: { type: "number", min: 0, max: 90, step: 0.1 },
+    distance_to_water_source: { type: "number", min: 0, step: 0.1 },
+    accessibility: { type: "select" },
+    wildlife: { type: "select" },
   };
 
   // 🍞 Notification helper
@@ -270,7 +225,136 @@ export default function MulticriteriaAnalysis() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // Fetch site data
+  // ✅ Type-safe getter for SiteData fields with fallback defaults
+  const getFieldValue = useCallback(
+    (fieldKey: string): string | number | boolean => {
+      if (!siteData) return getDefaultValue(fieldKey);
+      const value = siteData[fieldKey as keyof SiteData];
+      if (value === undefined || value === null) {
+        return getDefaultValue(fieldKey);
+      }
+      return value as string | number | boolean;
+    },
+    [siteData],
+  );
+
+  // ✅ Helper: Return sensible defaults for each field type
+  const getDefaultValue = (field: string): string | number | boolean => {
+    switch (field) {
+      case "legality":
+        return true;
+      case "slope":
+      case "distance_to_water_source":
+      case "survival_rate":
+      case "total_score":
+        return 0;
+      case "Safety":
+        return "safe";
+      case "soil_quality":
+      case "accessibility":
+      case "wildlife":
+        return "moderate";
+      default:
+        return "";
+    }
+  };
+
+  // ✅ Type-safe getter for status fields
+  const getStatusValue = useCallback(
+    (statusKey: string): string => {
+      if (!siteData) return "pending";
+      const value = siteData[statusKey as keyof SiteData];
+      return (value as string) ?? "pending";
+    },
+    [siteData],
+  );
+
+  // 🌐 Fetch field assessments from backend
+  const fetchFieldAssessments = useCallback(
+    async (layerKey: string) => {
+      if (!id || !token) return;
+
+      setAssessmentsLoading(true);
+      try {
+        // ✅ UPDATED: Use the new endpoint that aggregates by criteria
+        const res = await fetch(
+          `http://127.0.0.1:8000/api/get_sites/${id}/recent-assessments/`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        if (!res.ok) {
+          if (res.status === 404) throw new Error("Site not found");
+          throw new Error("Failed to fetch assessments");
+        }
+
+        const data: SiteAssessmentResponse = await res.json();
+
+        // ✅ Map criteria name to layer key (backend uses snake_case)
+        const criteriaToLayer: Record<string, string> = {
+          safety: "safety",
+          water_accessibility: "distance_to_water_source",
+          accessibility: "accessibility",
+          soil_quality: "soil_quality",
+          slope: "slope",
+          legality: "legality",
+        };
+
+        // ✅ Get the criteria key that matches our selected layer
+        const backendCriteriaKey = Object.entries(criteriaToLayer).find(
+          ([, layer]) => layer === layerKey,
+        )?.[0];
+
+        if (!backendCriteriaKey || !data.criteria_summary[backendCriteriaKey]) {
+          setFieldAssessments([]);
+          return;
+        }
+
+        // ✅ Transform backend feedbacks to match FieldAssessment interface
+        const transformed: FieldAssessment[] = data.criteria_summary[
+          backendCriteriaKey
+        ].recent_feedbacks.map((item: BackendFeedbackEntry) => ({
+          id: item.id,
+          title: `${layerKey.replace(/_/g, " ")} assessment`,
+          description: item.feedback, // General feedback
+          feedback: item.feedback, // Keep for backward compat
+          inspector: item.inspector,
+          // Map status from layerKey
+          status: {
+            safety: layerKey === "safety" ? "moderate" : "",
+            soil_quality: layerKey === "soil_quality" ? "moderate" : "",
+            legality: layerKey === "legality" ? "pending" : "",
+            accessibility: layerKey === "accessibility" ? "moderate" : "",
+            wildlife_status: "",
+          },
+          slope: layerKey === "slope" ? 0 : 0,
+          coordinates: null,
+          distance_to_water_source: "",
+          discussions: {
+            // Put feedback in the matching discussion field
+            [layerKey]: item.feedback,
+          },
+          photos: [], // Backend doesn't return photos in this endpoint yet
+          created_at: item.created_at,
+          is_sent: true,
+        }));
+
+        setFieldAssessments(transformed);
+      } catch (err) {
+        console.error("Assessment fetch error:", err);
+        setFieldAssessments([]);
+        showNotification("Failed to load field assessments", "error");
+      } finally {
+        setAssessmentsLoading(false);
+      }
+    },
+    [id, token],
+  );
+
+  // Fetch site data from backend
   useEffect(() => {
     const fetchData = async () => {
       if (!id || !token) return;
@@ -278,9 +362,7 @@ export default function MulticriteriaAnalysis() {
         setLoading(true);
         const res = await fetch(
           `http://127.0.0.1:8000/api/site/data/current/${id}/`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         if (!res.ok) throw new Error("Failed to fetch");
         const result = await res.json();
@@ -294,6 +376,13 @@ export default function MulticriteriaAnalysis() {
     };
     fetchData();
   }, [id, token]);
+
+  // Fetch field assessments when layer changes
+  useEffect(() => {
+    if (siteData) {
+      fetchFieldAssessments(selectedLayer);
+    }
+  }, [selectedLayer, siteData, fetchFieldAssessments]);
 
   // Update overall site status: Accept → "official", Reject → "rejected"
   const updateSiteStatus = async (newStatus: "official" | "rejected") => {
@@ -324,7 +413,7 @@ export default function MulticriteriaAnalysis() {
     }
   };
 
-  // Update individual layer
+  // ✅ Update individual layer + multicriteria status
   const updateMulticriteria = useCallback(
     async (
       layer: string,
@@ -334,11 +423,19 @@ export default function MulticriteriaAnalysis() {
       if (!siteData || !token) return;
 
       const body: Record<string, any> = {
-        total_score: siteData.total_score,
-        [`${layer}_status`]: "completed",
+        // Update Site_data field
         [layer]: value,
-        [modelField]: value,
+        // Update Site_multicriteria status
+        [`${layer}_status`]: "completed",
+        // Keep total_score (backend may recalculate)
+        total_score: siteData.total_score,
       };
+
+      // ✅ Special handling for survival_rate (only in multicriteria, not in site_data)
+      if (layer === "survival_rate") {
+        body.survival_rate = value;
+        delete body[layer]; // Remove duplicate
+      }
 
       try {
         const res = await fetch(
@@ -354,16 +451,25 @@ export default function MulticriteriaAnalysis() {
         );
         const data = await res.json();
         if (res.ok) {
-          showNotification(`${layer.replace("_", " ")} updated!`, "success");
-          setSiteData((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  [`${layer}_status`]: "completed",
-                  [modelField]: value,
-                }
-              : null,
-          );
+          showNotification(`${layer.replace(/_/g, " ")} updated!`, "success");
+          // ✅ Update local state with correct field names
+          setSiteData((prev) => {
+            if (!prev) return null;
+            const updated = { ...prev };
+            // Update Site_data value (if not survival_rate)
+            if (layer !== "survival_rate") {
+              updated[modelField as keyof SiteData] =
+                value as SiteData[keyof SiteData];
+            }
+            // Update multicriteria status
+            updated[`${layer}_status` as keyof SiteData] =
+              "completed" as SiteData[keyof SiteData];
+            // Update survival_rate if applicable
+            if (layer === "survival_rate") {
+              updated.survival_rate = value as number;
+            }
+            return updated;
+          });
         } else {
           showNotification(data.error || "Save failed", "error");
         }
@@ -377,10 +483,14 @@ export default function MulticriteriaAnalysis() {
   // 🔑 Filter: Only show selected layer card in center panel
   const selectedLayerData = layers.find((l) => l.key === selectedLayer);
 
-  // Filter assessments for selected layer (right panel)
-  const selectedAssessments = mockAssessments.filter(
-    (a) => a.layer === selectedLayer,
+  // ✅ FIXED: Sort by created_at instead of visited_at
+  const selectedAssessments = [...fieldAssessments].sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
+
+  // Get most recent assessment
+  const recentAssessment = selectedAssessments[0] || null;
 
   // Status badge helper
   const getStatusBadge = (status: string) => {
@@ -423,8 +533,7 @@ export default function MulticriteriaAnalysis() {
   }
 
   const completedLayers = layers.filter(
-    (layer) =>
-      siteData[`${layer.key}_status` as keyof SiteData] === "completed",
+    (layer) => getStatusValue(`${layer.key}_status`) === "completed",
   ).length;
   const progress = (completedLayers / layers.length) * 100;
 
@@ -515,9 +624,7 @@ export default function MulticriteriaAnalysis() {
               </h3>
               <div className="space-y-2">
                 {layers.map((layer) => {
-                  const statusKey = `${layer.key}_status` as keyof SiteData;
-                  const statusValue = siteData[statusKey] as string;
-
+                  const statusValue = getStatusValue(`${layer.key}_status`);
                   return (
                     <button
                       key={layer.key}
@@ -556,44 +663,60 @@ export default function MulticriteriaAnalysis() {
                   <span>{selectedLayerData?.icon}</span>
                   {selectedLayerData?.label} Evaluation
                 </h3>
+
                 <span
                   className={`text-xs px-3 py-1 rounded-full border font-medium ${getStatusBadge(
-                    siteData[
-                      `${selectedLayer}_status` as keyof SiteData
-                    ] as string,
+                    getStatusValue(`${selectedLayer}_status`),
                   )}`}
                 >
-                  {
-                    siteData[
-                      `${selectedLayer}_status` as keyof SiteData
-                    ] as string
-                  }
+                  {getStatusValue(`${selectedLayer}_status`)}
                 </span>
               </div>
 
               {/* ✅ Render ONLY the selected layer's card */}
-              {selectedLayerData && (
+              {selectedLayerData && siteData && (
                 <div className="max-w-md mx-auto">
                   <Card
                     title={selectedLayerData.label}
                     icon={selectedLayerData.icon}
-                    value={
-                      siteData[
-                        layerToModelField[
-                          selectedLayerData.key
-                        ] as keyof SiteData
-                      ]
-                    }
+                    value={getFieldValue(
+                      layerToModelField[selectedLayerData.key],
+                    )}
                     layerKey={selectedLayerData.key}
                     modelField={layerToModelField[selectedLayerData.key]}
                     options={fieldOptions[selectedLayerData.key]}
+                    inputType={layerInputConfig[selectedLayerData.key]?.type}
+                    min={layerInputConfig[selectedLayerData.key]?.min}
+                    max={layerInputConfig[selectedLayerData.key]?.max}
+                    step={layerInputConfig[selectedLayerData.key]?.step}
                     onSave={updateMulticriteria}
-                    status={
-                      siteData[
-                        `${selectedLayerData.key}_status` as keyof SiteData
-                      ] as string
+                    status={getStatusValue(`${selectedLayerData.key}_status`)}
+                    helpText={
+                      selectedLayerData.key === "slope"
+                        ? "Enter slope in degrees (0-90°)"
+                        : selectedLayerData.key === "distance_to_water_source"
+                          ? "Distance in meters to nearest water source"
+                          : undefined
                     }
                   />
+                  {selectedLayer == "legality" && (
+                    <div className="flex gap-2 mt-5">
+                      <p className="font-semibold text-gray-800 flex items-center gap-2">
+                        Manipulate Map:{" "}
+                      </p>
+                      <button
+                        onClick={() =>
+                          navigate(
+                            `/analysis/multicriteria-analysis/${id}/geo-spatial/`,
+                          )
+                        }
+                        className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
+                        title="View on Map"
+                      >
+                        <MapIcon size={20} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -636,7 +759,7 @@ export default function MulticriteriaAnalysis() {
             </div>
           </div>
 
-          {/* 📝 Right Panel: Field Assessments (Dynamic by Layer) */}
+          {/* 📝 Right Panel: Field Assessments (BACKEND DATA) */}
           <div className="xl:col-span-1 space-y-6">
             {/* Selected Layer Header */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
@@ -646,64 +769,67 @@ export default function MulticriteriaAnalysis() {
                   <h4 className="font-semibold text-gray-800">
                     {selectedLayerData?.label}
                   </h4>
-                  <p className="text-xs text-gray-500">
-                    {selectedAssessments.length} field assessment
-                    {selectedAssessments.length !== 1 ? "s" : ""}
-                  </p>
                 </div>
               </div>
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <span className="text-sm text-gray-600">Evaluation Status</span>
                 <span
                   className={`text-xs px-2.5 py-1 rounded-full border font-medium ${getStatusBadge(
-                    siteData[
-                      `${selectedLayer}_status` as keyof SiteData
-                    ] as string,
+                    getStatusValue(`${selectedLayer}_status`),
                   )}`}
                 >
-                  {
-                    siteData[
-                      `${selectedLayer}_status` as keyof SiteData
-                    ] as string
-                  }
+                  {getStatusValue(`${selectedLayer}_status`)}
                 </span>
               </div>
             </div>
 
-            {/* 📋 Field Assessments List */}
+            {/* 📋 Recent Assessment Card - Only Show Most Recent */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-              <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <span>👥</span> Inspector Feedback
-              </h4>
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+                  <span>👥</span> Latest Inspector Feedback
+                </h4>
+              </div>
 
-              {selectedAssessments.length === 0 ? (
+              {assessmentsLoading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-emerald-500 border-t-transparent mx-auto mb-2"></div>
+                  <p className="text-gray-500 text-sm">
+                    Loading assessments...
+                  </p>
+                </div>
+              ) : selectedAssessments.length === 0 ? (
                 <div className="text-center py-8">
                   <div className="text-4xl mb-3">🔍</div>
                   <p className="text-gray-500 text-sm">
                     No field assessments yet for this layer.
                   </p>
-                  <button
-                    onClick={() =>
-                      showNotification(
-                        "Demo mode: Add assessment feature coming soon!",
-                        "info",
-                      )
-                    }
-                    className="mt-3 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
-                  >
-                    + Add Assessment (Demo)
-                  </button>
                 </div>
-              ) : (
-                <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
-                  {selectedAssessments.map((assessment) => (
-                    <AssessmentCard
-                      key={assessment.id}
-                      assessment={assessment}
-                    />
-                  ))}
-                </div>
-              )}
+              ) : recentAssessment ? (
+                <>
+                  {/* ✅ Pass selectedLayer to AssessmentCard */}
+                  <AssessmentCard
+                    assessment={recentAssessment}
+                    isCompact
+                    selectedLayer={selectedLayer}
+                  />
+
+                  {/* Show "View All" button if more than 1 assessment */}
+                  {selectedAssessments.length > 1 && (
+                    <button
+                      onClick={() =>
+                        navigate(
+                          `/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
+                        )
+                      }
+                      className="w-full mt-4 py-2.5 px-4 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors flex items-center justify-center gap-2 border border-emerald-200"
+                    >
+                      View All Assessments
+                      <ChevronLeft className="rotate-180" size={16} />
+                    </button>
+                  )}
+                </>
+              ) : null}
             </div>
 
             {/* 📈 Quick Summary */}
@@ -721,7 +847,13 @@ export default function MulticriteriaAnalysis() {
                 <div className="flex justify-between items-center">
                   <span className="text-emerald-100">Total Score</span>
                   <span className="font-bold text-lg">
-                    {siteData.total_score?.toFixed(1) || 0}
+                    {siteData.total_score?.toFixed(1) ?? "0.0"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-emerald-100">Survival Rate</span>
+                  <span className="font-bold text-lg">
+                    {siteData.survival_rate?.toFixed(1) ?? "0.0"}%
                   </span>
                 </div>
                 <div className="pt-3 border-t border-white/20">
@@ -741,27 +873,50 @@ export default function MulticriteriaAnalysis() {
 }
 
 // ============ ASSESSMENT CARD COMPONENT ============
-function AssessmentCard({ assessment }: { assessment: FieldAssessment }) {
-  const [expanded, setExpanded] = useState(false);
+interface AssessmentCardProps {
+  assessment: FieldAssessment;
+  isCompact?: boolean;
+  selectedLayer: string; // ✅ Required for navigation & discussion lookup
+}
 
-  const StarRating = ({ rating }: { rating?: number }) => {
-    if (!rating) return null;
-    return (
-      <div className="flex gap-0.5">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <span
-            key={star}
-            className={`text-sm ${star <= rating ? "text-amber-400" : "text-gray-300"}`}
-          >
-            ★
-          </span>
-        ))}
-      </div>
-    );
+function AssessmentCard({
+  assessment,
+  isCompact = false,
+  selectedLayer,
+}: AssessmentCardProps) {
+  const [expanded, setExpanded] = useState(!isCompact);
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+
+  // ✅ Safe discussion access helper
+  const getDiscussion = (layer: string): string | undefined => {
+    const key = layer as DiscussionKey;
+    return assessment.discussions?.[key];
+  };
+
+  const discussionValue = getDiscussion(selectedLayer);
+
+  // ✅ Helper to get photo URL (supports both string and object)
+  const getPhotoUrl = (
+    photo: string | { id: number; url: string; type: string },
+  ): string => {
+    return typeof photo === "string" ? photo : photo.url;
   };
 
   return (
-    <div className="border border-gray-200 rounded-xl p-4 hover:border-emerald-300 transition-colors bg-gradient-to-br from-white to-gray-50">
+    <div
+      className={`border border-gray-200 rounded-xl p-4 hover:border-emerald-300 transition-colors bg-gradient-to-br from-white to-gray-50 ${
+        isCompact ? "cursor-pointer hover:shadow-md" : ""
+      }`}
+      onClick={
+        isCompact
+          ? () =>
+              navigate(
+                `/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
+              )
+          : undefined
+      }
+    >
       <div className="flex items-start gap-3 mb-3">
         <img
           src={assessment.inspector.avatar}
@@ -779,61 +934,42 @@ function AssessmentCard({ assessment }: { assessment: FieldAssessment }) {
             <h5 className="font-medium text-gray-800 text-sm truncate">
               {assessment.inspector.name}
             </h5>
-            {assessment.verified && (
-              <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex-shrink-0 ml-2">
-                ✓ Verified
-              </span>
-            )}
           </div>
           <p className="text-xs text-gray-500">{assessment.inspector.role}</p>
-          <p className="text-xs text-gray-400 truncate">
-            {assessment.inspector.email}
-          </p>
+          {!isCompact && (
+            <p className="text-xs text-gray-400 truncate">
+              {assessment.inspector.email}
+            </p>
+          )}
         </div>
       </div>
 
       <div className="mb-3">
+        {/* ✅ Use description (mapped from backend feedback) */}
         <p className="text-sm text-gray-700 leading-relaxed">
-          {assessment.feedback}
+          {assessment.description || assessment.feedback}
         </p>
-        {assessment.description && (
-          <>
-            <p
-              className={`text-xs text-gray-500 mt-2 leading-relaxed ${!expanded ? "line-clamp-2" : ""}`}
-            >
-              {assessment.description}
-            </p>
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="text-xs text-emerald-600 hover:text-emerald-700 font-medium mt-1"
-            >
-              {expanded ? "Show less" : "Read more"}
-            </button>
-          </>
+        {/* ✅ Type-safe discussion display */}
+        {discussionValue && discussionValue !== assessment.description && (
+          <p className="text-xs text-gray-500 mt-2 italic">
+            💬 {discussionValue}
+          </p>
         )}
       </div>
 
-      <div className="flex items-center justify-between mb-3">
-        <StarRating rating={assessment.rating} />
-        <span className="text-xs text-gray-400">
-          📅{" "}
-          {new Date(assessment.visited_at).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}
-        </span>
-      </div>
-
-      {assessment.photos && assessment.photos.length > 0 && (
+      {/* ✅ FIXED: Photos handling - support both string[] and object[] */}
+      {!isCompact && assessment.photos && assessment.photos.length > 0 && (
         <div className="flex gap-2 mb-3">
           {assessment.photos.slice(0, 3).map((photo, idx) => (
             <img
               key={idx}
-              src={photo}
+              src={getPhotoUrl(photo)}
               alt={`Evidence ${idx + 1}`}
               className="w-16 h-12 object-cover rounded-lg border border-gray-200 hover:scale-105 transition-transform cursor-pointer flex-shrink-0"
-              onClick={() => window.open(photo, "_blank")}
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(getPhotoUrl(photo), "_blank");
+              }}
             />
           ))}
           {assessment.photos.length > 3 && (
@@ -844,11 +980,28 @@ function AssessmentCard({ assessment }: { assessment: FieldAssessment }) {
         </div>
       )}
 
-      <div className="flex gap-2 pt-3 border-t border-gray-100">
-        <button className="flex-1 text-xs py-1.5 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors">
-          📧 view more
-        </button>
+      {/* ✅ FIXED: Date display using created_at instead of visited_at */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs text-gray-400">
+          📅{" "}
+          {new Date(assessment.created_at).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+        </span>
       </div>
+
+      {!isCompact && (
+        <div className="flex gap-2 pt-3 border-t border-gray-100">
+          <button
+            className="flex-1 text-xs py-1.5 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            📧 View Details
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -860,11 +1013,16 @@ function Card({
   layerKey,
   modelField,
   options,
+  inputType = "text",
+  min,
+  max,
+  step,
   onSave,
   status,
   icon = "📍",
+  helpText,
 }: CardProps) {
-  const [val, setVal] = useState(value);
+  const [val, setVal] = useState<string | number | boolean>(value);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -902,7 +1060,8 @@ function Card({
       </div>
 
       <div className="space-y-3">
-        {options ? (
+        {/* ✅ Dynamic input based on type */}
+        {inputType === "select" && options ? (
           <select
             value={String(val)}
             onChange={(e) => setVal(e.target.value)}
@@ -915,15 +1074,53 @@ function Card({
               </option>
             ))}
           </select>
+        ) : inputType === "boolean" ? (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setVal(true)}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                val === true
+                  ? "bg-emerald-500 text-white shadow-sm"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+              disabled={saving}
+            >
+              ✓ Legal
+            </button>
+            <button
+              type="button"
+              onClick={() => setVal(false)}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                val === false
+                  ? "bg-rose-500 text-white shadow-sm"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+              disabled={saving}
+            >
+              ✗ Illegal
+            </button>
+          </div>
         ) : (
           <input
-            type={typeof value === "number" ? "number" : "text"}
+            type={inputType}
             value={String(val)}
-            onChange={(e) => setVal(e.target.value)}
+            onChange={(e) =>
+              setVal(
+                inputType === "number"
+                  ? parseFloat(e.target.value) || 0
+                  : e.target.value,
+              )
+            }
+            min={min}
+            max={max}
+            step={step}
             className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-shadow"
             disabled={saving}
           />
         )}
+
+        {helpText && <p className="text-xs text-gray-400">{helpText}</p>}
 
         <button
           onClick={handleSave}

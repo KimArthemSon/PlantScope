@@ -2,6 +2,7 @@ from django.db import models
 from reforestation_areas.models import Reforestation_areas
 from soils.models import Soils
 from tree_species.models import Tree_species
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 class Sites(models.Model):
     site_id = models.BigAutoField(primary_key=True)
@@ -19,7 +20,7 @@ class Sites(models.Model):
         ('re-analysis', 'Re-Analysis'),
         ('completed', 'Completed'),
     )
-
+    
     name = models.CharField(max_length=100, default='')
     isActive = models.BooleanField(default=True)
     status = models.CharField(max_length=20, choices=status_types, default='pending')
@@ -73,11 +74,11 @@ class Site_data(models.Model):
     Safety =  models.CharField(max_length=20, choices=Safety_types, default='safe')
     isCurrent = models.BooleanField(default=True)
     legality = models.BooleanField(default=True)
+    slope = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     soil_quality = models.CharField(max_length=20, choices=Soil_quality_types, default='moderate')
-    ndvi = models.CharField(max_length=100)
     distance_to_water_source = models.FloatField()
     accessibility = models.CharField(max_length=20, choices=Accessibility_types, default='moderate')
-    wildlife_status = models.CharField(max_length=20, choices=Wildlife_status_types, default='moderate')
+    wildlife = models.CharField(max_length=20, choices=Wildlife_status_types, default='moderate')
     created_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -123,13 +124,27 @@ class Site_multicriteria(models.Model):
         ('rejected', 'Rejected'),
     )
 
-    safety_status =  models.CharField(max_length=20, choices=status_types, default='pending')
+    # Criterion Status Fields
+    safety_status = models.CharField(max_length=20, choices=status_types, default='pending')
     legality_status = models.CharField(max_length=20, choices=status_types, default='pending')
     soil_quality_status = models.CharField(max_length=20, choices=status_types, default='pending')
-    ndvi_status = models.CharField(max_length=20, choices=status_types, default='pending')
     distance_to_water_source_status = models.CharField(max_length=20, choices=status_types, default='pending')
     accessibility_status = models.CharField(max_length=20, choices=status_types, default='pending')
-    wildlife_status = models.CharField(max_length=20, choices=status_types, default='pending')
-    total_score = models.FloatField(default=0.00)
-    created_at = models.DateTimeField(auto_now_add=True)
+    wildlife_status = models.CharField(max_length=20, choices=status_types, default='pending', db_column='wildlife_status')  # Avoid conflict
+    slope_status = models.CharField(max_length=20, choices=status_types, default='pending')
 
+    # Scores and Rates
+    survival_rate = models.FloatField(
+        default=0.00,
+        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
+        help_text="Projected survival rate percentage"
+    )
+    total_score = models.FloatField(default=0.00)
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    remarks = models.TextField(blank=True, null=True, help_text="Additional notes or justification")
+
+    def __str__(self):
+        return f"Site {self.site_data.site.site_id} - Score: {self.total_score}"

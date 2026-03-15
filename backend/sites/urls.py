@@ -23,4 +23,7 @@ urlpatterns = [
     
     # ✅ NEW: Update individual multicriteria layer
     path("multicriteria/update/<int:site_data_id>/", multicriteria_views.update_multicriteria, name="update_multicriteria"),
+
+    path("update_site_coordinates/", views.update_site_coordinates, name="update_site_coordinates"),
+    path("get_site_coordinates/", views.get_site_coordinates, name="get_site_coordinates"),
 ]

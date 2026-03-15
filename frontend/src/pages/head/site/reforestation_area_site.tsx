@@ -10,6 +10,9 @@ import {
   VerifiedIcon,
   Eye,
   Leaf,
+  TreePalm,
+  LocateFixedIcon,
+  List,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -23,7 +26,10 @@ interface ReforestationArea {
   safety: string;
   polygon_coordinate: any;
   coordinate: any;
-  location: string;
+  barangay: {
+    barangay_id: number;
+    name: string;
+  };
   description: string;
   area_img: string | null;
   created_at: string;
@@ -89,7 +95,7 @@ export default function Reforestation_area_site() {
       if (!response.ok) throw new Error("Failed");
 
       const data = await response.json();
-
+      console.log(data)
       setAreas(data.data);
 
       setFilter((prev) => ({
@@ -277,7 +283,7 @@ export default function Reforestation_area_site() {
 
                     <td className="py-3 px-5">{area.name}</td>
 
-                    <td className="py-3 px-5">{area.location}</td>
+                    <td className="py-3 px-5">{area.barangay.name}</td>
 
                     <td className="py-3 px-5">
                       {area.legality === "legal"
@@ -296,22 +302,12 @@ export default function Reforestation_area_site() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/legality-and-safety/${area.reforestation_area_id}`,
-                            )
-                          }
-                          className="cursor-pointer"
-                        >
-                          <Eye size={18} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            navigate(
                               `/reforestation/site/${area.reforestation_area_id}`,
                             )
                           }
-                          className="cursor-pointer"
+                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1"
                         >
-                          <VerifiedIcon size={18} />
+                          <List size={18} />
                         </button>
                       </div>
                     </td>

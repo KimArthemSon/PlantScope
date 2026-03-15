@@ -4,7 +4,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 
 from accounts.helper import get_user_from_token
-from .models import Assigned_onsite_inspector, Field_assessment, Field_assessment_details
+from .models import Assigned_onsite_inspector, Field_assessment, Field_assessment_details,Field_assessment_multicriteria,Field_assessment_multicriteria_photos
 from barangay.models import Barangay
 from sites.models import Sites
 from soils.models import Soils
@@ -63,63 +63,36 @@ def get_field_assessments(request, assigned_onsite_inspector_id):
 
 # ---------------- Get a single field assessment ----------------
 @csrf_exempt
-def get_field_assessment(request, field_assessment_id):
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
-
-    fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
-    data = {
-        "field_assessment_id": fa.field_assessment_id,
-        "title": fa.title,
-        "legality": fa.legality,
-        "safety": fa.safety,
-        "barangay": fa.barangay.name if fa.barangay else None,
-        "coordinates": fa.coordinates,
-        "polygon_coordinates": fa.polygon_coordinates,
-        "description": fa.description,
-        "is_sent": fa.is_sent,
-        "soil_quality": fa.soil_quality,
-        "ndvi": fa.ndvi,
-        "distance_to_water_source": fa.distance_to_water_source,
-        "accessibility": fa.accessibility,
-        "wildlife_status": fa.wildlife_status,
-        "created_at": fa.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    return JsonResponse({"data": data}, status=200)
-
-
-# ---------------- Create field assessment ----------------
-@csrf_exempt
 def create_field_assessment(request):
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
 
     try:
-        data = json.loads(request.body)
+        # -------- BASIC FIELDS --------
+        title = request.POST.get("title")
+        legality = request.POST.get("legality", "pending")
+        safety = request.POST.get("safety")
+        description = request.POST.get("description", "")
+        is_sent = request.POST.get("is_sent", "True").lower() == "true"
+        slope = request.POST.get("slope")
 
-        # Required fields
-        title = data.get("title")
-        legality = bool(data.get("legality", 'pending'))
-        safety = data.get("safety", "moderate")
-        barangay_id = data.get("barangay_id")
-        coordinates = data.get("coordinates", {})
-        polygon_coordinates = data.get("polygon_coordinates", {})
-        description = data.get("description", "")
-        is_sent = data.get("is_sent", False)
-        soil_quality = data.get("soil_quality", "moderate")
-        ndvi = data.get("ndvi", "")
-        distance_to_water_source = data.get("distance_to_water_source", "")
-        accessibility = data.get("accessibility", "moderate")
-        wildlife_status = data.get("wildlife_status", "moderate")
+        coordinates = request.POST.get("coordinates")
+        polygon_coordinates = request.POST.get("polygon_coordinates")
 
-        # Optional foreign keys
-        site_id = data.get("site_id")
-        assigned_inspector_id = data.get("assigned_onsite_inspector_id")
+        soil_quality = request.POST.get("soil_quality")
+        distance_to_water_source = request.POST.get("distance_to_water_source")
+        accessibility = request.POST.get("accessibility")
+        wildlife_status = request.POST.get("wildlife_status")
 
-        # Fetch related objects
-        barangay = get_object_or_404(Barangay, barangay_id=barangay_id)
-        site = get_object_or_404(Sites, site_id=site_id) if site_id else None
-        assigned_inspector = get_object_or_404(Assigned_onsite_inspector, assigned_onsite_inspector_id=assigned_inspector_id) if assigned_inspector_id else None
+        site_id = request.POST.get("site_id")
+        assigned_inspector_id = request.POST.get("assigned_onsite_inspector_id")
+
+        site = Sites.objects.filter(site_id=site_id).first() if site_id else None
+        assigned_inspector = Assigned_onsite_inspector.objects.filter(
+            assigned_onsite_inspector_id=assigned_inspector_id
+        ).first()
+
+        # -------- CREATE FIELD ASSESSMENT --------
 
         fa = Field_assessment.objects.create(
             title=title,
@@ -128,10 +101,9 @@ def create_field_assessment(request):
             coordinates=coordinates,
             polygon_coordinates=polygon_coordinates,
             description=description,
-            barangay=barangay,
             is_sent=is_sent,
+            slope=slope,
             soil_quality=soil_quality,
-            ndvi=ndvi,
             distance_to_water_source=distance_to_water_source,
             accessibility=accessibility,
             wildlife_status=wildlife_status,
@@ -139,26 +111,60 @@ def create_field_assessment(request):
             assigned_onsite_inspector=assigned_inspector
         )
 
-        # Create details if provided
-        details_list = data.get("details", [])
-        for detail in details_list:
-            tree_id = detail.get("tree_specie_id")
-            soil_id = detail.get("soil_id")
-            tree = get_object_or_404(Tree_species, tree_species_id=tree_id) if tree_id else None
-            soil = get_object_or_404(Soils, soil_id=soil_id) if soil_id else None
+        # -------- DETAILS --------
+        details = request.POST.get("details")
 
-            Field_assessment_details.objects.create(
+        if details:
+            details = json.loads(details)
+
+            for d in details:
+                tree = Tree_species.objects.filter(
+                    tree_species_id=d.get("tree_specie_id")
+                ).first()
+
+                soil = Soils.objects.filter(
+                    soil_id=d.get("soil_id")
+                ).first()
+
+                Field_assessment_details.objects.create(
+                    field_assessment=fa,
+                    tree_specie=tree,
+                    soil=soil
+                )
+
+        # -------- MULTICRITERIA DISCUSSION --------
+
+        Field_assessment_multicriteria.objects.create(
+            field_assessment=fa,
+            legality_disccussion=request.POST.get("legality_discussion", ""),
+            slope_disccussion=request.POST.get("slope_discussion", ""),
+            safety_disccussion=request.POST.get("safety_discussion", ""),
+            soil_quality_disccussion=request.POST.get("soil_quality_discussion", ""),
+            distance_to_water_source_disccussion=request.POST.get("distance_to_water_source_discussion", ""),
+            accessibility_disccussion=request.POST.get("accessibility_discussion", ""),
+            wildlife_status_disccussion=request.POST.get("wildlife_status_discussion", "")
+        )
+
+        # -------- MULTICRITERIA PHOTOS --------
+
+        photos = request.FILES.getlist("photos")
+
+        for img in photos:
+            photo_type = request.POST.get("photo_type", "all")
+
+            Field_assessment_multicriteria_photos.objects.create(
                 field_assessment=fa,
-                tree_specie=tree,
-                soil=soil
+                multicriteria_type=photo_type,
+                img=img
             )
 
-        return JsonResponse({"message": "Field assessment created successfully", "field_assessment_id": fa.field_assessment_id})
+        return JsonResponse({
+            "message": "Field assessment created successfully",
+            "field_assessment_id": fa.field_assessment_id
+        })
 
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({"error": str(e)}, status=400)
 
 
 # ---------------- Update field assessment ----------------

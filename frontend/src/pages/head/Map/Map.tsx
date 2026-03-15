@@ -26,6 +26,7 @@ import {
   File,
   AreaChart,
 } from "lucide-react";
+import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 
 // Fix Leaflet marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -81,26 +82,45 @@ export interface ReforestationArea {
   } | null;
 
   coordinate: [number, number] | null;
-  location: string;
+  barangay: {
+    barangay_id: number;
+    name: string;
+  };
   description: string;
   area_img: File | string | null;
 }
 
+interface Barangays {
+  barangay_id: number;
+  name: string;
+  description: string;
+  coordinate: [number, number];
+}
+
 export default function Map() {
   const token = localStorage.getItem("token");
-  const ORMOCCITY: [number, number] = [11.02, 124.61];
+  let ORMOCCITY: [number, number] = [11.02, 124.61];
   const mapRef = useRef<L.Map | null>(null);
   const drawnLayerRef = useRef<any>(null); // For managing map layer
   const [classified_areas, setClassified_areas] = useState<ClassifiedArea[]>(
     [],
   );
+
+  const [barangays, setBarangays] = useState<Barangays[]>([]);
+  const [selectedBarangay, SetSelectedBarangay] = useState<[number, number]>([
+    1, 1,
+  ]);
+
   const [form, setForm] = useState({
     name: "",
     legality: "pending",
     safety: "moderate",
     polygon_coordinate: { coordinates: [] as number[][] },
     coordinate: null as number[] | null,
-    location: "Ormoc City",
+    barangay: {
+      barangay_id: 0,
+      name: "",
+    },
     description: "",
     area_img: null as File | null,
   });
@@ -130,10 +150,22 @@ export default function Map() {
   const [end, setEnd] = useState("2023-12-31");
   const [panelOpen, setPanelOpen] = useState(true);
   const [goHome, setGoHome] = useState(false);
+  const [PSalert, setPSAlert] = useState<{
+    type: "success" | "failed" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
 
   const greenIcon = new L.Icon({
     iconUrl:
       "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+  });
+  const yellowIcon = new L.Icon({
+    iconUrl:
+      "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-yellow.png",
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
     iconSize: [25, 41],
     iconAnchor: [12, 41],
@@ -265,6 +297,7 @@ export default function Map() {
 
   const handleHome = () => {
     setGoHome(true);
+    // console.log('[11.02, 124.61]: ',ORMOCCITY)
     setTimeout(() => setGoHome(false), 100);
   };
 
@@ -295,7 +328,11 @@ export default function Map() {
   const hasDrawnArea = !!drawnGeometry;
   useEffect(() => {
     get_classified_area();
+    getBarangays();
   }, []);
+  useEffect(() => {
+    console.log(barangays);
+  }, [barangays]);
 
   async function get_classified_area() {
     try {
@@ -313,6 +350,28 @@ export default function Map() {
       }
     } catch (e: any) {}
   }
+  async function getBarangays() {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/get_barangay_list/", {
+        headers: {
+          Authorization: "Bearer " + token,
+        },
+      });
+
+      const data = await res.json();
+      setBarangays(data.data);
+      if (!res.ok) {
+        alert(
+          "Failed to create area: " +
+            (data.detail || data.error || "Unknown error"),
+        );
+        return;
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Error submitting form.");
+    }
+  }
   function closeAll() {
     setIsNdviPenelOpen(false);
     setIsFormPenelOpen(false);
@@ -329,7 +388,7 @@ export default function Map() {
 
       formData.append("name", form.name);
       formData.append("description", form.description);
-      formData.append("location", form.location);
+      formData.append("barangay_id", String(form.barangay.barangay_id));
       formData.append("legality", form.legality);
       formData.append("safety", form.safety);
 
@@ -368,16 +427,22 @@ export default function Map() {
         );
         return;
       }
-
-      alert("Reforestation area created successfully!");
-
+       setPSAlert({
+        type: "success",
+        title: "Success",
+        message: data.data.message,
+      });
+     
       setForm({
         name: "",
         legality: "pending",
         safety: "moderate",
         polygon_coordinate: { coordinates: [] },
         coordinate: null,
-        location: "Ormoc City",
+        barangay: {
+          barangay_id: 0,
+          name: "",
+        },
         description: "",
         area_img: null,
       });
@@ -406,10 +471,14 @@ export default function Map() {
 
       const data = await res.json();
       setReforestation_areas(data.data); // Save areas to state
-      console.log(data.data);
     } catch (err) {
       console.error(err);
-      alert("Error fetching reforestation areas");
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Error fetching reforestation areas",
+      });
+      
     }
   }
   useEffect(() => {
@@ -418,6 +487,14 @@ export default function Map() {
 
   return (
     <div className="relative h-screen w-full">
+      {PSalert && (
+        <PlantScopeAlert
+          type={PSalert.type}
+          title={PSalert.title}
+          message={PSalert.message}
+          onClose={() => setPSAlert(null)}
+        />
+      )}
       <div className="absolute z-[1000] flex gap-1 bottom-2 border border-2 border-green-700 rounded rounded-2xl left-1/2 -translate-x-1/2 bg-white p-2 w-[40rem]">
         <button
           onClick={handleHome}
@@ -526,16 +603,35 @@ export default function Map() {
 
             {/* Location */}
             <div>
-              <label className="text-[.7rem] text-gray-600">Location</label>
-              <input
-                type="text"
-                value={form.location}
-                onChange={(e) => setForm({ ...form, location: e.target.value })}
+              <label className="text-[.7rem] text-gray-600">Barangay:</label>
+              <select
+                value={form.barangay.barangay_id || ""} // ✅ Handle empty state
+                onChange={(e) => {
+                  const selectedId = parseInt(e.target.value, 10);
+                  const selectedBarangay = barangays.find(
+                    (b) => b.barangay_id === selectedId,
+                  );
+
+                  setForm({
+                    ...form,
+                    barangay: {
+                      barangay_id: selectedId,
+                      name: selectedBarangay?.name || "", // ✅ Auto-fill name
+                    },
+                  });
+                }}
                 className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                 required
-              />
+              >
+                <option value="">-- Select Barangay --</option>{" "}
+                {/* ✅ Default option */}
+                {barangays.map((b) => (
+                  <option key={b.barangay_id} value={b.barangay_id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
             </div>
-
             {/* Coordinate */}
             <div>
               <label className="text-[.7rem] text-gray-600">
@@ -700,36 +796,33 @@ export default function Map() {
             <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
               <h2 className="text-white text-[.8rem]">Filters</h2>
             </div>
+            <div>
+              <label className="text-[.7rem] text-gray-600">Barangays</label>
 
-            <button
-              onClick={startDrawing}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-            >
-              <Pen size={16} /> Draw
-            </button>
+              <select
+                onChange={(e) => {
+                  const barangayId = parseInt(e.target.value, 10);
+                  const selectedBarangay = barangays.find(
+                    (b) => b.barangay_id === barangayId,
+                  );
 
-            <button
-              onClick={analyzeArea}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-            >
-              <CloudLightning size={16} /> Analyze
-            </button>
-
-            <button
-              onClick={cancelDrawing}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-            >
-              <Cross size={16} /> Cancel
-            </button>
-
-            <button
-              onClick={clearAnalysis}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-            >
-              <Trash size={16} /> Clear
-            </button>
+                  if (selectedBarangay && mapRef.current) {
+                    mapRef.current.flyTo(
+                      selectedBarangay.coordinate as [number, number],
+                      16,
+                    );
+                  }
+                }}
+                className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+              >
+                {barangays.map((b) => (
+                  <option key={b.barangay_id} value={b.barangay_id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-
           {/* Toggle Button */}
           <button
             onClick={() => {
@@ -807,7 +900,7 @@ export default function Map() {
                 <Popup>
                   <div className="text-sm flex flex-col gap-1">
                     <strong>{area.name}</strong>
-                    <span>Location: {area.location}</span>
+                    <span>Location: {area.barangay.name}</span>
                     <span>Safety: {area.safety}</span>
                     <span>Description: {area.description}</span>
 
@@ -821,6 +914,28 @@ export default function Map() {
                     <button className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer">
                       <AreaChart size={16} /> View Sites
                     </button>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+
+        {barangays.length > 0 &&
+          barangays.map((area) => {
+            // Skip if no coordinates or invalid
+            if (!area.coordinate || area.coordinate.length !== 2) return null;
+
+            // Ensure numbers
+            const lat = Number(area.coordinate[0]);
+            const lng = Number(area.coordinate[1]);
+            if (isNaN(lat) || isNaN(lng)) return null;
+
+            return (
+              <Marker key={area.name} position={[lat, lng]} icon={yellowIcon}>
+                <Popup>
+                  <div className="text-sm flex flex-col gap-1">
+                    <strong>{area.name}</strong>
+                    <span>Description: {area.description}</span>
                   </div>
                 </Popup>
               </Marker>

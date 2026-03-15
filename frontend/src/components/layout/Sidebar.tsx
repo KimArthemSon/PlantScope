@@ -228,7 +228,7 @@ export default function Sidebar() {
             </Link>
 
             {/* Site Verification */}
-            <Link
+            {/* <Link
               to="/site-verification"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
@@ -251,7 +251,7 @@ export default function Sidebar() {
               >
                 Site Verification
               </span>
-            </Link>
+            </Link> */}
 
             {/* Official Sites */}
             <Link

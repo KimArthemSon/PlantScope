@@ -1,5 +1,5 @@
 from django.db import models
-
+from barangay.models import Barangay
 
 # Create your models here.
 
@@ -16,7 +16,14 @@ class Reforestation_areas(models.Model):
         ('legal', 'Legal'),
         ('illegal', 'Illegal'),
     )
-
+    
+    barangay = models.ForeignKey(
+        Barangay,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='reforestation_areas'
+    )
     reforestation_area_id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=100, unique=True)
 
@@ -34,8 +41,7 @@ class Reforestation_areas(models.Model):
 
     polygon_coordinate = models.JSONField(null=True)
     coordinate = models.JSONField(null=True)
-
-    location = models.CharField(max_length=100)
+    
     description = models.CharField(max_length=255)
 
     area_img = models.ImageField(

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Trash2,
   Edit,
@@ -10,15 +9,26 @@ import {
   CloudLightningIcon,
   Map,
   Leaf,
+  Eye,
+  Droplets,
+  BarChart3,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 
+// =========================
+// INTERFACES
+// =========================
 interface SiteProgress {
   completed: number;
   rejected: number;
-  total: number;
+  total: number; // 7 layers: safety, legality, soil, water, accessibility, wildlife, slope
+}
+
+interface SiteMetrics {
+  survival_rate: number;
+  total_score: number;
 }
 
 interface Site {
@@ -27,6 +37,7 @@ interface Site {
   status: string;
   created_at: string;
   progress: SiteProgress;
+  metrics: SiteMetrics;
 }
 
 interface Filter {
@@ -66,6 +77,16 @@ export default function Sites_analysis() {
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [updateSiteName, setUpdateSiteName] = useState("");
   const [updateSiteId, setUpdateSiteId] = useState<number | null>(null);
+
+  // =========================
+  // HELPER: Get color for metrics
+  // =========================
+  const getMetricColor = (value: number, max: number) => {
+    const percent = (value / max) * 100;
+    if (percent >= 80) return "text-green-600";
+    if (percent >= 50) return "text-amber-600";
+    return "text-red-600";
+  };
 
   // =========================
   // FETCH SITES
@@ -118,7 +139,14 @@ export default function Sites_analysis() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name: newSiteName, reforestation_area_id: id }),
+        body: JSON.stringify({
+          name: newSiteName,
+          reforestation_area_id: parseInt(id),
+          coordinates: {},
+          polygon_coordinates: {},
+          total_area_planted: 0,
+          total_seedling_planted: 0,
+        }),
       });
 
       const data = await response.json();
@@ -255,6 +283,8 @@ export default function Sites_analysis() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
+
+      {/* HEADER */}
       <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3 mb-2">
@@ -264,7 +294,7 @@ export default function Sites_analysis() {
           <div className="flex items-center mt-5 mb-10 ml-auto gap-5">
             <button
               onClick={() => setIsCreateModalOpen(true)}
-               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <Plus size={20} /> Add new site
             </button>
@@ -277,9 +307,8 @@ export default function Sites_analysis() {
           </div>
         </div>
       </header>
-      <main className="flex-1 p-8 max-w-10xl">
-        {/* HEADER */}
 
+      <main className="flex-1 p-8 max-w-10xl">
         {/* CREATE SITE MODAL */}
         {isCreateModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -409,12 +438,22 @@ export default function Sites_analysis() {
           <table className="min-w-full bg-white">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
-                <th className="py-3 px-5 text-left">No</th>
-                <th className="py-3 px-5 text-left">Name</th>
-                <th className="py-3 px-5 text-left">Status</th>
-                <th className="py-3 px-5 text-left">Progress</th>
-                <th className="py-3 px-5 text-left">Created</th>
-                <th className="py-3 px-5 text-left">Actions</th>
+                <th className="py-3 px-4 text-left">No</th>
+                <th className="py-3 px-4 text-left">Name</th>
+                <th className="py-3 px-4 text-left">Status</th>
+                <th className="py-3 px-4 text-left">Progress</th>
+                <th className="py-3 px-4 text-left">
+                  <div className="flex items-center gap-1">
+                    <Droplets size={14} /> Survival
+                  </div>
+                </th>
+                <th className="py-3 px-4 text-left">
+                  <div className="flex items-center gap-1">
+                    <BarChart3 size={14} /> Score
+                  </div>
+                </th>
+                <th className="py-3 px-4 text-left">Created</th>
+                <th className="py-3 px-4 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -428,73 +467,168 @@ export default function Sites_analysis() {
                   return (
                     <tr
                       key={site.site_id}
-                      className={`${index % 2 ? "bg-[#0F4A2F0D]" : ""}`}
+                      className={`${index % 2 ? "bg-[#0F4A2F0D]" : ""} hover:bg-gray-50 transition-colors`}
                     >
-                      <td className="py-3 px-5">
+                      <td className="py-3 px-4">
                         {index + 1 + (filter.page - 1) * filter.entries}
                       </td>
-                      <td className="py-3 px-5">{site.name}</td>
-                      <td className="py-3 px-5 capitalize">{site.status}</td>
+                      <td className="py-3 px-4 font-medium">{site.name}</td>
+                      <td className="py-3 px-4 capitalize">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            site.status === "completed"
+                              ? "bg-green-100 text-green-800"
+                              : site.status === "rejected"
+                                ? "bg-red-100 text-red-800"
+                                : site.status === "official"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {site.status}
+                        </span>
+                      </td>
 
-                      <td className="py-3 px-5 w-56">
-                        <div className="flex flex-col gap-2 w-56">
-                          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                      {/* Progress */}
+                      <td className="py-3 px-4 w-40">
+                        <div className="flex flex-col gap-1">
+                          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                             <div
-                              className={`h-3 rounded-full transition-all duration-500 ${site.progress.rejected > 0 ? "bg-red-500" : "bg-green-600"}`}
+                              className={`h-2 rounded-full transition-all duration-500 ${
+                                site.progress.rejected > 0
+                                  ? "bg-red-500"
+                                  : "bg-green-600"
+                              }`}
                               style={{ width: `${percent}%` }}
                             />
                           </div>
-                          <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center justify-between text-[11px]">
                             <span className="font-medium text-gray-700">
-                              {site.progress.completed}/{site.progress.total}{" "}
-                              Completed
+                              {site.progress.completed}/{site.progress.total}
                             </span>
                             <span className="text-gray-500">
                               {Math.round(percent)}%
                             </span>
                           </div>
                           {site.progress.rejected > 0 && (
-                            <div className="text-[11px] text-red-600 font-medium">
-                              {site.progress.rejected} layer rejected
+                            <div className="text-[10px] text-red-600 font-medium">
+                              ⚠ {site.progress.rejected} rejected
                             </div>
                           )}
                         </div>
                       </td>
 
-                      <td className="py-3 px-5 text-sm text-gray-600">
-                        {site.created_at}
+                      {/* Survival Rate */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-14 bg-gray-200 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full ${
+                                site.metrics.survival_rate >= 80
+                                  ? "bg-green-500"
+                                  : site.metrics.survival_rate >= 50
+                                    ? "bg-amber-500"
+                                    : "bg-red-500"
+                              }`}
+                              style={{
+                                width: `${site.metrics.survival_rate}%`,
+                              }}
+                            />
+                          </div>
+                          <span
+                            className={`text-sm font-medium ${getMetricColor(
+                              site.metrics.survival_rate,
+                              100,
+                            )}`}
+                          >
+                            {site.metrics.survival_rate.toFixed(1)}%
+                          </span>
+                        </div>
                       </td>
 
-                      <td className="py-3 px-5 flex gap-2">
+                      {/* Total Score */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-14 bg-gray-200 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full ${
+                                site.metrics.total_score >= 80
+                                  ? "bg-green-500"
+                                  : site.metrics.total_score >= 50
+                                    ? "bg-amber-500"
+                                    : "bg-red-500"
+                              }`}
+                              style={{ width: `${site.metrics.total_score}%` }}
+                            />
+                          </div>
+                          <span
+                            className={`text-sm font-medium ${getMetricColor(
+                              site.metrics.total_score,
+                              100,
+                            )}`}
+                          >
+                            {site.metrics.total_score.toFixed(1)}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        {new Date(site.created_at).toLocaleDateString()}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3 px-4 flex gap-2">
                         <button
-                          className="text-yellow-900 cursor-pointer border border-amber-500 rounded-full p-1"
+                          className="text-amber-700 cursor-pointer border border-amber-500 rounded-full p-1 hover:bg-amber-50 transition-colors"
                           onClick={() =>
                             navigate(
                               "/analysis/multicriteria-analysis/" +
                                 site.site_id,
                             )
                           }
+                          title="Run Multicriteria Analysis"
                         >
-                          <CloudLightningIcon size={18} />
-                        </button>
-                        <button className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1">
-                          <Map size={18} />
+                          <CloudLightningIcon size={16} />
                         </button>
                         <button
-                          className="cursor-pointer"
+                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
+                          onClick={() =>
+                            navigate(
+                              `/reforestation_analysis/site_analysis/${id}/${site.site_id}`,
+                            )
+                          }
+                          title="View Site Details"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <button
+                          onClick={() =>
+                            navigate(
+                              `/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
+                            )
+                          }
+                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
+                          title="View on Map"
+                        >
+                          <Map size={16} />
+                        </button>
+                        <button
+                          className="text-gray-700 cursor-pointer border border-gray-400 rounded-full p-1 hover:bg-gray-50 transition-colors"
                           onClick={() => {
                             setUpdateSiteId(site.site_id);
                             setUpdateSiteName(site.name);
                             setIsUpdateModalOpen(true);
                           }}
+                          title="Edit Name"
                         >
-                          <Edit size={18} />
+                          <Edit size={16} />
                         </button>
                         <button
                           onClick={() => setDelete(site.site_id)}
-                          className="text-red-500 cursor-pointer"
+                          className="text-red-500 cursor-pointer border border-red-500 rounded-full p-1 hover:bg-red-50 transition-colors"
+                          title="Delete Site"
                         >
-                          <Trash2 size={18} />
+                          <Trash2 size={16} />
                         </button>
                       </td>
                     </tr>
@@ -503,10 +637,19 @@ export default function Sites_analysis() {
               ) : (
                 <tr>
                   <td
-                    colSpan={6}
-                    className="text-center py-5 text-gray-500 italic"
+                    colSpan={8}
+                    className="text-center py-10 text-gray-500 italic"
                   >
-                    No sites found
+                    <div className="flex flex-col items-center gap-2">
+                      <Leaf size={40} className="text-gray-300" />
+                      <p>No sites found</p>
+                      <button
+                        onClick={() => setIsCreateModalOpen(true)}
+                        className="text-green-600 hover:underline text-sm"
+                      >
+                        Create your first site
+                      </button>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -515,13 +658,13 @@ export default function Sites_analysis() {
         </div>
 
         {/* PAGINATION */}
-        <div className="flex items-center gap-1 mt-5">
+        <div className="flex items-center gap-1 mt-5 ">
           <button
             disabled={filter.page <= 1}
             onClick={() =>
               setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
             }
-            className="px-2 py-1 border rounded-md ml-auto"
+            className="px-2 py-1 border rounded-md ml-auto disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
           >
             <ChevronLeft size={19} />
           </button>
@@ -530,7 +673,11 @@ export default function Sites_analysis() {
               <button
                 key={p}
                 onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
-                className={`px-2 py-1 border rounded-md text-[.8rem] ${p === filter.page ? "bg-green-600 text-white" : ""}`}
+                className={`px-2 py-1 border rounded-md text-[.8rem] ${
+                  p === filter.page
+                    ? "bg-green-600 text-white"
+                    : "hover:bg-gray-50"
+                }`}
               >
                 {p}
               </button>
@@ -541,7 +688,7 @@ export default function Sites_analysis() {
             onClick={() =>
               setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
             }
-            className="px-2 py-1 border rounded-md"
+            className="px-2 py-1 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
           >
             <ChevronRight size={19} />
           </button>

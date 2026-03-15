@@ -7,18 +7,6 @@ from django.db import IntegrityError
 from .models import Reforestation_areas, Potential_sites
 
 
-# =====================================================
-# REFORESTATION AREAS CRUD
-# =====================================================
-
-# =========================
-# GET REFORESTATION AREAS (LIST + SEARCH + PAGINATION)
-# =========================
-# =========================
-# GET LIST OF REFORESTATION AREAS
-# =========================
-
-
 @csrf_exempt
 def get_all_reforestation_areas(request):
     if request.method != 'GET':
@@ -28,6 +16,14 @@ def get_all_reforestation_areas(request):
 
     data = []
     for area in areas:
+
+        barangay_data = None
+        if area.barangay:
+            barangay_data = {
+                'barangay_id': area.barangay.barangay_id,
+                'name': area.barangay.name
+            }
+
         data.append({
             'reforestation_area_id': area.reforestation_area_id,
             'name': area.name,
@@ -35,14 +31,13 @@ def get_all_reforestation_areas(request):
             'safety': area.safety,
             'polygon_coordinate': area.polygon_coordinate,
             'coordinate': area.coordinate,
-            'location': area.location,
+            'barangay': barangay_data,
             'description': area.description,
             'area_img': area.area_img.url if area.area_img else None,
             'created_at': area.created_at.isoformat(),
         })
 
     return JsonResponse({'data': data}, status=200)
-
 
 @csrf_exempt
 def get_reforestation_areas(request):
@@ -82,6 +77,14 @@ def get_reforestation_areas(request):
 
     data = []
     for area in areas[offset: offset + entries]:
+
+        barangay_data = None
+        if area.barangay:
+            barangay_data = {
+                'barangay_id': area.barangay.barangay_id,
+                'name': area.barangay.name
+            }
+
         data.append({
             'reforestation_area_id': area.reforestation_area_id,
             'name': area.name,
@@ -89,7 +92,7 @@ def get_reforestation_areas(request):
             'safety': area.safety,
             'polygon_coordinate': area.polygon_coordinate,
             'coordinate': area.coordinate,
-            'location': area.location,
+            'barangay': barangay_data,
             'description': area.description,
             'area_img': area.area_img.url if area.area_img else None,
             'created_at': area.created_at.isoformat(),
@@ -103,10 +106,6 @@ def get_reforestation_areas(request):
         'total': total
     }, status=200)
 
-
-# =========================
-# GET SINGLE REFORESTATION AREA
-# =========================
 @csrf_exempt
 def get_reforestation_area(request, reforestation_area_id):
     if request.method != 'GET':
@@ -117,6 +116,13 @@ def get_reforestation_area(request, reforestation_area_id):
         reforestation_area_id=reforestation_area_id
     )
 
+    barangay_data = None
+    if area.barangay:
+        barangay_data = {
+            'barangay_id': area.barangay.barangay_id,
+            'name': area.barangay.name
+        }
+
     data = {
         'reforestation_area_id': area.reforestation_area_id,
         'name': area.name,
@@ -124,7 +130,7 @@ def get_reforestation_area(request, reforestation_area_id):
         'safety': area.safety,
         'polygon_coordinate': area.polygon_coordinate,
         'coordinate': area.coordinate,
-        'location': area.location,
+        'barangay': barangay_data,
         'description': area.description,
         'area_img': area.area_img.url if area.area_img else None,
         'created_at': area.created_at.isoformat(),
@@ -132,10 +138,6 @@ def get_reforestation_area(request, reforestation_area_id):
 
     return JsonResponse({'data': data}, status=200)
 
-
-# =========================
-# CREATE REFORESTATION AREA
-# =========================
 @csrf_exempt
 def create_reforestation_areas(request):
     if request.method != 'POST':
@@ -145,13 +147,12 @@ def create_reforestation_areas(request):
         name = request.POST.get('name', '').strip()
         legality = request.POST.get('legality', 'pending')
         safety = request.POST.get('safety', 'danger')
-        location = request.POST.get('location', '').strip()
+        barangay_id = int(request.POST.get('barangay_id', '').strip())
         description = request.POST.get('description', '').strip()
-
         polygon_coordinate = request.POST.get('polygon_coordinate')
         coordinate = request.POST.get('coordinate')
 
-        if not name or not location:
+        if not name or not barangay_id:
             return JsonResponse({'error': 'Name and location are required'}, status=400)
 
         if polygon_coordinate:
@@ -183,7 +184,7 @@ def create_reforestation_areas(request):
             safety=safety,
             polygon_coordinate=polygon_coordinate,
             coordinate=coordinate,
-            location=location,
+            barangay_id=barangay_id,
             description=description,
             area_img=area_img
         )
@@ -192,10 +193,6 @@ def create_reforestation_areas(request):
 
     return JsonResponse({'message': 'Successfully added'}, status=201)
 
-
-# =========================
-# UPDATE REFORESTATION AREA
-# =========================
 @csrf_exempt
 def update_reforestation_areas(request, reforestation_area_id):
     if request.method not in ['PUT', 'POST']:
@@ -212,7 +209,7 @@ def update_reforestation_areas(request, reforestation_area_id):
             name = request.POST['name'].strip()
             legality = request.POST.get('legality', 'pending')
             safety = request.POST.get('safety', 'danger')
-            location = request.POST['location']
+            barangay_id = int(request.POST.get('barangay_id', '').strip())
             description = request.POST.get('description', '')
 
             polygon_coordinate = request.POST.get('polygon_coordinate')
@@ -233,7 +230,7 @@ def update_reforestation_areas(request, reforestation_area_id):
             safety = data.get('safety', 'danger')
             polygon_coordinate = data.get('polygon_coordinate')
             coordinate = data.get('coordinate')
-            location = data['location']
+            barangay_id = data['barangay_id']
             description = data['description']
 
     except (KeyError, json.JSONDecodeError):
@@ -249,16 +246,12 @@ def update_reforestation_areas(request, reforestation_area_id):
     area.safety = safety
     area.polygon_coordinate = polygon_coordinate
     area.coordinate = coordinate
-    area.location = location
+    area.barangay_id = barangay_id
     area.description = description
     area.save()
 
     return JsonResponse({'message': 'Successfully updated'}, status=200)
 
-
-# =========================
-# DELETE REFORESTATION AREA
-# =========================
 @csrf_exempt
 def delete_reforestation_areas(request, reforestation_area_id):
     if request.method != 'DELETE':
@@ -272,13 +265,11 @@ def delete_reforestation_areas(request, reforestation_area_id):
     area.delete()
 
     return JsonResponse({'message': 'Successfully deleted'}, status=200)
+
 # =====================================================
 # POTENTIAL SITES CRUD
 # =====================================================
 
-# =========================
-# GET ALL POTENTIAL SITES (NO PAGINATION)
-# =========================
 @csrf_exempt
 def get_potential_sites(request):
     if request.method != 'GET':
