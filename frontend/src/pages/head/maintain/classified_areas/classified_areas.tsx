@@ -48,7 +48,7 @@ export default function Classified_areas() {
     number | null
   >(null);
   const navigate = useNavigate();
-  
+
   const { userRole, isLoading } = useUserRole();
   const [useruserRole, setUseruserRole] = useState("");
 
@@ -58,13 +58,8 @@ export default function Classified_areas() {
       return;
     }
 
-    if (userRole === "GISSpecialist") {
-      setUseruserRole("GISS");
-      return;
-    }
-
     if (userRole === "DataManager") {
-      setUseruserRole("DataManager");
+      setUseruserRole("/DataManager");
       return;
     }
   }, [userRole]);
@@ -250,7 +245,7 @@ export default function Classified_areas() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/${useruserRole}/maintenance/classified_area_form/${area.classified_area_id}`,
+                              `${useruserRole}/maintenance/classified_area_form/${area.classified_area_id}`,
                             )
                           }
                           className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"

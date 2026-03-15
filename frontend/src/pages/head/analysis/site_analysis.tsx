@@ -275,12 +275,12 @@ export default function Sites_analysis() {
     }
 
     if (userRole === "GISSpecialist") {
-      setUseruserRole("GISS");
+      setUseruserRole("/GISS");
       return;
     }
 
     if (userRole === "DataManager") {
-      setUseruserRole("DataManager");
+      setUseruserRole("/DataManager");
       return;
     }
   }, [userRole]);
@@ -602,7 +602,7 @@ export default function Sites_analysis() {
                           className="text-amber-700 cursor-pointer border border-amber-500 rounded-full p-1 hover:bg-amber-50 transition-colors"
                           onClick={() =>
                             navigate(
-                              `/${useruserRole}/analysis/multicriteria-analysis/` +
+                              `${useruserRole}/analysis/multicriteria-analysis/` +
                                 site.site_id,
                             )
                           }
@@ -614,7 +614,7 @@ export default function Sites_analysis() {
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
                           onClick={() =>
                             navigate(
-                              `/${useruserRole}/reforestation_analysis/site_analysis/${id}/${site.site_id}`,
+                              `${useruserRole}/reforestation_analysis/site_analysis/${id}/${site.site_id}`,
                             )
                           }
                           title="View Site Details"
@@ -624,7 +624,7 @@ export default function Sites_analysis() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/${useruserRole}/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
+                              `${useruserRole}/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
                             )
                           }
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"

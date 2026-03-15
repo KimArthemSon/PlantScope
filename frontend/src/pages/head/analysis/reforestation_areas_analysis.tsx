@@ -160,7 +160,7 @@ export default function Reforestation_area_analysis() {
     setIsDeleteModalOpen(false);
   };
 
-  const { userRole, isLoading } = useUserRole();
+  const { userRole } = useUserRole();
   const [useruserRole, setUseruserRole] = useState("");
 
   useEffect(() => {
@@ -170,12 +170,12 @@ export default function Reforestation_area_analysis() {
     }
 
     if (userRole === "GISSpecialist") {
-      setUseruserRole("GISS");
+      setUseruserRole("/GISS");
       return;
     }
 
     if (userRole === "DataManager") {
-      setUseruserRole("DataManager");
+      setUseruserRole("/DataManager");
       return;
     }
   }, [userRole]);
@@ -196,7 +196,7 @@ export default function Reforestation_area_analysis() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
+      <header className="bg-linear-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3 mb-2">
             <Leaf size={32} className="text-green-300" />
@@ -325,7 +325,7 @@ export default function Reforestation_area_analysis() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
+                              `${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
                             )
                           }
                           className="cursor-pointer"
@@ -335,7 +335,7 @@ export default function Reforestation_area_analysis() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/${useruserRole}/reforestation_analysis/site_analysis/${area.reforestation_area_id}`,
+                              `${useruserRole}/reforestation_analysis/site_analysis/${area.reforestation_area_id}`,
                             )
                           }
                           className="cursor-pointer"

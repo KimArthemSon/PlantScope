@@ -5,7 +5,7 @@ import Sidebar from "./components/layout/Sidebar";
 import Analysis from "./pages/head/analysis/analysis";
 import Reforestation_areas from "./pages/head/reforestation_areas/reforestation_area";
 // import GenralMap from "./pages/general map/GeneralMap";
-import OfficailPlantingSites from "./pages/approved/OfficialPlantingSites";
+import OfficailPlantingSites from "./pages/approved/official_reforestation";
 import SiteVerification from "./pages/siteVerification/siteVerification";
 import Land_classifications from "./pages/head/maintain/land_classification";
 import Soils from "./pages/head/maintain/soils";
@@ -33,6 +33,7 @@ import Multicriteria_analysis from "./pages/head/analysis/multicriteria_analysis
 import Geo_spatial_analysis from "./pages/head/analysis/geo_spatial_analysis";
 import Sidebar_data_manager from "./components/layout/Sidebar_data_manager";
 import SidebarGISS from "./components/layout/SidebarGISSpecialist";
+import OfficialSites from "./pages/approved/OfficialSites";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -133,8 +134,12 @@ export default function App() {
           <Route path="/analysis" element={<Analysis />} />
           <Route path="/site-verification" element={<SiteVerification />} />
           <Route
-            path="/official-planting-sites"
+            path="/official-reforestation"
             element={<OfficailPlantingSites />}
+          />
+          <Route
+            path="/official-reforestation/site/:id"
+            element={<OfficialSites />}
           />
 
           <Route path="/map" element={<Map />} />
@@ -216,8 +221,12 @@ export default function App() {
             element={<Reforestation_areas />}
           />
           <Route
-            path="/DataManager/official-planting-sites"
+            path="/DataManager/official-reforestation"
             element={<OfficailPlantingSites />}
+          />
+          <Route
+            path="/DataManager/official-reforestation/site/:id"
+            element={<OfficialSites />}
           />
 
           <Route path="/DataManager/map" element={<Map />} />
@@ -274,11 +283,15 @@ export default function App() {
             path="/GISS/reforestation-areas"
             element={<Reforestation_areas />}
           />
+
           <Route
-            path="/GISS/official-planting-sites"
+            path="/GISS/official-reforestation"
             element={<OfficailPlantingSites />}
           />
-
+          <Route
+            path="/GISS/official-reforestation/site/:id"
+            element={<OfficialSites />}
+          />
           <Route path="/GISS/map" element={<Map />} />
           <Route
             path="/reports"

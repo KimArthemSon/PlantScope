@@ -8,7 +8,11 @@ import {
   User,
   CheckCheckIcon,
   VerifiedIcon,
+  Eye,
   Leaf,
+  TreePalm,
+  LocateFixedIcon,
+  List,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -41,14 +45,14 @@ interface Filter {
   safety: string;
 }
 
-export default function Reforestation_areas() {
+export default function OfficailPlantingSites() {
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [filter, setFilter] = useState<Filter>({
     search: "",
     entries: 10,
     page: 1,
     total_page: 1,
-    legality: "All",
+    legality: "legal",
     safety: "All",
   });
 
@@ -112,7 +116,7 @@ export default function Reforestation_areas() {
       if (!response.ok) throw new Error("Failed");
 
       const data = await response.json();
-
+      console.log(data);
       setAreas(data.data);
 
       setFilter((prev) => ({
@@ -137,50 +141,6 @@ export default function Reforestation_areas() {
   // =========================
   // DELETE
   // =========================
-  const setDelete = (id: number) => {
-    setDeleteId(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/delete_reforestation_areas/${deleteId}/`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Deleted",
-          message: data.message,
-        });
-
-        fetchAreas();
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.message || "Delete failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong.",
-      });
-    }
-
-    setIsDeleteModalOpen(false);
-  };
 
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
@@ -193,28 +153,13 @@ export default function Reforestation_areas() {
         />
       )}
 
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-center">
-          <div className="flex items-center gap-3 mb-2">
+      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-5 px-6 shadow-lg">
+        <div className="max-w-7xl mx-auto flex items-center">
+          <div className="flex items-center gap-3 mb-2" mr-auto>
             <Leaf size={32} className="text-green-300" />
             <h1 className="text-3xl md:text-4xl font-bold">
-              Reforestation Areas
+              Official Reforestation Areas
             </h1>
-          </div>
-          <div className="flex items-center mt-5 mb-10 ml-auto">
-            {userRole != "DataManager" && (
-              <button
-                onClick={() => navigate(`${useruserRole}/map`)}
-                className="flex items-center gap-2 bg-white hover:bg-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem]"
-              >
-                <Plus size={20} /> Add new area
-              </button>
-            )}
           </div>
         </div>
       </header>
@@ -240,25 +185,6 @@ export default function Reforestation_areas() {
             <option value={25}>25</option>
             <option value={50}>50</option>
             <option value={100}>100</option>
-          </select>
-
-          <label>Legality:</label>
-
-          <select
-            value={filter.legality}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                legality: e.target.value,
-                page: 1,
-              }))
-            }
-            className="border border-black p-2 rounded-md text-[.8rem]"
-          >
-            <option value="All">All</option>
-            <option value="legal">Legal</option>
-            <option value="pending">Pending</option>
-            <option value="illegal">Illegal</option>
           </select>
 
           <label>Safety:</label>
@@ -345,51 +271,16 @@ export default function Reforestation_areas() {
 
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
-                        {userRole != "DataManager" && (
-                          <button
-                            onClick={() =>
-                              navigate(
-                                `${useruserRole}/assign_onsite_inpsector/${area.reforestation_area_id}`,
-                              )
-                            }
-                            className="cursor-pointer"
-                          >
-                            <User size={18} />
-                          </button>
-                        )}
-                        {userRole != "DataManager" && (
-                          <button
-                            onClick={() =>
-                              navigate(
-                                `${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
-                              )
-                            }
-                            className="cursor-pointer"
-                          >
-                            <VerifiedIcon size={18} />
-                          </button>
-                        )}
-
                         <button
                           onClick={() =>
                             navigate(
-                              `${useruserRole}/maintenance/reforestation_area_form/${area.reforestation_area_id}`,
+                              `${useruserRole}/official-reforestation/site/${area.reforestation_area_id}`,
                             )
                           }
-                          className="cursor-pointer"
+                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1"
                         >
-                          <Edit size={18} />
+                          <List size={18} />
                         </button>
-                        {userRole != "DataManager" && (
-                          <button
-                            onClick={() =>
-                              setDelete(area.reforestation_area_id)
-                            }
-                            className="text-red-500 cursor-pointer"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
                       </div>
                     </td>
                   </tr>

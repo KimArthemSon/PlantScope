@@ -1,6 +1,6 @@
 // src/pages/analysis/field_assessment/index.tsx
-import { ChevronLeft, Filter, Search, Star } from "lucide-react";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { ChevronLeft, Search } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 // ============ CONFIG ============
@@ -314,7 +314,7 @@ export default function FieldAssessmentPage() {
   // Loading state
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-emerald-50">
+      <div className="flex items-center justify-center min-h-screen bg-linear-to-br from-slate-50 to-emerald-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-emerald-500 border-t-transparent mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">Loading assessments...</p>
@@ -326,7 +326,7 @@ export default function FieldAssessmentPage() {
   // Error state
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 to-emerald-50">
+      <div className="flex items-center justify-center min-h-screen bg-linear-to-br from-slate-50 to-emerald-50">
         <div className="text-center bg-white rounded-xl shadow-sm border border-red-100 p-8 max-w-md">
           <div className="text-4xl mb-4">⚠️</div>
           <h3 className="text-lg font-semibold text-red-700 mb-2">
@@ -345,9 +345,9 @@ export default function FieldAssessmentPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-emerald-50 to-teal-50">
+    <div className="min-h-screen bg-linear-to-br from-slate-50 via-emerald-50 to-teal-50">
       {/* Header */}
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-4 px-6 shadow-lg sticky top-0 z-40">
+      <header className="bg-linear-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-4 px-6 shadow-lg sticky top-0 z-40">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
             <button
@@ -495,7 +495,7 @@ function FieldAssessmentCard({ assessment }: { assessment: FieldAssessment }) {
         <img
           src={assessment.inspector.avatar}
           alt={assessment.inspector.name}
-          className="w-12 h-12 rounded-full border-2 border-white shadow-sm flex-shrink-0"
+          className="w-12 h-12 rounded-full border-2 border-white shadow-sm shrink-0"
           onError={(e) => {
             (e.target as HTMLImageElement).src =
               `https://ui-avatars.com/api/?name=${encodeURIComponent(

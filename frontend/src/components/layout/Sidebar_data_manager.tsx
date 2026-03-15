@@ -202,12 +202,12 @@ export default function Sidebar_data_manager() {
 
             {/* Official Sites */}
             <Link
-              to="/DataManager/official-planting-sites"
+              to="/DataManager/official-reforestation"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/DataManager/official-planting-sites"
+                  location.pathname === "/DataManager/official-reforestation"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }

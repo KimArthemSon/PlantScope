@@ -180,7 +180,7 @@ export default function GeoSpatialAnalysis() {
   return (
     <div className="flex w-full h-full gap-6 p-6 bg-gray-50">
       {/* LEFT PANEL */}
-      <div className="w-[420px] flex flex-col gap-6">
+      <div className="w-105 flex flex-col gap-6">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}

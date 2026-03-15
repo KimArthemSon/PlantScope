@@ -79,12 +79,12 @@ export default function Reforestation_area_site() {
     }
 
     if (userRole === "GISSpecialist") {
-      setUseruserRole("GISS");
+      setUseruserRole("/GISS");
       return;
     }
 
     if (userRole === "DataManager") {
-      setUseruserRole("DataManager");
+      setUseruserRole("/DataManager");
       return;
     }
   }, [userRole]);
@@ -323,7 +323,7 @@ export default function Reforestation_area_site() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/${useruserRole}/reforestation/site/${area.reforestation_area_id}`,
+                              `${useruserRole}/reforestation/site/${area.reforestation_area_id}`,
                             )
                           }
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1"

@@ -7,7 +7,6 @@ import {
   Cake,
   Map,
   UserX,
-  CheckCheckIcon,
   CheckCircle2Icon,
   Eye,
   EyeOff,

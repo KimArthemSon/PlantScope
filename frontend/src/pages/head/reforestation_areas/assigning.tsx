@@ -78,12 +78,12 @@ export default function Assign_onsite_inspector() {
     }
 
     if (userRole === "GISSpecialist") {
-      setUseruserRole("GISS");
+      setUseruserRole("/GISS");
       return;
     }
 
     if (userRole === "DataManager") {
-      setUseruserRole("DataManager");
+      setUseruserRole("/DataManager");
       return;
     }
   }, [userRole]);
@@ -143,7 +143,7 @@ export default function Assign_onsite_inspector() {
     }
   };
 
-  const handleCancel = () => navigate(`/${useruserRole}/reforestation-areas`);
+  const handleCancel = () => navigate(`${useruserRole}/reforestation-areas`);
 
   // -------------------------
   // SEARCH FILTERS

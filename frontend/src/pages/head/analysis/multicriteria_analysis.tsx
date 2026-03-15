@@ -364,12 +364,12 @@ export default function MulticriteriaAnalysis() {
     }
 
     if (userRole === "GISSpecialist") {
-      setUseruserRole("GISS");
+      setUseruserRole("/GISS");
       return;
     }
 
     if (userRole === "DataManager") {
-      setUseruserRole("DataManager");
+      setUseruserRole("/DataManager");
       return;
     }
   }, [userRole]);
@@ -727,7 +727,7 @@ export default function MulticriteriaAnalysis() {
                       <button
                         onClick={() =>
                           navigate(
-                            `/${useruserRole}/analysis/multicriteria-analysis/${id}/geo-spatial/`,
+                            `${useruserRole}/analysis/multicriteria-analysis/${id}/geo-spatial/`,
                           )
                         }
                         className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
@@ -840,7 +840,7 @@ export default function MulticriteriaAnalysis() {
                     <button
                       onClick={() =>
                         navigate(
-                          `/${useruserRole}/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
+                          `${useruserRole}/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
                         )
                       }
                       className="w-full mt-4 py-2.5 px-4 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors flex items-center justify-center gap-2 border border-emerald-200"
@@ -935,7 +935,7 @@ function AssessmentCard({
         isCompact
           ? () =>
               navigate(
-                `/${useruserRole}/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
+                `${useruserRole}/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
               )
           : undefined
       }

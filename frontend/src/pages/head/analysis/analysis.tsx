@@ -320,12 +320,12 @@ export default function AnalysisPage() {
     }
 
     if (userRole === "GISSpecialist") {
-      setUseruserRole("GISS");
+      setUseruserRole("/GISS");
       return;
     }
 
     if (userRole === "DataManager") {
-      setUseruserRole("DataManager");
+      setUseruserRole("/DataManager");
       return;
     }
   }, [userRole]);
@@ -401,7 +401,7 @@ export default function AnalysisPage() {
               {/* ✅ Fixed: Using Next.js Link component */}
               <button
                 onClick={() =>
-                  navigate(`/${useruserRole}/reforestation_area_analysis`)
+                  navigate(`${useruserRole}/reforestation_area_analysis`)
                 }
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm self-start sm:self-auto transition-colors text-white bg-[#0F4A2F] hover:bg-[#1a6b44]"
               >
