@@ -8,6 +8,7 @@ import {
   X,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
+import { useUserRole } from "@/hooks/authorization";
 
 const API = "http://127.0.0.1:8000/api";
 

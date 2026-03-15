@@ -11,6 +11,7 @@ import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "@/components/layout/loaderSmall";
+import { useUserRole } from "@/hooks/authorization";
 
 interface ClassifiedArea {
   classified_area_id: number;
@@ -46,8 +47,27 @@ export default function Classified_areas() {
   const [classifiedAreaIdDelete, setClassifiedAreaIdDelete] = useState<
     number | null
   >(null);
-
   const navigate = useNavigate();
+  
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("GISS");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
   const token = localStorage.getItem("token");
 
   // Fetch classified areas
@@ -139,7 +159,7 @@ export default function Classified_areas() {
           <div className="flex items-center mt-5 mb-10 ml-auto">
             <button
               onClick={() => navigate("/maintenance/classified_area_form/")}
-               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <Plus size={20} /> Add new classified area
             </button>
@@ -230,7 +250,7 @@ export default function Classified_areas() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/maintenance/classified_area_form/${area.classified_area_id}`,
+                              `/${useruserRole}/maintenance/classified_area_form/${area.classified_area_id}`,
                             )
                           }
                           className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"

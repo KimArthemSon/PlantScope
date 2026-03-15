@@ -15,6 +15,7 @@ import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
+import { useUserRole } from "@/hooks/authorization";
 
 interface ReforestationArea {
   reforestation_area_id: number;
@@ -159,6 +160,26 @@ export default function Reforestation_area_analysis() {
     setIsDeleteModalOpen(false);
   };
 
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("GISS");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
+
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
       {PSalert && (
@@ -186,7 +207,7 @@ export default function Reforestation_area_analysis() {
           <div className="flex items-center mt-5 mb-10 ml-auto">
             <button
               onClick={() => navigate(-1)}
-               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <ChevronLeft size={20} />
             </button>
@@ -304,7 +325,7 @@ export default function Reforestation_area_analysis() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/legality-and-safety/${area.reforestation_area_id}`,
+                              `/${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
                             )
                           }
                           className="cursor-pointer"
@@ -314,7 +335,7 @@ export default function Reforestation_area_analysis() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/reforestation_analysis/site_analysis/${area.reforestation_area_id}`,
+                              `/${useruserRole}/reforestation_analysis/site_analysis/${area.reforestation_area_id}`,
                             )
                           }
                           className="cursor-pointer"

@@ -1,3 +1,4 @@
+import { useUserRole } from "@/hooks/authorization";
 import { ChevronLeft, MapIcon } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -353,6 +354,25 @@ export default function MulticriteriaAnalysis() {
     },
     [id, token],
   );
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("GISS");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
 
   // Fetch site data from backend
   useEffect(() => {
@@ -707,7 +727,7 @@ export default function MulticriteriaAnalysis() {
                       <button
                         onClick={() =>
                           navigate(
-                            `/analysis/multicriteria-analysis/${id}/geo-spatial/`,
+                            `/${useruserRole}/analysis/multicriteria-analysis/${id}/geo-spatial/`,
                           )
                         }
                         className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
@@ -812,6 +832,7 @@ export default function MulticriteriaAnalysis() {
                     assessment={recentAssessment}
                     isCompact
                     selectedLayer={selectedLayer}
+                    useruserRole={useruserRole}
                   />
 
                   {/* Show "View All" button if more than 1 assessment */}
@@ -819,7 +840,7 @@ export default function MulticriteriaAnalysis() {
                     <button
                       onClick={() =>
                         navigate(
-                          `/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
+                          `/${useruserRole}/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
                         )
                       }
                       className="w-full mt-4 py-2.5 px-4 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors flex items-center justify-center gap-2 border border-emerald-200"
@@ -876,13 +897,15 @@ export default function MulticriteriaAnalysis() {
 interface AssessmentCardProps {
   assessment: FieldAssessment;
   isCompact?: boolean;
-  selectedLayer: string; // ✅ Required for navigation & discussion lookup
+  selectedLayer: string;
+  useruserRole: string; // ✅ Required for navigation & discussion lookup
 }
 
 function AssessmentCard({
   assessment,
   isCompact = false,
   selectedLayer,
+  useruserRole,
 }: AssessmentCardProps) {
   const [expanded, setExpanded] = useState(!isCompact);
   const navigate = useNavigate();
@@ -912,7 +935,7 @@ function AssessmentCard({
         isCompact
           ? () =>
               navigate(
-                `/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
+                `/${useruserRole}/analysis/multicriteria-analysis/${id}/field_assessment/${selectedLayer}`,
               )
           : undefined
       }

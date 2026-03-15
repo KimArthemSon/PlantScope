@@ -7,6 +7,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polygon } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { useNavigate, useParams } from "react-router-dom";
 import { useRef } from "react";
+import { useUserRole } from "@/hooks/authorization";
 
 interface Polygon {
   coordinates: [number, number][];
@@ -51,6 +52,27 @@ export default function Classified_area_form() {
       type: "POLYGON",
     },
   });
+
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
+ 
   const token = localStorage.getItem("token");
   const [loading, setLoading] = useState(false);
   const inputWrapper =
@@ -132,7 +154,7 @@ export default function Classified_area_form() {
       }
 
       if (data.data.length === 0) {
-        navigate("/maintenance/Classified_areas");
+        navigate(`/${useruserRole}/maintenance/Classified_areas`);
         return;
       }
 
@@ -193,7 +215,7 @@ export default function Classified_area_form() {
         message: "Successfully Created",
       });
       setTimeout(() => {
-        navigate("/maintenance/Classified_areas");
+        navigate(`/${useruserRole}/maintenance/Classified_areas`);
       }, 2000);
     } catch (e: any) {
       setLoading(false);
@@ -239,7 +261,7 @@ export default function Classified_area_form() {
         message: "Successfully Updated",
       });
       setTimeout(() => {
-        navigate("/maintenance/Classified_areas");
+        navigate(`/${useruserRole}/maintenance/Classified_areas`);
       }, 2000);
     } catch (e: any) {
       setLoading(false);
@@ -489,7 +511,7 @@ export default function Classified_area_form() {
                 className="bg-[#0F4A2F] p-2 min-w-30 rounded-lg text-white border border-[#0F4A2F] text-[.8rem] cursor-Map hover:text-[#0F4A2F] hover:bg-[#ffffff]"
                 onClick={(e) => {
                   e.preventDefault();
-                  navigate("/maintenance/Classified_areas");
+                  navigate(`/${useruserRole}/maintenance/Classified_areas`);
                 }}
               >
                 Cancel

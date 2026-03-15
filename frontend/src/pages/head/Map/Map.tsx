@@ -27,6 +27,7 @@ import {
   AreaChart,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
+import { useUserRole } from "@/hooks/authorization";
 
 // Fix Leaflet marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -170,6 +171,26 @@ export default function Map() {
     iconSize: [25, 41],
     iconAnchor: [12, 41],
   });
+
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("GISS");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
 
   // Initialize Geoman drawing
   useEffect(() => {
@@ -427,12 +448,12 @@ export default function Map() {
         );
         return;
       }
-       setPSAlert({
+      setPSAlert({
         type: "success",
         title: "Success",
         message: data.data.message,
       });
-     
+
       setForm({
         name: "",
         legality: "pending",
@@ -478,7 +499,6 @@ export default function Map() {
         title: "Error",
         message: "Error fetching reforestation areas",
       });
-      
     }
   }
   useEffect(() => {
@@ -504,290 +524,306 @@ export default function Map() {
         </button>
 
         {/* NDVI PANEL */}
-        <div className=" relative ml-auto ">
-          {isNdviPenelOpen && (
-            <div className="absolute top-[-240px] w-[12rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md">
-              <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
-                <h1 className="text-white [word-spacing:10px] ">NDVI</h1>
-              </div>
 
-              <div>
-                <label className="text-[.7rem] text-gray-600">Start Date</label>
-                <input
-                  type="date"
-                  value={start}
-                  onChange={(e) => setStart(e.target.value)}
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                />
-              </div>
+        {userRole != "DataManager" && (
+          <div className=" relative ml-auto ">
+            {isNdviPenelOpen && (
+              <div className="absolute top-[-240px] w-[12rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md">
+                <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
+                  <h1 className="text-white [word-spacing:10px] ">NDVI</h1>
+                </div>
 
-              <div>
-                <label className="text-[.7rem] text-gray-600">End Date</label>
-                <input
-                  type="date"
-                  value={end}
-                  onChange={(e) => setEnd(e.target.value)}
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-              <div className="flex flex-row gap-1 mt-2">
-                <button
-                  onClick={renderNDVI}
-                  className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
-                >
-                  <CloudLightning size={16} /> Run
-                </button>
-                <button
-                  onClick={() => setShowNDVI(!showNDVI)}
-                  className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
-                >
-                  <Eye size={16} /> {showNDVI ? "Hide" : "Show"}
-                </button>
-              </div>
-            </div>
-          )}
-          <button
-            onClick={() => {
-              if (isNdviPenelOpen) {
-                closeAll();
-              } else {
-                closeAll();
-                setIsNdviPenelOpen(!isNdviPenelOpen);
-              }
-            }}
-            className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-          >
-            <Activity size={16} /> NDVI
-          </button>
-        </div>
-        {/* Form PANEL */}
-        <div className=" relative ">
-          <form
-            onSubmit={onSubmit}
-            className={`absolute top-[-485px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
-              isFormPenelOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-            }`}
-          >
-            <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
-              <h2 className="text-white text-[.8rem]">
-                Create Reforestation Area
-              </h2>
-            </div>
+                <div>
+                  <label className="text-[.7rem] text-gray-600">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={start}
+                    onChange={(e) => setStart(e.target.value)}
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
 
-            {/* Name */}
-            <div>
-              <label className="text-[.7rem] text-gray-600">Name</label>
-              <input
-                type="text"
-                placeholder="Ex: RS_1"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                required
-              />
-            </div>
-
-            {/* Description */}
-            <div>
-              <label className="text-[.7rem] text-gray-600">Description</label>
-              <input
-                type="text"
-                placeholder="Ex: Area"
-                value={form.description}
-                onChange={(e) =>
-                  setForm({ ...form, description: e.target.value })
+                <div>
+                  <label className="text-[.7rem] text-gray-600">End Date</label>
+                  <input
+                    type="date"
+                    value={end}
+                    onChange={(e) => setEnd(e.target.value)}
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+                <div className="flex flex-row gap-1 mt-2">
+                  <button
+                    onClick={renderNDVI}
+                    className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
+                  >
+                    <CloudLightning size={16} /> Run
+                  </button>
+                  <button
+                    onClick={() => setShowNDVI(!showNDVI)}
+                    className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
+                  >
+                    <Eye size={16} /> {showNDVI ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+            )}
+            <button
+              onClick={() => {
+                if (isNdviPenelOpen) {
+                  closeAll();
+                } else {
+                  closeAll();
+                  setIsNdviPenelOpen(!isNdviPenelOpen);
                 }
-                className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-              />
-            </div>
+              }}
+              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+            >
+              <Activity size={16} /> NDVI
+            </button>
+          </div>
+        )}
+        {/* Create PANEL */}
+        {userRole != "DataManager" && (
+          <div className=" relative ">
+            <form
+              onSubmit={onSubmit}
+              className={`absolute top-[-485px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
+                isFormPenelOpen
+                  ? "opacity-100"
+                  : "opacity-0 pointer-events-none"
+              }`}
+            >
+              <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
+                <h2 className="text-white text-[.8rem]">
+                  Create Reforestation Area
+                </h2>
+              </div>
 
-            {/* Location */}
-            <div>
-              <label className="text-[.7rem] text-gray-600">Barangay:</label>
-              <select
-                value={form.barangay.barangay_id || ""} // ✅ Handle empty state
-                onChange={(e) => {
-                  const selectedId = parseInt(e.target.value, 10);
-                  const selectedBarangay = barangays.find(
-                    (b) => b.barangay_id === selectedId,
-                  );
-
-                  setForm({
-                    ...form,
-                    barangay: {
-                      barangay_id: selectedId,
-                      name: selectedBarangay?.name || "", // ✅ Auto-fill name
-                    },
-                  });
-                }}
-                className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                required
-              >
-                <option value="">-- Select Barangay --</option>{" "}
-                {/* ✅ Default option */}
-                {barangays.map((b) => (
-                  <option key={b.barangay_id} value={b.barangay_id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {/* Coordinate */}
-            <div>
-              <label className="text-[.7rem] text-gray-600">
-                Coordinate (Lat, Lng)
-              </label>
-
-              <div className="flex gap-2">
+              {/* Name */}
+              <div>
+                <label className="text-[.7rem] text-gray-600">Name</label>
                 <input
                   type="text"
-                  value={
-                    form.coordinate
-                      ? `${form.coordinate[0]}, ${form.coordinate[1]}`
-                      : ""
+                  placeholder="Ex: RS_1"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                  required
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="text-[.7rem] text-gray-600">
+                  Description
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Area"
+                  value={form.description}
+                  onChange={(e) =>
+                    setForm({ ...form, description: e.target.value })
                   }
+                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              {/* Location */}
+              <div>
+                <label className="text-[.7rem] text-gray-600">Barangay:</label>
+                <select
+                  value={form.barangay.barangay_id || ""} // ✅ Handle empty state
                   onChange={(e) => {
-                    const [lat, lng] = e.target.value.split(",").map(Number);
+                    const selectedId = parseInt(e.target.value, 10);
+                    const selectedBarangay = barangays.find(
+                      (b) => b.barangay_id === selectedId,
+                    );
 
                     setForm({
                       ...form,
-                      coordinate: [lat, lng],
+                      barangay: {
+                        barangay_id: selectedId,
+                        name: selectedBarangay?.name || "", // ✅ Auto-fill name
+                      },
                     });
                   }}
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                   required
-                />
-
-                <button
-                  type="button"
-                  onClick={startMarkerPlacement}
-                  className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-full text-[.7rem] cursor-pointer"
                 >
-                  <Pointer size={16} /> Marker
+                  <option value="">-- Select Barangay --</option>{" "}
+                  {/* ✅ Default option */}
+                  {barangays.map((b) => (
+                    <option key={b.barangay_id} value={b.barangay_id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {/* Coordinate */}
+              <div>
+                <label className="text-[.7rem] text-gray-600">
+                  Coordinate (Lat, Lng)
+                </label>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={
+                      form.coordinate
+                        ? `${form.coordinate[0]}, ${form.coordinate[1]}`
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const [lat, lng] = e.target.value.split(",").map(Number);
+
+                      setForm({
+                        ...form,
+                        coordinate: [lat, lng],
+                      });
+                    }}
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    onClick={startMarkerPlacement}
+                    className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-full text-[.7rem] cursor-pointer"
+                  >
+                    <Pointer size={16} /> Marker
+                  </button>
+                </div>
+              </div>
+
+              {/* Safety */}
+              <div>
+                <label className="text-[.7rem] text-gray-600">
+                  Safety Level
+                </label>
+                <select
+                  value={form.safety}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      safety: e.target.value as SafetyType,
+                    })
+                  }
+                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="safe">Low Risk</option>
+                  <option value="slightly">Slightly Unsafe</option>
+                  <option value="moderate">Moderate Risk</option>
+                  <option value="danger">High Risk</option>
+                </select>
+              </div>
+
+              {/* Image */}
+              <div>
+                <label className="text-[.7rem] text-gray-600">Area Image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      area_img: e.target.files?.[0] || null,
+                    })
+                  }
+                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div className="flex flex-row gap-1 mt-2">
+                <button
+                  type="submit"
+                  className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
+                >
+                  <File size={16} /> Submit
                 </button>
               </div>
-            </div>
+            </form>
 
-            {/* Safety */}
-            <div>
-              <label className="text-[.7rem] text-gray-600">Safety Level</label>
-              <select
-                value={form.safety}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    safety: e.target.value as SafetyType,
-                  })
+            <button
+              onClick={() => {
+                if (isFormPenelOpen) {
+                  closeAll();
+                } else {
+                  closeAll();
+                  setIsFormPenelOpen(!isFormPenelOpen);
                 }
-                className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-              >
-                <option value="safe">Low Risk</option>
-                <option value="slightly">Slightly Unsafe</option>
-                <option value="moderate">Moderate Risk</option>
-                <option value="danger">High Risk</option>
-              </select>
-            </div>
-
-            {/* Image */}
-            <div>
-              <label className="text-[.7rem] text-gray-600">Area Image</label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    area_img: e.target.files?.[0] || null,
-                  })
-                }
-                className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-              />
-            </div>
-
-            <div className="flex flex-row gap-1 mt-2">
-              <button
-                type="submit"
-                className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
-              >
-                <File size={16} /> Submit
-              </button>
-            </div>
-          </form>
-
-          <button
-            onClick={() => {
-              if (isFormPenelOpen) {
-                closeAll();
-              } else {
-                closeAll();
-                setIsFormPenelOpen(!isFormPenelOpen);
-              }
-            }}
-            className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-          >
-            <Cross size={16} /> Create
-          </button>
-        </div>
-
-        <div className="relative">
-          <div
-            className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
-              isDrawPenelOpen
-                ? "opacity-100 pointer-events-auto"
-                : "opacity-0 pointer-events-none"
-            }`}
-          >
-            <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
-              <h2 className="text-white text-[.8rem]">Draw Tools</h2>
-            </div>
-
-            <button
-              onClick={startDrawing}
+              }}
               className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
             >
-              <Pen size={16} /> Draw
-            </button>
-
-            <button
-              onClick={analyzeArea}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-            >
-              <CloudLightning size={16} /> Analyze
-            </button>
-
-            <button
-              onClick={cancelDrawing}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-            >
-              <Cross size={16} /> Cancel
-            </button>
-
-            <button
-              onClick={clearAnalysis}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-            >
-              <Trash size={16} /> Clear
+              <Cross size={16} /> Create
             </button>
           </div>
+        )}
+        {/* Draw PANEL */}
+        {userRole != "DataManager" && (
+          <div className="relative">
+            <div
+              className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
+                isDrawPenelOpen
+                  ? "opacity-100 pointer-events-auto"
+                  : "opacity-0 pointer-events-none"
+              }`}
+            >
+              <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
+                <h2 className="text-white text-[.8rem]">Draw Tools</h2>
+              </div>
 
-          {/* Toggle Button */}
-          <button
-            onClick={() => {
-              if (isDrawPenelOpen) {
-                closeAll();
-              } else {
-                closeAll();
-                setIsDrawPenelOpen(!isDrawPenelOpen);
-              }
-            }}
-            className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-          >
-            <Pen size={16} /> Draw Tools
-          </button>
-        </div>
+              <button
+                onClick={startDrawing}
+                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+              >
+                <Pen size={16} /> Draw
+              </button>
+
+              <button
+                onClick={analyzeArea}
+                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+              >
+                <CloudLightning size={16} /> Analyze
+              </button>
+
+              <button
+                onClick={cancelDrawing}
+                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+              >
+                <Cross size={16} /> Cancel
+              </button>
+
+              <button
+                onClick={clearAnalysis}
+                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+              >
+                <Trash size={16} /> Clear
+              </button>
+            </div>
+
+            {/* Toggle Button */}
+            <button
+              onClick={() => {
+                if (isDrawPenelOpen) {
+                  closeAll();
+                } else {
+                  closeAll();
+                  setIsDrawPenelOpen(!isDrawPenelOpen);
+                }
+              }}
+              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+            >
+              <Pen size={16} /> Draw Tools
+            </button>
+          </div>
+        )}
+        {/* Filter PANEL */}
         <div className="relative">
           <div
-            className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
+            className={`absolute top-[-250px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
               isFilterPenelOpen
                 ? "opacity-100 pointer-events-auto"
                 : "opacity-0 pointer-events-none"

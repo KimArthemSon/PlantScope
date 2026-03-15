@@ -104,13 +104,11 @@ export default function Login() {
         }
 
         setTimeout(() => {
-          if (data.user_role === "FieldOfficer") {
-            navigate("/dashboard/Field-Officer");
+          if (data.user_role === "DataManager") {
+            navigate("/dashboard-data-manager");
           } else if (data.user_role === "CityENROHead") {
             navigate("/dashboard");
-          } else if (data.user_role === "AFA") {
-            navigate("/dashboard/AFA");
-          } else {
+          } else if (data.user_role === "GISSpecialist") {
             navigate("/dashboard/GISS");
           }
         }, 3000);

@@ -14,6 +14,7 @@ import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
+import { useUserRole } from "@/hooks/authorization";
 
 interface ReforestationArea {
   reforestation_area_id: number;
@@ -63,6 +64,26 @@ export default function Reforestation_areas() {
 
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
+
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("GISS");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
 
   // =========================
   // FETCH AREAS
@@ -186,12 +207,14 @@ export default function Reforestation_areas() {
             </h1>
           </div>
           <div className="flex items-center mt-5 mb-10 ml-auto">
-            <button
-              onClick={() => navigate("/map")}
-              className="flex items-center gap-2 bg-white hover:bg-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem]"
-            >
-              <Plus size={20} /> Add new area
-            </button>
+            {userRole != "DataManager" && (
+              <button
+                onClick={() => navigate(`/${useruserRole}/map`)}
+                className="flex items-center gap-2 bg-white hover:bg-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem]"
+              >
+                <Plus size={20} /> Add new area
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -322,43 +345,51 @@ export default function Reforestation_areas() {
 
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
+                        {userRole != "DataManager" && (
+                          <button
+                            onClick={() =>
+                              navigate(
+                                `/${useruserRole}/assign_onsite_inpsector/${area.reforestation_area_id}`,
+                              )
+                            }
+                            className="cursor-pointer"
+                          >
+                            <User size={18} />
+                          </button>
+                        )}
+                        {userRole != "DataManager" && (
+                          <button
+                            onClick={() =>
+                              navigate(
+                                `/${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
+                              )
+                            }
+                            className="cursor-pointer"
+                          >
+                            <VerifiedIcon size={18} />
+                          </button>
+                        )}
+
                         <button
                           onClick={() =>
                             navigate(
-                              `/assign_onsite_inpsector/${area.reforestation_area_id}`,
-                            )
-                          }
-                          className="cursor-pointer"
-                        >
-                          <User size={18} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            navigate(
-                              `/legality-and-safety/${area.reforestation_area_id}`,
-                            )
-                          }
-                          className="cursor-pointer"
-                        >
-                          <VerifiedIcon size={18} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            navigate(
-                              `/maintenance/reforestation_area_form/${area.reforestation_area_id}`,
+                              `/${useruserRole}/maintenance/reforestation_area_form/${area.reforestation_area_id}`,
                             )
                           }
                           className="cursor-pointer"
                         >
                           <Edit size={18} />
                         </button>
-
-                        <button
-                          onClick={() => setDelete(area.reforestation_area_id)}
-                          className="text-red-500 cursor-pointer"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        {userRole != "DataManager" && (
+                          <button
+                            onClick={() =>
+                              setDelete(area.reforestation_area_id)
+                            }
+                            className="text-red-500 cursor-pointer"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

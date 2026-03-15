@@ -18,6 +18,7 @@ import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
+import { useUserRole } from "@/hooks/authorization";
 
 interface ReforestationArea {
   reforestation_area_id: number;
@@ -68,6 +69,26 @@ export default function Reforestation_area_site() {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("GISS");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
+
   // =========================
   // FETCH AREAS
   // =========================
@@ -95,7 +116,7 @@ export default function Reforestation_area_site() {
       if (!response.ok) throw new Error("Failed");
 
       const data = await response.json();
-      console.log(data)
+      console.log(data);
       setAreas(data.data);
 
       setFilter((prev) => ({
@@ -302,7 +323,7 @@ export default function Reforestation_area_site() {
                         <button
                           onClick={() =>
                             navigate(
-                              `/reforestation/site/${area.reforestation_area_id}`,
+                              `/${useruserRole}/reforestation/site/${area.reforestation_area_id}`,
                             )
                           }
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1"

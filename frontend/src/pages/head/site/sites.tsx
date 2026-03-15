@@ -15,6 +15,7 @@ import {
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
+import { useUserRole } from "@/hooks/authorization";
 
 interface SiteProgress {
   completed: number;
@@ -115,6 +116,27 @@ export default function SitesForArea() {
   // =========================
   // CREATE SITE
   // =========================
+
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("GISS");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
+
   const handleCreateSite = async () => {
     if (!newSiteName || !id) return;
 
@@ -290,14 +312,18 @@ export default function SitesForArea() {
             <h1 className="text-3xl md:text-4xl font-bold">Sites</h1>
           </div>
           <div className="flex items-center mt-5 mb-5 ml-auto">
-            <button
-              onClick={() =>
-                navigate(`/reforestation_analysis/site_analysis/${id}`)
-              }
-              className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
-            >
-              <Plus size={20} /> Add new site
-            </button>
+            {userRole != "DataManager" && (
+              <button
+                onClick={() =>
+                  navigate(
+                    `/${useruserRole}/reforestation_analysis/site_analysis/${id}`,
+                  )
+                }
+                className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+              >
+                <Plus size={20} /> Add new site
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -577,24 +603,29 @@ export default function SitesForArea() {
                         >
                           <Eye size={16} />
                         </button>
-                        <button
-                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
-                          onClick={() =>
-                            navigate(
-                              `/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
-                            )
-                          }
-                          title="Analyze Site"
-                        >
-                          <Map size={16} />
-                        </button>
-                        <button
-                          className="text-red-600 cursor-pointer border border-red-600 rounded-full p-1 hover:bg-red-50 transition-colors"
-                          onClick={() => setDelete(site.site_id)}
-                          title="Delete Site"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {userRole != "DataManager" && (
+                          <button
+                            className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
+                            onClick={() =>
+                              navigate(
+                                `/${useruserRole}/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
+                              )
+                            }
+                            title="Analyze Site"
+                          >
+                            <Map size={16} />
+                          </button>
+                        )}
+
+                        {userRole != "DataManager" && (
+                          <button
+                            className="text-red-600 cursor-pointer border border-red-600 rounded-full p-1 hover:bg-red-50 transition-colors"
+                            onClick={() => setDelete(site.site_id)}
+                            title="Delete Site"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

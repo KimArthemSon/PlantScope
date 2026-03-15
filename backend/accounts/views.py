@@ -114,6 +114,7 @@ def login_user(request):
         return JsonResponse({'error': 'Missing fields, Please try again'}, status=400)
     if is_lock(ip):
             return JsonResponse({'error': 'Too many failed attempts. Try again later.'}, status=403)
+    
     try:
         user = User.objects.get(email=email)
     except User.DoesNotExist:

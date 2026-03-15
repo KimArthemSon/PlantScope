@@ -26,15 +26,16 @@ import { useAuthorize } from "../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
 
 import "../../global css/sidebarScrollbar.css";
+import MaintenanceDropdown_Dm from "./maintenance/MaintenanceDropdown_Dm";
 
-export default function SidebarGISS() {
+export default function Sidebar_data_manager() {
   const location = useLocation();
   const [isLogout, setIsLogout] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const navigate = useNavigate();
 
-  const { isAuthorized, isLoading } = useAuthorize("GISSpecialist");
+  const { isAuthorized, isLoading } = useAuthorize("DataManager");
 
   if (isLoading) {
     return <PlantScopeLoader />;
@@ -92,7 +93,7 @@ export default function SidebarGISS() {
           <nav className="mt-1 gap-1 flex flex-col sidebar-scrollbar flex-1">
             {/* Dashboard */}
             <Link
-              to="/dashboard/GISS"
+              to="/dashboard-data-manager"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
@@ -118,12 +119,12 @@ export default function SidebarGISS() {
 
             {/* Field Selection */}
             <Link
-              to="/GISS/map"
+              to="/DataManager/map"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/GISS/map"
+                  location.pathname === "/DataManager/map"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }
@@ -142,12 +143,12 @@ export default function SidebarGISS() {
               </span>
             </Link>
             <Link
-              to="/GISS/reforestation-areas"
+              to="/DataManager/reforestation-areas"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/GISS/reforestation-areas"
+                  location.pathname === "/DataManager/reforestation-areas"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }
@@ -166,14 +167,20 @@ export default function SidebarGISS() {
               </span>
             </Link>
 
+            {/* Maintenance Dropdown */}
+            <MaintenanceDropdown_Dm
+              expanded={expanded}
+              maintenanceOpen={maintenanceOpen}
+              setMaintenanceOpen={setMaintenanceOpen}
+            />
             {/* Analysis */}
             <Link
-              to="/GISS/reforestation_area_site"
+              to="/DataManager/reforestation_area_site"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/GISS/reforestation_area_site"
+                  location.pathname === "/DataManager/reforestation_area_site"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }
@@ -192,38 +199,15 @@ export default function SidebarGISS() {
               </span>
             </Link>
             {/* Site */}
-            <Link
-              to="/GISS/analysis"
-              className={`
-                flex flex-row items-center transition-all duration-200 rounded-md
-                px-6 py-3 justify-center
-                ${
-                  location.pathname === "/analysis"
-                    ? "bg-white/25 text-white shadow-inner"
-                    : "text-white/80 hover:bg-white/10 hover:text-white"
-                }
-              `}
-            >
-              <span className="mr-auto">
-                <BarChart3 size={20} />
-              </span>
-              <span
-                className={`
-                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
-                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
-                `}
-              >
-                Analysis
-              </span>
-            </Link>
+
             {/* Official Sites */}
             <Link
-              to="/GISS/official-planting-sites"
+              to="/DataManager/official-planting-sites"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/GISS/official-planting-sites"
+                  location.pathname === "/DataManager/official-planting-sites"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }
@@ -244,12 +228,12 @@ export default function SidebarGISS() {
 
             {/* Reports */}
             <Link
-              to="/GISS/reports"
+              to="/DataManager/reports"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/GISS/reports"
+                  location.pathname === "/DataManager/reports"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }

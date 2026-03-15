@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   PieChart,
   Pie,
@@ -27,6 +27,7 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useNavigate } from "react-router-dom";
+import { useUserRole } from "@/hooks/authorization";
 
 // ===============================
 // MOCK DATA
@@ -309,6 +310,25 @@ export default function AnalysisPage() {
     (acc, a) => acc + a.pending,
     0,
   );
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("GISS");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-green-50/30 to-gray-50">
@@ -380,7 +400,9 @@ export default function AnalysisPage() {
               </div>
               {/* ✅ Fixed: Using Next.js Link component */}
               <button
-                onClick={() => navigate("/reforestation_area_analysis")}
+                onClick={() =>
+                  navigate(`/${useruserRole}/reforestation_area_analysis`)
+                }
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm self-start sm:self-auto transition-colors text-white bg-[#0F4A2F] hover:bg-[#1a6b44]"
               >
                 View All Areas <ChevronRight size={16} />

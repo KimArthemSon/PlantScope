@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 
-type UserRole = "CityENROHead" | "FieldOfficer" | "AFA" | "GISSpecialist";
+export type UserRole =
+  | "CityENROHead"
+  | "DataManager"
+  | "treeGrowers"
+  | "GISSpecialist";
 
 export const useAuthorize = (requiredRole?: UserRole) => {
   const [isAuthorized, setIsAuthorized] = useState<boolean>(false);
@@ -49,4 +53,47 @@ export const useAuthorize = (requiredRole?: UserRole) => {
   }, [requiredRole]);
 
   return { isAuthorized, isLoading };
+};
+
+
+export const useUserRole = () => {
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        setUserRole(null);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          setUserRole(null);
+          return;
+        }
+
+        const data = await response.json();
+        setUserRole(data.user_role || null);
+      } catch (error) {
+        setUserRole(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchUserRole();
+  }, []);
+
+  return { userRole, isLoading };
 };

@@ -13,8 +13,6 @@ import {
 } from "recharts";
 
 export default function DashboardGISS() {
-  const [isAuthorize, setIsAuthorize] = useState(true);
-
   const chartData = [
     { month: "Jan", sites: 5 },
     { month: "Feb", sites: 8 },
@@ -23,40 +21,9 @@ export default function DashboardGISS() {
     { month: "May", sites: 12 },
   ];
 
-  useEffect(() => {
-    checkIfStillLogin();
-  }, []);
-
-  const checkIfStillLogin = async () => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
-
-    try {
-      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        if (!(data.user_role === "GISSpecialist")) {
-          setIsAuthorize(false);
-        }
-      }
-    } catch (error) {
-      setIsAuthorize(false);
-    }
-  };
-
-  if (!localStorage.getItem("token") || !isAuthorize) {
-    return <NotFoundPage />;
-  }
-
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <SidebarGISS />
-
+     
       <main className="flex-1 p-8">
         {/* Header */}
         <div className="mb-8">
@@ -72,12 +39,19 @@ export default function DashboardGISS() {
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
           <div className="flex items-center gap-3 mb-4">
             <BarChart3 size={26} className="text-green-600" />
-            <h2 className="text-2xl font-semibold text-gray-800">Sites Monitored Per Month</h2>
+            <h2 className="text-2xl font-semibold text-gray-800">
+              Sites Monitored Per Month
+            </h2>
           </div>
 
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={chartData}>
-              <Line type="monotone" dataKey="sites" stroke="#16a34a" strokeWidth={3} />
+              <Line
+                type="monotone"
+                dataKey="sites"
+                stroke="#16a34a"
+                strokeWidth={3}
+              />
               <CartesianGrid stroke="#e5e7eb" />
               <XAxis dataKey="month" />
               <YAxis />
@@ -108,7 +82,9 @@ export default function DashboardGISS() {
         <div className="bg-white rounded-2xl shadow-lg p-6">
           <div className="flex items-center gap-3 mb-4">
             <Activity size={26} className="text-pink-500" />
-            <h2 className="text-2xl font-semibold text-gray-800">Recent Activity</h2>
+            <h2 className="text-2xl font-semibold text-gray-800">
+              Recent Activity
+            </h2>
           </div>
 
           <ul className="text-gray-700 space-y-2">

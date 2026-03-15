@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { X, Plus, Trash2, File } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
+import { useUserRole } from "@/hooks/authorization";
 
 interface Inspector {
   user_id: number;
@@ -67,6 +68,25 @@ export default function Assign_onsite_inspector() {
 
     load();
   }, []);
+  const { userRole, isLoading } = useUserRole();
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("GISS");
+      return;
+    }
+
+    if (userRole === "DataManager") {
+      setUseruserRole("DataManager");
+      return;
+    }
+  }, [userRole]);
 
   // -------------------------
   // ASSIGN
@@ -123,7 +143,7 @@ export default function Assign_onsite_inspector() {
     }
   };
 
-  const handleCancel = () => navigate("/reforestation-areas");
+  const handleCancel = () => navigate(`/${useruserRole}/reforestation-areas`);
 
   // -------------------------
   // SEARCH FILTERS

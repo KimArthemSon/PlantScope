@@ -169,11 +169,11 @@ export function Profile() {
       action == "Create"
     ) {
       if (
-        passwordConstraints.length ||
-        passwordConstraints.lower ||
-        passwordConstraints.upper ||
-        passwordConstraints.number ||
-        passwordConstraints.symbol
+        !passwordConstraints.length ||
+        !passwordConstraints.lower ||
+        !passwordConstraints.upper ||
+        !passwordConstraints.number ||
+        !passwordConstraints.symbol
       ) {
         setIsLoading(false);
         setPSAlert({
