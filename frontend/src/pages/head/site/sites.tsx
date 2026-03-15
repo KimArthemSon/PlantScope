@@ -56,7 +56,7 @@ export default function SitesForArea() {
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "All",
+    status: "pending",
   });
   const [loading, setLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
@@ -410,32 +410,6 @@ export default function SitesForArea() {
             ))}
           </select>
 
-          <label>Status:</label>
-          <select
-            value={filter.status}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                status: e.target.value,
-                page: 1,
-              }))
-            }
-            className="border border-black p-2 rounded-md text-[.8rem]"
-          >
-            {[
-              "All",
-              "pending",
-              "official",
-              "rejected",
-              "completed",
-              "re-analysis",
-            ].map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-
           <input
             type="text"
             placeholder="Search sites..."
@@ -594,11 +568,11 @@ export default function SitesForArea() {
                       <td className="py-3 px-5 flex gap-2">
                         <button
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
-                          onClick={() => {
-                            setUpdateSiteId(site.site_id);
-                            setUpdateSiteName(site.name);
-                            setIsUpdateModalOpen(true);
-                          }}
+                          onClick={() =>
+                            navigate(
+                              `${useruserRole}/reforestation/site/${id}/information/${site.site_id}`,
+                            )
+                          }
                           title="View Details"
                         >
                           <Eye size={16} />

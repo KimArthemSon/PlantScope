@@ -1,4 +1,6 @@
 import json
+import logging
+from django.db import IntegrityError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
@@ -7,7 +9,8 @@ from .models import Sites, Site_data, Site_details, Site_multicriteria
 from reforestation_areas.models import Reforestation_areas
 from soils.models import Soils
 from tree_species.models import Tree_species
-
+from django.db import transaction, IntegrityError
+from django.core.exceptions import ObjectDoesNotExist
 
 # ===============================
 # GET ALL SITES (PAGINATED)
@@ -114,25 +117,36 @@ def get_sites(request, reforestation_area_id):
 @csrf_exempt
 def get_site(request, site_id):
 
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
 
-    s = get_object_or_404(
-        Sites.objects.select_related(
-            "site_data",
-            "site_details__soil",
-            "site_details__Tree_specie",
-            "site_data__site_multicriteria"
+    sd = get_object_or_404(
+        Site_data.objects.select_related(
+            "site",
+            "site__site_details",
+            "site__site_details__soil",
+            "site__site_details__Tree_specie",
+            "site_multicriteria"
         ),
-        site_id=site_id
+        site__site_id=site_id,
+        isCurrent=True
     )
 
-    site_data = None
-    multicriteria = None
+    site = sd.site
+    details = getattr(site, "site_details", None)
+    mc = getattr(sd, "site_multicriteria", None)
 
-    if hasattr(s, "site_data"):
-        sd = s.site_data
-        site_data = {
+    data = {
+        "site_id": site.site_id,
+        "name": site.name,
+        "status": site.status,
+        "coordinates": site.coordinates,
+        "polygon_coordinates": site.polygon_coordinates,
+        "total_area_planted": site.total_area_planted,
+        "total_seedling_planted": site.total_seedling_planted,
+        "created_at": site.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+
+        "site_data": {
             "site_data_id": sd.site_data_id,
             "safety": sd.Safety,
             "legality": sd.legality,
@@ -142,112 +156,179 @@ def get_site(request, site_id):
             "accessibility": sd.accessibility,
             "wildlife": sd.wildlife,
             "created_at": sd.created_at.strftime("%Y-%m-%d %H:%M:%S")
-        }
+        },
 
-        if hasattr(sd, "site_multicriteria") and sd.site_multicriteria:
-            mc = sd.site_multicriteria
-            multicriteria = {
-                "safety_status": mc.safety_status,
-                "legality_status": mc.legality_status,
-                "soil_quality_status": mc.soil_quality_status,
-                "distance_to_water_source_status": mc.distance_to_water_source_status,
-                "accessibility_status": mc.accessibility_status,
-                "wildlife_status": mc.wildlife_status,
-                "slope_status": mc.slope_status,
-                "survival_rate": mc.survival_rate,
-                "total_score": mc.total_score,
-                "remarks": mc.remarks,
-                "updated_at": mc.updated_at.strftime("%Y-%m-%d %H:%M:%S") if mc.updated_at else None
-            }
+        "site_details": {
+            "soil_id": details.soil.soil_id if details and details.soil else None,
+            "soil_name": details.soil.name if details and details.soil else None,
+            "tree_specie_id": details.Tree_specie.tree_species_id if details and details.Tree_specie else None,
+            "tree_specie_name": details.Tree_specie.name if details and details.Tree_specie else None,
+        } if details else None,
 
-    site_details = None
-    if hasattr(s, "site_details"):
-        d = s.site_details
-        site_details = {
-            "soil_id": d.soil.soil_id if d.soil else None,
-            "soil_name": d.soil.name if d.soil else None,
-            "tree_specie_id": d.Tree_specie.tree_species_id if d.Tree_specie else None,
-            "tree_specie_name": d.Tree_specie.name if d.Tree_specie else None,
-        }
-
-    data = {
-        "site_id": s.site_id,
-        "name": s.name,
-        "status": s.status,
-        "coordinates": s.coordinates,
-        "polygon_coordinates": s.polygon_coordinates,
-        "total_area_planted": s.total_area_planted,
-        "total_seedling_planted": s.total_seedling_planted,
-        "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-        "site_data": site_data,
-        "site_details": site_details,
-        "multicriteria": multicriteria
+        "multicriteria": {
+            "safety_status": mc.safety_status,
+            "legality_status": mc.legality_status,
+            "soil_quality_status": mc.soil_quality_status,
+            "distance_to_water_source_status": mc.distance_to_water_source_status,
+            "accessibility_status": mc.accessibility_status,
+            "wildlife_status": mc.wildlife_status,
+            "slope_status": mc.slope_status,
+            "survival_rate": mc.survival_rate,
+            "total_score": mc.total_score,
+            "remarks": mc.remarks,
+            "updated_at": mc.updated_at.strftime("%Y-%m-%d %H:%M:%S") if mc.updated_at else None
+        } if mc else None
     }
 
     return JsonResponse({"data": data}, status=200)
-
 
 # ===============================
 # CREATE SITE
 # ===============================
 @csrf_exempt
 def create_site(request):
-
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST allowed'}, status=405)
-
+    """
+    Create a minimal new site - only name is required.
+    All other fields are set to null/defaults and can be updated later.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+    
     try:
-        data = json.loads(request.body)
-
-        reforestation_area = get_object_or_404(
-            Reforestation_areas,
-            reforestation_area_id=data.get("reforestation_area_id")
-        )
-
-        site = Sites.objects.create(
-            reforestation_area=reforestation_area,
-            name=data.get("name", "New Site"),
-            status="pending",
-            coordinates=data.get("coordinates", {}),
-            polygon_coordinates=data.get("polygon_coordinates", {}),
-            total_area_planted=data.get("total_area_planted", 0.0),
-            total_seedling_planted=data.get("total_seedling_planted", 0)
-        )
-
-        site_data = Site_data.objects.create(
-            site=site,
-            Safety="safe",
-            legality=True,
-            slope=0.00,
-            soil_quality="moderate",
-            distance_to_water_source=0.0,
-            accessibility="moderate",
-            wildlife="moderate"
-        )
-
-        Site_details.objects.create(
-            site=site,
-            soil=None,
-            Tree_specie=None
-        )
-
-        Site_multicriteria.objects.create(
-            site_data=site_data,
-            survival_rate=0.00,
-            total_score=0.00
-        )
-
+        # Parse JSON body
+        try:
+            body = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON format"}, status=400)
+        
+        # === ONLY REQUIRED FIELD: name + reforestation_area_id (FK) ===
+        if 'name' not in body or not body['name'].strip():
+            return JsonResponse({"error": "Field 'name' is required"}, status=400)
+        
+        if 'reforestation_area_id' not in body:
+            return JsonResponse({"error": "Field 'reforestation_area_id' is required"}, status=400)
+        
+        # Validate reforestation_area exists
+        try:
+            reforestation_area = Reforestation_areas.objects.get(
+                reforestation_area_id=body['reforestation_area_id']
+            )
+        except ObjectDoesNotExist:
+            return JsonResponse({
+                "error": f"Reforestation area with ID {body['reforestation_area_id']} not found"
+            }, status=404)
+        
+        # === ATOMIC TRANSACTION: Create minimal site structure ===
+        with transaction.atomic():
+            # 1. Create Sites (minimal required fields + safe defaults)
+            site = Sites.objects.create(
+                reforestation_area=reforestation_area,
+                name=body['name'].strip(),
+                status='pending',           # Default status
+                isActive=True,              # Default active
+                coordinates=[0.0, 0.0],     # Placeholder - update later
+                polygon_coordinates=[],     # Empty - update later
+                total_area_planted=0.0,     # Default
+                total_seedling_planted=0,   # Default
+            )
+            
+            # 2. Create Site_data (all defaults/nulls)
+            site_data = Site_data.objects.create(
+                site=site,
+                isCurrent=True,
+                # All choice fields use model defaults
+                # distance_to_water_source is required in model, set to 0.0 as placeholder
+                distance_to_water_source=0.0,
+            )
+            
+            # 3. Create Site_details (empty - no soil/tree assigned yet)
+            Site_details.objects.create(
+                site=site,
+                soil=None,
+                Tree_specie=None
+            )
+            
+            # 4. Create Site_multicriteria (all pending, zero scores)
+            Site_multicriteria.objects.create(
+                site_data=site_data,
+                # All status fields default to 'pending' via model
+                survival_rate=0.00,
+                total_score=0.00,
+                remarks=None
+            )
+        
+        # === RETURN CREATED SITE (same format as get_site for consistency) ===
+        created_sd = Site_data.objects.select_related(
+            "site",
+            "site__site_details",
+            "site__site_details__soil",
+            "site__site_details__Tree_specie",
+            "site_multicriteria"
+        ).get(site=site)
+        
+        created_site = created_sd.site
+        details = getattr(created_site, "site_details", None)
+        mc = getattr(created_sd, "site_multicriteria", None)
+        
+        response_data = {
+            "site_id": created_site.site_id,
+            "name": created_site.name,
+            "status": created_site.status,
+            "coordinates": created_site.coordinates,
+            "polygon_coordinates": created_site.polygon_coordinates,
+            "total_area_planted": created_site.total_area_planted,
+            "total_seedling_planted": created_site.total_seedling_planted,
+            "created_at": created_site.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            
+            "site_data": {
+                "site_data_id": created_sd.site_data_id,
+                "safety": created_sd.Safety,
+                "legality": created_sd.legality,
+                "slope": float(created_sd.slope),
+                "soil_quality": created_sd.soil_quality,
+                "distance_to_water_source": created_sd.distance_to_water_source,
+                "accessibility": created_sd.accessibility,
+                "wildlife": created_sd.wildlife,
+                "created_at": created_sd.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            },
+            
+            "site_details": {
+                "soil_id": details.soil.soil_id if details and details.soil else None,
+                "soil_name": details.soil.name if details and details.soil else None,
+                "tree_specie_id": details.Tree_specie.tree_species_id if details and details.Tree_specie else None,
+                "tree_specie_name": details.Tree_specie.name if details and details.Tree_specie else None,
+            } if details else None,
+            
+            "multicriteria": {
+                "safety_status": mc.safety_status if mc else None,
+                "legality_status": mc.legality_status if mc else None,
+                "soil_quality_status": mc.soil_quality_status if mc else None,
+                "distance_to_water_source_status": mc.distance_to_water_source_status if mc else None,
+                "accessibility_status": mc.accessibility_status if mc else None,
+                "wildlife_status": mc.wildlife_status if mc else None,
+                "slope_status": mc.slope_status if mc else None,
+                "survival_rate": mc.survival_rate if mc else 0.0,
+                "total_score": mc.total_score if mc else 0.0,
+                "remarks": mc.remarks if mc else None,
+                "updated_at": mc.updated_at.strftime("%Y-%m-%d %H:%M:%S") if mc and mc.updated_at else None
+            } if mc else None
+        }
+        
         return JsonResponse({
-            "message": "Site created successfully",
-            "site_id": site.site_id,
-            "site_data_id": site_data.site_data_id
+            "data": response_data, 
+            "message": "Site created successfully. Complete details can be added later."
         }, status=201)
-
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+        
+    except IntegrityError as e:
+        error_msg = str(e).lower()
+        if 'unique constraint' in error_msg or 'duplicate' in error_msg:
+            return JsonResponse({"error": "A site with this name already exists in this area"}, status=409)
+        logging.error(f"create_site IntegrityError: {str(e)}", exc_info=True)
+        return JsonResponse({"error": "Database error. Please try again."}, status=500)
+        
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=400)
-
+        logging.error(f"create_site error: {str(e)}", exc_info=True)
+        return JsonResponse({"error": "Internal server error"}, status=500)
 
 # ===============================
 # UPDATE SITE NAME

@@ -34,6 +34,7 @@ import Geo_spatial_analysis from "./pages/head/analysis/geo_spatial_analysis";
 import Sidebar_data_manager from "./components/layout/Sidebar_data_manager";
 import SidebarGISS from "./components/layout/SidebarGISSpecialist";
 import OfficialSites from "./pages/approved/OfficialSites";
+import Site_information from "./pages/approved/site_information";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -109,6 +110,11 @@ export default function App() {
           />
 
           <Route path="/reforestation/site/:id" element={<Sites />} />
+          
+          <Route
+            path="/reforestation/site/:id/information/:site_id"
+            element={<Site_information />}
+          />
           <Route
             path="/reforestation_analysis/site_analysis/:id"
             element={<Sites_analysis />}
@@ -140,6 +146,10 @@ export default function App() {
           <Route
             path="/official-reforestation/site/:id"
             element={<OfficialSites />}
+          />
+          <Route
+            path="/official-reforestation/site/:id/information/:site_id"
+            element={<Site_information />}
           />
 
           <Route path="/map" element={<Map />} />
@@ -228,7 +238,10 @@ export default function App() {
             path="/DataManager/official-reforestation/site/:id"
             element={<OfficialSites />}
           />
-
+          <Route
+            path="/DataManager/official-reforestation/site/:id/information/:site_id"
+            element={<Site_information />}
+          />
           <Route path="/DataManager/map" element={<Map />} />
           <Route
             path="/reports"
@@ -291,6 +304,10 @@ export default function App() {
           <Route
             path="/GISS/official-reforestation/site/:id"
             element={<OfficialSites />}
+          />
+          <Route
+            path="/GISS/official-reforestation/site/:id/information/:site_id"
+            element={<Site_information />}
           />
           <Route path="/GISS/map" element={<Map />} />
           <Route

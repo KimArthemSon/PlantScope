@@ -60,7 +60,7 @@ export default function Sites_analysis() {
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "All",
+    status: "pending",
   });
   const [loading, setLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
@@ -406,32 +406,6 @@ export default function Sites_analysis() {
             {[10, 25, 50, 100].map((e) => (
               <option key={e} value={e}>
                 {e}
-              </option>
-            ))}
-          </select>
-
-          <label>Status:</label>
-          <select
-            value={filter.status}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                status: e.target.value,
-                page: 1,
-              }))
-            }
-            className="border border-black p-2 rounded-md text-[.8rem]"
-          >
-            {[
-              "All",
-              "pending",
-              "official",
-              "rejected",
-              "completed",
-              "re-analysis",
-            ].map((s) => (
-              <option key={s} value={s}>
-                {s}
               </option>
             ))}
           </select>

@@ -568,11 +568,11 @@ export default function officialSites() {
                       <td className="py-3 px-5 flex gap-2">
                         <button
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
-                          onClick={() => {
-                            setUpdateSiteId(site.site_id);
-                            setUpdateSiteName(site.name);
-                            setIsUpdateModalOpen(true);
-                          }}
+                          onClick={() =>
+                            navigate(
+                              `${useruserRole}/official-reforestation/site/${id}/information/${site.site_id}`,
+                            )
+                          }
                           title="View Details"
                         >
                           <Eye size={16} />
