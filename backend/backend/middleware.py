@@ -3,7 +3,7 @@ from django.conf import settings
 from django.http import JsonResponse
 
 class JWTAuthorizationMiddleware:
-    EXEMPT_PATHS = ["/api/login/","/media/"]
+    EXEMPT_PATHS = ["/api/login/","/media/",'/api/get_ndvi_testing/']
 
     def __init__(self, get_response):
         self.get_response = get_response

@@ -1,6 +1,6 @@
 PLANTSCOPE A GIS-Based Site Suitability Assessment and Reforestation Monitoring System with Geospatial Analytics for Ormoc City
 
-versions
+
 Versions
 nvm
 python - 3.10.8

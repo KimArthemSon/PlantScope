@@ -259,7 +259,7 @@ export default function Soils() {
                   description: "",
                 });
               }}
-               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <Plus size={20} /> Add new soil
             </button>
@@ -433,7 +433,7 @@ export default function Soils() {
       >
         {form_loading && <LoaderPending />}
         <div
-          className={`flex flex-col items-center gap-2 bg-white rounded-lg p-0 w-100 text-center shadow-lg
+          className={`flex flex-col items-center h-auto max-h-[90vh] overflow-y-auto gap-2 bg-white rounded-lg p-0 w-100 text-center shadow-lg
           transform transition-all duration-300
           ${isOpenAddEditModal ? "scale-100 opacity-100" : "scale-95 opacity-0"}
         `}

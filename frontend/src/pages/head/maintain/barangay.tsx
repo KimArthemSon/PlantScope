@@ -275,9 +275,9 @@ export default function Barangays() {
         </div>
       </header>
 
-      <main className="flex-1 p-8 max-w-409">
+      <main className="flex-1 p-8 flex flex-col items-center">
         {/* Filters */}
-        <div className="flex items-center mb-7 gap-4">
+        <div className="flex items-center mb-7 gap-4 w-full max-w-406">
           <label>Show entries: </label>
           <select
             value={filter.entries}
@@ -313,7 +313,7 @@ export default function Barangays() {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200">
+        <div className="overflow-x-auto shadow-lg rounded-sm border w-full border-gray-200 max-w-406">
           {loading && <LoaderPending />}
           <table className="relative min-w-full bg-white rounded-sm">
             <thead className="bg-[#0f4a2fe0] text-white">
@@ -391,7 +391,7 @@ export default function Barangays() {
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center gap-1 mt-5 w-full">
+        <div className="flex items-center gap-1 mt-5 w-full max-w-406">
           <button
             disabled={filter.page <= 1}
             onClick={() =>
@@ -442,9 +442,13 @@ export default function Barangays() {
         {form_loading && <LoaderPending />}
 
         <div
-          className={`flex flex-col items-center gap-2 bg-white rounded-lg p-0 w-100 text-center shadow-lg transform transition-all duration-300 ${
-            isOpenAddEditModal ? "scale-100 opacity-100" : "scale-95 opacity-0"
-          }`}
+          className={`flex flex-col items-center gap-2 bg-white
+  w-[90vw] max-w-md
+  h-auto max-h-[90vh]
+  overflow-auto
+  rounded-lg text-center shadow-lg
+  transform transition-all duration-300 origin-center
+  ${isOpenAddEditModal ? "scale-100 opacity-100" : "scale-95 opacity-0"}`}
         >
           <div className="flex justify-items-start items-center gap-10 w-full bg-green-600 rounded-t-lg p-2">
             <Delete
