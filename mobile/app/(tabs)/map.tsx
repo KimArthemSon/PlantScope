@@ -90,6 +90,8 @@ export default function MapScreen() {
 
   const startTrackingLocation = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
+
+
     if (status !== "granted") {
       Alert.alert("Permission denied", "Cannot access location");
       return;

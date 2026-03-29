@@ -5,6 +5,7 @@ import Sidebar from "./components/layout/Sidebar";
 import Analysis from "./pages/head/analysis/analysis";
 import Reforestation_areas from "./pages/head/reforestation_areas/reforestation_area";
 // import GenralMap from "./pages/general map/GeneralMap";
+import Registration from "./pages/auth/registration";
 import OfficailPlantingSites from "./pages/approved/official_reforestation";
 import SiteVerification from "./pages/siteVerification/siteVerification";
 import Land_classifications from "./pages/head/maintain/land_classification";
@@ -35,6 +36,7 @@ import Sidebar_data_manager from "./components/layout/Sidebar_data_manager";
 import SidebarGISS from "./components/layout/SidebarGISSpecialist";
 import OfficialSites from "./pages/approved/OfficialSites";
 import Site_information from "./pages/approved/site_information";
+import Ormoc_City from "./pages/head/maintain/ormoc_city";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -53,6 +55,7 @@ export default function App() {
         {/* Authentication */}
 
         <Route path="/Login" element={<Login />} />
+        <Route path="/register" element={<Registration />} />
         <Route path="/" element={<HomePage />} />
         <Route path="/privacy-policy" element={<Privacy_policy />} />
 
@@ -71,6 +74,7 @@ export default function App() {
             path="/maintenance/land-classification"
             element={<Land_classifications />}
           />
+          <Route path="/maintenance/ormoc-city" element={<Ormoc_City />} />
           <Route
             path="/maintenance/Classified_area_form/:id"
             element={<Classified_area_form />}
@@ -110,7 +114,7 @@ export default function App() {
           />
 
           <Route path="/reforestation/site/:id" element={<Sites />} />
-          
+
           <Route
             path="/reforestation/site/:id/information/:site_id"
             element={<Site_information />}
@@ -175,10 +179,12 @@ export default function App() {
             path="/DataManager/maintenance/land-classification"
             element={<Land_classifications />}
           />
+
           <Route
             path="/DataManager/maintenance/Classified_area_form/:id"
             element={<Classified_area_form />}
           />
+
           <Route
             path="/DataManager/maintenance/Classified_area_form/"
             element={<Classified_area_form />}

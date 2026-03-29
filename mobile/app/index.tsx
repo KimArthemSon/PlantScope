@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -17,20 +17,21 @@ export default function Index() {
 
   const handleLoginAsync = async () => {
     router.push("/home");
+
     // if (!email || !password) {
     //   Alert.alert("Error", "Please enter email and password");
     //   return;
     // }
 
     // try {
-    //   const res = await fetch("http://127.0.0.1:8000/api/login/", {
+    //   const res = await fetch("http://192.168.254.102:8000/api/login/", {
     //     method: "POST",
     //     headers: { "Content-Type": "application/json" },
     //     body: JSON.stringify({ email, password }),
     //   });
 
     //   if (!res.ok) {
-    //     Alert.alert("Error", "Wrong Credentials, Please try again!");
+    //     Alert.alert("Error", "Wrong asdasd Credentials, Please try again!");
     //     return;
     //   }
     //   const data = await res.json();
@@ -47,6 +48,10 @@ export default function Index() {
     //   Alert.alert("Error", "Network error. Please try again later.");
     // }
   };
+
+  // useEffect(() => {
+  //   router.push("/home");
+  // }, []);
 
   return (
     <View style={styles.container}>

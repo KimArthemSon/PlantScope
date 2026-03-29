@@ -451,7 +451,7 @@ export default function Map() {
       setPSAlert({
         type: "success",
         title: "Success",
-        message: data.data.message,
+        message: "Successfully added!",
       });
 
       setForm({
@@ -972,6 +972,9 @@ export default function Map() {
                   <div className="text-sm flex flex-col gap-1">
                     <strong>{area.name}</strong>
                     <span>Description: {area.description}</span>
+                    <button className="flex items-center justify-center gap-1 ml-auto mt-3 bg-[#920505] hover:bg-[#690909] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer">
+                      <AreaChart size={16} /> View restricted area
+                    </button>
                   </div>
                 </Popup>
               </Marker>

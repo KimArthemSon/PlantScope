@@ -161,6 +161,7 @@ export function Profile() {
   };
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    console.log("asdasd");
     e.preventDefault();
     setIsLoading(true);
     if (
@@ -523,7 +524,7 @@ export function Profile() {
                   }
                 >
                   <option value="CityENROHead">City ENRO Head</option>
-                  <option value="FieldOfficer">OnsiteInspector</option>
+                  <option value="OnsiteInspector">Onsite Inspector</option>
                   <option value="GISSpecialist">GIS Specialist</option>
                   <option value="DataManager">Data Manager</option>
                 </select>
@@ -693,7 +694,10 @@ export function Profile() {
           >
             Cancel
           </button>
-          <button className="bg-[#0F4A2F] px-10 p-3 rounded-4xl text-white border border-[#0F4A2F] text-[.8rem] cursor-pointer hover:text-[#0F4A2F] hover:bg-[#ffffff]">
+          <button
+            type="submit"
+            className="bg-[#0F4A2F] px-10 p-3 rounded-4xl text-white border border-[#0F4A2F] text-[.8rem] cursor-pointer hover:text-[#0F4A2F] hover:bg-[#ffffff]"
+          >
             {action}
           </button>
         </div>

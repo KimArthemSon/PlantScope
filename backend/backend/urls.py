@@ -28,6 +28,8 @@ urlpatterns = [
     path('api/',include('Field_assessment.urls')),
     path('api/',include('barangay.urls')),
     path('api/',include('sites.urls')),
+    path('api/',include('ormoc_city.urls')),
+    
 ]
 
 if settings.DEBUG:

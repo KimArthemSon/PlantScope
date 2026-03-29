@@ -53,7 +53,8 @@ INSTALLED_APPS = [
     'land_classifications',
     'reforestation_areas',
     'Field_assessment',
-    'sites'
+    'sites',
+    'ormoc_city'
 ]
 
 MIDDLEWARE = [
@@ -73,9 +74,9 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:8081",
     "http://127.0.0.1:5500",
-    'http://localhost:5500',  # your React dev server
+    'http://localhost:5500',
 ]
-
+ALLOWED_HOSTS = ["*"]
 ROOT_URLCONF = 'backend.urls'
 
 TEMPLATES = [
