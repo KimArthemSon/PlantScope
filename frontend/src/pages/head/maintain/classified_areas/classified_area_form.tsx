@@ -18,11 +18,18 @@ interface Classified_area {
   name: string;
   description: string;
   land_classification_id: number;
+  barangay_id: number; // ✅ Added
   polygon: Polygon;
 }
 
 interface land_classification {
   land_classification_id: number;
+  name: string;
+}
+
+interface Barangay {
+  // ✅ Added
+  barangay_id: number;
   name: string;
 }
 
@@ -35,6 +42,7 @@ export default function Classified_area_form() {
     title: string;
     message: string;
   } | null>(null);
+
   const [land_classification, setLand_classification] = useState<
     land_classification[]
   >([
@@ -43,10 +51,14 @@ export default function Classified_area_form() {
       name: "land 1",
     },
   ]);
+
+  const [barangay_list, setBarangay_list] = useState<Barangay[]>([]); // ✅ Added
+
   const [classified_area, setClassified_area] = useState<Classified_area>({
     name: "",
     description: "",
     land_classification_id: 0,
+    barangay_id: 0, // ✅ Added
     polygon: {
       coordinates: [[1, 1]],
       type: "POLYGON",
@@ -83,7 +95,33 @@ export default function Classified_area_form() {
 
   useEffect(() => {
     get_land_classification_list();
+    get_barangay_list(); // ✅ Added
   }, []);
+
+  // ✅ Added: Fetch barangay list
+  async function get_barangay_list() {
+    try {
+      const res = await fetch(
+        "http://127.0.0.1:8000/api/get_barangay_list/", // ⚠️ Update URL to your actual endpoint
+        {
+          headers: { Authorization: "Bearer " + token },
+        },
+      );
+      const data = await res.json();
+      if (res.ok && data.data?.length > 0) {
+        setBarangay_list(data.data);
+        // Set default barangay if adding new
+        if (!id && data.data[0]) {
+          setClassified_area((prev) => ({
+            ...prev,
+            barangay_id: data.data[0].barangay_id,
+          }));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load barangays:", e);
+    }
+  }
 
   async function get_classified_area() {
     setLoading(true);
@@ -110,6 +148,7 @@ export default function Classified_area_form() {
         name: data.data.name,
         description: data.data.description,
         land_classification_id: data.data.land_classification_id,
+        barangay_id: data.data.barangay_id, // ✅ Added
         polygon: data.data.polygon,
       });
       console.log(data);
@@ -188,8 +227,11 @@ export default function Classified_area_form() {
         "http://127.0.0.1:8000/api/create_classified_area/",
         {
           method: "POST",
-          headers: { Authorization: "Bearer " + token },
-          body: JSON.stringify(classified_area),
+          headers: {
+            Authorization: "Bearer " + token,
+            "Content-Type": "application/json", // ✅ Added for consistency
+          },
+          body: JSON.stringify(classified_area), // ✅ Now includes barangay_id
         },
       );
 
@@ -235,7 +277,7 @@ export default function Classified_area_form() {
             "Content-Type": "application/json",
             Authorization: "Bearer " + token,
           },
-          body: JSON.stringify(classified_area),
+          body: JSON.stringify(classified_area), // ✅ Now includes barangay_id
         },
       );
 
@@ -358,13 +400,40 @@ export default function Classified_area_form() {
                     }));
                   }}
                 >
-                  {land_classification.map((e, i) => (
+                  {land_classification.map((e) => (
                     <option
                       key={e.land_classification_id}
                       value={e.land_classification_id}
-                      selected={i === 1}
                     >
                       {e.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* ✅ Barangay Dropdown - NEW */}
+            <div className="flex flex-col">
+              <label className="font-bold text-[1rem] mr-auto">Barangay:</label>
+              <div className={inputWrapper}>
+                <Map size={20} className="ml-4 text-green-700" />
+                <select
+                  required
+                  className={inputField}
+                  value={classified_area.barangay_id}
+                  onChange={(e) => {
+                    setClassified_area((prev) => ({
+                      ...prev,
+                      barangay_id: Number(e.target.value),
+                    }));
+                  }}
+                >
+                  <option value="" disabled>
+                    Select Barangay
+                  </option>
+                  {barangay_list.map((b) => (
+                    <option key={b.barangay_id} value={b.barangay_id}>
+                      {b.name}
                     </option>
                   ))}
                 </select>
@@ -528,7 +597,7 @@ export default function Classified_area_form() {
                 scrollWheelZoom={true}
                 style={{ width: "100%", height: "100%" }}
                 ref={(map) => {
-                  if (map != null) mapRef.current = map; // <-- TS happy
+                  if (map != null) mapRef.current = map;
                 }}
               >
                 <TileLayer

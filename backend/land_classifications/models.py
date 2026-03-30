@@ -1,5 +1,5 @@
 from django.db import models
-
+from barangay.models import Barangay
 class LandClassification(models.Model):
     land_classification_id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=100)
@@ -13,6 +13,13 @@ class Classified_areas(models.Model):
     land_classification = models.ForeignKey(
         LandClassification,
         on_delete=models.CASCADE,
+        related_name="classified_areas"
+    )
+
+    barangay = models.ForeignKey(
+        Barangay,
+        on_delete=models.RESTRICT,
+        null=True,
         related_name="classified_areas"
     )
     polygon = models.JSONField()

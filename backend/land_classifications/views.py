@@ -2,6 +2,7 @@ from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import LandClassification, Classified_areas
+from barangay.models import Barangay
 import json
 import math
 
@@ -137,7 +138,7 @@ def get_classified_areas(request):
 
     classified_areas = (
         Classified_areas.objects
-        .select_related('land_classification')
+        .select_related('land_classification', 'barangay')  # ✅ Added barangay
         .all()
         .order_by('-created_at')
     )
@@ -155,9 +156,11 @@ def get_classified_areas(request):
             'name': area.name,
             'land_classification_id': area.land_classification.land_classification_id,
             'land_classification_name': area.land_classification.name,
+            'barangay_id': area.barangay.barangay_id,  # ✅ Added
+            'barangay_name': area.barangay.name,        # ✅ Added
             'polygon': area.polygon,
             'description': area.description,
-            'created_at': area.created_at
+            'created_at': area.created_at.isoformat()   # ✅ ISO format for JSON
         })
 
     return JsonResponse({
@@ -168,6 +171,7 @@ def get_classified_areas(request):
         'total': total
     }, status=200)
 
+
 @csrf_exempt
 def get_classified_area(request, classified_area_id):
     if request.method != 'GET':
@@ -175,7 +179,7 @@ def get_classified_area(request, classified_area_id):
 
     classified_area = (
         Classified_areas.objects
-        .select_related('land_classification')
+        .select_related('land_classification', 'barangay')  # ✅ Added barangay
         .get(classified_area_id=classified_area_id)
     )
 
@@ -184,12 +188,15 @@ def get_classified_area(request, classified_area_id):
         'name': classified_area.name,
         'land_classification_id': classified_area.land_classification.land_classification_id,
         'land_classification_name': classified_area.land_classification.name,
+        'barangay_id': classified_area.barangay.barangay_id,  # ✅ Added
+        'barangay_name': classified_area.barangay.name,        # ✅ Added
         'polygon': classified_area.polygon,
         'description': classified_area.description,
-        'created_at': classified_area.created_at
+        'created_at': classified_area.created_at.isoformat()   # ✅ ISO format
     }
 
     return JsonResponse({'data': data}, status=200)
+
 
 @csrf_exempt
 def create_classified_area(request):
@@ -200,27 +207,37 @@ def create_classified_area(request):
         data = json.loads(request.body)
         name = data['name']
         land_classification_id = data['land_classification_id']
+        barangay_id = data['barangay_id']  # ✅ Added
         polygon = data['polygon']
         description = data['description']
-    except KeyError:
-        return JsonResponse({'error': 'Missing fields'}, status=400)
+    except KeyError as e:
+        return JsonResponse({'error': f'Missing field: {str(e)}'}, status=400)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     classification = get_object_or_404(
         LandClassification,
         land_classification_id=land_classification_id
     )
 
+    barangay = get_object_or_404(  # ✅ Added
+        Barangay,
+        barangay_id=barangay_id
+    )
+
     classified_area = Classified_areas.objects.create(
         name=name,
         land_classification=classification,
+        barangay=barangay,  # ✅ Added
         polygon=polygon,
         description=description
     )
 
     return JsonResponse(
-        {'data': classified_area.classified_area_id},
-        status=200
+        {'data': classified_area.classified_area_id, 'message': 'Created successfully'},
+        status=201
     )
+
 
 @csrf_exempt
 def update_classified_area(request, classified_area_id):
@@ -231,10 +248,13 @@ def update_classified_area(request, classified_area_id):
         data = json.loads(request.body)
         name = data['name']
         land_classification_id = data['land_classification_id']
+        barangay_id = data['barangay_id']  # ✅ Added
         polygon = data['polygon']
         description = data['description']
-    except KeyError:
-        return JsonResponse({'error': 'Missing fields'}, status=400)
+    except KeyError as e:
+        return JsonResponse({'error': f'Missing field: {str(e)}'}, status=400)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     classified_area = get_object_or_404(
         Classified_areas,
@@ -246,8 +266,14 @@ def update_classified_area(request, classified_area_id):
         land_classification_id=land_classification_id
     )
 
+    barangay = get_object_or_404(  # ✅ Added
+        Barangay,
+        barangay_id=barangay_id
+    )
+
     classified_area.name = name
     classified_area.land_classification = classification
+    classified_area.barangay = barangay  # ✅ Added
     classified_area.polygon = polygon
     classified_area.description = description
     classified_area.save()

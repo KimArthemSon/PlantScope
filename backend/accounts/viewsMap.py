@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, timedelta
 from django.http import JsonResponse
 from django.conf import settings
+from django.views.decorators.csrf import csrf_exempt
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,6 @@ def get_sentinel2_median(roi, start_date, end_date, cloud_threshold=20):
     
     # ✅ FIXED: Check if collection has images using .size()
     try:
-
         collection_size = collection.size().getInfo()
         logger.info(f"📊 Found {collection_size} images for {start_date} to {end_date}")
         
@@ -90,7 +91,6 @@ def get_sentinel2_median(roi, start_date, end_date, cloud_threshold=20):
         return None
     
     # Compute median composite
-    
     try:
         median_image = collection.median()
         return median_image
@@ -148,7 +148,6 @@ def ndvi_canopy(request):
             status=404
         )
     
-
     # Calculate NDVI
     ndvi = s2_median.normalizedDifference(["B8", "B4"]).rename("NDVI")
     
@@ -178,16 +177,23 @@ def ndvi_canopy(request):
 
 
 # ═══════════════════════════════════════════════════════════════
-# 🎯 VIEW: SUITABLE REFORESTATION SITES
+# 🎯 VIEW: SUITABLE REFORESTATION SITES (FULLY FIXED)
 # ═══════════════════════════════════════════════════════════════
-
-from django.views.decorators.csrf import csrf_exempt
-import json
 
 @csrf_exempt
 def suitable_sites(request):
     """
     API Endpoint: POST /api/suitable-sites/
+    
+    Request Body:
+    {
+        "start": "2024-01-01",
+        "end": "2024-12-31",
+        "geometry": {GeoJSON polygon},
+        "debug": false (optional)
+    }
+    
+    Returns: GeoJSON FeatureCollection of suitable sites
     """
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed. Use POST."}, status=405)
@@ -197,6 +203,7 @@ def suitable_sites(request):
         start = data.get("start")
         end = data.get("end")
         geom = data.get("geometry")
+        debug = data.get("debug", False)
 
         if not all([start, end, geom]):
             return JsonResponse(
@@ -204,10 +211,7 @@ def suitable_sites(request):
                 status=400
             )
 
-        # Parse user-drawn geometry
         roi = ee.Geometry(geom)
-
-        # Fetch processed Sentinel-2 median image with auto-fallback
         s2_median = get_sentinel2_median(roi, start, end)
         
         if s2_median is None:
@@ -217,10 +221,34 @@ def suitable_sites(request):
             )
 
         # Calculate NDVI
-        ndvi = s2_median.normalizedDifference(["B8", "B4"])
+        ndvi = s2_median.normalizedDifference(["B8", "B4"]).rename("NDVI")
         
-        # Identify suitable areas: NDVI < 0.4
-        suitable = ndvi.lt(0.4).selfMask().rename("suitable")
+        # ✅ DEBUG MODE: Return statistics instead of polygons
+        if debug:
+            stats = ndvi.reduceRegion(
+                reducer=ee.Reducer.minMax().combine(ee.Reducer.mean(), None, True),
+                geometry=roi,
+                scale=20,
+                maxPixels=1e9
+            ).getInfo()
+            
+            histogram = ndvi.reduceRegion(
+                reducer=ee.Reducer.fixedHistogram(min=0, max=1, steps=20),
+                geometry=roi,
+                scale=20,
+                maxPixels=1e9
+            ).getInfo()
+            
+            return JsonResponse({
+                "debug": True,
+                "ndvi_stats": stats,
+                "histogram": histogram.get("NDVI_fixed_histogram", {}),
+                "threshold_used": 0.41,
+                "message": "Debug mode: Use this data to verify NDVI distribution"
+            })
+        
+        # ✅ PRODUCTION MODE: Find suitable areas (NDVI < 0.41)
+        suitable = ndvi.lt(0.41).selfMask().rename("suitable")
 
         # Vectorize raster to polygons
         vectors = suitable.reduceToVectors(
@@ -229,20 +257,63 @@ def suitable_sites(request):
             maxPixels=1e10,
             geometryType="polygon",
             eightConnected=False,
-            labelProperty="suitable",
+            labelProperty="site_id",
             bestEffort=True
         )
 
-        # Convert to GeoJSON
         geojson = vectors.getInfo()
+        features = geojson.get("features", [])
+        
+        # Enrich with metadata
+        enriched_features = []
+        total_area = 0
+        total_ndvi = 0
+        
+        for i, feature in enumerate(features):
+            site_geometry = ee.Geometry(feature['geometry'])
+            
+            try:
+                stats = ndvi.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=site_geometry,
+                    scale=20,
+                    maxPixels=1e9
+                ).getInfo()
+                
+                area_ha = site_geometry.area().divide(10000).getInfo()
+                avg_ndvi = stats.get('NDVI', 0)
+                
+                total_area += area_ha
+                total_ndvi += avg_ndvi
+                
+                feature['properties'].update({
+                    'site_id': f'SITE-{str(i+1).zfill(3)}',
+                    'area_hectares': round(area_ha, 2),
+                    'avg_ndvi': round(avg_ndvi, 3),
+                    'suitability_score': round((1 - avg_ndvi) * 100, 1)
+                })
+                enriched_features.append(feature)
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Could not calculate stats for site {i}: {e}")
+                feature['properties']['site_id'] = f'SITE-{str(i+1).zfill(3)}'
+                enriched_features.append(feature)
+        
+        # Calculate average NDVI across all sites
+        avg_ndvi_all = total_ndvi / len(enriched_features) if enriched_features else 0
         
         return JsonResponse({
+            "success": True,
             "type": "FeatureCollection",
-            "features": geojson.get("features", []),
+            "features": enriched_features,
             "metadata": {
+                "total_sites": len(enriched_features),
+                "total_area_hectares": round(total_area, 2),
+                "average_ndvi": round(avg_ndvi_all, 3),
                 "date_range": f"{start} to {end}",
-                "ndvi_threshold": "< 0.4",
-                "description": "Areas with low vegetation cover suitable for reforestation"
+                "ndvi_threshold": "< 0.41",
+                "description": "Areas with low vegetation cover suitable for reforestation",
+                "scientific_basis": "NASA/FAO NDVI classification - sparse vegetation (0.2-0.4) + 0.01 buffer"
             }
         })
 
@@ -258,5 +329,176 @@ def suitable_sites(request):
         logger.error(f"❌ Unexpected error: {e}", exc_info=True)
         return JsonResponse(
             {"error": "Internal server error. Please try again later."}, 
+            status=500
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
+# 📈 VIEW: NDVI TIME SERIES TREND
+# ═══════════════════════════════════════════════════════════════
+
+@csrf_exempt
+def ndvi_trend(request):
+    """
+    API Endpoint: POST /api/ndvi-trend/
+    
+    Get NDVI trend over time for a specific polygon.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed. Use POST."}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        start = data.get("start")
+        end = data.get("end")
+        geom = data.get("geometry")
+        interval = data.get("interval", "month")
+        
+        if not all([start, end, geom]):
+            return JsonResponse(
+                {"error": "Missing required fields: 'start', 'end', and 'geometry'"}, 
+                status=400
+            )
+        
+        if interval not in ["month", "week"]:
+            interval = "month"
+        
+        roi = ee.Geometry(geom)
+        start_dt = datetime.strptime(start, "%Y-%m-%d")
+        end_dt = datetime.strptime(end, "%Y-%m-%d")
+        
+        time_series = []
+        
+        if interval == "month":
+            current = start_dt
+            while current + timedelta(days=30) <= end_dt:
+                period_start = current
+                period_end = current + timedelta(days=30)
+                
+                try:
+                    s2_median = get_sentinel2_median(
+                        roi, 
+                        period_start.strftime("%Y-%m-%d"),
+                        period_end.strftime("%Y-%m-%d"),
+                        cloud_threshold=30
+                    )
+                    
+                    if s2_median is not None:
+                        ndvi = s2_median.normalizedDifference(["B8", "B4"]).rename("NDVI")
+                        
+                        mean_ndvi = ndvi.reduceRegion(
+                            reducer=ee.Reducer.mean(),
+                            geometry=roi,
+                            scale=20,
+                            maxPixels=1e9
+                        ).getInfo()
+                        
+                        time_series.append({
+                            'date': period_start.strftime("%Y-%m"),
+                            'ndvi': round(mean_ndvi.get('NDVI', 0), 3),
+                            'start': period_start.strftime("%Y-%m-%d"),
+                            'end': period_end.strftime("%Y-%m-%d")
+                        })
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not get NDVI for {period_start}: {e}")
+                
+                current = current + timedelta(days=30)
+        
+        else:  # week
+            current = start_dt
+            while current + timedelta(days=7) <= end_dt:
+                period_start = current
+                period_end = current + timedelta(days=7)
+                
+                try:
+                    s2_median = get_sentinel2_median(
+                        roi,
+                        period_start.strftime("%Y-%m-%d"),
+                        period_end.strftime("%Y-%m-%d"),
+                        cloud_threshold=30
+                    )
+                    
+                    if s2_median is not None:
+                        ndvi = s2_median.normalizedDifference(["B8", "B4"]).rename("NDVI")
+                        
+                        mean_ndvi = ndvi.reduceRegion(
+                            reducer=ee.Reducer.mean(),
+                            geometry=roi,
+                            scale=20,
+                            maxPixels=1e9
+                        ).getInfo()
+                        
+                        time_series.append({
+                            'date': period_start.strftime("%Y-%m-%d"),
+                            'ndvi': round(mean_ndvi.get('NDVI', 0), 3),
+                            'start': period_start.strftime("%Y-%m-%d"),
+                            'end': period_end.strftime("%Y-%m-%d")
+                        })
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not get NDVI for {period_start}: {e}")
+                
+                current = current + timedelta(days=7)
+        
+        if not time_series:
+            return JsonResponse(
+                {"error": "No NDVI data available for the specified period. Try expanding date range."},
+                status=404
+            )
+        
+        # Calculate trend
+        if len(time_series) >= 2:
+            first_ndvi = time_series[0]['ndvi']
+            last_ndvi = time_series[-1]['ndvi']
+            trend_change = round(last_ndvi - first_ndvi, 3)
+            
+            if trend_change < -0.1:
+                trend_direction = "declining"
+                interpretation = "Declining NDVI suggests land degradation - good candidate for reforestation"
+            elif trend_change < 0:
+                trend_direction = "slightly_declining"
+                interpretation = "Slight decline in vegetation - suitable for enrichment planting"
+            elif trend_change < 0.1:
+                trend_direction = "stable"
+                interpretation = "Stable vegetation cover - verify ground conditions"
+            else:
+                trend_direction = "increasing"
+                interpretation = "Increasing vegetation - may be recovering naturally"
+        else:
+            trend_change = 0
+            trend_direction = "insufficient_data"
+            interpretation = "Insufficient data points for trend analysis"
+        
+        return JsonResponse({
+            "success": True,
+            "data": {
+                "dates": [ts['date'] for ts in time_series],
+                "values": [ts['ndvi'] for ts in time_series],
+                "details": time_series,
+                "trend_direction": trend_direction,
+                "trend_change": trend_change,
+                "interpretation": interpretation,
+                "interval": interval,
+                "periods_analyzed": len(time_series)
+            },
+            "metadata": {
+                "date_range": f"{start} to {end}",
+                "geometry_area_km2": round(roi.area().divide(1e6).getInfo(), 2)
+            }
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON in request body"}, status=400)
+    except ee.EEException as e:
+        logger.error(f"❌ Earth Engine error in ndvi_trend: {e}")
+        return JsonResponse(
+            {"error": f"Processing error: {str(e)[:200]}"},
+            status=500
+        )
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {e}", exc_info=True)
+        return JsonResponse(
+            {"error": "Internal server error. Please try again later."},
             status=500
         )

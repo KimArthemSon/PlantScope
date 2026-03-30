@@ -22,12 +22,14 @@ import {
   CloudLightning,
   Pen,
   Filter,
-  FormInput,
   File,
   AreaChart,
+  Info,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { useUserRole } from "@/hooks/authorization";
+// ✅ FIXED: Adjust import path based on your project structure
+import CanopyGuideModal from "./canopy_guide";
 
 // Fix Leaflet marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -56,10 +58,8 @@ function MapController({ center }: { center: [number, number] }) {
 interface PolygonGeometry {
   type: "Polygon";
   coordinates: [number, number][];
-  // Array of [latitude, longitude] pairs
 }
 
-// Main Classified Area interface
 interface ClassifiedArea {
   classified_area_id: number;
   name: string;
@@ -67,7 +67,7 @@ interface ClassifiedArea {
   land_classification_name: string;
   polygon: PolygonGeometry;
   description: string;
-  created_at: string; // ISO date string
+  created_at: string;
 }
 
 export type SafetyType = "safe" | "slightly" | "moderate" | "danger";
@@ -77,11 +77,9 @@ export interface ReforestationArea {
   name: string;
   legality: Legality;
   safety: SafetyType;
-
   polygon_coordinate: {
     coordinates: [number, number][];
   } | null;
-
   coordinate: [number, number] | null;
   barangay: {
     barangay_id: number;
@@ -98,19 +96,24 @@ interface Barangays {
   coordinate: [number, number];
 }
 
+interface SiteStatistics {
+  total: number;
+  totalArea: number;
+  avgNDVI: number;
+}
+
 export default function Map() {
   const token = localStorage.getItem("token");
   let ORMOCCITY: [number, number] = [11.02, 124.61];
   const mapRef = useRef<L.Map | null>(null);
-  const drawnLayerRef = useRef<any>(null); // For managing map layer
+  const drawnLayerRef = useRef<any>(null);
   const [classified_areas, setClassified_areas] = useState<ClassifiedArea[]>(
     [],
   );
-
   const [barangays, setBarangays] = useState<Barangays[]>([]);
-  const [selectedBarangay, SetSelectedBarangay] = useState<[number, number]>([
-    1, 1,
-  ]);
+
+  // ✅ Canopy Guide State
+  const [showCanopyGuide, setShowCanopyGuide] = useState(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -137,14 +140,22 @@ export default function Map() {
   const [isFormPenelOpen, setIsFormPenelOpen] = useState(false);
   const [isDrawPenelOpen, setIsDrawPenelOpen] = useState(false);
   const [isFilterPenelOpen, setIsFilterPenelOpen] = useState(false);
+
   // NDVI State
   const [ndviTileUrl, setNdviTileUrl] = useState<string | null>(null);
   const [showNDVI, setShowNDVI] = useState(true);
+  // ✅ Added loading state
+  const [isNdviLoading, setIsNdviLoading] = useState(false);
 
   // Analysis State
   const [suitablePolygons, setSuitablePolygons] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [drawnGeometry, setDrawnGeometry] = useState<any>(null); // Track geometry
+  const [drawnGeometry, setDrawnGeometry] = useState<any>(null);
+  const [siteStats, setSiteStats] = useState<SiteStatistics>({
+    total: 0,
+    totalArea: 0,
+    avgNDVI: 0,
+  });
 
   // Shared date state
   const [start, setStart] = useState("2023-01-01");
@@ -192,6 +203,25 @@ export default function Map() {
     }
   }, [userRole]);
 
+  // ✅ Auto-hide canopy guide when NDVI is hidden
+  useEffect(() => {
+    if (!showNDVI) {
+      setShowCanopyGuide(false);
+    }
+  }, [showNDVI]);
+
+  // ✅ Keyboard shortcut: Press 'G' to toggle guide
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "g" && showNDVI && !isNdviPenelOpen) {
+        setShowCanopyGuide((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showNDVI, isNdviPenelOpen]);
+
   // Initialize Geoman drawing
   useEffect(() => {
     if (!mapRef.current) return;
@@ -200,7 +230,6 @@ export default function Map() {
 
     map.off("pm:create");
     map.on("pm:create", (e: any) => {
-      // Remove previous layer if exists
       if (drawnLayerRef.current) {
         map.removeLayer(drawnLayerRef.current);
         drawnLayerRef.current = null;
@@ -211,7 +240,6 @@ export default function Map() {
       layer.setStyle({ color: "#3b82f6", weight: 2, fill: false });
       layer.addTo(map);
 
-      // Save geometry to state → triggers UI update
       const geojson = layer.toGeoJSON();
       setDrawnGeometry(geojson.geometry);
     });
@@ -224,6 +252,7 @@ export default function Map() {
       }
     };
   }, [mapRef.current]);
+
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -250,38 +279,78 @@ export default function Map() {
       map.off("click", handleClick);
     };
   }, [isPickingMarker, form]);
+
   function startMarkerPlacement() {
     setIsPickingMarker(true);
   }
-  // Render NDVI (city-wide)
+
+  // ✅ FIXED: Render NDVI with proper error handling and loading state
   const renderNDVI = async () => {
-    const res = await fetch(
-      `http://127.0.0.1:8000/api/ndvi/?start=${start}&end=${end}`,
-      {
-        headers: { Authorization: "Bearer " + token },
-      },
-    );
-    const data = await res.json();
-    if (data.tile_url) {
-      setNdviTileUrl(data.tile_url);
-      setSuitablePolygons(null);
-      setDrawnGeometry(null);
-      if (drawnLayerRef.current && mapRef.current) {
-        mapRef.current.removeLayer(drawnLayerRef.current);
-        drawnLayerRef.current = null;
+    setIsNdviLoading(true);
+
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:8000/api/ndvi/?start=${start}&end=${end}`,
+        {
+          headers: { Authorization: "Bearer " + token },
+        },
+      );
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
       }
-    } else {
-      alert("Could not generate NDVI map. Try a different date range.");
+
+      const data = await res.json();
+
+      if (data.tile_url) {
+        setNdviTileUrl(data.tile_url);
+        setShowNDVI(true);
+        setShowCanopyGuide(true); // Auto-show guide
+        setSuitablePolygons(null);
+        setDrawnGeometry(null);
+        setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
+
+        if (drawnLayerRef.current && mapRef.current) {
+          mapRef.current.removeLayer(drawnLayerRef.current);
+          drawnLayerRef.current = null;
+        }
+
+        setPSAlert({
+          type: "success",
+          title: "NDVI Loaded",
+          message:
+            "Canopy guide opened. Close it to see the NDVI layer on the map.",
+        });
+      } else {
+        throw new Error("No tile URL returned from API");
+      }
+    } catch (error: any) {
+      console.error("NDVI Error:", error);
+      setPSAlert({
+        type: "error",
+        title: "NDVI Loading Failed",
+        message:
+          error.message ||
+          "Could not generate NDVI map. Check console for details.",
+      });
+      setShowCanopyGuide(false); // Close modal on error
+    } finally {
+      setIsNdviLoading(false);
     }
   };
 
-  // Analyze drawn area
+  // ✅ FULLY FIXED: Analyze drawn area
   const analyzeArea = async () => {
     if (!drawnGeometry) {
-      alert("Please draw a rectangle first.");
+      setPSAlert({
+        type: "failed",
+        title: "No Area Drawn",
+        message: "Please draw a rectangle first before analyzing.",
+      });
       return;
     }
     setIsProcessing(true);
+
     try {
       const res = await fetch(`http://127.0.0.1:8000/api/suitable-sites/`, {
         method: "POST",
@@ -289,19 +358,86 @@ export default function Map() {
           "Content-Type": "application/json",
           Authorization: "Bearer " + token,
         },
-        body: JSON.stringify({ start, end, geometry: drawnGeometry }),
+        body: JSON.stringify({
+          start,
+          end,
+          geometry: drawnGeometry,
+          debug: false, // ✅ FIXED: Set to false for production
+        }),
       });
+
       const data = await res.json();
-      if (data.polygons && data.polygons.features?.length > 0) {
-        setSuitablePolygons(data.polygons);
-        setNdviTileUrl(null);
-      } else {
-        alert("No suitable planting sites found in this area.");
-        setSuitablePolygons(null);
+
+      // Check for HTTP errors
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to analyze area");
       }
-    } catch (err) {
-      console.error(err);
-      alert("Error analyzing area. Try again.");
+
+      // Handle debug mode (development only)
+      if (data.debug) {
+        console.log("📊 NDVI Debug Data:", data);
+        const histogram = data.histogram;
+        let suitablePixels = 0;
+        for (const [range, count] of Object.entries(histogram)) {
+          const maxVal = parseFloat(range.split("-")[1]);
+          if (maxVal < 0.41) {
+            suitablePixels += count as number;
+          }
+        }
+
+        setPSAlert({
+          type: "success",
+          title: "Debug Mode",
+          message: `Found ${suitablePixels} suitable pixels. Check console for details.`,
+        });
+        return;
+      }
+
+      // ✅ PRODUCTION MODE: Display suitable sites
+      if (data.success && data.features && data.features.length > 0) {
+        setSuitablePolygons(data);
+        setNdviTileUrl(null);
+
+        // Calculate statistics
+        const totalArea = data.features.reduce(
+          (sum: number, f: any) => sum + (f.properties.area_hectares || 0),
+          0,
+        );
+        const avgNDVI =
+          data.features.reduce(
+            (sum: number, f: any) => sum + (f.properties.avg_ndvi || 0),
+            0,
+          ) / data.features.length;
+
+        setSiteStats({
+          total: data.features.length,
+          totalArea: totalArea,
+          avgNDVI: avgNDVI,
+        });
+
+        setPSAlert({
+          type: "success",
+          title: "Analysis Complete",
+          message: `Found ${data.features.length} potential reforestation sites covering ${totalArea.toFixed(2)} hectares.`,
+        });
+      } else {
+        // No suitable sites found
+        setSuitablePolygons(null);
+        setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
+        setPSAlert({
+          type: "failed",
+          title: "No Sites Found",
+          message:
+            "No suitable planting sites found in this area. Try adjusting the date range or drawing a different area.",
+        });
+      }
+    } catch (err: any) {
+      console.error("Analysis error:", err);
+      setPSAlert({
+        type: "error",
+        title: "Analysis Failed",
+        message: err.message || "Error analyzing area. Please try again.",
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -318,13 +454,13 @@ export default function Map() {
 
   const handleHome = () => {
     setGoHome(true);
-    // console.log('[11.02, 124.61]: ',ORMOCCITY)
     setTimeout(() => setGoHome(false), 100);
   };
 
   const clearAnalysis = () => {
     setSuitablePolygons(null);
     setDrawnGeometry(null);
+    setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
     if (mapRef.current && drawnLayerRef.current) {
       mapRef.current.removeLayer(drawnLayerRef.current);
       drawnLayerRef.current = null;
@@ -347,10 +483,12 @@ export default function Map() {
   };
 
   const hasDrawnArea = !!drawnGeometry;
+
   useEffect(() => {
     get_classified_area();
     getBarangays();
   }, []);
+
   useEffect(() => {
     console.log(barangays);
   }, [barangays]);
@@ -371,6 +509,7 @@ export default function Map() {
       }
     } catch (e: any) {}
   }
+
   async function getBarangays() {
     try {
       const res = await fetch("http://127.0.0.1:8000/api/get_barangay_list/", {
@@ -393,12 +532,14 @@ export default function Map() {
       alert("Error submitting form.");
     }
   }
+
   function closeAll() {
     setIsNdviPenelOpen(false);
     setIsFormPenelOpen(false);
     setIsDrawPenelOpen(false);
     setIsFilterPenelOpen(false);
   }
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
@@ -475,9 +616,10 @@ export default function Map() {
       alert("Error submitting form.");
     }
   }
+
   async function get_all_reforestation_areas() {
     try {
-      const token = localStorage.getItem("token"); // If using auth
+      const token = localStorage.getItem("token");
       const res = await fetch(
         "http://127.0.0.1:8000/api/get_all_reforestation_areas/",
         {
@@ -491,7 +633,7 @@ export default function Map() {
       if (!res.ok) throw new Error("Failed to fetch reforestation areas");
 
       const data = await res.json();
-      setReforestation_areas(data.data); // Save areas to state
+      setReforestation_areas(data.data);
     } catch (err) {
       console.error(err);
       setPSAlert({
@@ -501,6 +643,7 @@ export default function Map() {
       });
     }
   }
+
   useEffect(() => {
     get_all_reforestation_areas();
   }, []);
@@ -515,6 +658,56 @@ export default function Map() {
           onClose={() => setPSAlert(null)}
         />
       )}
+
+      {/* ✅ Statistics Panel */}
+      {suitablePolygons && siteStats.total > 0 && (
+        <div className="absolute top-4 right-4 bg-white p-4 rounded-lg shadow-lg z-[1000] min-w-[250px]">
+          <h3 className="font-bold text-sm mb-3 text-[#0f4a2f] border-b pb-2">
+            📊 Analysis Results
+          </h3>
+          <div className="text-xs space-y-2">
+            <div className="flex justify-between">
+              <span>📍 Total Sites:</span>
+              <strong className="text-[#0f4a2f]">{siteStats.total}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span>📏 Total Area:</span>
+              <strong className="text-[#0f4a2f]">
+                {siteStats.totalArea.toFixed(2)} ha
+              </strong>
+            </div>
+            <div className="flex justify-between">
+              <span>🌱 Avg NDVI:</span>
+              <strong className="text-[#0f4a2f]">
+                {siteStats.avgNDVI.toFixed(3)}
+              </strong>
+            </div>
+            <div className="flex justify-between">
+              <span>🎯 Threshold:</span>
+              <strong className="text-[#0f4a2f]">&lt; 0.41</strong>
+            </div>
+          </div>
+          <button
+            onClick={clearAnalysis}
+            className="mt-3 w-full text-xs bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded border border-red-200 transition-colors"
+          >
+            Clear Results
+          </button>
+        </div>
+      )}
+
+      {/* ✅ NDVI Loading Overlay */}
+      {isNdviLoading && (
+        <div className="absolute inset-0 z-[1500] flex items-center justify-center bg-[#00000083] bg-opacity-10 pointer-events-none">
+          <div className="bg-white p-4 rounded-lg shadow-lg flex items-center gap-3">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#0f4a2f]"></div>
+            <span className="text-sm font-medium text-gray-700">
+              Loading NDVI...
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="absolute z-[1000] flex gap-1 bottom-2 border border-2 border-green-700 rounded rounded-2xl left-1/2 -translate-x-1/2 bg-white p-2 w-[40rem]">
         <button
           onClick={handleHome}
@@ -524,11 +717,10 @@ export default function Map() {
         </button>
 
         {/* NDVI PANEL */}
-
         {userRole != "DataManager" && (
           <div className=" relative ml-auto ">
             {isNdviPenelOpen && (
-              <div className="absolute top-[-240px] w-[12rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md">
+              <div className="absolute top-[-240px] w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md">
                 <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
                   <h1 className="text-white [word-spacing:10px] ">NDVI</h1>
                 </div>
@@ -555,12 +747,38 @@ export default function Map() {
                   />
                 </div>
                 <div className="flex flex-row gap-1 mt-2">
+                  {showNDVI && (
+                    <button
+                      onClick={() => setShowCanopyGuide(!showCanopyGuide)}
+                      className="flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
+                      title="Toggle Guide (Press G)"
+                    >
+                      <Info size={14} /> {showCanopyGuide ? "Hide" : "Show"}{" "}
+                      Guide
+                    </button>
+                  )}
                   <button
                     onClick={renderNDVI}
-                    className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
+                    disabled={isNdviLoading}
+                    className={`flex items-center justify-center gap-1 ml-auto h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer transition-colors
+                      ${
+                        isNdviLoading
+                          ? "bg-gray-400 cursor-not-allowed"
+                          : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"
+                      }`}
                   >
-                    <CloudLightning size={16} /> Run
+                    {isNdviLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <CloudLightning size={16} /> Run
+                      </>
+                    )}
                   </button>
+
                   <button
                     onClick={() => setShowNDVI(!showNDVI)}
                     className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
@@ -585,6 +803,7 @@ export default function Map() {
             </button>
           </div>
         )}
+
         {/* Create PANEL */}
         {userRole != "DataManager" && (
           <div className=" relative ">
@@ -602,7 +821,6 @@ export default function Map() {
                 </h2>
               </div>
 
-              {/* Name */}
               <div>
                 <label className="text-[.7rem] text-gray-600">Name</label>
                 <input
@@ -615,7 +833,6 @@ export default function Map() {
                 />
               </div>
 
-              {/* Description */}
               <div>
                 <label className="text-[.7rem] text-gray-600">
                   Description
@@ -631,11 +848,10 @@ export default function Map() {
                 />
               </div>
 
-              {/* Location */}
               <div>
                 <label className="text-[.7rem] text-gray-600">Barangay:</label>
                 <select
-                  value={form.barangay.barangay_id || ""} // ✅ Handle empty state
+                  value={form.barangay.barangay_id || ""}
                   onChange={(e) => {
                     const selectedId = parseInt(e.target.value, 10);
                     const selectedBarangay = barangays.find(
@@ -646,15 +862,14 @@ export default function Map() {
                       ...form,
                       barangay: {
                         barangay_id: selectedId,
-                        name: selectedBarangay?.name || "", // ✅ Auto-fill name
+                        name: selectedBarangay?.name || "",
                       },
                     });
                   }}
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                   required
                 >
-                  <option value="">-- Select Barangay --</option>{" "}
-                  {/* ✅ Default option */}
+                  <option value="">-- Select Barangay --</option>
                   {barangays.map((b) => (
                     <option key={b.barangay_id} value={b.barangay_id}>
                       {b.name}
@@ -662,7 +877,7 @@ export default function Map() {
                   ))}
                 </select>
               </div>
-              {/* Coordinate */}
+
               <div>
                 <label className="text-[.7rem] text-gray-600">
                   Coordinate (Lat, Lng)
@@ -698,7 +913,6 @@ export default function Map() {
                 </div>
               </div>
 
-              {/* Safety */}
               <div>
                 <label className="text-[.7rem] text-gray-600">
                   Safety Level
@@ -720,7 +934,6 @@ export default function Map() {
                 </select>
               </div>
 
-              {/* Image */}
               <div>
                 <label className="text-[.7rem] text-gray-600">Area Image</label>
                 <input
@@ -761,6 +974,7 @@ export default function Map() {
             </button>
           </div>
         )}
+
         {/* Draw PANEL */}
         {userRole != "DataManager" && (
           <div className="relative">
@@ -784,9 +998,24 @@ export default function Map() {
 
               <button
                 onClick={analyzeArea}
-                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+                disabled={isProcessing}
+                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer
+                  ${
+                    isProcessing
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"
+                  }`}
               >
-                <CloudLightning size={16} /> Analyze
+                {isProcessing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <CloudLightning size={16} /> Analyze
+                  </>
+                )}
               </button>
 
               <button
@@ -804,7 +1033,6 @@ export default function Map() {
               </button>
             </div>
 
-            {/* Toggle Button */}
             <button
               onClick={() => {
                 if (isDrawPenelOpen) {
@@ -820,6 +1048,7 @@ export default function Map() {
             </button>
           </div>
         )}
+
         {/* Filter PANEL */}
         <div className="relative">
           <div
@@ -859,7 +1088,7 @@ export default function Map() {
               </select>
             </div>
           </div>
-          {/* Toggle Button */}
+
           <button
             onClick={() => {
               if (isFilterPenelOpen) {
@@ -876,35 +1105,75 @@ export default function Map() {
         </div>
       </div>
 
-      <MapContainer center={ORMOCCITY} zoom={12} className="h-full w-full">
-        {/* Capture map instance */}
+      <MapContainer
+        center={ORMOCCITY}
+        zoom={12}
+        className="h-full w-full"
+        style={{ minHeight: "100vh" }}
+      >
         <MapInitializer setMapRef={(map) => (mapRef.current = map)} />
 
-        {/* Google Hybrid Basemap */}
         <TileLayer
           url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
           attribution='Map data &copy; <a href="https://www.google.com/maps">Google</a>'
         />
 
-        {/* NDVI Layer */}
         {ndviTileUrl && showNDVI && (
-          <TileLayer url={ndviTileUrl} opacity={0.7} />
+          <TileLayer
+            url={ndviTileUrl}
+            opacity={0.7}
+            attribution="NDVI Data &copy; Google Earth Engine"
+          />
         )}
 
-        {/* Suitable Polygons */}
-        {suitablePolygons && (
+        {/* Show warning when NDVI is active but no data
+        {showNDVI && !ndviTileUrl && !isNdviLoading && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded z-[1000] shadow-lg">
+            <p className="text-sm flex items-center gap-2">
+              <Info size={14} />
+              NDVI layer not loaded. Try different dates or check connection.
+            </p>
+          </div>
+        )} */}
+
+        {/* ✅ FIXED: Suitable Polygons with proper GeoJSON structure */}
+        {suitablePolygons && suitablePolygons.features && (
           <GeoJSON
-            data={suitablePolygons}
+            data={{
+              type: suitablePolygons.type,
+              features: suitablePolygons.features,
+            }}
             style={{
               color: "#dc2626",
               weight: 2,
               fillColor: "#fecaca",
               fillOpacity: 0.6,
             }}
+            onEachFeature={(feature, layer) => {
+              const props = feature.properties;
+              layer.bindPopup(`
+                <div style="font-size: 12px; min-width: 150px;">
+                  <strong style="color: #0f4a2f; font-size: 14px; display: block; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">
+                    ${props.site_id}
+                  </strong>
+                  <div style="margin: 4px 0;">
+                    <span style="color: #666;">📏 Area:</span>
+                    <strong> ${props.area_hectares} ha</strong>
+                  </div>
+                  <div style="margin: 4px 0;">
+                    <span style="color: #666;">🌱 NDVI:</span>
+                    <strong> ${props.avg_ndvi}</strong>
+                  </div>
+                  <div style="margin: 4px 0;">
+                    <span style="color: #666;">🎯 Suitability:</span>
+                    <strong> ${props.suitability_score}%</strong>
+                  </div>
+                </div>
+              `);
+            }}
           />
         )}
 
-        {/* Classified Areas */}
         {classified_areas.length > 0 &&
           classified_areas.map((area, i) => (
             <Polygon
@@ -916,13 +1185,10 @@ export default function Map() {
             </Polygon>
           ))}
 
-        {/* Reforestation Area Markers */}
         {reforestation_areas.length > 0 &&
           reforestation_areas.map((area) => {
-            // Skip if no coordinates or invalid
             if (!area.coordinate || area.coordinate.length !== 2) return null;
 
-            // Ensure numbers
             const lat = Number(area.coordinate[0]);
             const lng = Number(area.coordinate[1]);
             if (isNaN(lat) || isNaN(lng)) return null;
@@ -958,10 +1224,8 @@ export default function Map() {
 
         {barangays.length > 0 &&
           barangays.map((area) => {
-            // Skip if no coordinates or invalid
             if (!area.coordinate || area.coordinate.length !== 2) return null;
 
-            // Ensure numbers
             const lat = Number(area.coordinate[0]);
             const lng = Number(area.coordinate[1]);
             if (isNaN(lat) || isNaN(lng)) return null;
@@ -989,6 +1253,12 @@ export default function Map() {
           </Marker>
         )}
       </MapContainer>
+
+      {/* ✅ Canopy Guide Modal - Properly integrated */}
+      <CanopyGuideModal
+        isOpen={showCanopyGuide}
+        onClose={() => setShowCanopyGuide(false)}
+      />
     </div>
   );
 }
