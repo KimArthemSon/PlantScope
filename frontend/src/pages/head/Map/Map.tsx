@@ -7,7 +7,7 @@ import {
   Polygon,
   Popup,
 } from "react-leaflet";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
@@ -28,8 +28,9 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { useUserRole } from "@/hooks/authorization";
-// ✅ FIXED: Adjust import path based on your project structure
 import CanopyGuideModal from "./canopy_guide";
+// ✅ NEW: Import the separated component
+import BarangayClassifiedAreas from "./barangay_classified_area";
 
 // Fix Leaflet marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -144,7 +145,6 @@ export default function Map() {
   // NDVI State
   const [ndviTileUrl, setNdviTileUrl] = useState<string | null>(null);
   const [showNDVI, setShowNDVI] = useState(true);
-  // ✅ Added loading state
   const [isNdviLoading, setIsNdviLoading] = useState(false);
 
   // Analysis State
@@ -167,6 +167,11 @@ export default function Map() {
     title: string;
     message: string;
   } | null>(null);
+
+  // ✅ NEW: State for tracking selected barangay's classified areas
+  const [selectedBarangayId, setSelectedBarangayId] = useState<number | null>(
+    null,
+  );
 
   const greenIcon = new L.Icon({
     iconUrl:
@@ -191,33 +196,28 @@ export default function Map() {
       setUseruserRole("");
       return;
     }
-
     if (userRole === "GISSpecialist") {
       setUseruserRole("GISS");
       return;
     }
-
     if (userRole === "DataManager") {
       setUseruserRole("DataManager");
       return;
     }
   }, [userRole]);
 
-  // ✅ Auto-hide canopy guide when NDVI is hidden
   useEffect(() => {
     if (!showNDVI) {
       setShowCanopyGuide(false);
     }
   }, [showNDVI]);
 
-  // ✅ Keyboard shortcut: Press 'G' to toggle guide
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "g" && showNDVI && !isNdviPenelOpen) {
         setShowCanopyGuide((prev) => !prev);
       }
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showNDVI, isNdviPenelOpen]);
@@ -234,12 +234,10 @@ export default function Map() {
         map.removeLayer(drawnLayerRef.current);
         drawnLayerRef.current = null;
       }
-
       const layer = e.layer;
       drawnLayerRef.current = layer;
       layer.setStyle({ color: "#3b82f6", weight: 2, fill: false });
       layer.addTo(map);
-
       const geojson = layer.toGeoJSON();
       setDrawnGeometry(geojson.geometry);
     });
@@ -255,26 +253,15 @@ export default function Map() {
 
   useEffect(() => {
     if (!mapRef.current) return;
-
     const map = mapRef.current;
-
     const handleClick = (e: L.LeafletMouseEvent) => {
       if (!isPickingMarker) return;
-
       const { lat, lng } = e.latlng;
-
       setMarkerPosition([lat, lng]);
-
-      setForm({
-        ...form,
-        coordinate: [lat, lng],
-      });
-
+      setForm({ ...form, coordinate: [lat, lng] });
       setIsPickingMarker(false);
     };
-
     map.on("click", handleClick);
-
     return () => {
       map.off("click", handleClick);
     };
@@ -284,37 +271,26 @@ export default function Map() {
     setIsPickingMarker(true);
   }
 
-  // ✅ FIXED: Render NDVI with proper error handling and loading state
   const renderNDVI = async () => {
     setIsNdviLoading(true);
-
     try {
       const res = await fetch(
         `http://127.0.0.1:8000/api/ndvi/?start=${start}&end=${end}`,
-        {
-          headers: { Authorization: "Bearer " + token },
-        },
+        { headers: { Authorization: "Bearer " + token } },
       );
-
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
-
       if (data.tile_url) {
         setNdviTileUrl(data.tile_url);
         setShowNDVI(true);
-        setShowCanopyGuide(true); // Auto-show guide
+        setShowCanopyGuide(true);
         setSuitablePolygons(null);
         setDrawnGeometry(null);
         setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
-
         if (drawnLayerRef.current && mapRef.current) {
           mapRef.current.removeLayer(drawnLayerRef.current);
           drawnLayerRef.current = null;
         }
-
         setPSAlert({
           type: "success",
           title: "NDVI Loaded",
@@ -333,13 +309,12 @@ export default function Map() {
           error.message ||
           "Could not generate NDVI map. Check console for details.",
       });
-      setShowCanopyGuide(false); // Close modal on error
+      setShowCanopyGuide(false);
     } finally {
       setIsNdviLoading(false);
     }
   };
 
-  // ✅ FULLY FIXED: Analyze drawn area
   const analyzeArea = async () => {
     if (!drawnGeometry) {
       setPSAlert({
@@ -350,7 +325,6 @@ export default function Map() {
       return;
     }
     setIsProcessing(true);
-
     try {
       const res = await fetch(`http://127.0.0.1:8000/api/suitable-sites/`, {
         method: "POST",
@@ -362,29 +336,19 @@ export default function Map() {
           start,
           end,
           geometry: drawnGeometry,
-          debug: false, // ✅ FIXED: Set to false for production
+          debug: false,
         }),
       });
-
       const data = await res.json();
-
-      // Check for HTTP errors
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to analyze area");
-      }
-
-      // Handle debug mode (development only)
+      if (!res.ok) throw new Error(data.error || "Failed to analyze area");
       if (data.debug) {
         console.log("📊 NDVI Debug Data:", data);
         const histogram = data.histogram;
         let suitablePixels = 0;
         for (const [range, count] of Object.entries(histogram)) {
           const maxVal = parseFloat(range.split("-")[1]);
-          if (maxVal < 0.41) {
-            suitablePixels += count as number;
-          }
+          if (maxVal < 0.41) suitablePixels += count as number;
         }
-
         setPSAlert({
           type: "success",
           title: "Debug Mode",
@@ -392,13 +356,9 @@ export default function Map() {
         });
         return;
       }
-
-      // ✅ PRODUCTION MODE: Display suitable sites
       if (data.success && data.features && data.features.length > 0) {
         setSuitablePolygons(data);
         setNdviTileUrl(null);
-
-        // Calculate statistics
         const totalArea = data.features.reduce(
           (sum: number, f: any) => sum + (f.properties.area_hectares || 0),
           0,
@@ -408,20 +368,13 @@ export default function Map() {
             (sum: number, f: any) => sum + (f.properties.avg_ndvi || 0),
             0,
           ) / data.features.length;
-
-        setSiteStats({
-          total: data.features.length,
-          totalArea: totalArea,
-          avgNDVI: avgNDVI,
-        });
-
+        setSiteStats({ total: data.features.length, totalArea, avgNDVI });
         setPSAlert({
           type: "success",
           title: "Analysis Complete",
           message: `Found ${data.features.length} potential reforestation sites covering ${totalArea.toFixed(2)} hectares.`,
         });
       } else {
-        // No suitable sites found
         setSuitablePolygons(null);
         setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
         setPSAlert({
@@ -443,7 +396,6 @@ export default function Map() {
     }
   };
 
-  // Cancel current drawing
   const cancelDrawing = () => {
     if (mapRef.current && drawnLayerRef.current) {
       mapRef.current.removeLayer(drawnLayerRef.current);
@@ -482,8 +434,6 @@ export default function Map() {
     }
   };
 
-  const hasDrawnArea = !!drawnGeometry;
-
   useEffect(() => {
     get_classified_area();
     getBarangays();
@@ -492,6 +442,11 @@ export default function Map() {
   useEffect(() => {
     console.log(barangays);
   }, [barangays]);
+
+  // ✅ Cleanup: Clear selected barangay when component unmounts
+  useEffect(() => {
+    return () => setSelectedBarangayId(null);
+  }, []);
 
   async function get_classified_area() {
     try {
@@ -503,21 +458,15 @@ export default function Map() {
       );
       const data = await res.json();
       setClassified_areas(data.data);
-
-      if (!res.ok) {
-        return;
-      }
+      if (!res.ok) return;
     } catch (e: any) {}
   }
 
   async function getBarangays() {
     try {
       const res = await fetch("http://127.0.0.1:8000/api/get_barangay_list/", {
-        headers: {
-          Authorization: "Bearer " + token,
-        },
+        headers: { Authorization: "Bearer " + token },
       });
-
       const data = await res.json();
       setBarangays(data.data);
       if (!res.ok) {
@@ -542,46 +491,32 @@ export default function Map() {
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-
     try {
       const token = localStorage.getItem("token");
-
       const formData = new FormData();
-
       formData.append("name", form.name);
       formData.append("description", form.description);
       formData.append("barangay_id", String(form.barangay.barangay_id));
       formData.append("legality", form.legality);
       formData.append("safety", form.safety);
-
-      if (form.coordinate) {
+      if (form.coordinate)
         formData.append("coordinate", JSON.stringify(form.coordinate));
-      }
-
       if (form.polygon_coordinate.coordinates.length > 0) {
         formData.append(
           "polygon_coordinate",
           JSON.stringify(form.polygon_coordinate.coordinates),
         );
       }
-
-      if (form.area_img) {
-        formData.append("area_img", form.area_img);
-      }
-
+      if (form.area_img) formData.append("area_img", form.area_img);
       const res = await fetch(
         "http://127.0.0.1:8000/api/create_reforestation_areas/",
         {
           method: "POST",
-          headers: {
-            Authorization: "Bearer " + token,
-          },
+          headers: { Authorization: "Bearer " + token },
           body: formData,
         },
       );
-
       const data = await res.json();
-
       if (!res.ok) {
         alert(
           "Failed to create area: " +
@@ -594,21 +529,16 @@ export default function Map() {
         title: "Success",
         message: "Successfully added!",
       });
-
       setForm({
         name: "",
         legality: "pending",
         safety: "moderate",
         polygon_coordinate: { coordinates: [] },
         coordinate: null,
-        barangay: {
-          barangay_id: 0,
-          name: "",
-        },
+        barangay: { barangay_id: 0, name: "" },
         description: "",
         area_img: null,
       });
-
       setIsFormPenelOpen(false);
       get_all_reforestation_areas();
     } catch (error) {
@@ -624,14 +554,10 @@ export default function Map() {
         "http://127.0.0.1:8000/api/get_all_reforestation_areas/",
         {
           method: "GET",
-          headers: {
-            Authorization: token ? `Bearer ${token}` : "",
-          },
+          headers: { Authorization: token ? `Bearer ${token}` : "" },
         },
       );
-
       if (!res.ok) throw new Error("Failed to fetch reforestation areas");
-
       const data = await res.json();
       setReforestation_areas(data.data);
     } catch (err) {
@@ -648,6 +574,26 @@ export default function Map() {
     get_all_reforestation_areas();
   }, []);
 
+  const handleClassifiedAreasStatus = useCallback(
+    (status: { loading: boolean; error: string | null; count: number }) => {
+      if (status.error) {
+        setPSAlert({
+          type: "error",
+          title: "Load Failed",
+          message: status.error,
+        });
+      } else if (status.count > 0 && !status.loading) {
+        setPSAlert({
+          type: "success",
+          title: "Areas Loaded",
+          message: `Showing ${status.count} classified area(s) for this barangay.`,
+        });
+      }
+      // Optional: handle loading state with a spinner if desired
+    },
+    [],
+  );
+
   return (
     <div className="relative h-screen w-full">
       {PSalert && (
@@ -659,7 +605,7 @@ export default function Map() {
         />
       )}
 
-      {/* ✅ Statistics Panel */}
+      {/* Statistics Panel */}
       {suitablePolygons && siteStats.total > 0 && (
         <div className="absolute top-4 right-4 bg-white p-4 rounded-lg shadow-lg z-[1000] min-w-[250px]">
           <h3 className="font-bold text-sm mb-3 text-[#0f4a2f] border-b pb-2">
@@ -696,7 +642,7 @@ export default function Map() {
         </div>
       )}
 
-      {/* ✅ NDVI Loading Overlay */}
+      {/* NDVI Loading Overlay */}
       {isNdviLoading && (
         <div className="absolute inset-0 z-[1500] flex items-center justify-center bg-[#00000083] bg-opacity-10 pointer-events-none">
           <div className="bg-white p-4 rounded-lg shadow-lg flex items-center gap-3">
@@ -708,6 +654,7 @@ export default function Map() {
         </div>
       )}
 
+      {/* Bottom Control Panel */}
       <div className="absolute z-[1000] flex gap-1 bottom-2 border border-2 border-green-700 rounded rounded-2xl left-1/2 -translate-x-1/2 bg-white p-2 w-[40rem]">
         <button
           onClick={handleHome}
@@ -718,13 +665,12 @@ export default function Map() {
 
         {/* NDVI PANEL */}
         {userRole != "DataManager" && (
-          <div className=" relative ml-auto ">
+          <div className="relative ml-auto">
             {isNdviPenelOpen && (
               <div className="absolute top-[-240px] w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md">
                 <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
-                  <h1 className="text-white [word-spacing:10px] ">NDVI</h1>
+                  <h1 className="text-white [word-spacing:10px]">NDVI</h1>
                 </div>
-
                 <div>
                   <label className="text-[.7rem] text-gray-600">
                     Start Date
@@ -736,7 +682,6 @@ export default function Map() {
                     className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                   />
                 </div>
-
                 <div>
                   <label className="text-[.7rem] text-gray-600">End Date</label>
                   <input
@@ -760,16 +705,11 @@ export default function Map() {
                   <button
                     onClick={renderNDVI}
                     disabled={isNdviLoading}
-                    className={`flex items-center justify-center gap-1 ml-auto h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer transition-colors
-                      ${
-                        isNdviLoading
-                          ? "bg-gray-400 cursor-not-allowed"
-                          : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"
-                      }`}
+                    className={`flex items-center justify-center gap-1 ml-auto h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer transition-colors ${isNdviLoading ? "bg-gray-400 cursor-not-allowed" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
                   >
                     {isNdviLoading ? (
                       <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>{" "}
                         Loading...
                       </>
                     ) : (
@@ -778,7 +718,6 @@ export default function Map() {
                       </>
                     )}
                   </button>
-
                   <button
                     onClick={() => setShowNDVI(!showNDVI)}
                     className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
@@ -806,21 +745,16 @@ export default function Map() {
 
         {/* Create PANEL */}
         {userRole != "DataManager" && (
-          <div className=" relative ">
+          <div className="relative">
             <form
               onSubmit={onSubmit}
-              className={`absolute top-[-485px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
-                isFormPenelOpen
-                  ? "opacity-100"
-                  : "opacity-0 pointer-events-none"
-              }`}
+              className={`absolute top-[-485px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isFormPenelOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
             >
               <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
                 <h2 className="text-white text-[.8rem]">
                   Create Reforestation Area
                 </h2>
               </div>
-
               <div>
                 <label className="text-[.7rem] text-gray-600">Name</label>
                 <input
@@ -832,7 +766,6 @@ export default function Map() {
                   required
                 />
               </div>
-
               <div>
                 <label className="text-[.7rem] text-gray-600">
                   Description
@@ -847,7 +780,6 @@ export default function Map() {
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                 />
               </div>
-
               <div>
                 <label className="text-[.7rem] text-gray-600">Barangay:</label>
                 <select
@@ -857,7 +789,6 @@ export default function Map() {
                     const selectedBarangay = barangays.find(
                       (b) => b.barangay_id === selectedId,
                     );
-
                     setForm({
                       ...form,
                       barangay: {
@@ -877,12 +808,10 @@ export default function Map() {
                   ))}
                 </select>
               </div>
-
               <div>
                 <label className="text-[.7rem] text-gray-600">
                   Coordinate (Lat, Lng)
                 </label>
-
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -893,16 +822,11 @@ export default function Map() {
                     }
                     onChange={(e) => {
                       const [lat, lng] = e.target.value.split(",").map(Number);
-
-                      setForm({
-                        ...form,
-                        coordinate: [lat, lng],
-                      });
+                      setForm({ ...form, coordinate: [lat, lng] });
                     }}
                     className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                     required
                   />
-
                   <button
                     type="button"
                     onClick={startMarkerPlacement}
@@ -912,7 +836,6 @@ export default function Map() {
                   </button>
                 </div>
               </div>
-
               <div>
                 <label className="text-[.7rem] text-gray-600">
                   Safety Level
@@ -920,10 +843,7 @@ export default function Map() {
                 <select
                   value={form.safety}
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      safety: e.target.value as SafetyType,
-                    })
+                    setForm({ ...form, safety: e.target.value as SafetyType })
                   }
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                 >
@@ -933,22 +853,17 @@ export default function Map() {
                   <option value="danger">High Risk</option>
                 </select>
               </div>
-
               <div>
                 <label className="text-[.7rem] text-gray-600">Area Image</label>
                 <input
                   type="file"
                   accept="image/*"
                   onChange={(e) =>
-                    setForm({
-                      ...form,
-                      area_img: e.target.files?.[0] || null,
-                    })
+                    setForm({ ...form, area_img: e.target.files?.[0] || null })
                   }
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                 />
               </div>
-
               <div className="flex flex-row gap-1 mt-2">
                 <button
                   type="submit"
@@ -958,7 +873,6 @@ export default function Map() {
                 </button>
               </div>
             </form>
-
             <button
               onClick={() => {
                 if (isFormPenelOpen) {
@@ -979,36 +893,25 @@ export default function Map() {
         {userRole != "DataManager" && (
           <div className="relative">
             <div
-              className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
-                isDrawPenelOpen
-                  ? "opacity-100 pointer-events-auto"
-                  : "opacity-0 pointer-events-none"
-              }`}
+              className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isDrawPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
             >
               <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
                 <h2 className="text-white text-[.8rem]">Draw Tools</h2>
               </div>
-
               <button
                 onClick={startDrawing}
                 className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
               >
                 <Pen size={16} /> Draw
               </button>
-
               <button
                 onClick={analyzeArea}
                 disabled={isProcessing}
-                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer
-                  ${
-                    isProcessing
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"
-                  }`}
+                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer ${isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
               >
                 {isProcessing ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>{" "}
                     Analyzing...
                   </>
                 ) : (
@@ -1017,14 +920,12 @@ export default function Map() {
                   </>
                 )}
               </button>
-
               <button
                 onClick={cancelDrawing}
                 className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
               >
                 <Cross size={16} /> Cancel
               </button>
-
               <button
                 onClick={clearAnalysis}
                 className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
@@ -1032,7 +933,6 @@ export default function Map() {
                 <Trash size={16} /> Clear
               </button>
             </div>
-
             <button
               onClick={() => {
                 if (isDrawPenelOpen) {
@@ -1052,25 +952,19 @@ export default function Map() {
         {/* Filter PANEL */}
         <div className="relative">
           <div
-            className={`absolute top-[-250px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
-              isFilterPenelOpen
-                ? "opacity-100 pointer-events-auto"
-                : "opacity-0 pointer-events-none"
-            }`}
+            className={`absolute top-[-250px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isFilterPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
           >
             <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
               <h2 className="text-white text-[.8rem]">Filters</h2>
             </div>
             <div>
               <label className="text-[.7rem] text-gray-600">Barangays</label>
-
               <select
                 onChange={(e) => {
                   const barangayId = parseInt(e.target.value, 10);
                   const selectedBarangay = barangays.find(
                     (b) => b.barangay_id === barangayId,
                   );
-
                   if (selectedBarangay && mapRef.current) {
                     mapRef.current.flyTo(
                       selectedBarangay.coordinate as [number, number],
@@ -1088,7 +982,6 @@ export default function Map() {
               </select>
             </div>
           </div>
-
           <button
             onClick={() => {
               if (isFilterPenelOpen) {
@@ -1112,7 +1005,6 @@ export default function Map() {
         style={{ minHeight: "100vh" }}
       >
         <MapInitializer setMapRef={(map) => (mapRef.current = map)} />
-
         <TileLayer
           url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
           attribution='Map data &copy; <a href="https://www.google.com/maps">Google</a>'
@@ -1126,17 +1018,7 @@ export default function Map() {
           />
         )}
 
-        {/* Show warning when NDVI is active but no data
-        {showNDVI && !ndviTileUrl && !isNdviLoading && (
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded z-[1000] shadow-lg">
-            <p className="text-sm flex items-center gap-2">
-              <Info size={14} />
-              NDVI layer not loaded. Try different dates or check connection.
-            </p>
-          </div>
-        )} */}
-
-        {/* ✅ FIXED: Suitable Polygons with proper GeoJSON structure */}
+        {/* Suitable Polygons from Analysis */}
         {suitablePolygons && suitablePolygons.features && (
           <GeoJSON
             data={{
@@ -1151,48 +1033,30 @@ export default function Map() {
             }}
             onEachFeature={(feature, layer) => {
               const props = feature.properties;
-              layer.bindPopup(`
-                <div style="font-size: 12px; min-width: 150px;">
-                  <strong style="color: #0f4a2f; font-size: 14px; display: block; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">
-                    ${props.site_id}
-                  </strong>
-                  <div style="margin: 4px 0;">
-                    <span style="color: #666;">📏 Area:</span>
-                    <strong> ${props.area_hectares} ha</strong>
-                  </div>
-                  <div style="margin: 4px 0;">
-                    <span style="color: #666;">🌱 NDVI:</span>
-                    <strong> ${props.avg_ndvi}</strong>
-                  </div>
-                  <div style="margin: 4px 0;">
-                    <span style="color: #666;">🎯 Suitability:</span>
-                    <strong> ${props.suitability_score}%</strong>
-                  </div>
-                </div>
-              `);
+              layer.bindPopup(
+                `<div style="font-size: 12px; min-width: 150px;"><strong style="color: #0f4a2f; font-size: 14px; display: block; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">${props.site_id}</strong><div style="margin: 4px 0;"><span style="color: #666;">📏 Area:</span><strong> ${props.area_hectares} ha</strong></div><div style="margin: 4px 0;"><span style="color: #666;">🌱 NDVI:</span><strong> ${props.avg_ndvi}</strong></div><div style="margin: 4px 0;"><span style="color: #666;">🎯 Suitability:</span><strong> ${props.suitability_score}%</strong></div></div>`,
+              );
             }}
           />
         )}
 
-        {classified_areas.length > 0 &&
-          classified_areas.map((area, i) => (
-            <Polygon
-              key={i}
-              positions={area.polygon.coordinates}
-              pathOptions={{ color: "red" }}
-            >
-              <Popup>{area.name}</Popup>
-            </Polygon>
-          ))}
+        {/* ❌ REMOVE OR COMMENT OUT THIS BLOCK - It renders ALL classified areas immediately */}
+        {/* 
+  {classified_areas.length > 0 &&
+    classified_areas.map((area, i) => (
+      <Polygon key={i} positions={area.polygon.coordinates} pathOptions={{ color: "red" }}>
+        <Popup>{area.name}</Popup>
+      </Polygon>
+    ))} 
+  */}
 
+        {/* Reforestation Areas Markers */}
         {reforestation_areas.length > 0 &&
           reforestation_areas.map((area) => {
             if (!area.coordinate || area.coordinate.length !== 2) return null;
-
             const lat = Number(area.coordinate[0]);
             const lng = Number(area.coordinate[1]);
             if (isNaN(lat) || isNaN(lng)) return null;
-
             return (
               <Marker
                 key={area.name}
@@ -1205,7 +1069,6 @@ export default function Map() {
                     <span>Location: {area.barangay.name}</span>
                     <span>Safety: {area.safety}</span>
                     <span>Description: {area.description}</span>
-
                     {area.area_img && (
                       <img
                         src={"http://127.0.0.1:8000" + area.area_img}
@@ -1222,22 +1085,40 @@ export default function Map() {
             );
           })}
 
+        {/* Barangay Markers with "View Restricted Areas" Button */}
         {barangays.length > 0 &&
           barangays.map((area) => {
             if (!area.coordinate || area.coordinate.length !== 2) return null;
-
             const lat = Number(area.coordinate[0]);
             const lng = Number(area.coordinate[1]);
             if (isNaN(lat) || isNaN(lng)) return null;
-
             return (
-              <Marker key={area.name} position={[lat, lng]} icon={yellowIcon}>
+              <Marker
+                key={area.barangay_id}
+                position={[lat, lng]}
+                icon={yellowIcon}
+              >
                 <Popup>
-                  <div className="text-sm flex flex-col gap-1">
-                    <strong>{area.name}</strong>
-                    <span>Description: {area.description}</span>
-                    <button className="flex items-center justify-center gap-1 ml-auto mt-3 bg-[#920505] hover:bg-[#690909] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer">
-                      <AreaChart size={16} /> View restricted area
+                  <div className="text-sm flex flex-col gap-2 min-w-[200px]">
+                    <div>
+                      <strong className="text-[#0f4a2f]">{area.name}</strong>
+                      <p className="text-gray-600 text-xs mt-1">
+                        {area.description}
+                      </p>
+                    </div>
+                    {/* ✅ Button triggers barangay-specific classified areas */}
+                    <button
+                      onClick={() => setSelectedBarangayId(area.barangay_id)}
+                      className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-7 px-2 py-1 rounded text-[.7rem] cursor-pointer transition-colors w-fit"
+                    >
+                      <AreaChart size={14} /> View Restricted Areas
+                    </button>
+                    <button
+                      onClick={() => mapRef.current?.closePopup()}
+                      className="absolute top-1 right-1 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                      aria-label="Close popup"
+                    >
+                      ×
                     </button>
                   </div>
                 </Popup>
@@ -1246,15 +1127,22 @@ export default function Map() {
           })}
 
         {goHome && <MapController center={ORMOCCITY} />}
-
         {markerPosition && (
           <Marker position={markerPosition} icon={greenIcon}>
             <Popup>Selected Location</Popup>
           </Marker>
         )}
+
+        {/* ✅ ONLY this component renders classified areas - and ONLY when selectedBarangayId is set */}
+        <BarangayClassifiedAreas
+          barangayId={selectedBarangayId}
+          token={token}
+          onClose={() => setSelectedBarangayId(null)}
+          onStatusChange={handleClassifiedAreasStatus} // ✅ Add this prop
+        />
       </MapContainer>
 
-      {/* ✅ Canopy Guide Modal - Properly integrated */}
+      {/* Canopy Guide Modal */}
       <CanopyGuideModal
         isOpen={showCanopyGuide}
         onClose={() => setShowCanopyGuide(false)}
