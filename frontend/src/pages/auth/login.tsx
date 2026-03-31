@@ -253,7 +253,7 @@ export default function Login() {
           </div>
         </div>
       </div>
-      s
+
       <footer className="fixed flex items-center justify-center bottom-6 w-full z-50">
         <div
           className="flex items-center gap-4 w-110 px-5 py-2

@@ -1,4 +1,3 @@
-# backend/accounts/viewsMap.py
 import ee
 import logging
 from datetime import datetime, timedelta
@@ -280,7 +279,13 @@ def suitable_sites(request):
                     maxPixels=1e9
                 ).getInfo()
                 
-                area_ha = site_geometry.area().divide(10000).getInfo()
+                # ✅ FIX: Add errorMargin to area calculation for complex geometries
+                try:
+                    area_ha = site_geometry.area(ee.ErrorMargin(1)).divide(10000).getInfo()
+                except Exception as area_err:
+                    logger.warning(f"⚠️ Area calculation failed for site {i}: {area_err}")
+                    area_ha = 0  # Fallback to 0 if area calculation fails
+                
                 avg_ndvi = stats.get('NDVI', 0)
                 
                 total_area += area_ha
@@ -296,11 +301,24 @@ def suitable_sites(request):
                 
             except Exception as e:
                 logger.warning(f"⚠️ Could not calculate stats for site {i}: {e}")
-                feature['properties']['site_id'] = f'SITE-{str(i+1).zfill(3)}'
+                # Still add the feature with fallback values
+                feature['properties'].update({
+                    'site_id': f'SITE-{str(i+1).zfill(3)}',
+                    'area_hectares': 0,
+                    'avg_ndvi': 0,
+                    'suitability_score': 0
+                })
                 enriched_features.append(feature)
         
         # Calculate average NDVI across all sites
         avg_ndvi_all = total_ndvi / len(enriched_features) if enriched_features else 0
+        
+        # ✅ FIX: Calculate total area with errorMargin for metadata
+        try:
+            total_area_metadata = roi.area(ee.ErrorMargin(1)).divide(10000).getInfo()
+        except Exception as e:
+            logger.warning(f"⚠️ Could not calculate total ROI area: {e}")
+            total_area_metadata = total_area  # Fallback to accumulated area
         
         return JsonResponse({
             "success": True,
@@ -308,7 +326,7 @@ def suitable_sites(request):
             "features": enriched_features,
             "metadata": {
                 "total_sites": len(enriched_features),
-                "total_area_hectares": round(total_area, 2),
+                "total_area_hectares": round(total_area_metadata, 2),
                 "average_ndvi": round(avg_ndvi_all, 3),
                 "date_range": f"{start} to {end}",
                 "ndvi_threshold": "< 0.41",
@@ -331,7 +349,6 @@ def suitable_sites(request):
             {"error": "Internal server error. Please try again later."}, 
             status=500
         )
-
 
 # ═══════════════════════════════════════════════════════════════
 # 📈 VIEW: NDVI TIME SERIES TREND
@@ -364,14 +381,31 @@ def ndvi_trend(request):
             interval = "month"
         
         roi = ee.Geometry(geom)
-        start_dt = datetime.strptime(start, "%Y-%m-%d")
-        end_dt = datetime.strptime(end, "%Y-%m-%d")
+        
+        # ✅ FIX 1: Validate dates - prevent future dates
+        today = datetime.now().date()
+        start_dt = datetime.strptime(start, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(end, "%Y-%m-%d").date()
+        
+        if end_dt > today:
+            # Clamp end date to today
+            end_dt = today
+            end = end_dt.strftime("%Y-%m-%d")
+            logger.info(f"📅 Clamped end date to today: {end}")
+        
+        if start_dt > today:
+            return JsonResponse(
+                {"error": "Start date cannot be in the future. Please select valid dates."},
+                status=400
+            )
         
         time_series = []
         
         if interval == "month":
-            current = start_dt
-            while current + timedelta(days=30) <= end_dt:
+            current = datetime.combine(start_dt, datetime.min.time())
+            end_datetime = datetime.combine(end_dt, datetime.min.time())
+            
+            while current + timedelta(days=30) <= end_datetime:
                 period_start = current
                 period_end = current + timedelta(days=30)
                 
@@ -406,8 +440,10 @@ def ndvi_trend(request):
                 current = current + timedelta(days=30)
         
         else:  # week
-            current = start_dt
-            while current + timedelta(days=7) <= end_dt:
+            current = datetime.combine(start_dt, datetime.min.time())
+            end_datetime = datetime.combine(end_dt, datetime.min.time())
+            
+            while current + timedelta(days=7) <= end_datetime:
                 period_start = current
                 period_end = current + timedelta(days=7)
                 
@@ -443,7 +479,7 @@ def ndvi_trend(request):
         
         if not time_series:
             return JsonResponse(
-                {"error": "No NDVI data available for the specified period. Try expanding date range."},
+                {"error": "No NDVI data available for the specified period. Try expanding date range or selecting an area with imagery."},
                 status=404
             )
         
@@ -470,6 +506,15 @@ def ndvi_trend(request):
             trend_direction = "insufficient_data"
             interpretation = "Insufficient data points for trend analysis"
         
+        # ✅ FIX 2: Calculate area with errorMargin parameter
+        try:
+            # Use errorMargin for complex geometries (in meters)
+            area_km2 = roi.area(ee.ErrorMargin(1)).divide(1e6).getInfo()
+            geometry_area = round(area_km2, 2)
+        except Exception as e:
+            logger.warning(f"⚠️ Could not calculate geometry area: {e}")
+            geometry_area = 0  # Fallback to 0 if calculation fails
+        
         return JsonResponse({
             "success": True,
             "data": {
@@ -484,7 +529,7 @@ def ndvi_trend(request):
             },
             "metadata": {
                 "date_range": f"{start} to {end}",
-                "geometry_area_km2": round(roi.area().divide(1e6).getInfo(), 2)
+                "geometry_area_km2": geometry_area
             }
         })
         
@@ -502,3 +547,6 @@ def ndvi_trend(request):
             {"error": "Internal server error. Please try again later."},
             status=500
         )
+
+
+

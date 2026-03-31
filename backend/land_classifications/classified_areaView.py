@@ -62,10 +62,17 @@ def get_classified_areas(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
+    # Get parameters with defaults
     search = request.GET.get('search', '').strip()
-    entries = int(request.GET.get('entries', 10))
-    page = int(request.GET.get('page', 1))
+    
+    try:
+        entries = int(request.GET.get('entries', 10))
+        page = int(request.GET.get('page', 1))
+    except ValueError:
+        entries = 10
+        page = 1
 
+    # Validate pagination values
     if entries <= 0:
         entries = 10
     if page <= 0:
@@ -73,32 +80,40 @@ def get_classified_areas(request):
 
     offset = (page - 1) * entries
 
+    # Queryset with sorting by created_at (Descending: Newest first)
     classified_areas = (
         Classified_areas.objects
-        .select_related('land_classification', 'barangay')  # ✅ Added barangay
+        .select_related('land_classification', 'barangay')
         .all()
-        .order_by('-created_at')
+        .order_by('-created_at')  # ✅ Sorted by created_at
     )
 
+    # Apply search filter if exists
     if search:
         classified_areas = classified_areas.filter(name__icontains=search)
 
+    # Get total count before slicing
     total = classified_areas.count()
-    total_page = math.ceil(total / entries) if total > 0 else 0
+    total_page = math.ceil(total / entries) if total > 0 else 1
 
-    data = []
-    for area in classified_areas[offset: offset + entries]:
-        data.append({
+    # Slice queryset for pagination (Django handles this efficiently in SQL)
+    paginated_areas = classified_areas[offset: offset + entries]
+
+    # Build data list
+    data = [
+        {
             'classified_area_id': area.classified_area_id,
             'name': area.name,
             'land_classification_id': area.land_classification.land_classification_id,
             'land_classification_name': area.land_classification.name,
-            'barangay_id': area.barangay.barangay_id,  # ✅ Added
-            'barangay_name': area.barangay.name,        # ✅ Added
+            'barangay_id': area.barangay.barangay_id,
+            'barangay_name': area.barangay.name,
             'polygon': area.polygon,
             'description': area.description,
-            'created_at': area.created_at.isoformat()   # ✅ ISO format for JSON
-        })
+            'created_at': area.created_at.isoformat()
+        }
+        for area in paginated_areas
+    ]
 
     return JsonResponse({
         'data': data,

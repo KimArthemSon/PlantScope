@@ -176,6 +176,10 @@ export default function App() {
           <Route path="/dashboard-data-manager" element={<DashboardAFA />} />
 
           <Route
+            path="/DataManager/maintenance/ormoc-city"
+            element={<Ormoc_City />}
+          />
+          <Route
             path="/DataManager/maintenance/land-classification"
             element={<Land_classifications />}
           />

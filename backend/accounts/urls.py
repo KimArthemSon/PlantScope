@@ -1,5 +1,4 @@
 from django.urls import path
-from . import viewsMap
 from . import views
 
 urlpatterns = [
@@ -10,9 +9,6 @@ urlpatterns = [
     path('get_me/', views.get_me, name="get_me"),
     path('update_user/<int:user_id>', views.update_user, name='update_user'),
     path('delete_user/<int:user_id>', views.delete_user, name='delete_user'),
-    path('ndvi/', viewsMap.ndvi_canopy, name="ndvi_canopy"),
-    path('suitable-sites/', viewsMap.suitable_sites, name='suitable_sites'),
-    path('ndvi-trend/', viewsMap.ndvi_trend, name='ndvi_trend'),
     path('get_user/<int:user_id>',views.get_user, name='get_user'),
     
 ]

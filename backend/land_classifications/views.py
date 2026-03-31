@@ -33,10 +33,18 @@ def get_land_classifications(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
+    # Get parameters with defaults
     search = request.GET.get('search', '').strip()
-    entries = int(request.GET.get('entries', 10))
-    page = int(request.GET.get('page', 1))
+    
+    # Safe integer conversion
+    try:
+        entries = int(request.GET.get('entries', 10))
+        page = int(request.GET.get('page', 1))
+    except ValueError:
+        entries = 10
+        page = 1
 
+    # Validate pagination values
     if entries <= 0:
         entries = 10
     if page <= 0:
@@ -44,17 +52,25 @@ def get_land_classifications(request):
 
     offset = (page - 1) * entries
 
-    classifications = LandClassification.objects.all().order_by('created_at')
+    # Queryset with sorting
+    # Using '-created_at' for Descending (Newest first) to match get_classified_areas
+    # Use 'created_at' without '-' for Ascending (Oldest first)
+    classifications = LandClassification.objects.all().order_by('-created_at')
+
+    # Apply search filter
     if search:
         classifications = classifications.filter(name__icontains=search)
 
+    # Get total count before slicing
     total = classifications.count()
-    total_page = math.ceil(total / entries) if total > 0 else 0
+    total_page = math.ceil(total / entries) if total > 0 else 1
 
-    data = list(classifications[offset : offset + entries].values())
+    # Slice and convert to list of dictionaries
+    # .values() fetches all fields as dictionaries
+    paginated_data = classifications[offset: offset + entries].values()
 
     return JsonResponse({
-        'data': data,
+        'data': list(paginated_data),
         'total_page': total_page,
         'page': page,
         'entries': entries,

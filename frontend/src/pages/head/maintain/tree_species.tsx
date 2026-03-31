@@ -458,7 +458,7 @@ export default function Tree_species() {
                   required
                   type="text"
                   className={inputField}
-                  placeholder="Ex: Soil1"
+                  placeholder="Ex: tree specie name"
                   value={tree_specie.name}
                   onChange={(e) => {
                     setTree_specie((prev) => ({

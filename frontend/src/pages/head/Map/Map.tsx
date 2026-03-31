@@ -4,7 +4,6 @@ import {
   useMap,
   GeoJSON,
   Marker,
-  Polygon,
   Popup,
 } from "react-leaflet";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -29,8 +28,8 @@ import {
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { useUserRole } from "@/hooks/authorization";
 import CanopyGuideModal from "./canopy_guide";
-// ✅ NEW: Import the separated component
 import BarangayClassifiedAreas from "./barangay_classified_area";
+import PotentialSiteTrends from "./potentialSiteTrends";
 
 // Fix Leaflet marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -113,7 +112,7 @@ export default function Map() {
   );
   const [barangays, setBarangays] = useState<Barangays[]>([]);
 
-  // ✅ Canopy Guide State
+  // Canopy Guide State
   const [showCanopyGuide, setShowCanopyGuide] = useState(false);
 
   const [form, setForm] = useState({
@@ -136,6 +135,13 @@ export default function Map() {
   const [markerPosition, setMarkerPosition] = useState<[number, number] | null>(
     null,
   );
+
+  // ✅ Potential Site Trends Modal State
+  const [showSiteTrends, setShowSiteTrends] = useState(false);
+  const [selectedSiteGeometry, setSelectedSiteGeometry] = useState<any>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
+  const [selectedSiteName, setSelectedSiteName] = useState<string>("");
+
   const [isPickingMarker, setIsPickingMarker] = useState(false);
   const [isNdviPenelOpen, setIsNdviPenelOpen] = useState(false);
   const [isFormPenelOpen, setIsFormPenelOpen] = useState(false);
@@ -168,7 +174,7 @@ export default function Map() {
     message: string;
   } | null>(null);
 
-  // ✅ NEW: State for tracking selected barangay's classified areas
+  // State for tracking selected barangay's classified areas
   const [selectedBarangayId, setSelectedBarangayId] = useState<number | null>(
     null,
   );
@@ -206,12 +212,14 @@ export default function Map() {
     }
   }, [userRole]);
 
+  // Auto-hide canopy guide when NDVI is hidden
   useEffect(() => {
     if (!showNDVI) {
       setShowCanopyGuide(false);
     }
   }, [showNDVI]);
 
+  // Keyboard shortcut: Press 'G' to toggle guide
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "g" && showNDVI && !isNdviPenelOpen) {
@@ -251,6 +259,7 @@ export default function Map() {
     };
   }, [mapRef.current]);
 
+  // Marker placement click handler
   useEffect(() => {
     if (!mapRef.current) return;
     const map = mapRef.current;
@@ -271,6 +280,7 @@ export default function Map() {
     setIsPickingMarker(true);
   }
 
+  // Render NDVI (city-wide)
   const renderNDVI = async () => {
     setIsNdviLoading(true);
     try {
@@ -315,6 +325,7 @@ export default function Map() {
     }
   };
 
+  // Analyze drawn area for suitable sites
   const analyzeArea = async () => {
     if (!drawnGeometry) {
       setPSAlert({
@@ -341,6 +352,8 @@ export default function Map() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to analyze area");
+
+      // Handle debug mode (development only)
       if (data.debug) {
         console.log("📊 NDVI Debug Data:", data);
         const histogram = data.histogram;
@@ -356,6 +369,8 @@ export default function Map() {
         });
         return;
       }
+
+      // Production mode: Display suitable sites
       if (data.success && data.features && data.features.length > 0) {
         setSuitablePolygons(data);
         setNdviTileUrl(null);
@@ -434,6 +449,7 @@ export default function Map() {
     }
   };
 
+  // Fetch initial data
   useEffect(() => {
     get_classified_area();
     getBarangays();
@@ -443,7 +459,7 @@ export default function Map() {
     console.log(barangays);
   }, [barangays]);
 
-  // ✅ Cleanup: Clear selected barangay when component unmounts
+  // Cleanup: Clear selected barangay when component unmounts
   useEffect(() => {
     return () => setSelectedBarangayId(null);
   }, []);
@@ -589,7 +605,6 @@ export default function Map() {
           message: `Showing ${status.count} classified area(s) for this barangay.`,
         });
       }
-      // Optional: handle loading state with a spinner if desired
     },
     [],
   );
@@ -705,7 +720,11 @@ export default function Map() {
                   <button
                     onClick={renderNDVI}
                     disabled={isNdviLoading}
-                    className={`flex items-center justify-center gap-1 ml-auto h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer transition-colors ${isNdviLoading ? "bg-gray-400 cursor-not-allowed" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
+                    className={`flex items-center justify-center gap-1 ml-auto h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer transition-colors ${
+                      isNdviLoading
+                        ? "bg-gray-400 cursor-not-allowed"
+                        : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"
+                    }`}
                   >
                     {isNdviLoading ? (
                       <>
@@ -748,7 +767,11 @@ export default function Map() {
           <div className="relative">
             <form
               onSubmit={onSubmit}
-              className={`absolute top-[-485px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isFormPenelOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+              className={`absolute top-[-485px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
+                isFormPenelOpen
+                  ? "opacity-100"
+                  : "opacity-0 pointer-events-none"
+              }`}
             >
               <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
                 <h2 className="text-white text-[.8rem]">
@@ -893,7 +916,11 @@ export default function Map() {
         {userRole != "DataManager" && (
           <div className="relative">
             <div
-              className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isDrawPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+              className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
+                isDrawPenelOpen
+                  ? "opacity-100 pointer-events-auto"
+                  : "opacity-0 pointer-events-none"
+              }`}
             >
               <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
                 <h2 className="text-white text-[.8rem]">Draw Tools</h2>
@@ -907,7 +934,11 @@ export default function Map() {
               <button
                 onClick={analyzeArea}
                 disabled={isProcessing}
-                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer ${isProcessing ? "bg-gray-400 cursor-not-allowed" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
+                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer ${
+                  isProcessing
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"
+                }`}
               >
                 {isProcessing ? (
                   <>
@@ -952,7 +983,11 @@ export default function Map() {
         {/* Filter PANEL */}
         <div className="relative">
           <div
-            className={`absolute top-[-250px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isFilterPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+            className={`absolute top-[-250px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
+              isFilterPenelOpen
+                ? "opacity-100 pointer-events-auto"
+                : "opacity-0 pointer-events-none"
+            }`}
           >
             <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
               <h2 className="text-white text-[.8rem]">Filters</h2>
@@ -1018,7 +1053,7 @@ export default function Map() {
           />
         )}
 
-        {/* Suitable Polygons from Analysis */}
+        {/* ✅ Suitable Polygons with "View Trends" Button */}
         {suitablePolygons && suitablePolygons.features && (
           <GeoJSON
             data={{
@@ -1033,22 +1068,72 @@ export default function Map() {
             }}
             onEachFeature={(feature, layer) => {
               const props = feature.properties;
-              layer.bindPopup(
-                `<div style="font-size: 12px; min-width: 150px;"><strong style="color: #0f4a2f; font-size: 14px; display: block; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">${props.site_id}</strong><div style="margin: 4px 0;"><span style="color: #666;">📏 Area:</span><strong> ${props.area_hectares} ha</strong></div><div style="margin: 4px 0;"><span style="color: #666;">🌱 NDVI:</span><strong> ${props.avg_ndvi}</strong></div><div style="margin: 4px 0;"><span style="color: #666;">🎯 Suitability:</span><strong> ${props.suitability_score}%</strong></div></div>`,
-              );
+
+              // Create popup content with View Trends button
+              const popupContent = `
+                <div style="font-size: 12px; min-width: 180px;">
+                  <strong style="color: #0f4a2f; font-size: 14px; display: block; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px;">
+                    ${props.site_id}
+                  </strong>
+                  <div style="margin: 4px 0;">
+                    <span style="color: #666;">📏 Area:</span>
+                    <strong> ${props.area_hectares} ha</strong>
+                  </div>
+                  <div style="margin: 4px 0;">
+                    <span style="color: #666;">🌱 NDVI:</span>
+                    <strong> ${props.avg_ndvi}</strong>
+                  </div>
+                  <div style="margin: 4px 0;">
+                    <span style="color: #666;">🎯 Suitability:</span>
+                    <strong> ${props.suitability_score}%</strong>
+                  </div>
+                  <div style="margin-top: 12px; padding-top: 8px; border-top: 1px dashed #ddd;">
+                    <button id="view-trends-btn-${props.site_id}" style="
+                      width: 100%;
+                      padding: 6px 12px;
+                      background: #0f4a2f;
+                      color: white;
+                      border: none;
+                      border-radius: 4px;
+                      font-size: 11px;
+                      cursor: pointer;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      gap: 4px;
+                    ">
+                      📈 View Trends
+                    </button>
+                  </div>
+                </div>
+              `;
+
+              layer.bindPopup(popupContent);
+
+              // Add event listener for the View Trends button after popup opens
+              layer.on("popupopen", () => {
+                const btn = document.getElementById(
+                  `view-trends-btn-${props.site_id}`,
+                );
+                if (btn) {
+                  btn.onclick = (e: Event) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    // Close popup first
+                    layer.closePopup();
+
+                    // Set selected site data and open trends modal
+                    setSelectedSiteGeometry(feature.geometry);
+                    setSelectedSiteId(props.site_id);
+                    setSelectedSiteName(`Site ${props.site_id}`);
+                    setShowSiteTrends(true);
+                  };
+                }
+              });
             }}
           />
         )}
-
-        {/* ❌ REMOVE OR COMMENT OUT THIS BLOCK - It renders ALL classified areas immediately */}
-        {/* 
-  {classified_areas.length > 0 &&
-    classified_areas.map((area, i) => (
-      <Polygon key={i} positions={area.polygon.coordinates} pathOptions={{ color: "red" }}>
-        <Popup>{area.name}</Popup>
-      </Polygon>
-    ))} 
-  */}
 
         {/* Reforestation Areas Markers */}
         {reforestation_areas.length > 0 &&
@@ -1106,7 +1191,6 @@ export default function Map() {
                         {area.description}
                       </p>
                     </div>
-                    {/* ✅ Button triggers barangay-specific classified areas */}
                     <button
                       onClick={() => setSelectedBarangayId(area.barangay_id)}
                       className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-7 px-2 py-1 rounded text-[.7rem] cursor-pointer transition-colors w-fit"
@@ -1133,12 +1217,12 @@ export default function Map() {
           </Marker>
         )}
 
-        {/* ✅ ONLY this component renders classified areas - and ONLY when selectedBarangayId is set */}
+        {/* Barangay Classified Areas Component */}
         <BarangayClassifiedAreas
           barangayId={selectedBarangayId}
           token={token}
           onClose={() => setSelectedBarangayId(null)}
-          onStatusChange={handleClassifiedAreasStatus} // ✅ Add this prop
+          onStatusChange={handleClassifiedAreasStatus}
         />
       </MapContainer>
 
@@ -1146,6 +1230,16 @@ export default function Map() {
       <CanopyGuideModal
         isOpen={showCanopyGuide}
         onClose={() => setShowCanopyGuide(false)}
+      />
+
+      {/* ✅ Potential Site Trends Modal */}
+      <PotentialSiteTrends
+        isOpen={showSiteTrends}
+        onClose={() => setShowSiteTrends(false)}
+        siteGeometry={selectedSiteGeometry}
+        siteId={selectedSiteId}
+        siteName={selectedSiteName}
+        token={token}
       />
     </div>
   );
