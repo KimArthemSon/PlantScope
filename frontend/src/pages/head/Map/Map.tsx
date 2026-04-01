@@ -142,6 +142,10 @@ export default function Map() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   const [selectedSiteName, setSelectedSiteName] = useState<string>("");
 
+  // ✅ Potential Sites Integration State
+  const [isUsingPotentialSites, setIsUsingPotentialSites] = useState(false);
+  const [analyzedSitesForSave, setAnalyzedSitesForSave] = useState<any[]>([]);
+
   const [isPickingMarker, setIsPickingMarker] = useState(false);
   const [isNdviPenelOpen, setIsNdviPenelOpen] = useState(false);
   const [isFormPenelOpen, setIsFormPenelOpen] = useState(false);
@@ -280,6 +284,93 @@ export default function Map() {
     setIsPickingMarker(true);
   }
 
+  // ✅ ADD THIS HELPER: Format analyzed sites for backend API
+  const formatSitesForBackend = (sites: any[]) => {
+    return sites.map((site) => {
+      // Ensure geometry is valid GeoJSON Polygon
+      const geometry = site.geometry || site.polygon_coordinates;
+
+      // Convert coordinates if needed: Leaflet [lat,lng] → GeoJSON [lng,lat]
+      let coords = geometry?.coordinates;
+      if (coords && coords[0] && typeof coords[0][0] === "number") {
+        // Check if first coord looks like [lat, lng] (lat between -90 to 90)
+        if (
+          coords[0][0] >= -90 &&
+          coords[0][0] <= 90 &&
+          coords[0][1] >= -180 &&
+          coords[0][1] <= 180
+        ) {
+          // Convert [lat, lng] → [lng, lat] for GeoJSON
+          coords = coords.map((c: [number, number]) => [c[1], c[0]]);
+        }
+      }
+
+      return {
+        site_id:
+          site.properties?.site_id ||
+          site.site_id ||
+          `SITE-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        geometry: {
+          type: "Polygon",
+          coordinates: coords || [],
+        },
+        area_hectares:
+          site.properties?.area_hectares || site.area_hectares || 0,
+        avg_ndvi: site.properties?.avg_ndvi || site.avg_ndvi || 0,
+        suitability_score:
+          site.properties?.suitability_score || site.suitability_score || 0,
+      };
+    });
+  };
+
+  const saveAnalyzedSitesToArea = async (
+    reforestationAreaId: number,
+  ): Promise<boolean> => {
+    if (analyzedSitesForSave.length === 0) return false;
+
+    try {
+      const formattedSites = formatSitesForBackend(analyzedSitesForSave);
+
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/potential-sites/bulk-create/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: JSON.stringify({
+            reforestation_area_id: reforestationAreaId,
+            sites: formattedSites,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || "Failed to save sites");
+      }
+
+      setPSAlert({
+        type: "success",
+        title: "Sites Saved",
+        message: `Saved ${data.created_count || formattedSites.length} potential site(s)`,
+      });
+
+      setAnalyzedSitesForSave([]);
+      return true;
+    } catch (err: any) {
+      console.error("Save error:", err);
+      setPSAlert({
+        type: "error",
+        title: "Save Failed",
+        message: err.message || "Error saving sites",
+      });
+      return false;
+    }
+  };
+
   // Render NDVI (city-wide)
   const renderNDVI = async () => {
     setIsNdviLoading(true);
@@ -374,6 +465,10 @@ export default function Map() {
       if (data.success && data.features && data.features.length > 0) {
         setSuitablePolygons(data);
         setNdviTileUrl(null);
+
+        // ✅ Capture sites for potential saving
+        setAnalyzedSitesForSave(data.features);
+
         const totalArea = data.features.reduce(
           (sum: number, f: any) => sum + (f.properties.area_hectares || 0),
           0,
@@ -505,46 +600,93 @@ export default function Map() {
     setIsFilterPenelOpen(false);
   }
 
+  // ✅ REPLACE onSubmit WITH THIS FIXED VERSION (only the relevant parts changed)
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
+    // Basic validation
+    if (!form.name.trim() || form.barangay.barangay_id === 0) {
+      setPSAlert({
+        type: "failed",
+        title: "Validation Error",
+        message: "Name and Barangay are required",
+      });
+      return;
+    }
+
     try {
-      const token = localStorage.getItem("token");
       const formData = new FormData();
-      formData.append("name", form.name);
-      formData.append("description", form.description);
+      formData.append("name", form.name.trim());
+      formData.append("description", form.description.trim());
       formData.append("barangay_id", String(form.barangay.barangay_id));
       formData.append("legality", form.legality);
       formData.append("safety", form.safety);
-      if (form.coordinate)
+
+      // ✅ FIX: Send coordinate as [lat, lng] array string
+      if (form.coordinate) {
         formData.append("coordinate", JSON.stringify(form.coordinate));
-      if (form.polygon_coordinate.coordinates.length > 0) {
-        formData.append(
-          "polygon_coordinate",
-          JSON.stringify(form.polygon_coordinate.coordinates),
-        );
       }
-      if (form.area_img) formData.append("area_img", form.area_img);
+
+      // ✅ FIX: Send polygon_coordinate as proper GeoJSON object string
+      if (form.polygon_coordinate?.coordinates?.length > 0) {
+        const geojsonPoly = {
+          type: "Polygon" as const,
+          coordinates: [form.polygon_coordinate.coordinates], // Wrap in array for GeoJSON ring
+        };
+        formData.append("polygon_coordinate", JSON.stringify(geojsonPoly));
+      }
+
+      if (form.area_img) {
+        formData.append("area_img", form.area_img);
+      }
+
       const res = await fetch(
         "http://127.0.0.1:8000/api/create_reforestation_areas/",
         {
           method: "POST",
-          headers: { Authorization: "Bearer " + token },
+          headers: {
+            Authorization: "Bearer " + token,
+            // ⚠️ Do NOT set Content-Type for FormData - browser sets it with boundary
+          },
           body: formData,
         },
       );
+
       const data = await res.json();
+
       if (!res.ok) {
-        alert(
-          "Failed to create area: " +
-            (data.detail || data.error || "Unknown error"),
-        );
+        setPSAlert({
+          type: "error",
+          title: "Create Failed",
+          message: data.error || data.detail || "Unknown error",
+        });
         return;
       }
+
       setPSAlert({
         type: "success",
         title: "Success",
-        message: "Successfully added!",
+        message: "Reforestation area created!",
       });
+
+      // ✅ FIX: Save potential sites with proper ID extraction
+      const newAreaId =
+        data.data?.reforestation_area_id || data.reforestation_area_id;
+
+      if (
+        isUsingPotentialSites &&
+        analyzedSitesForSave.length > 0 &&
+        newAreaId
+      ) {
+        // Wait for sites to save, but don't block form completion
+        saveAnalyzedSitesToArea(newAreaId).then((success) => {
+          if (success) {
+            setIsUsingPotentialSites(false);
+          }
+        });
+      }
+
+      // Reset form
       setForm({
         name: "",
         legality: "pending",
@@ -555,11 +697,16 @@ export default function Map() {
         description: "",
         area_img: null,
       });
+      setAnalyzedSitesForSave([]); // Clear sites after submission
       setIsFormPenelOpen(false);
       get_all_reforestation_areas();
-    } catch (error) {
-      console.error(error);
-      alert("Error submitting form.");
+    } catch (error: any) {
+      console.error("Form submission error:", error);
+      setPSAlert({
+        type: "error",
+        title: "Submission Error",
+        message: error.message || "Error submitting form",
+      });
     }
   }
 
@@ -762,12 +909,16 @@ export default function Map() {
           </div>
         )}
 
-        {/* Create PANEL */}
+        {/* Create PANEL - With Potential Sites Integration */}
         {userRole != "DataManager" && (
           <div className="relative">
             <form
               onSubmit={onSubmit}
-              className={`absolute top-[-485px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
+              className={`absolute ${
+                isUsingPotentialSites && analyzedSitesForSave.length > 0
+                  ? "top-[-580px]" // Extra height for "Save Sites" button
+                  : "top-[-530px]" // Normal form height
+              } w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
                 isFormPenelOpen
                   ? "opacity-100"
                   : "opacity-0 pointer-events-none"
@@ -778,6 +929,8 @@ export default function Map() {
                   Create Reforestation Area
                 </h2>
               </div>
+
+              {/* Name */}
               <div>
                 <label className="text-[.7rem] text-gray-600">Name</label>
                 <input
@@ -789,6 +942,8 @@ export default function Map() {
                   required
                 />
               </div>
+
+              {/* Description */}
               <div>
                 <label className="text-[.7rem] text-gray-600">
                   Description
@@ -803,6 +958,8 @@ export default function Map() {
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                 />
               </div>
+
+              {/* Barangay */}
               <div>
                 <label className="text-[.7rem] text-gray-600">Barangay:</label>
                 <select
@@ -831,6 +988,8 @@ export default function Map() {
                   ))}
                 </select>
               </div>
+
+              {/* Coordinate */}
               <div>
                 <label className="text-[.7rem] text-gray-600">
                   Coordinate (Lat, Lng)
@@ -859,6 +1018,8 @@ export default function Map() {
                   </button>
                 </div>
               </div>
+
+              {/* Safety */}
               <div>
                 <label className="text-[.7rem] text-gray-600">
                   Safety Level
@@ -876,6 +1037,8 @@ export default function Map() {
                   <option value="danger">High Risk</option>
                 </select>
               </div>
+
+              {/* Area Image */}
               <div>
                 <label className="text-[.7rem] text-gray-600">Area Image</label>
                 <input
@@ -887,6 +1050,53 @@ export default function Map() {
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                 />
               </div>
+
+              {/* ✅ Use Potential Sites Toggle */}
+              <div className="border-t border-gray-200 pt-3 mt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isUsingPotentialSites}
+                    onChange={(e) => {
+                      setIsUsingPotentialSites(e.target.checked);
+                      if (!e.target.checked) setAnalyzedSitesForSave([]);
+                    }}
+                    className="rounded border-gray-300 text-[#0f4a2f] focus:ring-[#0f4a2f]"
+                  />
+                  <span className="text-[.7rem] text-gray-700">
+                    🔍 Use Potential Sites
+                  </span>
+                </label>
+              </div>
+
+              {/* ✅ Save Sites Button (shows when sites are analyzed) */}
+              {isUsingPotentialSites && analyzedSitesForSave.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!form.name || form.barangay.barangay_id === 0) {
+                      setPSAlert({
+                        type: "failed",
+                        title: "Fill Form First",
+                        message:
+                          "Enter area name and select barangay before saving sites.",
+                      });
+                      return;
+                    }
+                    setPSAlert({
+                      type: "success",
+                      title: "Ready",
+                      message: `${analyzedSitesForSave.length} sites will save when you submit.`,
+                    });
+                  }}
+                  className="w-full flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white h-7 px-2 py-1 rounded text-[.7rem]"
+                >
+                  <CloudLightning size={14} /> Save{" "}
+                  {analyzedSitesForSave.length} Sites
+                </button>
+              )}
+
+              {/* Submit Button */}
               <div className="flex flex-row gap-1 mt-2">
                 <button
                   type="submit"
@@ -896,6 +1106,7 @@ export default function Map() {
                 </button>
               </div>
             </form>
+
             <button
               onClick={() => {
                 if (isFormPenelOpen) {

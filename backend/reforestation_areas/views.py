@@ -5,7 +5,8 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.db import IntegrityError
 from .models import Reforestation_areas, Potential_sites
-
+import logging
+logger = logging.getLogger(__name__)
 
 @csrf_exempt
 def get_all_reforestation_areas(request):
@@ -178,7 +179,8 @@ def create_reforestation_areas(request):
         return JsonResponse({'error': 'Reforestation area with this name already exists'}, status=409)
 
     try:
-        Reforestation_areas.objects.create(
+        # ✅ CAPTURE THE CREATED AREA
+        area = Reforestation_areas.objects.create(
             name=name,
             legality=legality,
             safety=safety,
@@ -188,10 +190,18 @@ def create_reforestation_areas(request):
             description=description,
             area_img=area_img
         )
+        
+        # ✅ RETURN THE AREA ID IN 'data' KEY
+        return JsonResponse({
+            'message': 'Successfully added',
+            'data': {
+                'reforestation_area_id': area.reforestation_area_id,
+                'name': area.name
+            }
+        }, status=201)
+        
     except IntegrityError:
         return JsonResponse({'error': 'Reforestation area already exists'}, status=409)
-
-    return JsonResponse({'message': 'Successfully added'}, status=201)
 
 @csrf_exempt
 def update_reforestation_areas(request, reforestation_area_id):
@@ -281,7 +291,6 @@ def get_potential_sites(request):
         'data': list(sites)
     }, status=200)
 
-
 # =========================
 # GET SINGLE POTENTIAL SITE
 # =========================
@@ -303,66 +312,6 @@ def get_potential_site(request, potential_sites_id):
 
     return JsonResponse({'data': data}, status=200)
 
-
-# =========================
-# CREATE POTENTIAL SITE
-# =========================
-@csrf_exempt
-def create_potential_site(request):
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST allowed'}, status=405)
-
-    try:
-        data = json.loads(request.body)
-        reforestation_area_id = data['reforestation_area_id']
-        polygon_coordinates = data['polygon_coordinates']
-    except (KeyError, json.JSONDecodeError):
-        return JsonResponse(
-            {'error': 'Missing or invalid fields'},
-            status=400
-        )
-
-    area = get_object_or_404(
-        Reforestation_areas,
-        reforestation_area_id=reforestation_area_id
-    )
-
-    Potential_sites.objects.create(
-        reforestation_area=area,
-        polygon_coordinates=polygon_coordinates
-    )
-
-    return JsonResponse({'message': 'Successfully added'}, status=201)
-
-
-# =========================
-# UPDATE POTENTIAL SITE
-# =========================
-@csrf_exempt
-def update_potential_site(request, potential_sites_id):
-    if request.method != 'PUT':
-        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
-
-    try:
-        data = json.loads(request.body)
-        polygon_coordinates = data['polygon_coordinates']
-    except (KeyError, json.JSONDecodeError):
-        return JsonResponse(
-            {'error': 'Missing or invalid fields'},
-            status=400
-        )
-
-    site = get_object_or_404(
-        Potential_sites,
-        potential_sites_id=potential_sites_id
-    )
-
-    site.polygon_coordinates = polygon_coordinates
-    site.save()
-
-    return JsonResponse({'message': 'Successfully updated'}, status=200)
-
-
 # =========================
 # DELETE POTENTIAL SITE
 # =========================
@@ -378,3 +327,77 @@ def delete_potential_site(request, potential_sites_id):
     site.delete()
 
     return JsonResponse({'message': 'Successfully deleted'}, status=200)
+
+@csrf_exempt
+def bulk_create_potential_sites(request):
+    """
+    POST /api/potential-sites/bulk-create/
+    
+    Save multiple potential sites from NDVI analysis to a reforestation area.
+    
+    Request Body:
+    {
+        "reforestation_area_id": 123,
+        "sites": [
+            {
+                "site_id": "SITE-001",
+                "geometry": {GeoJSON Polygon},
+                "area_hectares": 2.4,
+                "avg_ndvi": 0.28,
+                "suitability_score": 72.0
+            }
+        ]
+    }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed. Use POST."}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        
+        reforestation_area_id = data.get('reforestation_area_id')
+        sites = data.get('sites')
+        
+        if not reforestation_area_id or not sites or not isinstance(sites, list):
+            return JsonResponse(
+                {"error": "Missing required fields: 'reforestation_area_id' and 'sites' array"},
+                status=400
+            )
+        
+        reforestation_area = get_object_or_404(
+            Reforestation_areas,
+            reforestation_area_id=reforestation_area_id
+        )
+        
+        created_count = 0
+        
+        for site_data in sites:
+            # Skip invalid geometries
+            if not site_data.get('geometry') or 'type' not in site_data['geometry']:
+                continue
+            
+            Potential_sites.objects.create(
+                reforestation_area=reforestation_area,
+                site_id=site_data.get('site_id', ''),
+                polygon_coordinates=site_data['geometry'],
+                area_hectares=site_data.get('area_hectares', 0),
+                avg_ndvi=site_data.get('avg_ndvi', 0),
+                suitability_score=site_data.get('suitability_score', 0),
+                ndvi_threshold=0.41  # Fixed threshold
+            )
+            created_count += 1
+        
+        return JsonResponse({
+            "success": True,
+            "created_count": created_count,
+            "message": f"Successfully saved {created_count} potential site(s)"
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON in request body"}, status=400)
+    except Exception as e:
+        logger.error(f"❌ Error in bulk_create_potential_sites: {e}")
+        return JsonResponse(
+            {"error": f"Server error: {str(e)[:200]}"},
+            status=500
+        )

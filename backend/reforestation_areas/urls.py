@@ -12,11 +12,11 @@ urlpatterns = [
 
     path('get_potential_sites/', views.get_potential_sites, name="get_potential_sites"),
     path('get_potential_site/<int:potential_sites_id>/', views.get_potential_site, name="get_potential_site"),
-    path('create_potential_site/', views.create_potential_site, name="create_potential_site"),
-    path('update_potential_site/<int:potential_sites_id>/', views.update_potential_site, name="update_potential_site"),
     path('delete_potential_site/<int:potential_sites_id>/', views.delete_potential_site, name="delete_potential_site"),
 
     path('ndvi/', viewsMap.ndvi_canopy, name="ndvi_canopy"),
     path('suitable-sites/', viewsMap.suitable_sites, name='suitable_sites'),
     path('ndvi-trend/', viewsMap.ndvi_trend, name='ndvi_trend'),
+
+    path('potential-sites/bulk-create/', views.bulk_create_potential_sites, name='bulk_create_potential_sites'),
 ]
