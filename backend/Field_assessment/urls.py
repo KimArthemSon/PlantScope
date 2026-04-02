@@ -1,7 +1,7 @@
 from django.urls import path
 from . import views
 from . import onsite_views
-# from . import multicriteria_views
+from . import multicriteria_views
 urlpatterns = [
     path(
         'get_assigned_list/<int:reforestation_area_id>/',
@@ -101,5 +101,8 @@ urlpatterns = [
         onsite_views.delete_field_detail,
         name='delete_field_detail'
     ),
-
+    
+    #Multicriteria GISSpecialist
+   path('get_pre_assessment_reviews/<int:reforestation_area_id>/', multicriteria_views.get_pre_assessment_reviews, name='get_pre_assessment_reviews'),
+   path('unsent_field_assessment/<int:field_assessment_id>/', multicriteria_views.unsent_field_assessment, name='unsent_field_assessment'),
   ]

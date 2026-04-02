@@ -54,7 +54,8 @@ INSTALLED_APPS = [
     'reforestation_areas',
     'Field_assessment',
     'sites',
-    'ormoc_city'
+    'ormoc_city',
+    'mcda_weight_config'
 ]
 
 MIDDLEWARE = [
