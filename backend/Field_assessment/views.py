@@ -11,8 +11,6 @@ from .models import (
     Assigned_onsite_inspector,
     Field_assessment,
     Field_assessment_details,
-    Field_assessment_multicriteria,
-    Field_assessment_multicriteria_photos
 )
 
 
@@ -170,309 +168,168 @@ def assign_inspector(request):
 # =====================================================
 
 
-@csrf_exempt
-def get_field_assessments(request, user_id):
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+# @csrf_exempt
+# def get_field_assessments_legality_safety(request, reforestation_area_id):
 
-    assignments = Assigned_onsite_inspector.objects.filter(user__id=user_id)
+#     if request.method != "GET":
+#         return JsonResponse({"error": "Only GET allowed"}, status=405)
 
-    assessments = Field_assessment.objects.filter(
-        assigned_onsite_inspector__in=assignments,
-        is_sent=True   # ✅ FILTER ONLY SENT ASSESSMENTS
-    ).select_related(
-        'assigned_onsite_inspector',
-        'site'
-    ).order_by('-created_at')
+#     assignments = Assigned_onsite_inspector.objects.select_related(
+#         "user",
+#         "user__profile",
+#         "reforestation_area"
+#     ).filter(
+#         reforestation_area__reforestation_area_id=reforestation_area_id
+#     )
 
-    data = []
-
-    for fa in assessments:
-        data.append({
-            "field_assessment_id": fa.field_assessment_id,
-            "site_id": fa.site.id if fa.site else None,
-            "assigned_onsite_inspector_id": fa.assigned_onsite_inspector.assigned_onsite_inspector_id,
-            "title": fa.tile,
-            "legality": fa.legality,
-            "safety": fa.safety,
-            "location": fa.location,
-            "soil_quality": fa.soil_quality,
-            "ndvi": fa.ndvi,
-            "distance_to_water_source": fa.distance_to_water_source,
-            "accessibility": fa.accessibility,
-            "wildlife_status": fa.wildlife_status,
-            "created_at": fa.created_at
-        })
-
-    return JsonResponse({
-        "user_id": user_id,
-        "count": len(data),
-        "results": data
-    }, status=200)
-
-
-# =====================================================
-# GET SINGLE FIELD ASSESSMENT (WITH DETAILS)
-# ONLY RETURN IF is_sent = TRUE
-# =====================================================
-@csrf_exempt
-def get_field_assessment(request, field_assessment_id):
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
-
-    fa = get_object_or_404(
-        Field_assessment.objects.select_related(
-            'assigned_onsite_inspector',
-            'site'
-        ).prefetch_related(
-            'details__Tree_specie',
-            'details__soil'
-        ),
-        field_assessment_id=field_assessment_id,
-        is_sent=True   # ✅ ONLY SENT ASSESSMENTS
-    )
-
-    details_data = []
-
-    for d in fa.details.all():
-        details_data.append({
-            "field_assessment_detail_id": d.field_assessment_detail_id,
-            "tree_specie": {
-                "id": d.Tree_specie.id if d.Tree_specie else None,
-                "name": d.Tree_specie.name if d.Tree_specie else None
-            },
-            "soil": {
-                "id": d.soil.id if d.soil else None,
-                "name": d.soil.name if d.soil else None
-            }
-        })
-
-    data = {
-        "field_assessment_id": fa.field_assessment_id,
-        "site_id": fa.site.id if fa.site else None,
-        "assigned_onsite_inspector_id": fa.assigned_onsite_inspector.assigned_onsite_inspector_id,
-        "title": fa.tile,
-        "legality": fa.legality,
-        "safety": fa.safety,
-        "location": fa.location,
-        "coordinates": fa.coordinates,
-        "polygon_coordinates": fa.polygon_coordinates,
-        "description": fa.description,
-        "soil_quality": fa.soil_quality,
-        "ndvi": fa.ndvi,
-        "distance_to_water_source": fa.distance_to_water_source,
-        "accessibility": fa.accessibility,
-        "wildlife_status": fa.wildlife_status,
-        "created_at": fa.created_at,
-        "details": details_data
-    }
-
-    return JsonResponse({"data": data}, status=200)
-
-
-@csrf_exempt
-def update_field_assessment_is_sent(request, field_assessment_id):
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST allowed'}, status=405)
-
-    # Parse JSON
-    try:
-        body = json.loads(request.body)
-        is_sent = body.get("is_sent")
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    # Validate input
-    if not isinstance(is_sent, bool):
-        return JsonResponse({
-            "error": "is_sent must be true or false"
-        }, status=400)
-
-    # Get assessment
-    field_assessment = get_object_or_404(
-        Field_assessment,
-        field_assessment_id=field_assessment_id
-    )
-
-    # Optional: Prevent un-sending once submitted
-    if field_assessment.is_sent and is_sent is False:
-        return JsonResponse({
-            "error": "Cannot revert a submitted field assessment"
-        }, status=400)
-
-    # Update value
-    field_assessment.is_sent = is_sent
-    field_assessment.save()
-
-    return JsonResponse({
-        "message": "Field assessment status updated successfully",
-        "field_assessment_id": field_assessment_id,
-        "is_sent": field_assessment.is_sent
-    }, status=200)
-
-
-@csrf_exempt
-def get_field_assessments_legality_safety(request, reforestation_area_id):
-
-    if request.method != "GET":
-        return JsonResponse({"error": "Only GET allowed"}, status=405)
-
-    assignments = Assigned_onsite_inspector.objects.select_related(
-        "user",
-        "user__profile",
-        "reforestation_area"
-    ).filter(
-        reforestation_area__reforestation_area_id=reforestation_area_id
-    )
-
-    print(f"Assignments found: {assignments.count()}")
+#     print(f"Assignments found: {assignments.count()}")
     
-    data = []
+#     data = []
 
-    for assignment in assignments:
+#     for assignment in assignments:
 
-        profile = getattr(assignment.user, "profile", None)
+#         profile = getattr(assignment.user, "profile", None)
 
-        full_name = (
-            " ".join(filter(None, [
-                profile.first_name,
-                profile.middle_name,
-                profile.last_name
-            ]))
-            if profile
-            else assignment.user.get_full_name() or assignment.user.username
-        )
+#         full_name = (
+#             " ".join(filter(None, [
+#                 profile.first_name,
+#                 profile.middle_name,
+#                 profile.last_name
+#             ]))
+#             if profile
+#             else assignment.user.get_full_name() or assignment.user.username
+#         )
 
-        profile_img = f"/media/{profile.profile_img}" if profile and profile.profile_img else None
+#         profile_img = f"/media/{profile.profile_img}" if profile and profile.profile_img else None
 
-        # -------- FILTER FIELD ASSESSMENTS --------
-        assessments = Field_assessment.objects.filter(
-            assigned_onsite_inspector=assignment,
-            is_sent=True,
-            site__isnull=True
-        ).prefetch_related("field_assessment_multicriteria")
+#         # -------- FILTER FIELD ASSESSMENTS --------
+#         assessments = Field_assessment.objects.filter(
+#             assigned_onsite_inspector=assignment,
+#             is_sent=True,
+#             site__isnull=True
+#         ).prefetch_related("field_assessment_multicriteria")
 
-        for fa in assessments:
+#         for fa in assessments:
 
-            multicriteria = fa.field_assessment_multicriteria.first()
+#             multicriteria = fa.field_assessment_multicriteria.first()
 
-            data.append({
-                "field_assessment_id": fa.field_assessment_id,
+#             data.append({
+#                 "field_assessment_id": fa.field_assessment_id,
 
-                "legality": fa.legality,
-                "safety": fa.safety,
+#                 "legality": fa.legality,
+#                 "safety": fa.safety,
 
-                "legality_discussion": multicriteria.legality_disccussion if multicriteria else None,
-                "safety_discussion": multicriteria.safety_disccussion if multicriteria else None,
+#                 "legality_discussion": multicriteria.legality_disccussion if multicriteria else None,
+#                 "safety_discussion": multicriteria.safety_disccussion if multicriteria else None,
 
-                "created_at": fa.created_at,
+#                 "created_at": fa.created_at,
 
-                "assigned_onsite_inspector_id": assignment.assigned_onsite_inspector_id,
+#                 "assigned_onsite_inspector_id": assignment.assigned_onsite_inspector_id,
 
-                "user": {
-                    "user_id": assignment.user.id,
-                    "full_name": full_name,
-                    "email": assignment.user.email,
-                    "profile_img": profile_img
-                }
-            })
+#                 "user": {
+#                     "user_id": assignment.user.id,
+#                     "full_name": full_name,
+#                     "email": assignment.user.email,
+#                     "profile_img": profile_img
+#                 }
+#             })
 
-    return JsonResponse({
-        "reforestation_area_id": reforestation_area_id,
-        "count": len(data),
-        "results": data
-    }, status=200)
+#     return JsonResponse({
+#         "reforestation_area_id": reforestation_area_id,
+#         "count": len(data),
+#         "results": data
+#     }, status=200)
 
-@csrf_exempt
-def get_recent_field_assessments(request, site_id):
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
+# @csrf_exempt
+# def get_recent_field_assessments(request, site_id):
+#     if request.method != 'GET':
+#         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
-    try:
-        # 1. Get the site
-        site = Sites.objects.get(site_id=site_id)
+#     try:
+#         # 1. Get the site
+#         site = Sites.objects.get(site_id=site_id)
         
-        # 2. Get reforestation area from site (adjust field name if needed)
-        reforestation_area = site.reforestation_area
+#         # 2. Get reforestation area from site (adjust field name if needed)
+#         reforestation_area = site.reforestation_area
 
-        # 3. Get all field assessments for this reforestation area
-        assessments = Field_assessment.objects.filter(
-            assigned_onsite_inspector__reforestation_area=reforestation_area
-        ).order_by('-created_at')
+#         # 3. Get all field assessments for this reforestation area
+#         assessments = Field_assessment.objects.filter(
+#             assigned_onsite_inspector__reforestation_area=reforestation_area
+#         ).order_by('-created_at')
 
-        # 4. Get all multicriteria feedbacks with related user and profile
-        multicriteria_list = Field_assessment_multicriteria.objects.filter(
-            field_assessment__in=assessments
-        ).select_related(
-            'field_assessment__assigned_onsite_inspector__user',
-            'field_assessment__assigned_onsite_inspector__user__profile'
-        )
+#         # 4. Get all multicriteria feedbacks with related user and profile
+#         multicriteria_list = Field_assessment_multicriteria.objects.filter(
+#             field_assessment__in=assessments
+#         ).select_related(
+#             'field_assessment__assigned_onsite_inspector__user',
+#             'field_assessment__assigned_onsite_inspector__user__profile'
+#         )
 
-        # 5. Define criteria mapping (model field -> display name)
-        criteria_mapping = {
-            'safety_disccussion': 'safety',
-            'distance_to_water_source_disccussion': 'water_accessibility',
-            'accessibility_disccussion': 'accessibility',
-            'soil_quality_disccussion': 'soil_quality',
-            'slope_disccussion': 'slope',
-            'legality_disccussion': 'legality'
-        }
+#         # 5. Define criteria mapping (model field -> display name)
+#         criteria_mapping = {
+#             'safety_disccussion': 'safety',
+#             'distance_to_water_source_disccussion': 'water_accessibility',
+#             'accessibility_disccussion': 'accessibility',
+#             'soil_quality_disccussion': 'soil_quality',
+#             'slope_disccussion': 'slope',
+#             'legality_disccussion': 'legality'
+#         }
 
-        # 6. Aggregate feedback counts and collect recent feedbacks
-        criteria_summary = {}
-        for db_field, criteria_name in criteria_mapping.items():
-            # Filter non-empty feedbacks (null=True means no feedback for that criteria)
-            feedbacks = multicriteria_list.filter(
-                **{f"{db_field}__isnull": False}
-            ).exclude(
-                **{f"{db_field}": ''}
-            )
+#         # 6. Aggregate feedback counts and collect recent feedbacks
+#         criteria_summary = {}
+#         for db_field, criteria_name in criteria_mapping.items():
+#             # Filter non-empty feedbacks (null=True means no feedback for that criteria)
+#             feedbacks = multicriteria_list.filter(
+#                 **{f"{db_field}__isnull": False}
+#             ).exclude(
+#                 **{f"{db_field}": ''}
+#             )
 
-            # Get recent 5 feedbacks for this criteria
-            recent_feedbacks = []
-            for fb in feedbacks.order_by('-created_at')[:5]:
-                inspector = fb.field_assessment.assigned_onsite_inspector.user
-                profile = inspector.profile
+#             # Get recent 5 feedbacks for this criteria
+#             recent_feedbacks = []
+#             for fb in feedbacks.order_by('-created_at')[:5]:
+#                 inspector = fb.field_assessment.assigned_onsite_inspector.user
+#                 profile = inspector.profile
                 
-                # Build profile image URL
-                profile_img_url = ''
-                if profile.profile_img:
-                    profile_img_url = request.build_absolute_uri(profile.profile_img.url)
+#                 # Build profile image URL
+#                 profile_img_url = ''
+#                 if profile.profile_img:
+#                     profile_img_url = request.build_absolute_uri(profile.profile_img.url)
 
-                recent_feedbacks.append({
-                    'id': fb.field_assessment_multicriteria_id,
-                    'assessment_id': fb.field_assessment.field_assessment_id,
-                    'feedback': getattr(fb, db_field),
-                    'inspector': {
-                        'name': f"{profile.first_name} {profile.last_name}".strip(),
-                        'email': inspector.email,
-                        'avatar': profile_img_url,
-                        'role': inspector.user_role
-                    },
-                    'created_at': fb.created_at.isoformat()
-                })
+#                 recent_feedbacks.append({
+#                     'id': fb.field_assessment_multicriteria_id,
+#                     'assessment_id': fb.field_assessment.field_assessment_id,
+#                     'feedback': getattr(fb, db_field),
+#                     'inspector': {
+#                         'name': f"{profile.first_name} {profile.last_name}".strip(),
+#                         'email': inspector.email,
+#                         'avatar': profile_img_url,
+#                         'role': inspector.user_role
+#                     },
+#                     'created_at': fb.created_at.isoformat()
+#                 })
 
-            criteria_summary[criteria_name] = {
-                'total_feedbacks': feedbacks.count(),
-                'recent_feedbacks': recent_feedbacks
-            }
+#             criteria_summary[criteria_name] = {
+#                 'total_feedbacks': feedbacks.count(),
+#                 'recent_feedbacks': recent_feedbacks
+#             }
 
-        # 7. Return response
-        return JsonResponse({
-            'success': True,
-            'site_id': site_id,
-            'reforestation_area_id': reforestation_area.reforestation_area_id,
-            'total_assessments': assessments.count(),
-            'criteria_summary': criteria_summary
-        }, status=200)
+#         # 7. Return response
+#         return JsonResponse({
+#             'success': True,
+#             'site_id': site_id,
+#             'reforestation_area_id': reforestation_area.reforestation_area_id,
+#             'total_assessments': assessments.count(),
+#             'criteria_summary': criteria_summary
+#         }, status=200)
 
-    except Sites.DoesNotExist:
-        return JsonResponse({
-            'success': False,
-            'error': 'Site not found'
-        }, status=404)
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=500)
+#     except Sites.DoesNotExist:
+#         return JsonResponse({
+#             'success': False,
+#             'error': 'Site not found'
+#         }, status=404)
+#     except Exception as e:
+#         return JsonResponse({
+#             'success': False,
+#             'error': str(e)
+#         }, status=500)

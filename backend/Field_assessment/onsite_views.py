@@ -2,16 +2,42 @@ import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
-
+from django.utils import timezone
 from accounts.helper import get_user_from_token
-from .models import Assigned_onsite_inspector, Field_assessment, Field_assessment_details,Field_assessment_multicriteria,Field_assessment_multicriteria_photos
+from .models import Assigned_onsite_inspector, Field_assessment, Field_assessment_details, field_assessment_images
 from barangay.models import Barangay
 from sites.models import Sites
 from soils.models import Soils
 from tree_species.models import Tree_species
+from reforestation_areas.models import Reforestation_areas
 
+# ---------------- Helper: Check Inspector Assignment ----------------
+def check_inspector_assignment(user, reforestation_area_id=None, site_id=None):
+    """
+    Ensures the user is an onsite inspector and is assigned to the specific area/site.
+    """
+    if not user or user.user_role != "OnsiteInspector":
+        return False
+    
+    query = Assigned_onsite_inspector.objects.filter(user=user)
+    
+    if reforestation_area_id:
+        query = query.filter(reforestation_area_id=reforestation_area_id)
+        
+    # If checking by site, we need to link site -> reforestation_area first
+    if site_id:
+        try:
+            site = Sites.objects.get(site_id=site_id)
+            if site.reforestation_area_id:
+                query = query.filter(reforestation_area_id=site.reforestation_area_id)
+            else:
+                return False # Site not linked to an area yet
+        except Sites.DoesNotExist:
+            return False
+            
+    return query.exists()
 
-# ---------------- Get assigned reforestation areas ----------------
+# ---------------- 1. Get Assigned Reforestation Areas ----------------
 @csrf_exempt
 def get_assigned_reforestation_area(request):
     if request.method != 'GET':
@@ -19,217 +45,323 @@ def get_assigned_reforestation_area(request):
 
     try:
         user = get_user_from_token(request)
-        if user.user_role != "onsite_inspector":
+        print(user.user_role)
+        if not user or user.user_role != "OnsiteInspector":
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-        assigned_records = Assigned_onsite_inspector.objects.filter(user=user)
+        assigned_records = Assigned_onsite_inspector.objects.filter(user=user).select_related('reforestation_area', 'reforestation_area__barangay')
+        
         data = [
             {
                 "id": record.reforestation_area.reforestation_area_id,
                 "name": record.reforestation_area.name,
-                "barangay": record.reforestation_area.barangay.name if hasattr(record.reforestation_area, 'barangay') and record.reforestation_area.barangay else None,
-                "safety": record.reforestation_area.safety,
+                "barangay": record.reforestation_area.barangay.name if record.reforestation_area.barangay else None,
+                # Adjust 'safety_status' based on your actual Reforestation_areas model field name
+                "safety_status": getattr(record.reforestation_area, 'safety_status', 'Unknown'), 
+                "legality": record.reforestation_area.legality,
+                "coordinate": record.reforestation_area.coordinate,
+                "created_at": record.created_at.isoformat()
             }
             for record in assigned_records
         ]
         return JsonResponse(data, safe=False)
 
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=401)
+        return JsonResponse({'error': str(e)}, status=500)
 
-
-# ---------------- Get field assessments for assigned inspector ----------------
+# ---------------- 2. Get Field Assessments (Filtered) ----------------
 @csrf_exempt
-def get_field_assessments(request, assigned_onsite_inspector_id):
+def get_field_assessments(request, multicriteria_type=None):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
-    assigned_area = get_object_or_404(Assigned_onsite_inspector, assigned_onsite_inspector_id=assigned_onsite_inspector_id)
-    field_assessments = assigned_area.field_assessments.all()
+    try:
+        user = get_user_from_token(request)
+        if not user or user.user_role != "OnsiteInspector":
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+        # Filters
+        site_id = request.GET.get('site_id')
+        reforestation_area_id = request.GET.get('reforestation_area_id') # NEW FILTER
+        is_sent = request.GET.get('is_sent')
+        
+        # Base query: Only assessments belonging to this user
+        query = Field_assessment.objects.filter(assigned_onsite_inspector__user=user)
+        
+        if multicriteria_type:
+            query = query.filter(multicriteria_type=multicriteria_type)
+        
+        if site_id:
+            query = query.filter(site_id=site_id)
+            
+        # NEW LOGIC: Filter by Reforestation Area
+        # This works even if site_id is NULL because it joins through assigned_onsite_inspector
+        if reforestation_area_id:
+            query = query.filter(assigned_onsite_inspector__reforestation_area_id=reforestation_area_id)
+            
+        if is_sent is not None:
+            query = query.filter(is_sent=(is_sent.lower() == 'true'))
+        
+        # Serialize
+        data = []
+        for fa in query.select_related('site', 'assigned_onsite_inspector__reforestation_area'):
+            item = {
+                "field_assessment_id": fa.field_assessment_id,
+                "site_id": fa.site_id,
+                "site_name": fa.site.name if fa.site else "New Site Proposal",
+                "reforestation_area_id": fa.assigned_onsite_inspector.reforestation_area_id, # Include Area ID in response
+                "type": fa.multicriteria_type,
+                "title": fa.title,
+                "description": fa.description,
+                "data": fa.field_assessment_data,
+                "is_sent": fa.is_sent,
+                "created_at": fa.created_at.isoformat(),
+                "updated_at": fa.updated_at.isoformat(),
+                "image_count": fa.field_assessment_images.count()
+            }
+            data.append(item)
 
-    data = [
-        {
+        return JsonResponse(data, safe=False)
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def get_field_assessment_detail_view(request, field_assessment_id):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    try:
+        fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
+        # Simple serializer
+        data = {
             "field_assessment_id": fa.field_assessment_id,
+            "site_id": fa.site_id,
+            "type": fa.multicriteria_type,
             "title": fa.title,
-            "legality": fa.legality,
-            "safety": fa.safety,
-            "barangay": fa.barangay.name if fa.barangay else None,
+            "description": fa.description,
+            "data": fa.field_assessment_data,
             "is_sent": fa.is_sent,
+            "created_at": fa.created_at.isoformat()
         }
-        for fa in field_assessments
-    ]
-    return JsonResponse({'data': data}, status=200)
+        return JsonResponse(data)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
-
-# ---------------- Get a single field assessment ----------------
+# ---------------- 3. Create Field Assessment (Save Draft) ----------------
 @csrf_exempt
 def create_field_assessment(request):
     if request.method != "POST":
         return JsonResponse({"error": "Only POST allowed"}, status=405)
 
     try:
-        # -------- BASIC FIELDS --------
-        title = request.POST.get("title")
-        legality = request.POST.get("legality", "pending")
-        safety = request.POST.get("safety")
-        description = request.POST.get("description", "")
-        is_sent = request.POST.get("is_sent", "True").lower() == "true"
-        slope = request.POST.get("slope")
+        user = get_user_from_token(request)
+        if not user or user.user_role != "OnsiteInspector":
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-        coordinates = request.POST.get("coordinates")
-        polygon_coordinates = request.POST.get("polygon_coordinates")
+        body = json.loads(request.body)
+        
+        site_id = body.get("site_id") # Can be None for new site proposals
+        reforestation_area_id = body.get("reforestation_area_id") # MUST be present
+        multicriteria_type = body.get("multicriteria_type")
+        title = body.get("title", f"Draft {multicriteria_type}")
+        description = body.get("description", "")
+        field_data = body.get("field_assessment_data", {})
 
-        soil_quality = request.POST.get("soil_quality")
-        distance_to_water_source = request.POST.get("distance_to_water_source")
-        accessibility = request.POST.get("accessibility")
-        wildlife_status = request.POST.get("wildlife_status")
+        if not reforestation_area_id:
+            return JsonResponse({
+                "error": "reforestation_area_id is required to associate data with an area."
+            }, status=400)
 
-        site_id = request.POST.get("site_id")
-        assigned_inspector_id = request.POST.get("assigned_onsite_inspector_id")
+        if not multicriteria_type:
+            return JsonResponse({"error": "multicriteria_type is required"}, status=400)
 
-        site = Sites.objects.filter(site_id=site_id).first() if site_id else None
-        assigned_inspector = Assigned_onsite_inspector.objects.filter(
-            assigned_onsite_inspector_id=assigned_inspector_id
+        # Validate Assignment (Works even if site_id is None)
+        if not check_inspector_assignment(user, reforestation_area_id=reforestation_area_id):
+            return JsonResponse({"error": "You are not assigned to this reforestation area"}, status=403)
+
+        # Get Assignment Object
+        assignment = Assigned_onsite_inspector.objects.filter(
+            user=user, 
+            reforestation_area_id=reforestation_area_id
         ).first()
+        
+        if not assignment:
+             return JsonResponse({"error": "No active assignment found for this area"}, status=400)
 
-        # -------- CREATE FIELD ASSESSMENT --------
-
+        # Create Record
         fa = Field_assessment.objects.create(
+            site_id=site_id,  # Saves as NULL if not provided
+            assigned_onsite_inspector=assignment,
+            multicriteria_type=multicriteria_type,
             title=title,
-            legality=legality,
-            safety=safety,
-            coordinates=coordinates,
-            polygon_coordinates=polygon_coordinates,
             description=description,
-            is_sent=is_sent,
-            slope=slope,
-            soil_quality=soil_quality,
-            distance_to_water_source=distance_to_water_source,
-            accessibility=accessibility,
-            wildlife_status=wildlife_status,
-            site=site,
-            assigned_onsite_inspector=assigned_inspector
+            field_assessment_data=field_data,
+            is_sent=False # Always start as draft
         )
-
-        # -------- DETAILS --------
-        details = request.POST.get("details")
-
-        if details:
-            details = json.loads(details)
-
-            for d in details:
-                tree = Tree_species.objects.filter(
-                    tree_species_id=d.get("tree_specie_id")
-                ).first()
-
-                soil = Soils.objects.filter(
-                    soil_id=d.get("soil_id")
-                ).first()
-
-                Field_assessment_details.objects.create(
-                    field_assessment=fa,
-                    tree_specie=tree,
-                    soil=soil
-                )
-
-        # -------- MULTICRITERIA DISCUSSION --------
-
-        Field_assessment_multicriteria.objects.create(
-            field_assessment=fa,
-            legality_disccussion=request.POST.get("legality_discussion", ""),
-            slope_disccussion=request.POST.get("slope_discussion", ""),
-            safety_disccussion=request.POST.get("safety_discussion", ""),
-            soil_quality_disccussion=request.POST.get("soil_quality_discussion", ""),
-            distance_to_water_source_disccussion=request.POST.get("distance_to_water_source_discussion", ""),
-            accessibility_disccussion=request.POST.get("accessibility_discussion", ""),
-            wildlife_status_disccussion=request.POST.get("wildlife_status_discussion", "")
-        )
-
-        # -------- MULTICRITERIA PHOTOS --------
-
-        photos = request.FILES.getlist("photos")
-
-        for img in photos:
-            photo_type = request.POST.get("photo_type", "all")
-
-            Field_assessment_multicriteria_photos.objects.create(
-                field_assessment=fa,
-                multicriteria_type=photo_type,
-                img=img
-            )
 
         return JsonResponse({
-            "message": "Field assessment created successfully",
-            "field_assessment_id": fa.field_assessment_id
-        })
-
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=400)
-
-
-# ---------------- Update field assessment ----------------
-@csrf_exempt
-def update_field_assessment(request, field_assessment_id):
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST allowed'}, status=405)
-
-    try:
-        data = json.loads(request.body)
-        fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
-
-        for field in ["title", "legality", "safety", "coordinates", "polygon_coordinates", "description",
-                      "is_sent", "soil_quality", "ndvi", "distance_to_water_source", "accessibility", "wildlife_status"]:
-            if field in data:
-                setattr(fa, field, data[field] if field != "legality" else bool(data[field]))
-
-        if "barangay_id" in data:
-            fa.barangay = get_object_or_404(Barangay, barangay_id=data["barangay_id"])
-        if "site_id" in data:
-            fa.site = get_object_or_404(Sites, site_id=data["site_id"])
-        if "assigned_onsite_inspector_id" in data:
-            fa.assigned_onsite_inspector = get_object_or_404(Assigned_onsite_inspector, assigned_onsite_inspector_id=data["assigned_onsite_inspector_id"])
-
-        fa.save()
-        return JsonResponse({"message": "Field assessment updated successfully", "field_assessment_id": fa.field_assessment_id})
+            "message": "Assessment created successfully" if site_id else "New site proposal created successfully",
+            "field_assessment_id": fa.field_assessment_id,
+            "is_new_site_proposal": site_id is None
+        }, status=201)
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=400)
+        return JsonResponse({"error": str(e)}, status=500)
 
+# ---------------- 4. Update Field Assessment ----------------
+@csrf_exempt
+def update_field_assessment(request, field_assessment_id):
+    if request.method not in ['POST', 'PUT']:
+        return JsonResponse({'error': 'Only POST/PUT allowed'}, status=405)
 
-# ---------------- Delete field assessment ----------------
+    try:
+        user = get_user_from_token(request)
+        fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
+
+        # Security: Only the owner can update
+        if fa.assigned_onsite_inspector.user != user:
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+
+        # Cannot update if already sent
+        if fa.is_sent:
+            return JsonResponse({'error': 'Cannot update a submitted assessment. Contact admin.'}, status=400)
+
+        body = json.loads(request.body)
+        
+        # Update fields if provided
+        if 'title' in body: fa.title = body['title']
+        if 'description' in body: fa.description = body['description']
+        if 'field_assessment_data' in body: fa.field_assessment_data = body['field_assessment_data']
+        
+        fa.save()
+
+        return JsonResponse({
+            "message": "Updated successfully",
+            "data": fa.field_assessment_data
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+# ---------------- 5. Delete Field Assessment ----------------
 @csrf_exempt
 def delete_field_assessment(request, field_assessment_id):
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
 
-    fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
-    fa.delete()
-    return JsonResponse({"message": "Field assessment deleted successfully"})
+    try:
+        user = get_user_from_token(request)
+        fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
 
+        if fa.assigned_onsite_inspector.user != user:
+            return JsonResponse({'error': 'Forbidden'}, status=403)
 
-# ---------------- Field assessment details ----------------
+        if fa.is_sent:
+            return JsonResponse({'error': 'Cannot delete a submitted assessment'}, status=400)
+
+        fa.delete()
+        return JsonResponse({"message": "Field assessment deleted successfully"})
+    
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+# ---------------- 6. Update Is Sent (Submit) ----------------
+@csrf_exempt
+def update_field_assessment_is_sent(request, field_assessment_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+    try:
+        user = get_user_from_token(request)
+        fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
+
+        if fa.assigned_onsite_inspector.user != user:
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+
+        body = json.loads(request.body)
+        is_sent = body.get("is_sent")
+        
+        if not isinstance(is_sent, bool):
+            return JsonResponse({"error": "is_sent must be boolean"}, status=400)
+
+        # Prevent un-sending
+        if fa.is_sent and is_sent is False:
+            return JsonResponse({"error": "Cannot revert a submitted assessment"}, status=400)
+
+        fa.is_sent = is_sent
+        fa.save()
+
+        return JsonResponse({
+            "message": "Status updated",
+            "is_sent": fa.is_sent
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+# ---------------- 7. Image Upload Handling ----------------
+@csrf_exempt
+def upload_field_assessment_image(request, field_assessment_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+    try:
+        user = get_user_from_token(request)
+        fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
+
+        if fa.assigned_onsite_inspector.user != user:
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        
+        if fa.is_sent:
+            return JsonResponse({'error': 'Cannot add images to submitted assessment'}, status=400)
+
+        if 'image' not in request.FILES:
+            return JsonResponse({'error': 'No image file provided'}, status=400)
+
+        img_file = request.FILES['image']
+        caption = request.POST.get('caption', '')
+
+        new_img = field_assessment_images.objects.create(
+            field_assessment=fa,
+            img=img_file,
+            caption=caption
+        )
+
+        return JsonResponse({
+            "message": "Image uploaded",
+            "image_id": new_img.field_assessment_images_id,
+            "url": new_img.img.url if new_img.img else None
+        }, status=201)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+# ---------------- 8. Details (Tree/Soil Links) ----------------
 @csrf_exempt
 def get_field_assessment_details(request, field_assessment_id):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
-
-    fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
-    details = fa.field_assessment_details.all()  # use correct related_name
-
-    data = [
-        {
-            "field_assessment_detail_id": d.field_assessment_detail_id,
-            "tree_specie_id": d.tree_specie.tree_species_id if d.tree_specie else None,
-            "tree_specie": d.tree_specie.name if d.tree_specie else None,
-            "soil_id": d.soil.soil_id if d.soil else None,
-            "soil": d.soil.name if d.soil else None,
-        }
-        for d in details
-    ]
-    return JsonResponse({"data": data}, status=200)
-
+    
+    try:
+        details = Field_assessment_details.objects.filter(field_assessment_id=field_assessment_id)
+        data = [
+            {
+                "detail_id": d.field_assessment_detail_id,
+                "tree_specie_id": d.tree_specie_id,
+                "tree_name": d.tree_specie.name if d.tree_specie else None,
+                "soil_id": d.soil_id,
+                "soil_name": d.soil.name if d.soil else None
+            }
+            for d in details
+        ]
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 @csrf_exempt
 def create_field_detail(request):
@@ -238,24 +370,29 @@ def create_field_detail(request):
 
     try:
         data = json.loads(request.body)
-        fa = get_object_or_404(Field_assessment, field_assessment_id=data.get("field_assessment_id"))
-        tree = get_object_or_404(Tree_species, tree_species_id=data.get("tree_specie_id")) if data.get("tree_specie_id") else None
-        soil = get_object_or_404(Soils, soil_id=data.get("soil_id")) if data.get("soil_id") else None
+        fa_id = data.get("field_assessment_id")
+        tree_id = data.get("tree_specie_id")
+        soil_id = data.get("soil_id")
+
+        if not fa_id:
+            return JsonResponse({"error": "field_assessment_id required"}, status=400)
+
+        fa = get_object_or_404(Field_assessment, field_assessment_id=fa_id)
+        tree = get_object_or_404(Tree_species, tree_species_id=tree_id) if tree_id else None
+        soil = get_object_or_404(Soils, soil_id=soil_id) if soil_id else None
 
         detail = Field_assessment_details.objects.create(
             field_assessment=fa,
             tree_specie=tree,
             soil=soil
         )
-        return JsonResponse({"message": "Field assessment detail created successfully",
-                             "field_assessment_detail_id": detail.field_assessment_detail_id}, status=201)
+        return JsonResponse({"message": "Detail linked", "id": detail.field_assessment_detail_id}, status=201)
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=400)
-
-
+        return JsonResponse({"error": str(e)}, status=500)
+    
 @csrf_exempt
 def delete_field_detail(request, field_assessment_detail_id):
     if request.method != 'DELETE':
@@ -263,4 +400,4 @@ def delete_field_detail(request, field_assessment_detail_id):
 
     detail = get_object_or_404(Field_assessment_details, field_assessment_detail_id=field_assessment_detail_id)
     detail.delete()
-    return JsonResponse({"message": "Field assessment detail deleted successfully"})
+    return JsonResponse({"message": "Detail deleted successfully"})

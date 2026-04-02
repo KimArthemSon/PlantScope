@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import viewsMap
+
 urlpatterns = [
     
     path('get_all_reforestation_areas/', views.get_all_reforestation_areas, name="get_all_reforestation_areas"),

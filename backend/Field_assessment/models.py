@@ -30,6 +30,11 @@ class Assigned_onsite_inspector(models.Model):
             )
         ]
 
+    def __str__(self):
+        return f"Inspector {self.user.email} - Area {self.reforestation_area_id}"
+
+
+# -------------------- Field Assessment (Modular) --------------------
 
 class Field_assessment(models.Model):
     field_assessment_id = models.BigAutoField(primary_key=True)
@@ -37,6 +42,7 @@ class Field_assessment(models.Model):
     site = models.ForeignKey(
         Sites,
         null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name='field_assessments'
     )
@@ -47,110 +53,54 @@ class Field_assessment(models.Model):
         related_name='field_assessments'
     )
     
-    Safety_types = (
-        ('safe', 'Low Risk'),
-        ('slightly', 'Slightly Unsafe'),
-        ('moderate', 'Moderate Risk'),
-        ('danger', 'High Risk')
+    # Fixed: Added missing comma after 'Legality' and corrected spelling in labels
+    multicriteria_layers = (
+        ('pre_assessment', 'Pre-Assessment'),
+        ('safety', 'Safety'),
+        ('legality', 'Legality'),  # Comma added here
+        ('slope', 'Slope'),
+        ('soil_quality', 'Soil Quality'),
+        ('tree_species_suitability', 'Tree Species Suitability'),
+        ('accessibility', 'Accessibility'),
+        ('hydrology', 'Hydrology'),
+        ('wildlife_status', 'Wildlife Status'),
     )
 
-    Soil_quality_types = (
-        ('very_good', 'Very Good'),
-        ('good', 'Good'),
-        ('moderate', 'Moderate'),
-        ('poor', 'Poor'),
-        ('very_poor', 'Very Poor')
+    multicriteria_type = models.CharField(
+        max_length=30, 
+        choices=multicriteria_layers, 
+        default='pre_assessment'
     )
-    legality_status = (
-        ('pending', 'Pending'),
-        ('legal', 'Legal'),
-        ('illegal', 'Illegal'),
+    
+    # Fixed: Typo 'fied' -> 'field'
+    field_assessment_data = models.JSONField(
+        default=dict, 
+        help_text="JSON data specific to the selected layer type"
     )
-    Accessibility_types = (
-        ('very_good', 'Very Good'),
-        ('good', 'Good'),
-        ('moderate', 'Moderate'),
-        ('poor', 'Poor'),
-        ('very_poor', 'Very Poor')
-    )
-
-    Wildlife_status_types = (
-        ('very_good', 'Very Good'),
-        ('good', 'Good'),
-        ('moderate', 'Moderate'),
-        ('poor', 'Poor'),
-        ('very_poor', 'Very Poor')
-    )
-
-    # Info
+    
     title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
     is_sent = models.BooleanField(default=False) 
-    description = models.CharField(max_length=255)
-    legality = models.CharField(
-        max_length=20,
-        choices=legality_status,
-        default='pending',
-        null=True,
-        blank=True
-    )
 
-    safety = models.CharField(
-        max_length=20,
-        choices=Safety_types,
-        default='moderate',
-        null=True,
-        blank=True
-    )
-
-    coordinates = models.JSONField(
-        null=True,
-        blank=True
-    )
-
-    polygon_coordinates = models.JSONField(
-        null=True,
-        blank=True
-    )
-
-    slope = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        default=0.00,
-        null=True,
-        blank=True
-    )
-
-    soil_quality = models.CharField(
-        max_length=20,
-        choices=Soil_quality_types,
-        default='moderate',
-        null=True,
-        blank=True
-    )
-
-    distance_to_water_source = models.CharField(
-        max_length=100,
-        null=True,
-        blank=True
-    )
-
-    accessibility = models.CharField(
-        max_length=20,
-        choices=Accessibility_types,
-        default='moderate',
-        null=True,
-        blank=True
-    )
-
-    wildlife_status = models.CharField(
-        max_length=20,
-        choices=Wildlife_status_types,
-        default='moderate',
-        null=True,
-        blank=True
-    )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        site_name = self.site.name if self.site else "New Site"
+        return f"[{self.get_multicriteria_type_display()}] for {site_name}"
+
+    class Meta:
+        # Prevents duplicate submissions of the same layer by the same inspector for the same site
+        constraints = [
+            models.UniqueConstraint(
+                fields=['site', 'assigned_onsite_inspector', 'multicriteria_type'],
+                name='unique_layer_submission',
+                condition=models.Q(is_sent=True)
+            )
+        ]
+
+
+# -------------------- Field Assessment Details --------------------
 
 class Field_assessment_details(models.Model):
     field_assessment_detail_id = models.BigAutoField(primary_key=True)
@@ -165,65 +115,45 @@ class Field_assessment_details(models.Model):
     tree_specie = models.ForeignKey(
         Tree_species,
         null=True,
-        on_delete=models.CASCADE,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name='field_assessment_details'
     )
 
     soil = models.ForeignKey(
         Soils,
         null=True,
-        on_delete=models.CASCADE,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name='field_assessment_details'
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
-class Field_assessment_multicriteria(models.Model):
-    field_assessment_multicriteria_id = models.BigAutoField(primary_key=True)
+    def __str__(self):
+        return f"Details for Assessment #{self.field_assessment_id}"
+
+
+# -------------------- Field Assessment Images --------------------
+
+class field_assessment_images(models.Model):
+    field_assessment_images_id = models.BigAutoField(primary_key=True)
     
     field_assessment = models.ForeignKey(
         Field_assessment,
         null=True,
         on_delete=models.CASCADE,
-        related_name='field_assessment_multicriteria'
+        related_name='field_assessment_images'
     )
-
-    # Info
-    legality_disccussion = models.CharField(max_length=255, default='')
-    slope_disccussion = models.CharField(max_length=255, default='')
-    safety_disccussion = models.CharField(max_length=255, default='')
-    soil_quality_disccussion = models.CharField(max_length=255, default='')
-    distance_to_water_source_disccussion = models.CharField(max_length=255, default='')
-    accessibility_disccussion = models.CharField(max_length=255, default='')
-    wildlife_status_disccussion = models.CharField(max_length=255, default='')
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-class Field_assessment_multicriteria_photos(models.Model):
-    field_assessment_multicriteria_photo_id = models.BigAutoField(primary_key=True)
-    
-    field_assessment = models.ForeignKey(
-        Field_assessment,
-        null=True,
-        on_delete=models.CASCADE,
-        related_name='Field_assessment_multicriteria_photos'
-    )
-
-    multicriteria_types = (
-        ('all', 'All'),
-        ('slope', 'Slope'),
-        ('soil_quality', 'Soil quality'),
-        ('accessibility', 'Accessibility'),
-        ('wildlife_status', 'Wildlife status'),
-        ('safety', 'Safety'),
-        ('legality', 'Legality')
-    )
-    multicriteria_type = models.CharField(max_length=20, choices=multicriteria_types, default='all')
     
     img = models.ImageField(
-        upload_to='field_asessment/',
+        upload_to='field_assessments/%Y/%m/%d/',
         blank=True,
         null=True
     )
-
+    
+    caption = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Image for Assessment #{self.field_assessment_id}"

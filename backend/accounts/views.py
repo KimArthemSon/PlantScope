@@ -134,6 +134,7 @@ def login_user(request):
     payload = {
         'user_id': user.id,
         'email': user.email,
+        'user_role': user.user_role,
         'exp': datetime.utcnow() + timedelta(seconds=settings.JWT_EXP_DELTA_SECONDS)
     }
 

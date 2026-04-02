@@ -1,5 +1,7 @@
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { api } from "@/constants/url_fixed";
+import * as SecureStore from "expo-secure-store"; // ✅ Direct import
 import {
   View,
   Text,
@@ -13,45 +15,52 @@ export default function Index() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleLoginAsync = async () => {
-    router.push("/home");
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter email and password");
+      return;
+    }
 
-    // if (!email || !password) {
-    //   Alert.alert("Error", "Please enter email and password");
-    //   return;
-    // }
+    setLoading(true);
 
-    // try {
-    //   const res = await fetch("http://192.168.254.102:8000/api/login/", {
-    //     method: "POST",
-    //     headers: { "Content-Type": "application/json" },
-    //     body: JSON.stringify({ email, password }),
-    //   });
+    try {
+      const res = await fetch(`${api}/api/login/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-    //   if (!res.ok) {
-    //     Alert.alert("Error", "Wrong asdasd Credentials, Please try again!");
-    //     return;
-    //   }
-    //   const data = await res.json();
-    //   if (data.user_role !== "OnsiteInspector") {
-    //     Alert.alert("Error", "Wrong Credentials, Please try again!");
-    //     return;
-    //   }
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        Alert.alert("Error", errorData.message || "Invalid credentials");
+        return;
+      }
 
-    //   Alert.alert("Success", `Logged in as ${email}`);
-    //   setTimeout(() => {
-    //     router.push("/home");
-    //   }, 500);
-    // } catch (error) {
-    //   Alert.alert("Error", "Network error. Please try again later.");
-    // }
+      const data = await res.json();
+
+      if (data.user_role !== "OnsiteInspector") {
+        Alert.alert("Error", "Access denied: Insufficient permissions");
+        return;
+      }
+
+      // 💾 Store token — ONE LINE, DONE ✅
+      await SecureStore.setItemAsync("token", data.token);
+
+      Alert.alert("Success", `Welcome, ${data.email}!`);
+      router.replace("/home");
+    } catch (error) {
+      console.error("Login error:", error);
+      Alert.alert(
+        "Connection Error",
+        "Cannot reach server. Check your network & API URL.",
+      );
+    } finally {
+      setLoading(false);
+    }
   };
-
-  // useEffect(() => {
-  //   router.push("/home");
-  // }, []);
 
   return (
     <View style={styles.container}>
@@ -66,6 +75,7 @@ export default function Index() {
           autoCapitalize="none"
           value={email}
           onChangeText={setEmail}
+          editable={!loading}
         />
       </View>
 
@@ -77,10 +87,13 @@ export default function Index() {
           secureTextEntry={!showPassword}
           value={password}
           onChangeText={setPassword}
+          editable={!loading}
+          onSubmitEditing={handleLogin}
         />
         <TouchableOpacity
           style={styles.showPasswordBtn}
           onPress={() => setShowPassword(!showPassword)}
+          disabled={loading}
         >
           <Text style={styles.showPasswordText}>
             {showPassword ? "Hide" : "Show"}
@@ -88,11 +101,17 @@ export default function Index() {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleLoginAsync}>
-        <Text style={styles.buttonText}>Log In</Text>
+      <TouchableOpacity
+        style={[styles.button, loading && styles.buttonDisabled]}
+        onPress={handleLogin}
+        disabled={loading}
+      >
+        <Text style={styles.buttonText}>
+          {loading ? "Logging in..." : "Log In"}
+        </Text>
       </TouchableOpacity>
 
-      <TouchableOpacity>
+      <TouchableOpacity disabled={loading}>
         <Text style={styles.forgotText}>Forgot Password?</Text>
       </TouchableOpacity>
     </View>
@@ -123,13 +142,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
     shadowRadius: 5,
-    elevation: 5, // Android shadow
+    elevation: 5,
   },
   input: {
     color: "white",
     fontSize: 16,
-
-    // paddingVertical: 12,
     padding: 20,
   },
   showPasswordBtn: {
@@ -152,6 +169,7 @@ const styles = StyleSheet.create({
     shadowRadius: 7,
     elevation: 5,
   },
+  buttonDisabled: { opacity: 0.7 },
   buttonText: {
     color: "#fff",
     fontSize: 20,
