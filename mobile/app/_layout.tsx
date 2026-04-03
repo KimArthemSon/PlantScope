@@ -26,10 +26,6 @@ export default function RootLayout() {
           name="modal"
           options={{ presentation: "modal", title: "Modal" }}
         />
-        <Stack.Screen
-          name="feedbacks/feedback"
-          options={{ title: "Feedback" }}
-        />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

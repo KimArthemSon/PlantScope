@@ -43,7 +43,7 @@ urlpatterns = [
         name='get_field_assessments_by_type'
     ),
     
-    path('get_field_assessment/<int:field_assessment_id>/', onsite_views.get_field_assessment_detail_view, name='assessment-detail'),
+    path('get_field_assessment/<int:field_assessment_id>/', onsite_views.get_field_assessment_detail_view, name='get_field_assessment_detail_view'),
 
     # Create a new assessment (Draft)
     path(
@@ -101,8 +101,12 @@ urlpatterns = [
         onsite_views.delete_field_detail,
         name='delete_field_detail'
     ),
-    
+
+    path('delete_field_assessment_image/<int:image_id>/', 
+     onsite_views.delete_field_assessment_image, 
+     name='delete_field_assessment_image'),
     #Multicriteria GISSpecialist
-   path('get_pre_assessment_reviews/<int:reforestation_area_id>/', multicriteria_views.get_pre_assessment_reviews, name='get_pre_assessment_reviews'),
-   path('unsent_field_assessment/<int:field_assessment_id>/', multicriteria_views.unsent_field_assessment, name='unsent_field_assessment'),
+    path('get_pre_assessment_reviews/<int:reforestation_area_id>/', multicriteria_views.get_pre_assessment_reviews, name='get_pre_assessment_reviews'),
+    path('unsent_field_assessment/<int:field_assessment_id>/', multicriteria_views.unsent_field_assessment, name='unsent_field_assessment'),
+    path('get_sites_by_area/<int:reforestation_area_id>/', onsite_views.get_sites_by_area, name='get_sites_by_area'),
   ]

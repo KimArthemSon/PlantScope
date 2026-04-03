@@ -16,47 +16,39 @@ import {
 import * as SecureStore from "expo-secure-store";
 import MapView, { Marker, Polygon } from "react-native-maps";
 import { api } from "@/constants/url_fixed";
+
 const screenHeight = Dimensions.get("window").height;
-// For Android Emulator: http://10.0.2.2:8000/api
-// For iOS Simulator: http://localhost:8000/api
-// For Physical Device: http://YOUR_IP_ADDRESS:8000/api
 const API_BASE_URL = api + "/api";
 
-/* ---------- TYPES ---------- */
-
-type Site = {
+type ReforestationArea = {
   id: string;
   name: string;
   coordinates: string;
   location: string;
-  legality: string; // 'legal', 'pending', 'illegal'
+  legality: string;
   latitude: number;
   longitude: number;
   safety_status: string;
 };
 
-/* ---------- SCREEN ---------- */
-
-const Sites: React.FC = () => {
+const ReforestationAreas: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
-  const [selectedSite, setSelectedSite] = useState<Site | null>(null);
+  const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(
+    null,
+  );
   const [searchText, setSearchText] = useState("");
-  const [areas, setAreas] = useState<Site[]>([]);
+  const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const router = useRouter();
 
-  // Fetch Data from Django API
   const fetchAssignedAreas = async () => {
     try {
       setLoading(true);
       setError(null);
-
       const token = await SecureStore.getItemAsync("token");
-      if (!token) {
-        throw new Error("No authentication token found.");
-      }
+      if (!token) throw new Error("No authentication token found.");
 
       const response = await fetch(
         `${API_BASE_URL}/get_assigned_reforestation_area/`,
@@ -76,8 +68,7 @@ const Sites: React.FC = () => {
       }
 
       const data = await response.json();
-
-      const mappedSites: Site[] = data.map((item: any) => ({
+      const mappedAreas: ReforestationArea[] = data.map((item: any) => ({
         id: item.id.toString(),
         name: item.name,
         location: item.barangay || "Unknown Barangay",
@@ -89,8 +80,7 @@ const Sites: React.FC = () => {
         latitude: item.coordinate ? item.coordinate[0] : 11.0,
         longitude: item.coordinate ? item.coordinate[1] : 124.6,
       }));
-
-      setAreas(mappedSites);
+      setAreas(mappedAreas);
     } catch (err: any) {
       console.error("Fetch error:", err);
       setError(err.message);
@@ -108,26 +98,27 @@ const Sites: React.FC = () => {
     fetchAssignedAreas();
   }, []);
 
-  const openModal = (site: Site) => {
-    setSelectedSite(site);
+  const openModal = (area: ReforestationArea) => {
+    setSelectedArea(area);
     setModalVisible(true);
   };
 
   const closeModal = () => {
-    setSelectedSite(null);
+    setSelectedArea(null);
     setModalVisible(false);
   };
 
-  const handleActionPress = (site: Site) => {
-    if (site.legality === "pending") {
+  const handleActionPress = (area: ReforestationArea) => {
+    if (area.legality === "pending") {
       router.push({
         pathname: "/feedbacks/pre_assessment",
-        params: { areaId: site.id, areaName: site.name },
+        params: { areaId: area.id, areaName: area.name },
       });
-    } else if (site.legality === "legal") {
+    } else if (area.legality === "legal") {
+      // ✅ Removed redundant `legality` param - it's derivable on next screen if needed
       router.push({
-        pathname: "/feedbacks/select_layer",
-        params: { areaId: site.id, areaName: site.name },
+        pathname: "/feedbacks/site_field_assessment",
+        params: { areaId: area.id, areaName: area.name },
       });
     } else {
       Alert.alert(
@@ -137,17 +128,15 @@ const Sites: React.FC = () => {
     }
   };
 
-  // Filter sites based on search text
-  const filteredSites = areas.filter(
-    (site) =>
-      site.name.toLowerCase().includes(searchText.toLowerCase()) ||
-      site.location.toLowerCase().includes(searchText.toLowerCase()) ||
-      site.legality.toLowerCase().includes(searchText.toLowerCase()),
+  const filteredAreas = areas.filter(
+    (area) =>
+      area.name.toLowerCase().includes(searchText.toLowerCase()) ||
+      area.location.toLowerCase().includes(searchText.toLowerCase()) ||
+      area.legality.toLowerCase().includes(searchText.toLowerCase()),
   );
 
   return (
     <View style={styles.container}>
-      {/* ---------- SEARCH BAR ---------- */}
       <TextInput
         style={styles.searchInput}
         placeholder="Search by name, barangay, or status..."
@@ -173,25 +162,23 @@ const Sites: React.FC = () => {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
           <Text style={styles.header}>
-            Assigned Areas ({filteredSites.length})
+            Assigned Areas ({filteredAreas.length})
           </Text>
 
-          {filteredSites.map((site) => (
-            <View key={site.id} style={styles.siteCard}>
-              <View style={styles.siteInfo}>
-                <Text style={styles.siteName}>{site.name}</Text>
-                <Text style={styles.siteCoord}>{site.coordinates}</Text>
-                <Text style={styles.siteLocation}>{site.location}</Text>
-
-                {/* Status Badge */}
+          {filteredAreas.map((area) => (
+            <View key={area.id} style={styles.card}>
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardName}>{area.name}</Text>
+                <Text style={styles.cardCoord}>{area.coordinates}</Text>
+                <Text style={styles.cardLocation}>{area.location}</Text>
                 <View
                   style={[
                     styles.statusBadge,
                     {
                       backgroundColor:
-                        site.legality === "legal"
+                        area.legality === "legal"
                           ? "#d4edda"
-                          : site.legality === "illegal"
+                          : area.legality === "illegal"
                             ? "#f8d7da"
                             : "#fff3cd",
                     },
@@ -202,15 +189,15 @@ const Sites: React.FC = () => {
                       styles.statusText,
                       {
                         color:
-                          site.legality === "legal"
+                          area.legality === "legal"
                             ? "#155724"
-                            : site.legality === "illegal"
+                            : area.legality === "illegal"
                               ? "#721c24"
                               : "#856404",
                       },
                     ]}
                   >
-                    {site.legality.toUpperCase()}
+                    {area.legality.toUpperCase()}
                   </Text>
                 </View>
               </View>
@@ -218,32 +205,31 @@ const Sites: React.FC = () => {
               <View style={styles.cardActions}>
                 <TouchableOpacity
                   style={styles.viewBtn}
-                  onPress={() => openModal(site)}
+                  onPress={() => openModal(area)}
                 >
                   <Text style={styles.viewText}>View</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[
                     styles.actionBtn,
                     {
                       backgroundColor:
-                        site.legality === "legal"
+                        area.legality === "legal"
                           ? "#0F4A2F"
-                          : site.legality === "pending"
+                          : area.legality === "pending"
                             ? "#DAA520"
                             : "#ccc",
                       marginTop: 8,
                     },
                   ]}
-                  onPress={() => handleActionPress(site)}
-                  disabled={site.legality === "illegal"}
+                  onPress={() => handleActionPress(area)}
+                  disabled={area.legality === "illegal"}
                 >
                   <Text style={styles.actionBtnText}>
-                    {site.legality === "pending"
+                    {area.legality === "pending"
                       ? "Start Pre-Assessment"
-                      : site.legality === "legal"
-                        ? "Select Layer"
+                      : area.legality === "legal"
+                        ? "Assess Site"
                         : "Restricted"}
                   </Text>
                 </TouchableOpacity>
@@ -251,7 +237,7 @@ const Sites: React.FC = () => {
             </View>
           ))}
 
-          {filteredSites.length === 0 && !loading && (
+          {filteredAreas.length === 0 && !loading && (
             <Text style={styles.noResults}>
               No areas found matching "{searchText}".
             </Text>
@@ -259,7 +245,6 @@ const Sites: React.FC = () => {
         </ScrollView>
       )}
 
-      {/* ---------- MODAL ---------- */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -268,43 +253,42 @@ const Sites: React.FC = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            {selectedSite && (
+            {selectedArea && (
               <>
                 <MapView
                   style={styles.map}
                   initialRegion={{
-                    latitude: selectedSite.latitude,
-                    longitude: selectedSite.longitude,
+                    latitude: selectedArea.latitude,
+                    longitude: selectedArea.longitude,
                     latitudeDelta: 0.01,
                     longitudeDelta: 0.01,
                   }}
                 >
                   <Marker
                     coordinate={{
-                      latitude: selectedSite.latitude,
-                      longitude: selectedSite.longitude,
+                      latitude: selectedArea.latitude,
+                      longitude: selectedArea.longitude,
                     }}
-                    title={selectedSite.name}
-                    description={selectedSite.location}
+                    title={selectedArea.name}
+                    description={selectedArea.location}
                   />
-                  {/* Visual Placeholder Polygon */}
                   <Polygon
                     coordinates={[
                       {
-                        latitude: selectedSite.latitude + 0.002,
-                        longitude: selectedSite.longitude - 0.002,
+                        latitude: selectedArea.latitude + 0.002,
+                        longitude: selectedArea.longitude - 0.002,
                       },
                       {
-                        latitude: selectedSite.latitude + 0.002,
-                        longitude: selectedSite.longitude + 0.002,
+                        latitude: selectedArea.latitude + 0.002,
+                        longitude: selectedArea.longitude + 0.002,
                       },
                       {
-                        latitude: selectedSite.latitude - 0.002,
-                        longitude: selectedSite.longitude + 0.002,
+                        latitude: selectedArea.latitude - 0.002,
+                        longitude: selectedArea.longitude + 0.002,
                       },
                       {
-                        latitude: selectedSite.latitude - 0.002,
-                        longitude: selectedSite.longitude - 0.002,
+                        latitude: selectedArea.latitude - 0.002,
+                        longitude: selectedArea.longitude - 0.002,
                       },
                     ]}
                     strokeColor="#0F4A2F"
@@ -314,30 +298,30 @@ const Sites: React.FC = () => {
                 </MapView>
 
                 <View style={styles.infoContainer}>
-                  <Text style={styles.infoTitle}>{selectedSite.name}</Text>
+                  <Text style={styles.infoTitle}>{selectedArea.name}</Text>
                   <Text style={styles.infoText}>
                     <Text style={styles.label}>Barangay:</Text>{" "}
-                    {selectedSite.location}
+                    {selectedArea.location}
                   </Text>
                   <Text style={styles.infoText}>
                     <Text style={styles.label}>Coordinates:</Text>{" "}
-                    {selectedSite.coordinates}
+                    {selectedArea.coordinates}
                   </Text>
                   <Text style={styles.infoText}>
-                    <Text style={styles.label}>Legality Status:</Text>{" "}
+                    <Text style={styles.label}>Legality:</Text>{" "}
                     <Text
                       style={{
                         fontWeight: "bold",
                         color:
-                          selectedSite.legality === "legal" ? "green" : "red",
+                          selectedArea.legality === "legal" ? "green" : "red",
                       }}
                     >
-                      {selectedSite.legality.toUpperCase()}
+                      {selectedArea.legality.toUpperCase()}
                     </Text>
                   </Text>
                   <Text style={styles.infoText}>
                     <Text style={styles.label}>Safety:</Text>{" "}
-                    {selectedSite.safety_status}
+                    {selectedArea.safety_status}
                   </Text>
                 </View>
 
@@ -349,17 +333,17 @@ const Sites: React.FC = () => {
                     style={[
                       styles.feedbackBtn,
                       {
-                        opacity: selectedSite.legality === "illegal" ? 0.5 : 1,
+                        opacity: selectedArea.legality === "illegal" ? 0.5 : 1,
                       },
                     ]}
-                    onPress={() => handleActionPress(selectedSite)}
-                    disabled={selectedSite.legality === "illegal"}
+                    onPress={() => handleActionPress(selectedArea)}
+                    disabled={selectedArea.legality === "illegal"}
                   >
                     <Text style={styles.feedbackText}>
-                      {selectedSite.legality === "pending"
+                      {selectedArea.legality === "pending"
                         ? "Start Pre-Assessment"
-                        : selectedSite.legality === "legal"
-                          ? "Select Layer"
+                        : selectedArea.legality === "legal"
+                          ? "Assess Site"
                           : "Restricted"}
                     </Text>
                   </Pressable>
@@ -373,9 +357,7 @@ const Sites: React.FC = () => {
   );
 };
 
-export default Sites;
-
-/* ---------- STYLES ---------- */
+export default ReforestationAreas;
 
 const styles = StyleSheet.create({
   container: {
@@ -390,25 +372,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 20,
   },
-  loadingText: {
-    marginTop: 10,
-    color: "#666",
-  },
-  errorText: {
-    color: "red",
-    textAlign: "center",
-    marginBottom: 15,
-  },
+  loadingText: { marginTop: 10, color: "#666" },
+  errorText: { color: "red", textAlign: "center", marginBottom: 15 },
   retryBtn: {
     backgroundColor: "#0F4A2F",
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
   },
-  retryText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
+  retryText: { color: "#fff", fontWeight: "bold" },
   header: {
     fontSize: 22,
     fontWeight: "bold",
@@ -425,7 +397,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: "#f9f9f9",
   },
-  siteCard: {
+  card: {
     flexDirection: "row",
     backgroundColor: "#fff",
     padding: 16,
@@ -438,25 +410,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#eee",
   },
-  siteInfo: {
-    flex: 3,
-    paddingRight: 10,
-  },
-  siteName: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#000",
-  },
-  siteCoord: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 2,
-  },
-  siteLocation: {
-    fontSize: 13,
-    color: "#555",
-    marginTop: 2,
-  },
+  cardInfo: { flex: 3, paddingRight: 10 },
+  cardName: { fontSize: 16, fontWeight: "bold", color: "#000" },
+  cardCoord: { fontSize: 12, color: "#666", marginTop: 2 },
+  cardLocation: { fontSize: 13, color: "#555", marginTop: 2 },
   statusBadge: {
     alignSelf: "flex-start",
     paddingHorizontal: 8,
@@ -464,11 +421,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginTop: 8,
   },
-  statusText: {
-    fontSize: 11,
-    fontWeight: "bold",
-    textTransform: "uppercase",
-  },
+  statusText: { fontSize: 11, fontWeight: "bold", textTransform: "uppercase" },
   cardActions: {
     flex: 1.5,
     flexDirection: "column",
@@ -483,11 +436,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
   },
-  viewText: {
-    color: "#0F4A2F",
-    fontWeight: "600",
-    fontSize: 12,
-  },
+  viewText: { color: "#0F4A2F", fontWeight: "600", fontSize: 12 },
   actionBtn: {
     width: "100%",
     paddingVertical: 10,
@@ -527,26 +476,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     backgroundColor: "#eee",
   },
-  infoContainer: {
-    flex: 1,
-    marginBottom: 10,
-  },
+  infoContainer: { flex: 1, marginBottom: 10 },
   infoTitle: {
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 10,
     color: "#000",
   },
-  infoText: {
-    fontSize: 14,
-    marginBottom: 8,
-    color: "#333",
-    lineHeight: 20,
-  },
-  label: {
-    fontWeight: "700",
-    color: "#0F4A2F",
-  },
+  infoText: { fontSize: 14, marginBottom: 8, color: "#333", lineHeight: 20 },
+  label: { fontWeight: "700", color: "#0F4A2F" },
   buttonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -562,11 +500,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
     alignItems: "center",
   },
-  closeText: {
-    color: "#0F4A2F",
-    textAlign: "center",
-    fontWeight: "600",
-  },
+  closeText: { color: "#0F4A2F", textAlign: "center", fontWeight: "600" },
   feedbackBtn: {
     flex: 1.5,
     backgroundColor: "#0F4A2F",

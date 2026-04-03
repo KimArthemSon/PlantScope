@@ -46,17 +46,16 @@ export default function TabLayout() {
           ),
         }}
       />
-
-      {/* Sites Tab */}
       <Tabs.Screen
-        name="sites"
+        name="Area"
         options={{
-          title: "Sites",
+          title: "Area",
           tabBarIcon: ({ color }) => (
             <MaterialCommunityIcons name="leaf" size={26} color={color} />
           ),
         }}
       />
+      {/* Sites Tab */}
 
       {/* Map Tab */}
       <Tabs.Screen

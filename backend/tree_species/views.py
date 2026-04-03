@@ -171,3 +171,36 @@ def delete_tree_specie(request, tree_specie_id):
         {'message': 'Successfully deleted'},
         status=200
     )
+
+
+
+
+@csrf_exempt
+def get_tree_species_list(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    try:
+        search = request.GET.get('search', '').strip()
+        entries = int(request.GET.get('entries', 20))
+        page = int(request.GET.get('page', 1))
+
+        if entries <= 0: entries = 20
+        if page <= 0: page = 1
+        offset = (page - 1) * entries
+
+        queryset = Tree_species.objects.all().order_by('name')
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+
+        total = queryset.count()
+        data = list(queryset[offset: offset + entries].values('tree_species_id', 'name', 'scientific_name', 'description'))
+
+        return JsonResponse({
+            'data': data,
+            'total_page': math.ceil(total / entries) if total > 0 else 0,
+            'page': page,
+            'total': total
+        }, status=200)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

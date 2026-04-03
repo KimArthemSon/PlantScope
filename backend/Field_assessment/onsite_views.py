@@ -128,23 +128,83 @@ def get_field_assessments(request, multicriteria_type=None):
 
 @csrf_exempt
 def get_field_assessment_detail_view(request, field_assessment_id):
+    """
+    GET: Fetch complete field assessment data including:
+    - Core assessment fields
+    - Related Field_assessment_details (tree/soil links)
+    - Related field_assessment_images (with URLs)
+    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    
     try:
-        fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
-        # Simple serializer
+        user = get_user_from_token(request)
+        fa = get_object_or_404(
+            Field_assessment.objects.select_related(
+                'site', 
+                'assigned_onsite_inspector',
+                'assigned_onsite_inspector__user'
+            ),
+            field_assessment_id=field_assessment_id
+        )
+        
+        # 🔐 Security: Only the assigned inspector can view details
+        if fa.assigned_onsite_inspector.user != user:
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        
+        # ✅ Serialize Field_assessment_details (tree/soil links)
+        details_data = []
+        for detail in fa.field_assessment_details.all().select_related('tree_specie', 'soil'):
+            details_data.append({
+                "detail_id": detail.field_assessment_detail_id,
+                "tree_specie": {
+                    "id": detail.tree_specie.tree_species_id if detail.tree_specie else None,
+                    "name": detail.tree_specie.name if detail.tree_specie else None,
+                    "scientific_name": detail.tree_specie.scientific_name if detail.tree_specie else None,
+                } if detail.tree_specie else None,
+                "soil": {
+                    "id": detail.soil.soil_id if detail.soil else None,
+                    "name": detail.soil.name if detail.soil else None,
+                    "type": detail.soil.type if detail.soil else None,
+                } if detail.soil else None,
+                "created_at": detail.created_at.isoformat() if detail.created_at else None
+            })
+        
+        # ✅ Serialize field_assessment_images (with full URLs)
+        images_data = []
+        for img in fa.field_assessment_images.all().order_by('created_at'):
+            images_data.append({
+                "image_id": img.field_assessment_images_id,
+                "url": img.img.url if img.img else None,  # Django auto-generates relative URL
+                "caption": img.caption or "",
+                "created_at": img.created_at.isoformat() if img.created_at else None
+            })
+        
+        # ✅ Main assessment data
         data = {
             "field_assessment_id": fa.field_assessment_id,
             "site_id": fa.site_id,
+            "site_name": fa.site.name if fa.site else "New Site Proposal",
+            "reforestation_area_id": fa.assigned_onsite_inspector.reforestation_area_id,
             "type": fa.multicriteria_type,
             "title": fa.title,
             "description": fa.description,
-            "data": fa.field_assessment_data,
+            "data": fa.field_assessment_data,  # The JSON field with layer-specific data
             "is_sent": fa.is_sent,
-            "created_at": fa.created_at.isoformat()
+            "created_at": fa.created_at.isoformat(),
+            "updated_at": fa.updated_at.isoformat(),
+            
+            # ✅ Include related data
+            "details": details_data,      # Tree/Soil relational links
+            "images": images_data,        # Uploaded photos with metadata
+            "image_count": len(images_data)  # Quick count for UI badges
         }
-        return JsonResponse(data)
+        
+        return JsonResponse(data, status=200)
+        
     except Exception as e:
+        import logging
+        logging.error(f"Error fetching assessment {field_assessment_id}: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
 # ---------------- 3. Create Field Assessment (Save Draft) ----------------
@@ -269,6 +329,7 @@ def delete_field_assessment(request, field_assessment_id):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
+
 # ---------------- 6. Update Is Sent (Submit) ----------------
 @csrf_exempt
 def update_field_assessment_is_sent(request, field_assessment_id):
@@ -341,6 +402,68 @@ def upload_field_assessment_image(request, field_assessment_id):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
+@csrf_exempt
+def delete_field_assessment_image(request, image_id):
+    """
+    DELETE: Remove an image from a field assessment
+    
+    Security Rules:
+    1. Only the assigned onsite inspector can delete their images
+    2. Cannot delete images from submitted (is_sent=True) assessments
+    3. Image file is deleted from storage + database record removed
+    """
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
+    
+    try:
+        # 1. Authenticate user
+        user = get_user_from_token(request)
+        
+        # 2. Get image object with related assessment
+        img = get_object_or_404(
+            field_assessment_images.objects.select_related(
+                'field_assessment',
+                'field_assessment__assigned_onsite_inspector',
+                'field_assessment__assigned_onsite_inspector__user'
+            ),
+            field_assessment_images_id=image_id
+        )
+        
+        fa = img.field_assessment
+        
+        # 3. 🔐 Security: Only the owner can delete
+        if fa.assigned_onsite_inspector.user != user:
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        
+        # 4. 🚫 Prevent deletion from submitted assessments
+        if fa.is_sent:
+            return JsonResponse({
+                'error': 'Cannot delete images from a submitted assessment. Contact admin to revert submission first.'
+            }, status=400)
+        
+        # 5. 🗑️ Delete image file from storage (if exists)
+        if img.img and hasattr(img.img, 'delete'):
+            try:
+                img.img.delete(save=False)  # Delete file without saving model first
+            except Exception as file_err:
+                # Log but continue - we still want to remove the DB record
+                import logging
+                logging.warning(f"Could not delete file for image {image_id}: {file_err}")
+        
+        # 6. Delete database record
+        image_id_deleted = img.field_assessment_images_id
+        img.delete()
+        
+        return JsonResponse({
+            "message": "Image deleted successfully",
+            "deleted_image_id": image_id_deleted
+        }, status=200)
+        
+    except Exception as e:
+        import logging
+        logging.error(f"Error deleting image {image_id}: {str(e)}")
+        return JsonResponse({"error": str(e)}, status=500)
+    
 # ---------------- 8. Details (Tree/Soil Links) ----------------
 @csrf_exempt
 def get_field_assessment_details(request, field_assessment_id):
@@ -401,3 +524,37 @@ def delete_field_detail(request, field_assessment_detail_id):
     detail = get_object_or_404(Field_assessment_details, field_assessment_detail_id=field_assessment_detail_id)
     detail.delete()
     return JsonResponse({"message": "Detail deleted successfully"})
+
+@csrf_exempt
+def get_sites_by_area(request, reforestation_area_id):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    
+    try:
+        # Fetch sites linked to this area
+        sites = Sites.objects.filter(
+            reforestation_area_id=reforestation_area_id,
+            isActive=True
+        ).order_by('-created_at')
+        
+        data = [
+            {
+                "site_id": s.site_id,
+                "name": s.name,
+                "status": s.status,
+                "score": float(s.score) if s.score else None,
+                "polygon_coordinates": s.polygon_coordinates,
+                "center_coordinate": s.center_coordinate,
+                "created_at": s.created_at.isoformat()
+            }
+            for s in sites
+        ]
+        
+        return JsonResponse({
+            "reforestation_area_id": reforestation_area_id,
+            "count": len(data),
+            "sites": data
+        }, status=200)
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

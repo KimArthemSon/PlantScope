@@ -4,6 +4,8 @@ from soils.models import Soils
 from tree_species.models import Tree_species
 from django.core.validators import MinValueValidator, MaxValueValidator
 
+# -------------------- Sites (Main Entity) --------------------
+
 class Sites(models.Model):
     site_id = models.BigAutoField(primary_key=True)
 
@@ -15,23 +17,45 @@ class Sites(models.Model):
     
     status_types = (
         ('pending', 'Pending'),
-        ('rejected', 'Rejected'),
         ('official', 'Official'),
+        ('rejected', 'Rejected'),
         ('re-analysis', 'Re-Analysis'),
         ('completed', 'Completed'),
     )
     
-    name = models.CharField(max_length=100, default='')
+    name = models.CharField(max_length=100, default='Unnamed Site')
     isActive = models.BooleanField(default=True)
     status = models.CharField(max_length=20, choices=status_types, default='pending')
-    coordinates = models.JSONField()
-    polygon_coordinates = models.JSONField()
-    total_area_planted = models.FloatField()
-    total_seedling_planted = models.IntegerField()
+    
+    # Geometry Fields
+    center_coordinate = models.JSONField(help_text="Single point [lat, lng] for map marker", null=True)
+    polygon_coordinates = models.JSONField(help_text="Full GeoJSON polygon for boundary")
+    marker_coordinate = models.JSONField(null=True, blank=True, help_text="Legal verification point [lat, lng]")
+    
+    # Metrics (Quick access without parsing JSON)
+    total_area_planted = models.FloatField(default=0.0, help_text="Area in hectares")
+    total_seedling_planted = models.IntegerField(default=0)
+    survival_status = models.CharField(max_length=50, null=True, blank=True, help_text="e.g., 'High', 'Medium', 'Low'")
+    score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="Final MCDA Score")
+    
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return f"{self.name} ({self.get_status_display()})"
+
+    class Meta:
+        verbose_name = "Site"
+        verbose_name_plural = "Sites"
+
+
+# -------------------- Site Data (The Complex MCDA Result) --------------------
 
 class Site_data(models.Model):
+    """
+    Stores the complete finalized MCDA analysis result for a site.
+    Contains meta_info, all 8 layers (agreed_data + result), and final_site_summary.
+    """
     site_data_id = models.BigAutoField(primary_key=True)
 
     site = models.OneToOneField(
@@ -39,50 +63,47 @@ class Site_data(models.Model):
         on_delete=models.CASCADE,
         related_name='site_data'
     )
-
-    Soil_quality_types = (
-        ('very_good', 'Very Good'),
-        ('good', 'Good'),
-        ('moderate', 'Moderate'),
-        ('poor', 'Poor'),
-        ('very_poor', 'Very Poor')
+    
+    is_current = models.BooleanField(default=True, help_text="False if this is an archived version after re-analysis")
+    
+    # The Big JSON Field containing the entire structure you provided
+    site_data = models.JSONField(
+        default=dict,
+        help_text="Full MCDA result: meta_info, layers (safety, legality...), final_site_summary"
     )
-
-    Accessibility_types = (
-        ('very_good', 'Very Good'),
-        ('good', 'Good'),
-        ('moderate', 'Moderate'),
-        ('poor', 'Poor'),
-        ('very_poor', 'Very Poor')
+    
+    score = models.DecimalField(
+        max_digits=5, 
+        decimal_places=2, 
+        null=True,
+        help_text="Total weighted score extracted from JSON for easy querying"
     )
-
-    Wildlife_status_types = (
-        ('very_good', 'Very Good'),
-        ('good', 'Good'),
-        ('moderate', 'Moderate'),
-        ('poor', 'Poor'),
-        ('very_poor', 'Very Poor')
+    
+    suitability_classification = models.CharField(
+        max_length=50, 
+        null=True, 
+        blank=True, 
+        help_text="e.g., 'HIGHLY SUITABLE', 'MARGINALLY SUITABLE'"
     )
-
-    Safety_types = (
-        ('safe', 'Low Risk'),
-        ('slightly', 'Slightly Unsafe'),
-        ('moderate', 'Moderate Risk'),
-        ('danger', 'High Risk')
-    )
-
-    Safety =  models.CharField(max_length=20, choices=Safety_types, default='safe')
-    isCurrent = models.BooleanField(default=True)
-    legality = models.BooleanField(default=True)
-    slope = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
-    soil_quality = models.CharField(max_length=20, choices=Soil_quality_types, default='moderate')
-    distance_to_water_source = models.FloatField()
-    accessibility = models.CharField(max_length=20, choices=Accessibility_types, default='moderate')
-    wildlife = models.CharField(max_length=20, choices=Wildlife_status_types, default='moderate')
+    
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f"Data for Site #{self.site.site_id} - Score: {self.score}"
+
+    class Meta:
+        verbose_name = "Site MCDA Data"
+        verbose_name_plural = "Site MCDA Data"
+
+
+# -------------------- Site Details (Relational Links) --------------------
 
 class Site_details(models.Model):
+    """
+    Optional relational links to specific Soil and Tree Species master tables.
+    Useful for filtering "All sites with Mahogany" without parsing JSON.
+    Primary data still lives in Site_data JSON.
+    """
     site_detail_id = models.BigAutoField(primary_key=True)
 
     site = models.OneToOneField(
@@ -94,57 +115,53 @@ class Site_details(models.Model):
     soil = models.ForeignKey(
         Soils,
         null=True,
-        on_delete=models.CASCADE,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name='site_details_soils'
     )
 
-    Tree_specie = models.ForeignKey(
+    tree_species = models.ForeignKey(  # Renamed from Tree_specie to standard convention
         Tree_species,
         null=True,
-        on_delete=models.CASCADE,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name='site_details_tree_species'
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f"Details for Site #{self.site.site_id}"
+
+    class Meta:
+        verbose_name = "Site Detail"
+        verbose_name_plural = "Site Details"
 
 
-class Site_multicriteria(models.Model):
-    site_multicriteria_id = models.BigAutoField(primary_key=True)
+# -------------------- Site Images --------------------
 
-    site_data = models.OneToOneField(
-        Site_data,
+class Site_images(models.Model):
+    site_image_id = models.BigAutoField(primary_key=True)
+    
+    site = models.ForeignKey(
+        Sites,
+        null=True,
         on_delete=models.CASCADE,
-        related_name='site_multicriteria'
+        related_name='site_images'
     )
-
-    status_types = (
-        ('pending', 'Pending'),
-        ('completed', 'Completed'),
-        ('rejected', 'Rejected'),
+    
+    img = models.ImageField(
+        upload_to='sites/%Y/%m/%d/',
+        blank=True,
+        null=True
     )
-
-    # Criterion Status Fields
-    safety_status = models.CharField(max_length=20, choices=status_types, default='pending')
-    legality_status = models.CharField(max_length=20, choices=status_types, default='pending')
-    soil_quality_status = models.CharField(max_length=20, choices=status_types, default='pending')
-    distance_to_water_source_status = models.CharField(max_length=20, choices=status_types, default='pending')
-    accessibility_status = models.CharField(max_length=20, choices=status_types, default='pending')
-    wildlife_status = models.CharField(max_length=20, choices=status_types, default='pending', db_column='wildlife_status')  # Avoid conflict
-    slope_status = models.CharField(max_length=20, choices=status_types, default='pending')
-
-    # Scores and Rates
-    survival_rate = models.FloatField(
-        default=0.00,
-        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
-        help_text="Projected survival rate percentage"
-    )
-    total_score = models.FloatField(default=0.00)
-
-    # Metadata
+    
+    caption = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    remarks = models.TextField(blank=True, null=True, help_text="Additional notes or justification")
 
     def __str__(self):
-        return f"Site {self.site_data.site.site_id} - Score: {self.total_score}"
+        return f"Image for Site #{self.site.site_id if self.site else 'Unknown'}"
+
+    class Meta:
+        verbose_name = "Site Image"
+        verbose_name_plural = "Site Images"

@@ -6,5 +6,7 @@ urlpatterns = [
     path('get_soil/<int:soil_id>',views.get_soil, name="get_soil"),
     path('create_soil/',views.create_soil, name="create_soil"),
     path('update_soil/<int:soil_id>', views.update_soil, name="update_soil"),
-    path('delete_soil/<int:soil_id>', views.delete_soil, name="delete_soil")
+    path('delete_soil/<int:soil_id>', views.delete_soil, name="delete_soil"),
+    path('get_soils_list/', views.get_soils_list, name='get_soils_list')
+
 ]
