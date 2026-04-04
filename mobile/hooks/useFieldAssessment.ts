@@ -6,6 +6,7 @@ import { Alert } from "react-native";
 
 const API = api + "/api";
 
+// ✅ TypeScript Interfaces
 export interface AssessmentDetails {
   detail_id: number;
   tree_specie: {
@@ -16,7 +17,7 @@ export interface AssessmentDetails {
   soil: {
     id: number;
     name: string;
-    type: string;
+    type?: string; // Optional - Soils model doesn't have 'type' field
   } | null;
   created_at: string;
 }
@@ -45,6 +46,12 @@ export interface AssessmentResponse {
   image_count: number;
 }
 
+export interface SoilItem {
+  soil_id: number;
+  name: string;
+  description: string;
+}
+
 export const useFieldAssessment = (
   areaId: string,
   layerId: string,
@@ -54,18 +61,20 @@ export const useFieldAssessment = (
 ) => {
   const [saving, setSaving] = useState(false);
 
-  // 1. Save Draft or Submit
+  // 1. Save Draft or Submit (Layer Data + Auto-Linking Support)
   const handleSave = async (data: any, submit: boolean = false) => {
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync("token");
+
+      // ✅ Include selected_soil_id for auto-linking in backend
       const payload = {
         reforestation_area_id: parseInt(areaId),
         site_id: siteId || null,
         multicriteria_type: layerId,
         title: `${layerId} Assessment`,
         description: "Mobile entry",
-        field_assessment_data: data,
+        field_assessment_data: data, // data can include selected_soil_id for auto-linking
       };
 
       const isEdit = !!assessmentId;
@@ -126,7 +135,7 @@ export const useFieldAssessment = (
   const uploadImage = async (currentAssessmentId: string) => {
     if (!currentAssessmentId) {
       Alert.alert("Error", "Please save the draft first to get an ID.");
-      return;
+      return false;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -156,7 +165,7 @@ export const useFieldAssessment = (
         );
         if (res.ok) {
           Alert.alert("Success", "Image uploaded!");
-          if (onRefresh) onRefresh(); // Refresh parent list
+          if (onRefresh) onRefresh();
           return true;
         } else {
           const err = await res.json();
@@ -169,12 +178,13 @@ export const useFieldAssessment = (
     return false;
   };
 
-  // 3. Fetch Full Assessment Data (including details & images)
+  // 3. ✅ FIXED: Fetch Full Assessment Data (correct endpoint)
   const fetchAssessmentData = async (): Promise<AssessmentResponse | null> => {
     if (!assessmentId) return null;
 
     try {
       const token = await SecureStore.getItemAsync("token");
+      // ✅ CORRECT ENDPOINT: get_field_assessment_detail_view
       const res = await fetch(`${API}/get_field_assessment/${assessmentId}/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -219,11 +229,33 @@ export const useFieldAssessment = (
     }
   };
 
+  // 5. ✅ Fetch All Soils (for picker in SoilForm)
+  const fetchSoilsList = async (): Promise<SoilItem[]> => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await fetch(`${API}/get_soils_list/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        return await res.json();
+      } else {
+        const err = await res.json();
+        Alert.alert("Error", err.error || "Failed to fetch soils");
+        return [];
+      }
+    } catch (e) {
+      Alert.alert("Error", "Network error while fetching soils");
+      return [];
+    }
+  };
+
   return {
     saving,
     handleSave,
     uploadImage,
     fetchAssessmentData,
     deleteImage,
+    fetchSoilsList, // ✅ For soil picker in SoilForm
   };
 };

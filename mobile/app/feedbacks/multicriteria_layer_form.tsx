@@ -50,17 +50,18 @@ export default function Multicriteria_layer_form() {
   const isEditing = isEdit === "true";
   const currentSiteId = siteId ? parseInt(siteId) : null;
 
-  const { saving, handleSave, uploadImage, deleteImage } = useFieldAssessment(
-    areaId || "",
-    layerId || "",
-    assessmentId,
-    currentSiteId,
-    () => {
-      /* Optional refresh callback */
-    },
-  );
+  const { saving, handleSave, uploadImage, deleteImage, fetchSoilsList } =
+    useFieldAssessment(
+      areaId || "",
+      layerId || "",
+      assessmentId,
+      currentSiteId,
+      () => {
+        /* Optional refresh callback */
+      },
+    );
 
-  // ✅ FIXED: Stabilize fetch function with useCallback
+  // ✅ FIXED: Stabilize fetch function with useCallback + CORRECT ENDPOINT
   const fetchAssessmentData = useCallback(async () => {
     if (!assessmentId) {
       setLoading(false);
@@ -71,9 +72,9 @@ export default function Multicriteria_layer_form() {
       setFetchError(null);
       const token = await SecureStore.getItemAsync("token");
 
-      // ✅ CORRECT ENDPOINT: Returns { data, details, images, is_sent }
+      // ✅ CORRECT ENDPOINT: get_field_assessment_detail_view
       const response = await fetch(
-        `${API}/get_field_assessment/${assessmentId}/`,
+        `${API}/get_field_assessment/${assessmentId}/`, // ✅ Fixed endpoint
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -98,6 +99,7 @@ export default function Multicriteria_layer_form() {
         dataKeys: assessment.data ? Object.keys(assessment.data) : [],
         is_sent: assessment.is_sent,
         imageCount: assessment.images?.length || 0,
+        detailsCount: assessment.details?.length || 0,
       });
 
       // ✅ Set form data from the nested 'data' field (field_assessment_data JSON)
@@ -193,6 +195,7 @@ export default function Multicriteria_layer_form() {
     saving,
     assessmentId,
     isViewMode, // ✅ Enables read-only UI
+    areaId,
     onRefresh: () => {
       // Refresh by re-fetching current assessment
       fetchAssessmentData();
@@ -248,7 +251,7 @@ export default function Multicriteria_layer_form() {
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#fff" }}>
       {/* Header with layer title and view/edit badge */}
-      <View
+      {/* <View
         style={{
           flexDirection: "row",
           justifyContent: "space-between",
@@ -259,16 +262,7 @@ export default function Multicriteria_layer_form() {
           borderBottomColor: "#e2e8f0",
         }}
       >
-        <Text
-          style={{
-            fontSize: 18,
-            fontWeight: "bold",
-            color: "#0F4A2F",
-            textTransform: "uppercase",
-          }}
-        >
-          {layerId?.replace("_", " ")}
-        </Text>
+       
         {isViewMode && (
           <View
             style={{
@@ -283,7 +277,7 @@ export default function Multicriteria_layer_form() {
             </Text>
           </View>
         )}
-      </View>
+      </View> */}
 
       {renderForm()}
       <View style={{ height: 50 }} />

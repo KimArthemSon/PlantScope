@@ -18,6 +18,7 @@ export default function RootLayout() {
       <Stack>
         {/* Login screen first */}
         <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="feedbacks" options={{ headerShown: false }} />
 
         {/* Tabs after login */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

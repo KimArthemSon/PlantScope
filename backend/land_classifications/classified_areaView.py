@@ -4,6 +4,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import LandClassification, Classified_areas
 from barangay.models import Barangay
 from .models import Classified_areas
+from reforestation_areas.models import Reforestation_areas
 import json
 import math
 
@@ -56,7 +57,66 @@ def get_barangay_classified_areas(request, barangay_id):
             'success': False
         }, status=500)
 
-
+@csrf_exempt 
+def get_classified_areas_by_reforestation_area(request, reforestation_area_id):
+    """
+    Returns classified areas for a reforestation area by first getting its barangay.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET method is allowed'}, status=405)
+    
+    try:
+        # ✅ Get reforestation area
+        reforestation_area = get_object_or_404(
+            Reforestation_areas, 
+            reforestation_area_id=reforestation_area_id
+        )
+        
+        # ✅ Get barangay from reforestation area
+        if not reforestation_area.barangay:
+            return JsonResponse({
+                'success': False,
+                'error': 'Reforestation area has no barangay assigned',
+                'data': []
+            }, status=400)
+        
+        # ✅ Get classified areas for this barangay
+        areas = Classified_areas.objects.filter(
+            barangay=reforestation_area.barangay
+        ).select_related('land_classification')
+        
+        # ✅ Serialize
+        data = []
+        for area in areas:
+            data.append({
+                'classified_area_id': area.classified_area_id,
+                'name': area.name,
+                'description': area.description,
+                'land_classification': {
+                    'id': area.land_classification.land_classification_id,
+                    'name': area.land_classification.name
+                } if area.land_classification else None,
+                'polygon': area.polygon,
+                'created_at': area.created_at.isoformat() if area.created_at else None,
+            })
+            
+        return JsonResponse({
+            'success': True,
+            'reforestation_area_id': reforestation_area_id,
+            'barangay_id': reforestation_area.barangay.barangay_id,
+            'barangay_name': reforestation_area.barangay.name,
+            'count': len(data),
+            'data': data
+        }, safe=False)
+        
+    except Exception as e:
+        import logging
+        logging.error(f"Error fetching classified areas: {str(e)}")
+        return JsonResponse({
+            'error': str(e), 
+            'success': False
+        }, status=500)
+    
 @csrf_exempt
 def get_classified_areas(request):
     if request.method != 'GET':

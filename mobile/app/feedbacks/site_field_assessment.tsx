@@ -110,6 +110,10 @@ export default function SiteFieldAssessment() {
 
   // ✅ Navigate to layer list
   const handleLayerPress = (layerId: string, layerName: string) => {
+    // ✅ Determine siteId from selectedTarget
+    const targetSiteId =
+      selectedTarget?.type === "new" ? null : selectedTarget?.id;
+
     router.push({
       pathname: "/feedbacks/layer_assessment_list",
       params: {
@@ -117,6 +121,8 @@ export default function SiteFieldAssessment() {
         areaName,
         layerId,
         layerName,
+        // ✅ CRITICAL: Pass siteId (null for general, string for specific)
+        siteId: targetSiteId || "", // Empty string for general assessments
       },
     });
   };

@@ -19,4 +19,7 @@ urlpatterns = [
         classified_areaView.get_barangay_classified_areas, 
         name='get_barangay_classified_areas'
     ),
+    path('get_classified_areas_by_reforestation_area/<int:reforestation_area_id>/', 
+     classified_areaView.get_classified_areas_by_reforestation_area, 
+     name='get_classified_areas_by_reforestation_area'),
  ]

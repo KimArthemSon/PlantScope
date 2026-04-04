@@ -165,30 +165,35 @@ def delete_soil(request, soil_id):
 
 @csrf_exempt
 def get_soils_list(request):
+    """
+    GET: Return ALL soils without pagination or search
+    For mobile app soil picker - simple flat list
+    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     try:
-        search = request.GET.get('search', '').strip()
-        entries = int(request.GET.get('entries', 20))
-        page = int(request.GET.get('page', 1))
-
-        if entries <= 0: entries = 20
-        if page <= 0: page = 1
-        offset = (page - 1) * entries
-
-        queryset = Soils.objects.all().order_by('name')
-        if search:
-            queryset = queryset.filter(name__icontains=search)
-
-        total = queryset.count()
-        data = list(queryset[offset: offset + entries].values('soil_id', 'name', 'type', 'description'))
-
-        return JsonResponse({
-            'data': data,
-            'total_page': math.ceil(total / entries) if total > 0 else 0,
-            'page': page,
-            'total': total
-        }, status=200)
+        # Return all soils, ordered by name
+        # Note: Soils model only has: soil_id, name, description, created_at
+        soils = Soils.objects.all().order_by('name').values(
+            'soil_id', 
+            'name', 
+            'description'
+        )
+        
+        # Convert to list with null-safe description
+        data = [
+            {
+                "soil_id": s['soil_id'],
+                "name": s['name'],
+                "description": s['description'] or ""
+            }
+            for s in soils
+        ]
+        
+        return JsonResponse(data, safe=False, status=200)
+        
     except Exception as e:
+        import logging
+        logging.error(f"Error fetching soils list: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)

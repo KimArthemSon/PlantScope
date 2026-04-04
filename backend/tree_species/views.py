@@ -173,34 +173,37 @@ def delete_tree_specie(request, tree_specie_id):
     )
 
 
-
-
 @csrf_exempt
 def get_tree_species_list(request):
+    """
+    GET: Return ALL tree species without pagination or search
+    For mobile app tree species picker - simple flat list
+    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     try:
-        search = request.GET.get('search', '').strip()
-        entries = int(request.GET.get('entries', 20))
-        page = int(request.GET.get('page', 1))
-
-        if entries <= 0: entries = 20
-        if page <= 0: page = 1
-        offset = (page - 1) * entries
-
-        queryset = Tree_species.objects.all().order_by('name')
-        if search:
-            queryset = queryset.filter(name__icontains=search)
-
-        total = queryset.count()
-        data = list(queryset[offset: offset + entries].values('tree_species_id', 'name', 'scientific_name', 'description'))
-
-        return JsonResponse({
-            'data': data,
-            'total_page': math.ceil(total / entries) if total > 0 else 0,
-            'page': page,
-            'total': total
-        }, status=200)
+        # Return all tree species, ordered by name
+        # Tree_species model has: tree_species_id, name, scientific_name, description, created_at
+        species = Tree_species.objects.all().order_by('name').values(
+            'tree_specie_id', 
+            'name', 
+            'description'
+        )
+        
+        # Convert to list with null-safe fields
+        data = [
+            {
+                "tree_specie_id": s['tree_specie_id'],
+                "name": s['name'],
+                "description": s['description'] or ""
+            }
+            for s in species
+        ]
+        
+        return JsonResponse(data, safe=False, status=200)
+        
     except Exception as e:
+        import logging
+        logging.error(f"Error fetching tree species list: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)

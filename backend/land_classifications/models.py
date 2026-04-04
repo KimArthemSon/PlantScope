@@ -1,5 +1,6 @@
 from django.db import models
 from barangay.models import Barangay
+
 class LandClassification(models.Model):
     land_classification_id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=100)

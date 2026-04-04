@@ -5,36 +5,48 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Alert,
   ScrollView,
   Image,
   ActivityIndicator,
   Modal,
-  Alert,
+  Dimensions,
 } from "react-native";
 import { X, Trash2, PlusCircle } from "lucide-react-native";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 
 const API = api + "/api";
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
+// ✅ TypeScript Interfaces
 export interface ImageItem {
   image_id: number;
   url: string;
   caption: string;
   created_at: string;
 }
+
 export interface AssessmentDetail {
   detail_id: number;
-  tree_specie: any | null;
-  soil: any | null;
+  tree_specie: {
+    id: number;
+    name: string;
+    scientific_name: string;
+  } | null;
+  soil: {
+    id: number;
+    name: string;
+    type: string;
+  } | null;
   created_at: string;
 }
 
 interface Props {
-  existingData: any;
-  details?: AssessmentDetail[];
-  images?: ImageItem[];
-  onSave: (data: any, submit: boolean) => Promise<void>;
+  existingData: any; // The field_assessment_data JSON
+  details?: AssessmentDetail[]; // Tree/Soil relational links (optional)
+  images?: ImageItem[]; // Pre-loaded images (optional)
+  onSave: (any: any, submit: boolean) => Promise<void>;
   onUploadImage: (id: string) => Promise<boolean>;
   onDeleteImage?: (id: number) => Promise<boolean>;
   saving: boolean;
@@ -43,7 +55,7 @@ interface Props {
   onRefresh?: () => void;
 }
 
-export default function SlopeForm({
+export default function SafetyForm({
   existingData,
   details = [],
   images: propImages = [],
@@ -55,86 +67,230 @@ export default function SlopeForm({
   isViewMode = false,
   onRefresh,
 }: Props) {
-  const [degrees, setDegrees] = useState(
-    existingData?.visual_estimate_degrees?.toString() || "0",
+  // ✅ Geophysical Assessment State
+  const [riskLevel, setRiskLevel] = useState<
+    "Low" | "Medium" | "High" | "Critical"
+  >(existingData?.geophysical_assessment?.risk_level || "Low");
+  const [hazardComment, setHazardComment] = useState(
+    existingData?.geophysical_assessment?.inspector_comment_hazard || "",
   );
-  const [erosion, setErosion] = useState(existingData?.erosion_signs || "");
-  const [comment, setComment] = useState(existingData?.inspector_comment || "");
+  const [observedHazards, setObservedHazards] = useState<string[]>(
+    existingData?.geophysical_assessment?.observed_hazards || [],
+  );
+  const [newHazard, setNewHazard] = useState("");
 
+  // ✅ Human Security Assessment State
+  const [securityLevel, setSecurityLevel] = useState<
+    "Low" | "Medium" | "High" | "Critical"
+  >(existingData?.human_security_assessment?.security_threat_level || "Low");
+  const [securityComment, setSecurityComment] = useState(
+    existingData?.human_security_assessment?.inspector_comment_security || "",
+  );
+  const [specificThreats, setSpecificThreats] = useState<string[]>(
+    existingData?.human_security_assessment?.specific_threats || [],
+  );
+  const [newThreat, setNewThreat] = useState("");
+
+  // ✅ Image Gallery State
   const [images, setImages] = useState<ImageItem[]>(propImages);
+  const [loadingImages, setLoadingImages] = useState(false);
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
   const [deletingImageId, setDeletingImageId] = useState<number | null>(null);
 
+  // ✅ Re-initialize state when existingData changes (edit mode)
   useEffect(() => {
     if (existingData) {
-      setDegrees(existingData.visual_estimate_degrees?.toString() || "0");
-      setErosion(existingData.erosion_signs || "");
-      setComment(existingData.inspector_comment || "");
+      setRiskLevel(existingData.geophysical_assessment?.risk_level || "Low");
+      setHazardComment(
+        existingData.geophysical_assessment?.inspector_comment_hazard || "",
+      );
+      setObservedHazards(
+        existingData.geophysical_assessment?.observed_hazards || [],
+      );
+      setSecurityLevel(
+        existingData.human_security_assessment?.security_threat_level || "Low",
+      );
+      setSecurityComment(
+        existingData.human_security_assessment?.inspector_comment_security ||
+          "",
+      );
+      setSpecificThreats(
+        existingData.human_security_assessment?.specific_threats || [],
+      );
     }
   }, [existingData]);
 
+  // ✅ Update images if propImages changes
   useEffect(() => {
-    setImages(propImages);
+    if (propImages.length > 0) {
+      setImages(propImages);
+    }
   }, [propImages]);
 
-  const handleSubmit = async (submit: boolean) => {
-    await onSave(
-      {
-        visual_estimate_degrees: parseInt(degrees) || 0,
-        erosion_signs: erosion,
-        inspector_comment: comment,
-      },
-      submit,
+  // ✅ Fetch images from API if not provided via props
+  useEffect(() => {
+    if (assessmentId && propImages.length === 0) {
+      fetchImages();
+    }
+  }, [assessmentId, propImages.length]);
+
+  const fetchImages = async () => {
+    if (!assessmentId) return;
+    setLoadingImages(true);
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await fetch(
+        `${API}/get_field_assessment_images/${assessmentId}/`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setImages(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch images:", err);
+    } finally {
+      setLoadingImages(false);
+    }
+  };
+
+  // ✅ Delete image with confirmation
+  const handleDeleteImage = async (imageId: number) => {
+    Alert.alert(
+      "Delete Photo",
+      "Are you sure you want to delete this photo? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeletingImageId(imageId);
+            try {
+              // Use hook's deleteImage if provided, otherwise call API directly
+              if (onDeleteImage) {
+                const success = await onDeleteImage(imageId);
+                if (success) {
+                  setImages((prev) =>
+                    prev.filter((img) => img.image_id !== imageId),
+                  );
+                  if (onRefresh) onRefresh();
+                }
+              } else {
+                // Fallback direct API call
+                const token = await SecureStore.getItemAsync("token");
+                const res = await fetch(
+                  `${API}/delete_field_assessment_image/${imageId}/`,
+                  {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${token}` },
+                  },
+                );
+                if (res.ok) {
+                  Alert.alert("Success", "Photo deleted");
+                  setImages((prev) =>
+                    prev.filter((img) => img.image_id !== imageId),
+                  );
+                  if (onRefresh) onRefresh();
+                } else {
+                  const err = await res.json();
+                  Alert.alert("Error", err.error || "Failed to delete");
+                }
+              }
+            } catch (e) {
+              Alert.alert("Error", "Network error while deleting image");
+            } finally {
+              setDeletingImageId(null);
+            }
+          },
+        },
+      ],
     );
   };
 
-  const handleDeleteImage = async (imageId: number) => {
-    Alert.alert("Delete Photo", "Are you sure? This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          setDeletingImageId(imageId);
-          try {
-            if (onDeleteImage) {
-              const success = await onDeleteImage(imageId);
-              if (success) {
-                setImages((prev) =>
-                  prev.filter((img) => img.image_id !== imageId),
-                );
-                if (onRefresh) onRefresh();
-              }
-            } else {
-              const token = await SecureStore.getItemAsync("token");
-              const res = await fetch(
-                `${API}/delete_field_assessment_image/${imageId}/`,
-                {
-                  method: "DELETE",
-                  headers: { Authorization: `Bearer ${token}` },
-                },
-              );
-              if (res.ok) {
-                Alert.alert("Success", "Photo deleted");
-                setImages((prev) =>
-                  prev.filter((img) => img.image_id !== imageId),
-                );
-                if (onRefresh) onRefresh();
-              } else {
-                const err = await res.json();
-                Alert.alert("Error", err.error || "Failed to delete");
-              }
-            }
-          } catch (e) {
-            Alert.alert("Error", "Network error");
-          } finally {
-            setDeletingImageId(null);
-          }
-        },
-      },
-    ]);
+  // ✅ Helper: Add item to array (hazards or threats)
+  const addToArray = (
+    value: string,
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    clearInput: () => void,
+  ) => {
+    const trimmed = value.trim();
+    if (trimmed) {
+      const currentArray =
+        setter === setObservedHazards ? observedHazards : specificThreats;
+      if (!currentArray.includes(trimmed)) {
+        setter((prev) => [...prev, trimmed]);
+        clearInput();
+      } else {
+        Alert.alert("Duplicate", "This item already exists");
+      }
+    }
   };
 
+  // ✅ Helper: Remove item from array
+  const removeFromArray = (
+    item: string,
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+  ) => {
+    setter((prev) => prev.filter((i) => i !== item));
+  };
+
+  const handleSubmit = async (submit: boolean) => {
+    // Basic validation
+    if (!riskLevel || !securityLevel) {
+      Alert.alert(
+        "Validation",
+        "Please select both Risk Level and Security Threat Level",
+      );
+      return;
+    }
+
+    const data = {
+      geophysical_assessment: {
+        risk_level: riskLevel,
+        observed_hazards: observedHazards,
+        inspector_comment_hazard: hazardComment,
+      },
+      human_security_assessment: {
+        security_threat_level: securityLevel,
+        specific_threats: specificThreats,
+        inspector_comment_security: securityComment,
+      },
+    };
+    await onSave(data, submit);
+  };
+
+  // ✅ Color coding for risk/security levels (matches MCDA scoring)
+  const getLevelColor = (level: string, isActive: boolean) => {
+    const colors: Record<string, { bg: string; text: string; border: string }> =
+      {
+        Low: {
+          bg: isActive ? "#dcfce7" : "#fff",
+          text: isActive ? "#155724" : "#166534",
+          border: "#22c55e",
+        },
+        Medium: {
+          bg: isActive ? "#fef3c7" : "#fff",
+          text: isActive ? "#856404" : "#92400e",
+          border: "#f59e0b",
+        },
+        High: {
+          bg: isActive ? "#fee2e2" : "#fff",
+          text: isActive ? "#b91c1c" : "#991b1b",
+          border: "#ef4444",
+        },
+        Critical: {
+          bg: isActive ? "#fecaca" : "#fff",
+          text: isActive ? "#991b1b" : "#7f1d1d",
+          border: "#dc2626",
+        },
+      };
+    return colors[level] || colors.Low;
+  };
+
+  // ✅ Render Image Preview Modal
   const renderImageModal = () => (
     <Modal
       visible={!!selectedImage}
@@ -156,20 +312,22 @@ export default function SlopeForm({
             resizeMode="contain"
           />
         )}
-        {selectedImage?.caption && (
+        {selectedImage?.caption ? (
           <View style={styles.modalCaption}>
             <Text style={styles.modalCaptionText}>{selectedImage.caption}</Text>
             <Text style={styles.modalCaptionDate}>
               {new Date(selectedImage.created_at).toLocaleString()}
             </Text>
           </View>
-        )}
+        ) : null}
       </View>
     </Modal>
   );
 
+  // ✅ Render Image Gallery Section
   const renderImageGallery = () => {
     if (!assessmentId) return null;
+
     return (
       <View style={styles.imageSection}>
         <View style={styles.imageHeader}>
@@ -187,7 +345,12 @@ export default function SlopeForm({
             </TouchableOpacity>
           )}
         </View>
-        {images.length === 0 ? (
+
+        {loadingImages ? (
+          <View style={styles.loadingImages}>
+            <ActivityIndicator size="small" color="#0F4A2F" />
+          </View>
+        ) : images.length === 0 ? (
           <View style={styles.noImages}>
             <Text style={styles.noImagesText}>No photos yet</Text>
             {!isViewMode && (
@@ -225,6 +388,8 @@ export default function SlopeForm({
                     </View>
                   )}
                 </TouchableOpacity>
+
+                {/* Delete button - only show in edit mode */}
                 {!isViewMode && (
                   <TouchableOpacity
                     style={styles.deleteImageBtn}
@@ -246,66 +411,277 @@ export default function SlopeForm({
     );
   };
 
+  // ✅ View Mode: Read-only display
   if (isViewMode) {
     return (
       <ScrollView style={styles.container}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>⛰️ Slope Assessment</Text>
-          <Text style={styles.label}>Slope Degrees (Visual Estimate)</Text>
-          <View style={styles.readonlyBadge}>
-            <Text style={styles.readonlyText}>{degrees}°</Text>
+          <Text style={styles.sectionTitle}>⛑️ Geophysical Assessment</Text>
+
+          <Text style={styles.label}>Risk Level</Text>
+          <View
+            style={[
+              styles.levelBadge,
+              {
+                backgroundColor: getLevelColor(riskLevel, true).bg,
+                borderColor: getLevelColor(riskLevel, true).border,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.levelText,
+                { color: getLevelColor(riskLevel, true).text },
+              ]}
+            >
+              {riskLevel}
+            </Text>
           </View>
-          {erosion ? (
+
+          {observedHazards.length > 0 && (
             <>
-              <Text style={styles.label}>Erosion Signs</Text>
-              <Text style={styles.readonlyTextBlock}>{erosion}</Text>
+              <Text style={styles.label}>Observed Hazards</Text>
+              <View style={styles.chipContainer}>
+                {observedHazards.map((h, i) => (
+                  <View key={i} style={styles.chip}>
+                    <Text style={styles.chipText}>{h}</Text>
+                  </View>
+                ))}
+              </View>
             </>
-          ) : null}
-          {comment ? (
+          )}
+
+          {hazardComment ? (
             <>
-              <Text style={styles.label}>Comments</Text>
-              <Text style={styles.readonlyTextBlock}>{comment}</Text>
+              <Text style={styles.label}>Inspector Notes</Text>
+              <Text style={styles.readonlyText}>{hazardComment}</Text>
             </>
           ) : null}
         </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🔐 Human Security Assessment</Text>
+
+          <Text style={styles.label}>Security Threat Level</Text>
+          <View
+            style={[
+              styles.levelBadge,
+              {
+                backgroundColor: getLevelColor(securityLevel, true).bg,
+                borderColor: getLevelColor(securityLevel, true).border,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.levelText,
+                { color: getLevelColor(securityLevel, true).text },
+              ]}
+            >
+              {securityLevel}
+            </Text>
+          </View>
+
+          {specificThreats.length > 0 && (
+            <>
+              <Text style={styles.label}>Specific Threats</Text>
+              <View style={styles.chipContainer}>
+                {specificThreats.map((t, i) => (
+                  <View key={i} style={styles.chip}>
+                    <Text style={styles.chipText}>{t}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
+          {securityComment ? (
+            <>
+              <Text style={styles.label}>Inspector Notes</Text>
+              <Text style={styles.readonlyText}>{securityComment}</Text>
+            </>
+          ) : null}
+        </View>
+
+        {/* Image Gallery in View Mode */}
         {renderImageGallery()}
       </ScrollView>
     );
   }
 
+  // ✅ Edit Mode: Full interactive form
   return (
     <ScrollView style={styles.container}>
+      {/* Geophysical Assessment Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>⛰️ Slope Assessment</Text>
-        <Text style={styles.label}>Slope Degrees (Visual Estimate)</Text>
+        <Text style={styles.sectionTitle}>⛑️ Geophysical Assessment</Text>
+
+        <Text style={styles.label}>Risk Level *</Text>
+        <View style={styles.row}>
+          {(["Low", "Medium", "High", "Critical"] as const).map((lvl) => {
+            const colors = getLevelColor(lvl, riskLevel === lvl);
+            return (
+              <TouchableOpacity
+                key={lvl}
+                style={[
+                  styles.btn,
+                  { backgroundColor: colors.bg, borderColor: colors.border },
+                  riskLevel === lvl && styles.btnActive,
+                ]}
+                onPress={() => setRiskLevel(lvl)}
+                disabled={saving}
+              >
+                <Text style={[styles.btnText, { color: colors.text }]}>
+                  {lvl}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Dynamic Hazard Tags Input */}
+        <Text style={styles.label}>Observed Hazards (Optional)</Text>
+        <View style={styles.chipInputContainer}>
+          <View style={styles.chipContainer}>
+            {observedHazards.map((hazard, index) => (
+              <View key={index} style={styles.chip}>
+                <Text style={styles.chipText}>{hazard}</Text>
+                <TouchableOpacity
+                  onPress={() => removeFromArray(hazard, setObservedHazards)}
+                  style={styles.chipRemove}
+                  disabled={saving}
+                >
+                  <X size={12} color="#666" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.smallInput}
+              placeholder="Add hazard (e.g., Landslide)"
+              value={newHazard}
+              onChangeText={setNewHazard}
+              onSubmitEditing={() => {
+                addToArray(newHazard, setObservedHazards, () =>
+                  setNewHazard(""),
+                );
+              }}
+              editable={!saving}
+              returnKeyType="done"
+            />
+            <TouchableOpacity
+              style={styles.addBtn}
+              onPress={() =>
+                addToArray(newHazard, setObservedHazards, () =>
+                  setNewHazard(""),
+                )
+              }
+              disabled={saving || !newHazard.trim()}
+            >
+              <Text style={styles.addBtnText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text style={styles.label}>Inspector Notes</Text>
         <TextInput
           style={styles.input}
-          keyboardType="numeric"
-          value={degrees}
-          onChangeText={setDegrees}
-          placeholder="e.g., 25"
-          editable={!saving}
-        />
-        <Text style={styles.label}>Erosion Signs</Text>
-        <TextInput
-          style={styles.input}
+          placeholder="Describe hazards or mitigation ideas..."
           multiline
-          value={erosion}
-          onChangeText={setErosion}
-          placeholder="e.g., Moderate rilling observed"
-          editable={!saving}
-        />
-        <Text style={styles.label}>Comments</Text>
-        <TextInput
-          style={styles.input}
-          multiline
-          value={comment}
-          onChangeText={setComment}
-          placeholder="e.g., Stable enough for planting with terracing"
+          value={hazardComment}
+          onChangeText={setHazardComment}
           editable={!saving}
         />
       </View>
+
+      {/* Human Security Assessment Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🔐 Human Security Assessment</Text>
+
+        <Text style={styles.label}>Security Threat Level *</Text>
+        <View style={styles.row}>
+          {(["Low", "Medium", "High", "Critical"] as const).map((lvl) => {
+            const colors = getLevelColor(lvl, securityLevel === lvl);
+            return (
+              <TouchableOpacity
+                key={lvl}
+                style={[
+                  styles.btn,
+                  { backgroundColor: colors.bg, borderColor: colors.border },
+                  securityLevel === lvl && styles.btnActive,
+                ]}
+                onPress={() => setSecurityLevel(lvl)}
+                disabled={saving}
+              >
+                <Text style={[styles.btnText, { color: colors.text }]}>
+                  {lvl}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Dynamic Threat Tags Input */}
+        <Text style={styles.label}>Specific Threats (Optional)</Text>
+        <View style={styles.chipInputContainer}>
+          <View style={styles.chipContainer}>
+            {specificThreats.map((threat, index) => (
+              <View key={index} style={styles.chip}>
+                <Text style={styles.chipText}>{threat}</Text>
+                <TouchableOpacity
+                  onPress={() => removeFromArray(threat, setSpecificThreats)}
+                  style={styles.chipRemove}
+                  disabled={saving}
+                >
+                  <X size={12} color="#666" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.smallInput}
+              placeholder="Add threat (e.g., NPA activity)"
+              value={newThreat}
+              onChangeText={setNewThreat}
+              onSubmitEditing={() => {
+                addToArray(newThreat, setSpecificThreats, () =>
+                  setNewThreat(""),
+                );
+              }}
+              editable={!saving}
+              returnKeyType="done"
+            />
+            <TouchableOpacity
+              style={styles.addBtn}
+              onPress={() =>
+                addToArray(newThreat, setSpecificThreats, () =>
+                  setNewThreat(""),
+                )
+              }
+              disabled={saving || !newThreat.trim()}
+            >
+              <Text style={styles.addBtnText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text style={styles.label}>Inspector Notes</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Describe security situation..."
+          multiline
+          value={securityComment}
+          onChangeText={setSecurityComment}
+          editable={!saving}
+        />
+      </View>
+
+      {/* Image Gallery Section */}
       {renderImageGallery()}
+
+      {/* Action Buttons */}
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={[styles.saveBtn, saving && styles.btnDisabled]}
@@ -326,11 +702,14 @@ export default function SlopeForm({
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Image Preview Modal */}
       {renderImageModal()}
     </ScrollView>
   );
 }
 
+// ✅ Complete StyleSheet
 const styles = StyleSheet.create({
   container: { padding: 16, backgroundColor: "#fff" },
   section: {
@@ -352,40 +731,102 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontSize: 13,
   },
-  row: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 4 },
+  row: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginVertical: 4,
+  },
   btn: {
     flex: 1,
     minWidth: 70,
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderWidth: 2,
-    borderColor: "#0F4A2F",
     borderRadius: 8,
     alignItems: "center",
   },
-  btnActive: { backgroundColor: "#0F4A2F", borderWidth: 2 },
-  btnText: { fontWeight: "600", fontSize: 12, color: "#0F4A2F" },
-  btnTextActive: { color: "#fff" },
+  btnActive: {
+    borderWidth: 2,
+  },
+  btnText: {
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  levelBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  levelText: {
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  chipInputContainer: {
+    marginBottom: 8,
+  },
+  chipContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 8,
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f1f5f9",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  chipText: {
+    fontSize: 12,
+    color: "#334155",
+    fontWeight: "500",
+  },
+  chipRemove: {
+    padding: 2,
+  },
+  inputRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  smallInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    padding: 8,
+    fontSize: 13,
+    minHeight: 36,
+  },
+  addBtn: {
+    backgroundColor: "#0F4A2F",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 12,
+  },
   input: {
     borderWidth: 1,
     borderColor: "#cbd5e1",
     borderRadius: 8,
     padding: 12,
-    minHeight: 50,
+    minHeight: 80,
+    textAlignVertical: "top",
     fontSize: 14,
     color: "#334155",
-    marginBottom: 12,
   },
-  readonlyBadge: {
-    backgroundColor: "#f8fafc",
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    marginBottom: 12,
-  },
-  readonlyText: { fontSize: 14, color: "#475569", fontWeight: "500" },
-  readonlyTextBlock: {
+  readonlyText: {
     fontSize: 14,
     color: "#475569",
     lineHeight: 20,
@@ -394,7 +835,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    marginBottom: 12,
   },
   imageSection: {
     marginVertical: 16,
@@ -410,7 +850,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  imageTitle: { fontSize: 14, fontWeight: "700", color: "#0f172a" },
+  imageTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
   uploadSmallBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -420,7 +864,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#dcfce7",
     borderRadius: 6,
   },
-  uploadSmallText: { fontSize: 12, fontWeight: "600", color: "#0F4A2F" },
+  uploadSmallText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#0F4A2F",
+  },
+  loadingImages: {
+    padding: 20,
+    alignItems: "center",
+  },
   noImages: {
     padding: 20,
     alignItems: "center",
@@ -430,16 +882,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#cbd5e1",
   },
-  noImagesText: { color: "#64748b", fontSize: 13, marginBottom: 10 },
+  noImagesText: {
+    color: "#64748b",
+    fontSize: 13,
+    marginBottom: 10,
+  },
   addPhotoBtn: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     backgroundColor: "#0F4A2F",
     borderRadius: 6,
   },
-  addPhotoText: { color: "#fff", fontWeight: "600", fontSize: 12 },
-  imageScrollContent: { paddingHorizontal: 4 },
-  imageCard: { position: "relative", marginRight: 10 },
+  addPhotoText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  imageScrollContent: {
+    paddingHorizontal: 4,
+  },
+  imageCard: {
+    position: "relative",
+    marginRight: 10,
+  },
   imageThumb: {
     width: 100,
     height: 100,
@@ -447,7 +912,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "#e2e8f0",
   },
-  imageThumbImg: { width: "100%", height: "100%" },
+  imageThumbImg: {
+    width: "100%",
+    height: "100%",
+  },
   imageCaptionBadge: {
     position: "absolute",
     bottom: 0,
@@ -456,7 +924,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.7)",
     padding: 4,
   },
-  imageCaptionText: { color: "#fff", fontSize: 10, fontWeight: "500" },
+  imageCaptionText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "500",
+  },
   deleteImageBtn: {
     position: "absolute",
     top: 4,
@@ -466,7 +938,12 @@ const styles = StyleSheet.create({
     padding: 4,
     zIndex: 10,
   },
-  actionRow: { flexDirection: "row", gap: 12, marginTop: 16, marginBottom: 30 },
+  actionRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 16,
+    marginBottom: 30,
+  },
   saveBtn: {
     flex: 1,
     backgroundColor: "#64748b",
@@ -481,8 +958,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
-  btnDisabled: { opacity: 0.7 },
-  whiteText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  btnDisabled: {
+    opacity: 0.7,
+  },
+  whiteText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
@@ -499,7 +982,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 8,
   },
-  modalImage: { width: "100%", height: "70%", borderRadius: 12 },
+  modalImage: {
+    width: "100%",
+    height: "70%",
+    borderRadius: 12,
+  },
   modalCaption: {
     position: "absolute",
     bottom: 30,
@@ -516,5 +1003,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 4,
   },
-  modalCaptionDate: { color: "#cbd5e1", fontSize: 12, textAlign: "center" },
+  modalCaptionDate: {
+    color: "#cbd5e1",
+    fontSize: 12,
+    textAlign: "center",
+  },
 });

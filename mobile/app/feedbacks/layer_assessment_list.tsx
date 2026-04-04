@@ -18,6 +18,7 @@ import {
   Eye,
   PlusCircle,
   CheckCircle,
+  Globe,
 } from "lucide-react-native";
 
 const API_BASE_URL = api + "/api";
@@ -35,11 +36,18 @@ type Assessment = {
 };
 
 export default function LayerAssessmentList() {
-  const { areaId, areaName, layerId, layerName } = useLocalSearchParams<{
+  const {
+    areaId,
+    areaName,
+    layerId,
+    layerName,
+    siteId: targetSiteId,
+  } = useLocalSearchParams<{
     areaId: string;
     areaName: string;
     layerId: string;
     layerName: string;
+    siteId?: string;
   }>();
 
   const router = useRouter();
@@ -116,7 +124,8 @@ export default function LayerAssessmentList() {
         areaId,
         layerId,
         isEdit: "false",
-        siteId: "", // Empty for new general assessment
+        // ✅ Use the siteId passed from parent screen
+        siteId: targetSiteId || "", // Empty string for general assessments
       },
     });
   };
@@ -128,6 +137,7 @@ export default function LayerAssessmentList() {
         areaId,
         layerId,
         assessmentId: assessment.field_assessment_id.toString(),
+        // ✅ Ensure siteId is passed (could be empty string for general)
         siteId: assessment.site_id?.toString() || "",
         isEdit: "true",
       },
@@ -141,106 +151,131 @@ export default function LayerAssessmentList() {
         areaId,
         layerId,
         assessmentId: assessment.field_assessment_id.toString(),
-        siteId: assessment.site_id?.toString() || "",
-        isEdit: "false", // View mode
+        siteId: assessment.site_id?.toString() || "", // ✅ Pass siteId
+        isEdit: "false",
       },
     });
   };
 
-  const renderItem = ({ item }: { item: Assessment }) => (
-    <View
-      style={[
-        styles.card,
-        item.is_sent && styles.sentCard,
-        !item.is_sent && styles.draftCard,
-      ]}
-    >
-      <View style={styles.cardHeader}>
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>{item.title}</Text>
-          <View
-            style={[
-              styles.badge,
-              {
-                backgroundColor: item.is_sent ? "#dcfce7" : "#fef3c7",
-              },
-            ]}
-          >
-            {item.is_sent ? (
-              <CheckCircle size={12} color="#155724" />
-            ) : (
-              <Edit3 size={12} color="#856404" />
-            )}
-            <Text
-              style={{
-                color: item.is_sent ? "#155724" : "#856404",
-                fontWeight: "700",
-                fontSize: 10,
-                marginLeft: 4,
-              }}
-            >
-              {item.is_sent ? "SUBMITTED" : "DRAFT"}
-            </Text>
+  const renderItem = ({ item }: { item: Assessment }) => {
+    // ✅ Determine if this is a general assessment (no specific site)
+    const isGeneral = !item.site_id || item.site_name === "New Site Proposal";
+
+    return (
+      <View
+        style={[
+          styles.card,
+          item.is_sent && styles.sentCard,
+          !item.is_sent && styles.draftCard,
+          isGeneral && styles.generalCard, // ✅ Highlight general assessments
+        ]}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>{item.title}</Text>
+            <View style={styles.badgeContainer}>
+              {/* ✅ Status Badge */}
+              <View
+                style={[
+                  styles.badge,
+                  {
+                    backgroundColor: item.is_sent ? "#dcfce7" : "#fef3c7",
+                  },
+                ]}
+              >
+                {item.is_sent ? (
+                  <CheckCircle size={12} color="#155724" />
+                ) : (
+                  <Edit3 size={12} color="#856404" />
+                )}
+                <Text
+                  style={{
+                    color: item.is_sent ? "#155724" : "#856404",
+                    fontWeight: "700",
+                    fontSize: 10,
+                    marginLeft: 4,
+                  }}
+                >
+                  {item.is_sent ? "SUBMITTED" : "DRAFT"}
+                </Text>
+              </View>
+
+              {/* ✅ General Assessment Badge */}
+              {isGeneral && (
+                <View style={[styles.badge, styles.generalBadge]}>
+                  <Globe size={12} color="#0F4A2F" />
+                  <Text style={styles.generalBadgeText}>GENERAL</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
-      </View>
 
-      {item.site_name && item.site_name !== "New Site Proposal" && (
-        <View style={styles.siteInfo}>
-          <Text style={styles.siteLabel}>Site:</Text>
-          <Text style={styles.siteName}>{item.site_name}</Text>
-        </View>
-      )}
+        {/* ✅ Site Info OR General Assessment Label */}
+        {isGeneral ? (
+          <View style={styles.generalInfo}>
+            <Globe size={16} color="#0F4A2F" />
+            <Text style={styles.generalInfoText}>
+              General Field Assessment for {areaName}
+            </Text>
+          </View>
+        ) : item.site_name ? (
+          <View style={styles.siteInfo}>
+            <Text style={styles.siteLabel}>Site:</Text>
+            <Text style={styles.siteName}>{item.site_name}</Text>
+          </View>
+        ) : null}
 
-      <Text style={styles.desc} numberOfLines={2}>
-        {item.description || "No description provided"}
-      </Text>
-
-      <View style={styles.footer}>
-        <Text style={styles.date}>
-          {new Date(item.created_at).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          })}
+        <Text style={styles.desc} numberOfLines={2}>
+          {item.description || "No description provided"}
         </Text>
-        {item.is_sent && (
-          <Text style={styles.updatedDate}>
-            Updated: {new Date(item.updated_at).toLocaleDateString()}
-          </Text>
-        )}
-      </View>
 
-      <View style={styles.actions}>
-        {item.is_sent ? (
-          <TouchableOpacity
-            style={styles.btnView}
-            onPress={() => handleView(item)}
-          >
-            <Eye size={16} color="#0F4A2F" />
-            <Text style={styles.btnViewText}>View</Text>
-          </TouchableOpacity>
-        ) : (
-          <>
+        <View style={styles.footer}>
+          <Text style={styles.date}>
+            {new Date(item.created_at).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })}
+          </Text>
+          {item.is_sent && (
+            <Text style={styles.updatedDate}>
+              Updated: {new Date(item.updated_at).toLocaleDateString()}
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.actions}>
+          {item.is_sent ? (
             <TouchableOpacity
-              style={styles.btnEdit}
-              onPress={() => handleEdit(item)}
+              style={styles.btnView}
+              onPress={() => handleView(item)}
             >
-              <Edit3 size={16} color="#0F4A2F" />
-              <Text style={styles.btnEditText}>Edit</Text>
+              <Eye size={16} color="#0F4A2F" />
+              <Text style={styles.btnViewText}>View</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.btnDelete}
-              onPress={() => handleDelete(item.field_assessment_id)}
-            >
-              <Trash2 size={16} color="#721c24" />
-              <Text style={styles.btnDeleteText}>Delete</Text>
-            </TouchableOpacity>
-          </>
-        )}
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.btnEdit}
+                onPress={() => handleEdit(item)}
+              >
+                <Edit3 size={16} color="#0F4A2F" />
+                <Text style={styles.btnEditText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.btnDelete}
+                onPress={() => handleDelete(item.field_assessment_id)}
+              >
+                <Trash2 size={16} color="#721c24" />
+                <Text style={styles.btnDeleteText}>Delete</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const drafts = assessments.filter((i) => !i.is_sent);
   const submitted = assessments.filter((i) => i.is_sent);
@@ -466,6 +501,12 @@ const styles = StyleSheet.create({
     borderLeftColor: "#22c55e",
     opacity: 0.95,
   },
+  // ✅ NEW: Style for general assessments
+  generalCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: "#0F4A2F", // Dark green for general assessments
+    backgroundColor: "#f0fdf4", // Light green background
+  },
   cardHeader: {
     marginBottom: 8,
   },
@@ -473,6 +514,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+  },
+  badgeContainer: {
+    flexDirection: "row",
+    gap: 6,
+    alignItems: "center",
   },
   title: {
     fontSize: 15,
@@ -488,6 +534,35 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
     gap: 4,
+  },
+  // ✅ NEW: General badge styles
+  generalBadge: {
+    backgroundColor: "#dcfce7",
+    borderColor: "#0F4A2F",
+    borderWidth: 1,
+  },
+  generalBadgeText: {
+    color: "#0F4A2F",
+    fontWeight: "700",
+    fontSize: 10,
+  },
+  // ✅ NEW: General info section
+  generalInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    backgroundColor: "#f0fdf4",
+    padding: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#86efac",
+  },
+  generalInfoText: {
+    fontSize: 12,
+    color: "#0F4A2F",
+    fontWeight: "600",
+    marginLeft: 6,
+    flex: 1,
   },
   siteInfo: {
     flexDirection: "row",

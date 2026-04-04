@@ -5,7 +5,7 @@ import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 
 export default function TabLayout() {
   return (
-    <Tabs
+    <Stack
       screenOptions={{
         // 🌲 Header styling
         headerShown: true,
@@ -37,37 +37,7 @@ export default function TabLayout() {
       }}
     >
       <Stack screenOptions={{ headerShown: false }} />
-      {/* Home Tab */}
-      <Tabs.Screen
-        name="home"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="home" size={26} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="Area"
-        options={{
-          title: "Area",
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="leaf" size={26} color={color} />
-          ),
-        }}
-      />
-      {/* Sites Tab */}
-
-      {/* Profile Tab */}
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="person" size={26} color={color} />
-          ),
-        }}
-      />
-    </Tabs>
+    
+    </Stack>
   );
 }

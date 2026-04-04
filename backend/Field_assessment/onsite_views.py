@@ -82,7 +82,7 @@ def get_field_assessments(request, multicriteria_type=None):
         
         # Filters
         site_id = request.GET.get('site_id')
-        reforestation_area_id = request.GET.get('reforestation_area_id') # NEW FILTER
+        reforestation_area_id = request.GET.get('reforestation_area_id')
         is_sent = request.GET.get('is_sent')
         
         # Base query: Only assessments belonging to this user
@@ -94,13 +94,15 @@ def get_field_assessments(request, multicriteria_type=None):
         if site_id:
             query = query.filter(site_id=site_id)
             
-        # NEW LOGIC: Filter by Reforestation Area
-        # This works even if site_id is NULL because it joins through assigned_onsite_inspector
+        # Filter by Reforestation Area
         if reforestation_area_id:
             query = query.filter(assigned_onsite_inspector__reforestation_area_id=reforestation_area_id)
             
         if is_sent is not None:
             query = query.filter(is_sent=(is_sent.lower() == 'true'))
+        
+        # ✅ ORDER BY updated_at DESC (most recent first)
+        query = query.order_by('-updated_at')
         
         # Serialize
         data = []
@@ -109,7 +111,7 @@ def get_field_assessments(request, multicriteria_type=None):
                 "field_assessment_id": fa.field_assessment_id,
                 "site_id": fa.site_id,
                 "site_name": fa.site.name if fa.site else "New Site Proposal",
-                "reforestation_area_id": fa.assigned_onsite_inspector.reforestation_area_id, # Include Area ID in response
+                "reforestation_area_id": fa.assigned_onsite_inspector.reforestation_area_id,
                 "type": fa.multicriteria_type,
                 "title": fa.title,
                 "description": fa.description,
@@ -124,6 +126,8 @@ def get_field_assessments(request, multicriteria_type=None):
         return JsonResponse(data, safe=False)
 
     except Exception as e:
+        import logging
+        logging.error(f"Error fetching assessments: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
@@ -158,7 +162,7 @@ def get_field_assessment_detail_view(request, field_assessment_id):
             details_data.append({
                 "detail_id": detail.field_assessment_detail_id,
                 "tree_specie": {
-                    "id": detail.tree_specie.tree_species_id if detail.tree_specie else None,
+                    "id": detail.tree_specie.tree_specie_id if detail.tree_specie else None,
                     "name": detail.tree_specie.name if detail.tree_specie else None,
                     "scientific_name": detail.tree_specie.scientific_name if detail.tree_specie else None,
                 } if detail.tree_specie else None,
@@ -273,6 +277,9 @@ def create_field_assessment(request):
 # ---------------- 4. Update Field Assessment ----------------
 @csrf_exempt
 def update_field_assessment(request, field_assessment_id):
+    """
+    PUT/POST: Update field assessment data + AUTO-LINK soil/tree if provided
+    """
     if request.method not in ['POST', 'PUT']:
         return JsonResponse({'error': 'Only POST/PUT allowed'}, status=405)
 
@@ -290,23 +297,60 @@ def update_field_assessment(request, field_assessment_id):
 
         body = json.loads(request.body)
         
-        # Update fields if provided
+        # Update core fields if provided
         if 'title' in body: fa.title = body['title']
         if 'description' in body: fa.description = body['description']
-        if 'field_assessment_data' in body: fa.field_assessment_data = body['field_assessment_data']
+        if 'field_assessment_data' in body: 
+            fa.field_assessment_data = body['field_assessment_data']
         
         fa.save()
 
+        # ✅ AUTO-LINKING: Check for selected_soil_id or selected_tree_specie_id in payload
+        field_data = body.get("field_assessment_data", {})
+        
+        # Auto-link soil if provided and not already linked
+        if "selected_soil_id" in field_data and field_data["selected_soil_id"]:
+            soil_id = field_data["selected_soil_id"]
+            # Avoid duplicate links
+            if not Field_assessment_details.objects.filter(
+                field_assessment=fa, 
+                soil_id=soil_id
+            ).exists():
+                Field_assessment_details.objects.create(
+                    field_assessment=fa,
+                    soil_id=soil_id,
+                    tree_specie_id=None
+                )
+        
+        # Auto-link tree species if provided (for TreeSpeciesForm)
+        if "selected_tree_specie_id" in field_data and field_data["selected_tree_specie_id"]:
+            tree_id = field_data["selected_tree_specie_id"]
+            if not Field_assessment_details.objects.filter(
+                field_assessment=fa,
+                tree_specie_id=tree_id
+            ).exists():
+                Field_assessment_details.objects.create(
+                    field_assessment=fa,
+                    soil_id=None,
+                    tree_specie_id=tree_id
+                )
+
         return JsonResponse({
             "message": "Updated successfully",
-            "data": fa.field_assessment_data
+            "data": fa.field_assessment_data,
+            "auto_linked": {
+                "soil_id": field_data.get("selected_soil_id"),
+                "tree_specie_id": field_data.get("selected_tree_specie_id")
+            }
         })
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
     except Exception as e:
+        import logging
+        logging.error(f"Error updating assessment {field_assessment_id}: {str(e)}")
         return JsonResponse({"error": str(e)}, status=500)
-
+    
 # ---------------- 5. Delete Field Assessment ----------------
 @csrf_exempt
 def delete_field_assessment(request, field_assessment_id):
