@@ -37,7 +37,7 @@ import SidebarGISS from "./components/layout/SidebarGISSpecialist";
 import OfficialSites from "./pages/approved/OfficialSites";
 import Site_information from "./pages/approved/site_information";
 import Ormoc_City from "./pages/head/maintain/ormoc_city";
-import Mcda_config_manager from "./pages/head/mcda/mcda";
+
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -128,10 +128,7 @@ export default function App() {
             path="/reforestation_area_site"
             element={<Reforestation_area_site />}
           />
-          <Route
-            path="/mcda_config_manager"
-            element={<Mcda_config_manager />}
-          />
+        
           <Route
             path="/reforestation_area_analysis"
             element={<Reforestation_area_analysis />}

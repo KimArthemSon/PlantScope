@@ -10,7 +10,15 @@ urlpatterns = [
     path("create_site/", views.create_site, name="create_site"),
     path("update_site/<int:site_id>/", views.update_site, name="update_site"),
     path("delete_site/<int:site_id>/", views.delete_site, name="delete_site"),
-
+    path('update_site_details/<int:site_id>/', views.update_site_details, name='update_site_details'),
+    path('submit_mcda_layer/<int:site_id>/<str:layer_name>/', 
+         views.submit_mcda_layer, 
+         name='submit_mcda_layer'),
+         
+    # Finalize entire site MCDA assessment
+    path('finalize_site_mcda/<int:site_id>/', 
+         views.finalize_site_mcda, 
+         name='finalize_site_mcda'),
     # # ==========================
     # # SITE DATA
     # # ==========================
