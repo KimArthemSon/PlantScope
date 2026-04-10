@@ -5,149 +5,179 @@ import { ChevronLeft } from "lucide-react";
 import { useUserRole } from "@/hooks/authorization";
 
 // Types
-import type { LayerKey, SiteData } from "./types/mcda";
+import type {
+  LayerKey,
+  SiteData,
+  LayerConfig,
+  LeaderDecision,
+  LayerValidation,
+  FieldAssessment,
+} from "./types/mcda";
 
 // Hooks
 import { useSiteAssessment } from "./hooks/useSiteAssessment";
 
 // Components
 import LayerNavigation from "./components/LayerNavigation";
+import SideBySideComparison from "./components/SideBySideComparison";
 import ActionPanel from "./components/ActionPanel";
 
-// Layer Components (lazy load for performance)
+// Layer Components
 import SafetyLayer from "./layers/SafetyLayer";
-import LegalityLayer from "./layers/LegalityLayer";
-import SlopeLayer from "./layers/SlopeLayer";
-import SoilQualityLayer from "./layers/SoilQualityLayer";
-import HydrologyLayer from "./layers/HydrologyLayer";
-import AccessibilityLayer from "./layers/AccessibilityLayer";
-import WildlifeLayer from "./layers/WildlifeLayer";
-import TreeSpeciesLayer from "./layers/TreeSpeciesLayer";
+// Import other 7 layers similarly when created:
+// import LegalityLayer from "./layers/LegalityLayer";
+// import SlopeLayer from "./layers/SlopeLayer";
+// etc.
 
 // ============ CONFIG ============
-const LAYERS: Array<{
-  key: LayerKey;
-  label: string;
-  icon: string;
-  weight: number;
-}> = [
-  { key: "safety", label: "Safety", icon: "🛡️", weight: 15 },
-  { key: "legality", label: "Legality", icon: "⚖️", weight: 20 },
-  { key: "slope", label: "Slope", icon: "📐", weight: 10 },
-  { key: "soil_quality", label: "Soil Quality", icon: "🌱", weight: 15 },
-  { key: "hydrology", label: "Hydrology", icon: "💧", weight: 10 },
-  { key: "accessibility", label: "Accessibility", icon: "🚶", weight: 10 },
-  { key: "wildlife_status", label: "Wildlife", icon: "🦌", weight: 10 },
+const LAYERS: LayerConfig[] = [
+  {
+    key: "safety",
+    label: "Safety",
+    icon: "🛡️",
+    description: "Geophysical & human security",
+  },
+  {
+    key: "legality",
+    label: "Legality",
+    icon: "⚖️",
+    description: "Land tenure & boundaries",
+  },
+  {
+    key: "slope",
+    label: "Slope",
+    icon: "📐",
+    description: "Topography & erosion",
+  },
+  {
+    key: "soil_quality",
+    label: "Soil Quality",
+    icon: "🌱",
+    description: "Edaphic factors",
+  },
+  {
+    key: "hydrology",
+    label: "Hydrology",
+    icon: "💧",
+    description: "Water access & reliability",
+  },
+  {
+    key: "accessibility",
+    label: "Accessibility",
+    icon: "🚶",
+    description: "Logistics & transport",
+  },
+  {
+    key: "wildlife_status",
+    label: "Wildlife",
+    icon: "🦌",
+    description: "Ecological impact",
+  },
   {
     key: "tree_species_suitability",
     label: "Tree Species",
     icon: "🌳",
-    weight: 10,
+    description: "Species matching",
   },
 ];
-const API_BASE = "http://localhost:8000/api";
+
 // ============ MAIN COMPONENT ============
 export default function MulticriteriaAnalysis() {
   const { id } = useParams<{ id: string }>();
   const siteId = id ? parseInt(id) : undefined;
   const navigate = useNavigate();
 
-  // Custom hook for all API + state logic
+  // Custom hook for all API + state logic (LEADER ONLY)
   const {
     siteData,
     loading,
     submittingLayer,
     finalizing,
     notification,
-    submitLayer,
+    submitLeaderValidation, // ✅ Leader validation only
     finalizeSite,
     updateSiteStatus,
+    isLayerValidated,
     getLayerStatus,
+    getValidationProgress,
   } = useSiteAssessment(siteId);
 
   const [selectedLayer, setSelectedLayer] = useState<LayerKey>("safety");
   const [consensusNote, setConsensusNote] = useState("");
+  const [finalStatus, setFinalStatus] = useState<
+    "accepted" | "rejected" | "completed"
+  >("accepted");
 
-  // Role-based access (keep your existing logic)
-  const { userRole } = useUserRole();
-  const basePath = useCallback(() => {
-    if (userRole === "GISSpecialist") return "/GISS";
-    if (userRole === "DataManager") return "/DataManager";
-    return "";
-  }, [userRole]);
+  // Role-based access: This page is for LEADERS only
+  // const { userRole } = useUserRole();
+  // const isLeaderView =
+  //   userRole === "GISSpecialist" || userRole === "CityENROHead";
 
-  // Count completed layers
-  const completedCount = LAYERS.filter(
-    (layer) => siteData?.mcda_data?.layers?.[layer.key]?.result?.verdict,
-  ).length;
+  // const basePath = useCallback(() => {
+  //   if (userRole === "GISSpecialist") return "/GISS";
+  //   if (userRole === "DataManager") return "/DataManager";
+  //   return "";
+  // }, [userRole]);
 
-  // ============ LAYER RENDERER ============
+  // // Redirect non-leaders away from this page
+  // useEffect(() => {
+  //   if (!isLeaderView) {
+  //     navigate(`${basePath()}/sites`);
+  //   }
+  // }, [isLeaderView, navigate, basePath]);
+  const isLeaderView = true;
+  // Validation progress
+  const validationProgress = getValidationProgress();
+  const isFinalizable = validationProgress.validated === 8;
+
+  // ============ LAYER RENDERER (Leader Validation Only) ============
   const renderLayerContent = useCallback(() => {
-    const layerData = siteData?.mcda_data?.layers?.[selectedLayer];
-    const commonProps = {
-      siteData,
-      layerData,
+    // ✅ Inspector data: READ-ONLY reference for leader (from field_assessment_data)
+    const inspectorData: FieldAssessment | undefined =
+      siteData?.raw_field_assessment?.[selectedLayer];
+
+    // ✅ Leader data: Already validated data (from site_data)
+    const leaderData: LayerValidation | undefined =
+      siteData?.validated_mcda_data?.[selectedLayer];
+
+    // ✅ Props for layer components: Leader validates based on inspector reference
+    const layerProps = {
+      siteId: siteId!,
+      inspectorData, // 🔹 READ-ONLY: What inspector submitted
+      leaderData, // ✅ Leader's validated data (if exists)
       isLoading: submittingLayer === selectedLayer,
-      onSubmit: (data: Record<string, any>, comment?: string) =>
-        submitLayer(selectedLayer, data, comment),
-      onCommentChange: setConsensusNote, // for final consensus
+      // ✅ Leader submits validation (ACCEPT/REJECT + comments)
+      onSubmitValidation: (
+        data: Record<string, any>,
+        decision: LeaderDecision,
+        comment?: string,
+        note?: string,
+      ) => submitLeaderValidation(selectedLayer, data, decision, comment, note),
     };
 
     switch (selectedLayer) {
       case "safety":
-        return <SafetyLayer {...commonProps} />;
-      case "legality":
-        return <LegalityLayer {...commonProps} />;
-      case "slope":
-        return <SlopeLayer {...commonProps} />;
-      case "soil_quality":
-        return (
-          <SoilQualityLayer
-            {...commonProps}
-            onDetailsUpdate={async (payload) => {
-              await fetch(`${API_BASE}/update_site_details/${siteId}/`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${localStorage.getItem("token")}`,
-                },
-                body: JSON.stringify(payload),
-              });
-            }}
-          />
-        );
-      case "hydrology":
-        return <HydrologyLayer {...commonProps} />;
-      case "accessibility":
-        return <AccessibilityLayer {...commonProps} />;
-      case "wildlife_status":
-        return <WildlifeLayer {...commonProps} />;
-      case "tree_species_suitability":
-        return (
-          <TreeSpeciesLayer
-            {...commonProps}
-            onDetailsUpdate={async (payload) => {
-              try {
-                await fetch(`${API_BASE}/update_site_details/${siteId}/`, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${localStorage.getItem("token")}`,
-                  },
-                  body: JSON.stringify({
-                    tree_species_id: payload.tree_species_id,
-                  }),
-                });
-              } catch (error) {
-                console.error("Failed to update tree species FK:", error);
-              }
-            }}
-          />
-        );
+        return <SafetyLayer {...layerProps} />;
+      // Add other layers here when created:
+      // case "legality": return <LegalityLayer {...layerProps} />;
+      // case "slope": return <SlopeLayer {...layerProps} />;
+      // etc.
       default:
-        return <div className="p-6 text-gray-500">Select a layer to begin</div>;
+        return (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+            <p className="text-gray-500">
+              Select a layer from the navigation to begin validation
+            </p>
+          </div>
+        );
     }
-  }, [selectedLayer, siteData, submittingLayer, submitLayer]);
+  }, [
+    selectedLayer,
+    siteData,
+    submittingLayer,
+    submitLeaderValidation,
+    siteId,
+  ]);
 
   // ============ LOADING / ERROR STATES ============
   if (loading) {
@@ -174,7 +204,7 @@ export default function MulticriteriaAnalysis() {
             Please verify the site ID and try again.
           </p>
           <button
-            onClick={() => navigate(`${basePath()}/sites`)}
+            onClick={() => navigate(-1)}
             className="text-emerald-600 hover:underline"
           >
             ← Back to Sites
@@ -217,6 +247,14 @@ export default function MulticriteriaAnalysis() {
                 </span>{" "}
                 • {siteData.name}
               </p>
+              {siteData.versioning && (
+                <p className="text-xs text-emerald-200">
+                  Version:{" "}
+                  {siteData.versioning.is_current ? "Active" : "Archived"}
+                  {siteData.versioning.validated_by &&
+                    ` • Validated by ${siteData.versioning.validated_by}`}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm text-emerald-100/80">
@@ -243,39 +281,74 @@ export default function MulticriteriaAnalysis() {
               selectedLayer={selectedLayer}
               onSelectLayer={setSelectedLayer}
               getLayerStatus={getLayerStatus}
-              completedCount={completedCount}
-              totalCount={LAYERS.length}
+              validationProgress={validationProgress}
             />
           </div>
 
-          {/* 🎯 Center: Active Layer Content */}
+          {/* 🎯 Center: Active Layer Content (Leader Validation Form) */}
           <div className="xl:col-span-2 space-y-6">
             {renderLayerContent()}
 
-            {/* ✅ Action Panel: Accept/Reject/Finalize */}
+            {/* ✅ Action Panel: Finalize Site (no scoring - just lock version) */}
             <ActionPanel
               siteStatus={siteData.status}
-              isFinalizable={completedCount === LAYERS.length}
+              isFinalizable={isFinalizable}
               isFinalizing={finalizing}
               consensusNote={consensusNote}
+              finalStatus={finalStatus}
               onConsensusNoteChange={setConsensusNote}
-              onFinalize={() => finalizeSite(consensusNote)}
-              onAccept={() => updateSiteStatus("official")}
-              onReject={() => updateSiteStatus("rejected")}
+              onFinalStatusChange={setFinalStatus}
+              onFinalize={() => finalizeSite(consensusNote, finalStatus)}
             />
           </div>
 
-          {/* 📝 Right: Inspector Submissions (Placeholder for now) */}
+          {/* 📝 Right: Side-by-Side Comparison (Leader Reference Panel) */}
           <div className="xl:col-span-1">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sticky top-24">
-              <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                <span>👥</span> Inspector Submissions
-              </h3>
-              <p className="text-sm text-gray-500 italic">
-                Inspector comparison view coming soon...
-              </p>
-              {/* We'll build this in the next iteration */}
-            </div>
+            {/* ✅ Inspector's raw submission - READ-ONLY for leader */}
+            {siteData && (
+              <SideBySideComparison
+                layer={selectedLayer}
+                inspectorData={siteData.raw_field_assessment?.[selectedLayer]}
+                leaderData={siteData.validated_mcda_data?.[selectedLayer]}
+                isLeaderView={true}
+              />
+            )}
+
+            {/* ✅ NDVI Quick Reference (Assessment Phase - Scientific Threshold) */}
+            {siteData.ndvi_value !== undefined && (
+              <div className="mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <span>💧</span> NDVI Reference
+                </h3>
+                <div className="text-sm">
+                  <p className="text-gray-600">
+                    Current:{" "}
+                    <span
+                      className={`font-medium ${
+                        siteData.ndvi_value !== null &&
+                        siteData.ndvi_value >= 0.2 &&
+                        siteData.ndvi_value <= 0.4
+                          ? "text-green-600"
+                          : siteData.ndvi_value !== null &&
+                              siteData.ndvi_value < 0.2
+                            ? "text-red-600"
+                            : "text-amber-600"
+                      }`}
+                    >
+                      {siteData.ndvi_value !== null
+                        ? siteData.ndvi_value.toFixed(2)
+                        : "Pending"}
+                    </span>
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    ✅ Ideal: 0.2–0.4 (degraded land for reforestation)
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    ⚠️ &lt;0.2: Non-plantable | &gt;0.4: Dense vegetation
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>

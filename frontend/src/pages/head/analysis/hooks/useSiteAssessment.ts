@@ -1,8 +1,14 @@
 // src/pages/multicriteria/hooks/useSiteAssessment.ts
-import { useState, useCallback } from "react";
-import type { LayerKey, LayerData, SiteData, Notification } from "../types/mcda";
+import { useState, useCallback, useEffect } from "react";
+import type { 
+  LayerKey, 
+  LeaderDecision, 
+  SiteData, 
+  Notification,
+  LayerValidation,
+} from "../types/mcda";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api";
 
 export function useSiteAssessment(siteId: number | undefined) {
   const [siteData, setSiteData] = useState<SiteData | null>(null);
@@ -11,7 +17,6 @@ export function useSiteAssessment(siteId: number | undefined) {
   const [finalizing, setFinalizing] = useState(false);
   const [notification, setNotification] = useState<Notification | null>(null);
 
-  // Show toast notification
   const showNotification = useCallback(
     (message: string, type: Notification["type"], duration = 3000) => {
       setNotification({ message, type });
@@ -20,7 +25,6 @@ export function useSiteAssessment(siteId: number | undefined) {
     [],
   );
 
-  // Fetch site data with MCDA info
   const fetchSiteData = useCallback(async () => {
     if (!siteId) return;
     try {
@@ -42,18 +46,20 @@ export function useSiteAssessment(siteId: number | undefined) {
     }
   }, [siteId, showNotification]);
 
-  // Submit finalized layer data (Leader input)
-  const submitLayer = useCallback(
+  // ✅ LEADER ONLY: Validate layer with ACCEPT/REJECT
+  const submitLeaderValidation = useCallback(
     async (
       layer: LayerKey,
       finalAgreedData: Record<string, any>,
+      leaderDecision: LeaderDecision,
       leaderComment?: string,
+      additionalNote?: string,
     ) => {
       if (!siteId) return false;
       try {
         setSubmittingLayer(layer);
         const response = await fetch(
-          `${API_BASE}/submit_mcda_layer/${siteId}/${layer}/`,
+          `${API_BASE}/submit_leader_validation/${siteId}/${layer}/`,
           {
             method: "POST",
             headers: {
@@ -61,26 +67,27 @@ export function useSiteAssessment(siteId: number | undefined) {
               Authorization: `Bearer ${localStorage.getItem("token")}`,
             },
             body: JSON.stringify({
-              final_agreed_data: finalAgreedData,
+              final_agreed: finalAgreedData,
+              leader_decision: leaderDecision,
               leader_comment: leaderComment || "",
+              additional_documentation_note: additionalNote || "",
             }),
           },
         );
         const json = await response.json();
         if (response.ok) {
-          // Refresh site data to get updated results
           await fetchSiteData();
           showNotification(
-            `✅ ${layer.replace("_", " ").toUpperCase()} submitted`,
+            `✅ ${layer.replace("_", " ").toUpperCase()} validated as ${leaderDecision}`,
             "success",
           );
           return true;
         } else {
-          showNotification(json.error || "Submission failed", "error");
+          showNotification(json.error || "Validation failed", "error");
           return false;
         }
       } catch (error) {
-        showNotification("Network error during submission", "error");
+        showNotification("Network error during validation", "error");
         console.error(error);
         return false;
       } finally {
@@ -90,9 +97,8 @@ export function useSiteAssessment(siteId: number | undefined) {
     [siteId, fetchSiteData, showNotification],
   );
 
-  // Finalize entire site MCDA
   const finalizeSite = useCallback(
-    async (consensusNote: string) => {
+    async (consensusNote: string, finalStatus: "accepted" | "rejected" | "completed") => {
       if (!siteId) return false;
       try {
         setFinalizing(true);
@@ -104,13 +110,17 @@ export function useSiteAssessment(siteId: number | undefined) {
               "Content-Type": "application/json",
               Authorization: `Bearer ${localStorage.getItem("token")}`,
             },
-            body: JSON.stringify({ consensus_note: consensusNote }),
+            body: JSON.stringify({ 
+              consensus_note: consensusNote,
+              final_status: finalStatus,
+              validated_by: "Project Leader",
+            }),
           },
         );
         const json = await response.json();
         if (response.ok) {
           await fetchSiteData();
-          showNotification("🎉 Site MCDA finalized!", "success", 5000);
+          showNotification("🎉 Site assessment finalized and locked!", "success", 5000);
           return true;
         } else {
           showNotification(json.error || "Finalization failed", "error");
@@ -127,15 +137,14 @@ export function useSiteAssessment(siteId: number | undefined) {
     [siteId, fetchSiteData, showNotification],
   );
 
-  // Update site status (Accept/Reject)
   const updateSiteStatus = useCallback(
-    async (newStatus: "official" | "rejected" | "pending_approval") => {
+    async (newStatus: "accepted" | "rejected" | "completed" | "under_review") => {
       if (!siteId) return false;
       try {
         const response = await fetch(
-          `${API_BASE}/update_site_status/${siteId}/`,
+          `${API_BASE}/update_site/${siteId}/`,
           {
-            method: "PUT",
+            method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${localStorage.getItem("token")}`,
@@ -162,62 +171,48 @@ export function useSiteAssessment(siteId: number | undefined) {
     [siteId, siteData, showNotification],
   );
 
-  // Helper: Get layer status badge info
-  const getLayerStatus = useCallback(
-    (layer: LayerKey): { label: string; className: string } => {
-      if (!siteData?.mcda_data?.layers?.[layer]) {
-        return {
-          label: "Not Started",
-          className: "bg-gray-100 text-gray-600 border-gray-200",
-        };
-      }
-      const verdict = siteData.mcda_data.layers[layer]?.result?.verdict;
-      const critical = siteData.mcda_data.layers[layer]?.result?.critical_flag;
-
-      if (critical)
-        return {
-          label: "⚠️ Veto",
-          className: "bg-red-100 text-red-700 border-red-200",
-        };
-
-      switch (verdict) {
-        case "PASS":
-        case "HIGHLY_SUITABLE":
-        case "OPTIMIZED":
-          return {
-            label: "✅ Pass",
-            className: "bg-emerald-100 text-emerald-700 border-emerald-200",
-          };
-        case "PASS_WITH_MITIGATION":
-          return {
-            label: "⚡ Mitigation",
-            className: "bg-amber-100 text-amber-700 border-amber-200",
-          };
-        case "WARNING":
-          return {
-            label: "⚠️ Warning",
-            className: "bg-orange-100 text-orange-700 border-orange-200",
-          };
-        case "FAIL":
-        case "AUTO_REJECT":
-          return {
-            label: "❌ Fail",
-            className: "bg-rose-100 text-rose-700 border-rose-200",
-          };
-        default:
-          return {
-            label: "📝 Submitted",
-            className: "bg-blue-100 text-blue-700 border-blue-200",
-          };
-      }
+  const isLayerValidated = useCallback(
+    (layer: LayerKey): boolean => {
+      return !!(siteData?.validated_mcda_data?.[layer]?.leader_decision);
     },
     [siteData],
   );
 
-  // Auto-fetch on mount
-  useState(() => {
+  const getLayerStatus = useCallback(
+    (layer: LayerKey): { label: string; className: string } => {
+      const validated = siteData?.validated_mcda_data?.[layer];
+      
+      if (!validated) {
+        const hasRaw = siteData?.raw_field_assessment?.[layer];
+        return hasRaw 
+          ? { label: "📝 Inspector Submitted", className: "bg-blue-100 text-blue-700 border-blue-200" }
+          : { label: "⏳ Not Started", className: "bg-gray-100 text-gray-600 border-gray-200" };
+      }
+
+      if (validated.leader_decision === "ACCEPT") {
+        return { label: "✅ Accepted", className: "bg-emerald-100 text-emerald-700 border-emerald-200" };
+      }
+      if (validated.leader_decision === "REJECT") {
+        return { label: "❌ Rejected", className: "bg-rose-100 text-rose-700 border-rose-200" };
+      }
+      return { label: "📋 Pending Review", className: "bg-amber-100 text-amber-700 border-amber-200" };
+    },
+    [siteData],
+  );
+
+  const getValidationProgress = useCallback(() => {
+    if (!siteData?.validated_mcda_data) return { validated: 0, total: 8, rejected: 0 };
+    
+    const layers = Object.keys(siteData.validated_mcda_data) as LayerKey[];
+    const validated = layers.filter(l => siteData.validated_mcda_data?.[l]?.leader_decision).length;
+    const rejected = layers.filter(l => siteData.validated_mcda_data?.[l]?.leader_decision === "REJECT").length;
+    
+    return { validated, total: 8, rejected };
+  }, [siteData]);
+
+  useEffect(() => {
     if (siteId) fetchSiteData();
-  });
+  }, [siteId, fetchSiteData]);
 
   return {
     siteData,
@@ -226,9 +221,11 @@ export function useSiteAssessment(siteId: number | undefined) {
     finalizing,
     notification,
     fetchSiteData,
-    submitLayer,
+    submitLeaderValidation,   // ✅ LEADER ONLY
     finalizeSite,
     updateSiteStatus,
+    isLayerValidated,
     getLayerStatus,
+    getValidationProgress,
   };
 }

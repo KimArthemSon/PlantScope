@@ -1,13 +1,15 @@
 // src/pages/multicriteria/components/ActionPanel.tsx
+import type { SiteStatus } from '../types/mcda';
+
 interface Props {
-  siteStatus: string;
+  siteStatus: SiteStatus;
   isFinalizable: boolean;
   isFinalizing: boolean;
   consensusNote: string;
+  finalStatus: "accepted" | "rejected" | "completed";
   onConsensusNoteChange: (note: string) => void;
+  onFinalStatusChange: (status: "accepted" | "rejected" | "completed") => void;
   onFinalize: () => Promise<boolean>;
-  onAccept: () => Promise<boolean>;
-  onReject: () => Promise<boolean>;
 }
 
 export default function ActionPanel({
@@ -15,18 +17,18 @@ export default function ActionPanel({
   isFinalizable,
   isFinalizing,
   consensusNote,
+  finalStatus,
   onConsensusNoteChange,
+  onFinalStatusChange,
   onFinalize,
-  onAccept,
-  onReject
 }: Props) {
-  const isLocked = siteStatus === 'official' || siteStatus === 'rejected';
+  const isLocked = siteStatus === 'accepted' || siteStatus === 'rejected' || siteStatus === 'completed';
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <h3 className="font-semibold text-gray-800 mb-4">Final Decision</h3>
       
-      {/* Consensus Note (for Finalize) */}
+      {/* Consensus Note (for Finalization) */}
       {!isLocked && (
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -42,9 +44,39 @@ export default function ActionPanel({
         </div>
       )}
 
+      {/* Final Status Selection */}
+      {!isLocked && isFinalizable && (
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Final Site Status
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { value: "accepted", label: "✅ Accepted", desc: "Proceed to planting" },
+              { value: "rejected", label: "❌ Rejected", desc: "Return for revision" },
+              { value: "completed", label: "🎯 Completed", desc: "Monitoring phase" },
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onFinalStatusChange(option.value as any)}
+                className={`p-3 rounded-xl border-2 text-left transition-all ${
+                  finalStatus === option.value
+                    ? 'border-emerald-500 bg-emerald-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <span className="font-medium text-gray-800 block">{option.label}</span>
+                <span className="text-xs text-gray-500">{option.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="space-y-3">
-        {/* Finalize MCDA (calculates total score) */}
+        {/* Finalize MCDA (v2.0: locks version, no scoring) */}
         {!isLocked && (
           <button
             onClick={onFinalize}
@@ -61,49 +93,36 @@ export default function ActionPanel({
               </>
             ) : (
               <>
-                <span>🔒</span> Finalize Assessment & Calculate Score
+                <span>🔒</span> Finalize Assessment & Lock Record
               </>
             )}
           </button>
         )}
 
-        {/* Accept / Reject (only after finalization or for overrides) */}
-        <div className="flex gap-3">
-          <button
-            onClick={onAccept}
-            disabled={isLocked && siteStatus !== 'rejected'}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${
-              siteStatus === 'official'
-                ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md hover:shadow-lg'
-            }`}
-          >
-            <span>✅</span> {siteStatus === 'official' ? 'Approved' : 'Accept Site'}
-          </button>
-          
-          <button
-            onClick={onReject}
-            disabled={isLocked && siteStatus !== 'official'}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold transition-all ${
-              siteStatus === 'rejected'
-                ? 'bg-rose-100 text-rose-700 cursor-default'
-                : 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white shadow-md hover:shadow-lg'
-            }`}
-          >
-            <span>❌</span> {siteStatus === 'rejected' ? 'Rejected' : 'Reject Site'}
-          </button>
-        </div>
+        {/* Status Update Buttons (if already finalized) */}
+        {isLocked && (
+          <div className="p-4 bg-gray-50 rounded-xl text-center">
+            <p className="text-sm text-gray-600">
+              Assessment finalized • Status:{" "}
+              <code className="bg-white px-2 py-0.5 rounded border">{siteStatus}</code>
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              To modify, create a new assessment version (re-analysis)
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Status Legend */}
-      <div className="mt-4 pt-4 border-t border-gray-100">
-        <p className="text-xs text-gray-400 text-center">
-          Status: <code className="bg-gray-100 px-2 py-0.5 rounded">{siteStatus}</code>
-          {isFinalizable && !isLocked && (
-            <span className="ml-2 text-emerald-600 font-medium">• Ready to finalize</span>
-          )}
-        </p>
-      </div>
+      {/* Validation Checklist */}
+      {!isLocked && (
+        <div className="mt-6 pt-4 border-t border-gray-100">
+          <p className="text-xs text-gray-400 text-center">
+            {isFinalizable 
+              ? "✅ All 8 layers validated • Ready to finalize" 
+              : `⏳ ${8 - (isFinalizable ? 8 : 0)} layers pending validation`}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

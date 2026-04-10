@@ -1,8 +1,10 @@
-# models.py
 from django.db import models
 from barangay.models import Barangay
+from django.core.validators import FileExtensionValidator
+from accounts.models import User
 
 class Reforestation_areas(models.Model):
+    # Kept for backward compatibility with your existing create form
     Safety_types = (
         ('safe', 'Low Risk'),
         ('slightly', 'Slightly Unsafe'),
@@ -14,26 +16,69 @@ class Reforestation_areas(models.Model):
         ('legal', 'Legal'),
         ('illegal', 'Illegal'),
     )
-    
-    barangay = models.ForeignKey(
-        Barangay,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name='reforestation_areas'
+    PRE_ASSESSMENT_STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
     )
+
     reforestation_area_id = models.BigAutoField(primary_key=True)
+    barangay = models.ForeignKey(Barangay, null=True, blank=True, on_delete=models.SET_NULL, related_name='reforestation_areas')
     name = models.CharField(max_length=100, unique=True)
-    safety = models.CharField(max_length=20, choices=Safety_types, default='danger')
-    legality = models.CharField(max_length=20, choices=legality_status, default='pending')
+    description = models.CharField(max_length=255, blank=True, null=True)
+    area_img = models.ImageField(upload_to='areas/', blank=True, null=True)
+
+    # Phase 1: Pre-Assessment Fields (Nullable/Defaults for form compatibility)
+    legality = models.CharField(max_length=20, choices=legality_status, default='pending', blank=True)
+    pre_assessment_status = models.CharField(max_length=20, choices=PRE_ASSESSMENT_STATUS_CHOICES, default='pending', blank=True)
+    reforestation_data = models.JSONField(null=True, blank=True, help_text="GIS Specialist manual validation JSON. Stored after right-panel review.")
+    
+    # Kept to not break your existing create form
+    safety = models.CharField(max_length=20, choices=Safety_types, default='danger', blank=True)
+
+    # Spatial Fields
     polygon_coordinate = models.JSONField(null=True, blank=True)
     coordinate = models.JSONField(null=True, blank=True)
-    description = models.CharField(max_length=255)
-    area_img = models.ImageField(upload_to='areas/', blank=True, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.name
+
+
+class PermitDocument(models.Model):
+    DOCUMENT_TYPES = (
+        ('barangay_clearance', 'Barangay Clearance'),
+        ('lgu_endorsement', 'LGU Endorsement'),
+        ('denr_permit', 'DENR Permit'),
+        ('landowner_consent', 'Landowner Consent'),
+        ('other', 'Other'),
+    )
+
+    permit_id = models.BigAutoField(primary_key=True)
+    reforestation_area = models.ForeignKey(
+        'Reforestation_areas',
+        on_delete=models.CASCADE,
+        related_name='permit_documents'
+    )
+    document_type = models.CharField(max_length=30, choices=DOCUMENT_TYPES)
+    permit_number = models.CharField(max_length=100, blank=True, null=True)
+    file = models.FileField(
+        upload_to='permits/%Y/%m/',
+        validators=[FileExtensionValidator(['pdf', 'jpg', 'jpeg', 'png'])]
+    )
+    verification_notes = models.TextField(blank=True, null=True, help_text="GIS Specialist notes on why this permit was accepted")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        help_text="GIS Specialist who verified & uploaded"
+    )
+
+    class Meta:
+        ordering = ['-uploaded_at']
+
+    def __str__(self):
+        return f"{self.get_document_type_display()} → {self.reforestation_area.name}"
 
 class Potential_sites(models.Model):
     potential_sites_id = models.BigAutoField(primary_key=True)

@@ -1,20 +1,12 @@
 // src/pages/multicriteria/components/LayerNavigation.tsx
-import type { LayerKey } from '../types/mcda';
-
-interface Layer {
-  key: LayerKey;
-  label: string;
-  icon: string;
-  weight: number; // for display
-}
+import type { LayerKey, LayerConfig } from '../types/mcda';
 
 interface Props {
-  layers: Layer[];
+  layers: LayerConfig[];  // ✅ Uses LayerConfig (no weight field)
   selectedLayer: LayerKey;
   onSelectLayer: (key: LayerKey) => void;
   getLayerStatus: (layer: LayerKey) => { label: string; className: string };
-  completedCount: number;
-  totalCount: number;
+  validationProgress: { validated: number; total: number; rejected: number };
 }
 
 export default function LayerNavigation({
@@ -22,33 +14,37 @@ export default function LayerNavigation({
   selectedLayer,
   onSelectLayer,
   getLayerStatus,
-  completedCount,
-  totalCount
+  validationProgress,
 }: Props) {
-  const progress = (completedCount / totalCount) * 100;
+  const progress = (validationProgress.validated / validationProgress.total) * 100;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sticky top-24">
       {/* Progress */}
       <div className="mb-6">
         <div className="flex justify-between text-sm mb-2">
-          <span className="font-medium text-gray-700">Progress</span>
+          <span className="font-medium text-gray-700">Validation Progress</span>
           <span className="text-emerald-600 font-bold">{Math.round(progress)}%</span>
         </div>
         <div className="w-full bg-gray-100 rounded-full h-2">
           <div 
-            className="bg-gradient-to-r from-emerald-400 to-teal-500 h-2 rounded-full transition-all duration-500"
+            className={`h-2 rounded-full transition-all duration-500 ${
+              validationProgress.rejected > 0 ? 'bg-rose-500' : 'bg-emerald-500'
+            }`}
             style={{ width: `${progress}%` }}
           />
         </div>
         <p className="text-xs text-gray-500 mt-1">
-          {completedCount} of {totalCount} layers completed
+          {validationProgress.validated} of {validationProgress.total} layers validated
+          {validationProgress.rejected > 0 && (
+            <span className="text-rose-600 ml-1">• {validationProgress.rejected} rejected</span>
+          )}
         </p>
       </div>
 
       {/* Layer List */}
       <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-        <span>📋</span> Criteria Layers
+        <span>📋</span> Assessment Layers
       </h3>
       <div className="space-y-2">
         {layers.map((layer) => {
@@ -67,7 +63,7 @@ export default function LayerNavigation({
                 <span className="text-lg group-hover:scale-110 transition-transform">{layer.icon}</span>
                 <div className="text-left">
                   <span className="font-medium text-gray-700 block">{layer.label}</span>
-                  <span className="text-xs text-gray-400">{layer.weight}% weight</span>
+                  <span className="text-xs text-gray-400">{layer.description}</span>  {/* ✅ Description, not weight */}
                 </div>
               </div>
               <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${status.className}`}>

@@ -25,7 +25,7 @@ import Multicriteria_field_asessment from "./pages/head/analysis/multicriteria_f
 import Classified_area_form from "./pages/head/maintain/classified_areas/classified_area_form";
 import Classified_areas from "./pages/head/maintain/classified_areas/classified_areas";
 import Assign_onsite_inspector from "./pages/head/reforestation_areas/assigning";
-import Legality_and_Safety from "./pages/head/reforestation_areas/lagelity_and_safety";
+import Pre_Assessment from "./pages/head/reforestation_areas/pre_assessment";
 import Reforestation_area_site from "./pages/head/site/reforestation_area_site";
 import Sites from "./pages/head/site/sites";
 import Reforestation_area_analysis from "./pages/head/analysis/reforestation_areas_analysis";
@@ -92,10 +92,7 @@ export default function App() {
             path="/assign_onsite_inpsector/:id"
             element={<Assign_onsite_inspector />}
           />
-          <Route
-            path="/legality-and-safety/:id"
-            element={<Legality_and_Safety />}
-          />
+          <Route path="/legality-and-safety/:id" element={<Pre_Assessment />} />
           <Route
             path="/maintenance/reforestation_area_form/:id"
             element={<Reforestation_area_form />}
@@ -128,7 +125,7 @@ export default function App() {
             path="/reforestation_area_site"
             element={<Reforestation_area_site />}
           />
-        
+
           <Route
             path="/reforestation_area_analysis"
             element={<Reforestation_area_analysis />}
@@ -205,7 +202,7 @@ export default function App() {
           />
           <Route
             path="/DataManager/legality-and-safety/:id"
-            element={<Legality_and_Safety />}
+            element={<Pre_Assessment />}
           />
           <Route
             path="/DataManager/maintenance/reforestation_area_form/:id"
@@ -269,7 +266,7 @@ export default function App() {
           />
           <Route
             path="/GISS/legality-and-safety/:id"
-            element={<Legality_and_Safety />}
+            element={<Pre_Assessment />}
           />
           <Route
             path="/GISS/maintenance/reforestation_area_form/:id"

@@ -1,3 +1,5 @@
+// src/pages/multicriteria/types/mcda.ts
+
 export type LayerKey =
   | "safety"
   | "legality"
@@ -8,68 +10,79 @@ export type LayerKey =
   | "wildlife_status"
   | "tree_species_suitability";
 
-export type Verdict =
-  | "PASS"
-  | "PASS_WITH_MITIGATION"
-  | "HIGHLY_SUITABLE"
-  | "OPTIMIZED"
-  | "WARNING"
-  | "FAIL"
-  | "AUTO_REJECT"
-  | "HOLD";
+// ✅ v2.0: Only manual decision, no scoring
+export type LeaderDecision = "ACCEPT" | "REJECT";
 
-export interface LayerResult {
-  normalized_score: number;
-  weight_percentage: number;
-  weighted_score: number;
-  status_input: string;
-  verdict: Verdict;
-  critical_flag: boolean;
-  remark: string;
-  derived_mitigation: string;
+// ✅ v2.0: Leader validation metadata (no result/scoring)
+export interface LayerValidation {
+  final_agreed_data: Record<string, any>;
+  additional_documentation_note?: string;
+  leader_decision?: LeaderDecision;
+  leader_comment?: string;
+  validated_at?: string;
 }
 
-export interface LayerData {
+// ✅ v2.0: Raw inspector submission (no validation fields)
+export interface FieldAssessment {
   final_agreed_data: Record<string, any>;
-  leader_comment?: string;
-  result?: LayerResult;
+  inspector_comment?: string;
   submitted_at?: string;
 }
 
+// ✅ v2.0: Complete MCDA data structure
 export interface SiteMCDAData {
-  layers: Partial<Record<LayerKey, LayerData>>;
+  // Leader-validated final data (8 layers)
+  site_data?: Partial<Record<LayerKey, LayerValidation>>;
+  
+  // Raw inspector submissions (8 layers)
+  field_assessment_data?: Partial<Record<LayerKey, FieldAssessment>>;
+  
+  // Versioning metadata
   meta_info?: {
     finalized_date?: string;
     finalized_by_role?: string;
     consensus_note?: string;
   };
-  final_site_summary?: {
-    total_weighted_score: number;
-    suitability_classification: string;
-    final_decision: string;
-    priority_actions: string[];
-    estimated_survival_rate: string;
-    public_map_color_code: string;
-  };
 }
+
+// ✅ v2.0: Site status matches backend exactly
+export type SiteStatus = "pending" | "under_review" | "accepted" | "rejected" | "completed";
 
 export interface SiteData {
   site_id: number;
   name: string;
-  status:
-    | "pending"
-    | "official"
-    | "rejected"
-    | "pending_approval"
-    | "re-analysis"
-    | "completed";
+  status: SiteStatus;
+  is_pinned: boolean;
   created_at: string;
-  mcda_data?: SiteMCDAData;
-  // ... other site fields
+  center_coordinate?: [number, number];
+  polygon_coordinates?: any;
+  marker_coordinate?: [number, number];
+  ndvi_value?: number | null;
+  total_area_hectares?: number;
+  total_seedlings_planted?: number;
+  
+  // ✅ v2.0: Dual JSON structure
+  validated_mcda_data?: SiteMCDAData["site_data"];
+  raw_field_assessment?: SiteMCDAData["field_assessment_data"];
+  
+  // Versioning
+  versioning?: {
+    is_current: boolean;
+    validated_by?: string;
+    validated_at?: string;
+  };
 }
 
 export interface Notification {
   message: string;
   type: "success" | "error" | "info";
   duration?: number;
+}
+
+// ✅ v2.0: Layer config (no weights)
+export interface LayerConfig {
+  key: LayerKey;
+  label: string;
+  icon: string;
+  description: string;
 }

@@ -1,357 +1,404 @@
 import json
 import logging
+import math
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
-import math
 from django.utils import timezone
-from .models import Sites, Site_data, Site_details, Site_images
+from .models import Sites, Site_data, Site_species_recommendation, Site_images
 from reforestation_areas.models import Reforestation_areas
-from soils.models import Soils
 from tree_species.models import Tree_species
-from mcda_weight_config.models import McdaWeightsConfig
 
 logger = logging.getLogger(__name__)
 
-# ==========================================
-# MCDA SCORING ENGINE HELPERS
-# ==========================================
+# ✅ PLANTSCOPE v5.0: 3-Layer MCDA Framework
+ALLOWED_LAYERS = ['safety', 'boundary_verification', 'survivability']
 
-ALLOWED_LAYERS = [
-    'safety', 'legality', 'slope', 'soil_quality', 
-    'accessibility', 'hydrology', 
-    'wildlife_status', 'tree_species_suitability'
+# ✅ Acceptance Decision Enums (v5.0)
+ACCEPTANCE_CHOICES = [
+    'ACCEPT',
+    'REJECT',
+    'ACCEPT_WITH_MITIGATION',   # Safety layer
+    'ACCEPT_WITH_ADJUSTMENT',   # Boundary layer
+    'ACCEPT_WITH_CONDITIONS',   # Survivability layer
 ]
 
-def find_nested_value(data, target_key):
-    """Recursively search for a key in nested dictionaries."""
-    if isinstance(data, dict):
-        if target_key in data:
-            return data[target_key]
-        for value in data.values():
-            result = find_nested_value(value, target_key)
-            if result is not None:
-                return result
-    return None
-
-def calculate_layer_result(layer_name, final_agreed_data, config):
-    """Dynamically calculate scores based on McdaWeightsConfig."""
-    rules_json = config.scoring_rules
-    input_field = rules_json.get("input_field")
-    rules = rules_json.get("rules", [])
-    
-    # Find the actual input value from the submitted data
-    input_value = find_nested_value(final_agreed_data, input_field)
-    if input_value is None:
-        raise ValueError(f"Missing required field '{input_field}' for layer '{layer_name}'")
-    
-    # Match against scoring rules
-    matched_rule = None
-    for rule in rules:
-        if str(rule["status_input"]).strip().lower() == str(input_value).strip().lower():
-            matched_rule = rule
-            break
-        print(str(rule["status_input"]).strip().lower(), "asss")
-            
-    if not matched_rule:
-        raise ValueError(f"No scoring rule found for input value: '{input_value}' in layer '{layer_name}'")
-    
-    # Calculate scores
-    normalized_score = matched_rule["normalized_score"]
-    weight_pct = float(config.weight_percentage)
-    weighted_score = round(normalized_score * (weight_pct / 100.0), 2)
-    is_veto = matched_rule.get("is_veto", False)
-    
-    # Generate dynamic remarks & mitigations (fallback to config or defaults)
-    verdict = matched_rule["verdict"]
-    remark = matched_rule.get("remark", f"Scored {normalized_score} based on {input_field}={input_value}")
-    mitigation = matched_rule.get("derived_mitigation", "Standard monitoring required.")
-    
-    # Allow inspector comments to append to mitigation/remark
-    comment_keys = [k for k in final_agreed_data.keys() if "comment" in k.lower()]
-    for ck in comment_keys:
-        val = final_agreed_data[ck]
-        if val:
-            remark += f" Inspector Note: {val}"
-            mitigation += f" Address: {val}"
-
-    return {
-        "normalized_score": normalized_score,
-        "weight_percentage": weight_pct,
-        "weighted_score": weighted_score,
-        "status_input": str(input_value),
-        "verdict": verdict,
-        "critical_flag": is_veto,
-        "remark": remark.strip(),
-        "derived_mitigation": mitigation.strip()
-    }
-
-
 # ==========================================
-# ENDPOINT 1: SUBMIT LAYER DATA
+# 1. INSPECTOR: Submit Raw Field Assessment
 # ==========================================
 @csrf_exempt
-def submit_mcda_layer(request, site_id, layer_name):
+def submit_field_assessment(request, site_id, layer_name):
+    """
+    POST: Onsite Inspector submits raw observational data for a specific MCDA layer.
+    Payload: { "field_assessment_data": {...} }
+    """
     if request.method != "POST":
         return JsonResponse({"error": "Only POST allowed"}, status=405)
-
     if layer_name not in ALLOWED_LAYERS:
         return JsonResponse({"error": f"Invalid layer. Must be one of: {ALLOWED_LAYERS}"}, status=400)
 
     try:
         body = json.loads(request.body)
-        final_agreed_data = body.get("final_agreed_data")
-        leader_comment = body.get("leader_comment", "")
-        print(final_agreed_data, "sdsdasd")
-        if not final_agreed_data:
-            return JsonResponse({"error": "final_agreed_data is required"}, status=400)
+        field_assessment_data = body.get("field_assessment_data")
+        inspector_comment = body.get("inspector_comment", "")
 
-        site = get_object_or_404(Sites, site_id=site_id, isActive=True)
-        config = McdaWeightsConfig.objects.filter(layer_name=layer_name, is_active=True).first()
-        if not config:
-            return JsonResponse({"error": f"Active MCDA config not found for layer '{layer_name}'"}, status=404)
+        if not field_assessment_data:
+            return JsonResponse({"error": "field_assessment_data is required"}, status=400)
 
-        # Calculate result dynamically
-        result_data = calculate_layer_result(layer_name, final_agreed_data, config)
+        site = get_object_or_404(Sites, site_id=site_id, is_active=True)
+        
+        # Auto-transition workflow state
+        if site.status == 'pending':
+            site.status = 'under_review'
+            site.save()
 
-        # Build layer payload
-        layer_payload = {
-            "final_agreed_data": final_agreed_data,
-            "leader_comment": leader_comment,
-            "result": result_data,
+        # Get or create current Site_data record
+        site_data_obj, _ = Site_data.objects.get_or_create(
+            site=site,
+            is_current=True,
+            defaults={"site_data": {}, "field_assessment_snapshot": {}}
+        )
+
+        # Store raw inspector data snapshot
+        if not site_data_obj.field_assessment_snapshot:
+            site_data_obj.field_assessment_snapshot = {}
+        
+        site_data_obj.field_assessment_snapshot[layer_name] = {
+            "data": field_assessment_data,
+            "inspector_comment": inspector_comment,
             "submitted_at": timezone.now().isoformat()
         }
-
-        with transaction.atomic():
-            # Get or create Site_data
-            site_data_obj, created = Site_data.objects.get_or_create(
-                site=site,
-                defaults={"is_current": True, "site_data": {"layers": {}, "meta_info": {}}, "score": 0.0}
-            )
-            
-            # Ensure structure exists
-            if not site_data_obj.site_data:
-                site_data_obj.site_data = {"layers": {}, "meta_info": {}}
-            if "layers" not in site_data_obj.site_data:
-                site_data_obj.site_data["layers"] = {}
-                
-            # Merge/Update layer
-            site_data_obj.site_data["layers"][layer_name] = layer_payload
-            site_data_obj.save()
+        site_data_obj.save()
 
         return JsonResponse({
-            "message": f"Layer '{layer_name}' submitted successfully.",
-            "layer": layer_name,
-            "result": result_data
+            "message": f"Field assessment for '{layer_name}' saved.",
+            "site_id": site.site_id,
+            "layer": layer_name
         }, status=200)
-
-    except ValueError as ve:
-        return JsonResponse({"error": str(ve)}, status=400)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
     except Exception as e:
-        logger.error(f"submit_mcda_layer error: {str(e)}", exc_info=True)
+        logger.error(f"submit_field_assessment error: {e}", exc_info=True)
         return JsonResponse({"error": "Internal server error"}, status=500)
 
 
 # ==========================================
-# ENDPOINT 2: FINALIZE SITE MCDA
+# 2. GIS SPECIALIST: Validate Layer (Manual Decision)
+# ==========================================
+@csrf_exempt
+def validate_mcda_layer(request, site_id, layer_name):
+    """
+    POST: GIS Specialist reviews inspector data and makes manual ACCEPT/REJECT decision.
+    Payload: {
+        "acceptance": "ACCEPT|REJECT|ACCEPT_WITH_MITIGATION|...",
+        "validation_notes": "...",
+        "mitigation_required": [...],  // optional
+        "species_recommendations": [...] // for survivability layer
+    }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+    if layer_name not in ALLOWED_LAYERS:
+        return JsonResponse({"error": f"Invalid layer. Must be one of: {ALLOWED_LAYERS}"}, status=400)
+
+    try:
+        body = json.loads(request.body)
+        acceptance = body.get("acceptance", "").strip().upper()
+        validation_notes = body.get("validation_notes", "")
+        
+        if acceptance not in ACCEPTANCE_CHOICES:
+            return JsonResponse({"error": f"Invalid acceptance. Must be one of: {ACCEPTANCE_CHOICES}"}, status=400)
+
+        site = get_object_or_404(Sites, site_id=site_id, is_active=True)
+        site_data_obj = get_object_or_404(Site_data, site=site, is_current=True)
+
+        if not site_data_obj.site_data:
+            site_data_obj.site_data = {}
+
+        # Build layer validation record per v5.0 schema
+        layer_validation = {
+            "acceptance": acceptance,
+            "validation_notes": validation_notes,
+            "validated_at": timezone.now().isoformat(),
+            "validated_by": body.get("validated_by", "GIS-SPECIALIST"),
+        }
+        
+        # Add layer-specific optional fields
+        if acceptance in ["ACCEPT_WITH_MITIGATION", "ACCEPT_WITH_ADJUSTMENT", "ACCEPT_WITH_CONDITIONS"]:
+            if "mitigation_required" in body:
+                layer_validation["mitigation_required"] = body["mitigation_required"]
+            if "adjustment_notes" in body:
+                layer_validation["adjustment_notes"] = body["adjustment_notes"]
+            if "conditions" in body:
+                layer_validation["conditions"] = body["conditions"]
+        
+        # Survivability layer: species recommendations
+        if layer_name == "survivability" and "species_recommendations" in body:
+            layer_validation["species_recommendations"] = body["species_recommendations"]
+
+        # Save to site_data JSON
+        site_data_obj.site_data[layer_name] = layer_validation
+        site_data_obj.save()
+
+        return JsonResponse({
+            "message": f"Layer '{layer_name}' validated as {acceptance}.",
+            "layer": layer_name,
+            "acceptance": acceptance
+        }, status=200)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+    except Exception as e:
+        logger.error(f"validate_mcda_layer error: {e}", exc_info=True)
+        return JsonResponse({"error": "Internal server error"}, status=500)
+
+
+# ==========================================
+# 3. FINALIZE SITE: Lock Version & Set Status (v5.0 Cascade Logic)
 # ==========================================
 @csrf_exempt
 def finalize_site_mcda(request, site_id):
+    """
+    POST: Verifies all 3 layers are validated, applies v5.0 approval cascade,
+    locks the record (is_current=false for old version), and updates site status.
+    
+    Approval Cascade (v5.0):
+    - If ANY layer = REJECT → Site REJECTED
+    - Else → Site ACCEPTED (with conditions if any layer is CONDITIONAL)
+    """
     if request.method != "POST":
         return JsonResponse({"error": "Only POST allowed"}, status=405)
 
     try:
         body = json.loads(request.body)
-        consensus_note = body.get("consensus_note", "Finalized by Project Leader.")
-        
-        site = get_object_or_404(Sites, site_id=site_id, isActive=True)
+        validated_by = body.get("validated_by", "GIS-SPECIALIST")
+
+        site = get_object_or_404(Sites, site_id=site_id, is_active=True)
         site_data_obj = get_object_or_404(Site_data, site=site, is_current=True)
+
+        layers_data = site_data_obj.site_data or {}
         
-        layers_data = site_data_obj.site_data.get("layers", {})
-        
-        # 1. Validate all 8 layers are present
-        missing_layers = [l for l in ALLOWED_LAYERS if l not in layers_data]
+        # Check all 3 layers have decisions
+        missing_layers = [
+            l for l in ALLOWED_LAYERS 
+            if l not in layers_data or not layers_data[l].get("acceptance")
+        ]
         if missing_layers:
             return JsonResponse({
-                "error": f"Incomplete assessment. Missing layers: {missing_layers}",
+                "error": f"Incomplete validation. Missing decisions for: {missing_layers}",
                 "missing_layers": missing_layers
             }, status=400)
 
-        # 2. Aggregate scores & check vetoes
-        total_weighted_score = 0.0
-        critical_veto_triggered = False
-        priority_actions = []
+        # ✅ v5.0 Approval Cascade Logic
+        final_status = "accepted"
+        rejection_reason = None
         
-        for layer_name, layer_obj in layers_data.items():
-            result = layer_obj.get("result", {})
-            total_weighted_score += result.get("weighted_score", 0.0)
+        for layer_name in ALLOWED_LAYERS:
+            layer = layers_data[layer_name]
+            acceptance = layer.get("acceptance")
             
-            if result.get("critical_flag", False):
-                critical_veto_triggered = True
-                
-            # Collect mitigations as priority actions
-            mitigation = result.get("derived_mitigation")
-            if mitigation and mitigation.lower() != "none.":
-                priority_actions.append(f"[{layer_name.replace('_', ' ').title()}] {mitigation}")
+            if acceptance == "REJECT":
+                final_status = "rejected"
+                rejection_reason = f"{layer_name} layer rejected: {layer.get('validation_notes', 'No reason provided')}"
+                break  # First REJECT wins
+        
+        # If not rejected, check for conditional acceptances
+        if final_status == "accepted":
+            has_conditions = any(
+                layers_data[l].get("acceptance") in 
+                ["ACCEPT_WITH_MITIGATION", "ACCEPT_WITH_ADJUSTMENT", "ACCEPT_WITH_CONDITIONS"]
+                for l in ALLOWED_LAYERS
+            )
+            if has_conditions:
+                final_status = "accepted"  # Still accepted, but with conditions noted
 
-        total_weighted_score = round(total_weighted_score, 2)
+        # Archive current version (create new version for future edits)
+        site_data_obj.is_current = False
+        site_data_obj.validated_by = validated_by
+        site_data_obj.validated_at = timezone.now()
+        site_data_obj.save()
+        
+        # Create new current version (empty, ready for re-assessment if needed)
+        Site_data.objects.create(
+            site=site,
+            version=site_data_obj.version + 1,
+            is_current=True,
+            site_data={},
+            field_assessment_snapshot={},
+            created_by=validated_by
+        )
 
-        # 3. Determine Classification & Color
-        if critical_veto_triggered:
-            classification = "NOT_SUITABLE"
-            color_code = "#FF0000"
-            final_decision = "REJECTED"
-        elif total_weighted_score >= 85:
-            classification = "HIGHLY_SUITABLE"
-            color_code = "#2E8B57"
-            final_decision = "APPROVED_FOR_REFORESTATION"
-        elif total_weighted_score >= 60:
-            classification = "MODERATELY_SUITABLE"
-            color_code = "#FFD700"
-            final_decision = "APPROVED_WITH_MITIGATIONS"
+        # Update site status
+        site.status = final_status
+        if rejection_reason:
+            site.save(update_fields=['status'])  # Could add rejection_reason field if needed
         else:
-            classification = "MARGINALLY_SUITABLE"
-            color_code = "#FFA500"
-            final_decision = "NEEDS_RE_EVALUATION"
-
-        # 4. Estimate survival rate based on score
-        if total_weighted_score >= 85: survival_rate = "85% - 90%"
-        elif total_weighted_score >= 60: survival_rate = "70% - 84%"
-        elif total_weighted_score >= 40: survival_rate = "50% - 69%"
-        else: survival_rate = "< 50%"
-
-        # 5. Build Final Summary
-        final_summary = {
-            "total_weighted_score": total_weighted_score,
-            "suitability_classification": classification,
-            "final_decision": final_decision,
-            "priority_actions": priority_actions[:5], # Top 5 actions
-            "estimated_survival_rate": survival_rate,
-            "public_map_color_code": color_code
-        }
-
-        # 6. Update Site Data JSON
-        with transaction.atomic():
-            site_data_obj.site_data["final_site_summary"] = final_summary
-            site_data_obj.site_data["meta_info"] = {
-                "finalized_date": timezone.now().isoformat(),
-                "finalized_by_role": "Project Leader",
-                "consensus_note": consensus_note
-            }
-            site_data_obj.score = total_weighted_score
-            site_data_obj.suitability_classification = classification
-            site_data_obj.save()
-
-            # Optionally update Site status (keep as pending_approval or move to official)
-            site.status = "official" if final_decision.startswith("APPROVED") else "pending_approval"
             site.save()
 
         return JsonResponse({
-            "message": "Site MCDA finalized successfully.",
-            "summary": final_summary,
-            "site_status": site.status
+            "message": "Site MCDA finalized and locked.",
+            "site_id": site.site_id,
+            "site_status": site.status,
+            "rejection_reason": rejection_reason,
+            "archived_version": site_data_obj.version,
+            "new_version": site_data_obj.version + 1
         }, status=200)
-
+        
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
     except Exception as e:
-        logger.error(f"finalize_site_mcda error: {str(e)}", exc_info=True)
+        logger.error(f"finalize_site_mcda error: {e}", exc_info=True)
         return JsonResponse({"error": "Internal server error"}, status=500)
 
 
 # ==========================================
-# EXISTING ENDPOINTS (Preserved & Slightly Optimized)
+# 4. LIST SITES (Dashboard View)
 # ==========================================
-
 @csrf_exempt
 def get_sites(request, reforestation_area_id):
+    """GET: List sites for a reforestation area with validation progress."""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     search = request.GET.get("search", "").strip()
-    entries = int(request.GET.get("entries", 10))
-    page = int(request.GET.get("page", 1))
+    entries = max(1, int(request.GET.get("entries", 10)))
+    page = max(1, int(request.GET.get("page", 1)))
     status_filter = request.GET.get("status", "all").strip().lower()
+    pinned_filter = request.GET.get("pinned_only", "").strip().lower()
 
-    if entries <= 0: entries = 10
-    if page <= 0: page = 1
     offset = (page - 1) * entries
 
     sites = Sites.objects.filter(
         reforestation_area_id=reforestation_area_id,
-        isActive=True
-    ).order_by("-created_at")
+        is_active=True
+    ).order_by("-is_pinned", "-created_at")
 
     if search:
         sites = sites.filter(name__icontains=search)
     if status_filter != "all":
         sites = sites.filter(status=status_filter)
+    if pinned_filter == "true":
+        sites = sites.filter(is_pinned=True)
 
     total = sites.count()
-    total_page = math.ceil(total / entries) if total > 0 else 1
-    sites = sites[offset: offset + entries]
+    total_page = max(1, math.ceil(total / entries))
+    sites_list = sites[offset: offset + entries]
 
     data = []
-    for s in sites:
-        completed = 0
-        rejected = 0
-        total_score = 0.0
+    for s in sites_list:
+        # Get current site_data for validation progress
+        current_sd = s.site_data_versions.filter(is_current=False).first()  # Archived = finalized
+        validated_count = 0
+        rejected_count = 0
+        layer_status = {}
         
-        sd = getattr(s, 'site_data', None)
-        if sd and sd.site_data:
-            layers = sd.site_data.get("layers", {})
-            for key in ALLOWED_LAYERS:
-                if key in layers:
-                    verdict = layers[key].get("result", {}).get("verdict", "")
-                    if verdict in ["PASS", "PASS_WITH_MITIGATION", "HIGHLY_SUITABLE", "OPTIMIZED"]:
-                        completed += 1
-                    elif verdict in ["AUTO_REJECT", "FAIL"]:
-                        rejected += 1
-            
-            summary = sd.site_data.get("final_site_summary", {})
-            total_score = summary.get("total_weighted_score", 0.0)
+        if current_sd and current_sd.site_data:
+            for layer_name in ALLOWED_LAYERS:
+                layer = current_sd.site_data.get(layer_name, {})
+                acceptance = layer.get("acceptance")
+                if acceptance:
+                    validated_count += 1
+                    layer_status[layer_name] = acceptance
+                    if acceptance == "REJECT":
+                        rejected_count += 1
 
         data.append({
             "site_id": s.site_id,
             "name": s.name,
             "status": s.status,
-            "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "progress": { "completed": completed, "rejected": rejected, "total": len(ALLOWED_LAYERS) },
-            "metrics": { "survival_rate": float(total_score), "total_score": float(total_score) }
+            "is_pinned": s.is_pinned,
+            "validation_progress": {
+                "validated_layers": validated_count,
+                "total_layers": len(ALLOWED_LAYERS),
+                "rejected_layers": rejected_count,
+                "layer_status": layer_status,  # {safety: "ACCEPT", boundary: "REJECT", ...}
+                "is_complete": validated_count == len(ALLOWED_LAYERS)
+            },
+            "metrics": {
+                "ndvi": s.ndvi_value,
+                "area_hectares": s.total_area_hectares,
+                "seedlings": s.total_seedlings_planted,
+            },
+            "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S")
         })
 
-    return JsonResponse({ "data": data, "total_page": total_page, "page": page, "entries": entries, "total": total }, status=200)
+    return JsonResponse({
+        "data": data,
+        "total_page": total_page,
+        "page": page,
+        "entries": entries,
+        "total": total
+    }, status=200)
 
+
+# ==========================================
+# 5. GET SINGLE SITE DETAILS (Full MCDA Data)
+# ==========================================
 @csrf_exempt
 def get_site(request, site_id):
+    """GET: Full site details including finalized MCDA data and inspector snapshots."""
     if request.method != "GET":
         return JsonResponse({"error": "Only GET allowed"}, status=405)
 
     site = get_object_or_404(Sites, site_id=site_id)
-    site_data_obj = getattr(site, 'site_data', None)
-    details = getattr(site, 'site_details', None)
     
+    # Get archived (finalized) site_data
+    finalized_sd = site.site_data_versions.filter(is_current=False).order_by('-version').first()
+    # Get current (draft) site_data if exists
+    current_sd = site.site_data_versions.filter(is_current=True).first()
+
     response = {
         "site_id": site.site_id,
         "name": site.name,
         "status": site.status,
-        "coordinates": site.center_coordinate,
+        "is_pinned": site.is_pinned,
+        "center_coordinate": site.center_coordinate,
         "polygon_coordinates": site.polygon_coordinates,
         "marker_coordinate": site.marker_coordinate,
-        "total_area_planted": site.total_area_planted,
-        "total_seedling_planted": site.total_seedling_planted,
+        "ndvi_value": site.ndvi_value,
+        "total_area_hectares": site.total_area_hectares,
+        "total_seedlings_planted": site.total_seedlings_planted,
         "created_at": site.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-        "mcda_data": site_data_obj.site_data if site_data_obj else {},
-        "site_details": {
-            "soil_id": details.soil.soil_id if details and details.soil else None,
-            "soil_name": details.soil.name if details and details.soil else None,
-            "tree_species_id": details.tree_species.tree_species_id if details and details.tree_species else None,
-            "tree_species_name": details.tree_species.name if details and details.tree_species else None,
-        } if details else None
+        
+        # Finalized MCDA results (read-only)
+        "finalized_mcda_data": finalized_sd.site_data if finalized_sd else {},
+        "finalized_validation_info": {
+            "validated_by": finalized_sd.validated_by if finalized_sd else None,
+            "validated_at": finalized_sd.validated_at.isoformat() if finalized_sd and finalized_sd.validated_at else None,
+            "version": finalized_sd.version if finalized_sd else None,
+        } if finalized_sd else None,
+        
+        # Draft MCDA work-in-progress (editable)
+        "draft_mcda_data": current_sd.site_data if current_sd and current_sd.is_current else {},
+        
+        # Inspector raw data snapshots (reference only)
+        "inspector_snapshots": finalized_sd.field_assessment_snapshot if finalized_sd else {},
+        
+        # Species recommendations
+        "species_recommendations": [
+            {
+                "species_id": rec.tree_species.tree_specie_id if rec.tree_species else None,
+                "species_name": rec.tree_species.name if rec.tree_species else "Unknown",
+                "priority_rank": rec.priority_rank,
+                "notes": rec.notes,
+            }
+            for rec in site.species_recommendations.order_by('priority_rank')
+        ],
     }
     return JsonResponse({"data": response}, status=200)
 
+
+# ==========================================
+# 6. CREATE SITE (With Parent Area Gate Check)
+# ==========================================
 @csrf_exempt
 def create_site(request):
+    """
+    POST: Create new site. 
+    ⚠️  Gate: Parent Reforestation Area must have pre_assessment_status = 'approved'
+    """
     if request.method != "POST":
         return JsonResponse({"error": "Only POST allowed"}, status=405)
     
@@ -364,48 +411,131 @@ def create_site(request):
         
         area = get_object_or_404(Reforestation_areas, reforestation_area_id=body['reforestation_area_id'])
         
+        # ✅ v5.0 Gate: Only allow site creation if area is approved
+        if area.pre_assessment_status != "approved":
+            return JsonResponse({
+                "error": "Cannot create site: Parent area pre-assessment is not approved.",
+                "area_status": area.pre_assessment_status
+            }, status=400)
+        
         with transaction.atomic():
             site = Sites.objects.create(
                 reforestation_area=area,
                 name=body['name'].strip(),
                 status='pending',
-                isActive=True,
-                center_coordinate=[0.0, 0.0],
-                polygon_coordinates=[],
-                marker_coordinate=None,
-                total_area_planted=0.0,
-                total_seedling_planted=0,
+                is_active=True,
+                is_pinned=body.get('is_pinned', False),
+                center_coordinate=body.get("center_coordinate", [0.0, 0.0]),
+                polygon_coordinates=body.get("polygon_coordinates", []),
+                marker_coordinate=body.get("marker_coordinate"),
+                ndvi_value=body.get("ndvi_value"),
+                total_area_hectares=body.get("total_area_hectares", 0.0),
+                total_seedlings_planted=body.get("total_seedlings_planted", 0),
             )
-            # Initialize with proper structure
+            
+            # Initialize empty MCDA structures per v5.0
             Site_data.objects.create(
                 site=site, 
+                version=1,
                 is_current=True, 
-                site_data={"layers": {}, "meta_info": {}}, 
-                score=0.0, 
-                suitability_classification=None
+                site_data={}, 
+                field_assessment_snapshot={}
             )
-            Site_details.objects.create(site=site, soil=None, tree_species=None)
 
         return JsonResponse({"message": "Site created successfully.", "site_id": site.site_id}, status=201)
         
     except IntegrityError:
         return JsonResponse({"error": "A site with this name already exists in this area"}, status=409)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
     except Exception as e:
-        logger.error(f"create_site error: {str(e)}", exc_info=True)
+        logger.error(f"create_site error: {e}", exc_info=True)
         return JsonResponse({"error": "Internal server error"}, status=500)
 
+
+# ==========================================
+# 7. TOGGLE PIN (Dashboard Priority)
+# ==========================================
+@csrf_exempt
+def toggle_pin(request, site_id):
+    """POST/PUT: Toggle the is_pinned boolean for dashboard prioritization."""
+    if request.method not in ["POST", "PUT"]:
+        return JsonResponse({"error": "Only POST/PUT allowed"}, status=405)
+    
+    try:
+        site = get_object_or_404(Sites, site_id=site_id, is_active=True)
+        site.is_pinned = not site.is_pinned
+        site.save()
+        return JsonResponse({
+            "message": f"Site {'pinned' if site.is_pinned else 'unpinned'} successfully.",
+            "is_pinned": site.is_pinned
+        }, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+
+
+# ==========================================
+# 8. UPDATE SITE SPECIES RECOMMENDATIONS
+# ==========================================
+@csrf_exempt
+def update_species_recommendations(request, site_id):
+    """
+    POST: GIS Specialist updates recommended tree species for a site.
+    Payload: { "species": [{"tree_species_id": 123, "priority_rank": 1, "notes": "..."}, ...] }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST allowed"}, status=405)
+    
+    try:
+        body = json.loads(request.body)
+        site = get_object_or_404(Sites, site_id=site_id, is_active=True)
+        species_list = body.get("species", [])
+        
+        if not isinstance(species_list, list):
+            return JsonResponse({"error": "'species' must be an array"}, status=400)
+        
+        with transaction.atomic():
+            # Clear existing recommendations
+            site.species_recommendations.all().delete()
+            
+            # Add new recommendations
+            for i, sp in enumerate(species_list):
+                tree_species_id = sp.get("tree_species_id")
+                if not tree_species_id:
+                    continue
+                tree_species = get_object_or_404(Tree_species, tree_specie_id=tree_species_id)
+                Site_species_recommendation.objects.create(
+                    site=site,
+                    tree_species=tree_species,
+                    priority_rank=sp.get("priority_rank", i + 1),
+                    notes=sp.get("notes", "")
+                )
+        
+        return JsonResponse({"message": "Species recommendations updated."}, status=200)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format"}, status=400)
+    except Exception as e:
+        logger.error(f"update_species_recommendations error: {e}", exc_info=True)
+        return JsonResponse({"error": "Internal server error"}, status=500)
+
+
+# ==========================================
+# UTILITY ENDPOINTS (Preserved)
+# ==========================================
 @csrf_exempt
 def update_site(request, site_id):
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+    if request.method not in ['POST', 'PUT']:
+        return JsonResponse({'error': 'Only POST/PUT allowed'}, status=405)
     try:
         data = json.loads(request.body)
-        if "name" not in data:
-            return JsonResponse({"error": "Name is required"}, status=400)
         site = get_object_or_404(Sites, site_id=site_id)
-        site.name = data["name"]
+        if "name" in data:
+            site.name = data["name"]
+        if "status" in data and data["status"] in dict(Sites.STATUS_CHOICES):
+            site.status = data["status"]
         site.save()
-        return JsonResponse({"message": "Site name updated successfully"})
+        return JsonResponse({"message": "Site updated successfully"})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=400)
 
@@ -414,76 +544,28 @@ def delete_site(request, site_id):
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
     site = get_object_or_404(Sites, site_id=site_id)
-    site.delete()
-    return JsonResponse({"message": "Site deleted successfully"})
+    site.is_active = False  # Soft delete
+    site.save()
+    return JsonResponse({"message": "Site deactivated successfully"})
 
 @csrf_exempt
 def update_site_coordinates(request):
-    if request.method != "PUT":
+    if request.method not in ["PUT", "POST"]:
         return JsonResponse({"error": "Invalid method"}, status=405)
     try:
         data = json.loads(request.body)
-        site = Sites.objects.get(site_id=data.get("site_id"))
-        if data.get("center_coordinate"): site.center_coordinate = data["center_coordinate"]
-        if data.get("polygon_coordinates"): site.polygon_coordinates = data["polygon_coordinates"]
-        if data.get("marker_coordinate"): site.marker_coordinate = data["marker_coordinate"]
+        site = get_object_or_404(Sites, site_id=data.get("site_id"))
+        if data.get("center_coordinate"):
+            site.center_coordinate = data["center_coordinate"]
+        if data.get("polygon_coordinates"):
+            site.polygon_coordinates = data["polygon_coordinates"]
+        if data.get("marker_coordinate"):
+            site.marker_coordinate = data["marker_coordinate"]
+        if data.get("ndvi_value") is not None:
+            site.ndvi_value = data["ndvi_value"]
+        if data.get("total_area_hectares") is not None:
+            site.total_area_hectares = data["total_area_hectares"]
         site.save()
-        return JsonResponse({"message": "Coordinates updated"})
+        return JsonResponse({"message": "Coordinates & metrics updated"})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=400)
-
-@csrf_exempt
-def update_site_details(request, site_id):
-    """
-    POST: Update relational Site_details (soil_id, tree_species_id)
-    Payload: { "soil_id": 123, "tree_species_id": 456 }
-    Pass null to clear a field.
-    """
-    if request.method != "POST":
-        return JsonResponse({"error": "Only POST allowed"}, status=405)
-
-    try:
-        body = json.loads(request.body)
-        site = get_object_or_404(Sites, site_id=site_id)
-        
-        # Get or create details record
-        details, created = Site_details.objects.get_or_create(site=site)
-        updated_fields = []
-
-        # Handle Soil
-        if "soil_id" in body:
-            if body["soil_id"] is None:
-                details.soil = None
-                updated_fields.append("soil cleared")
-            else:
-                soil = get_object_or_404(Soils, soil_id=body["soil_id"])
-                details.soil = soil
-                updated_fields.append(f"soil set to {soil.name}")
-
-        # Handle Tree Species
-        if "tree_species_id" in body:
-            if body["tree_species_id"] is None:
-                details.tree_species = None
-                updated_fields.append("tree_species cleared")
-            else:
-                species = get_object_or_404(Tree_species, tree_species_id=body["tree_species_id"])
-                details.tree_species = species
-                updated_fields.append(f"tree_species set to {species.name}")
-
-        details.save()
-
-        return JsonResponse({
-            "message": "Site details updated successfully",
-            "updated": updated_fields,
-            "details": {
-                "soil_id": details.soil.soil_id if details.soil else None,
-                "soil_name": details.soil.name if details.soil else None,
-                "tree_species_id": details.tree_species.tree_species_id if details.tree_species else None,
-                "tree_species_name": details.tree_species.name if details.tree_species else None
-            }
-        }, status=200)
-
-    except Exception as e:
-        import logging
-        logging.error(f"update_site_details error: {str(e)}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)

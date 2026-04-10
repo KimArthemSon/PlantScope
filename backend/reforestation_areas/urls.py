@@ -20,4 +20,7 @@ urlpatterns = [
     path('ndvi-trend/', viewsMap.ndvi_trend, name='ndvi_trend'),
     
     path('potential-sites/bulk-create/', views.bulk_create_potential_sites, name='bulk_create_potential_sites'),
+    path('permits/<int:reforestation_area_id>/list/', views.list_permits, name='list_permits'),
+    path('permits/<int:reforestation_area_id>/upload/', views.upload_permit, name='upload_permit'),
+    path('permits/<int:permit_id>/delete/', views.delete_permit, name='delete_permit'),
 ]

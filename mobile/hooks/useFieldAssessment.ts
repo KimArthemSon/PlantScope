@@ -1,49 +1,46 @@
 import { useState } from "react";
 import * as SecureStore from "expo-secure-store";
-import { api } from "@/constants/url_fixed";
 import * as ImagePicker from "expo-image-picker";
 import { Alert } from "react-native";
+import { api } from "@/constants/url_fixed";
 
-const API = api + "/api";
+// ✅ Base URL: The 'api' constant usually includes the port
+const API_BASE = `${api}/api`;
 
-// ✅ TypeScript Interfaces
-export interface AssessmentDetails {
-  detail_id: number;
-  tree_specie: {
-    id: number;
-    name: string;
-    scientific_name: string;
+// ─────────────────────────────────────────────
+// TypeScript Interfaces
+// ─────────────────────────────────────────────
+
+export interface AssessmentData {
+  layer: string;
+  assessment_date: string;
+  location: {
+    latitude: number;
+    longitude: number;
+    gps_accuracy_meters?: number;
   } | null;
-  soil: {
-    id: number;
-    name: string;
-    type?: string; // Optional - Soils model doesn't have 'type' field
-  } | null;
-  created_at: string;
+  // Layer-specific fields (Safety, Boundary, Survivability, etc.)
+  [key: string]: any;
 }
 
 export interface AssessmentImage {
   image_id: number;
   url: string;
   caption: string;
+  layer: string;
   created_at: string;
 }
 
 export interface AssessmentResponse {
   field_assessment_id: number;
-  site_id: number | null;
-  site_name: string;
-  reforestation_area_id: number;
-  type: string;
-  title: string;
-  description: string;
-  data: any; // The field_assessment_data JSON
-  is_sent: boolean;
+  layer: string;
+  is_submitted: boolean;
+  assessment_date: string;
+  location: any;
+  field_assessment_data: AssessmentData;
+  images: AssessmentImage[];
   created_at: string;
   updated_at: string;
-  details: AssessmentDetails[];
-  images: AssessmentImage[];
-  image_count: number;
 }
 
 export interface SoilItem {
@@ -52,38 +49,60 @@ export interface SoilItem {
   description: string;
 }
 
+// ✅ Hook Return Type Interface
+export interface UseFieldAssessmentReturn {
+  saving: boolean;
+  uploading: boolean;
+  handleSave: (data: any, submit?: boolean) => Promise<boolean>;
+  uploadImage: (currentAssessmentId: string | number) => Promise<boolean>;
+  deleteImage: (imageId: number) => Promise<boolean>;
+  fetchAssessmentData: () => Promise<AssessmentResponse | null>;
+  fetchSoils: () => Promise<SoilItem[]>;
+}
+
+// ─────────────────────────────────────────────
+// Main Hook
+// ─────────────────────────────────────────────
+
 export const useFieldAssessment = (
   areaId: string,
   layerId: string,
   assessmentId?: string,
-  siteId?: number | null,
   onRefresh?: () => void,
-) => {
+): UseFieldAssessmentReturn => {
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  // 1. Save Draft or Submit (Layer Data + Auto-Linking Support)
-  const handleSave = async (data: any, submit: boolean = false) => {
+  /**
+   * 1. SAVE DRAFT OR SUBMIT
+   */
+  const handleSave = async (
+    data: any,
+    submit: boolean = false,
+  ): Promise<boolean> => {
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync("token");
+      if (!token) throw new Error("Authentication token missing");
 
-      // ✅ Include selected_soil_id for auto-linking in backend
       const payload = {
         reforestation_area_id: parseInt(areaId),
-        site_id: siteId || null,
-        multicriteria_type: layerId,
-        title: `${layerId} Assessment`,
-        description: "Mobile entry",
-        field_assessment_data: data, // data can include selected_soil_id for auto-linking
+        layer: layerId,
+        assessment_date:
+          data.assessment_date || new Date().toISOString().split("T")[0],
+        location: data.location || null,
+        field_assessment_data: data, // ✅ FIXED: Added colon ':'
       };
 
       const isEdit = !!assessmentId;
       const url = isEdit
-        ? `${API}/update_field_assessment/${assessmentId}/`
-        : `${API}/create_field_assessment/`;
+        ? `${API_BASE}/field_assessments/${assessmentId}/update/`
+        : `${API_BASE}/field_assessments/create/`;
+
+      const method = isEdit ? "PUT" : "POST";
 
       const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
+        method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -94,120 +113,135 @@ export const useFieldAssessment = (
       const resData = await res.json();
 
       if (res.ok) {
-        const newId = resData.field_assessment_id || assessmentId;
+        const savedId = resData.field_assessment_id || assessmentId;
 
-        if (submit) {
-          const subRes = await fetch(
-            `${API}/update_field_assessment_is_sent/${newId}/`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({ is_sent: true }),
-            },
-          );
-          if (subRes.ok) {
-            Alert.alert("Success", "Assessment Submitted!");
-            if (onRefresh) onRefresh();
-            return true;
-          } else {
-            const err = await subRes.json();
-            Alert.alert("Error", err.error || "Failed to submit status");
-          }
+        if (submit && savedId) {
+          return await handleSubmit(savedId, token);
         } else {
-          Alert.alert("Saved", "Draft saved successfully.");
+          Alert.alert("Success", isEdit ? "Draft updated." : "Draft saved.");
+          if (onRefresh) onRefresh();
           return true;
         }
       } else {
-        Alert.alert("Error", resData.error || "Save failed");
+        Alert.alert("Error", resData.error || "Failed to save assessment.");
+        return false;
       }
-    } catch (err) {
-      Alert.alert("Error", "Network error while saving");
+    } catch (error: any) {
+      console.error("Save Error:", error);
+      Alert.alert("Network Error", "Could not connect to server.");
+      return false;
     } finally {
       setSaving(false);
     }
-    return false;
   };
 
-  // 2. Upload Image
-  const uploadImage = async (currentAssessmentId: string) => {
-    if (!currentAssessmentId) {
-      Alert.alert("Error", "Please save the draft first to get an ID.");
+  /**
+   * Helper: Submits (locks) the assessment
+   */
+  const handleSubmit = async (id: number, token: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/field_assessments/${id}/submit/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        Alert.alert("Success", "Assessment submitted to GIS Specialist!");
+        if (onRefresh) onRefresh();
+        return true;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        Alert.alert("Submit Failed", errData.error || "Could not submit.");
+        return false;
+      }
+    } catch (err) {
+      Alert.alert("Error", "Network error during submission.");
       return false;
     }
+  };
+
+  /**
+   * 2. UPLOAD IMAGE
+   */
+  const uploadImage = async (
+    currentAssessmentId: string | number,
+  ): Promise<boolean> => {
+    if (!currentAssessmentId) {
+      Alert.alert(
+        "Action Required",
+        "Please save the draft first to enable image uploads.",
+      );
+      return false;
+    }
+
+    const permissionResult =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.status !== "granted") {
+      Alert.alert("Permission Denied", "Please allow access to photos.");
+      return false;
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: false,
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets[0]) {
-      const token = await SecureStore.getItemAsync("token");
-      const formDataImg = new FormData();
-      // @ts-ignore - FormData accepts this format in React Native
-      formDataImg.append("image", {
-        uri: result.assets[0].uri,
-        name: `photo_${Date.now()}.jpg`,
-        type: "image/jpeg",
-      });
-      formDataImg.append("caption", "Field photo");
+    if (result.canceled || !result.assets?.[0]) return false;
 
-      try {
-        const res = await fetch(
-          `${API}/upload_field_assessment_image/${currentAssessmentId}/`,
-          {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-            body: formDataImg,
-          },
-        );
-        if (res.ok) {
-          Alert.alert("Success", "Image uploaded!");
-          if (onRefresh) onRefresh();
-          return true;
-        } else {
-          const err = await res.json();
-          Alert.alert("Error", err.error || "Upload failed");
-        }
-      } catch (e) {
-        Alert.alert("Error", "Network error during upload");
-      }
-    }
-    return false;
-  };
-
-  // 3. ✅ FIXED: Fetch Full Assessment Data (correct endpoint)
-  const fetchAssessmentData = async (): Promise<AssessmentResponse | null> => {
-    if (!assessmentId) return null;
-
+    setUploading(true);
     try {
       const token = await SecureStore.getItemAsync("token");
-      // ✅ CORRECT ENDPOINT: get_field_assessment_detail_view
-      const res = await fetch(`${API}/get_field_assessment/${assessmentId}/`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const formData = new FormData();
+
+      // @ts-ignore - React Native FormData type definition issue
+      formData.append("image", {
+        uri: result.assets[0].uri,
+        name: `field_photo_${Date.now()}.jpg`,
+        type: "image/jpeg",
       });
 
+      formData.append("caption", "Field assessment photo");
+      formData.append("layer", layerId);
+
+      const res = await fetch(
+        `${API_BASE}/field_assessments/${currentAssessmentId}/images/upload/`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        },
+      );
+
       if (res.ok) {
-        return await res.json();
+        Alert.alert("Success", "Photo uploaded.");
+        if (onRefresh) onRefresh();
+        return true;
       } else {
-        const err = await res.json();
-        Alert.alert("Error", err.error || "Failed to fetch assessment");
-        return null;
+        const err = await res.json().catch(() => ({}));
+        Alert.alert("Upload Failed", err.error || "Server error.");
+        return false;
       }
-    } catch (e) {
-      Alert.alert("Error", "Network error while loading assessment");
-      return null;
+    } catch (error) {
+      Alert.alert("Error", "Failed to upload image.");
+      return false;
+    } finally {
+      setUploading(false);
     }
   };
 
-  // 4. Delete Image
+  /**
+   * 3. DELETE IMAGE
+   */
   const deleteImage = async (imageId: number): Promise<boolean> => {
     try {
       const token = await SecureStore.getItemAsync("token");
+
       const res = await fetch(
-        `${API}/delete_field_assessment_image/${imageId}/`,
+        `${API_BASE}/field_assessments/images/${imageId}/delete/`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
@@ -215,47 +249,73 @@ export const useFieldAssessment = (
       );
 
       if (res.ok) {
-        Alert.alert("Success", "Image deleted");
         if (onRefresh) onRefresh();
         return true;
       } else {
-        const err = await res.json();
-        Alert.alert("Error", err.error || "Failed to delete image");
+        Alert.alert("Error", "Failed to delete image.");
         return false;
       }
-    } catch (e) {
-      Alert.alert("Error", "Network error while deleting image");
+    } catch (error) {
+      Alert.alert("Error", "Network error deleting image.");
       return false;
     }
   };
 
-  // 5. ✅ Fetch All Soils (for picker in SoilForm)
-  const fetchSoilsList = async (): Promise<SoilItem[]> => {
+  /**
+   * 4. FETCH ASSESSMENT DATA
+   */
+  const fetchAssessmentData = async (): Promise<AssessmentResponse | null> => {
+    if (!assessmentId) return null;
+
     try {
       const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${API}/get_soils_list/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      if (!token) throw new Error("Authentication token missing");
+
+      const res = await fetch(
+        `${API_BASE}/field_assessments/${assessmentId}/`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
       if (res.ok) {
         return await res.json();
       } else {
-        const err = await res.json();
-        Alert.alert("Error", err.error || "Failed to fetch soils");
-        return [];
+        const err = await res.json().catch(() => ({}));
+        Alert.alert("Error", err.error || "Failed to fetch assessment");
+        return null;
       }
+    } catch (error: any) {
+      console.error("Fetch assessment error:", error);
+      Alert.alert("Error", "Network error while loading assessment");
+      return null;
+    }
+  };
+
+  /**
+   * 5. FETCH SOILS (For Survivability Form)
+   */
+  const fetchSoils = async (): Promise<SoilItem[]> => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await fetch(`${API_BASE}/soils/list/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) return await res.json();
+      return [];
     } catch (e) {
-      Alert.alert("Error", "Network error while fetching soils");
       return [];
     }
   };
 
+  // ✅ Return ALL functions
   return {
     saving,
+    uploading,
     handleSave,
     uploadImage,
-    fetchAssessmentData,
     deleteImage,
-    fetchSoilsList, // ✅ For soil picker in SoilForm
+    fetchAssessmentData,
+    fetchSoils,
   };
 };

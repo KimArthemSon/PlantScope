@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GeoTIFF Upload - Ormoc City</title>
+
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        height: 100vh;
+        width: 100%;
+      }
+      .control-panel {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        max-width: 300px;
+      }
+      .control-panel h3 {
+        margin: 0 0 10px 0;
+        font-size: 16px;
+      }
+      .control-panel input[type="file"] {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+      .control-panel label {
+        display: block;
+        margin: 8px 0 4px 0;
+        font-size: 13px;
+      }
+      .control-panel input[type="range"] {
+        width: 100%;
+      }
+      .control-panel button {
+        width: 100%;
+        padding: 8px;
+        margin-top: 8px;
+        background: #0078d4;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .control-panel button:hover {
+        background: #005a9e;
+      }
+      .control-panel button.danger {
+        background: #d32f2f;
+      }
+      .status {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #666;
+      }
+      .layer-info {
+        margin-top: 8px;
+        padding: 8px;
+        background: #f5f5f5;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+
+    <div class="control-panel">
+      <h3>📁 Upload QGIS GeoTIFF</h3>
+      <input type="file" id="geotiff-input" accept=".tif,.tiff" />
+
+      <label>Opacity: <span id="opacity-value">0.8</span></label>
+      <input
+        type="range"
+        id="opacity-slider"
+        min="0"
+        max="1"
+        step="0.1"
+        value="0.8"
+      />
+
+      <button onclick="toggleLayer()">Toggle Visibility</button>
+      <button onclick="clearLayer()" class="danger">Clear Layer</button>
+
+      <div id="status" class="status">Ready</div>
+      <div id="layer-info" class="layer-info" style="display: none"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+
+    <!-- MUST load in this order -->
+    <script src="https://cdn.jsdelivr.net/npm/georaster@1.6.0/dist/georaster.browser.bundle.min.js"></script>
+    <script src="https://unpkg.com/georaster-layer-for-leaflet/dist/georaster-layer-for-leaflet.min.js"></script>
+
+    <script>
+      // Initialize map (Ormoc City)
+      const map = L.map("map").setView([11.0069, 124.607], 13);
+
+      L.esri.basemapLayer("Imagery").addTo(map);
+      L.esri.basemapLayer("ImageryLabels").addTo(map);
+
+      let currentLayer = null;
+      let layerVisible = true;
+
+      const statusEl = document.getElementById("status");
+
+      // Upload handler
+      document
+        .getElementById("geotiff-input")
+        .addEventListener("change", async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          try {
+            if (typeof parseGeoraster === "undefined") {
+              throw new Error("parseGeoraster not loaded");
+            }
+
+            if (typeof GeoRasterLayer === "undefined") {
+              throw new Error("GeoRasterLayer not loaded");
+            }
+
+            if (currentLayer) map.removeLayer(currentLayer);
+
+            statusEl.textContent = "⏳ Reading file...";
+            const arrayBuffer = await file.arrayBuffer();
+
+            statusEl.textContent = "⏳ Parsing GeoTIFF...";
+            const georaster = await parseGeoraster(arrayBuffer);
+
+            statusEl.textContent = "⏳ Rendering layer...";
+
+            currentLayer = new GeoRasterLayer({
+              georaster: georaster,
+              opacity: 0.8,
+              resolution: 128,
+              resampleMethod: "bilinear",
+            });
+
+            currentLayer.addTo(map);
+            layerVisible = true;
+
+            const bounds = currentLayer.getBounds();
+            map.fitBounds(bounds);
+
+            // Info panel
+            const infoEl = document.getElementById("layer-info");
+            infoEl.style.display = "block";
+            infoEl.innerHTML = `
+              <strong>${file.name}</strong><br>
+              Size: ${(file.size / 1024 / 1024).toFixed(2)} MB<br>
+              N: ${bounds.getNorth().toFixed(4)}°<br>
+              S: ${bounds.getSouth().toFixed(4)}°<br>
+              E: ${bounds.getEast().toFixed(4)}°<br>
+              W: ${bounds.getWest().toFixed(4)}°
+            `;
+
+            statusEl.textContent = "✅ Loaded successfully!";
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = "❌ " + err.message;
+          }
+        });
+
+      // Opacity control
+      document
+        .getElementById("opacity-slider")
+        .addEventListener("input", (e) => {
+          const opacity = parseFloat(e.target.value);
+          document.getElementById("opacity-value").textContent = opacity;
+
+          if (currentLayer) currentLayer.setOpacity(opacity);
+        });
+
+      // Toggle layer
+      function toggleLayer() {
+        if (!currentLayer) {
+          statusEl.textContent = "⚠️ No layer loaded";
+          return;
+        }
+
+        if (layerVisible) {
+          map.removeLayer(currentLayer);
+        } else {
+          currentLayer.addTo(map);
+        }
+
+        layerVisible = !layerVisible;
+      }
+
+      // Clear layer
+      function clearLayer() {
+        if (currentLayer) {
+          map.removeLayer(currentLayer);
+          currentLayer = null;
+        }
+
+        layerVisible = false;
+        document.getElementById("layer-info").style.display = "none";
+        document.getElementById("geotiff-input").value = "";
+        statusEl.textContent = "Cleared";
+      }
+      const sampleMarker = L.marker([11.0085, 124.641]).addTo(map);
+
+      sampleMarker.bindPopup("📍 Sample Point<br>Inside GeoTIFF").openPopup();
+
+      // Sample Polygon (small box inside raster)
+      const samplePolygon = L.polygon(
+        [
+          [11.0095, 124.639],
+          [11.0095, 124.643],
+          [11.0075, 124.643],
+          [11.0075, 124.639],
+        ],
+        {
+          color: "red",
+          fillColor: "red",
+          fillOpacity: 0.3,
+        },
+      ).addTo(map);
+
+      samplePolygon.bindPopup("🟥 Sample Polygon Area");
+    </script>
+  </body>
+</html>

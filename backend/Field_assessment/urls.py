@@ -1,9 +1,9 @@
 from django.urls import path
-from . import views
 from . import onsite_views
-from . import multicriteria_views
+from . import views
 urlpatterns = [
-    path(
+    
+     path(
         'get_assigned_list/<int:reforestation_area_id>/',
         views.get_assigned_list,
         name='get_assigned_list'
@@ -21,92 +21,61 @@ urlpatterns = [
         name='assign_inspector'
     ),
 
-     # --- Inspector Dashboard ---
+    # ── Assigned Areas ──────────────────────────────────────────────
     path(
         'get_assigned_reforestation_area/',
         onsite_views.get_assigned_reforestation_area,
         name='get_assigned_reforestation_area'
     ),
 
-    # --- Field Assessment CRUD ---
-    # Get all assessments (optional filter by type in query params or url)
+    # ── Field Assessment CRUD ───────────────────────────────────────
     path(
-        'get_field_assessments/',
+        'field_assessments/',
         onsite_views.get_field_assessments,
         name='get_field_assessments'
     ),
-    
-    # Get assessments filtered by specific type (e.g., /safety/)
     path(
-        'get_field_assessments/<str:multicriteria_type>/',
-        onsite_views.get_field_assessments,
-        name='get_field_assessments_by_type'
+        'field_assessments/<int:field_assessment_id>/',
+        onsite_views.get_field_assessment_detail,
+        name='get_field_assessment_detail'
     ),
-    
-    path('get_field_assessment/<int:field_assessment_id>/', onsite_views.get_field_assessment_detail_view, name='get_field_assessment_detail_view'),
-
-    # Create a new assessment (Draft)
     path(
-        'create_field_assessment/',
+        'field_assessments/create/',
         onsite_views.create_field_assessment,
         name='create_field_assessment'
     ),
-    
-    # Update an existing assessment (Draft only)
     path(
-        'update_field_assessment/<int:field_assessment_id>/',
+        'field_assessments/<int:field_assessment_id>/update/',
         onsite_views.update_field_assessment,
         name='update_field_assessment'
     ),
-    
-    # Delete an assessment (Draft only)
     path(
-        'delete_field_assessment/<int:field_assessment_id>/',
+        'field_assessments/<int:field_assessment_id>/delete/',
         onsite_views.delete_field_assessment,
         name='delete_field_assessment'
     ),
 
-    # --- Submission Workflow ---
-    # Submit or Un-submit (Lock/Unlock)
+    # ── Submission ──────────────────────────────────────────────────
     path(
-        'update_field_assessment_is_sent/<int:field_assessment_id>/',
-        onsite_views.update_field_assessment_is_sent,
-        name='update_field_assessment_is_sent'
+        'field_assessments/<int:field_assessment_id>/submit/',
+        onsite_views.submit_field_assessment,
+        name='submit_field_assessment'
     ),
 
-    # --- Images ---
-    # Upload image to a specific assessment
+    # ── Images ──────────────────────────────────────────────────────
     path(
-        'upload_field_assessment_image/<int:field_assessment_id>/',
+        'field_assessments/<int:field_assessment_id>/images/upload/',
         onsite_views.upload_field_assessment_image,
         name='upload_field_assessment_image'
     ),
-
-    # --- Details (Tree/Soil Links) ---
-    # Get linked details for an assessment
     path(
-        'get_field_assessment_details/<int:field_assessment_id>/',
-        onsite_views.get_field_assessment_details,
-        name='get_field_assessment_details'
+        'field_assessments/images/<int:image_id>/delete/',
+        onsite_views.delete_field_assessment_image,
+        name='delete_field_assessment_image'
     ),
-    # Link a tree/soil to an assessment
     path(
-        'create_field_detail/',
-        onsite_views.create_field_detail,
-        name='create_field_detail'
+        'area/<int:reforestation_area_id>/pre-assessments/',
+        onsite_views.get_area_pre_assessments_for_gis,
+        name='get_area_pre_assessments_for_gis'
     ),
-    # Remove a link
-    path(
-        'delete_field_detail/<int:field_assessment_detail_id>/',
-        onsite_views.delete_field_detail,
-        name='delete_field_detail'
-    ),
-
-    path('delete_field_assessment_image/<int:image_id>/', 
-     onsite_views.delete_field_assessment_image, 
-     name='delete_field_assessment_image'),
-    #Multicriteria GISSpecialist
-    path('get_pre_assessment_reviews/<int:reforestation_area_id>/', multicriteria_views.get_pre_assessment_reviews, name='get_pre_assessment_reviews'),
-    path('unsent_field_assessment/<int:field_assessment_id>/', multicriteria_views.unsent_field_assessment, name='unsent_field_assessment'),
-    path('get_sites_by_area/<int:reforestation_area_id>/', onsite_views.get_sites_by_area, name='get_sites_by_area'),
-  ]
+]

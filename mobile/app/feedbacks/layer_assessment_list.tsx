@@ -18,36 +18,32 @@ import {
   Eye,
   PlusCircle,
   CheckCircle,
-  Globe,
+  AlertCircle,
 } from "lucide-react-native";
 
-const API_BASE_URL = api + "/api";
+// ✅ Use base API URL (no "/api" suffix - endpoints add it)
+const API_BASE = api;
 
 type Assessment = {
   field_assessment_id: number;
-  site_id: number | null;
-  site_name: string;
-  title: string;
-  description: string;
-  is_sent: boolean;
+  reforestation_area_id: number;
+  reforestation_area_name: string;
+  layer: "safety" | "boundary_verification" | "survivability"; // ✅ Updated layer names
+  layer_display: string;
+  assessment_date: string | null;
+  location: { latitude: number; longitude: number; gps_accuracy_meters?: number } | null;
+  is_submitted: boolean; // ✅ Matches backend: is_submitted (not is_sent)
+  image_count: number;
   created_at: string;
   updated_at: string;
-  data: any;
 };
 
 export default function LayerAssessmentList() {
-  const {
-    areaId,
-    areaName,
-    layerId,
-    layerName,
-    siteId: targetSiteId,
-  } = useLocalSearchParams<{
+  const { areaId, areaName, layerId, layerName } = useLocalSearchParams<{
     areaId: string;
     areaName: string;
-    layerId: string;
+    layerId: "safety" | "boundary_verification" | "survivability"; // ✅ Type-safe layer IDs
     layerName: string;
-    siteId?: string;
   }>();
 
   const router = useRouter();
@@ -58,21 +54,20 @@ export default function LayerAssessmentList() {
   const fetchAssessments = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      const url = `${API_BASE_URL}/get_field_assessments/${layerId}/?reforestation_area_id=${areaId}`;
-
+      // ✅ Endpoint: /api/field_assessments/?reforestation_area_id=X&layer=Y
+      const url = `${API_BASE}/api/field_assessments/?reforestation_area_id=${areaId}&layer=${layerId}`;
       const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
-
-      if (!res.ok) throw new Error("Failed to fetch assessments");
-
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
       const data = await res.json();
-      setAssessments(data);
+      // ✅ Ensure we handle array response
+      setAssessments(Array.isArray(data) ? data : []);
     } catch (error: any) {
-      console.error(error);
+      console.error("Fetch assessments error:", error);
       Alert.alert("Error", error.message || "Could not load assessments");
     } finally {
       setLoading(false);
@@ -82,50 +77,49 @@ export default function LayerAssessmentList() {
 
   useEffect(() => {
     fetchAssessments();
-  }, [areaId, layerId]);
+  }, [areaId, layerId]); // Re-fetch when area or layer changes
 
   const handleDelete = async (id: number) => {
-    Alert.alert(
-      "Confirm Delete",
-      "Are you sure you want to delete this draft? This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const token = await SecureStore.getItemAsync("token");
-              const res = await fetch(
-                `${API_BASE_URL}/delete_field_assessment/${id}/`,
-                {
-                  method: "DELETE",
-                  headers: { Authorization: `Bearer ${token}` },
-                },
-              );
-
-              if (!res.ok) throw new Error("Failed to delete");
-
-              Alert.alert("Success", "Assessment deleted successfully");
-              fetchAssessments();
-            } catch (e: any) {
-              Alert.alert("Error", e.message || "Failed to delete");
+    Alert.alert("Confirm Delete", "Delete this draft? This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const token = await SecureStore.getItemAsync("token");
+            // ✅ Endpoint: /api/field_assessments/{id}/delete/
+            const res = await fetch(
+              `${API_BASE}/api/field_assessments/${id}/delete/`,
+              {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+              },
+            );
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              throw new Error(err.error || `HTTP ${res.status}`);
             }
-          },
+            Alert.alert("Success", "Assessment deleted");
+            fetchAssessments(); // Refresh list
+          } catch (e: any) {
+            console.error("Delete error:", e);
+            Alert.alert("Error", e.message || "Failed to delete");
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleCreateNew = () => {
     router.push({
       pathname: "/feedbacks/multicriteria_layer_form",
-      params: {
-        areaId,
-        layerId,
+      params: { 
+        areaId, 
+        layerId, 
+        layerName, 
         isEdit: "false",
-        // ✅ Use the siteId passed from parent screen
-        siteId: targetSiteId || "", // Empty string for general assessments
+        assessmentId: undefined // Explicitly undefined for new
       },
     });
   };
@@ -136,9 +130,8 @@ export default function LayerAssessmentList() {
       params: {
         areaId,
         layerId,
+        layerName,
         assessmentId: assessment.field_assessment_id.toString(),
-        // ✅ Ensure siteId is passed (could be empty string for general)
-        siteId: assessment.site_id?.toString() || "",
         isEdit: "true",
       },
     });
@@ -150,103 +143,92 @@ export default function LayerAssessmentList() {
       params: {
         areaId,
         layerId,
+        layerName,
         assessmentId: assessment.field_assessment_id.toString(),
-        siteId: assessment.site_id?.toString() || "", // ✅ Pass siteId
-        isEdit: "false",
+        isEdit: "false", // View mode = read-only
       },
     });
   };
 
   const renderItem = ({ item }: { item: Assessment }) => {
-    // ✅ Determine if this is a general assessment (no specific site)
-    const isGeneral = !item.site_id || item.site_name === "New Site Proposal";
-
+    const isSubmitted = item.is_submitted;
+    const hasLocation = item.location && item.location.latitude && item.location.longitude;
+    
     return (
       <View
         style={[
           styles.card,
-          item.is_sent && styles.sentCard,
-          !item.is_sent && styles.draftCard,
-          isGeneral && styles.generalCard, // ✅ Highlight general assessments
+          isSubmitted ? styles.submittedCard : styles.draftCard,
         ]}
       >
         <View style={styles.cardHeader}>
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>{item.title}</Text>
-            <View style={styles.badgeContainer}>
-              {/* ✅ Status Badge */}
-              <View
+          {/* Layer + Status badge */}
+          <View style={styles.badgeRow}>
+            <View
+              style={[
+                styles.badge,
+                { backgroundColor: isSubmitted ? "#dcfce7" : "#fef3c7" },
+              ]}
+            >
+              {isSubmitted ? (
+                <CheckCircle size={12} color="#155724" />
+              ) : (
+                <Edit3 size={12} color="#856404" />
+              )}
+              <Text
                 style={[
-                  styles.badge,
-                  {
-                    backgroundColor: item.is_sent ? "#dcfce7" : "#fef3c7",
-                  },
+                  styles.badgeText,
+                  { color: isSubmitted ? "#155724" : "#856404" },
                 ]}
               >
-                {item.is_sent ? (
-                  <CheckCircle size={12} color="#155724" />
-                ) : (
-                  <Edit3 size={12} color="#856404" />
-                )}
-                <Text
-                  style={{
-                    color: item.is_sent ? "#155724" : "#856404",
-                    fontWeight: "700",
-                    fontSize: 10,
-                    marginLeft: 4,
-                  }}
-                >
-                  {item.is_sent ? "SUBMITTED" : "DRAFT"}
-                </Text>
-              </View>
-
-              {/* ✅ General Assessment Badge */}
-              {isGeneral && (
-                <View style={[styles.badge, styles.generalBadge]}>
-                  <Globe size={12} color="#0F4A2F" />
-                  <Text style={styles.generalBadgeText}>GENERAL</Text>
-                </View>
-              )}
+                {isSubmitted ? "SUBMITTED" : "DRAFT"}
+              </Text>
             </View>
           </View>
+
+          {/* Assessment date */}
+          <Text style={styles.dateText}>
+            {item.assessment_date
+              ? new Date(item.assessment_date).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })
+              : "Date not set"}
+          </Text>
         </View>
 
-        {/* ✅ Site Info OR General Assessment Label */}
-        {isGeneral ? (
-          <View style={styles.generalInfo}>
-            <Globe size={16} color="#0F4A2F" />
-            <Text style={styles.generalInfoText}>
-              General Field Assessment for {areaName}
-            </Text>
-          </View>
-        ) : item.site_name ? (
-          <View style={styles.siteInfo}>
-            <Text style={styles.siteLabel}>Site:</Text>
-            <Text style={styles.siteName}>{item.site_name}</Text>
-          </View>
-        ) : null}
+        {/* Location indicator */}
+        {hasLocation ? (
+          <Text style={styles.locationText}>
+            📍 {item.location!.latitude.toFixed(4)},{" "}
+            {item.location!.longitude.toFixed(4)}
+            {item.location!.gps_accuracy_meters
+              ? ` (±${item.location!.gps_accuracy_meters}m)`
+              : ""}
+          </Text>
+        ) : (
+          <Text style={styles.noLocationText}>
+            📍 No GPS — GIS Specialist will assign location
+          </Text>
+        )}
 
-        <Text style={styles.desc} numberOfLines={2}>
-          {item.description || "No description provided"}
+        {/* Image count */}
+        {item.image_count > 0 && (
+          <Text style={styles.imageCountText}>
+            🖼 {item.image_count} photo{item.image_count > 1 ? "s" : ""} attached
+          </Text>
+        )}
+
+        <Text style={styles.metaText}>
+          Created: {new Date(item.created_at).toLocaleDateString()}
+          {isSubmitted &&
+            `  •  Submitted: ${new Date(item.updated_at).toLocaleDateString()}`}
         </Text>
 
-        <View style={styles.footer}>
-          <Text style={styles.date}>
-            {new Date(item.created_at).toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-            })}
-          </Text>
-          {item.is_sent && (
-            <Text style={styles.updatedDate}>
-              Updated: {new Date(item.updated_at).toLocaleDateString()}
-            </Text>
-          )}
-        </View>
-
+        {/* Actions */}
         <View style={styles.actions}>
-          {item.is_sent ? (
+          {isSubmitted ? (
             <TouchableOpacity
               style={styles.btnView}
               onPress={() => handleView(item)}
@@ -277,14 +259,16 @@ export default function LayerAssessmentList() {
     );
   };
 
-  const drafts = assessments.filter((i) => !i.is_sent);
-  const submitted = assessments.filter((i) => i.is_sent);
+  const drafts = assessments.filter((a) => !a.is_submitted);
+  const submitted = assessments.filter((a) => a.is_submitted);
 
   if (loading) {
     return (
       <View style={styles.centerContent}>
         <ActivityIndicator size="large" color="#0F4A2F" />
-        <Text style={styles.loadingText}>Loading assessments...</Text>
+        <Text style={styles.loadingText}>
+          Loading {layerName} assessments...
+        </Text>
       </View>
     );
   }
@@ -295,7 +279,11 @@ export default function LayerAssessmentList() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.areaName}>{areaName}</Text>
-          <Text style={styles.layerName}>{layerName}</Text>
+          <Text style={styles.layerName}>
+            {layerName} Layer
+            {/* Show layer ID for debugging */}
+            <Text style={styles.layerIdBadge}>[{layerId}]</Text>
+          </Text>
         </View>
         <TouchableOpacity style={styles.createBtn} onPress={handleCreateNew}>
           <PlusCircle size={18} color="#fff" />
@@ -303,7 +291,7 @@ export default function LayerAssessmentList() {
         </TouchableOpacity>
       </View>
 
-      {/* Stats Bar */}
+      {/* Stats */}
       <View style={styles.statsBar}>
         <View style={styles.stat}>
           <Text style={styles.statNumber}>{drafts.length}</Text>
@@ -320,73 +308,41 @@ export default function LayerAssessmentList() {
         data={[...drafts, ...submitted]}
         keyExtractor={(item) => item.field_assessment_id.toString()}
         renderItem={renderItem}
-        ListHeaderComponent={
-          <>
-            {drafts.length > 0 && (
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Drafts</Text>
-                <Text style={styles.sectionSubtitle}>
-                  Incomplete assessments
-                </Text>
-              </View>
-            )}
-            {submitted.length > 0 && drafts.length > 0 && (
-              <View style={styles.divider} />
-            )}
-            {submitted.length > 0 && (
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Submitted History</Text>
-                <Text style={styles.sectionSubtitle}>
-                  Finalized assessments
-                </Text>
-              </View>
-            )}
-            {assessments.length === 0 && (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>
-                  No assessments yet for this layer
-                </Text>
-                <TouchableOpacity
-                  style={styles.emptyBtn}
-                  onPress={handleCreateNew}
-                >
-                  <PlusCircle size={18} color="#fff" />
-                  <Text style={styles.emptyBtnText}>
-                    Create First Assessment
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </>
-        }
-        ListFooterComponent={<View style={{ height: 20 }} />}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={fetchAssessments}
+            onRefresh={() => {
+              setRefreshing(true);
+              fetchAssessments();
+            }}
             tintColor="#0F4A2F"
           />
         }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <AlertCircle size={48} color="#94a3b8" style={{ marginBottom: 12 }} />
+            <Text style={styles.emptyText}>
+              No {layerName} assessments yet
+            </Text>
+            <Text style={styles.emptySubtext}>
+              Tap "New" to start your first {layerName.toLowerCase()} assessment for this site.
+            </Text>
+            <TouchableOpacity style={styles.emptyBtn} onPress={handleCreateNew}>
+              <PlusCircle size={18} color="#fff" />
+              <Text style={styles.emptyBtnText}>Create First Assessment</Text>
+            </TouchableOpacity>
+          </View>
+        }
+        ListFooterComponent={<View style={{ height: 20 }} />}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-  },
-  centerContent: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 10,
-    color: "#64748b",
-    fontSize: 14,
-  },
+  container: { flex: 1, backgroundColor: "#f8fafc" },
+  centerContent: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { marginTop: 10, color: "#64748b" },
   header: {
     backgroundColor: "#fff",
     padding: 16,
@@ -397,18 +353,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
   },
-  headerLeft: {
-    flex: 1,
-  },
-  areaName: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0f172a",
-  },
-  layerName: {
-    fontSize: 13,
-    color: "#64748b",
+  headerLeft: { flex: 1 },
+  areaName: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
+  layerName: { 
+    fontSize: 13, 
+    color: "#64748b", 
     marginTop: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  layerIdBadge: {
+    fontSize: 10,
+    color: "#94a3b8",
+    backgroundColor: "#f1f5f9",
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontWeight: "600",
   },
   createBtn: {
     backgroundColor: "#0F4A2F",
@@ -419,11 +381,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 6,
   },
-  createBtnText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 13,
-  },
+  createBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
   statsBar: {
     flexDirection: "row",
     backgroundColor: "#fff",
@@ -439,46 +397,14 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  stat: {
-    alignItems: "center",
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#0F4A2F",
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#64748b",
-    marginTop: 2,
-  },
+  stat: { alignItems: "center", flex: 1 },
+  statNumber: { fontSize: 24, fontWeight: "bold", color: "#0F4A2F" },
+  statLabel: { fontSize: 12, color: "#64748b", marginTop: 2 },
   statDivider: {
     width: 1,
     height: 40,
     backgroundColor: "#e2e8f0",
     marginHorizontal: 16,
-  },
-  sectionHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#334155",
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: "#94a3b8",
-    marginTop: 2,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#e2e8f0",
-    marginHorizontal: 16,
-    marginVertical: 8,
   },
   card: {
     backgroundColor: "#fff",
@@ -492,41 +418,15 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 3,
   },
-  draftCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#fbbf24",
-  },
-  sentCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#22c55e",
-    opacity: 0.95,
-  },
-  // ✅ NEW: Style for general assessments
-  generalCard: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#0F4A2F", // Dark green for general assessments
-    backgroundColor: "#f0fdf4", // Light green background
-  },
+  draftCard: { borderLeftWidth: 4, borderLeftColor: "#fbbf24" },
+  submittedCard: { borderLeftWidth: 4, borderLeftColor: "#22c55e" },
   cardHeader: {
-    marginBottom: 8,
-  },
-  titleContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  badgeContainer: {
-    flexDirection: "row",
-    gap: 6,
     alignItems: "center",
+    marginBottom: 8,
   },
-  title: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#0f172a",
-    flex: 1,
-    marginRight: 8,
-  },
+  badgeRow: { flexDirection: "row", gap: 6 },
   badge: {
     flexDirection: "row",
     alignItems: "center",
@@ -535,79 +435,18 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     gap: 4,
   },
-  // ✅ NEW: General badge styles
-  generalBadge: {
-    backgroundColor: "#dcfce7",
-    borderColor: "#0F4A2F",
-    borderWidth: 1,
-  },
-  generalBadgeText: {
-    color: "#0F4A2F",
-    fontWeight: "700",
-    fontSize: 10,
-  },
-  // ✅ NEW: General info section
-  generalInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    backgroundColor: "#f0fdf4",
-    padding: 8,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#86efac",
-  },
-  generalInfoText: {
+  badgeText: { fontWeight: "700", fontSize: 10 },
+  dateText: { fontSize: 12, color: "#64748b" },
+  locationText: { fontSize: 12, color: "#0F4A2F", marginBottom: 4 },
+  noLocationText: {
     fontSize: 12,
-    color: "#0F4A2F",
-    fontWeight: "600",
-    marginLeft: 6,
-    flex: 1,
-  },
-  siteInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    backgroundColor: "#f1f5f9",
-    padding: 8,
-    borderRadius: 6,
-  },
-  siteLabel: {
-    fontSize: 12,
-    color: "#64748b",
-    fontWeight: "600",
-    marginRight: 6,
-  },
-  siteName: {
-    fontSize: 12,
-    color: "#0f172a",
-    fontWeight: "600",
-  },
-  desc: {
-    color: "#64748b",
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  date: {
-    fontSize: 11,
     color: "#94a3b8",
+    marginBottom: 4,
+    fontStyle: "italic",
   },
-  updatedDate: {
-    fontSize: 11,
-    color: "#94a3b8",
-  },
-  actions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 8,
-  },
+  imageCountText: { fontSize: 12, color: "#64748b", marginBottom: 4 },
+  metaText: { fontSize: 11, color: "#94a3b8", marginBottom: 12 },
+  actions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
   btnView: {
     flexDirection: "row",
     alignItems: "center",
@@ -617,11 +456,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     gap: 6,
   },
-  btnViewText: {
-    color: "#0F4A2F",
-    fontWeight: "600",
-    fontSize: 13,
-  },
+  btnViewText: { color: "#0F4A2F", fontWeight: "600", fontSize: 13 },
   btnEdit: {
     flexDirection: "row",
     alignItems: "center",
@@ -631,11 +466,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     gap: 6,
   },
-  btnEditText: {
-    color: "#0F4A2F",
-    fontWeight: "600",
-    fontSize: 13,
-  },
+  btnEditText: { color: "#0F4A2F", fontWeight: "600", fontSize: 13 },
   btnDelete: {
     flexDirection: "row",
     alignItems: "center",
@@ -645,11 +476,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     gap: 6,
   },
-  btnDeleteText: {
-    color: "#721c24",
-    fontWeight: "600",
-    fontSize: 13,
-  },
+  btnDeleteText: { color: "#721c24", fontWeight: "600", fontSize: 13 },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
@@ -662,10 +489,18 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
   },
   emptyText: {
-    color: "#94a3b8",
-    fontSize: 14,
+    color: "#334155",
+    fontSize: 16,
+    fontWeight: "600",
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    color: "#64748b",
+    fontSize: 13,
+    textAlign: "center",
+    marginBottom: 20,
+    lineHeight: 18,
   },
   emptyBtn: {
     flexDirection: "row",
@@ -676,9 +511,5 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 8,
   },
-  emptyBtnText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 13,
-  },
+  emptyBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
 });

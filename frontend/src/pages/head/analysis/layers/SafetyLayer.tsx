@@ -1,151 +1,240 @@
 // src/pages/multicriteria/layers/SafetyLayer.tsx
-import { useState } from 'react';
-import type { LayerData, SiteData } from '../types/mcda';
+import { useState, useEffect } from "react";
+import type {
+  LayerKey,
+  FieldAssessment,
+  LayerValidation,
+  LeaderDecision,
+} from "../types/mcda";
+import SideBySideComparison from "../components/SideBySideComparison";
 
 interface Props {
-  siteData: SiteData | null;
-  layerData?: LayerData;
+  siteId: number;
+  inspectorData?: FieldAssessment;      // ✅ READ-ONLY: Inspector's raw submission (right panel)
+  leaderData?: LayerValidation;          // ✅ Leader's validated data (if exists)
   isLoading: boolean;
-  onSubmit: (data: Record<string, any>, comment?: string) => Promise<boolean>;
+  onSubmitValidation: (                 // ✅ LEADER SUBMISSION ONLY
+    data: Record<string, any>,
+    decision: LeaderDecision,
+    comment?: string,
+    note?: string,
+  ) => Promise<boolean>;
 }
 
-export default function SafetyLayer({ siteData, layerData, isLoading, onSubmit }: Props) {
+export default function SafetyLayer({
+  siteId,
+  inspectorData,
+  leaderData,
+  isLoading,
+  onSubmitValidation,
+}: Props) {
+  // ✅ Leader's validated/agreed data form (manually input or pre-filled from inspector as suggestion)
   const [formData, setFormData] = useState({
     geophysical_assessment: {
       observed_hazards: [] as string[],
-      risk_level: '' as 'Low' | 'Medium' | 'High' | 'Critical',
-      inspector_comment_hazard: ''
+      risk_level: "" as "Low" | "Medium" | "High" | "Critical",
+      inspector_comment_hazard: "",
     },
     human_security_assessment: {
-      security_threat_level: '' as 'Low' | 'Medium' | 'High' | 'Critical',
+      security_threat_level: "" as "Low" | "Medium" | "High" | "Critical",
       specific_threats: [] as string[],
-      inspector_comment_security: ''
-    }
+      inspector_comment_security: "",
+    },
   });
-  const [leaderComment, setLeaderComment] = useState(layerData?.leader_comment || '');
-  const [newHazard, setNewHazard] = useState('');
-  const [newThreat, setNewThreat] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const success = await onSubmit(formData, leaderComment);
-    if (success) {
-      // Optionally reset or keep data for editing
+  // ✅ Leader decision & comments (critical for v2.0)
+  const [leaderDecision, setLeaderDecision] = useState<LeaderDecision>(
+    leaderData?.leader_decision || "ACCEPT",
+  );
+  const [leaderComment, setLeaderComment] = useState(
+    leaderData?.leader_comment || "",
+  );
+  const [additionalNote, setAdditionalNote] = useState(
+    leaderData?.additional_documentation_note || "",
+  );
+
+  // ✅ Form helpers for list management
+  const [newHazard, setNewHazard] = useState("");
+  const [newThreat, setNewThreat] = useState("");
+
+  // ✅ Initialize form: Pre-fill from inspector data as suggestion (leader can modify)
+  useEffect(() => {
+    if (inspectorData?.final_agreed_data) {
+      setFormData(inspectorData.final_agreed_data);
     }
-  };
+    if (leaderData?.final_agreed_data) {
+      setFormData(leaderData.final_agreed_data);
+      setLeaderComment(leaderData.leader_comment || "");
+      setAdditionalNote(leaderData.additional_documentation_note || "");
+    }
+  }, [inspectorData, leaderData]);
 
   const addHazard = () => {
     if (newHazard.trim()) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         geophysical_assessment: {
           ...prev.geophysical_assessment,
-          observed_hazards: [...prev.geophysical_assessment.observed_hazards, newHazard.trim()]
-        }
+          observed_hazards: [
+            ...prev.geophysical_assessment.observed_hazards,
+            newHazard.trim(),
+          ],
+        },
       }));
-      setNewHazard('');
+      setNewHazard("");
     }
   };
 
   const removeHazard = (index: number) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       geophysical_assessment: {
         ...prev.geophysical_assessment,
-        observed_hazards: prev.geophysical_assessment.observed_hazards.filter((_, i) => i !== index)
-      }
+        observed_hazards: prev.geophysical_assessment.observed_hazards.filter(
+          (_, i) => i !== index,
+        ),
+      },
     }));
   };
 
-  // If already submitted, show read-only view + result
-  if (layerData?.result) {
+  const addThreat = () => {
+    if (newThreat.trim()) {
+      setFormData((prev) => ({
+        ...prev,
+        human_security_assessment: {
+          ...prev.human_security_assessment,
+          specific_threats: [
+            ...prev.human_security_assessment.specific_threats,
+            newThreat.trim(),
+          ],
+        },
+      }));
+      setNewThreat("");
+    }
+  };
+
+  const removeThreat = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      human_security_assessment: {
+        ...prev.human_security_assessment,
+        specific_threats:
+          prev.human_security_assessment.specific_threats.filter(
+            (_, i) => i !== index,
+          ),
+      },
+    }));
+  };
+
+  // ✅ LEADER SUBMISSION: Validate layer with ACCEPT/REJECT
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const success = await onSubmitValidation(
+      formData,
+      leaderDecision,
+      leaderComment,
+      additionalNote,
+    );
+    if (success) {
+      // Keep data for potential edits
+    }
+  };
+
+  // ✅ Read-only view if leader already validated this layer
+  if (leaderData?.leader_decision) {
     return (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <div className="flex items-start justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-800">🛡️ Safety Assessment</h3>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-            layerData.result.critical_flag 
-              ? 'bg-red-100 text-red-700' 
-              : layerData.result.verdict === 'PASS' 
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-amber-100 text-amber-700'
-          }`}>
-            {layerData.result.verdict}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <span>🛡️</span> Safety Assessment
+          </h2>
+          <span
+            className={`px-3 py-1 rounded-full text-sm font-medium ${
+              leaderData.leader_decision === "ACCEPT"
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-rose-100 text-rose-700"
+            }`}
+          >
+            {leaderData.leader_decision}
           </span>
         </div>
 
-        {/* Submitted Data Summary */}
-        <div className="space-y-4 mb-6">
-          <div>
-            <h4 className="font-medium text-gray-700 mb-2">Geophysical Risk</h4>
-            <p className="text-sm text-gray-600">
-              <strong>Level:</strong> {layerData.final_agreed_data.geophysical_assessment?.risk_level}
-            </p>
-            {layerData.final_agreed_data.geophysical_assessment?.observed_hazards?.length > 0 && (
-              <ul className="mt-1 text-sm text-gray-600 list-disc list-inside">
-                {layerData.final_agreed_data.geophysical_assessment.observed_hazards.map((h: string, i: number) => (
-                  <li key={i}>{h}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-          
-          <div>
-            <h4 className="font-medium text-gray-700 mb-2">Human Security</h4>
-            <p className="text-sm text-gray-600">
-              <strong>Threat Level:</strong> {layerData.final_agreed_data.human_security_assessment?.security_threat_level}
-            </p>
-          </div>
-        </div>
+        {/* ✅ Side-by-side: Inspector data (left) vs Leader validated (right) */}
+        <SideBySideComparison
+          layer="safety"
+          inspectorData={inspectorData}
+          leaderData={leaderData}
+          isLeaderView={true}
+        />
 
-        {/* Calculated Result */}
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-100">
-          <h4 className="font-semibold text-emerald-800 mb-2">📊 Calculated Result</h4>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><span className="text-gray-500">Normalized Score:</span> <strong>{layerData.result.normalized_score}/100</strong></div>
-            <div><span className="text-gray-500">Weight:</span> <strong>{layerData.result.weight_percentage}%</strong></div>
-            <div><span className="text-gray-500">Weighted Score:</span> <strong>+{layerData.result.weighted_score}</strong></div>
-            <div><span className="text-gray-500">Veto:</span> <strong>{layerData.result.critical_flag ? '⚠️ YES' : 'No'}</strong></div>
-          </div>
-          {layerData.result.derived_mitigation && layerData.result.derived_mitigation !== 'None.' && (
-            <p className="mt-3 text-sm text-emerald-700">
-              <strong>Required Mitigation:</strong> {layerData.result.derived_mitigation}
+        {/* ✅ Leader's comment for audit trail */}
+        {leaderData.leader_comment && (
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <p className="text-xs text-gray-500 uppercase font-medium mb-1">
+              Leader Notes
             </p>
-          )}
-        </div>
-
-        {/* Leader Comment */}
-        {layerData.leader_comment && (
-          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-            <p className="text-xs text-gray-500 uppercase font-medium mb-1">Leader Notes</p>
-            <p className="text-sm text-gray-700">{layerData.leader_comment}</p>
+            <p className="text-sm text-gray-700">{leaderData.leader_comment}</p>
           </div>
         )}
       </div>
     );
   }
 
-  // Edit form for leader input
+  // ✅ LEADER VALIDATION FORM
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <h3 className="text-lg font-semibold text-gray-800 mb-6">🛡️ Safety Assessment</h3>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+          <span>🛡️</span> Safety Assessment
+        </h2>
+        {leaderData?.leader_decision && (
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+            leaderData.leader_decision === "ACCEPT"
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-rose-100 text-rose-700"
+          }`}>
+            Previously: {leaderData.leader_decision}
+          </span>
+        )}
+      </div>
+
+      {/* ✅ RIGHT PANEL: Inspector's raw submission (READ-ONLY reference) */}
+      <div className="mb-6">
+        <SideBySideComparison
+          layer="safety"
+          inspectorData={inspectorData}
+          leaderData={leaderData}
+          isLeaderView={true}
+        />
+      </div>
+
+      {/* ✅ LEFT PANEL: Leader's validation form */}
       
       {/* Geophysical Assessment */}
       <fieldset className="mb-6 pb-6 border-b border-gray-100">
-        <legend className="font-medium text-gray-700 mb-4">Geophysical Hazards</legend>
-        
+        <legend className="font-medium text-gray-700 mb-4">
+          Geophysical Hazards (Leader Validation)
+        </legend>
+
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Risk Level *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Agreed Risk Level *
+          </label>
           <select
             required
             value={formData.geophysical_assessment.risk_level}
-            onChange={(e) => setFormData(prev => ({
-              ...prev,
-              geophysical_assessment: { ...prev.geophysical_assessment, risk_level: e.target.value as any }
-            }))}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                geophysical_assessment: {
+                  ...prev.geophysical_assessment,
+                  risk_level: e.target.value as "Low" | "Medium" | "High" | "Critical",
+                },
+              }))
+            }
             className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
           >
-            <option value="">Select risk level...</option>
+            <option value="">Select agreed risk level...</option>
             <option value="Low">Low - Minimal hazards</option>
             <option value="Medium">Medium - Manageable with controls</option>
             <option value="High">High - Significant intervention needed</option>
@@ -154,7 +243,9 @@ export default function SafetyLayer({ siteData, layerData, isLoading, onSubmit }
         </div>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Observed Hazards</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Agreed Observed Hazards
+          </label>
           <div className="flex gap-2 mb-2">
             <input
               type="text"
@@ -162,7 +253,7 @@ export default function SafetyLayer({ siteData, layerData, isLoading, onSubmit }
               onChange={(e) => setNewHazard(e.target.value)}
               placeholder="e.g., Loose soil on ridge"
               className="flex-1 p-2 border border-gray-200 rounded-lg"
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addHazard())}
+              onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addHazard())}
             />
             <button type="button" onClick={addHazard} className="px-4 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200">
               Add
@@ -179,38 +270,33 @@ export default function SafetyLayer({ siteData, layerData, isLoading, onSubmit }
             </div>
           )}
         </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Inspector Comment</label>
-          <textarea
-            value={formData.geophysical_assessment.inspector_comment_hazard}
-            onChange={(e) => setFormData(prev => ({
-              ...prev,
-              geophysical_assessment: { ...prev.geophysical_assessment, inspector_comment_hazard: e.target.value }
-            }))}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
-            rows={2}
-            placeholder="Additional notes from field inspection..."
-          />
-        </div>
       </fieldset>
 
       {/* Human Security Assessment */}
       <fieldset className="mb-6 pb-6 border-b border-gray-100">
-        <legend className="font-medium text-gray-700 mb-4">Human Security</legend>
-        
+        <legend className="font-medium text-gray-700 mb-4">
+          Human Security (Leader Validation)
+        </legend>
+
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Threat Level *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Agreed Threat Level *
+          </label>
           <select
             required
             value={formData.human_security_assessment.security_threat_level}
-            onChange={(e) => setFormData(prev => ({
-              ...prev,
-              human_security_assessment: { ...prev.human_security_assessment, security_threat_level: e.target.value as any }
-            }))}
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                human_security_assessment: {
+                  ...prev.human_security_assessment,
+                  security_threat_level: e.target.value as "Low" | "Medium" | "High" | "Critical",
+                },
+              }))
+            }
             className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
           >
-            <option value="">Select threat level...</option>
+            <option value="">Select agreed threat level...</option>
             <option value="Low">Low - Area secure</option>
             <option value="Medium">Medium - Monitor situation</option>
             <option value="High">High - Coordination required</option>
@@ -218,8 +304,10 @@ export default function SafetyLayer({ siteData, layerData, isLoading, onSubmit }
           </select>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Specific Threats</label>
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Agreed Specific Threats
+          </label>
           <div className="flex gap-2 mb-2">
             <input
               type="text"
@@ -227,26 +315,9 @@ export default function SafetyLayer({ siteData, layerData, isLoading, onSubmit }
               onChange={(e) => setNewThreat(e.target.value)}
               placeholder="e.g., Local land dispute"
               className="flex-1 p-2 border border-gray-200 rounded-lg"
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), setFormData(prev => ({
-                ...prev,
-                human_security_assessment: {
-                  ...prev.human_security_assessment,
-                  specific_threats: [...prev.human_security_assessment.specific_threats, newThreat.trim()]
-                }
-              })), setNewThreat(''))}
+              onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addThreat())}
             />
-            <button type="button" onClick={() => {
-              if (newThreat.trim()) {
-                setFormData(prev => ({
-                  ...prev,
-                  human_security_assessment: {
-                    ...prev.human_security_assessment,
-                    specific_threats: [...prev.human_security_assessment.specific_threats, newThreat.trim()]
-                  }
-                }));
-                setNewThreat('');
-              }
-            }} className="px-4 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200">
+            <button type="button" onClick={addThreat} className="px-4 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200">
               Add
             </button>
           </div>
@@ -255,13 +326,7 @@ export default function SafetyLayer({ siteData, layerData, isLoading, onSubmit }
               {formData.human_security_assessment.specific_threats.map((threat, idx) => (
                 <span key={idx} className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 rounded-full text-sm">
                   {threat}
-                  <button type="button" onClick={() => setFormData(prev => ({
-                    ...prev,
-                    human_security_assessment: {
-                      ...prev.human_security_assessment,
-                      specific_threats: prev.human_security_assessment.specific_threats.filter((_, i) => i !== idx)
-                    }
-                  }))} className="text-gray-400 hover:text-rose-500">×</button>
+                  <button type="button" onClick={() => removeThreat(idx)} className="text-gray-400 hover:text-rose-500">×</button>
                 </span>
               ))}
             </div>
@@ -269,26 +334,79 @@ export default function SafetyLayer({ siteData, layerData, isLoading, onSubmit }
         </div>
       </fieldset>
 
-      {/* Leader Consensus Comment */}
+      {/* ✅ LEADER DECISION CONTROLS (Critical for v2.0) */}
+      <div className="mb-6 p-4 bg-amber-50 rounded-xl border border-amber-100">
+        <label className="block text-sm font-medium text-amber-800 mb-3">
+          Leader Decision *
+        </label>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="leaderDecision"
+              value="ACCEPT"
+              checked={leaderDecision === "ACCEPT"}
+              onChange={(e) => setLeaderDecision(e.target.value as LeaderDecision)}
+              className="text-emerald-600"
+            />
+            <span className="font-medium text-emerald-700">✅ ACCEPT</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="leaderDecision"
+              value="REJECT"
+              checked={leaderDecision === "REJECT"}
+              onChange={(e) => setLeaderDecision(e.target.value as LeaderDecision)}
+              className="text-rose-600"
+            />
+            <span className="font-medium text-rose-700">❌ REJECT</span>
+          </label>
+        </div>
+      </div>
+
       <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Leader Consensus Comment</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Leader Comment
+        </label>
         <textarea
           value={leaderComment}
           onChange={(e) => setLeaderComment(e.target.value)}
-          placeholder="Document the team's agreed assessment rationale..."
+          placeholder="Rationale for your decision (e.g., 'Geophysical risk manageable with standard terracing')"
           className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
           rows={3}
         />
       </div>
 
-      {/* Submit Button */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Additional Documentation Note
+        </label>
+        <textarea
+          value={additionalNote}
+          onChange={(e) => setAdditionalNote(e.target.value)}
+          placeholder="Reference documents, maps, or external data (e.g., 'Hazard zones mapped via GPS')"
+          className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
+          rows={2}
+        />
+      </div>
+
+      {/* ✅ Submit Button */}
       <button
         type="submit"
-        disabled={isLoading || !formData.geophysical_assessment.risk_level || !formData.human_security_assessment.security_threat_level}
+        disabled={
+          isLoading ||
+          !formData.geophysical_assessment.risk_level ||
+          !formData.human_security_assessment.security_threat_level ||
+          !leaderDecision
+        }
         className={`w-full py-3 px-6 rounded-xl font-semibold transition-all ${
-          !isLoading && formData.geophysical_assessment.risk_level && formData.human_security_assessment.security_threat_level
-            ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md hover:shadow-lg'
-            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+          !isLoading &&
+          formData.geophysical_assessment.risk_level &&
+          formData.human_security_assessment.security_threat_level &&
+          leaderDecision
+            ? "bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md hover:shadow-lg"
+            : "bg-gray-100 text-gray-400 cursor-not-allowed"
         }`}
       >
         {isLoading ? (
@@ -296,7 +414,7 @@ export default function SafetyLayer({ siteData, layerData, isLoading, onSubmit }
             <span className="animate-spin">⏳</span> Submitting...
           </span>
         ) : (
-          '💾 Save Safety Assessment'
+          `💾 Validate Safety Layer as ${leaderDecision}`
         )}
       </button>
     </form>

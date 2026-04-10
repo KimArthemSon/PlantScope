@@ -10,7 +10,6 @@ from accounts.models import User
 from .models import (
     Assigned_onsite_inspector,
     Field_assessment,
-    Field_assessment_details,
 )
 
 

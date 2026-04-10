@@ -2,1010 +2,785 @@ import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
+  ScrollView,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
+  Switch,
   Alert,
-  ScrollView,
+  StyleSheet,
   Image,
   ActivityIndicator,
   Modal,
-  Dimensions,
+  Platform,
 } from "react-native";
-import { X, Trash2, PlusCircle } from "lucide-react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import {
+  MapPin,
+  AlertTriangle,
+  Droplets,
+  Mountain,
+  FileText,
+  ImagePlus,
+  Trash2,
+  X,
+  Save,
+  Send,
+  Check,
+  Target,
+} from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
+
+import { useFieldAssessment } from "@/hooks/useFieldAssessment";
 import { api } from "@/constants/url_fixed";
 
-const API = api + "/api";
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const API_BASE = `${api}/api`;
 
-// ✅ TypeScript Interfaces
-export interface ImageItem {
-  image_id: number;
-  url: string;
-  caption: string;
-  created_at: string;
-}
+// ─────────────────────────────────────────────
+// Constants & Options (Single-select for "Other")
+// ─────────────────────────────────────────────
+const LANDSLIDE_OPTIONS = [
+  "tension_cracks",
+  "bent_trees",
+  "soil_slump",
+  "exposed_bedrock",
+  "other", // ✅ Single-select "other" option
+];
 
-export interface AssessmentDetail {
-  detail_id: number;
-  tree_specie: {
-    id: number;
-    name: string;
-    scientific_name: string;
-  } | null;
-  soil: {
-    id: number;
-    name: string;
-    type: string;
-  } | null;
-  created_at: string;
-}
+const EROSION_TYPES = ["sheet", "rill", "gully", "bank_collapse", "other"]; // ✅ Single-select
 
-interface Props {
-  existingData: any; // The field_assessment_data JSON
-  details?: AssessmentDetail[]; // Tree/Soil relational links (optional)
-  images?: ImageItem[]; // Pre-loaded images (optional)
-  onSave: (any: any, submit: boolean) => Promise<void>;
-  onUploadImage: (id: string) => Promise<boolean>;
-  onDeleteImage?: (id: number) => Promise<boolean>;
-  saving: boolean;
-  assessmentId?: string;
-  isViewMode?: boolean;
-  onRefresh?: () => void;
-}
+export default function SafetyForm() {
+  const params = useLocalSearchParams();
+  const areaId = params.areaId as string;
+  const assessmentId = params.assessmentId as string | undefined;
+  const layerId = "safety";
+  const router = useRouter();
 
-export default function SafetyForm({
-  existingData,
-  details = [],
-  images: propImages = [],
-  onSave,
-  onUploadImage,
-  onDeleteImage,
-  saving,
-  assessmentId,
-  isViewMode = false,
-  onRefresh,
-}: Props) {
-  // ✅ Geophysical Assessment State
-  const [riskLevel, setRiskLevel] = useState<
-    "Low" | "Medium" | "High" | "Critical"
-  >(existingData?.geophysical_assessment?.risk_level || "Low");
-  const [hazardComment, setHazardComment] = useState(
-    existingData?.geophysical_assessment?.inspector_comment_hazard || "",
-  );
-  const [observedHazards, setObservedHazards] = useState<string[]>(
-    existingData?.geophysical_assessment?.observed_hazards || [],
-  );
-  const [newHazard, setNewHazard] = useState("");
+  const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
+    useFieldAssessment(areaId, layerId, assessmentId);
 
-  // ✅ Human Security Assessment State
-  const [securityLevel, setSecurityLevel] = useState<
-    "Low" | "Medium" | "High" | "Critical"
-  >(existingData?.human_security_assessment?.security_threat_level || "Low");
-  const [securityComment, setSecurityComment] = useState(
-    existingData?.human_security_assessment?.inspector_comment_security || "",
-  );
-  const [specificThreats, setSpecificThreats] = useState<string[]>(
-    existingData?.human_security_assessment?.specific_threats || [],
-  );
-  const [newThreat, setNewThreat] = useState("");
+  // ─────────────────────────────────────────────
+  // State: Form Fields
+  // ─────────────────────────────────────────────
+  const [indicators, setIndicators] = useState<string[]>([]);
+  const [landslideNotes, setLandslideNotes] = useState("");
+  const [floodHeight, setFloodHeight] = useState("");
+  const [floodDebris, setFloodDebris] = useState(false);
+  const [floodNotes, setFloodNotes] = useState("");
+  const [erosionType, setErosionType] = useState("none");
+  const [erosionSeverity, setErosionSeverity] = useState("");
+  const [erosionAreaPct, setErosionAreaPct] = useState("");
+  const [erosionSigns, setErosionSigns] = useState("");
+  const [inspectorComment, setInspectorComment] = useState("");
+  const [hazardNotes, setHazardNotes] = useState("");
 
-  // ✅ Image Gallery State
-  const [images, setImages] = useState<ImageItem[]>(propImages);
-  const [loadingImages, setLoadingImages] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
-  const [deletingImageId, setDeletingImageId] = useState<number | null>(null);
+  // ✅ NEW: Location State
+  const [locationLat, setLocationLat] = useState("");
+  const [locationLng, setLocationLng] = useState("");
+  const [locationAccuracy, setLocationAccuracy] = useState("");
+  const [gettingLocation, setGettingLocation] = useState(false);
 
-  // ✅ Re-initialize state when existingData changes (edit mode)
+  // State: UI
+  const [images, setImages] = useState<any[]>([]);
+  const [isViewMode, setIsViewMode] = useState(false); // ✅ Only true after SUBMIT, not after save draft
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(!!assessmentId);
+
+  // ─────────────────────────────────────────────
+  // Effect: Load Data if Editing
+  // ─────────────────────────────────────────────
   useEffect(() => {
-    if (existingData) {
-      setRiskLevel(existingData.geophysical_assessment?.risk_level || "Low");
-      setHazardComment(
-        existingData.geophysical_assessment?.inspector_comment_hazard || "",
-      );
-      setObservedHazards(
-        existingData.geophysical_assessment?.observed_hazards || [],
-      );
-      setSecurityLevel(
-        existingData.human_security_assessment?.security_threat_level || "Low",
-      );
-      setSecurityComment(
-        existingData.human_security_assessment?.inspector_comment_security ||
-          "",
-      );
-      setSpecificThreats(
-        existingData.human_security_assessment?.specific_threats || [],
-      );
+    if (assessmentId) {
+      const load = async () => {
+        const data = await fetchAssessmentData();
+        if (data) {
+          populateForm(data.field_assessment_data || {});
+          setImages(data.images || []);
+          // ✅ Only lock if truly submitted (not just saved as draft)
+          setIsViewMode(!!data.is_submitted);
+        }
+        setLoading(false);
+      };
+      load();
+    } else {
+      setLoading(false);
     }
-  }, [existingData]);
+  }, [assessmentId]);
 
-  // ✅ Update images if propImages changes
-  useEffect(() => {
-    if (propImages.length > 0) {
-      setImages(propImages);
-    }
-  }, [propImages]);
+  // Helper: Populate State from JSON
+  const populateForm = (data: any) => {
+    // ✅ Handle array field correctly
+    setIndicators(Array.isArray(data.landslide_indicators_observed) ? data.landslide_indicators_observed : []);
+    setLandslideNotes(data.landslide_notes || "");
+    setFloodHeight(data.flood_water_line_cm?.toString() || "");
+    setFloodDebris(data.flood_debris_line_visible || false);
+    setFloodNotes(data.flood_notes || "");
+    setErosionType(data.erosion_type || "none");
+    setErosionSeverity(data.erosion_severity_description || "");
+    setErosionAreaPct(data.erosion_area_estimate_pct?.toString() || "");
+    setErosionSigns(data.erosion_signs || "");
+    setInspectorComment(data.inspector_comment || "");
+    setHazardNotes(data.hazard_proximity_notes || "");
 
-  // ✅ Fetch images from API if not provided via props
-  useEffect(() => {
-    if (assessmentId && propImages.length === 0) {
-      fetchImages();
-    }
-  }, [assessmentId, propImages.length]);
-
-  const fetchImages = async () => {
-    if (!assessmentId) return;
-    setLoadingImages(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(
-        `${API}/get_field_assessment_images/${assessmentId}/`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setImages(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch images:", err);
-    } finally {
-      setLoadingImages(false);
+    // ✅ Load location if present
+    if (data.location) {
+      setLocationLat(data.location.latitude?.toString() || "");
+      setLocationLng(data.location.longitude?.toString() || "");
+      setLocationAccuracy(data.location.gps_accuracy_meters?.toString() || "");
     }
   };
 
-  // ✅ Delete image with confirmation
-  const handleDeleteImage = async (imageId: number) => {
+  // ─────────────────────────────────────────────
+  // Handlers: Location
+  // ─────────────────────────────────────────────
+  const handleGetCurrentLocation = async () => {
+    setGettingLocation(true);
+    try {
+      // Request permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "Please enable location access.");
+        return;
+      }
+
+      // Get current position
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      setLocationLat(location.coords.latitude.toFixed(6));
+      setLocationLng(location.coords.longitude.toFixed(6));
+      setLocationAccuracy(location.coords.accuracy?.toFixed(1) || "");
+      Alert.alert("Location Captured", "GPS coordinates updated.");
+    } catch (error) {
+      Alert.alert("Error", "Could not get current location.");
+    } finally {
+      setGettingLocation(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────
+  // Handlers: Form Logic
+  // ─────────────────────────────────────────────
+  const toggleIndicator = (item: string) => {
+    // ✅ Single-select logic: if "other" is selected, clear others; if specific is selected, clear "other"
+    if (item === "other") {
+      setIndicators(["other"]);
+    } else {
+      // Remove "other" if selecting a specific option
+      const filtered = indicators.filter((i) => i !== "other");
+      if (filtered.includes(item)) {
+        setIndicators(filtered.filter((i) => i !== item));
+      } else {
+        setIndicators([...filtered, item]);
+      }
+    }
+  };
+
+  const buildPayload = () => {
+    // Build location object only if lat/lng are provided
+    const location =
+      locationLat && locationLng
+        ? {
+            latitude: parseFloat(locationLat),
+            longitude: parseFloat(locationLng),
+            gps_accuracy_meters: locationAccuracy
+              ? parseFloat(locationAccuracy)
+              : undefined,
+          }
+        : null;
+
+    return {
+      layer: "safety",
+      landslide_indicators_observed: indicators,
+      landslide_notes: landslideNotes || null,
+      flood_water_line_cm: floodHeight ? parseFloat(floodHeight) : null,
+      flood_debris_line_visible: floodDebris,
+      flood_notes: floodNotes || null,
+      erosion_type: erosionType,
+      erosion_severity_description: erosionSeverity || null,
+      erosion_area_estimate_pct: erosionAreaPct
+        ? parseFloat(erosionAreaPct)
+        : null,
+      erosion_signs: erosionSigns || null,
+      inspector_comment: inspectorComment || null,
+      hazard_proximity_notes: hazardNotes || null,
+      location, // ✅ Include location in payload
+    };
+  };
+
+  const handleDraft = async () => {
+    const payload = buildPayload();
+    const success = await handleSave(payload, false);
+    if (success) {
+      // ✅ Re-fetch to get updated data (including new assessmentId if just created)
+      if (assessmentId) {
+        const data = await fetchAssessmentData();
+        if (data) {
+          populateForm(data.field_assessment_data || {});
+          setImages(data.images || []);
+        }
+      }
+      Alert.alert("Saved", "Draft saved successfully. You can continue editing.");
+    }
+  };
+
+  const handleSubmit = async () => {
     Alert.alert(
-      "Delete Photo",
-      "Are you sure you want to delete this photo? This cannot be undone.",
+      "Submit Assessment",
+      "Are you sure? You cannot edit this after submission.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Delete",
-          style: "destructive",
+          text: "Submit",
           onPress: async () => {
-            setDeletingImageId(imageId);
-            try {
-              // Use hook's deleteImage if provided, otherwise call API directly
-              if (onDeleteImage) {
-                const success = await onDeleteImage(imageId);
-                if (success) {
-                  setImages((prev) =>
-                    prev.filter((img) => img.image_id !== imageId),
-                  );
-                  if (onRefresh) onRefresh();
-                }
-              } else {
-                // Fallback direct API call
-                const token = await SecureStore.getItemAsync("token");
-                const res = await fetch(
-                  `${API}/delete_field_assessment_image/${imageId}/`,
-                  {
-                    method: "DELETE",
-                    headers: { Authorization: `Bearer ${token}` },
-                  },
-                );
-                if (res.ok) {
-                  Alert.alert("Success", "Photo deleted");
-                  setImages((prev) =>
-                    prev.filter((img) => img.image_id !== imageId),
-                  );
-                  if (onRefresh) onRefresh();
-                } else {
-                  const err = await res.json();
-                  Alert.alert("Error", err.error || "Failed to delete");
-                }
-              }
-            } catch (e) {
-              Alert.alert("Error", "Network error while deleting image");
-            } finally {
-              setDeletingImageId(null);
+            const payload = buildPayload();
+            const success = await handleSave(payload, true);
+            if (success) {
+              // ✅ Lock form after successful submit
+              setIsViewMode(true);
+              Alert.alert("Success", "Assessment submitted to GIS Specialist!");
             }
           },
         },
-      ],
+      ]
     );
   };
 
-  // ✅ Helper: Add item to array (hazards or threats)
-  const addToArray = (
-    value: string,
-    setter: React.Dispatch<React.SetStateAction<string[]>>,
-    clearInput: () => void,
-  ) => {
-    const trimmed = value.trim();
-    if (trimmed) {
-      const currentArray =
-        setter === setObservedHazards ? observedHazards : specificThreats;
-      if (!currentArray.includes(trimmed)) {
-        setter((prev) => [...prev, trimmed]);
-        clearInput();
-      } else {
-        Alert.alert("Duplicate", "This item already exists");
-      }
-    }
-  };
-
-  // ✅ Helper: Remove item from array
-  const removeFromArray = (
-    item: string,
-    setter: React.Dispatch<React.SetStateAction<string[]>>,
-  ) => {
-    setter((prev) => prev.filter((i) => i !== item));
-  };
-
-  const handleSubmit = async (submit: boolean) => {
-    // Basic validation
-    if (!riskLevel || !securityLevel) {
+  const handlePickImage = async () => {
+    if (!assessmentId) {
       Alert.alert(
-        "Validation",
-        "Please select both Risk Level and Security Threat Level",
+        "Action Required",
+        "Please save the draft first to get an ID for image uploads."
       );
       return;
     }
-
-    const data = {
-      geophysical_assessment: {
-        risk_level: riskLevel,
-        observed_hazards: observedHazards,
-        inspector_comment_hazard: hazardComment,
-      },
-      human_security_assessment: {
-        security_threat_level: securityLevel,
-        specific_threats: specificThreats,
-        inspector_comment_security: securityComment,
-      },
-    };
-    await onSave(data, submit);
+    const success = await uploadImage(assessmentId);
+    if (success) {
+      // ✅ Re-fetch to update gallery
+      const data = await fetchAssessmentData();
+      if (data) setImages(data.images || []);
+    }
   };
 
-  // ✅ Color coding for risk/security levels (matches MCDA scoring)
-  const getLevelColor = (level: string, isActive: boolean) => {
-    const colors: Record<string, { bg: string; text: string; border: string }> =
+  const handleDeleteImage = async (img: any) => {
+    Alert.alert("Delete Photo", "Remove this photo?", [
+      { text: "Cancel", style: "cancel" },
       {
-        Low: {
-          bg: isActive ? "#dcfce7" : "#fff",
-          text: isActive ? "#155724" : "#166534",
-          border: "#22c55e",
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          await deleteImage(img.image_id);
+          // ✅ Re-fetch to update gallery
+          const data = await fetchAssessmentData();
+          if (data) setImages(data.images || []);
         },
-        Medium: {
-          bg: isActive ? "#fef3c7" : "#fff",
-          text: isActive ? "#856404" : "#92400e",
-          border: "#f59e0b",
-        },
-        High: {
-          bg: isActive ? "#fee2e2" : "#fff",
-          text: isActive ? "#b91c1c" : "#991b1b",
-          border: "#ef4444",
-        },
-        Critical: {
-          bg: isActive ? "#fecaca" : "#fff",
-          text: isActive ? "#991b1b" : "#7f1d1d",
-          border: "#dc2626",
-        },
-      };
-    return colors[level] || colors.Low;
+      },
+    ]);
   };
 
-  // ✅ Render Image Preview Modal
-  const renderImageModal = () => (
-    <Modal
-      visible={!!selectedImage}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setSelectedImage(null)}
-    >
-      <View style={styles.modalOverlay}>
-        <TouchableOpacity
-          style={styles.modalClose}
-          onPress={() => setSelectedImage(null)}
-        >
-          <X size={24} color="#fff" />
-        </TouchableOpacity>
-        {selectedImage?.url && (
-          <Image
-            source={{ uri: api + selectedImage.url }}
-            style={styles.modalImage}
-            resizeMode="contain"
-          />
-        )}
-        {selectedImage?.caption ? (
-          <View style={styles.modalCaption}>
-            <Text style={styles.modalCaptionText}>{selectedImage.caption}</Text>
-            <Text style={styles.modalCaptionDate}>
-              {new Date(selectedImage.created_at).toLocaleString()}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    </Modal>
-  );
-
-  // ✅ Render Image Gallery Section
-  const renderImageGallery = () => {
-    if (!assessmentId) return null;
-
+  // ─────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────
+  if (loading) {
     return (
-      <View style={styles.imageSection}>
-        <View style={styles.imageHeader}>
-          <Text style={styles.imageTitle}>
-            📷 Field Photos ({images.length})
+      <View style={styles.centerContent}>
+        <ActivityIndicator size="large" color="#0F4A2F" />
+        <Text style={{ marginTop: 10 }}>Loading Safety Assessment...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* SECTION 1: Landslide Indicators */}
+        <SectionCard
+          title="Landslide Indicators"
+          icon={<Mountain size={20} color="#0F4A2F" />}
+        >
+          <Text style={styles.label}>Select observed indicators:</Text>
+          <View style={styles.chipContainer}>
+            {LANDSLIDE_OPTIONS.map((opt) => (
+              <TouchableOpacity
+                key={opt}
+                style={[
+                  styles.chip,
+                  indicators.includes(opt) && styles.chipActive,
+                ]}
+                onPress={() => !isViewMode && toggleIndicator(opt)}
+                disabled={isViewMode}
+              >
+                {indicators.includes(opt) && (
+                  <Check size={14} color="#fff" style={{ marginRight: 4 }} />
+                )}
+                <Text
+                  style={[
+                    styles.chipText,
+                    indicators.includes(opt) && styles.chipTextActive,
+                  ]}
+                >
+                  {opt.replace(/_/g, " ")}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {indicators.includes("other") && (
+            <TextInput
+              style={styles.textArea}
+              multiline
+              value={landslideNotes}
+              onChangeText={setLandslideNotes}
+              placeholder="Describe other indicator observed..."
+              editable={!isViewMode}
+            />
+          )}
+          {!indicators.includes("other") && (
+            <TextInput
+              style={styles.textArea}
+              multiline
+              value={landslideNotes}
+              onChangeText={setLandslideNotes}
+              placeholder="Additional notes on landslide indicators..."
+              editable={!isViewMode}
+            />
+          )}
+        </SectionCard>
+
+        {/* SECTION 2: Flood Evidence */}
+        <SectionCard
+          title="Flood Evidence"
+          icon={<Droplets size={20} color="#0F4A2F" />}
+        >
+          <Text style={styles.label}>Water line height (cm above ground)</Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            value={floodHeight}
+            onChangeText={setFloodHeight}
+            placeholder="e.g., 80"
+            editable={!isViewMode}
+          />
+
+          <View style={styles.rowBetween}>
+            <Text style={styles.label}>Debris line visible in trees?</Text>
+            <Switch
+              value={floodDebris}
+              onValueChange={(val) => !isViewMode && setFloodDebris(val)}
+              disabled={isViewMode}
+              trackColor={{ false: "#cbd5e1", true: "#0F4A2F" }}
+            />
+          </View>
+
+          <Text style={styles.label}>Flood Notes (Optional)</Text>
+          <TextInput
+            style={styles.textArea}
+            multiline
+            value={floodNotes}
+            onChangeText={setFloodNotes}
+            placeholder="e.g., Debris caught 1m up on bamboo..."
+            editable={!isViewMode}
+          />
+        </SectionCard>
+
+        {/* SECTION 3: Erosion Assessment */}
+        <SectionCard
+          title="Erosion Assessment"
+          icon={<AlertTriangle size={20} color="#0F4A2F" />}
+        >
+          <Text style={styles.label}>Erosion Type</Text>
+          <View style={styles.chipContainer}>
+            {EROSION_TYPES.map((type) => (
+              <TouchableOpacity
+                key={type}
+                style={[styles.chip, erosionType === type && styles.chipActive]}
+                onPress={() => !isViewMode && setErosionType(type)}
+                disabled={isViewMode}
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    erosionType === type && styles.chipTextActive,
+                  ]}
+                >
+                  {type.replace(/_/g, " ")}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {erosionType === "other" && (
+            <TextInput
+              style={styles.textArea}
+              multiline
+              value={erosionSeverity}
+              onChangeText={setErosionSeverity}
+              placeholder="Describe erosion type observed..."
+              editable={!isViewMode}
+            />
+          )}
+
+          <View style={styles.rowHalf}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.label}>Area Affected (%)</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                value={erosionAreaPct}
+                onChangeText={setErosionAreaPct}
+                placeholder="0-100"
+                editable={!isViewMode}
+              />
+            </View>
+          </View>
+
+          <Text style={styles.label}>Severity / Signs (Optional)</Text>
+          <TextInput
+            style={styles.textArea}
+            multiline
+            value={erosionSigns}
+            onChangeText={setErosionSigns}
+            placeholder="e.g., Shallow rills, 2-5cm deep..."
+            editable={!isViewMode}
+          />
+        </SectionCard>
+
+        {/* SECTION 4: Location Capture */}
+        <SectionCard
+          title="Assessment Location"
+          icon={<MapPin size={20} color="#0F4A2F" />}
+        >
+          <Text style={styles.label}>
+            Enter coordinates manually OR use GPS:
           </Text>
+          <View style={styles.rowHalf}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.label}>Latitude</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="decimal-pad"
+                value={locationLat}
+                onChangeText={setLocationLat}
+                placeholder="e.g., 11.0"
+                editable={!isViewMode}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Longitude</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="decimal-pad"
+                value={locationLng}
+                onChangeText={setLocationLng}
+                placeholder="e.g., 124.6"
+                editable={!isViewMode}
+              />
+            </View>
+          </View>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            value={locationAccuracy}
+            onChangeText={setLocationAccuracy}
+            placeholder="GPS accuracy in meters (optional)"
+            editable={!isViewMode}
+          />
           {!isViewMode && (
             <TouchableOpacity
-              style={styles.uploadSmallBtn}
-              onPress={() => onUploadImage(assessmentId)}
-              disabled={saving}
+              style={styles.gpsBtn}
+              onPress={handleGetCurrentLocation}
+              disabled={gettingLocation}
             >
-              <PlusCircle size={16} color="#0F4A2F" />
-              <Text style={styles.uploadSmallText}>Add</Text>
+              {gettingLocation ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Target size={16} color="#fff" />
+                  <Text style={styles.gpsBtnText}>Get Current Location</Text>
+                </>
+              )}
             </TouchableOpacity>
           )}
-        </View>
+          <Text style={styles.hint}>
+            Optional: Leave blank if assessment was done during a meeting. GIS
+            Specialist can assign coordinates later.
+          </Text>
+        </SectionCard>
 
-        {loadingImages ? (
-          <View style={styles.loadingImages}>
-            <ActivityIndicator size="small" color="#0F4A2F" />
-          </View>
-        ) : images.length === 0 ? (
-          <View style={styles.noImages}>
-            <Text style={styles.noImagesText}>No photos yet</Text>
-            {!isViewMode && (
-              <TouchableOpacity
-                style={styles.addPhotoBtn}
-                onPress={() => onUploadImage(assessmentId)}
-                disabled={saving}
-              >
-                <Text style={styles.addPhotoText}>+ Add First Photo</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
+        {/* SECTION 5: General Notes & Hazards */}
+        <SectionCard
+          title="General Notes & Hazards"
+          icon={<FileText size={20} color="#0F4A2F" />}
+        >
+          <Text style={styles.label}>Inspector Comment</Text>
+          <TextInput
+            style={styles.textArea}
+            multiline
+            value={inspectorComment}
+            onChangeText={setInspectorComment}
+            placeholder="General observations on stability..."
+            editable={!isViewMode}
+          />
+          <Text style={styles.label}>Proximity to Known Hazards</Text>
+          <TextInput
+            style={styles.textArea}
+            multiline
+            value={hazardNotes}
+            onChangeText={setHazardNotes}
+            placeholder="e.g., Active fault 850m NE..."
+            editable={!isViewMode}
+          />
+        </SectionCard>
+
+        {/* SECTION 6: Photo Gallery */}
+        <SectionCard
+          title={`Photos (${images.length})`}
+          icon={<ImagePlus size={20} color="#0F4A2F" />}
+        >
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.imageScrollContent}
+            style={styles.galleryScroll}
           >
             {images.map((img) => (
-              <View key={img.image_id} style={styles.imageCard}>
+              <View key={img.image_id} style={styles.thumbWrapper}>
                 <TouchableOpacity
-                  style={styles.imageThumb}
-                  onPress={() => setSelectedImage(img)}
+                  onPress={() => setPreviewImage(api + img.url)}
                 >
                   <Image
                     source={{ uri: api + img.url }}
-                    style={styles.imageThumbImg}
+                    style={styles.thumb}
                     resizeMode="cover"
                   />
-                  {img.caption && (
-                    <View style={styles.imageCaptionBadge}>
-                      <Text style={styles.imageCaptionText} numberOfLines={1}>
-                        {img.caption}
-                      </Text>
-                    </View>
-                  )}
                 </TouchableOpacity>
-
-                {/* Delete button - only show in edit mode */}
                 {!isViewMode && (
                   <TouchableOpacity
-                    style={styles.deleteImageBtn}
-                    onPress={() => handleDeleteImage(img.image_id)}
-                    disabled={deletingImageId === img.image_id || saving}
+                    style={styles.deleteBtn}
+                    onPress={() => handleDeleteImage(img)}
                   >
-                    {deletingImageId === img.image_id ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Trash2 size={14} color="#fff" />
-                    )}
+                    <X size={14} color="#fff" />
                   </TouchableOpacity>
                 )}
               </View>
             ))}
+            {!isViewMode && (
+              <TouchableOpacity
+                style={styles.addPhotoBtn}
+                onPress={handlePickImage}
+              >
+                <ImagePlus size={24} color="#64748b" />
+                <Text style={{ color: "#64748b", fontSize: 10 }}>
+                  Add Photo
+                </Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
-        )}
-      </View>
-    );
-  };
+        </SectionCard>
 
-  // ✅ View Mode: Read-only display
-  if (isViewMode) {
-    return (
-      <ScrollView style={styles.container}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>⛑️ Geophysical Assessment</Text>
-
-          <Text style={styles.label}>Risk Level</Text>
-          <View
-            style={[
-              styles.levelBadge,
-              {
-                backgroundColor: getLevelColor(riskLevel, true).bg,
-                borderColor: getLevelColor(riskLevel, true).border,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.levelText,
-                { color: getLevelColor(riskLevel, true).text },
-              ]}
-            >
-              {riskLevel}
-            </Text>
-          </View>
-
-          {observedHazards.length > 0 && (
-            <>
-              <Text style={styles.label}>Observed Hazards</Text>
-              <View style={styles.chipContainer}>
-                {observedHazards.map((h, i) => (
-                  <View key={i} style={styles.chip}>
-                    <Text style={styles.chipText}>{h}</Text>
-                  </View>
-                ))}
-              </View>
-            </>
-          )}
-
-          {hazardComment ? (
-            <>
-              <Text style={styles.label}>Inspector Notes</Text>
-              <Text style={styles.readonlyText}>{hazardComment}</Text>
-            </>
-          ) : null}
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔐 Human Security Assessment</Text>
-
-          <Text style={styles.label}>Security Threat Level</Text>
-          <View
-            style={[
-              styles.levelBadge,
-              {
-                backgroundColor: getLevelColor(securityLevel, true).bg,
-                borderColor: getLevelColor(securityLevel, true).border,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.levelText,
-                { color: getLevelColor(securityLevel, true).text },
-              ]}
-            >
-              {securityLevel}
-            </Text>
-          </View>
-
-          {specificThreats.length > 0 && (
-            <>
-              <Text style={styles.label}>Specific Threats</Text>
-              <View style={styles.chipContainer}>
-                {specificThreats.map((t, i) => (
-                  <View key={i} style={styles.chip}>
-                    <Text style={styles.chipText}>{t}</Text>
-                  </View>
-                ))}
-              </View>
-            </>
-          )}
-
-          {securityComment ? (
-            <>
-              <Text style={styles.label}>Inspector Notes</Text>
-              <Text style={styles.readonlyText}>{securityComment}</Text>
-            </>
-          ) : null}
-        </View>
-
-        {/* Image Gallery in View Mode */}
-        {renderImageGallery()}
+        {/* Footer Spacer */}
+        <View style={{ height: 80 }} />
       </ScrollView>
-    );
-  }
 
-  // ✅ Edit Mode: Full interactive form
-  return (
-    <ScrollView style={styles.container}>
-      {/* Geophysical Assessment Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>⛑️ Geophysical Assessment</Text>
-
-        <Text style={styles.label}>Risk Level *</Text>
-        <View style={styles.row}>
-          {(["Low", "Medium", "High", "Critical"] as const).map((lvl) => {
-            const colors = getLevelColor(lvl, riskLevel === lvl);
-            return (
-              <TouchableOpacity
-                key={lvl}
-                style={[
-                  styles.btn,
-                  { backgroundColor: colors.bg, borderColor: colors.border },
-                  riskLevel === lvl && styles.btnActive,
-                ]}
-                onPress={() => setRiskLevel(lvl)}
-                disabled={saving}
-              >
-                <Text style={[styles.btnText, { color: colors.text }]}>
-                  {lvl}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+      {/* Footer Actions (Fixed) */}
+      {!isViewMode && (
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnDraft]}
+            onPress={handleDraft}
+            disabled={saving}
+          >
+            <Save size={16} color="#fff" />
+            <Text style={styles.btnText}>Save Draft</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btn, styles.btnSubmit]}
+            onPress={handleSubmit}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Send size={16} color="#fff" />
+                <Text style={styles.btnText}>Submit</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
+      )}
 
-        {/* Dynamic Hazard Tags Input */}
-        <Text style={styles.label}>Observed Hazards (Optional)</Text>
-        <View style={styles.chipInputContainer}>
-          <View style={styles.chipContainer}>
-            {observedHazards.map((hazard, index) => (
-              <View key={index} style={styles.chip}>
-                <Text style={styles.chipText}>{hazard}</Text>
-                <TouchableOpacity
-                  onPress={() => removeFromArray(hazard, setObservedHazards)}
-                  style={styles.chipRemove}
-                  disabled={saving}
-                >
-                  <X size={12} color="#666" />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.smallInput}
-              placeholder="Add hazard (e.g., Landslide)"
-              value={newHazard}
-              onChangeText={setNewHazard}
-              onSubmitEditing={() => {
-                addToArray(newHazard, setObservedHazards, () =>
-                  setNewHazard(""),
-                );
-              }}
-              editable={!saving}
-              returnKeyType="done"
-            />
-            <TouchableOpacity
-              style={styles.addBtn}
-              onPress={() =>
-                addToArray(newHazard, setObservedHazards, () =>
-                  setNewHazard(""),
-                )
-              }
-              disabled={saving || !newHazard.trim()}
-            >
-              <Text style={styles.addBtnText}>Add</Text>
-            </TouchableOpacity>
-          </View>
+      {/* Full Screen Image Preview Modal */}
+      <Modal visible={!!previewImage} transparent animationType="fade">
+        <View style={styles.modalContainer}>
+          <TouchableOpacity
+            style={styles.closeModal}
+            onPress={() => setPreviewImage(null)}
+          >
+            <X size={32} color="#fff" />
+          </TouchableOpacity>
+          <Image
+            source={{ uri: previewImage }}
+            style={styles.fullImage}
+            resizeMode="contain"
+          />
         </View>
-
-        <Text style={styles.label}>Inspector Notes</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Describe hazards or mitigation ideas..."
-          multiline
-          value={hazardComment}
-          onChangeText={setHazardComment}
-          editable={!saving}
-        />
-      </View>
-
-      {/* Human Security Assessment Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🔐 Human Security Assessment</Text>
-
-        <Text style={styles.label}>Security Threat Level *</Text>
-        <View style={styles.row}>
-          {(["Low", "Medium", "High", "Critical"] as const).map((lvl) => {
-            const colors = getLevelColor(lvl, securityLevel === lvl);
-            return (
-              <TouchableOpacity
-                key={lvl}
-                style={[
-                  styles.btn,
-                  { backgroundColor: colors.bg, borderColor: colors.border },
-                  securityLevel === lvl && styles.btnActive,
-                ]}
-                onPress={() => setSecurityLevel(lvl)}
-                disabled={saving}
-              >
-                <Text style={[styles.btnText, { color: colors.text }]}>
-                  {lvl}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Dynamic Threat Tags Input */}
-        <Text style={styles.label}>Specific Threats (Optional)</Text>
-        <View style={styles.chipInputContainer}>
-          <View style={styles.chipContainer}>
-            {specificThreats.map((threat, index) => (
-              <View key={index} style={styles.chip}>
-                <Text style={styles.chipText}>{threat}</Text>
-                <TouchableOpacity
-                  onPress={() => removeFromArray(threat, setSpecificThreats)}
-                  style={styles.chipRemove}
-                  disabled={saving}
-                >
-                  <X size={12} color="#666" />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.smallInput}
-              placeholder="Add threat (e.g., NPA activity)"
-              value={newThreat}
-              onChangeText={setNewThreat}
-              onSubmitEditing={() => {
-                addToArray(newThreat, setSpecificThreats, () =>
-                  setNewThreat(""),
-                );
-              }}
-              editable={!saving}
-              returnKeyType="done"
-            />
-            <TouchableOpacity
-              style={styles.addBtn}
-              onPress={() =>
-                addToArray(newThreat, setSpecificThreats, () =>
-                  setNewThreat(""),
-                )
-              }
-              disabled={saving || !newThreat.trim()}
-            >
-              <Text style={styles.addBtnText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <Text style={styles.label}>Inspector Notes</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Describe security situation..."
-          multiline
-          value={securityComment}
-          onChangeText={setSecurityComment}
-          editable={!saving}
-        />
-      </View>
-
-      {/* Image Gallery Section */}
-      {renderImageGallery()}
-
-      {/* Action Buttons */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.saveBtn, saving && styles.btnDisabled]}
-          onPress={() => handleSubmit(false)}
-          disabled={saving}
-        >
-          <Text style={styles.whiteText}>
-            {saving ? "Saving..." : "Save Draft"}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.submitBtn, saving && styles.btnDisabled]}
-          onPress={() => handleSubmit(true)}
-          disabled={saving}
-        >
-          <Text style={styles.whiteText}>
-            {saving ? "Submitting..." : "Submit"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Image Preview Modal */}
-      {renderImageModal()}
-    </ScrollView>
+      </Modal>
+    </View>
   );
 }
 
-// ✅ Complete StyleSheet
+// ─────────────────────────────────────────────
+// Sub-Components & Styles
+// ─────────────────────────────────────────────
+const SectionCard = ({ title, icon, children }: any) => (
+  <View style={styles.card}>
+    <View style={styles.cardHeader}>
+      <Text style={styles.cardTitle}>{title}</Text>
+      {icon}
+    </View>
+    <View style={styles.cardBody}>{children}</View>
+  </View>
+);
+
 const styles = StyleSheet.create({
-  container: { padding: 16, backgroundColor: "#fff" },
-  section: {
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 12,
-  },
-  label: {
-    fontWeight: "600",
-    color: "#334155",
-    marginTop: 8,
-    marginBottom: 6,
-    fontSize: 13,
-  },
-  row: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginVertical: 4,
-  },
-  btn: {
-    flex: 1,
-    minWidth: 70,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderWidth: 2,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  btnActive: {
-    borderWidth: 2,
-  },
-  btnText: {
-    fontWeight: "600",
-    fontSize: 12,
-  },
-  levelBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  levelText: {
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  chipInputContainer: {
-    marginBottom: 8,
-  },
-  chipContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 8,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
-  },
-  chipText: {
-    fontSize: 12,
-    color: "#334155",
-    fontWeight: "500",
-  },
-  chipRemove: {
-    padding: 2,
-  },
-  inputRow: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-  },
-  smallInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    padding: 8,
-    fontSize: 13,
-    minHeight: 36,
-  },
-  addBtn: {
-    backgroundColor: "#0F4A2F",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addBtnText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 8,
-    padding: 12,
-    minHeight: 80,
-    textAlignVertical: "top",
-    fontSize: 14,
-    color: "#334155",
-  },
-  readonlyText: {
-    fontSize: 14,
-    color: "#475569",
-    lineHeight: 20,
-    backgroundColor: "#f8fafc",
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  imageSection: {
-    marginVertical: 16,
-    padding: 12,
-    backgroundColor: "#f8fafc",
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
+  centerContent: { flex: 1, justifyContent: "center", alignItems: "center" },
+  scrollContent: { padding: 16 },
+
+  // Cards
+  card: {
+    backgroundColor: "#fff",
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  imageHeader: {
+  cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
   },
-  imageTitle: {
+  cardTitle: { fontSize: 16, fontWeight: "700", color: "#0F4A2F" },
+  cardBody: { gap: 12 },
+
+  // Inputs
+  label: { fontSize: 13, fontWeight: "600", color: "#475569", marginBottom: 4 },
+  input: {
+    backgroundColor: "#F1F5F9",
+    borderRadius: 8,
+    padding: 10,
     fontSize: 14,
-    fontWeight: "700",
-    color: "#0f172a",
+    color: "#334155",
+    marginBottom: 8,
   },
-  uploadSmallBtn: {
+  textArea: {
+    backgroundColor: "#F1F5F9",
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+    color: "#334155",
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+  rowBetween: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginVertical: 4,
+  },
+  rowHalf: { flexDirection: "row", marginBottom: 8 },
+  hint: { fontSize: 12, color: "#64748b", fontStyle: "italic", marginTop: 4 },
+
+  // Chips
+  chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    backgroundColor: "#dcfce7",
-    borderRadius: 6,
-  },
-  uploadSmallText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#0F4A2F",
-  },
-  loadingImages: {
-    padding: 20,
-    alignItems: "center",
-  },
-  noImages: {
-    padding: 20,
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    borderStyle: "dashed",
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
+    borderColor: "#CBD5E1",
+    backgroundColor: "#fff",
   },
-  noImagesText: {
-    color: "#64748b",
-    fontSize: 13,
-    marginBottom: 10,
+  chipActive: { backgroundColor: "#0F4A2F", borderColor: "#0F4A2F" },
+  chipText: { fontSize: 12, color: "#475569", fontWeight: "500" },
+  chipTextActive: { color: "#fff" },
+
+  // GPS Button
+  gpsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#0F4A2F",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 8,
+    gap: 6,
+  },
+  gpsBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+
+  // Gallery
+  galleryScroll: { paddingVertical: 4 },
+  thumbWrapper: { position: "relative", marginRight: 12 },
+  thumb: { width: 80, height: 80, borderRadius: 8, backgroundColor: "#E2E8F0" },
+  deleteBtn: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: "#EF4444",
+    borderRadius: 12,
+    padding: 2,
   },
   addPhotoBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "#0F4A2F",
-    borderRadius: 6,
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  addPhotoText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 12,
-  },
-  imageScrollContent: {
-    paddingHorizontal: 4,
-  },
-  imageCard: {
-    position: "relative",
-    marginRight: 10,
-  },
-  imageThumb: {
-    width: 100,
-    height: 100,
-    borderRadius: 10,
-    overflow: "hidden",
-    backgroundColor: "#e2e8f0",
-  },
-  imageThumbImg: {
-    width: "100%",
-    height: "100%",
-  },
-  imageCaptionBadge: {
+
+  // Footer
+  footer: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    padding: 4,
-  },
-  imageCaptionText: {
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: "500",
-  },
-  deleteImageBtn: {
-    position: "absolute",
-    top: 4,
-    right: 4,
-    backgroundColor: "#ef4444",
-    borderRadius: 12,
-    padding: 4,
-    zIndex: 10,
-  },
-  actionRow: {
+    backgroundColor: "#fff",
+    padding: 16,
+    borderTopWidth: 1,
+    borderColor: "#E2E8F0",
     flexDirection: "row",
     gap: 12,
-    marginTop: 16,
-    marginBottom: 30,
   },
-  saveBtn: {
+  btn: {
     flex: 1,
-    backgroundColor: "#64748b",
-    padding: 14,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  submitBtn: {
-    flex: 1,
-    backgroundColor: "#0F4A2F",
-    padding: 14,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  btnDisabled: {
-    opacity: 0.7,
-  },
-  whiteText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.95)",
+    flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
-  },
-  modalClose: {
-    position: "absolute",
-    top: 50,
-    right: 20,
-    zIndex: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    borderRadius: 20,
-    padding: 8,
-  },
-  modalImage: {
-    width: "100%",
-    height: "70%",
-    borderRadius: 12,
-  },
-  modalCaption: {
-    position: "absolute",
-    bottom: 30,
-    left: 20,
-    right: 20,
-    backgroundColor: "rgba(0,0,0,0.8)",
-    padding: 16,
+    padding: 14,
     borderRadius: 8,
+    gap: 8,
   },
-  modalCaptionText: {
-    color: "#fff",
-    fontSize: 14,
-    textAlign: "center",
-    fontWeight: "600",
-    marginBottom: 4,
+  btnDraft: { backgroundColor: "#64748B" },
+  btnSubmit: { backgroundColor: "#0F4A2F" },
+  btnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+
+  // Modal
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  modalCaptionDate: {
-    color: "#cbd5e1",
-    fontSize: 12,
-    textAlign: "center",
-  },
+  closeModal: { position: "absolute", top: 40, right: 20, zIndex: 10 },
+  fullImage: { width: "100%", height: "80%" },
 });
