@@ -1,18 +1,17 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  Trash2,
-  Edit,
-  Plus,
-  ChevronRight,
-  ChevronLeft,
-  Map,
   Leaf,
+  ChevronLeft,
+  Plus,
   Eye,
-  Droplets,
-  Target,
+  Map,
   Pin,
   PinOff,
+  Droplets,
+  ChevronRight,
+  Trash2,
+  Target,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -20,24 +19,23 @@ import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
 
 // =========================
-// INTERFACES (Assessment Phase Only)
+// INTERFACES (Document 2: MCDA 3-Layer Framework)
 // =========================
 interface ValidationProgress {
-  validated_layers: number;
-  total_layers: number; // Always 8 per MCDA v2.0
-  rejected_layers: number;
-  is_complete: boolean;
+  validated_layers: number; // Count of layers with acceptance decision
+  total_layers: number; // Always 3 (safety, boundary_verification, survivability)
+  rejected_layers: number; // Count of layers with REJECT decision
+  is_complete: boolean; // true if all 3 layers validated
 }
 
 interface SiteMetrics {
-  ndvi: number | null; // Only NDVI shown - calculated from satellite, not manual
-  // area_hectares & seedlings removed: monitoring-phase metrics
+  ndvi: number | null; // NDVI value (0.2-0.4 ideal for reforestation)
 }
 
 interface Site {
   site_id: number;
   name: string;
-  status: string;
+  status: "pending" | "under_review" | "accepted" | "rejected" | "completed";
   is_pinned: boolean;
   created_at: string;
   validation_progress: ValidationProgress;
@@ -54,7 +52,7 @@ interface Filter {
 }
 
 export default function Sites_analysis() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>(); // reforestation_area_id
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
@@ -77,17 +75,10 @@ export default function Sites_analysis() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newSiteName, setNewSiteName] = useState("");
-  // ✅ REMOVED: Manual inputs for NDVI/area/seedlings - calculated in other modules
-
-  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
-  const [updateSiteName, setUpdateSiteName] = useState("");
-  const [updateSiteId, setUpdateSiteId] = useState<number | null>(null);
-
   const { userRole } = useUserRole();
   const [userPath, setUserPath] = useState("");
 
+  // Set user path prefix based on role
   useEffect(() => {
     if (userRole === "treeGrowers" || userRole === "CityENROHead") {
       setUserPath("");
@@ -99,7 +90,7 @@ export default function Sites_analysis() {
   }, [userRole]);
 
   // =========================
-  // FETCH SITES
+  // FETCH SITES LIST
   // =========================
   const fetchSites = async () => {
     if (!id) return;
@@ -138,7 +129,7 @@ export default function Sites_analysis() {
   }, [id, filter.page, filter.entries, filter.status, filter.pinned_only]);
 
   // =========================
-  // TOGGLE PIN
+  // TOGGLE PIN (Dashboard Priority)
   // =========================
   const handleTogglePin = async (siteId: number, currentPin: boolean) => {
     try {
@@ -165,106 +156,7 @@ export default function Sites_analysis() {
   };
 
   // =========================
-  // CREATE SITE (Assessment Phase - Minimal Inputs)
-  // =========================
-  const handleCreateSite = async () => {
-    if (!newSiteName || !id) return;
-
-    try {
-      const response = await fetch(`http://127.0.0.1:8000/api/create_site/`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: newSiteName,
-          reforestation_area_id: parseInt(id),
-          is_pinned: false,
-          // ✅ DEFAULTS: Metrics calculated in other modules (GIS/monitoring)
-          ndvi_value: null,
-          total_area_hectares: 0,
-          total_seedlings_planted: 0,
-          center_coordinate: [0.0, 0.0],
-          polygon_coordinates: [],
-          marker_coordinate: null,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Created",
-          message: data.message,
-        });
-        fetchSites();
-        setNewSiteName("");
-        setIsCreateModalOpen(false);
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.error || "Create failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong",
-      });
-    }
-  };
-
-  // =========================
-  // UPDATE SITE NAME
-  // =========================
-  const handleUpdateSite = async () => {
-    if (!updateSiteId || !updateSiteName) return;
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/update_site/${updateSiteId}/`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ name: updateSiteName }),
-        },
-      );
-      const data = await response.json();
-
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Updated",
-          message: data.message,
-        });
-        fetchSites();
-        setIsUpdateModalOpen(false);
-        setUpdateSiteId(null);
-        setUpdateSiteName("");
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.error || "Update failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong",
-      });
-    }
-  };
-
-  // =========================
-  // DELETE SITE
+  // DELETE SITE (GIS Specialist Only)
   // =========================
   const setDelete = (siteId: number) => {
     setDeleteId(siteId);
@@ -308,7 +200,7 @@ export default function Sites_analysis() {
   };
 
   // =========================
-  // HELPERS
+  // UI HELPERS
   // =========================
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -342,7 +234,7 @@ export default function Sites_analysis() {
 
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
-      {/* ALERT */}
+      {/* ALERT COMPONENT */}
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -352,7 +244,7 @@ export default function Sites_analysis() {
         />
       )}
 
-      {/* DELETE MODAL */}
+      {/* DELETE CONFIRMATION MODAL */}
       <Delete_modal
         setIsDeleteModalOpen={setIsDeleteModalOpen}
         isDeleteModalOpen={isDeleteModalOpen}
@@ -360,15 +252,21 @@ export default function Sites_analysis() {
       />
 
       {/* HEADER */}
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
+      <header className="bg-linear-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3 mb-2">
             <Leaf size={32} className="text-green-300" />
             <h1 className="text-3xl md:text-4xl font-bold">Sites</h1>
           </div>
           <div className="flex items-center mt-5 mb-10 ml-auto gap-5">
+            {/* ✅ ADD NEW SITE - Routes to MCDA workspace for polygon creation */}
+            {/* Document 2: Sites can only be created after parent Area is approved */}
             <button
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={() =>
+                navigate(
+                  `${userPath}/analysis/multicriteria-analysis/new?areaId=${id}`,
+                )
+              }
               className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
             >
               <Plus size={20} /> Add new site
@@ -384,76 +282,7 @@ export default function Sites_analysis() {
       </header>
 
       <main className="flex-1 p-8 max-w-10xl">
-        {/* CREATE SITE MODAL (Assessment Phase - Name Only) */}
-        {isCreateModalOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg w-96">
-              <h2 className="font-bold text-lg mb-4">Create Site</h2>
-              {/* <p className="text-sm text-gray-600 mb-4">
-                NDVI, area, and seedlings will be calculated automatically after
-                site creation via GIS processing.
-              </p> */}
-              <input
-                type="text"
-                placeholder="Site name *"
-                value={newSiteName}
-                onChange={(e) => setNewSiteName(e.target.value)}
-                className="w-full border p-2 rounded mb-4"
-                required
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  className="px-4 py-2 border rounded hover:bg-gray-50"
-                  onClick={() => {
-                    setIsCreateModalOpen(false);
-                    setNewSiteName("");
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                  onClick={handleCreateSite}
-                  disabled={!newSiteName.trim()}
-                >
-                  Create
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* UPDATE SITE MODAL */}
-        {isUpdateModalOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg w-96">
-              <h2 className="font-bold text-lg mb-4">Update Site Name</h2>
-              <input
-                type="text"
-                placeholder="Site name"
-                value={updateSiteName}
-                onChange={(e) => setUpdateSiteName(e.target.value)}
-                className="w-full border p-2 rounded mb-4"
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  className="px-4 py-2 border rounded hover:bg-gray-50"
-                  onClick={() => setIsUpdateModalOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                  onClick={handleUpdateSite}
-                >
-                  Update
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* FILTERS */}
+        {/* FILTERS & SEARCH */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm">Show:</label>
           <select
@@ -531,7 +360,7 @@ export default function Sites_analysis() {
           />
         </div>
 
-        {/* TABLE */}
+        {/* SITES TABLE */}
         <div className="overflow-x-auto shadow-lg border border-gray-200 rounded-lg">
           {loading && <LoaderPending />}
           <table className="min-w-full bg-white">
@@ -549,7 +378,7 @@ export default function Sites_analysis() {
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold">
                   <Target size={14} className="inline mr-1 -mt-0.5" />
-                  Validation
+                  Validation (3-Layer MCDA)
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold">
                   <Droplets size={14} className="inline mr-1 -mt-0.5" />
@@ -619,7 +448,7 @@ export default function Sites_analysis() {
                         </span>
                       </td>
 
-                      {/* Validation Progress (8-Layer MCDA) */}
+                      {/* Validation Progress - 3-Layer MCDA */}
                       <td className="py-3 px-4 w-44">
                         <div className="flex flex-col gap-1">
                           <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
@@ -657,7 +486,7 @@ export default function Sites_analysis() {
                         </div>
                       </td>
 
-                      {/* NDVI Value (Scientific Threshold: 0.2–0.4) - READ ONLY */}
+                      {/* NDVI Value - Scientific Threshold: 0.2–0.4 */}
                       <td className="py-3 px-4">
                         <span
                           className={`text-sm font-medium ${getNDVIColor(
@@ -675,21 +504,25 @@ export default function Sites_analysis() {
                         {new Date(site.created_at).toLocaleDateString()}
                       </td>
 
-                      {/* Actions */}
+                      {/* ✅ STREAMLINED ACTIONS (MCDA Workflow) */}
                       <td className="py-3 px-4 flex gap-2">
+                        {/* PRIMARY: View/Edit on Map - GIS Specialist workflow */}
+                        {/* Routes to polygon editing workspace for existing sites */}
                         <button
-                          className="text-amber-700 cursor-pointer border border-amber-500 rounded-full p-1 hover:bg-amber-50 transition-colors"
                           onClick={() =>
                             navigate(
-                              `${userPath}/analysis/multicriteria-analysis/${site.site_id}`,
+                              `${userPath}/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
                             )
                           }
-                          title="Run 8-Layer MCDA Validation"
+                          className="text-blue-900 cursor-pointer border border-blue-900 rounded-full p-1 hover:bg-blue-50 transition-colors"
+                          title="View/Edit Site on Map"
                         >
-                          <Target size={16} />
+                          <Map size={16} />
                         </button>
+
+                        {/* SECONDARY: View Details - Read-only reference */}
                         <button
-                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
+                          className="text-gray-700 cursor-pointer border border-gray-400 rounded-full p-1 hover:bg-gray-50 transition-colors"
                           onClick={() =>
                             navigate(
                               `${userPath}/reforestation_analysis/site_analysis/${id}/${site.site_id}`,
@@ -699,28 +532,9 @@ export default function Sites_analysis() {
                         >
                           <Eye size={16} />
                         </button>
-                        <button
-                          onClick={() =>
-                            navigate(
-                              `${userPath}/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
-                            )
-                          }
-                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
-                          title="View on Map"
-                        >
-                          <Map size={16} />
-                        </button>
-                        <button
-                          className="text-gray-700 cursor-pointer border border-gray-400 rounded-full p-1 hover:bg-gray-50 transition-colors"
-                          onClick={() => {
-                            setUpdateSiteId(site.site_id);
-                            setUpdateSiteName(site.name);
-                            setIsUpdateModalOpen(true);
-                          }}
-                          title="Edit Name"
-                        >
-                          <Edit size={16} />
-                        </button>
+
+                        {/* DELETE - GIS Specialist Only (Soft Delete) */}
+
                         <button
                           onClick={() => setDelete(site.site_id)}
                           className="text-red-500 cursor-pointer border border-red-500 rounded-full p-1 hover:bg-red-50 transition-colors"
@@ -742,7 +556,11 @@ export default function Sites_analysis() {
                       <Leaf size={40} className="text-gray-300" />
                       <p>No sites found</p>
                       <button
-                        onClick={() => setIsCreateModalOpen(true)}
+                        onClick={() =>
+                          navigate(
+                            `${userPath}/analysis/multicriteria-analysis/new?areaId=${id}`,
+                          )
+                        }
                         className="text-green-600 hover:underline text-sm font-medium"
                       >
                         Create your first site
