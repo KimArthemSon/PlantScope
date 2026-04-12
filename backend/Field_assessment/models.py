@@ -1,7 +1,7 @@
 from django.db import models
 from accounts.models import User
 from reforestation_areas.models import Reforestation_areas
-
+from sites.models import Sites
 # -------------------- Assigned Onsite Inspector --------------------
 class Assigned_onsite_inspector(models.Model):
     assigned_onsite_inspector_id = models.BigAutoField(primary_key=True)
@@ -39,6 +39,14 @@ class Field_assessment(models.Model):
         Assigned_onsite_inspector,
         on_delete=models.CASCADE,
         related_name='field_assessments'
+    )
+
+    site = models.ForeignKey(
+        Sites,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="field_assessment"
     )
 
     # ✅ Default set to pre_assessment for Phase 1 mobile flow

@@ -18,7 +18,6 @@ export interface AssessmentLocation {
   gps_accuracy_meters: number;
 }
 
-// Layer-specific data shapes
 export interface SafetyData {
   layer: "safety";
   location: AssessmentLocation;
@@ -80,6 +79,7 @@ export interface FieldAssessmentEntry {
   full_name: string;
   profile_image: string;
   field_assessment_data: {
+    field_assessment_id: number;
     layer: MCDALayer;
     location: AssessmentLocation;
     field_assessment_data: LayerData;
@@ -109,7 +109,7 @@ const LAYER_EMOJIS: Record<MCDALayer, string> = {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
-  const markersRef = useRef<Map<number, L.Marker>>(new Map());
+  const markersRef = useRef<Map<string, L.Marker>>(new Map());
 
   const [assessments, setAssessments] = useState<
     Record<MCDALayer, FieldAssessmentEntry[]>
@@ -128,18 +128,8 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
   const [activeLayer, setActiveLayer] = useState<MCDALayer>("safety");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
-  // ── clear markers for a layer ──────────────────────────────────────────────
-  const clearMarkersForLayer = useCallback(
-    (layer: MCDALayer) => {
-      const map = mapRef.current;
-      if (!map) return;
-      markersRef.current.forEach((marker, key) => {
-        // key encodes layer+index: `${layer}-${index}`
-        // We store them with numeric keys — use a prefix map instead
-      });
-    },
-    [mapRef]
-  );
+  // ── NEW: tracks which field_assessment_id is waiting for a map click ──────
+  const [locationTargetId, setLocationTargetId] = useState<number | null>(null);
 
   // ── place markers on map ───────────────────────────────────────────────────
   const placeMarkers = useCallback(
@@ -149,7 +139,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
 
       // Remove old markers for this layer
       markersRef.current.forEach((marker, key) => {
-        if (String(key).startsWith(`${layer}-`)) {
+        if (key.startsWith(`${layer}-`)) {
           map.removeLayer(marker);
           markersRef.current.delete(key);
         }
@@ -194,8 +184,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
           <span style="font-size:10px;color:#999">GPS ±${loc.gps_accuracy_meters}m</span>
         `);
 
-        const key = `${layer}-${idx}` as unknown as number;
-        markersRef.current.set(key, marker);
+        markersRef.current.set(`${layer}-${idx}`, marker);
       });
     },
     [mapRef]
@@ -209,9 +198,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         const token = localStorage.getItem("token");
         const res = await fetch(
           `http://127.0.0.1:8000/api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
+          { headers: { Authorization: `Bearer ${token}` } }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json: FieldAssessmentsResponse = await res.json();
@@ -235,15 +222,72 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     (layer: MCDALayer, idx: number) => {
       const map = mapRef.current;
       if (!map) return;
-      const key = `${layer}-${idx}` as unknown as number;
-      const marker = markersRef.current.get(key);
+      const marker = markersRef.current.get(`${layer}-${idx}`);
       if (marker) {
-        const latlng = marker.getLatLng();
-        map.flyTo(latlng, 17, { animate: true, duration: 0.8 });
+        map.flyTo(marker.getLatLng(), 17, { animate: true, duration: 0.8 });
         marker.openPopup();
       }
     },
     [mapRef]
+  );
+
+  // ── update location ────────────────────────────────────────────────────────
+  const updateLocation = useCallback(
+    async (
+      fieldAssessmentId: number,
+      latitude: number,
+      longitude: number,
+      gps_accuracy_meters: number = 20
+    ): Promise<{ success: boolean; message?: string }> => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          "http://127.0.0.1:8000/api/update_field_assessment_location/",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              field_assessment_id: fieldAssessmentId,
+              coordinate: { latitude, longitude, gps_accuracy_meters },
+            }),
+          }
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.message ?? `HTTP ${res.status}`);
+
+        // Update location in local state immediately
+        setAssessments((prev) => {
+          const updated = { ...prev };
+          (Object.keys(updated) as MCDALayer[]).forEach((layer) => {
+            updated[layer] = updated[layer].map((entry) => {
+              if (
+                entry.field_assessment_data.field_assessment_id ===
+                fieldAssessmentId
+              ) {
+                return {
+                  ...entry,
+                  field_assessment_data: {
+                    ...entry.field_assessment_data,
+                    location: { latitude, longitude, gps_accuracy_meters },
+                  },
+                };
+              }
+              return entry;
+            });
+          });
+          return updated;
+        });
+
+        return { success: true, message: json.message };
+      } catch (err: any) {
+        console.error("updateLocation error:", err);
+        return { success: false, message: err.message };
+      }
+    },
+    []
   );
 
   return {
@@ -255,5 +299,9 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     setSelectedIndex,
     fetchLayer,
     flyToMarker,
+    updateLocation,
+    // NEW exports
+    locationTargetId,
+    setLocationTargetId,
   };
 }

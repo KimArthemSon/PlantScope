@@ -81,6 +81,7 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
                     else None
                 ),
                 "field_assessment_data": {
+                    "field_assessment_id": a.field_assessment_id,
                     "layer": a.layer,
                     "location": a.location,
                     "field_assessment_data": a.field_assessment_data,
@@ -102,6 +103,43 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
 
         return JsonResponse({"data": inspectors}, status=200)
 
+    except Exception as e:
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
+
+@csrf_exempt
+def update_field_assessment_coordinate(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+    try:
+        data_json = json.loads(request.body)
+
+        field_assessment_id = int(data_json.get("field_assessment_id", 0))
+        coordinate = data_json.get("coordinate")
+
+        if not coordinate:
+            return JsonResponse({"error": "Coordinate is required"}, status=400)
+
+        try:
+            coordinate = {
+            "latitude": float(coordinate["latitude"]),
+            "longitude": float(coordinate["longitude"]),
+            "gps_accuracy_meters": float(coordinate["gps_accuracy_meters"])
+            }
+
+        except (ValueError, KeyError, TypeError):
+            return JsonResponse({"error": "Invalid coordinate values"}, status=400)
+
+        field_assessment = get_object_or_404(
+        Field_assessment,
+        field_assessment_id=field_assessment_id
+        )
+
+        field_assessment.location = coordinate
+        field_assessment.save()
+
+        return JsonResponse({"message": "Location saved successfully"})
+
+        
     except Exception as e:
         return JsonResponse({'error': str(e), 'success': False}, status=500)
 

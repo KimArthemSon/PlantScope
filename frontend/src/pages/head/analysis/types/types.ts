@@ -52,11 +52,11 @@ export const LAND_CLASSIFICATION_COLORS: Record<
   string,
   { fill: string; stroke: string }
 > = {
-  "Timber Land": { fill: "#2E7D32", stroke: "#1B5E20" },
-  "City Area": { fill: "#78909C", stroke: "#455A64" },
-  "Agricultural Land": { fill: "#FFB300", stroke: "#FF8F00" },
-  "Protected Area": { fill: "#5C6BC0", stroke: "#3949AB" },
-  Default: { fill: "#9E9E9E", stroke: "#616161" },
+  "Timber Land": { fill: "#ff0000", stroke: "#1B5E20" },
+  "City Area": { fill: "#ff0000", stroke: "#455A64" },
+  "Agricultural Land": { fill: "#ff0000", stroke: "#FF8F00" },
+  "Protected Area": { fill: "#ff0000", stroke: "#3949AB" },
+  Default: { fill: "#ff0000", stroke: "#616161" },
 };
 
 /**
