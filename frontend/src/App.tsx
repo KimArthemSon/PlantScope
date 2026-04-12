@@ -21,7 +21,6 @@ import Reforestation_area_form from "./pages/head/reforestation_areas/reforestat
 import LogTrail from "./pages/head/accounts/logTrail";
 import { Profile } from "./pages/head/accounts/profile";
 import Map from "./pages/head/Map/map";
-import Multicriteria_field_asessment from "./pages/head/analysis/multicriteria_field_asessment";
 import Classified_area_form from "./pages/head/maintain/classified_areas/classified_area_form";
 import Classified_areas from "./pages/head/maintain/classified_areas/classified_areas";
 import Assign_onsite_inspector from "./pages/head/reforestation_areas/assigning";
@@ -31,7 +30,6 @@ import Sites from "./pages/head/site/sites";
 import Reforestation_area_analysis from "./pages/head/analysis/reforestation_areas_analysis";
 import Sites_analysis from "./pages/head/analysis/site_analysis";
 import Multicriteria_analysis from "./pages/head/analysis/multicriteria_analysis";
-import Geo_spatial_analysis from "./pages/head/analysis/geo_spatial_analysis";
 import Sidebar_data_manager from "./components/layout/Sidebar_data_manager";
 import SidebarGISS from "./components/layout/SidebarGISSpecialist";
 import OfficialSites from "./pages/approved/OfficialSites";
@@ -102,14 +100,6 @@ export default function App() {
             element={<Multicriteria_analysis />}
           />
 
-          <Route
-            path="/analysis/multicriteria-analysis/:id/geo-spatial/"
-            element={<Geo_spatial_analysis />}
-          />
-          <Route
-            path="/analysis/multicriteria-analysis/:siteId/field_assessment/:layerKey"
-            element={<Multicriteria_field_asessment />}
-          />
 
           <Route path="/reforestation/site/:id" element={<Sites />} />
 
@@ -293,14 +283,6 @@ export default function App() {
             element={<Multicriteria_analysis />}
           />
 
-          <Route
-            path="/GISS/analysis/multicriteria-analysis/:id/geo-spatial/"
-            element={<Geo_spatial_analysis />}
-          />
-          <Route
-            path="/GISS/analysis/multicriteria-analysis/:siteId/field_assessment/:layerKey"
-            element={<Multicriteria_field_asessment />}
-          />
           <Route
             path="/GISS/reforestation-areas"
             element={<Reforestation_areas />}

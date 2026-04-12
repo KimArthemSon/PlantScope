@@ -6,34 +6,42 @@ import {
   Plus,
   ChevronRight,
   ChevronLeft,
-  Map,
   Leaf,
   Eye,
-  BarChart3,
   Droplets,
+  Ruler,
+  Target,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
 
-interface SiteProgress {
-  completed: number;
-  rejected: number;
-  total: number;
+// =========================
+// INTERFACES (Aligned with Backend v2.0)
+// =========================
+interface ValidationProgress {
+  validated_layers: number;
+  total_layers: number; // Always 8
+  rejected_layers: number;
+  is_complete: boolean;
 }
 
 interface SiteMetrics {
-  survival_rate: number;
-  total_score: number;
+  ndvi: number | null;
+  area_hectares: number;
+  seedlings: number;
 }
 
 interface Site {
   site_id: number;
   name: string;
   status: string;
+  is_pinned: boolean;
   created_at: string;
-  progress: SiteProgress;
+  validation_progress: ValidationProgress;
   metrics: SiteMetrics;
 }
 
@@ -43,9 +51,10 @@ interface Filter {
   page: number;
   total_page: number;
   status: string;
+  pinned_only: boolean;
 }
 
-export default function officialSites() {
+export default function SitesForArea() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
@@ -56,7 +65,8 @@ export default function officialSites() {
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "official",
+    status: "accepted",
+    pinned_only: false,
   });
   const [loading, setLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
@@ -68,12 +78,18 @@ export default function officialSites() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newSiteName, setNewSiteName] = useState("");
+  const { userRole } = useUserRole();
+  const [userPath, setUserPath] = useState("");
 
-  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
-  const [updateSiteName, setUpdateSiteName] = useState("");
-  const [updateSiteId, setUpdateSiteId] = useState<number | null>(null);
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUserPath("");
+    } else if (userRole === "GISSpecialist") {
+      setUserPath("/GISS");
+    } else if (userRole === "DataManager") {
+      setUserPath("/DataManager");
+    }
+  }, [userRole]);
 
   // =========================
   // FETCH SITES
@@ -87,6 +103,7 @@ export default function officialSites() {
         page: filter.page.toString(),
         entries: filter.entries.toString(),
         status: filter.status,
+        pinned_only: filter.pinned_only ? "true" : "false",
       });
       const response = await fetch(
         `http://127.0.0.1:8000/api/get_sites/${id}/?${params}`,
@@ -111,121 +128,32 @@ export default function officialSites() {
 
   useEffect(() => {
     fetchSites();
-  }, [id, filter.page, filter.entries, filter.status]);
+  }, [id, filter.page, filter.entries, filter.status, filter.pinned_only]);
 
   // =========================
-  // CREATE SITE
+  // TOGGLE PIN
   // =========================
-
-  const { userRole, isLoading } = useUserRole();
-  const [useruserRole, setUseruserRole] = useState("");
-
-  useEffect(() => {
-    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
-      setUseruserRole("");
-      return;
-    }
-
-    if (userRole === "GISSpecialist") {
-      setUseruserRole("/GISS");
-      return;
-    }
-
-    if (userRole === "DataManager") {
-      setUseruserRole("/DataManager");
-      return;
-    }
-  }, [userRole]);
-
-  const handleCreateSite = async () => {
-    if (!newSiteName || !id) return;
-
-    try {
-      const response = await fetch(`http://127.0.0.1:8000/api/create_site/`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: newSiteName,
-          reforestation_area_id: parseInt(id),
-          coordinates: {},
-          polygon_coordinates: {},
-          total_area_planted: 0,
-          total_seedling_planted: 0,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Created",
-          message: data.message,
-        });
-        fetchSites();
-        setNewSiteName("");
-        setIsCreateModalOpen(false);
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.error || "Create failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong",
-      });
-    }
-  };
-
-  // =========================
-  // UPDATE SITE NAME
-  // =========================
-  const handleUpdateSite = async () => {
-    if (!updateSiteId || !updateSiteName) return;
+  const handleTogglePin = async (siteId: number, currentPin: boolean) => {
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/update_site/${updateSiteId}/`,
+        `http://127.0.0.1:8000/api/toggle_pin/${siteId}/`,
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ name: updateSiteName }),
         },
       );
-      const data = await response.json();
-
       if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Updated",
-          message: data.message,
-        });
-        fetchSites();
-        setIsUpdateModalOpen(false);
-        setUpdateSiteId(null);
-        setUpdateSiteName("");
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.error || "Update failed",
-        });
+        setSites((prev) =>
+          prev.map((s) =>
+            s.site_id === siteId ? { ...s, is_pinned: !currentPin } : s,
+          ),
+        );
       }
     } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong",
-      });
+      // Silent fail - refreshes on next fetch
     }
   };
 
@@ -273,16 +201,22 @@ export default function officialSites() {
     setIsDeleteModalOpen(false);
   };
 
-  // Helper: Get color for score/rate
-  const getMetricColor = (
-    value: number,
-    max: number,
-    type: "score" | "rate",
-  ) => {
-    const percent = (value / max) * 100;
-    if (percent >= 80) return "text-green-600";
-    if (percent >= 50) return "text-yellow-600";
-    return "text-red-600";
+  // =========================
+  // HELPERS
+  // =========================
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "bg-green-100 text-green-800";
+      case "accepted":
+        return "bg-blue-100 text-blue-800";
+      case "rejected":
+        return "bg-red-100 text-red-800";
+      case "under_review":
+        return "bg-purple-100 text-purple-800";
+      default:
+        return "bg-yellow-100 text-yellow-800";
+    }
   };
 
   return (
@@ -312,11 +246,11 @@ export default function officialSites() {
             <h1 className="text-3xl md:text-4xl font-bold">Sites</h1>
           </div>
           <div className="flex items-center mt-5 mb-5 ml-auto">
-            {userRole != "DataManager" && (
+            {userRole !== "DataManager" && (
               <button
                 onClick={() =>
                   navigate(
-                    `${useruserRole}/reforestation_analysis/site_analysis/${id}`,
+                    `${userPath}/analysis/multicriteria-analysis/new?areaId=${id}`,
                   )
                 }
                 className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
@@ -329,69 +263,9 @@ export default function officialSites() {
       </header>
 
       <main className="flex-1 p-8 max-w-10xl">
-        {/* CREATE SITE MODAL */}
-        {isCreateModalOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg w-96">
-              <h2 className="font-bold text-lg mb-4">Create Site</h2>
-              <input
-                type="text"
-                placeholder="Site name"
-                value={newSiteName}
-                onChange={(e) => setNewSiteName(e.target.value)}
-                className="w-full border p-2 rounded mb-4"
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  className="px-4 py-2 border rounded"
-                  onClick={() => setIsCreateModalOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-4 py-2 bg-green-600 text-white rounded"
-                  onClick={handleCreateSite}
-                >
-                  Create
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* UPDATE SITE MODAL */}
-        {isUpdateModalOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg w-96">
-              <h2 className="font-bold text-lg mb-4">Update Site Name</h2>
-              <input
-                type="text"
-                placeholder="Site name"
-                value={updateSiteName}
-                onChange={(e) => setUpdateSiteName(e.target.value)}
-                className="w-full border p-2 rounded mb-4"
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  className="px-4 py-2 border rounded"
-                  onClick={() => setIsUpdateModalOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-4 py-2 bg-green-600 text-white rounded"
-                  onClick={handleUpdateSite}
-                >
-                  Update
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* FILTERS */}
-        <div className="flex items-center mb-7 gap-4">
-          <label>Show entries:</label>
+        <div className="flex items-center mb-7 gap-4 flex-wrap">
+          <label className="text-sm">Show:</label>
           <select
             value={filter.entries}
             onChange={(e) =>
@@ -405,10 +279,32 @@ export default function officialSites() {
           >
             {[10, 25, 50, 100].map((e) => (
               <option key={e} value={e}>
-                {e}
+                {e} entries
               </option>
             ))}
           </select>
+
+          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={filter.pinned_only}
+              onChange={(e) =>
+                setFilter((prev) => ({
+                  ...prev,
+                  pinned_only: e.target.checked,
+                  page: 1,
+                }))
+              }
+              className="rounded border-gray-300"
+            />
+            <Pin
+              size={14}
+              className={
+                filter.pinned_only ? "text-green-600" : "text-gray-400"
+              }
+            />
+            Pinned only
+          </label>
 
           <input
             type="text"
@@ -427,138 +323,137 @@ export default function officialSites() {
         </div>
 
         {/* TABLE */}
-        <div className="overflow-x-auto shadow-lg border border-gray-200">
+        <div className="overflow-x-auto shadow-lg border border-gray-200 rounded-lg">
           {loading && <LoaderPending />}
           <table className="min-w-full bg-white">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
-                <th className="py-3 px-5 text-left">No</th>
-                <th className="py-3 px-5 text-left">Name</th>
-                <th className="py-3 px-5 text-left">Status</th>
-                <th className="py-3 px-5 text-left">Progress</th>
-                <th className="py-3 px-5 text-left">
-                  <div className="flex items-center gap-1">
-                    <Droplets size={14} />
-                    Survival Rate
-                  </div>
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  No
                 </th>
-                <th className="py-3 px-5 text-left">
-                  <div className="flex items-center gap-1">
-                    <BarChart3 size={14} />
-                    Total Score
-                  </div>
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  <Pin size={14} className="inline mr-1 -mt-0.5" />
+                  Name
                 </th>
-                <th className="py-3 px-5 text-left">Created</th>
-                <th className="py-3 px-5 text-left">Actions</th>
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  Status
+                </th>
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  <Target size={14} className="inline mr-1 -mt-0.5" />
+                  Validation
+                </th>
+
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  <Ruler size={14} className="inline mr-1 -mt-0.5" />
+                  Area (ha)
+                </th>
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  Created
+                </th>
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
               {sites.length > 0 ? (
                 sites.map((site, index) => {
                   const percent =
-                    site.progress.total > 0
-                      ? (site.progress.completed / site.progress.total) * 100
+                    site.validation_progress.total_layers > 0
+                      ? (site.validation_progress.validated_layers /
+                          site.validation_progress.total_layers) *
+                        100
                       : 0;
 
                   return (
                     <tr
                       key={site.site_id}
-                      className={`${index % 2 ? "bg-[#0F4A2F0D]" : ""} hover:bg-gray-50 transition-colors`}
+                      className={`${
+                        index % 2 ? "bg-[#0F4A2F0D]" : ""
+                      } hover:bg-gray-50 transition-colors ${
+                        site.is_pinned
+                          ? "border-l-4 border-green-600 bg-green-50/30"
+                          : ""
+                      }`}
                     >
-                      <td className="py-3 px-5">
+                      <td className="py-3 px-5 text-sm">
                         {index + 1 + (filter.page - 1) * filter.entries}
                       </td>
-                      <td className="py-3 px-5 font-medium">{site.name}</td>
+                      <td className="py-3 px-5 font-medium text-sm">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              handleTogglePin(site.site_id, site.is_pinned)
+                            }
+                            className={`p-1 rounded hover:bg-gray-100 transition ${
+                              site.is_pinned
+                                ? "text-green-600"
+                                : "text-gray-400 hover:text-gray-600"
+                            }`}
+                            title={site.is_pinned ? "Unpin site" : "Pin to top"}
+                          >
+                            {site.is_pinned ? (
+                              <Pin size={16} className="fill-current" />
+                            ) : (
+                              <PinOff size={16} />
+                            )}
+                          </button>
+                          {site.name}
+                        </div>
+                      </td>
                       <td className="py-3 px-5 capitalize">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            site.status === "completed"
-                              ? "bg-green-100 text-green-800"
-                              : site.status === "rejected"
-                                ? "bg-red-100 text-red-800"
-                                : site.status === "official"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : "bg-yellow-100 text-yellow-800"
-                          }`}
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                            site.status,
+                          )}`}
                         >
-                          {site.status}
+                          {site.status.replace("_", " ")}
                         </span>
                       </td>
 
+                      {/* Validation Progress */}
                       <td className="py-3 px-5 w-48">
                         <div className="flex flex-col gap-1">
                           <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                             <div
                               className={`h-2 rounded-full transition-all duration-500 ${
-                                site.progress.rejected > 0
+                                site.validation_progress.rejected_layers > 0
                                   ? "bg-red-500"
-                                  : "bg-green-600"
+                                  : site.validation_progress.is_complete
+                                    ? "bg-green-600"
+                                    : "bg-blue-500"
                               }`}
                               style={{ width: `${percent}%` }}
                             />
                           </div>
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="font-medium text-gray-700">
-                              {site.progress.completed}/{site.progress.total}
+                              {site.validation_progress.validated_layers}/
+                              {site.validation_progress.total_layers} layers
                             </span>
                             <span className="text-gray-500">
                               {Math.round(percent)}%
                             </span>
                           </div>
-                          {site.progress.rejected > 0 && (
+                          {site.validation_progress.rejected_layers > 0 && (
                             <div className="text-[10px] text-red-600 font-medium">
-                              ⚠ {site.progress.rejected} rejected
+                              ⚠ {site.validation_progress.rejected_layers}{" "}
+                              rejected
+                            </div>
+                          )}
+                          {site.validation_progress.is_complete && (
+                            <div className="text-[10px] text-green-600 font-medium">
+                              ✓ Ready to finalize
                             </div>
                           )}
                         </div>
                       </td>
 
-                      {/* Survival Rate */}
+                      {/* Area */}
                       <td className="py-3 px-5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${
-                                site.metrics.survival_rate >= 80
-                                  ? "bg-green-500"
-                                  : site.metrics.survival_rate >= 50
-                                    ? "bg-yellow-500"
-                                    : "bg-red-500"
-                              }`}
-                              style={{
-                                width: `${site.metrics.survival_rate}%`,
-                              }}
-                            />
-                          </div>
-                          <span
-                            className={`text-sm font-medium ${getMetricColor(site.metrics.survival_rate, 100, "rate")}`}
-                          >
-                            {site.metrics.survival_rate.toFixed(1)}%
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Total Score */}
-                      <td className="py-3 px-5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 bg-gray-200 rounded-full h-2">
-                            <div
-                              className={`h-2 rounded-full ${
-                                site.metrics.total_score >= 80
-                                  ? "bg-green-500"
-                                  : site.metrics.total_score >= 50
-                                    ? "bg-yellow-500"
-                                    : "bg-red-500"
-                              }`}
-                              style={{ width: `${site.metrics.total_score}%` }}
-                            />
-                          </div>
-                          <span
-                            className={`text-sm font-medium ${getMetricColor(site.metrics.total_score, 100, "score")}`}
-                          >
-                            {site.metrics.total_score.toFixed(1)}
-                          </span>
-                        </div>
+                        <span className="text-sm font-medium text-gray-700">
+                          {site.metrics.area_hectares.toFixed(2)} ha
+                        </span>
                       </td>
 
                       <td className="py-3 px-5 text-sm text-gray-600">
@@ -570,28 +465,14 @@ export default function officialSites() {
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
                           onClick={() =>
                             navigate(
-                              `${useruserRole}/official-reforestation/site/${id}/information/${site.site_id}`,
+                              `${userPath}/reforestation/site/${id}/information/${site.site_id}`,
                             )
                           }
                           title="View Details"
                         >
                           <Eye size={16} />
                         </button>
-                        {userRole != "DataManager" && (
-                          <button
-                            className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
-                            onClick={() =>
-                              navigate(
-                                `${useruserRole}/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
-                              )
-                            }
-                            title="Analyze Site"
-                          >
-                            <Map size={16} />
-                          </button>
-                        )}
-
-                        {userRole != "DataManager" && (
+                        {userRole !== "DataManager" && (
                           <button
                             className="text-red-600 cursor-pointer border border-red-600 rounded-full p-1 hover:bg-red-50 transition-colors"
                             onClick={() => setDelete(site.site_id)}
@@ -613,12 +494,6 @@ export default function officialSites() {
                     <div className="flex flex-col items-center gap-2">
                       <Leaf size={40} className="text-gray-300" />
                       <p>No sites found</p>
-                      <button
-                        onClick={() => setIsCreateModalOpen(true)}
-                        className="text-green-600 hover:underline text-sm"
-                      >
-                        Create your first site
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -634,12 +509,11 @@ export default function officialSites() {
             onClick={() =>
               setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
             }
-            className="px-2 py-1 border rounded-md ml-auto disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            className="px-2 py-1 border rounded-md ml-auto disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition"
           >
             <ChevronLeft size={19} />
           </button>
           {Array.from({ length: Math.min(filter.total_page, 5) }, (_, i) => {
-            // Show first 5 pages or centered around current page
             let pageNum = i + 1;
             if (filter.total_page > 5 && filter.page > 3) {
               pageNum = Math.min(filter.page - 2 + i, filter.total_page);
@@ -682,7 +556,7 @@ export default function officialSites() {
             onClick={() =>
               setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
             }
-            className="px-2 py-1 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            className="px-2 py-1 border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition"
           >
             <ChevronRight size={19} />
           </button>

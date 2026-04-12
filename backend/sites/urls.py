@@ -2,8 +2,10 @@ from django.urls import path
 from . import views
 from . import extended_views
 urlpatterns = [
+
     # Site Management
 
+    path('get_sites/<int:reforestation_area_id>/', views.get_sites, name='get_sites'),
     path('sites/create_site/', views.create_site, name='create_site'),
     path('list_sites/<int:reforestation_area_id>/', views.get_sites_list, name='get_sites_list'),
     path('get_site/<int:site_id>/', views.get_site, name='get_site'),

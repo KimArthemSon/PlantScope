@@ -6,7 +6,6 @@ import {
   Plus,
   ChevronRight,
   ChevronLeft,
-  Map,
   Leaf,
   Eye,
   Droplets,
@@ -66,7 +65,7 @@ export default function SitesForArea() {
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "all",
+    status: "pending",
     pinned_only: false,
   });
   const [loading, setLoading] = useState(false);
@@ -78,16 +77,6 @@ export default function SitesForArea() {
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
-
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newSiteName, setNewSiteName] = useState("");
-  const [newSiteNDVI, setNewSiteNDVI] = useState<string>("");
-  const [newSiteArea, setNewSiteArea] = useState<string>("");
-  const [newSiteSeedlings, setNewSiteSeedlings] = useState<string>("");
-
-  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
-  const [updateSiteName, setUpdateSiteName] = useState("");
-  const [updateSiteId, setUpdateSiteId] = useState<number | null>(null);
 
   const { userRole } = useUserRole();
   const [userPath, setUserPath] = useState("");
@@ -169,109 +158,6 @@ export default function SitesForArea() {
   };
 
   // =========================
-  // CREATE SITE
-  // =========================
-  const handleCreateSite = async () => {
-    if (!newSiteName || !id) return;
-
-    try {
-      const response = await fetch(`http://127.0.0.1:8000/api/create_site/`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: newSiteName,
-          reforestation_area_id: parseInt(id),
-          is_pinned: false,
-          ndvi_value: newSiteNDVI ? parseFloat(newSiteNDVI) : null,
-          total_area_hectares: newSiteArea ? parseFloat(newSiteArea) : 0,
-          total_seedlings_planted: newSiteSeedlings
-            ? parseInt(newSiteSeedlings)
-            : 0,
-          center_coordinate: [0.0, 0.0],
-          polygon_coordinates: [],
-          marker_coordinate: null,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Created",
-          message: data.message,
-        });
-        fetchSites();
-        setNewSiteName("");
-        setNewSiteNDVI("");
-        setNewSiteArea("");
-        setNewSiteSeedlings("");
-        setIsCreateModalOpen(false);
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.error || "Create failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong",
-      });
-    }
-  };
-
-  // =========================
-  // UPDATE SITE NAME
-  // =========================
-  const handleUpdateSite = async () => {
-    if (!updateSiteId || !updateSiteName) return;
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/update_site/${updateSiteId}/`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ name: updateSiteName }),
-        },
-      );
-      const data = await response.json();
-
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Updated",
-          message: data.message,
-        });
-        fetchSites();
-        setIsUpdateModalOpen(false);
-        setUpdateSiteId(null);
-        setUpdateSiteName("");
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.error || "Update failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong",
-      });
-    }
-  };
-
-  // =========================
   // DELETE SITE
   // =========================
   const setDelete = (siteId: number) => {
@@ -333,21 +219,6 @@ export default function SitesForArea() {
     }
   };
 
-  const getNDVIColor = (ndvi: number | null) => {
-    if (ndvi === null) return "text-gray-500";
-    if (ndvi >= 0.2 && ndvi <= 0.4) return "text-green-600 font-medium";
-    if (ndvi < 0.2) return "text-red-600";
-    return "text-yellow-600";
-  };
-
-  const getNDVITooltip = (ndvi: number | null) => {
-    if (ndvi === null) return "No NDVI data available";
-    if (ndvi >= 0.2 && ndvi <= 0.4)
-      return "✅ Ideal for reforestation (degraded land/grassland)";
-    if (ndvi < 0.2) return "⚠️ Likely non-plantable (concrete/water/rock)";
-    return "⚠️ Dense vegetation (may not need reforestation)";
-  };
-
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
       {/* ALERT */}
@@ -379,7 +250,7 @@ export default function SitesForArea() {
               <button
                 onClick={() =>
                   navigate(
-                    `${userPath}/reforestation_analysis/site_analysis/${id}`,
+                    `${userPath}/analysis/multicriteria-analysis/new?areaId=${id}`,
                   )
                 }
                 className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
@@ -392,103 +263,6 @@ export default function SitesForArea() {
       </header>
 
       <main className="flex-1 p-8 max-w-10xl">
-        {/* CREATE SITE MODAL */}
-        {isCreateModalOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg w-[32rem]">
-              <h2 className="font-bold text-lg mb-4">Create Site</h2>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <input
-                  type="text"
-                  placeholder="Site name *"
-                  value={newSiteName}
-                  onChange={(e) => setNewSiteName(e.target.value)}
-                  className="border p-2 rounded"
-                  required
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="1"
-                  placeholder="NDVI (0.2–0.4 ideal)"
-                  value={newSiteNDVI}
-                  onChange={(e) => setNewSiteNDVI(e.target.value)}
-                  className="border p-2 rounded"
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="Area (hectares)"
-                  value={newSiteArea}
-                  onChange={(e) => setNewSiteArea(e.target.value)}
-                  className="border p-2 rounded"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="Seedlings planted"
-                  value={newSiteSeedlings}
-                  onChange={(e) => setNewSiteSeedlings(e.target.value)}
-                  className="border p-2 rounded"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  className="px-4 py-2 border rounded hover:bg-gray-50"
-                  onClick={() => {
-                    setIsCreateModalOpen(false);
-                    setNewSiteName("");
-                    setNewSiteNDVI("");
-                    setNewSiteArea("");
-                    setNewSiteSeedlings("");
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                  onClick={handleCreateSite}
-                  disabled={!newSiteName.trim()}
-                >
-                  Create
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* UPDATE SITE MODAL */}
-        {isUpdateModalOpen && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg w-96">
-              <h2 className="font-bold text-lg mb-4">Update Site Name</h2>
-              <input
-                type="text"
-                placeholder="Site name"
-                value={updateSiteName}
-                onChange={(e) => setUpdateSiteName(e.target.value)}
-                className="w-full border p-2 rounded mb-4"
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  className="px-4 py-2 border rounded hover:bg-gray-50"
-                  onClick={() => setIsUpdateModalOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                  onClick={handleUpdateSite}
-                >
-                  Update
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* FILTERS */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm">Show:</label>
@@ -508,25 +282,6 @@ export default function SitesForArea() {
                 {e} entries
               </option>
             ))}
-          </select>
-
-          <select
-            value={filter.status}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                status: e.target.value,
-                page: 1,
-              }))
-            }
-            className="border border-black p-2 rounded-md text-[.8rem]"
-          >
-            <option value="all">All Statuses</option>
-            <option value="pending">Pending</option>
-            <option value="under_review">Under Review</option>
-            <option value="accepted">Accepted</option>
-            <option value="rejected">Rejected</option>
-            <option value="completed">Completed</option>
           </select>
 
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -587,10 +342,7 @@ export default function SitesForArea() {
                   <Target size={14} className="inline mr-1 -mt-0.5" />
                   Validation
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
-                  <Droplets size={14} className="inline mr-1 -mt-0.5" />
-                  NDVI
-                </th>
+
                 <th className="py-3 px-5 text-left text-sm font-semibold">
                   <Ruler size={14} className="inline mr-1 -mt-0.5" />
                   Area (ha)
@@ -697,20 +449,6 @@ export default function SitesForArea() {
                         </div>
                       </td>
 
-                      {/* NDVI Value */}
-                      <td className="py-3 px-5">
-                        <span
-                          className={`text-sm font-medium ${getNDVIColor(
-                            site.metrics.ndvi,
-                          )}`}
-                          title={getNDVITooltip(site.metrics.ndvi)}
-                        >
-                          {site.metrics.ndvi !== null
-                            ? site.metrics.ndvi.toFixed(2)
-                            : "—"}
-                        </span>
-                      </td>
-
                       {/* Area */}
                       <td className="py-3 px-5">
                         <span className="text-sm font-medium text-gray-700">
@@ -736,19 +474,6 @@ export default function SitesForArea() {
                         </button>
                         {userRole !== "DataManager" && (
                           <button
-                            className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
-                            onClick={() =>
-                              navigate(
-                                `${userPath}/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
-                              )
-                            }
-                            title="Analyze Site (8-Layer MCDA)"
-                          >
-                            <Map size={16} />
-                          </button>
-                        )}
-                        {userRole !== "DataManager" && (
-                          <button
                             className="text-red-600 cursor-pointer border border-red-600 rounded-full p-1 hover:bg-red-50 transition-colors"
                             onClick={() => setDelete(site.site_id)}
                             title="Delete Site"
@@ -769,12 +494,6 @@ export default function SitesForArea() {
                     <div className="flex flex-col items-center gap-2">
                       <Leaf size={40} className="text-gray-300" />
                       <p>No sites found</p>
-                      <button
-                        onClick={() => setIsCreateModalOpen(true)}
-                        className="text-green-600 hover:underline text-sm font-medium"
-                      >
-                        Create your first site
-                      </button>
                     </div>
                   </td>
                 </tr>

@@ -799,8 +799,8 @@ export default function MulticriteriaAnalysis() {
   };
 
   // ✅ FIXED: handleSaveDraft with proper typing and error handling
-  const handleSaveDraft = useCallback(
-    async (layerName: string,  any): Promise<boolean> => {
+    const handleSaveDraft = useCallback(
+    async (layerName: string,data: any): Promise<boolean> => {
       if (!validatingSite) return false;
       try {
         const result = await sites.updateLayer(

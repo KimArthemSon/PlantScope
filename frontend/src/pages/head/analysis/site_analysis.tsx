@@ -62,7 +62,7 @@ export default function Sites_analysis() {
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "all",
+    status: "pending",
     pinned_only: false,
   });
   const [loading, setLoading] = useState(false);
@@ -217,21 +217,6 @@ export default function Sites_analysis() {
     }
   };
 
-  const getNDVIColor = (ndvi: number | null) => {
-    if (ndvi === null) return "text-gray-500";
-    if (ndvi >= 0.2 && ndvi <= 0.4) return "text-green-600 font-medium";
-    if (ndvi < 0.2) return "text-red-600";
-    return "text-yellow-600";
-  };
-
-  const getNDVITooltip = (ndvi: number | null) => {
-    if (ndvi === null) return "NDVI pending satellite processing";
-    if (ndvi >= 0.2 && ndvi <= 0.4)
-      return "✅ Ideal for reforestation (degraded land/grassland)";
-    if (ndvi < 0.2) return "⚠️ Likely non-plantable (concrete/water/rock)";
-    return "⚠️ Dense vegetation (may not need reforestation)";
-  };
-
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
       {/* ALERT COMPONENT */}
@@ -256,7 +241,7 @@ export default function Sites_analysis() {
         <div className="max-w-7xl mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3 mb-2">
             <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">Sites</h1>
+            <h1 className="text-3xl md:text-4xl font-bold">Site</h1>
           </div>
           <div className="flex items-center mt-5 mb-10 ml-auto gap-5">
             {/* ✅ ADD NEW SITE - Routes to MCDA workspace for polygon creation */}
@@ -301,25 +286,6 @@ export default function Sites_analysis() {
                 {e} entries
               </option>
             ))}
-          </select>
-
-          <select
-            value={filter.status}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                status: e.target.value,
-                page: 1,
-              }))
-            }
-            className="border border-black p-2 rounded-md text-[.8rem]"
-          >
-            <option value="all">All Statuses</option>
-            <option value="pending">Pending</option>
-            <option value="under_review">Under Review</option>
-            <option value="accepted">Accepted</option>
-            <option value="rejected">Rejected</option>
-            <option value="completed">Completed</option>
           </select>
 
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -381,8 +347,8 @@ export default function Sites_analysis() {
                   Validation (3-Layer MCDA)
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold">
-                  <Droplets size={14} className="inline mr-1 -mt-0.5" />
-                  NDVI
+                  <Target size={14} className="inline mr-1 -mt-0.5" />
+                 Area
                 </th>
                 <th className="py-3 px-4 text-left text-sm font-semibold">
                   Created
@@ -449,7 +415,7 @@ export default function Sites_analysis() {
                       </td>
 
                       {/* Validation Progress - 3-Layer MCDA */}
-                      <td className="py-3 px-4 w-44">
+                      <td className="py-3 px-4 w-50">
                         <div className="flex flex-col gap-1">
                           <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                             <div
@@ -486,20 +452,6 @@ export default function Sites_analysis() {
                         </div>
                       </td>
 
-                      {/* NDVI Value - Scientific Threshold: 0.2–0.4 */}
-                      <td className="py-3 px-4">
-                        <span
-                          className={`text-sm font-medium ${getNDVIColor(
-                            site.metrics.ndvi,
-                          )}`}
-                          title={getNDVITooltip(site.metrics.ndvi)}
-                        >
-                          {site.metrics.ndvi !== null
-                            ? site.metrics.ndvi.toFixed(2)
-                            : "—"}
-                        </span>
-                      </td>
-
                       <td className="py-3 px-4 text-sm text-gray-600">
                         {new Date(site.created_at).toLocaleDateString()}
                       </td>
@@ -508,17 +460,6 @@ export default function Sites_analysis() {
                       <td className="py-3 px-4 flex gap-2">
                         {/* PRIMARY: View/Edit on Map - GIS Specialist workflow */}
                         {/* Routes to polygon editing workspace for existing sites */}
-                        <button
-                          onClick={() =>
-                            navigate(
-                              `${userPath}/analysis/multicriteria-analysis/${site.site_id}/geo-spatial/`,
-                            )
-                          }
-                          className="text-blue-900 cursor-pointer border border-blue-900 rounded-full p-1 hover:bg-blue-50 transition-colors"
-                          title="View/Edit Site on Map"
-                        >
-                          <Map size={16} />
-                        </button>
 
                         {/* SECONDARY: View Details - Read-only reference */}
                         <button

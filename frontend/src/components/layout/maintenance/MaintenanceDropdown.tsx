@@ -2,7 +2,6 @@ import {
   ClipboardList,
   Layers,
   TreePine,
-  Mountain,
   ChevronLeft,
   Map,
   Box,
@@ -110,21 +109,6 @@ export default function MaintenanceDropdown({
           >
             <TreePine size={16} />
             <span>Tree Species</span>
-          </Link>
-
-          <Link
-            to="/maintenance/soils"
-            className={`
-              flex items-center gap-3 px-4 py-3 text-[.75rem] rounded-md
-              ${
-                location.pathname === "/maintenance/soils"
-                  ? "bg-white/20 text-white"
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
-              }
-            `}
-          >
-            <Mountain size={16} />
-            <span>Soils</span>
           </Link>
           <Link
             to="/maintenance/land-classification"

@@ -1,15 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
-  Edit,
-  Plus,
   ChevronRight,
   ChevronLeft,
-  User,
-  CheckCheckIcon,
-  VerifiedIcon,
   Eye,
   Leaf,
+  CirclePower,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -335,12 +330,12 @@ export default function Reforestation_area_analysis() {
                         <button
                           onClick={() =>
                             navigate(
-                              `${useruserRole}/reforestation_analysis/site_analysis/${area.reforestation_area_id}`,
+                              `${useruserRole}/analysis/multicriteria-analysis/new?areaId=${area.reforestation_area_id}`,
                             )
                           }
-                          className="cursor-pointer"
+                          className="cursor-pointer text-[#ff4800]"
                         >
-                          <VerifiedIcon size={18} />
+                          <CirclePower size={18} />
                         </button>
                       </div>
                     </td>

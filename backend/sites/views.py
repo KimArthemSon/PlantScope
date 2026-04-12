@@ -33,10 +33,10 @@ ACCEPTANCE_CHOICES = [
     'ACCEPT_WITH_ADJUSTMENT',   # Boundary layer
     'ACCEPT_WITH_CONDITIONS',   # Survivability layer
 ]
-  
+
+
 @csrf_exempt
 def get_sites(request, reforestation_area_id):
-    """GET: List sites for a reforestation area with validation progress."""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -64,18 +64,33 @@ def get_sites(request, reforestation_area_id):
     total_page = max(1, math.ceil(total / entries))
     sites_list = sites[offset: offset + entries]
 
+    # ─── LAYER-SPECIFIC ACCEPTANCE FIELD NAMES (must match finalize_site) ───
+    ACCEPTANCE_FIELD_MAP = {
+        "safety": "safety_acceptance",
+        "boundary_verification": "boundary_acceptance",
+        "survivability": "overall_survivability_decision",
+    }
+
     data = []
     for s in sites_list:
-        # Get finalized (archived) site_data for validation progress
+        # ✅ Check BOTH current draft AND latest finalized — use whichever has more data
+        current_sd = s.site_data_versions.filter(is_current=True).first()
         finalized_sd = s.site_data_versions.filter(is_current=False).order_by('-version').first()
+
+        # Prefer finalized if it exists, otherwise fall back to current draft
+        active_sd = finalized_sd if finalized_sd else current_sd
+
         validated_count = 0
         rejected_count = 0
         layer_status = {}
-        
-        if finalized_sd and finalized_sd.site_data:
+
+        if active_sd and active_sd.site_data:
             for layer_name in ALLOWED_LAYERS:
-                layer = finalized_sd.site_data.get(layer_name, {})
-                acceptance = layer.get("acceptance")
+                layer = active_sd.site_data.get(layer_name, {})
+                # ✅ Use the correct field name per layer
+                acceptance_field = ACCEPTANCE_FIELD_MAP[layer_name]
+                acceptance = layer.get(acceptance_field)
+
                 if acceptance:
                     validated_count += 1
                     layer_status[layer_name] = acceptance
@@ -89,10 +104,10 @@ def get_sites(request, reforestation_area_id):
             "is_pinned": s.is_pinned,
             "validation_progress": {
                 "validated_layers": validated_count,
-                "total_layers": len(ALLOWED_LAYERS),
+                "total_layers": len(ALLOWED_LAYERS),  # always 3
                 "rejected_layers": rejected_count,
                 "layer_status": layer_status,
-                "is_complete": validated_count == len(ALLOWED_LAYERS)
+                "is_complete": validated_count == len(ALLOWED_LAYERS) and rejected_count == 0,
             },
             "metrics": {
                 "ndvi": s.ndvi_value,

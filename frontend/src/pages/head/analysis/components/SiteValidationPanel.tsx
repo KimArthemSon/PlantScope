@@ -18,7 +18,7 @@ interface SiteValidationPanelProps {
   site: SiteDetail | null;
   isOpen: boolean;
   onClose: () => void;
-  onSaveDraft: (layerName: string, data: any) => Promise<boolean>;
+  onSaveDraft: (layerName: string,  any) => Promise<boolean>;
   onFinalize: (decision: "ACCEPT" | "REJECT") => Promise<boolean>;
   loading: boolean;
 }
@@ -294,7 +294,7 @@ export default function SiteValidationPanel({
 
     if (!site) return;
 
-    console.log("🔍 Finalize check - Draft MCDA data:", {
+    console.log("🔍 Finalize check - Draft MCDA ", {
       safety: getLayerData(site.current_draft_mcda, "safety"),
       boundary_verification: getLayerData(site.current_draft_mcda, "boundary_verification"),
       survivability: getLayerData(site.current_draft_mcda, "survivability"),
@@ -353,8 +353,8 @@ export default function SiteValidationPanel({
     }
   };
 
-  // ✅ Handler for LayerField onChange
-  const handleFieldChange = useCallback((field: string,  any) => {
+  // ✅ FIXED: Handler for LayerField onChange - Added missing "value:" parameter name
+  const handleFieldChange = useCallback((field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   }, []);
 
