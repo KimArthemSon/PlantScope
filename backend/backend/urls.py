@@ -29,7 +29,7 @@ urlpatterns = [
     path('api/',include('barangay.urls')),
     path('api/',include('sites.urls')),
     path('api/',include('ormoc_city.urls')),
-    path('api/',include('mcda_weight_config.urls')),
+    path('api/',include('tree_planting_programs.urls')),
     
 ]
 

@@ -7,7 +7,6 @@ import {
   CirclePower,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
-import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
@@ -17,6 +16,7 @@ interface ReforestationArea {
   name: string;
   legality: string;
   safety: string;
+  pre_assessment_status: string;
   polygon_coordinate: any;
   coordinate: any;
   location: string;
@@ -32,6 +32,7 @@ interface Filter {
   total_page: number;
   legality: string;
   safety: string;
+  pre_assessment_status: string;
 }
 
 export default function Reforestation_area_analysis() {
@@ -42,12 +43,11 @@ export default function Reforestation_area_analysis() {
     page: 1,
     total_page: 1,
     legality: "legal",
+    pre_assessment_status: "approved",
     safety: "All",
   });
 
   const [loading, setLoading] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -71,6 +71,7 @@ export default function Reforestation_area_analysis() {
         entries: filter.entries.toString(),
         legality: filter.legality,
         safety: filter.safety,
+        pre_assessment_status: filter.pre_assessment_status,
       });
 
       const response = await fetch(
@@ -107,54 +108,6 @@ export default function Reforestation_area_analysis() {
     fetchAreas();
   }, [filter.page, filter.entries, filter.legality, filter.safety]);
 
-  // =========================
-  // DELETE
-  // =========================
-  const setDelete = (id: number) => {
-    setDeleteId(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/delete_reforestation_areas/${deleteId}/`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Deleted",
-          message: data.message,
-        });
-
-        fetchAreas();
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.message || "Delete failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong.",
-      });
-    }
-
-    setIsDeleteModalOpen(false);
-  };
-
   const { userRole } = useUserRole();
   const [useruserRole, setUseruserRole] = useState("");
 
@@ -186,11 +139,6 @@ export default function Reforestation_area_analysis() {
         />
       )}
 
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
       <header className="bg-linear-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3 mb-2">
@@ -247,7 +195,7 @@ export default function Reforestation_area_analysis() {
             className="border border-black p-2 rounded-md text-[.8rem]"
           >
             <option value="All">All</option>
-            <option value="safe">Low Risk</option>
+            <option value="safe">Safe</option>
             <option value="slightly">Slightly Unsafe</option>
             <option value="moderate">Moderate Risk</option>
             <option value="danger">High Risk</option>

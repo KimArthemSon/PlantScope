@@ -1,5 +1,6 @@
 from django.db import models
 
+
 class User(models.Model):
     USER_ROLES = (
         ('CityENROHead', 'City ENRO Head'),
@@ -43,5 +44,33 @@ class profile(models.Model):
     address = models.CharField(max_length=100)
     created_at = models.DateField(auto_now_add=True)
     profile_img = models.ImageField(upload_to='profile/')
+
+
+class Organization(models.Model):
+    """Organization model for managing organization details"""
+    organization_name = models.CharField(max_length=255)
+    
+    
+    users = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='organization'
+    )
+    email = models.CharField(max_length=150, default='')
+    address = models.TextField()
+    contact = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    profile_img = models.ImageField(upload_to='profile/', null=True)
+    class Meta:
+        verbose_name = "Organization"
+        verbose_name_plural = "Organizations"
+        ordering = ['organization_name']
+
+    def __str__(self):
+        return self.organization_name
+
+
+
 
 

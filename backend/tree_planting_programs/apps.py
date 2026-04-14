@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class McdaWeightConfigConfig(AppConfig):
+class TreePlantingProgramsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'mcda_weight_config'
+    name = 'tree_planting_programs'

@@ -9,7 +9,7 @@ export default function ProfilePage() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1b5e20" />
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/')}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.push('./dashboard')}>
           <MaterialCommunityIcons name="chevron-left" size={22} color="#ffffff" />
           <Text style={styles.backText}>Profile</Text>
         </TouchableOpacity>
@@ -27,11 +27,11 @@ export default function ProfilePage() {
         </View>
 
         <View style={styles.menuSection}>
-          <TouchableOpacity style={styles.menuItem} onPress={() => router.push({ pathname: '/' })}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => router.push({ pathname: './dashboard' })}>
             <MaterialCommunityIcons name="account" size={20} color="#1b5e20" style={styles.menuIcon} />
             <Text style={styles.menuText}>Profile</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem} onPress={() => router.push({ pathname: '/' })}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => router.push({ pathname: './notification' })}>
             <MaterialCommunityIcons name="bell-outline" size={20} color="#1b5e20" style={styles.menuIcon} />
             <Text style={styles.menuText}>Notifications</Text>
           </TouchableOpacity>

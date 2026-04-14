@@ -22,6 +22,7 @@ class Sites(models.Model):
         ('accepted', 'Accepted'),
         ('rejected', 'Rejected'),
         ('completed', 'Completed'),
+        ('under_monitoring', 'Under Monitoring'),
     )
     status = models.CharField(
         max_length=20,

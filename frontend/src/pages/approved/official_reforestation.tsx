@@ -1,21 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
-  Edit,
-  Plus,
   ChevronRight,
   ChevronLeft,
-  User,
-  CheckCheckIcon,
-  VerifiedIcon,
-  Eye,
+
   Leaf,
-  TreePalm,
-  LocateFixedIcon,
+
   List,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
-import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
@@ -32,6 +24,7 @@ interface ReforestationArea {
     name: string;
   };
   description: string;
+  pre_assessment_status: string;
   area_img: string | null;
   created_at: string;
 }
@@ -42,6 +35,7 @@ interface Filter {
   page: number;
   total_page: number;
   legality: string;
+  pre_assessment_status: string;
   safety: string;
 }
 
@@ -54,11 +48,10 @@ export default function OfficailPlantingSites() {
     total_page: 1,
     legality: "legal",
     safety: "All",
+    pre_assessment_status: "approved",
   });
 
   const [loading, setLoading] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -102,6 +95,7 @@ export default function OfficailPlantingSites() {
         entries: filter.entries.toString(),
         legality: filter.legality,
         safety: filter.safety,
+        pre_assessment_status: filter.pre_assessment_status,
       });
 
       const response = await fetch(

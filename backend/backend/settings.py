@@ -55,7 +55,7 @@ INSTALLED_APPS = [
     'Field_assessment',
     'sites',
     'ormoc_city',
-    'mcda_weight_config'
+    'tree_planting_programs'
 ]
 
 MIDDLEWARE = [

@@ -40,9 +40,9 @@ export default function TabLayout() {
       <Stack screenOptions={{ headerShown: false }} />
       {/* Home Tab */}
       <Tabs.Screen
-        name="home"
+        name="dashboard"
         options={{
-          title: "Home",
+          title: "Dashboard",
           tabBarIcon: ({ color }) => (
             <Ionicons name="home" size={26} color={color} />
           ),
@@ -50,9 +50,9 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="Area"
+        name="request"
         options={{
-          title: "Area",
+          title: "Request",
           tabBarIcon: ({ color }) => (
             <MaterialCommunityIcons name="leaf" size={26} color={color} />
           ),

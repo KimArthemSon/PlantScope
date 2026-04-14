@@ -2,7 +2,7 @@ import math
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
-from .models import User, profile
+from .models import User, profile, Organization
 from security.models import SecurityLog
 from security.views import log_event, is_lock
 import json
@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import re
 from django.conf import settings
 from django.db import DatabaseError, connection, transaction
+from tree_planting_programs.models import Application 
 
 
 @csrf_exempt
@@ -55,8 +56,42 @@ def register_user(request):
     address =  request.POST.get('address')
     profile_img = request.FILES.get('profile_img')
     gender = request.POST.get('gender')
-    
 
+    organization_name = ""
+    org_email = ""
+    org_address = ""
+    org_contact = ""
+    org_profile = ""
+    title = ""
+    description = ""
+    status =  "for_evaluation"
+    # Dates
+    project_duration = 0  
+    # Files 
+    maintenance_plan = ""  
+    # Seedling and Area Metrics
+    total_request_seedling = ""
+
+    if user_role == 'treeGrowers':
+        #org
+        is_active = False
+        organization_name = request.POST.get('organization_name')
+        org_email = request.POST.get('org_email')
+        org_address = request.POST.get('org_address')
+        org_contact = request.POST.get('org_contact')
+        org_profile = request.FILES.get('org_profile')
+        #application
+
+        title = request.POST.get('title')
+        description = request.POST.get('description')
+        # Dates
+        project_duration = int(request.POST.get('project_duration', 0))
+        #Files 
+        maintenance_plan = request.FILES.get('maintenance_plan')
+        #Seedling and Area Metrics
+        total_request_seedling = int(request.POST.get('total_request_seedling', 0))
+
+    
     password_regex = r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$'
 
     if not re.match(password_regex, password):
@@ -92,6 +127,24 @@ def register_user(request):
             gender = gender,
             )
 
+            if  user_role == 'treeGrowers':
+                Organization.objects.create(
+                        organization_name =organization_name ,
+                        users=user,
+                        email = org_email ,
+                        address =org_address ,
+                        contact =org_contact ,
+                        profile_img = org_profile,
+                )
+                Application.objects.create(
+                    user = user,
+                    title = title,
+                    description = description,
+                    status =  "for_evaluation",
+                    project_duration = project_duration ,    
+                    maintenance_plan = maintenance_plan,
+                    total_request_seedling =  total_request_seedling,
+                )
     except Exception as e:
         print(e)
         return JsonResponse(

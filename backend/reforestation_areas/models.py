@@ -2,6 +2,7 @@ from django.db import models
 from barangay.models import Barangay
 from django.core.validators import FileExtensionValidator
 from accounts.models import User
+from land_classifications.models import LandClassification
 
 class Reforestation_areas(models.Model):
     # Kept for backward compatibility with your existing create form
@@ -22,6 +23,7 @@ class Reforestation_areas(models.Model):
         ('rejected', 'Rejected'),
     )
 
+    land_classification = models.ForeignKey(LandClassification, on_delete=models.RESTRICT, blank=True, null=True, related_name='reforesatation_areas')
     reforestation_area_id = models.BigAutoField(primary_key=True)
     barangay = models.ForeignKey(Barangay, null=True, blank=True, on_delete=models.SET_NULL, related_name='reforestation_areas')
     name = models.CharField(max_length=100, unique=True)

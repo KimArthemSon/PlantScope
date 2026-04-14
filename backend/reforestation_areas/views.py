@@ -9,7 +9,7 @@ from django.db import IntegrityError
 from django.conf import settings
 from accounts.helper import get_user_from_token  # ✅ Added missing import
 from .models import Reforestation_areas, Potential_sites, PermitDocument
-
+from barangay.models import Barangay 
 logger = logging.getLogger(__name__)
 
 
@@ -27,11 +27,15 @@ def _serialize_area(area):
             'barangay_id': area.barangay.barangay_id,
             'name': area.barangay.name
         } if area.barangay else None,
+        'land_classification': {
+            'land_classification_id': area.land_classification.land_classification_id,
+            'name': area.land_classification.name
+        } if area.land_classification else None,
         'description': area.description,
         'area_img': area.area_img.url if area.area_img else None,
         'reforestation_data': area.reforestation_data,
         'permit_count': area.permit_documents.count(),  # ✅ Added for React permit badge
-        'created_at': area.created_at.isoformat(),
+        'created_at': area.created_at.strftime("%d/%m/%y"),
     }
 
 
@@ -53,7 +57,10 @@ def get_reforestation_areas(request):
 
     search = request.GET.get('search', '').strip()
     legality = request.GET.get('legality', 'All')
-    pre_status = request.GET.get('pre_assessment_status', request.GET.get('safety', 'All'))
+    safety = request.GET.get('safety', 'All')
+    barangay_id = request.GET.get('barangay_id', 'All')
+    land_classification_id = request.GET.get('land_classification_id', 'All')
+    pre_status = request.GET.get('pre_assessment_status', 'All')
 
     try:
         entries = max(1, int(request.GET.get('entries', 10)))
@@ -63,11 +70,17 @@ def get_reforestation_areas(request):
 
     offset = (page - 1) * entries
     areas = Reforestation_areas.objects.all().order_by('-created_at')
-
+    
     if search:
         areas = areas.filter(name__icontains=search)
     if legality != 'All':
         areas = areas.filter(legality=legality)
+    if safety != 'All':
+        areas = areas.filter(safety=safety)
+    if barangay_id != 'All':
+        areas = areas.filter(barangay_id=barangay_id)
+    if land_classification_id != 'All':
+        areas = areas.filter(land_classification_id=land_classification_id)
     if pre_status != 'All':
         areas = areas.filter(pre_assessment_status=pre_status)
 
@@ -182,6 +195,10 @@ def update_reforestation_areas(request, reforestation_area_id):
             area.pre_assessment_status = data['pre_assessment_status']
         if 'safety' in data:
             area.safety = data['safety']
+        if 'barangay_id' in data:
+            area.barangay_id = data['barangay_id']
+        if 'land_classification_id' in data:
+            area.land_classification_id = data['land_classification_id']
         if 'description' in data:
             area.description = data['description']
 

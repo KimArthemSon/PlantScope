@@ -21,6 +21,7 @@ import {
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
+import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 
 // ─────────────────────────────────────────────────────────────
 // Types & Interfaces
@@ -30,6 +31,12 @@ interface Barangay {
   name: string;
   description: string;
   coordinate: [number, number];
+}
+
+interface Land_classification {
+  land_classification_id: number;
+  name: string;
+  description: string;
 }
 
 interface ReforestationAreaData {
@@ -43,6 +50,7 @@ interface ReforestationAreaData {
   polygon_coordinate: { coordinates: [number, number][] } | null;
   area_img: string | null;
   barangay: { barangay_id: number; name: string } | null;
+  land_classification: { land_classification_id: number; name: string } | null;
   created_at: string;
 }
 
@@ -51,6 +59,7 @@ interface FormState {
   legality: "pending" | "legal" | "illegal";
   safety: "safe" | "slightly" | "moderate" | "danger";
   barangay_id: number | "";
+  land_classification_id: number | "";
   description: string;
   coordinate: [number, number] | null;
   polygon_coordinate: { coordinates: [number, number][] } | null;
@@ -110,16 +119,25 @@ export default function UpdateReforestationArea() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
+  const [land_classification, setLand_classification] = useState<
+    Land_classification[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [PSalert, setPSAlert] = useState<{
+    type: "success" | "failed" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
 
   const [form, setForm] = useState<FormState>({
     name: "",
     legality: "pending",
     safety: "moderate",
     barangay_id: "",
+    land_classification_id: "",
     description: "",
     coordinate: null,
     polygon_coordinate: null,
@@ -128,7 +146,7 @@ export default function UpdateReforestationArea() {
 
   const token = localStorage.getItem("token");
 
-  // ── Fetch Barangays ────────────────────────────────────────
+  // ── Fetch Barangays & Land Classifications ─────────────────
   useEffect(() => {
     const fetchBarangays = async () => {
       try {
@@ -143,6 +161,22 @@ export default function UpdateReforestationArea() {
         console.error("Failed to fetch barangays:", err);
       }
     };
+
+    const fetchLand_classification = async () => {
+      try {
+        const res = await fetch(`${API}/get_land_classifications_list/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setLand_classification(data.data || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch land classifications:", err);
+      }
+    };
+
+    fetchLand_classification();
     fetchBarangays();
   }, [token]);
 
@@ -156,7 +190,7 @@ export default function UpdateReforestationArea() {
 
       try {
         setLoading(true);
-        setError(null);
+        setLoadError(null);
 
         const res = await fetch(`${API}/get_reforestation_area/${id}/`, {
           headers: {
@@ -175,6 +209,8 @@ export default function UpdateReforestationArea() {
           legality: area.legality,
           safety: area.safety,
           barangay_id: area.barangay?.barangay_id || "",
+          land_classification_id:
+            area.land_classification?.land_classification_id || "",
           description: area.description || "",
           coordinate: area.coordinate,
           polygon_coordinate: area.polygon_coordinate,
@@ -188,7 +224,9 @@ export default function UpdateReforestationArea() {
           setImagePreview(imgUrl);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load area");
+        setLoadError(
+          err instanceof Error ? err.message : "Failed to load area",
+        );
       } finally {
         setLoading(false);
       }
@@ -212,26 +250,30 @@ export default function UpdateReforestationArea() {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      // Validate file type
       if (!file.type.startsWith("image/")) {
-        setError("Please select a valid image file");
+        setPSAlert({
+          type: "error",
+          title: "Invalid File",
+          message: "Please select a valid image file.",
+        });
         return;
       }
 
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        setError("Image must be less than 5MB");
+        setPSAlert({
+          type: "error",
+          title: "File Too Large",
+          message: "Image must be less than 5MB.",
+        });
         return;
       }
 
-      // Cleanup previous blob URL
       if (imagePreview?.startsWith("blob:")) {
         URL.revokeObjectURL(imagePreview);
       }
 
       setForm((prev) => ({ ...prev, area_img: file }));
       setImagePreview(URL.createObjectURL(file));
-      setError(null);
     },
     [imagePreview],
   );
@@ -241,19 +283,24 @@ export default function UpdateReforestationArea() {
     e.preventDefault();
     if (!token || !id) return;
 
-    // Validation
     if (!form.name.trim()) {
-      setError("Area name is required");
+      setPSAlert({
+        type: "error",
+        title: "Validation Error",
+        message: "Area name is required.",
+      });
       return;
     }
     if (!form.barangay_id) {
-      setError("Please select a barangay");
+      setPSAlert({
+        type: "error",
+        title: "Validation Error",
+        message: "Please select a barangay.",
+      });
       return;
     }
 
     setSubmitting(true);
-    setError(null);
-    setSuccess(null);
 
     try {
       const formData = new FormData();
@@ -263,6 +310,12 @@ export default function UpdateReforestationArea() {
       formData.append("barangay_id", String(form.barangay_id));
       formData.append("description", form.description.trim());
 
+      if (form.land_classification_id) {
+        formData.append(
+          "land_classification_id",
+          String(form.land_classification_id),
+        );
+      }
       if (form.coordinate) {
         formData.append("coordinate", JSON.stringify(form.coordinate));
       }
@@ -285,13 +338,25 @@ export default function UpdateReforestationArea() {
       const data = await res.json();
 
       if (res.ok) {
-        setSuccess("Area updated successfully! 🎉");
+        setPSAlert({
+          type: "success",
+          title: "Success",
+          message: "Area updated successfully!",
+        });
         setTimeout(() => navigate(-1), 1500);
       } else {
-        setError(data.error || data.detail || "Update failed");
+        setPSAlert({
+          type: "failed",
+          title: "Update Failed",
+          message: data.error || data.detail || "Update failed.",
+        });
       }
     } catch (err) {
-      setError("Network error. Please check your connection.");
+      setPSAlert({
+        type: "error",
+        title: "Network Error",
+        message: "Network error. Please check your connection.",
+      });
       console.error(err);
     } finally {
       setSubmitting(false);
@@ -300,16 +365,19 @@ export default function UpdateReforestationArea() {
 
   // ── Cancel Handler ─────────────────────────────────────────
   const handleCancel = () => {
-    // Cleanup blob URL if exists
     if (imagePreview?.startsWith("blob:")) {
       URL.revokeObjectURL(imagePreview);
     }
     navigate(-1);
   };
 
-  // ── Get selected barangay name for display ─────────────────
+  // ── Derived display values ─────────────────────────────────
   const selectedBarangayName = barangays.find(
     (b) => b.barangay_id === form.barangay_id,
+  )?.name;
+
+  const selectedLandClassificationName = land_classification.find(
+    (lc) => lc.land_classification_id === form.land_classification_id,
   )?.name;
 
   // ── Loading State ──────────────────────────────────────────
@@ -324,8 +392,8 @@ export default function UpdateReforestationArea() {
     );
   }
 
-  // ── Error State ────────────────────────────────────────────
-  if (error && !form.name) {
+  // ── Error State (fatal load error) ────────────────────────
+  if (loadError && !form.name) {
     return (
       <div className="flex items-center justify-center h-screen bg-gradient-to-br from-green-50 to-emerald-100">
         <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md text-center">
@@ -333,7 +401,7 @@ export default function UpdateReforestationArea() {
           <h3 className="text-xl font-bold text-black mb-2">
             Error Loading Area
           </h3>
-          <p className="text-black mb-6">{error}</p>
+          <p className="text-black mb-6">{loadError}</p>
           <button
             onClick={() => navigate(-1)}
             className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
@@ -348,6 +416,17 @@ export default function UpdateReforestationArea() {
   // ── Main Render ────────────────────────────────────────────
   return (
     <div className="flex w-full h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 md:p-6">
+
+      {/* ── PLANTSCOPEALERT ───────────────────────────────── */}
+      {PSalert && (
+        <PlantScopeAlert
+          type={PSalert.type}
+          title={PSalert.title}
+          message={PSalert.message}
+          onClose={() => setPSAlert(null)}
+        />
+      )}
+
       {/* ── IMAGE MODAL ───────────────────────────────────── */}
       {showModal && imagePreview && (
         <div
@@ -394,20 +473,6 @@ export default function UpdateReforestationArea() {
           </button>
         </div>
 
-        {/* Alerts */}
-        {error && (
-          <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-            <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-        {success && (
-          <div className="flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
-            <CheckCircle size={18} className="mt-0.5 flex-shrink-0" />
-            <span>{success}</span>
-          </div>
-        )}
-
         {/* Name Field */}
         <div className="space-y-1.5">
           <label className="text-sm font-semibold text-black flex items-center gap-2">
@@ -416,10 +481,7 @@ export default function UpdateReforestationArea() {
           </label>
           <input
             value={form.name}
-            onChange={(e) => {
-              setForm({ ...form, name: e.target.value });
-              setError(null);
-            }}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="e.g., Reforestation Site Alpha"
             className="w-full border border-black p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all bg-black50"
             required
@@ -435,10 +497,9 @@ export default function UpdateReforestationArea() {
           </label>
           <select
             value={form.barangay_id}
-            onChange={(e) => {
-              setForm({ ...form, barangay_id: parseInt(e.target.value) || "" });
-              setError(null);
-            }}
+            onChange={(e) =>
+              setForm({ ...form, barangay_id: parseInt(e.target.value) || "" })
+            }
             className="w-full border border-black p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all bg-black50 appearance-none cursor-pointer"
             required
             disabled={submitting || barangays.length === 0}
@@ -453,6 +514,40 @@ export default function UpdateReforestationArea() {
           {selectedBarangayName && (
             <p className="text-xs text-green-600 flex items-center gap-1">
               <CheckCircle size={12} /> Selected: {selectedBarangayName}
+            </p>
+          )}
+        </div>
+
+        {/* Land Classification Dropdown */}
+        <div className="space-y-1.5">
+          <label className="text-sm font-semibold text-black flex items-center gap-2">
+            <File size={16} className="text-green-600" />
+            Land Classification
+          </label>
+          <select
+            value={form.land_classification_id}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                land_classification_id: parseInt(e.target.value) || "",
+              })
+            }
+            className="w-full border border-black p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all bg-black50 appearance-none cursor-pointer"
+            disabled={submitting || land_classification.length === 0}
+          >
+            <option value="">-- Select Land Classification --</option>
+            {land_classification.map((lc) => (
+              <option
+                key={lc.land_classification_id}
+                value={lc.land_classification_id}
+              >
+                {lc.name}
+              </option>
+            ))}
+          </select>
+          {selectedLandClassificationName && (
+            <p className="text-xs text-green-600 flex items-center gap-1">
+              <CheckCircle size={12} /> Selected: {selectedLandClassificationName}
             </p>
           )}
         </div>
@@ -474,7 +569,6 @@ export default function UpdateReforestationArea() {
         </div>
 
         {/* Legality & Safety Row */}
-        
 
         {/* Coordinate Input */}
         <div className="space-y-1.5">
@@ -567,7 +661,7 @@ export default function UpdateReforestationArea() {
             type="button"
             onClick={handleCancel}
             disabled={submitting}
-            className="flex-1 border border-black p-3 rounded-xl hover:bg-blacktransition-colors font-medium text-black disabled:opacity-50"
+            className="flex-1 border border-black p-3 rounded-xl hover:bg-black transition-colors font-medium text-black disabled:opacity-50"
           >
             Cancel
           </button>
@@ -617,9 +711,7 @@ export default function UpdateReforestationArea() {
                     <strong>{form.name || "Selected Location"}</strong>
                     {selectedBarangayName && <br />}
                     {selectedBarangayName && (
-                      <span className="text-black">
-                        {selectedBarangayName}
-                      </span>
+                      <span className="text-black">{selectedBarangayName}</span>
                     )}
                   </div>
                 </Popup>

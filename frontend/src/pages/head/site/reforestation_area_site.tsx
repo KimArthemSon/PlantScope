@@ -1,17 +1,8 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
-  Edit,
-  Plus,
   ChevronRight,
   ChevronLeft,
-  User,
-  CheckCheckIcon,
-  VerifiedIcon,
-  Eye,
   Leaf,
-  TreePalm,
-  LocateFixedIcon,
   List,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
@@ -31,6 +22,7 @@ interface ReforestationArea {
     barangay_id: number;
     name: string;
   };
+  pre_assessment_status: string;
   description: string;
   area_img: string | null;
   created_at: string;
@@ -43,6 +35,7 @@ interface Filter {
   total_page: number;
   legality: string;
   safety: string;
+  pre_assessment_status: string;
 }
 
 export default function Reforestation_area_site() {
@@ -54,6 +47,7 @@ export default function Reforestation_area_site() {
     total_page: 1,
     legality: "legal",
     safety: "All",
+    pre_assessment_status: "approved",
   });
 
   const [loading, setLoading] = useState(false);
@@ -102,6 +96,7 @@ export default function Reforestation_area_site() {
         entries: filter.entries.toString(),
         legality: filter.legality,
         safety: filter.safety,
+          pre_assessment_status: filter.pre_assessment_status,
       });
 
       const response = await fetch(
@@ -250,7 +245,7 @@ export default function Reforestation_area_site() {
             className="border border-black p-2 rounded-md text-[.8rem]"
           >
             <option value="All">All</option>
-            <option value="safe">Low Risk</option>
+            <option value="safe">Safe</option>
             <option value="slightly">Slightly Unsafe</option>
             <option value="moderate">Moderate Risk</option>
             <option value="danger">High Risk</option>
