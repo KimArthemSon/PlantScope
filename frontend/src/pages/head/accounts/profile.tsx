@@ -523,7 +523,7 @@ export function Profile() {
                     }))
                   }
                 >
-                  <option value="CityENROHead">City ENRO Head</option>
+                  <option value="CityENROHead">Head</option>
                   <option value="OnsiteInspector">Onsite Inspector</option>
                   <option value="GISSpecialist">GIS Specialist</option>
                   <option value="DataManager">Data Manager</option>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -28,10 +28,14 @@ import {
   ShieldCheck,
   Droplets,
   Mountain,
+  Camera as CameraIcon,
+  RotateCcw,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import MapView, { Marker, Polygon } from "react-native-maps";
+import MapView, { Marker } from "react-native-maps";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImageManipulator from "expo-image-manipulator";
 import * as SecureStore from "expo-secure-store";
 
 import { useFieldAssessment } from "@/hooks/useFieldAssessment";
@@ -47,7 +51,7 @@ const MARKER_STATUS_OPTIONS = [
   "some_missing",
   "none_visible",
   "replaced_temporarily",
-  "other", // ✅ Single-select "other" option
+  "other",
 ];
 
 const ENCROACHMENT_TYPES = [
@@ -56,9 +60,617 @@ const ENCROACHMENT_TYPES = [
   "livestock_grazing",
   "illegal_logging",
   "none",
-  "other", // ✅ Single-select "other" option
+  "other",
 ];
 
+// ─────────────────────────────────────────────
+// GPS Camera Component (Inline - Same File)
+// ─────────────────────────────────────────────
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  address?: string;
+  city?: string;
+  barangay?: string;
+  timestamp: string;
+  accuracy?: number;
+}
+
+function GPSStampCamera({
+  onImageCaptured,
+  onClose,
+}: {
+  onImageCaptured: (uri: string, location: LocationData) => void;
+  onClose: () => void;
+}) {
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [locationPermission, requestLocationPermission] =
+    Location.useForegroundPermissions();
+  const [capturing, setCapturing] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<LocationData | null>(
+    null
+  );
+  const [showMap, setShowMap] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const cameraRef = useRef<CameraView>(null);
+
+  const getCurrentLocation = async () => {
+    try {
+      if (!locationPermission?.granted) {
+        const status = await requestLocationPermission();
+        if (!status?.granted) {
+          Alert.alert("Permission Denied", "Location access is required");
+          return null;
+        }
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Highest,
+      });
+
+      const addresses = await Location.reverseGeocodeAsync({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+
+      const address = addresses[0];
+
+      const locData: LocationData = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        address: address?.street || "",
+        city: address?.city || address?.region || "",
+        barangay: address?.subregion || address?.district || "",
+        timestamp: new Date().toLocaleString("en-PH", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+        accuracy: location.coords.accuracy,
+      };
+
+      setCurrentLocation(locData);
+      return locData;
+    } catch (error) {
+      console.error("Location error:", error);
+      Alert.alert("Error", "Could not get location");
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
+
+  const stampCoordinatesOnImage = async (
+    imageUri: string,
+    location: LocationData
+  ) => {
+    try {
+      const locationText = location.city || location.barangay || "Unknown";
+      const coordsText = `Lat: ${location.latitude.toFixed(6)}° Long: ${location.longitude.toFixed(6)}°`;
+      const timestampText = location.timestamp;
+      const accuracyText = location.accuracy
+        ? `±${Math.round(location.accuracy)}m`
+        : "";
+
+      const manipulatedImage = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [],
+        {
+          compress: 0.9,
+          format: ImageManipulator.SaveFormat.JPEG,
+        }
+      );
+
+      return {
+        uri: manipulatedImage.uri,
+        locationText,
+        coordsText,
+        timestampText,
+        accuracyText,
+      };
+    } catch (error) {
+      console.error("Image manipulation error:", error);
+      return {
+        uri: imageUri,
+        locationText: location.city || "Unknown",
+        coordsText: `Lat: ${location.latitude.toFixed(6)}° Long: ${location.longitude.toFixed(6)}°`,
+        timestampText: location.timestamp,
+        accuracyText: "",
+      };
+    }
+  };
+
+  const takePicture = async () => {
+    if (!cameraRef.current) return;
+
+    setCapturing(true);
+    try {
+      let locData = currentLocation;
+      if (!locData) {
+        Alert.alert(
+          "Getting Location",
+          "Please wait while we get your GPS coordinates..."
+        );
+        locData = await getCurrentLocation();
+      }
+
+      if (!locData) {
+        Alert.alert(
+          "Location Required",
+          "GPS coordinates are required to capture photos"
+        );
+        setCapturing(false);
+        return;
+      }
+
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.9,
+        base64: false,
+        exif: true,
+      });
+
+      if (!photo?.uri) {
+        Alert.alert("Error", "Failed to capture photo");
+        setCapturing(false);
+        return;
+      }
+
+      setProcessing(true);
+      const stampedImage = await stampCoordinatesOnImage(photo.uri, locData);
+
+      Alert.alert(
+        "Photo Captured",
+        `${stampedImage.locationText}\n${stampedImage.coordsText}`,
+        [
+          {
+            text: "Retake",
+            style: "cancel",
+            onPress: () => {},
+          },
+          {
+            text: "Use Photo",
+            onPress: () => {
+              onImageCaptured(stampedImage.uri, locData);
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error("Capture error:", error);
+      Alert.alert("Error", "Failed to capture photo");
+    } finally {
+      setCapturing(false);
+      setProcessing(false);
+    }
+  };
+
+  if (!cameraPermission || !locationPermission) {
+    return (
+      <View style={gpsStyles.centerContent}>
+        <ActivityIndicator size="large" color="#0F4A2F" />
+        <Text style={gpsStyles.permissionText}>Requesting permissions...</Text>
+      </View>
+    );
+  }
+
+  if (!cameraPermission.granted || !locationPermission.granted) {
+    return (
+      <View style={gpsStyles.centerContent}>
+        <CameraIcon size={48} color="#64748b" />
+        <Text style={gpsStyles.permissionText}>
+          Camera and Location permissions required
+        </Text>
+        <TouchableOpacity
+          style={gpsStyles.permissionBtn}
+          onPress={() => {
+            requestCameraPermission();
+            requestLocationPermission();
+          }}
+        >
+          <Text style={gpsStyles.permissionBtnText}>Grant Permissions</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={gpsStyles.closeBtnSimple}
+          onPress={onClose}
+        >
+          <Text style={gpsStyles.closeBtnText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={gpsStyles.container}>
+      <CameraView ref={cameraRef} style={gpsStyles.camera} facing="back">
+        {/* Top Bar */}
+        <View style={gpsStyles.topBar}>
+          <TouchableOpacity
+            style={gpsStyles.closeButton}
+            onPress={onClose}
+          >
+            <X size={24} color="#fff" />
+          </TouchableOpacity>
+
+          {currentLocation && (
+            <TouchableOpacity
+              style={gpsStyles.locationBadge}
+              onPress={() => setShowMap(true)}
+              activeOpacity={0.7}
+            >
+              <MapPin size={14} color="#0F4A2F" />
+              <Text style={gpsStyles.locationBadgeText} numberOfLines={1}>
+                {currentLocation.city ||
+                  currentLocation.barangay ||
+                  "Getting location..."}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={gpsStyles.refreshLocationBtn}
+            onPress={getCurrentLocation}
+          >
+            <RotateCcw size={18} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* GPS Info Overlay */}
+        {currentLocation && (
+          <View style={gpsStyles.gpsOverlay}>
+            <View style={gpsStyles.gpsHeader}>
+              <MapPin size={16} color="#EF4444" />
+              <Text style={gpsStyles.gpsLocationText} numberOfLines={1}>
+                {currentLocation.barangay
+                  ? `${currentLocation.barangay}, ${currentLocation.city}`
+                  : currentLocation.city || "Unknown Location"}
+              </Text>
+            </View>
+            <Text style={gpsStyles.gpsCoordsText}>
+              {currentLocation.latitude.toFixed(6)}°,{" "}
+              {currentLocation.longitude.toFixed(6)}°
+            </Text>
+            <Text style={gpsStyles.gpsTimeText}>{currentLocation.timestamp}</Text>
+            {currentLocation.accuracy && (
+              <Text style={gpsStyles.gpsAccuracyText}>
+                Accuracy: ±{Math.round(currentLocation.accuracy)}m
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* Capture Button */}
+        <View style={gpsStyles.captureContainer}>
+          <TouchableOpacity
+            style={gpsStyles.captureButton}
+            onPress={takePicture}
+            disabled={capturing || processing}
+            activeOpacity={0.8}
+          >
+            {capturing || processing ? (
+              <ActivityIndicator color="#0F4A2F" size="large" />
+            ) : (
+              <View style={gpsStyles.captureButtonInner}>
+                <CameraIcon size={32} color="#0F4A2F" />
+              </View>
+            )}
+          </TouchableOpacity>
+          <Text style={gpsStyles.captureHint}>
+            {currentLocation ? "Tap to capture with GPS" : "Getting GPS..."}
+          </Text>
+        </View>
+      </CameraView>
+
+      {/* Map Modal */}
+      <Modal
+        visible={showMap}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowMap(false)}
+      >
+        <View style={gpsStyles.mapModalContainer}>
+          <View style={gpsStyles.mapModalContent}>
+            <View style={gpsStyles.mapHeader}>
+              <Text style={gpsStyles.mapTitle}>Your Location</Text>
+              <TouchableOpacity onPress={() => setShowMap(false)}>
+                <X size={24} color="#0F4A2F" />
+              </TouchableOpacity>
+            </View>
+
+            {currentLocation ? (
+              <>
+                <MapView
+                  style={gpsStyles.map}
+                  initialRegion={{
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
+                    latitudeDelta: 0.01,
+                    longitudeDelta: 0.01,
+                  }}
+                  showsUserLocation={true}
+                  showsMyLocationButton={true}
+                >
+                  <Marker
+                    coordinate={{
+                      latitude: currentLocation.latitude,
+                      longitude: currentLocation.longitude,
+                    }}
+                    title={currentLocation.city || "Current Location"}
+                    description={
+                      currentLocation.barangay
+                        ? `${currentLocation.barangay}, ${currentLocation.city}`
+                        : currentLocation.address
+                    }
+                  />
+                </MapView>
+
+                <View style={gpsStyles.mapInfo}>
+                  <View style={gpsStyles.mapInfoRow}>
+                    <Text style={gpsStyles.mapInfoLabel}>📍 Coordinates:</Text>
+                    <Text style={gpsStyles.mapInfoValue}>
+                      {currentLocation.latitude.toFixed(6)}°,{" "}
+                      {currentLocation.longitude.toFixed(6)}°
+                    </Text>
+                  </View>
+                  <View style={gpsStyles.mapInfoRow}>
+                    <Text style={gpsStyles.mapInfoLabel}>🏛️ Location:</Text>
+                    <Text style={gpsStyles.mapInfoValue}>
+                      {currentLocation.barangay &&
+                        `${currentLocation.barangay}, `}
+                      {currentLocation.city}
+                    </Text>
+                  </View>
+                  <View style={gpsStyles.mapInfoRow}>
+                    <Text style={gpsStyles.mapInfoLabel}>⏰ Time:</Text>
+                    <Text style={gpsStyles.mapInfoValue}>
+                      {currentLocation.timestamp}
+                    </Text>
+                  </View>
+                  {currentLocation.accuracy && (
+                    <View style={gpsStyles.mapInfoRow}>
+                      <Text style={gpsStyles.mapInfoLabel}>📡 Accuracy:</Text>
+                      <Text style={gpsStyles.mapInfoValue}>
+                        ±{Math.round(currentLocation.accuracy)} meters
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </>
+            ) : (
+              <View style={gpsStyles.centerContent}>
+                <ActivityIndicator size="large" color="#0F4A2F" />
+                <Text style={{ marginTop: 10, color: "#64748b" }}>
+                  Loading map...
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Processing Indicator */}
+      {processing && (
+        <View style={gpsStyles.processingOverlay}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={gpsStyles.processingText}>Adding GPS stamp...</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const gpsStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#000" },
+  centerContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+    backgroundColor: "#F8FAFC",
+  },
+  permissionText: {
+    fontSize: 16,
+    textAlign: "center",
+    marginTop: 16,
+    marginBottom: 24,
+    color: "#475569",
+    lineHeight: 24,
+  },
+  permissionBtn: {
+    backgroundColor: "#0F4A2F",
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  permissionBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  closeBtnSimple: { paddingVertical: 10, paddingHorizontal: 24 },
+  closeBtnText: { color: "#64748b", fontWeight: "600", fontSize: 14 },
+  camera: { flex: 1 },
+  topBar: {
+    position: "absolute",
+    top: 50,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    zIndex: 10,
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  locationBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    maxWidth: "60%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  locationBadgeText: {
+    color: "#0F4A2F",
+    fontWeight: "600",
+    fontSize: 13,
+    marginLeft: 6,
+  },
+  refreshLocationBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(15, 74, 47, 0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  gpsOverlay: {
+    position: "absolute",
+    bottom: 120,
+    left: 16,
+    right: 16,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    borderRadius: 12,
+    padding: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  gpsHeader: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  gpsLocationText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+    marginLeft: 6,
+    flex: 1,
+  },
+  gpsCoordsText: {
+    color: "#10b981",
+    fontSize: 13,
+    fontWeight: "600",
+    fontFamily: "monospace",
+    marginBottom: 4,
+  },
+  gpsTimeText: { color: "#94a3b8", fontSize: 11, marginBottom: 2 },
+  gpsAccuracyText: { color: "#64748b", fontSize: 10, fontStyle: "italic" },
+  captureContainer: {
+    position: "absolute",
+    bottom: 30,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  captureButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 5,
+    borderColor: "rgba(255,255,255,0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  captureButtonInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  captureHint: {
+    color: "#fff",
+    fontSize: 13,
+    marginTop: 12,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  mapModalContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    justifyContent: "flex-end",
+  },
+  mapModalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: "80%",
+    paddingBottom: 20,
+  },
+  mapHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+  mapTitle: { fontSize: 18, fontWeight: "700", color: "#0F4A2F" },
+  map: { width: "100%", height: 300 },
+  mapInfo: {
+    padding: 16,
+    backgroundColor: "#F8FAFC",
+    margin: 16,
+    borderRadius: 12,
+  },
+  mapInfoRow: { flexDirection: "row", marginBottom: 8, flexWrap: "wrap" },
+  mapInfoLabel: {
+    fontWeight: "600",
+    color: "#475569",
+    fontSize: 13,
+    marginRight: 8,
+    minWidth: 100,
+  },
+  mapInfoValue: { color: "#0F4A2F", fontSize: 13, flex: 1 },
+  processingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
+  },
+  processingText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 12,
+  },
+});
+
+// ─────────────────────────────────────────────
+// Main Form Component
+// ─────────────────────────────────────────────
 export default function BoundaryVerificationForm() {
   const params = useLocalSearchParams();
   const areaId = params.areaId as string;
@@ -78,14 +690,12 @@ export default function BoundaryVerificationForm() {
   const [encroachmentDetected, setEncroachmentDetected] = useState(false);
   const [encroachmentType, setEncroachmentType] = useState("none");
   const [slopeBoundaryCheck, setSlopeBoundaryCheck] = useState(false);
-  
-  // ✅ Simplified coordinate feedback: single point + marker name (not JSON array)
+
   const [boundaryLat, setBoundaryLat] = useState("");
   const [boundaryLng, setBoundaryLng] = useState("");
   const [markerName, setMarkerName] = useState("");
   const [boundaryNotes, setBoundaryNotes] = useState("");
 
-  // ✅ Location state for assessment location (optional)
   const [locationLat, setLocationLat] = useState("");
   const [locationLng, setLocationLng] = useState("");
   const [locationAccuracy, setLocationAccuracy] = useState("");
@@ -93,9 +703,12 @@ export default function BoundaryVerificationForm() {
 
   // State: UI
   const [images, setImages] = useState<any[]>([]);
-  const [isViewMode, setIsViewMode] = useState(false); // ✅ Only true after SUBMIT, not after save draft
+  const [isViewMode, setIsViewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!assessmentId);
+
+  // ✅ NEW: GPS Camera State
+  const [showGPSCamera, setShowGPSCamera] = useState(false);
 
   // ─────────────────────────────────────────────
   // Effect: Load Data if Editing
@@ -107,7 +720,6 @@ export default function BoundaryVerificationForm() {
         if (data) {
           populateForm(data.field_assessment_data || {});
           setImages(data.images || []);
-          // ✅ Only lock if truly submitted (not just saved as draft)
           setIsViewMode(!!data.is_submitted);
         }
         setLoading(false);
@@ -118,7 +730,6 @@ export default function BoundaryVerificationForm() {
     }
   }, [assessmentId]);
 
-  // Helper: Populate State from JSON
   const populateForm = (data: any) => {
     setMarkersStatus(data.boundary_markers_status || "");
     setDeviationMeters(data.boundary_deviation_meters?.toString() || "");
@@ -128,19 +739,22 @@ export default function BoundaryVerificationForm() {
     setSlopeBoundaryCheck(data.slope_boundary_check || false);
     setBoundaryNotes(data.boundary_notes || "");
 
-    // ✅ Load boundary coordinate feedback (simplified: first point only)
-    if (Array.isArray(data.boundary_coordinates_feedback) && data.boundary_coordinates_feedback.length > 0) {
+    if (
+      Array.isArray(data.boundary_coordinates_feedback) &&
+      data.boundary_coordinates_feedback.length > 0
+    ) {
       const first = data.boundary_coordinates_feedback[0];
       setBoundaryLat(first.latitude?.toString() || "");
       setBoundaryLng(first.longitude?.toString() || "");
       setMarkerName(first.marker_name || "");
     }
 
-    // ✅ Load location if present
     if (data.location) {
       setLocationLat(data.location.latitude?.toString() || "");
       setLocationLng(data.location.longitude?.toString() || "");
-      setLocationAccuracy(data.location.gps_accuracy_meters?.toString() || "");
+      setLocationAccuracy(
+        data.location.gps_accuracy_meters?.toString() || ""
+      );
     }
   };
 
@@ -171,11 +785,60 @@ export default function BoundaryVerificationForm() {
     }
   };
 
+  // ✅ NEW: Handle GPS Photo Capture
+  const handleGPSPhotoCaptured = async (uri: string, location: LocationData) => {
+    setShowGPSCamera(false);
+
+    if (!assessmentId) {
+      Alert.alert(
+        "Action Required",
+        "Please save the draft first to get an ID for image uploads."
+      );
+      return;
+    }
+
+    try {
+      // Create FormData for upload
+      const formData = new FormData();
+      formData.append("image", {
+        uri: Platform.OS === "ios" ? uri.replace("file://", "") : uri,
+        name: `gps_photo_${Date.now()}.jpg`,
+        type: "image/jpeg",
+      } as any);
+      formData.append("assessment_id", assessmentId);
+      formData.append("layer", layerId);
+      formData.append("gps_data", JSON.stringify(location));
+
+      // Upload using existing hook
+      const token = await SecureStore.getItemAsync("token");
+      const response = await fetch(`${API_BASE}/upload_assessment_image/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        // Re-fetch to update gallery
+        const data = await fetchAssessmentData();
+        if (data) setImages(data.images || []);
+        Alert.alert("Success", "GPS-stamped photo uploaded!");
+      } else {
+        Alert.alert("Upload Failed", result.error || "Please try again");
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      Alert.alert("Error", "Failed to upload photo");
+    }
+  };
+
   // ─────────────────────────────────────────────
   // Handlers: Form Logic
   // ─────────────────────────────────────────────
   const buildPayload = () => {
-    // Build location object only if lat/lng are provided
     const location =
       locationLat && locationLng
         ? {
@@ -187,7 +850,6 @@ export default function BoundaryVerificationForm() {
           }
         : null;
 
-    // Build boundary_coordinates_feedback as simplified array
     const boundaryCoordinatesFeedback =
       boundaryLat && boundaryLng
         ? [
@@ -195,7 +857,7 @@ export default function BoundaryVerificationForm() {
               latitude: parseFloat(boundaryLat),
               longitude: parseFloat(boundaryLng),
               marker_name: markerName || null,
-              confidence: "high", // Default for mobile simplicity
+              confidence: "high",
               notes: boundaryNotes || null,
             },
           ]
@@ -213,7 +875,7 @@ export default function BoundaryVerificationForm() {
       slope_boundary_check: slopeBoundaryCheck,
       boundary_coordinates_feedback: boundaryCoordinatesFeedback,
       boundary_notes: boundaryNotes || null,
-      location, // ✅ Include location in payload
+      location,
     };
   };
 
@@ -221,7 +883,6 @@ export default function BoundaryVerificationForm() {
     const payload = buildPayload();
     const success = await handleSave(payload, false);
     if (success) {
-      // ✅ Re-fetch to get updated data (including new assessmentId if just created)
       if (assessmentId) {
         const data = await fetchAssessmentData();
         if (data) {
@@ -245,7 +906,6 @@ export default function BoundaryVerificationForm() {
             const payload = buildPayload();
             const success = await handleSave(payload, true);
             if (success) {
-              // ✅ Lock form after successful submit
               setIsViewMode(true);
               Alert.alert("Success", "Assessment submitted to GIS Specialist!");
             }
@@ -265,7 +925,6 @@ export default function BoundaryVerificationForm() {
     }
     const success = await uploadImage(assessmentId);
     if (success) {
-      // ✅ Re-fetch to update gallery
       const data = await fetchAssessmentData();
       if (data) setImages(data.images || []);
     }
@@ -279,7 +938,6 @@ export default function BoundaryVerificationForm() {
         style: "destructive",
         onPress: async () => {
           await deleteImage(img.image_id);
-          // ✅ Re-fetch to update gallery
           const data = await fetchAssessmentData();
           if (data) setImages(data.images || []);
         },
@@ -343,7 +1001,9 @@ export default function BoundaryVerificationForm() {
               editable={!isViewMode}
             />
           )}
-          <Text style={styles.label}>Deviation from Planned Polygon (meters)</Text>
+          <Text style={styles.label}>
+            Deviation from Planned Polygon (meters)
+          </Text>
           <TextInput
             style={styles.input}
             keyboardType="numeric"
@@ -372,7 +1032,9 @@ export default function BoundaryVerificationForm() {
             <Text style={styles.label}>Encroachment Detected?</Text>
             <Switch
               value={encroachmentDetected}
-              onValueChange={(val) => !isViewMode && setEncroachmentDetected(val)}
+              onValueChange={(val: any) =>
+                !isViewMode && setEncroachmentDetected(val)
+              }
               disabled={isViewMode}
               trackColor={{ false: "#cbd5e1", true: "#0F4A2F" }}
             />
@@ -419,7 +1081,7 @@ export default function BoundaryVerificationForm() {
             </>
           )}
           <View style={styles.rowBetween}>
-            <Text style={styles.label}>Boundary crosses >30° slope?</Text>
+            <Text style={styles.label}>Boundary crosses &gt;30° slope?</Text>
             <Switch
               value={slopeBoundaryCheck}
               onValueChange={(val) => !isViewMode && setSlopeBoundaryCheck(val)}
@@ -470,7 +1132,8 @@ export default function BoundaryVerificationForm() {
             editable={!isViewMode}
           />
           <Text style={styles.hint}>
-            This single point helps GIS Specialist verify boundary alignment. Add more points in notes if needed.
+            This single point helps GIS Specialist verify boundary alignment.
+            Add more points in notes if needed.
           </Text>
         </SectionCard>
 
@@ -531,7 +1194,8 @@ export default function BoundaryVerificationForm() {
             </TouchableOpacity>
           )}
           <Text style={styles.hint}>
-            Optional: Leave blank if assessment was done during a meeting. GIS Specialist can assign coordinates later.
+            Optional: Leave blank if assessment was done during a meeting. GIS
+            Specialist can assign coordinates later.
           </Text>
         </SectionCard>
 
@@ -556,7 +1220,7 @@ export default function BoundaryVerificationForm() {
               longitudeDelta: 0.01,
             }}
           >
-            {(locationLat && locationLng) && (
+            {locationLat && locationLng && (
               <Marker
                 coordinate={{
                   latitude: parseFloat(locationLat),
@@ -565,8 +1229,7 @@ export default function BoundaryVerificationForm() {
                 title="Assessment Location"
               />
             )}
-            {/* Optional: Show boundary point if entered */}
-            {(boundaryLat && boundaryLng) && (
+            {boundaryLat && boundaryLng && (
               <Marker
                 coordinate={{
                   latitude: parseFloat(boundaryLat),
@@ -578,7 +1241,8 @@ export default function BoundaryVerificationForm() {
             )}
           </MapView>
           <Text style={styles.hint}>
-            Map shows approximate context. Final boundary will be drawn by GIS Specialist using drone imagery.
+            Map shows approximate context. Final boundary will be drawn by GIS
+            Specialist using drone imagery.
           </Text>
         </SectionCard>
 
@@ -630,17 +1294,37 @@ export default function BoundaryVerificationForm() {
               </View>
             ))}
             {!isViewMode && (
-              <TouchableOpacity
-                style={styles.addPhotoBtn}
-                onPress={handlePickImage}
-              >
-                <ImagePlus size={24} color="#64748b" />
-                <Text style={{ color: "#64748b", fontSize: 10 }}>
-                  Add Photo
-                </Text>
-              </TouchableOpacity>
+              <>
+                {/* ✅ EXISTING: Pick from Gallery */}
+                <TouchableOpacity
+                  style={styles.addPhotoBtn}
+                  onPress={handlePickImage}
+                >
+                  <ImagePlus size={24} color="#64748b" />
+                  <Text style={{ color: "#64748b", fontSize: 10 }}>
+                    Add Photo
+                  </Text>
+                </TouchableOpacity>
+
+                {/* ✅ NEW: GPS Camera Button */}
+                <TouchableOpacity
+                  style={[styles.addPhotoBtn, { borderColor: "#0F4A2F" }]}
+                  onPress={() => setShowGPSCamera(true)}
+                >
+                  <CameraIcon size={24} color="#0F4A2F" />
+                  <Text style={{ color: "#0F4A2F", fontSize: 10 }}>
+                    GPS Photo
+                  </Text>
+                </TouchableOpacity>
+              </>
             )}
           </ScrollView>
+          {!isViewMode && (
+            <Text style={[styles.hint, { marginTop: 8 }]}>
+              • "Add Photo" = Pick from gallery{"\n"}• "GPS Photo" = Capture with
+              coordinates stamped
+            </Text>
+          )}
         </SectionCard>
 
         {/* Footer Spacer */}
@@ -690,6 +1374,19 @@ export default function BoundaryVerificationForm() {
             resizeMode="contain"
           />
         </View>
+      </Modal>
+
+      {/* ✅ NEW: GPS Camera Modal */}
+      <Modal
+        visible={showGPSCamera}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowGPSCamera(false)}
+      >
+        <GPSStampCamera
+          onImageCaptured={handleGPSPhotoCaptured}
+          onClose={() => setShowGPSCamera(false)}
+        />
       </Modal>
     </View>
   );

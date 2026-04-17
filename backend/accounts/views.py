@@ -58,6 +58,7 @@ def register_user(request):
     gender = request.POST.get('gender')
 
     organization_name = ""
+    total_members = 0
     org_email = ""
     org_address = ""
     org_contact = ""
@@ -80,9 +81,11 @@ def register_user(request):
         org_address = request.POST.get('org_address')
         org_contact = request.POST.get('org_contact')
         org_profile = request.FILES.get('org_profile')
+       
         #application
 
         title = request.POST.get('title')
+        total_members = request.POST.get('total_members')
         description = request.POST.get('description')
         # Dates
         project_duration = int(request.POST.get('project_duration', 0))
@@ -140,10 +143,12 @@ def register_user(request):
                     user = user,
                     title = title,
                     description = description,
-                    status =  "for_evaluation",
+                    classification = 'new',
+                    status="for_evaluation",
                     project_duration = project_duration ,    
                     maintenance_plan = maintenance_plan,
                     total_request_seedling =  total_request_seedling,
+                    total_members=total_members
                 )
     except Exception as e:
         print(e)
@@ -173,7 +178,10 @@ def login_user(request):
     except User.DoesNotExist:
         log_event(None, email, SecurityLog.LOGIN_FAILED, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
         return JsonResponse({'error': 'Login failed. Please check your credentials.'}, status=401)
-
+    
+    if not user.is_active:
+        return JsonResponse({'error': 'Your account is deactivated!'}, status=401)
+    
     # Hash the input password and compare
     hashed_password = hashlib.sha256(password.encode()).hexdigest()
     if hashed_password != user.password:

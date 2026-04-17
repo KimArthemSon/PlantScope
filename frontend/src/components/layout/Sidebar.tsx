@@ -1,19 +1,17 @@
 import {
   LayoutDashboard,
   Satellite,
-  Layers,
   BarChart3,
   ClipboardList,
-  CheckCircle,
   TreePine,
   FileText,
   Users,
   LogOut,
   ChevronLeft,
-  Mountain,
   Map,
-  BarChart,
   Layers2,
+  ListCheck,
+  MonitorDot
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
@@ -26,7 +24,7 @@ import { useAuthorize } from "../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
 
 // ✅ Import the MaintenanceDropdown component
-import MaintenanceDropdown from "./maintenance/MaintenanceDropdown";
+// import MaintenanceDropdown from "./maintenance/MaintenanceDropdown";
 
 // ✅ Import your custom scrollbar styles
 import "../../global css/sidebarScrollbar.css";
@@ -171,11 +169,11 @@ export default function Sidebar() {
             </Link>
 
             {/* Maintenance Dropdown */}
-            <MaintenanceDropdown
+            {/* <MaintenanceDropdown
               expanded={expanded}
               maintenanceOpen={maintenanceOpen}
               setMaintenanceOpen={setMaintenanceOpen}
-            />
+            /> */}
             {/* Analysis */}
             <Link
               to="/reforestation_area_site"
@@ -191,31 +189,6 @@ export default function Sidebar() {
             >
               <span className="mr-auto">
                 <Layers2 size={20} />
-              </span>
-              <span
-                className={`
-                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
-                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
-                `}
-              >
-                Sites
-              </span>
-            </Link>
-            {/* Site */}
-            <Link
-              to="/analysis"
-              className={`
-                flex flex-row items-center transition-all duration-200 rounded-md
-                px-6 py-3 justify-center
-                ${
-                  location.pathname === "/analysis"
-                    ? "bg-white/25 text-white shadow-inner"
-                    : "text-white/80 hover:bg-white/10 hover:text-white"
-                }
-              `}
-            >
-              <span className="mr-auto">
-                <BarChart3 size={20} />
               </span>
               <span
                 className={`
@@ -279,8 +252,57 @@ export default function Sidebar() {
               </span>
             </Link>
 
-            {/* Reports */}
             <Link
+              to="/applications"
+              className={`
+                flex flex-row items-center transition-all duration-200 rounded-md
+                px-6 py-3 justify-center
+                ${
+                  location.pathname === "/applications"
+                    ? "bg-white/25 text-white shadow-inner"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
+                }
+              `}
+            >
+              <span className="mr-auto">
+                <ListCheck size={20} />
+              </span>
+              <span
+                className={`
+                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
+                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
+                `}
+              >
+                Applications
+              </span>
+            </Link>
+            <Link
+              to="/monitoring"
+              className={`
+                flex flex-row items-center transition-all duration-200 rounded-md
+                px-6 py-3 justify-center
+                ${
+                  location.pathname === "/monitoring"
+                    ? "bg-white/25 text-white shadow-inner"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
+                }
+              `}
+            >
+              <span className="mr-auto">
+                <MonitorDot size={20} />
+              </span>
+              <span
+                className={`
+                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
+                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
+                `}
+              >
+                Monitoring
+              </span>
+            </Link>
+
+            {/* Reports */}
+            {/* <Link
               to="/reports"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
@@ -303,8 +325,32 @@ export default function Sidebar() {
               >
                 Reports
               </span>
+            </Link> */}
+            {/* Site */}
+            <Link
+              to="/analysis"
+              className={`
+                flex flex-row items-center transition-all duration-200 rounded-md
+                px-6 py-3 justify-center
+                ${
+                  location.pathname === "/analysis"
+                    ? "bg-white/25 text-white shadow-inner"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
+                }
+              `}
+            >
+              <span className="mr-auto">
+                <BarChart3 size={20} />
+              </span>
+              <span
+                className={`
+                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
+                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
+                `}
+              >
+                Report
+              </span>
             </Link>
-
             {/* Log Trail */}
             <Link
               to="/Log-trail"

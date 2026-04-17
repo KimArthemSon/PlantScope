@@ -20,7 +20,7 @@ type Assessment = {
   updated_at: string;
 };
 
-export default function Pre_assessment() {
+export default function MetaDataAssessment() { // ✅ Renamed component
   const { areaId, areaName } = useLocalSearchParams<{ areaId: string; areaName: string }>();
   const router = useRouter();
   const [assessments, setAssessments] = useState<Assessment[]>([]);
@@ -30,8 +30,8 @@ export default function Pre_assessment() {
   const fetchAssessments = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      // ✅ Updated: Filter by layer=pre_assessment + area ID
-      const url = `${API_BASE_URL}/field_assessments/?reforestation_area_id=${areaId}&layer=pre_assessment`;
+      // ✅ Updated: Filter by layer=meta_data + area ID
+      const url = `${API_BASE_URL}/field_assessments/?reforestation_area_id=${areaId}&layer=meta_data`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       });
@@ -77,7 +77,7 @@ export default function Pre_assessment() {
       <Text style={styles.desc}>{item.assessment_date ? `Date: ${new Date(item.assessment_date).toLocaleDateString()}` : "No date set"}</Text>
       <Text style={styles.meta}>{item.image_count} image(s) attached • Created: {new Date(item.created_at).toLocaleDateString()}</Text>
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.btnEdit} onPress={() => router.push(`/feedbacks/pre_assessment_form?id=${item.field_assessment_id}&areaId=${areaId}`)}>
+        <TouchableOpacity style={styles.btnEdit} onPress={() => router.push(`/feedbacks/meta_data_form?id=${item.field_assessment_id}&areaId=${areaId}`)}> {/* ✅ Updated route */}
           <Text style={styles.btnTextEdit}>{item.is_submitted ? "View" : "Edit"}</Text>
         </TouchableOpacity>
         {!item.is_submitted && (
@@ -97,9 +97,9 @@ export default function Pre_assessment() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Pre-Assessment: {areaName}</Text>
-        <TouchableOpacity style={styles.createBtn} onPress={() => router.push(`/feedbacks/pre_assessment_form?areaId=${areaId}`)}>
-          <Text style={styles.createBtnText}>+ New Assessment</Text>
+        <Text style={styles.headerTitle}>Meta Data: {areaName}</Text> {/* ✅ Updated title */}
+        <TouchableOpacity style={styles.createBtn} onPress={() => router.push(`/feedbacks/meta_data_form?areaId=${areaId}`)}> {/* ✅ Updated route */}
+          <Text style={styles.createBtnText}>+ New Meta Data Entry</Text> {/* ✅ Updated button text */}
         </TouchableOpacity>
       </View>
       <FlatList
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5", padding: 16 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
   headerTitle: { fontSize: 18, fontWeight: "bold", flex: 1 },
-  createBtn: { backgroundColor: "#0F4A2F", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 },
+  createBtn: { backgroundColor: "#7c3aed", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 }, // ✅ Purple theme
   createBtnText: { color: "#fff", fontWeight: "bold" },
   sectionTitle: { fontSize: 16, fontWeight: "600", color: "#666", marginTop: 10, marginBottom: 8 },
   divider: { height: 1, backgroundColor: "#ddd", marginVertical: 10 },

@@ -30,7 +30,6 @@ urlpatterns = [
     path('api/',include('sites.urls')),
     path('api/',include('ormoc_city.urls')),
     path('api/',include('tree_planting_programs.urls')),
-    
 ]
 
 if settings.DEBUG:

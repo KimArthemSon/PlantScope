@@ -28,7 +28,7 @@ class Assigned_onsite_inspector(models.Model):
 # -------------------- Field Assessment --------------------
 class Field_assessment(models.Model):
     LAYER_CHOICES = (
-        ('pre_assessment', 'Pre-Assessment (Area Level)'),
+        ('meta_data', 'Meta Data (Area Level)'),
         ('safety', 'Safety (MCDA Layer 1)'),
         ('boundary_verification', 'Boundary Verification (MCDA Layer 2)'),
         ('survivability', 'Survivability (MCDA Layer 3)'),

@@ -70,7 +70,7 @@ export default function TreeGrowersApp() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1b5e20" />
 
-      {/* Header */}
+      {/* Header
       <View style={styles.header}>
         <View style={styles.topBar}>
           <View style={styles.topBarLeft}>
@@ -98,7 +98,7 @@ export default function TreeGrowersApp() {
           </View>
         </View>
 
-      </View>
+      </View> */}
 
       {profileMenuOpen && (
         <View style={styles.overlay}>

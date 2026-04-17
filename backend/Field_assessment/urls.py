@@ -74,8 +74,8 @@ urlpatterns = [
         name='delete_field_assessment_image'
     ),
     path(
-        'area/<int:reforestation_area_id>/pre-assessments/',
-        onsite_views.get_area_pre_assessments_for_gis,
-        name='get_area_pre_assessments_for_gis'
+        'area/<int:reforestation_area_id>/meta_data/',
+        onsite_views.get_area_meta_data,
+        name='get_area_meta_data'
     ),
 ]

@@ -39,7 +39,8 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "react-native-image-marker"
     ],
     "experiments": {
       "typedRoutes": true,

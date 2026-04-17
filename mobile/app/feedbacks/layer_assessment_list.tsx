@@ -19,30 +19,45 @@ import {
   PlusCircle,
   CheckCircle,
   AlertCircle,
+  Database, // ✅ Icon for Meta Data
 } from "lucide-react-native";
 
-// ✅ Use base API URL (no "/api" suffix - endpoints add it)
 const API_BASE = api;
 
 type Assessment = {
   field_assessment_id: number;
   reforestation_area_id: number;
   reforestation_area_name: string;
-  layer: "safety" | "boundary_verification" | "survivability"; // ✅ Updated layer names
+  // ✅ Updated: Added "meta_data" to union type
+  layer: "safety" | "boundary_verification" | "survivability" | "meta_data";
   layer_display: string;
   assessment_date: string | null;
-  location: { latitude: number; longitude: number; gps_accuracy_meters?: number } | null;
-  is_submitted: boolean; // ✅ Matches backend: is_submitted (not is_sent)
+  location: {
+    latitude: number;
+    longitude: number;
+    gps_accuracy_meters?: number;
+  } | null;
+  is_submitted: boolean;
   image_count: number;
   created_at: string;
   updated_at: string;
+};
+
+// ✅ Helper: Get correct form path based on layer
+const getFormPath = (layerId: string) => {
+  // console.log("asdas");
+  if (layerId === "meta_data") {
+    return "/feedbacks/meta_data_form"; // ✅ Dedicated Meta Data form
+  }
+  return "/feedbacks/multicriteria_layer_form"; // ✅ MCDA forms for other layers
 };
 
 export default function LayerAssessmentList() {
   const { areaId, areaName, layerId, layerName } = useLocalSearchParams<{
     areaId: string;
     areaName: string;
-    layerId: "safety" | "boundary_verification" | "survivability"; // ✅ Type-safe layer IDs
+    // ✅ Updated: Added "meta_data" to type-safe layer IDs
+    layerId: "safety" | "boundary_verification" | "survivability" | "meta_data";
     layerName: string;
   }>();
 
@@ -54,7 +69,6 @@ export default function LayerAssessmentList() {
   const fetchAssessments = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      // ✅ Endpoint: /api/field_assessments/?reforestation_area_id=X&layer=Y
       const url = `${API_BASE}/api/field_assessments/?reforestation_area_id=${areaId}&layer=${layerId}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -64,7 +78,6 @@ export default function LayerAssessmentList() {
         throw new Error(err.error || `HTTP ${res.status}`);
       }
       const data = await res.json();
-      // ✅ Ensure we handle array response
       setAssessments(Array.isArray(data) ? data : []);
     } catch (error: any) {
       console.error("Fetch assessments error:", error);
@@ -77,7 +90,7 @@ export default function LayerAssessmentList() {
 
   useEffect(() => {
     fetchAssessments();
-  }, [areaId, layerId]); // Re-fetch when area or layer changes
+  }, [areaId, layerId]);
 
   const handleDelete = async (id: number) => {
     Alert.alert("Confirm Delete", "Delete this draft? This cannot be undone.", [
@@ -88,7 +101,6 @@ export default function LayerAssessmentList() {
         onPress: async () => {
           try {
             const token = await SecureStore.getItemAsync("token");
-            // ✅ Endpoint: /api/field_assessments/{id}/delete/
             const res = await fetch(
               `${API_BASE}/api/field_assessments/${id}/delete/`,
               {
@@ -101,7 +113,7 @@ export default function LayerAssessmentList() {
               throw new Error(err.error || `HTTP ${res.status}`);
             }
             Alert.alert("Success", "Assessment deleted");
-            fetchAssessments(); // Refresh list
+            fetchAssessments();
           } catch (e: any) {
             console.error("Delete error:", e);
             Alert.alert("Error", e.message || "Failed to delete");
@@ -112,48 +124,90 @@ export default function LayerAssessmentList() {
   };
 
   const handleCreateNew = () => {
-    router.push({
-      pathname: "/feedbacks/multicriteria_layer_form",
-      params: { 
-        areaId, 
-        layerId, 
-        layerName, 
-        isEdit: "false",
-        assessmentId: undefined // Explicitly undefined for new
-      },
-    });
+    const formPath = getFormPath(layerId); // ✅ Dynamic routing
+
+    // ✅ Meta Data form doesn't need layer params in same way
+    if (layerId === "meta_data") {
+      router.push({
+        pathname: formPath,
+        params: {
+          areaId,
+          isEdit: "false",
+          assessmentId: undefined,
+        },
+      });
+    } else {
+      // ✅ MCDA layers keep existing param structure
+      router.push({
+        pathname: formPath,
+        params: {
+          areaId,
+          layerId,
+          layerName,
+          isEdit: "false",
+          assessmentId: undefined,
+        },
+      });
+    }
   };
 
   const handleEdit = (assessment: Assessment) => {
-    router.push({
-      pathname: "/feedbacks/multicriteria_layer_form",
-      params: {
-        areaId,
-        layerId,
-        layerName,
-        assessmentId: assessment.field_assessment_id.toString(),
-        isEdit: "true",
-      },
-    });
+    const formPath = getFormPath(assessment.layer);
+
+    if (assessment.layer === "meta_data") {
+      router.push({
+        pathname: formPath,
+        params: {
+          areaId,
+          id: assessment.field_assessment_id.toString(), // ✅ Meta Data form uses 'id'
+          isEdit: "true",
+        },
+      });
+    } else {
+      router.push({
+        pathname: formPath,
+        params: {
+          areaId,
+          layerId: assessment.layer,
+          layerName: assessment.layer_display,
+          assessmentId: assessment.field_assessment_id.toString(),
+          isEdit: "true",
+        },
+      });
+    }
   };
 
   const handleView = (assessment: Assessment) => {
-    router.push({
-      pathname: "/feedbacks/multicriteria_layer_form",
-      params: {
-        areaId,
-        layerId,
-        layerName,
-        assessmentId: assessment.field_assessment_id.toString(),
-        isEdit: "false", // View mode = read-only
-      },
-    });
+    const formPath = getFormPath(assessment.layer);
+
+    if (assessment.layer === "meta_data") {
+      router.push({
+        pathname: formPath,
+        params: {
+          areaId,
+          id: assessment.field_assessment_id.toString(),
+          isEdit: "false",
+        },
+      });
+    } else {
+      router.push({
+        pathname: formPath,
+        params: {
+          areaId,
+          layerId: assessment.layer,
+          layerName: assessment.layer_display,
+          assessmentId: assessment.field_assessment_id.toString(),
+          isEdit: "false",
+        },
+      });
+    }
   };
 
   const renderItem = ({ item }: { item: Assessment }) => {
     const isSubmitted = item.is_submitted;
-    const hasLocation = item.location && item.location.latitude && item.location.longitude;
-    
+    const hasLocation =
+      item.location && item.location.latitude && item.location.longitude;
+
     return (
       <View
         style={[
@@ -162,7 +216,6 @@ export default function LayerAssessmentList() {
         ]}
       >
         <View style={styles.cardHeader}>
-          {/* Layer + Status badge */}
           <View style={styles.badgeRow}>
             <View
               style={[
@@ -185,8 +238,6 @@ export default function LayerAssessmentList() {
               </Text>
             </View>
           </View>
-
-          {/* Assessment date */}
           <Text style={styles.dateText}>
             {item.assessment_date
               ? new Date(item.assessment_date).toLocaleDateString("en-US", {
@@ -198,7 +249,6 @@ export default function LayerAssessmentList() {
           </Text>
         </View>
 
-        {/* Location indicator */}
         {hasLocation ? (
           <Text style={styles.locationText}>
             📍 {item.location!.latitude.toFixed(4)},{" "}
@@ -213,20 +263,21 @@ export default function LayerAssessmentList() {
           </Text>
         )}
 
-        {/* Image count */}
         {item.image_count > 0 && (
           <Text style={styles.imageCountText}>
-            🖼 {item.image_count} photo{item.image_count > 1 ? "s" : ""} attached
+            🖼 {item.image_count} photo{item.image_count > 1 ? "s" : ""}{" "}
+            attached
           </Text>
         )}
 
         <Text style={styles.metaText}>
-          Created: {new Date(item.created_at).toLocaleDateString()}
-          {isSubmitted &&
-            `  •  Submitted: ${new Date(item.updated_at).toLocaleDateString()}`}
+          {`Created: ${new Date(item.created_at).toLocaleDateString()}${
+            isSubmitted
+              ? `  •  Submitted: ${new Date(item.updated_at).toLocaleDateString()}`
+              : ""
+          }`}
         </Text>
 
-        {/* Actions */}
         <View style={styles.actions}>
           {isSubmitted ? (
             <TouchableOpacity
@@ -281,7 +332,6 @@ export default function LayerAssessmentList() {
           <Text style={styles.areaName}>{areaName}</Text>
           <Text style={styles.layerName}>
             {layerName} Layer
-            {/* Show layer ID for debugging */}
             <Text style={styles.layerIdBadge}>[{layerId}]</Text>
           </Text>
         </View>
@@ -320,12 +370,24 @@ export default function LayerAssessmentList() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <AlertCircle size={48} color="#94a3b8" style={{ marginBottom: 12 }} />
-            <Text style={styles.emptyText}>
-              No {layerName} assessments yet
-            </Text>
+            {/* ✅ Show Meta Data icon for meta_data layer */}
+            {layerId === "meta_data" ? (
+              <Database
+                size={48}
+                color="#8b5cf6"
+                style={{ marginBottom: 12 }}
+              />
+            ) : (
+              <AlertCircle
+                size={48}
+                color="#94a3b8"
+                style={{ marginBottom: 12 }}
+              />
+            )}
+            <Text style={styles.emptyText}>No {layerName} assessments yet</Text>
             <Text style={styles.emptySubtext}>
-              Tap "New" to start your first {layerName.toLowerCase()} assessment for this site.
+              Tap "New" to start your first {layerName.toLowerCase()} assessment
+              for this site.
             </Text>
             <TouchableOpacity style={styles.emptyBtn} onPress={handleCreateNew}>
               <PlusCircle size={18} color="#fff" />
@@ -355,9 +417,9 @@ const styles = StyleSheet.create({
   },
   headerLeft: { flex: 1 },
   areaName: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
-  layerName: { 
-    fontSize: 13, 
-    color: "#64748b", 
+  layerName: {
+    fontSize: 13,
+    color: "#64748b",
     marginTop: 2,
     flexDirection: "row",
     alignItems: "center",

@@ -5,7 +5,7 @@ const BASE_URL = "http://127.0.0.1:8000";
 
 // ✅ HELPER: Convert Leaflet [lat, lng] → GeoJSON [lng, lat]
 export const toGeoJSONCoords = (coords: [number, number][]): [number, number][] => {
-  return coords.map(([lat, lng]) => [lng, lat]);
+  return coords.map(([lat, lng]) => [lat, lng]);
 };
 
 // ✅ HELPER: Calculate centroid in GeoJSON format [lng, lat]

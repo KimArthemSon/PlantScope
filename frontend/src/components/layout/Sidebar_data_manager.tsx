@@ -1,19 +1,14 @@
 import {
   LayoutDashboard,
-  Satellite,
-  Layers,
-  BarChart3,
   ClipboardList,
-  CheckCircle,
   TreePine,
   FileText,
-  Users,
   LogOut,
   ChevronLeft,
-  Mountain,
   Map,
-  BarChart,
   Layers2,
+  ListCheck,
+  MonitorDot,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
@@ -225,7 +220,56 @@ export default function Sidebar_data_manager() {
                 Official Sites
               </span>
             </Link>
-
+                 <Link
+              to="/DataManager/applications"
+              className={`
+                flex flex-row items-center transition-all duration-200 rounded-md
+                px-6 py-3 justify-center
+                ${
+                  location.pathname === "/DataManager/applications"
+                    ? "bg-white/25 text-white shadow-inner"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
+                }
+              `}
+            >
+              <span className="mr-auto">
+                <ListCheck size={20} />
+              </span>
+              <span
+                className={`
+                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
+                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
+                `}
+              >
+                Applications
+              </span>
+            </Link>
+            
+             <Link
+              to="/DataManager/monitoring"
+              className={`
+                flex flex-row items-center transition-all duration-200 rounded-md
+                px-6 py-3 justify-center
+                ${
+                  location.pathname === "/monitoring"
+                    ? "bg-white/25 text-white shadow-inner"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
+                }
+              `}
+            >
+              <span className="mr-auto">
+                <MonitorDot size={20} />
+              </span>
+              <span
+                className={`
+                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
+                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
+                `}
+              >
+                Monitoring
+              </span>
+            </Link>
+            
             {/* Reports */}
             <Link
               to="/DataManager/reports"

@@ -91,7 +91,9 @@ function countActiveFilters(filter: Filter): number {
 export default function Reforestation_areas() {
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [landClassifications, setLandClassifications] = useState<LandClassification[]>([]);
+  const [landClassifications, setLandClassifications] = useState<
+    LandClassification[]
+  >([]);
   const [showFilters, setShowFilters] = useState(false);
   const filterPanelRef = useRef<HTMLDivElement>(null);
 
@@ -148,9 +150,12 @@ export default function Reforestation_areas() {
   useEffect(() => {
     const fetchBarangays = async () => {
       try {
-        const res = await fetch("http://127.0.0.1:8000/api/get_barangay_list/", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res = await fetch(
+          "http://127.0.0.1:8000/api/get_barangay_list/",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
         if (res.ok) {
           const data = await res.json();
           setBarangays(data.data || []);
@@ -237,7 +242,11 @@ export default function Reforestation_areas() {
       );
       const data = await response.json();
       if (response.ok) {
-        setPSAlert({ type: "success", title: "Deleted", message: data.message });
+        setPSAlert({
+          type: "success",
+          title: "Deleted",
+          message: data.message,
+        });
         fetchAreas();
       } else {
         setPSAlert({
@@ -247,14 +256,22 @@ export default function Reforestation_areas() {
         });
       }
     } catch {
-      setPSAlert({ type: "error", title: "Error", message: "Something went wrong." });
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Something went wrong.",
+      });
     }
     setIsDeleteModalOpen(false);
   };
 
   // ── Reset all filters ──────────────────────────────────────
   const resetFilters = () => {
-    setFilter((prev) => ({ ...prev, ...DEFAULT_FILTER, total_page: prev.total_page }));
+    setFilter((prev) => ({
+      ...prev,
+      ...DEFAULT_FILTER,
+      total_page: prev.total_page,
+    }));
   };
 
   const activeFilterCount = countActiveFilters(filter);
@@ -300,10 +317,8 @@ export default function Reforestation_areas() {
       </header>
 
       <main className="flex-1 p-8 max-w-409">
-
         {/* ── TOOLBAR ───────────────────────────────────────── */}
         <div className="flex items-center flex-wrap mb-4 gap-3">
-
           {/* Entries */}
           <label className="text-sm text-gray-600">Show:</label>
           <select
@@ -379,7 +394,11 @@ export default function Reforestation_areas() {
                     <select
                       value={filter.legality}
                       onChange={(e) =>
-                        setFilter((prev) => ({ ...prev, legality: e.target.value, page: 1 }))
+                        setFilter((prev) => ({
+                          ...prev,
+                          legality: e.target.value,
+                          page: 1,
+                        }))
                       }
                       className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
                     >
@@ -397,7 +416,11 @@ export default function Reforestation_areas() {
                     <select
                       value={filter.safety}
                       onChange={(e) =>
-                        setFilter((prev) => ({ ...prev, safety: e.target.value, page: 1 }))
+                        setFilter((prev) => ({
+                          ...prev,
+                          safety: e.target.value,
+                          page: 1,
+                        }))
                       }
                       className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
                     >
@@ -411,7 +434,7 @@ export default function Reforestation_areas() {
 
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Pre-assessment
+                      Meta Data
                     </label>
                     <select
                       value={filter.pre_assessment_status}
@@ -438,7 +461,11 @@ export default function Reforestation_areas() {
                     <select
                       value={filter.barangay_id}
                       onChange={(e) =>
-                        setFilter((prev) => ({ ...prev, barangay_id: e.target.value, page: 1 }))
+                        setFilter((prev) => ({
+                          ...prev,
+                          barangay_id: e.target.value,
+                          page: 1,
+                        }))
                       }
                       className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
                     >
@@ -488,7 +515,11 @@ export default function Reforestation_areas() {
               {filter.legality !== "All" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
                   Legality: {filter.legality}
-                  <button onClick={() => setFilter((p) => ({ ...p, legality: "All", page: 1 }))}>
+                  <button
+                    onClick={() =>
+                      setFilter((p) => ({ ...p, legality: "All", page: 1 }))
+                    }
+                  >
                     <X size={11} />
                   </button>
                 </span>
@@ -496,31 +527,63 @@ export default function Reforestation_areas() {
               {filter.safety !== "All" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
                   Safety: {filter.safety}
-                  <button onClick={() => setFilter((p) => ({ ...p, safety: "All", page: 1 }))}>
+                  <button
+                    onClick={() =>
+                      setFilter((p) => ({ ...p, safety: "All", page: 1 }))
+                    }
+                  >
                     <X size={11} />
                   </button>
                 </span>
               )}
               {filter.pre_assessment_status !== "All" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Pre-assessment: {filter.pre_assessment_status}
-                  <button onClick={() => setFilter((p) => ({ ...p, pre_assessment_status: "All", page: 1 }))}>
+                  Meta Data: {filter.pre_assessment_status}
+                  <button
+                    onClick={() =>
+                      setFilter((p) => ({
+                        ...p,
+                        pre_assessment_status: "All",
+                        page: 1,
+                      }))
+                    }
+                  >
                     <X size={11} />
                   </button>
                 </span>
               )}
               {filter.barangay_id !== "All" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Barangay: {barangays.find((b) => String(b.barangay_id) === filter.barangay_id)?.name ?? filter.barangay_id}
-                  <button onClick={() => setFilter((p) => ({ ...p, barangay_id: "All", page: 1 }))}>
+                  Barangay:{" "}
+                  {barangays.find(
+                    (b) => String(b.barangay_id) === filter.barangay_id,
+                  )?.name ?? filter.barangay_id}
+                  <button
+                    onClick={() =>
+                      setFilter((p) => ({ ...p, barangay_id: "All", page: 1 }))
+                    }
+                  >
                     <X size={11} />
                   </button>
                 </span>
               )}
               {filter.land_classification_id !== "All" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Land: {landClassifications.find((lc) => String(lc.land_classification_id) === filter.land_classification_id)?.name ?? filter.land_classification_id}
-                  <button onClick={() => setFilter((p) => ({ ...p, land_classification_id: "All", page: 1 }))}>
+                  Land:{" "}
+                  {landClassifications.find(
+                    (lc) =>
+                      String(lc.land_classification_id) ===
+                      filter.land_classification_id,
+                  )?.name ?? filter.land_classification_id}
+                  <button
+                    onClick={() =>
+                      setFilter((p) => ({
+                        ...p,
+                        land_classification_id: "All",
+                        page: 1,
+                      }))
+                    }
+                  >
                     <X size={11} />
                   </button>
                 </span>
@@ -534,9 +597,15 @@ export default function Reforestation_areas() {
             placeholder="Search reforestation areas..."
             value={filter.search}
             onChange={(e) =>
-              setFilter((prev) => ({ ...prev, search: e.target.value, page: 1 }))
+              setFilter((prev) => ({
+                ...prev,
+                search: e.target.value,
+                page: 1,
+              }))
             }
-            onKeyDown={(e) => { if (e.key === "Enter") fetchAreas(); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") fetchAreas();
+            }}
             className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
         </div>
@@ -588,46 +657,45 @@ export default function Reforestation_areas() {
                         {userRole !== "DataManager" && (
                           <button
                             onClick={() =>
-                              navigate(`${useruserRole}/assign_onsite_inpsector/${area.reforestation_area_id}`)
+                              navigate(
+                                `${useruserRole}/assign_onsite_inpsector/${area.reforestation_area_id}`,
+                              )
                             }
                             className="cursor-pointer"
                           >
                             <User size={18} />
                           </button>
                         )}
-                        {userRole !== "DataManager" && (
-                          <button
-                            onClick={() =>
-                              navigate(`${useruserRole}/legality-and-safety/${area.reforestation_area_id}`)
-                            }
-                            className="cursor-pointer"
-                          >
-                            <VerifiedIcon size={18} />
-                          </button>
-                        )}
                         <button
                           onClick={() =>
-                            navigate(`${useruserRole}/maintenance/reforestation_area_form/${area.reforestation_area_id}`)
+                            navigate(
+                              `${useruserRole}/maintenance/reforestation_area_form/${area.reforestation_area_id}`,
+                            )
                           }
                           className="cursor-pointer"
                         >
                           <Edit size={18} />
                         </button>
-                        {userRole !== "DataManager" && (
+                        {/* {userRole !== "DataManager" && (
                           <button
-                            onClick={() => setDelete(area.reforestation_area_id)}
+                            onClick={() =>
+                              setDelete(area.reforestation_area_id)
+                            }
                             className="text-red-500 cursor-pointer"
                           >
                             <Trash2 size={18} />
                           </button>
-                        )}
+                        )} */}
                       </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="text-center py-5 text-gray-500 italic">
+                  <td
+                    colSpan={8}
+                    className="text-center py-5 text-gray-500 italic"
+                  >
                     No areas found
                   </td>
                 </tr>
@@ -640,25 +708,31 @@ export default function Reforestation_areas() {
         <div className="flex items-center gap-1 mt-5">
           <button
             disabled={filter.page <= 1}
-            onClick={() => setFilter((prev) => ({ ...prev, page: prev.page - 1 }))}
+            onClick={() =>
+              setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
+            }
             className="px-2 py-1 border rounded-md ml-auto"
           >
             <ChevronLeft size={19} />
           </button>
-          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map((p) => (
-            <button
-              key={p}
-              onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
-              className={`px-2 py-1 border rounded-md text-[.8rem] ${
-                p === filter.page ? "bg-green-600 text-white" : ""
-              }`}
-            >
-              {p}
-            </button>
-          ))}
+          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map(
+            (p) => (
+              <button
+                key={p}
+                onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
+                className={`px-2 py-1 border rounded-md text-[.8rem] ${
+                  p === filter.page ? "bg-green-600 text-white" : ""
+                }`}
+              >
+                {p}
+              </button>
+            ),
+          )}
           <button
             disabled={filter.page >= filter.total_page}
-            onClick={() => setFilter((prev) => ({ ...prev, page: prev.page + 1 }))}
+            onClick={() =>
+              setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
+            }
             className="px-2 py-1 border rounded-md"
           >
             <ChevronRight size={19} />

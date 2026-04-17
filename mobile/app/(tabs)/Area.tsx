@@ -11,14 +11,14 @@ import { api } from "@/constants/url_fixed";
 const screenHeight = Dimensions.get("window").height;
 const API_BASE_URL = api + "/api";
 
-// ✅ Updated type to match Django Reforestation_areas model
+// ✅ Updated type - pre_assessment_status kept for display only (no longer gates navigation)
 type ReforestationArea = {
   reforestation_area_id: string;
   assigned_onsite_inspector_id: string;
   name: string;
   barangay: string | null;
   coordinate: [number, number] | null;
-  pre_assessment_status: "pending" | "approved" | "rejected";
+  pre_assessment_status: "pending" | "approved" | "rejected"; // ✅ Keep for UI display
   assigned_at: string;
   // Derived for UI
   latitude: number;
@@ -99,23 +99,15 @@ const ReforestationAreas: React.FC = () => {
   const openModal = (area: ReforestationArea) => { setSelectedArea(area); setModalVisible(true); };
   const closeModal = () => { setSelectedArea(null); setModalVisible(false); };
 
+  // ✅ UPDATED: Always navigate to Field Assessment (no status gating)
   const handleActionPress = (area: ReforestationArea) => {
-    // ✅ Navigation based on pre_assessment_status (Phase 1 gate)
-    if (area.pre_assessment_status === "pending") {
-      router.push({
-        pathname: "/feedbacks/pre_assessment",
-        params: { areaId: area.reforestation_area_id, areaName: area.name },
-      });
-    } else if (area.pre_assessment_status === "approved") {
-      // Later: Navigate to MCDA/Site assessment
-       router.push({
-        pathname: "/feedbacks/site_field_assessment",
-        params: { areaId: area.reforestation_area_id, areaName: area.name },
-      });
-      
-    } else {
-      Alert.alert("Area Excluded", "This area was rejected during pre-assessment. No further action allowed.");
-    }
+    router.push({
+      pathname: "/feedbacks/site_field_assessment", // ✅ Direct to 4-layer MCDA screen
+      params: { 
+        areaId: area.reforestation_area_id, 
+        areaName: area.name 
+      },
+    });
   };
 
   const filteredAreas = areas.filter(
@@ -127,7 +119,13 @@ const ReforestationAreas: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <TextInput style={styles.searchInput} placeholder="Search by name, barangay, or status..." value={searchText} onChangeText={setSearchText} />
+      <TextInput 
+        style={styles.searchInput} 
+        placeholder="Search by name, barangay, or status..." 
+        value={searchText} 
+        onChangeText={setSearchText} 
+      />
+      
       {loading ? (
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color="#0F4A2F" />
@@ -143,48 +141,65 @@ const ReforestationAreas: React.FC = () => {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
           <Text style={styles.header}>Assigned Areas ({filteredAreas.length})</Text>
+          
           {filteredAreas.map((area) => (
             <View key={area.reforestation_area_id} style={styles.card}>
               <View style={styles.cardInfo}>
                 <Text style={styles.cardName}>{area.name}</Text>
                 <Text style={styles.cardCoord}>{area.coordDisplay}</Text>
                 <Text style={styles.cardLocation}>{area.barangay}</Text>
+                
+                {/* ✅ Status badge kept for INFO ONLY - no longer gates actions */}
                 <View style={[styles.statusBadge, {
-                  backgroundColor: area.pre_assessment_status === "approved" ? "#d4edda" : area.pre_assessment_status === "rejected" ? "#f8d7da" : "#fff3cd",
+                  backgroundColor: area.pre_assessment_status === "approved" ? "#d4edda" : 
+                                  area.pre_assessment_status === "rejected" ? "#f8d7da" : "#fff3cd",
                 }]}>
                   <Text style={[styles.statusText, {
-                    color: area.pre_assessment_status === "approved" ? "#155724" : area.pre_assessment_status === "rejected" ? "#721c24" : "#856404",
+                    color: area.pre_assessment_status === "approved" ? "#155724" : 
+                           area.pre_assessment_status === "rejected" ? "#721c24" : "#856404",
                   }]}>{area.pre_assessment_status.toUpperCase()}</Text>
                 </View>
               </View>
+              
               <View style={styles.cardActions}>
                 <TouchableOpacity style={styles.viewBtn} onPress={() => openModal(area)}>
                   <Text style={styles.viewText}>View</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, {
-                  backgroundColor: area.pre_assessment_status === "approved" ? "#0F4A2F" : area.pre_assessment_status === "pending" ? "#DAA520" : "#ccc",
-                  marginTop: 8,
-                }]} onPress={() => handleActionPress(area)} disabled={area.pre_assessment_status === "rejected"}>
-                  <Text style={styles.actionBtnText}>
-                    {area.pre_assessment_status === "pending" ? "Start Pre-Assessment" : area.pre_assessment_status === "approved" ? "View Approved" : "Excluded"}
-                  </Text>
-                </TouchableOpacity>
+                
+                {/* ✅ UPDATED: Always enabled, always says "Start Field Assessment" */}
+                {/* <TouchableOpacity 
+                  style={[styles.actionBtn, { backgroundColor: "#0F4A2F", marginTop: 8 }]} 
+                  onPress={() => handleActionPress(area)}
+                >
+                  <Text style={styles.actionBtnText}>Start Field Assessment</Text>
+                </TouchableOpacity> */}
               </View>
             </View>
           ))}
-          {filteredAreas.length === 0 && !loading && <Text style={styles.noResults}>No areas found matching "{searchText}".</Text>}
+          
+          {filteredAreas.length === 0 && !loading && (
+            <Text style={styles.noResults}>No areas found matching "{searchText}".</Text>
+          )}
         </ScrollView>
       )}
-      {/* Modal unchanged - uses selectedArea fields */}
+
+      {/* Modal - Updated button logic */}
       <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             {selectedArea && (
               <>
                 <MapView style={styles.map} initialRegion={{
-                  latitude: selectedArea.latitude, longitude: selectedArea.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01,
+                  latitude: selectedArea.latitude, 
+                  longitude: selectedArea.longitude, 
+                  latitudeDelta: 0.01, 
+                  longitudeDelta: 0.01,
                 }}>
-                  <Marker coordinate={{ latitude: selectedArea.latitude, longitude: selectedArea.longitude }} title={selectedArea.name} description={selectedArea.barangay ?? ''} />
+                  <Marker 
+                    coordinate={{ latitude: selectedArea.latitude, longitude: selectedArea.longitude }} 
+                    title={selectedArea.name} 
+                    description={selectedArea.barangay ?? ''} 
+                  />
                   <Polygon coordinates={[
                     { latitude: selectedArea.latitude + 0.002, longitude: selectedArea.longitude - 0.002 },
                     { latitude: selectedArea.latitude + 0.002, longitude: selectedArea.longitude + 0.002 },
@@ -192,16 +207,41 @@ const ReforestationAreas: React.FC = () => {
                     { latitude: selectedArea.latitude - 0.002, longitude: selectedArea.longitude - 0.002 },
                   ]} strokeColor="#0F4A2F" fillColor="rgba(15, 74, 47, 0.3)" strokeWidth={2} />
                 </MapView>
+                
                 <View style={styles.infoContainer}>
                   <Text style={styles.infoTitle}>{selectedArea.name}</Text>
-                  <Text style={styles.infoText}><Text style={styles.label}>Barangay:</Text> {selectedArea.barangay}</Text>
-                  <Text style={styles.infoText}><Text style={styles.label}>Coordinates:</Text> {selectedArea.coordDisplay}</Text>
-                  <Text style={styles.infoText}><Text style={styles.label}>Status:</Text> <Text style={{ fontWeight: "bold", color: selectedArea.pre_assessment_status === "approved" ? "green" : selectedArea.pre_assessment_status === "rejected" ? "red" : "#856404" }}>{selectedArea.pre_assessment_status.toUpperCase()}</Text></Text>
+                  <Text style={styles.infoText}>
+                    <Text style={''}>Barangay:</Text> {selectedArea.barangay}
+                  </Text>
+                  <Text style={styles.infoText}>
+                    <Text style={''}>Coordinates:</Text> {selectedArea.coordDisplay}
+                  </Text>
+                  <Text style={styles.infoText}>
+                    <Text style={''}>Status:</Text>{" "}
+                    {/* <Text style={{ 
+                      fontWeight: "bold", 
+                      color: selectedArea.pre_assessment_status === "approved" ? "green" : 
+                             selectedArea.pre_assessment_status === "rejected" ? "red" : "#856404" 
+                    }}>
+                      {selectedArea.pre_assessment_status.toUpperCase()}
+                    </Text> */}
+                  </Text>
+                  {/* ✅ Helpful hint about new workflow */}
+                  <Text style={styles.hintText}>
+                    💡 Field Assessment now includes Meta Data, Safety, Boundary Verification, and Survivability layers.
+                  </Text>
                 </View>
+                
                 <View style={styles.buttonRow}>
-                  <Pressable style={styles.closeBtn} onPress={closeModal}><Text style={styles.closeText}>Close</Text></Pressable>
-                  <Pressable style={[styles.feedbackBtn, { opacity: selectedArea.pre_assessment_status === "rejected" ? 0.5 : 1 }]} onPress={() => handleActionPress(selectedArea)} disabled={selectedArea.pre_assessment_status === "rejected"}>
-                    <Text style={styles.feedbackText}>{selectedArea.pre_assessment_status === "pending" ? "Start Pre-Assessment" : selectedArea.pre_assessment_status === "approved" ? "View Approved" : "Excluded"}</Text>
+                  <Pressable style={styles.closeBtn} onPress={closeModal}>
+                    <Text style={styles.closeText}>Close</Text>
+                  </Pressable>
+                  {/* ✅ UPDATED: Always enabled, consistent action */}
+                  <Pressable 
+                    style={[styles.feedbackBtn, { backgroundColor: "#0F4A2F" }]} 
+                    onPress={() => handleActionPress(selectedArea)}
+                  >
+                    <Text style={styles.feedbackText}>Start Field Assessment</Text>
                   </Pressable>
                 </View>
               </>
@@ -214,7 +254,6 @@ const ReforestationAreas: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  // ... (keep your existing styles, they work fine)
   container: { flex: 1, backgroundColor: "#FFFFFF", paddingHorizontal: 16, paddingTop: 10 },
   centerContent: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
   loadingText: { marginTop: 10, color: "#666" },
@@ -222,31 +261,59 @@ const styles = StyleSheet.create({
   retryBtn: { backgroundColor: "#0F4A2F", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
   retryText: { color: "#fff", fontWeight: "bold" },
   header: { fontSize: 22, fontWeight: "bold", color: "#000", marginBottom: 16, marginTop: 10 },
-  searchInput: { height: 44, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 12, marginBottom: 12, backgroundColor: "#f9f9f9" },
-  card: { flexDirection: "row", backgroundColor: "#fff", padding: 16, marginBottom: 12, borderRadius: 12, elevation: 3, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 6, borderWidth: 1, borderColor: "#eee" },
+  searchInput: { 
+    height: 44, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, 
+    paddingHorizontal: 12, marginBottom: 12, backgroundColor: "#f9f9f9" 
+  },
+  card: { 
+    flexDirection: "row", backgroundColor: "#fff", padding: 16, marginBottom: 12, 
+    borderRadius: 12, elevation: 3, shadowColor: "#000", shadowOpacity: 0.05, 
+    shadowRadius: 6, borderWidth: 1, borderColor: "#eee" 
+  },
   cardInfo: { flex: 3, paddingRight: 10 },
   cardName: { fontSize: 16, fontWeight: "bold", color: "#000" },
   cardCoord: { fontSize: 12, color: "#666", marginTop: 2 },
   cardLocation: { fontSize: 13, color: "#555", marginTop: 2 },
   statusBadge: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, marginTop: 8 },
   statusText: { fontSize: 11, fontWeight: "bold", textTransform: "uppercase" },
-  cardActions: { flex: 1.5, flexDirection: "column", justifyContent: "center", alignItems: "center" },
-  viewBtn: { width: "100%", backgroundColor: "#e9ecef", paddingVertical: 8, borderRadius: 8, alignItems: "center", marginBottom: 8 },
+  cardActions: { flex: 1, flexDirection: "column", justifyContent: "center", alignItems: "center" },
+  viewBtn: { 
+    width: "100%", backgroundColor: "#e9ecef", paddingVertical: 8, 
+    borderRadius: 8, alignItems: "center", marginBottom: 8 
+  },
   viewText: { color: "#0F4A2F", fontWeight: "600", fontSize: 12 },
-  actionBtn: { width: "100%", paddingVertical: 10, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  actionBtn: { 
+    width: "100%", paddingVertical: 10, borderRadius: 8, 
+    alignItems: "center", justifyContent: "center" 
+  },
   actionBtnText: { color: "#fff", fontWeight: "bold", fontSize: 12, textAlign: "center" },
   noResults: { textAlign: "center", marginTop: 20, color: "#888", fontSize: 16 },
   modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
-  modalContent: { height: screenHeight * 0.85, backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 30 },
+  modalContent: { 
+    height: screenHeight * 0.85, backgroundColor: "#fff", 
+    borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 30 
+  },
   map: { width: "100%", height: 250, borderRadius: 12, marginBottom: 16, backgroundColor: "#eee" },
   infoContainer: { flex: 1, marginBottom: 10 },
   infoTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 10, color: "#000" },
   infoText: { fontSize: 14, marginBottom: 8, color: "#333", lineHeight: 20 },
-  label: { fontWeight: "700", color: "#0F4A2F" },
+  labelText: { fontWeight: "700", color: "#0F4A2F" },
+  hintText: { 
+    fontSize: 12, color: "#64748b", fontStyle: "italic", 
+    marginTop: 8, paddingHorizontal: 4, lineHeight: 16 
+  },
   buttonRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 10 },
-  closeBtn: { flex: 1, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#0F4A2F", borderRadius: 8, paddingVertical: 14, marginRight: 8, alignItems: "center" },
+  closeBtn: { 
+    flex: 1, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#0F4A2F", 
+    borderRadius: 8, paddingVertical: 14, marginRight: 8, alignItems: "center" 
+  },
   closeText: { color: "#0F4A2F", textAlign: "center", fontWeight: "600" },
-  feedbackBtn: { flex: 1.5, backgroundColor: "#0F4A2F", borderRadius: 8, paddingVertical: 14, marginLeft: 8, alignItems: "center", shadowColor: "#0F4A2F", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
+  feedbackBtn: { 
+    flex: 1.5, backgroundColor: "#0F4A2F", borderRadius: 8, 
+    paddingVertical: 14, marginLeft: 8, alignItems: "center",
+    shadowColor: "#0F4A2F", shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 
+  },
   feedbackText: { color: "#FFF", textAlign: "center", fontWeight: "700", fontSize: 16 },
 });
 

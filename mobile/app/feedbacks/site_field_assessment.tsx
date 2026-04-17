@@ -16,21 +16,29 @@ import {
   CheckCircle,
   Edit3,
   HardHat,
-  Scale,  // ✅ For Boundary Verification
+  Scale,
   Sprout,
+  Database, // ✅ New icon for Meta Data
 } from "lucide-react-native";
 
 const API = api + "/api";
 
-// ✅ Updated to match PLANTSCOPE v5.0: 3 layers
+// ✅ Updated to 4 layers: Safety, Boundary Verification, Meta Data, Survivability
 export const LAYERS = [
+   { 
+    id: "meta_data",  // ✅ NEW: Combined pre-assessment fields
+    label: "Meta Data", 
+    icon: Database, 
+    color: "#8b5cf6"  // Purple to distinguish
+  },
   { id: "safety", label: "Safety", icon: HardHat, color: "#ef4444" },
   { 
-    id: "boundary_verification",  // ✅ Changed from "legality"
+    id: "boundary_verification",
     label: "Boundary Verification", 
     icon: Scale, 
     color: "#3b82f6" 
   },
+ 
   { id: "survivability", label: "Survivability", icon: Sprout, color: "#16a34a" },
 ];
 
@@ -51,7 +59,6 @@ export default function SiteFieldAssessment() {
   const fetchAssessments = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
-      // ✅ Include layer filter for MCDA
       const res = await fetch(
         `${API}/field_assessments/?reforestation_area_id=${areaId}`,
         { headers: { Authorization: `Bearer ${token}` } },
@@ -100,16 +107,16 @@ export default function SiteFieldAssessment() {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        {/* Info Banner */}
+        {/* Info Banner - ✅ Updated for 4 layers */}
         <View style={styles.infoBanner}>
-          <Text style={styles.infoBannerTitle}>3-Layer MCDA Assessment</Text>
+          <Text style={styles.infoBannerTitle}>4-Layer MCDA Assessment</Text>
           <Text style={styles.infoBannerText}>
-            Complete all three layers — Safety, Boundary Verification, and Survivability —
-            before submitting to the GIS Specialist.
+            Complete all four layers — Safety, Boundary Verification, Meta Data, and Survivability —
+            before submitting to the GIS Specialist. Meta Data combines permits, security, and site context.
           </Text>
         </View>
 
-        {/* Layer Cards */}
+        {/* Layer Cards - ✅ Now renders 4 cards automatically */}
         <Text style={styles.sectionTitle}>Assessment Layers</Text>
         <View style={styles.grid}>
           {LAYERS.map((layer) => {
@@ -174,7 +181,6 @@ export default function SiteFieldAssessment() {
 }
 
 const styles = StyleSheet.create({
-  // ... (keep your existing styles - they work fine)
   container: { flex: 1, backgroundColor: "#f8fafc" },
   centerContent: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 10, color: "#64748b" },
@@ -190,20 +196,20 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   contentContainer: { paddingHorizontal: 16, paddingBottom: 40 },
   infoBanner: {
-    backgroundColor: "#f0fdf4",
+    backgroundColor: "#f5f3ff", // ✅ Purple tint for Meta Data theme
     borderRadius: 12,
     padding: 16,
     marginTop: 16,
     borderWidth: 1,
-    borderColor: "#86efac",
+    borderColor: "#c4b5fd",
   },
   infoBannerTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#0F4A2F",
+    color: "#5b21b6", // ✅ Darker purple
     marginBottom: 4,
   },
-  infoBannerText: { fontSize: 13, color: "#166534", lineHeight: 18 },
+  infoBannerText: { fontSize: 13, color: "#6d28d9", lineHeight: 18 },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",

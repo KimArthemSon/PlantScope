@@ -297,7 +297,7 @@ def delete_field_assessment_image(request, image_id):
 
 
 @csrf_exempt
-def get_area_pre_assessments_for_gis(request, reforestation_area_id):
+def get_area_meta_data(request, reforestation_area_id):
     """
     GET: For GIS Specialists only.
     Fetches ALL submitted pre-assessments for a specific Reforestation Area,
@@ -318,7 +318,7 @@ def get_area_pre_assessments_for_gis(request, reforestation_area_id):
         # ✅ Optimized query: prefetch images to avoid N+1
         assessments = Field_assessment.objects.filter(
             assigned_onsite_inspector__reforestation_area_id=reforestation_area_id,
-            layer='pre_assessment',
+            layer='meta_data',
             is_submitted=True
         ).select_related(
             'assigned_onsite_inspector__user',

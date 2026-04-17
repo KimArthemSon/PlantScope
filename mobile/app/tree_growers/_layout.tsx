@@ -1,75 +1,66 @@
 import React from "react";
-import { TouchableOpacity } from "react-native";
-import { Stack, Tabs } from "expo-router";
-import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
+import { TouchableOpacity, StatusBar } from "react-native"; // 👈 Add StatusBar
+import { Tabs } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+// Remove unused imports: Stack, MaterialCommunityIcons, ListCheck (unless needed elsewhere)
 
 export default function TabLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        //   // 🌲 Header styling
+    <>
+      {/* 🌲 Set status bar style to match your app */}
+      <StatusBar 
+        backgroundColor="#0F4A2F" 
+        barStyle="light-content" 
+        translucent={false}
+         
+      />
+      
+      <Tabs
+        screenOptions={{
           headerShown: true,
-        //   headerStyle: {
-        //     backgroundColor: "#0F4A2F", // Header background color
-        //   },
-        //   headerTintColor: "#FFFFFF", // Header text color
-        //   headerTitleStyle: {
-        //     fontWeight: "bold",
-        //   },
-
-        //   // 🔔 Bell icon on the right
-        //   headerRight: () => (
-        //     <TouchableOpacity style={{ marginRight: 15 }}>
-        //       <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
-        //     </TouchableOpacity>
-        //   ),
-
-        //   // 🌲 Bottom navigation styling
-        tabBarStyle: {
-          backgroundColor: "#0F4A2F",
-          borderTopWidth: 0,
-          elevation: 0, // Android shadow
-          marginTop: 5,
-        },
-
-        //   // 🎨 Icon & label colors
-        tabBarActiveTintColor: "#FFFFFF",
-        tabBarInactiveTintColor: "#B7D3C6",
-      }}
-    >
-      <Stack screenOptions={{ headerShown: false }} />
-      {/* Home Tab */}
-      <Tabs.Screen
-        name="dashboard"
-        options={{
-          title: "Dashboard",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="home" size={26} color={color} />
-          ),
-          headerShown: false,
+          tabBarStyle: {
+            backgroundColor: "#0F4A2F",
+            borderTopWidth: 0,
+            elevation: 0,
+          },
+          headerStyle: {
+              height: 0,
+          },
+          tabBarActiveTintColor: "#FFFFFF",
+          tabBarInactiveTintColor: "#B7D3C6",
         }}
-      />
-      <Tabs.Screen
-        name="request"
-        options={{
-          title: "Request",
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="leaf" size={26} color={color} />
-          ),
-        }}
-      />
-      {/* Sites Tab */}
-
-      {/* Profile Tab */}
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="person" size={26} color={color} />
-          ),
-        }}
-      />
-    </Tabs>
+      >
+       
+        <Tabs.Screen
+          name="application"
+          options={{
+            title: "Application",
+            tabBarIcon: ({ color }) => (
+              <Ionicons name="folder" size={26} color={color} />
+            ),
+          }}
+        />
+         {/* Home Tab */}
+        <Tabs.Screen
+          name="reports"
+          options={{
+            title: "Reports",
+            tabBarIcon: ({ color }) => (
+              <Ionicons name="analytics" size={26} color={color} />
+            ),
+          }}
+        />
+        {/* Profile Tab */}
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+            tabBarIcon: ({ color }) => (
+              <Ionicons name="person" size={26} color={color} />
+            ),
+          }}
+        />
+      </Tabs>
+    </>
   );
 }

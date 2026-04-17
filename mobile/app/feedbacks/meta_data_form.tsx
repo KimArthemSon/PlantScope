@@ -2,7 +2,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import React, { useState, useEffect } from "react";
 import {
   View,
-  Text,
+  Text, // ✅ Ensure Text is imported
   StyleSheet,
   ScrollView,
   TextInput,
@@ -19,9 +19,7 @@ import * as SecureStore from "expo-secure-store";
 import * as ImagePicker from "expo-image-picker";
 import { api } from "@/constants/url_fixed";
 
-// ✅ Use 'api' directly (e.g., "http://127.0.0.1:8000" or "http://10.0.2.2:8000")
-// Django returns URLs like "/media/field_assessments/...", so we prepend 'api'
-const API_BASE = api; // No "/api" suffix here - Django media URLs are relative to server root
+const API_BASE = api;
 
 // Types
 type PermitType =
@@ -51,22 +49,21 @@ type LandUseConflict =
 
 interface ExistingImage {
   image_id: number;
-  url: string | null; // e.g., "/media/field_assessments/2026/04/photo.jpg"
+  url: string | null;
   caption: string;
   layer: string;
   created_at: string;
 }
 
-// ✅ Unified type for display (combines server + local images)
 type DisplayImage = {
-  image_id: number | string; // number for server, string for local temp IDs
-  displayUrl: string | null; // Full URL for Image source
+  image_id: number | string;
+  displayUrl: string | null;
   caption: string;
   isLocal: boolean;
   isFromServer: boolean;
 };
 
-export default function Pre_assessment_form() {
+export default function MetaDataForm() {
   const { id, areaId } = useLocalSearchParams<{
     id?: string;
     areaId: string;
@@ -78,7 +75,7 @@ export default function Pre_assessment_form() {
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Form State - Matches PLANTSCOPE v5.0 field_assessment_data schema
+  // Form State
   const [assessmentDate, setAssessmentDate] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -90,31 +87,23 @@ export default function Pre_assessment_form() {
 
   // Permits
   const [permitsAvailable, setPermitsAvailable] = useState<PermitType[]>([]);
-  const [permitNumbers, setPermitNumbers] = useState<Record<string, string>>(
-    {},
-  );
+  const [permitNumbers, setPermitNumbers] = useState<Record<string, string>>({});
 
   // Security
-  const [securityConcerns, setSecurityConcerns] = useState<SecurityConcern[]>([
-    "none",
-  ]);
+  const [securityConcerns, setSecurityConcerns] = useState<SecurityConcern[]>(["none"]);
   const [securityNotes, setSecurityNotes] = useState("");
 
   // Safety & Access
   const [generalSafetyAssessment, setGeneralSafetyAssessment] = useState<
     "safe" | "slightly_unsafe" | "moderate_risk" | "high_risk"
   >("safe");
-  const [accessibility, setAccessibility] =
-    useState<Accessibility>("vehicle_accessible");
+  const [accessibility, setAccessibility] = useState<Accessibility>("vehicle_accessible");
 
   // Community
-  const [communitySupport, setCommunitySupport] =
-    useState<CommunitySupport>("strong_support");
+  const [communitySupport, setCommunitySupport] = useState<CommunitySupport>("strong_support");
 
   // Land Use
-  const [landUseConflicts, setLandUseConflicts] = useState<LandUseConflict[]>([
-    "none",
-  ]);
+  const [landUseConflicts, setLandUseConflicts] = useState<LandUseConflict[]>(["none"]);
   const [conflictNotes, setConflictNotes] = useState("");
 
   // Documents & Images
@@ -122,20 +111,13 @@ export default function Pre_assessment_form() {
     { document_type: string; file_url: string; uploaded_at: string }[]
   >([]);
 
-  // ✅ Separate state for existing (server) vs new (local) images
   const [existingImages, setExistingImages] = useState<ExistingImage[]>([]);
-  const [localImages, setLocalImages] = useState<
-    { uri: string; caption: string }[]
-  >([]);
+  const [localImages, setLocalImages] = useState<{ uri: string; caption: string }[]>([]);
 
   // Final
   const [preAssessmentRecommendation, setPreAssessmentRecommendation] =
-    useState<"proceed_to_mcda" | "requires_clarification" | "reject">(
-      "proceed_to_mcda",
-    );
+    useState<"proceed_to_mcda" | "requires_clarification" | "reject">("proceed_to_mcda");
   const [additionalNotes, setAdditionalNotes] = useState("");
-
-  // Track submission state
   const [isSubmitted, setIsSubmitted] = useState(false);
 
   useEffect(() => {
@@ -156,8 +138,7 @@ export default function Pre_assessment_form() {
 
       if (faData) {
         setAssessmentDate(
-          faData.assessment_date?.split("T")[0] ||
-            new Date().toISOString().split("T")[0],
+          faData.assessment_date?.split("T")[0] || new Date().toISOString().split("T")[0],
         );
         setLocation(faData.location || null);
         setPermitsAvailable(faData.permits_available || []);
@@ -170,13 +151,10 @@ export default function Pre_assessment_form() {
         setLandUseConflicts(faData.land_use_conflicts || ["none"]);
         setConflictNotes(faData.conflict_notes || "");
         setAttachedDocuments(faData.attached_documents || []);
-        setPreAssessmentRecommendation(
-          faData.pre_assessment_recommendation || "proceed_to_mcda",
-        );
+        setPreAssessmentRecommendation(faData.pre_assessment_recommendation || "proceed_to_mcda");
         setAdditionalNotes(faData.additional_notes || "");
       }
 
-      // ✅ Load existing images from backend response
       if (data.images && Array.isArray(data.images)) {
         setExistingImages(data.images);
       }
@@ -189,27 +167,17 @@ export default function Pre_assessment_form() {
     }
   };
 
-  // Helper: Toggle array item (for multi-select fields)
-  const toggleArrayItem = <T,>(
-    arr: T[],
-    item: T,
-    setter: (val: T[]) => void,
-  ) => {
+  const toggleArrayItem = <T,>(arr: T[], item: T, setter: (val: T[]) => void) => {
     if (item === "none" && arr.includes("none")) {
       setter([]);
     } else if (item === "none" && !arr.includes("none")) {
       setter(["none"]);
     } else {
       const filtered = arr.filter((i) => i !== "none");
-      setter(
-        filtered.includes(item)
-          ? filtered.filter((i) => i !== item)
-          : [...filtered, item],
-      );
+      setter(filtered.includes(item) ? filtered.filter((i) => i !== item) : [...filtered, item]);
     }
   };
 
-  // Pick new image from device (local only - not yet uploaded)
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -217,41 +185,29 @@ export default function Pre_assessment_form() {
       quality: 0.8,
     });
     if (!result.canceled && result.assets?.[0]) {
-      setLocalImages([
-        ...localImages,
-        { uri: result.assets[0].uri, caption: "" },
-      ]);
+      setLocalImages([...localImages, { uri: result.assets[0].uri, caption: "" }]);
     }
   };
 
-  // Upload NEW local images to backend (called on save/submit)
-  const uploadLocalImages = async (
-    fieldAssessmentId: number,
-    token: string,
-  ) => {
+  const uploadLocalImages = async (fieldAssessmentId: number, token: string) => {
     for (const img of localImages) {
       const formData = new FormData();
-      // React Native FormData requires this specific format for file uploads
       formData.append("image", {
         uri: img.uri,
         type: "image/jpeg",
         name: `assessment_${fieldAssessmentId}_${Date.now()}.jpg`,
       } as any);
       formData.append("caption", img.caption || "");
-      formData.append("layer", "pre_assessment");
+      formData.append("layer", "meta_data");
 
-      await fetch(
-        `${API_BASE}/api/field_assessments/${fieldAssessmentId}/images/upload/`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        },
-      );
+      await fetch(`${API_BASE}/api/field_assessments/${fieldAssessmentId}/images/upload/`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
     }
   };
 
-  // Delete existing image from backend (server-side)
   const deleteExistingImage = async (imageId: number) => {
     Alert.alert("Delete Photo", "Remove this photo from the assessment?", [
       { text: "Cancel", style: "cancel" },
@@ -263,15 +219,10 @@ export default function Pre_assessment_form() {
             const token = await SecureStore.getItemAsync("token");
             const res = await fetch(
               `${API_BASE}/api/field_assessments/images/${imageId}/delete/`,
-              {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
-              },
+              { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
             );
             if (res.ok) {
-              setExistingImages(
-                existingImages.filter((img) => img.image_id !== imageId),
-              );
+              setExistingImages(existingImages.filter((img) => img.image_id !== imageId));
               Alert.alert("Success", "Photo deleted");
             } else {
               const err = await res.json();
@@ -285,14 +236,12 @@ export default function Pre_assessment_form() {
     ]);
   };
 
-  // Remove local (unsaved) image from state only
   const removeLocalImage = (index: number) => {
     const updated = [...localImages];
     updated.splice(index, 1);
     setLocalImages(updated);
   };
 
-  // SAVE DRAFT - Save form data + upload new images
   const handleSaveDraft = async () => {
     if (!assessmentDate) {
       Alert.alert("Missing Info", "Assessment date is required.");
@@ -303,11 +252,11 @@ export default function Pre_assessment_form() {
       const token = await SecureStore.getItemAsync("token");
       const payload = {
         reforestation_area_id: parseInt(areaId),
-        layer: "pre_assessment",
+        layer: "meta_data",
         assessment_date: assessmentDate,
         location,
         field_assessment_data: {
-          assessment_type: "pre_assessment",
+          assessment_type: "meta_data",
           assessment_date: assessmentDate,
           location,
           permits_available: permitsAvailable,
@@ -332,10 +281,7 @@ export default function Pre_assessment_form() {
 
       const res = await fetch(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
 
@@ -346,35 +292,24 @@ export default function Pre_assessment_form() {
 
       const responseData = await res.json();
 
-      // Upload NEW local images only (existing ones are already on server)
-      const fieldAssessmentId = isEditMode
-        ? parseInt(id!)
-        : responseData.field_assessment_id;
+      const fieldAssessmentId = isEditMode ? parseInt(id!) : responseData.field_assessment_id;
       if (fieldAssessmentId && localImages.length > 0) {
         await uploadLocalImages(fieldAssessmentId, token);
-        // After successful upload, move local images to existingImages for display
-        // Note: We'll refetch on next open to get real server URLs, but this gives immediate feedback
         const uploadedImages: ExistingImage[] = localImages.map((img, idx) => ({
-          image_id: Date.now() + idx, // temp ID until next fetch
-          url: img.uri, // local URI for immediate display
+          image_id: Date.now() + idx,
+          url: img.uri,
           caption: img.caption,
-          layer: "pre_assessment",
+          layer: "meta_data",
           created_at: new Date().toISOString(),
         }));
         setExistingImages([...existingImages, ...uploadedImages]);
-        setLocalImages([]); // Clear local after "upload"
+        setLocalImages([]);
       }
 
-      Alert.alert(
-        "Success",
-        isEditMode
-          ? "Draft updated."
-          : "Draft saved. You can submit when ready.",
-      );
+      Alert.alert("Success", isEditMode ? "Draft updated." : "Draft saved. You can submit when ready.");
       if (!isEditMode) {
-        // Refresh list to show new item
         router.replace({
-          pathname: "/feedbacks/pre_assessment",
+          pathname: "/feedbacks/meta_data_assessment",
           params: { areaId, areaName: "" },
         });
       }
@@ -386,10 +321,9 @@ export default function Pre_assessment_form() {
     }
   };
 
-  // SUBMIT - Save + lock record (cannot edit after)
   const handleSubmitAssessment = async () => {
     Alert.alert(
-      "Finalize Pre-Assessment",
+      "Finalize Meta Data",
       "Once submitted, this assessment cannot be edited. Proceed?",
       [
         { text: "Cancel", style: "cancel" },
@@ -399,28 +333,21 @@ export default function Pre_assessment_form() {
             setSubmitting(true);
             try {
               const token = await SecureStore.getItemAsync("token");
-              // First save any final changes + upload new images
               await handleSaveDraft();
-              // Then submit (lock the record)
               const res = await fetch(
                 `${API_BASE}/api/field_assessments/${id}/submit/`,
                 {
                   method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                  },
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 },
               );
               if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.error || "Failed to submit");
               }
-              Alert.alert(
-                "Success",
-                "Pre-assessment submitted to GIS Specialist!",
-                [{ text: "OK", onPress: () => router.back() }],
-              );
+              Alert.alert("Success", "Meta Data submitted to GIS Specialist!", [
+                { text: "OK", onPress: () => router.back() },
+              ]);
             } catch (e: any) {
               console.error("Submit error:", e);
               Alert.alert("Error", e.message);
@@ -433,13 +360,10 @@ export default function Pre_assessment_form() {
     );
   };
 
-  if (loading)
-    return <ActivityIndicator size="large" style={{ marginTop: 50 }} />;
+  if (loading) return <ActivityIndicator size="large" style={{ marginTop: 50 }} />;
   const isReadOnly = isSubmitted;
 
-  // ✅ Combine existing + local images for display with proper URL handling
   const allImages: DisplayImage[] = [
-    // Server images: prepend API base URL
     ...existingImages.map((img) => ({
       image_id: img.image_id,
       displayUrl: img.url ? `${API_BASE}${img.url}` : null,
@@ -447,7 +371,6 @@ export default function Pre_assessment_form() {
       isLocal: false,
       isFromServer: true,
     })),
-    // Local images: use local URI directly (works for display before upload)
     ...localImages.map((img, idx) => ({
       image_id: `local-${idx}`,
       displayUrl: img.uri,
@@ -459,7 +382,8 @@ export default function Pre_assessment_form() {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.sectionTitle}>📅 Assessment Details</Text>
+      <Text style={styles.sectionTitle}>📅 Meta Data Details</Text>
+      
       <Text style={styles.label}>Assessment Date</Text>
       <TextInput
         style={[styles.input, isReadOnly && styles.readOnly]}
@@ -475,31 +399,21 @@ export default function Pre_assessment_form() {
         value={location ? `${location.latitude}, ${location.longitude}` : ""}
         editable={false}
       />
+      {/* ✅ Fixed: hint text properly wrapped */}
       <Text style={styles.hint}>
-        Leave blank if collecting data during barangay meeting. GIS Specialist
-        can assign coordinates later.
+        Leave blank if collecting data during barangay meeting. GIS Specialist can assign coordinates later.
       </Text>
 
       <Text style={styles.sectionTitle}>📄 Permits & Clearances</Text>
       {(
-        [
-          "barangay_clearance",
-          "lgu_endorsement",
-          "denr_permit",
-          "landowner_consent",
-          "other",
-        ] as PermitType[]
+        ["barangay_clearance", "lgu_endorsement", "denr_permit", "landowner_consent", "other"] as PermitType[]
       ).map((p) => (
         <View key={p} style={styles.row}>
+          {/* ✅ Fixed: dynamic text wrapped in Text */}
           <Text>{p.replace("_", " ").toUpperCase()}</Text>
           <Switch
             value={permitsAvailable.includes(p)}
-            onValueChange={
-              isReadOnly
-                ? null
-                : () =>
-                    toggleArrayItem(permitsAvailable, p, setPermitsAvailable)
-            }
+            onValueChange={isReadOnly ? undefined : () => toggleArrayItem(permitsAvailable, p, setPermitsAvailable)}
             disabled={isReadOnly}
           />
         </View>
@@ -513,9 +427,7 @@ export default function Pre_assessment_form() {
               style={[styles.input, isReadOnly && styles.readOnly]}
               placeholder={`${p.replace("_", " ")} Number`}
               value={permitNumbers[p] || ""}
-              onChangeText={(val) =>
-                setPermitNumbers({ ...permitNumbers, [p]: val })
-              }
+              onChangeText={(val) => setPermitNumbers({ ...permitNumbers, [p]: val })}
               editable={!isReadOnly}
             />
           ))}
@@ -524,60 +436,43 @@ export default function Pre_assessment_form() {
 
       <Text style={styles.sectionTitle}>🔒 Security & Safety</Text>
       {(
-        [
-          "none",
-          "npa_presence",
-          "land_dispute",
-          "theft_risk",
-          "other",
-        ] as SecurityConcern[]
+        ["none", "npa_presence", "land_dispute", "theft_risk", "other"] as SecurityConcern[]
       ).map((s) => (
         <View key={s} style={styles.row}>
+          {/* ✅ Fixed: dynamic text wrapped in Text */}
           <Text>{s.replace("_", " ").toUpperCase()}</Text>
           <Switch
             value={securityConcerns.includes(s)}
-            onValueChange={
-              isReadOnly
-                ? null
-                : () =>
-                    toggleArrayItem(securityConcerns, s, setSecurityConcerns)
-            }
+            onValueChange={isReadOnly ? undefined : () => toggleArrayItem(securityConcerns, s, setSecurityConcerns)}
             disabled={isReadOnly}
           />
         </View>
       ))}
+      {/* ✅ Fixed: conditional text area with proper Text wrapper for label */}
       {!securityConcerns.includes("none") && (
-        <TextInput
-          style={[styles.input, styles.textArea, isReadOnly && styles.readOnly]}
-          placeholder="Security notes..."
-          value={securityNotes}
-          onChangeText={setSecurityNotes}
-          multiline
-          editable={!isReadOnly}
-        />
+        <>
+          <Text style={styles.label}>Security Notes</Text>
+          <TextInput
+            style={[styles.input, styles.textArea, isReadOnly && styles.readOnly]}
+            placeholder="Security notes..."
+            value={securityNotes}
+            onChangeText={setSecurityNotes}
+            multiline
+            editable={!isReadOnly}
+          />
+        </>
       )}
 
       <Text style={styles.label}>General Safety Assessment</Text>
       <View style={styles.pickerRow}>
-        {(
-          ["safe", "slightly_unsafe", "moderate_risk", "high_risk"] as const
-        ).map((opt) => (
+        {(["safe", "slightly_unsafe", "moderate_risk", "high_risk"] as const).map((opt) => (
           <TouchableOpacity
             key={opt}
-            style={[
-              styles.pickerChip,
-              generalSafetyAssessment === opt && styles.pickerChipActive,
-            ]}
-            onPress={
-              isReadOnly ? undefined : () => setGeneralSafetyAssessment(opt)
-            }
+            style={[styles.pickerChip, generalSafetyAssessment === opt && styles.pickerChipActive]}
+            onPress={isReadOnly ? undefined : () => setGeneralSafetyAssessment(opt)}
           >
-            <Text
-              style={[
-                styles.pickerChipText,
-                generalSafetyAssessment === opt && styles.pickerChipTextActive,
-              ]}
-            >
+            {/* ✅ Fixed: dynamic text properly wrapped */}
+            <Text style={[styles.pickerChipText, generalSafetyAssessment === opt && styles.pickerChipTextActive]}>
               {opt.replace("_", " ")}
             </Text>
           </TouchableOpacity>
@@ -586,28 +481,14 @@ export default function Pre_assessment_form() {
 
       <Text style={styles.label}>Accessibility</Text>
       <View style={styles.pickerRow}>
-        {(
-          [
-            "vehicle_accessible",
-            "motorcycle_only",
-            "footpath_only",
-            "not_accessible",
-          ] as const
-        ).map((opt) => (
+        {(["vehicle_accessible", "motorcycle_only", "footpath_only", "not_accessible"] as const).map((opt) => (
           <TouchableOpacity
             key={opt}
-            style={[
-              styles.pickerChip,
-              accessibility === opt && styles.pickerChipActive,
-            ]}
+            style={[styles.pickerChip, accessibility === opt && styles.pickerChipActive]}
             onPress={isReadOnly ? undefined : () => setAccessibility(opt)}
           >
-            <Text
-              style={[
-                styles.pickerChipText,
-                accessibility === opt && styles.pickerChipTextActive,
-              ]}
-            >
+            {/* ✅ Fixed: dynamic text properly wrapped */}
+            <Text style={[styles.pickerChipText, accessibility === opt && styles.pickerChipTextActive]}>
               {opt.replace("_", " ")}
             </Text>
           </TouchableOpacity>
@@ -617,67 +498,52 @@ export default function Pre_assessment_form() {
       <Text style={styles.sectionTitle}>👥 Community & Land Use</Text>
       <Text style={styles.label}>Community Support</Text>
       <View style={styles.pickerRow}>
-        {(["strong_support", "neutral", "opposition", "unknown"] as const).map(
-          (opt) => (
-            <TouchableOpacity
-              key={opt}
-              style={[
-                styles.pickerChip,
-                communitySupport === opt && styles.pickerChipActive,
-              ]}
-              onPress={isReadOnly ? undefined : () => setCommunitySupport(opt)}
-            >
-              <Text
-                style={[
-                  styles.pickerChipText,
-                  communitySupport === opt && styles.pickerChipTextActive,
-                ]}
-              >
-                {opt.replace("_", " ")}
-              </Text>
-            </TouchableOpacity>
-          ),
-        )}
+        {(["strong_support", "neutral", "opposition", "unknown"] as const).map((opt) => (
+          <TouchableOpacity
+            key={opt}
+            style={[styles.pickerChip, communitySupport === opt && styles.pickerChipActive]}
+            onPress={isReadOnly ? undefined : () => setCommunitySupport(opt)}
+          >
+            {/* ✅ Fixed: dynamic text properly wrapped */}
+            <Text style={[styles.pickerChipText, communitySupport === opt && styles.pickerChipTextActive]}>
+              {opt.replace("_", " ")}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {(
-        [
-          "none",
-          "agricultural_use",
-          "residential_encroachment",
-          "mining_claim",
-          "other",
-        ] as LandUseConflict[]
+        ["none", "agricultural_use", "residential_encroachment", "mining_claim", "other"] as LandUseConflict[]
       ).map((c) => (
         <View key={c} style={styles.row}>
+          {/* ✅ Fixed: dynamic text wrapped in Text */}
           <Text>{c.replace("_", " ").toUpperCase()}</Text>
           <Switch
             value={landUseConflicts.includes(c)}
-            onValueChange={
-              isReadOnly
-                ? null
-                : () =>
-                    toggleArrayItem(landUseConflicts, c, setLandUseConflicts)
-            }
+            onValueChange={isReadOnly ? undefined : () => toggleArrayItem(landUseConflicts, c, setLandUseConflicts)}
             disabled={isReadOnly}
           />
         </View>
       ))}
+      {/* ✅ Fixed: conditional text area with proper Text wrapper */}
       {!landUseConflicts.includes("none") && (
-        <TextInput
-          style={[styles.input, styles.textArea, isReadOnly && styles.readOnly]}
-          placeholder="Conflict notes..."
-          value={conflictNotes}
-          onChangeText={setConflictNotes}
-          multiline
-          editable={!isReadOnly}
-        />
+        <>
+          <Text style={styles.label}>Conflict Notes</Text>
+          <TextInput
+            style={[styles.input, styles.textArea, isReadOnly && styles.readOnly]}
+            placeholder="Conflict notes..."
+            value={conflictNotes}
+            onChangeText={setConflictNotes}
+            multiline
+            editable={!isReadOnly}
+          />
+        </>
       )}
 
       <Text style={styles.sectionTitle}>📎 Attachments</Text>
+      {/* ✅ Fixed: hint text properly wrapped */}
       <Text style={styles.hint}>
-        Attached documents from permits can be referenced here. Upload field
-        photos below.
+        Attached documents from permits can be referenced here. Upload field photos below.
       </Text>
       {attachedDocuments.map((doc, idx) => (
         <View key={idx} style={styles.docItem}>
@@ -688,7 +554,7 @@ export default function Pre_assessment_form() {
         </View>
       ))}
 
-      {/* ✅ Image Gallery Section - Shows both existing + new images */}
+      {/* Image Gallery */}
       <Text style={styles.label}>Field Photos</Text>
       {allImages.length > 0 && (
         <FlatList
@@ -699,32 +565,19 @@ export default function Pre_assessment_form() {
           contentContainerStyle={{ paddingBottom: 10 }}
           renderItem={({ item }: { item: DisplayImage }) => (
             <View style={styles.imageCard}>
-              <Image
-                source={{ uri: item.displayUrl || undefined }}
-                style={styles.imageThumb}
-                onError={() => {
-                  // Optional: Set fallback for broken images
-                  console.warn("Image failed to load:", item.displayUrl);
-                }}
-              />
+              <Image source={{ uri: item.displayUrl || undefined }} style={styles.imageThumb} />
+              {/* ✅ Fixed: conditional caption rendering - both branches return Text */}
               {item.caption ? (
-                <Text style={styles.imageCaption} numberOfLines={1}>
-                  {item.caption}
-                </Text>
+                <Text style={styles.imageCaption} numberOfLines={1}>{item.caption}</Text>
               ) : (
                 <Text style={styles.imageCaptionEmpty}>Add caption...</Text>
               )}
-              {/* Delete button - only show in edit mode (not read-only) */}
               {!isReadOnly && (
                 <TouchableOpacity
                   style={styles.deleteImageBtn}
                   onPress={() =>
                     item.isLocal
-                      ? removeLocalImage(
-                          localImages.findIndex(
-                            (i) => i.uri === item.displayUrl,
-                          ),
-                        )
+                      ? removeLocalImage(localImages.findIndex((i) => i.uri === item.displayUrl))
                       : deleteExistingImage(item.image_id as number)
                   }
                 >
@@ -736,43 +589,24 @@ export default function Pre_assessment_form() {
         />
       )}
 
-      {/* Add Photo Button */}
-      <TouchableOpacity
-        style={styles.uploadBtn}
-        onPress={isReadOnly ? undefined : pickImage}
-        disabled={isReadOnly}
-      >
+      <TouchableOpacity style={styles.uploadBtn} onPress={isReadOnly ? undefined : pickImage} disabled={isReadOnly}>
         <Text style={styles.uploadBtnText}>📷 Add Field Photo</Text>
       </TouchableOpacity>
 
       <Text style={styles.sectionTitle}>✅ Final Recommendation</Text>
       <View style={styles.pickerRow}>
-        {(["proceed_to_mcda", "requires_clarification", "reject"] as const).map(
-          (opt) => (
-            <TouchableOpacity
-              key={opt}
-              style={[
-                styles.pickerChip,
-                preAssessmentRecommendation === opt && styles.pickerChipActive,
-              ]}
-              onPress={
-                isReadOnly
-                  ? undefined
-                  : () => setPreAssessmentRecommendation(opt)
-              }
-            >
-              <Text
-                style={[
-                  styles.pickerChipText,
-                  preAssessmentRecommendation === opt &&
-                    styles.pickerChipTextActive,
-                ]}
-              >
-                {opt.replace("_", " ")}
-              </Text>
-            </TouchableOpacity>
-          ),
-        )}
+        {(["proceed_to_mcda", "requires_clarification", "reject"] as const).map((opt) => (
+          <TouchableOpacity
+            key={opt}
+            style={[styles.pickerChip, preAssessmentRecommendation === opt && styles.pickerChipActive]}
+            onPress={isReadOnly ? undefined : () => setPreAssessmentRecommendation(opt)}
+          >
+            {/* ✅ Fixed: dynamic text properly wrapped */}
+            <Text style={[styles.pickerChipText, preAssessmentRecommendation === opt && styles.pickerChipTextActive]}>
+              {opt.replace("_", " ")}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
       <TextInput
         style={[styles.input, styles.textArea, isReadOnly && styles.readOnly]}
@@ -787,7 +621,7 @@ export default function Pre_assessment_form() {
       <View style={styles.buttonContainer}>
         {isSubmitted ? (
           <View style={styles.submittedBadge}>
-            <Text style={styles.submittedText}>✓ PRE-ASSESSMENT SUBMITTED</Text>
+            <Text style={styles.submittedText}>✓ META DATA SUBMITTED</Text>
             <Text style={styles.submittedSubtext}>
               Awaiting GIS Specialist review. This record is locked.
             </Text>
@@ -799,9 +633,7 @@ export default function Pre_assessment_form() {
               onPress={handleSaveDraft}
               disabled={saving}
             >
-              <Text style={styles.saveBtnText}>
-                {saving ? "Saving..." : "Save Draft"}
-              </Text>
+              <Text style={styles.saveBtnText}>{saving ? "Saving..." : "Save Draft"}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.submitBtn, submitting && styles.btnDisabled]}
@@ -812,9 +644,9 @@ export default function Pre_assessment_form() {
                 {submitting ? "Submitting..." : "Submit to GIS Specialist"}
               </Text>
             </TouchableOpacity>
+            {/* ✅ Fixed: warning text properly wrapped */}
             <Text style={styles.warningText}>
-              ⚠️ Submitting locks this record. Only the GIS Specialist can
-              finalize the area status.
+              ⚠️ Submitting locks this record. Only the GIS Specialist can finalize the area status.
             </Text>
           </>
         )}
@@ -829,7 +661,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontWeight: "bold",
     fontSize: 16,
-    color: "#0F4A2F",
+    color: "#5b21b6",
     marginTop: 20,
     marginBottom: 10,
     paddingBottom: 4,
@@ -846,18 +678,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#f9f9f9",
     fontSize: 15,
   },
-  readOnly: {
-    backgroundColor: "#e9ecef",
-    color: "#6c757d",
-    borderColor: "#dee2e6",
-  },
+  readOnly: { backgroundColor: "#e9ecef", color: "#6c757d", borderColor: "#dee2e6" },
   textArea: { height: 80, textAlignVertical: "top" },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
+  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   pickerRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   pickerChip: {
     paddingHorizontal: 12,
@@ -867,7 +690,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ccc",
   },
-  pickerChipActive: { backgroundColor: "#0F4A2F", borderColor: "#0F4A2F" },
+  pickerChipActive: { backgroundColor: "#7c3aed", borderColor: "#7c3aed" },
   pickerChipText: { fontSize: 13, color: "#333" },
   pickerChipTextActive: { color: "#fff", fontWeight: "600" },
   docItem: {
@@ -876,16 +699,11 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginBottom: 6,
     borderLeftWidth: 3,
-    borderLeftColor: "#0F4A2F",
+    borderLeftColor: "#7c3aed",
   },
   docType: { fontWeight: "600", fontSize: 13 },
   docUrl: { fontSize: 11, color: "#666" },
-
-  // ✅ Image Gallery Styles
-  imageCard: {
-    marginRight: 12,
-    width: 120,
-  },
+  imageCard: { marginRight: 12, width: 120 },
   imageThumb: {
     width: 120,
     height: 90,
@@ -893,17 +711,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     backgroundColor: "#f0f0f0",
   },
-  imageCaption: {
-    fontSize: 11,
-    color: "#333",
-    textAlign: "center",
-  },
-  imageCaptionEmpty: {
-    fontSize: 11,
-    color: "#999",
-    textAlign: "center",
-    fontStyle: "italic",
-  },
+  imageCaption: { fontSize: 11, color: "#333", textAlign: "center" },
+  imageCaptionEmpty: { fontSize: 11, color: "#999", textAlign: "center", fontStyle: "italic" },
   deleteImageBtn: {
     position: "absolute",
     top: 4,
@@ -915,13 +724,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  deleteImageText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-    lineHeight: 18,
-  },
-
+  deleteImageText: { color: "#fff", fontSize: 14, fontWeight: "bold", lineHeight: 18 },
   uploadBtn: {
     backgroundColor: "#e9ecef",
     padding: 12,
@@ -929,21 +732,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
-  uploadBtnText: { color: "#0F4A2F", fontWeight: "600" },
+  uploadBtnText: { color: "#7c3aed", fontWeight: "600" },
   buttonContainer: { marginTop: 24, gap: 12 },
-  saveBtn: {
-    backgroundColor: "#6c757d",
-    padding: 15,
-    borderRadius: 8,
-    alignItems: "center",
-  },
+  saveBtn: { backgroundColor: "#6c757d", padding: 15, borderRadius: 8, alignItems: "center" },
   saveBtnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
   submitBtn: {
-    backgroundColor: "#0F4A2F",
+    backgroundColor: "#7c3aed",
     padding: 15,
     borderRadius: 8,
     alignItems: "center",
-    shadowColor: "#0F4A2F",
+    shadowColor: "#7c3aed",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -951,26 +749,15 @@ const styles = StyleSheet.create({
   },
   submitBtnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
   btnDisabled: { opacity: 0.6 },
-  warningText: {
-    textAlign: "center",
-    color: "#856404",
-    fontSize: 12,
-    marginTop: 5,
-    fontStyle: "italic",
-  },
+  warningText: { textAlign: "center", color: "#856404", fontSize: 12, marginTop: 5, fontStyle: "italic" },
   submittedBadge: {
-    backgroundColor: "#d4edda",
-    borderColor: "#c3e6cb",
+    backgroundColor: "#f5f3ff",
+    borderColor: "#c4b5fd",
     borderWidth: 1,
     borderRadius: 8,
     padding: 20,
     alignItems: "center",
   },
-  submittedText: {
-    color: "#155724",
-    fontWeight: "bold",
-    fontSize: 18,
-    marginBottom: 5,
-  },
-  submittedSubtext: { color: "#155724", fontSize: 14, textAlign: "center" },
+  submittedText: { color: "#5b21b6", fontWeight: "bold", fontSize: 18, marginBottom: 5 },
+  submittedSubtext: { color: "#6d28d9", fontSize: 14, textAlign: "center" },
 });

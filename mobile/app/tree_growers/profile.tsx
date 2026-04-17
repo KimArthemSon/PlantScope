@@ -10,7 +10,7 @@ export default function ProfilePage() {
       <StatusBar barStyle="light-content" backgroundColor="#1b5e20" />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.push('./dashboard')}>
-          <MaterialCommunityIcons name="chevron-left" size={22} color="#ffffff" />
+          {/* <MaterialCommunityIcons name="chevron-left" size={22} color="#ffffff" /> */}
           <Text style={styles.backText}>Profile</Text>
         </TouchableOpacity>
       </View>

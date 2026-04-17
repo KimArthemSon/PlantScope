@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
-import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
 interface Tree_species {
   tree_specie_id: number;
@@ -59,7 +58,7 @@ export default function Tree_species() {
   const [tree_specie_idDelete, settree_specie_IdDelete] = useState<
     number | null
   >(null);
-  const navigate = useNavigate();
+
   const token = localStorage.getItem("token");
 
   const inputWrapper =
@@ -245,7 +244,7 @@ export default function Tree_species() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
+      <header className="bg-linear-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-center">
           <div className="flex items-center gap-3 mb-2">
             <Leaf size={32} className="text-green-300" />

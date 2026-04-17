@@ -519,7 +519,7 @@ export default function UpdateReforestationArea() {
         </div>
 
         {/* Land Classification Dropdown */}
-        <div className="space-y-1.5">
+        {/* <div className="space-y-1.5">
           <label className="text-sm font-semibold text-black flex items-center gap-2">
             <File size={16} className="text-green-600" />
             Land Classification
@@ -550,7 +550,7 @@ export default function UpdateReforestationArea() {
               <CheckCircle size={12} /> Selected: {selectedLandClassificationName}
             </p>
           )}
-        </div>
+        </div> */}
 
         {/* Description */}
         <div className="space-y-1.5">

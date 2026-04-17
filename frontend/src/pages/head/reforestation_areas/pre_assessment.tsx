@@ -15,7 +15,8 @@ import {
   XCircle,
   AlertCircle,
   Image as ImageIcon,
-  ExternalLink,
+  Layers, // ✅ For Land Classification
+  ThermometerSun, // ✅ For Safety Level
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 
@@ -24,20 +25,22 @@ const API_IMAGE = "http://127.0.0.1:8000/";
 const CURRENT_USER_ID = 1; // Replace with actual auth context
 
 // ─────────────────────────────────────────────
-// Type Definitions (Matches Django Response)
+// Type Definitions
 // ─────────────────────────────────────────────
 interface AreaData {
   reforestation_area_id: number;
   name: string;
   barangay: { barangay_id: number; name: string } | null;
   legality: "pending" | "legal" | "illegal";
-  pre_assessment_status: "pending" | "approved" | "rejected";
+  pre_assessment_status: "pending" | "approved" | "rejected"; // Keep for backward compat
   safety: "safe" | "slightly" | "moderate" | "danger";
   description: string;
   reforestation_data: Record<string, any> | null;
   permit_count: number;
   area_img: string | null;
   created_at: string;
+  // ✅ NEW: Land classification field
+  land_classification: { land_classification_id: number; name: string } | null;
 }
 
 interface AssessmentImage {
@@ -93,7 +96,7 @@ interface AssessmentItem {
   };
   is_submitted: boolean;
   image_count: number;
-  images: AssessmentImage[]; // ✅ ADDED: Actual image data
+  images: AssessmentImage[];
   created_at: string;
   submitted_at: string;
 }
@@ -111,6 +114,13 @@ interface PermitItem {
   verification_notes: string | null;
   uploaded_at: string;
   uploaded_by: string | null;
+}
+
+// ✅ NEW: Land Classification interface
+interface LandClassificationOption {
+  land_classification_id: number;
+  name: string;
+  description?: string;
 }
 
 // ─────────────────────────────────────────────
@@ -190,11 +200,9 @@ function RecommendationBadge({ recommendation }: { recommendation: string }) {
   );
 }
 
-// ✅ NEW: Image Gallery Component
+// ✅ Image Gallery Component
 function ImageGallery({ images }: { images: AssessmentImage[] }) {
   if (!images || images.length === 0) return null;
-
-  // Filter out images with null/empty URLs
   const validImages = images.filter((img) => img.url);
   if (validImages.length === 0) return null;
 
@@ -225,9 +233,9 @@ function ImageGallery({ images }: { images: AssessmentImage[] }) {
 }
 
 // ─────────────────────────────────────────────
-// Main Component
+// Main Component: Meta Data Verification
 // ─────────────────────────────────────────────
-export default function Pre_Assessment() {
+export default function MetaDataVerification() {
   const { id } = useParams<{ id: string }>();
   const token = localStorage.getItem("token");
   const navigate = useNavigate();
@@ -235,9 +243,19 @@ export default function Pre_Assessment() {
 
   // State
   const [areaData, setAreaData] = useState<AreaData | null>(null);
-  const [preAssessmentStatus, setPreAssessmentStatus] =
+  const [metaDataStatus, setMetaDataStatus] =
     useState<AreaData["pre_assessment_status"]>("pending");
   const [legality, setLegality] = useState<AreaData["legality"]>("pending");
+
+  // ✅ NEW: Safety level & Land Classification state
+  const [safetyLevel, setSafetyLevel] = useState<AreaData["safety"]>("safe");
+  const [landClassificationId, setLandClassificationId] = useState<number | "">(
+    "",
+  );
+  const [landClassifications, setLandClassifications] = useState<
+    LandClassificationOption[]
+  >([]);
+
   const [assessments, setAssessments] = useState<AssessmentItem[]>([]);
   const [permits, setPermits] = useState<PermitItem[]>([]);
   const [PSalert, setPSAlert] = useState<{
@@ -269,8 +287,12 @@ export default function Pre_Assessment() {
       if (res.ok && data.data) {
         const area: AreaData = data.data;
         setAreaData(area);
-        setPreAssessmentStatus(area.pre_assessment_status || "pending");
+        setMetaDataStatus(area.pre_assessment_status || "pending");
         setLegality(area.legality || "pending");
+        setSafetyLevel(area.safety || "safe");
+        setLandClassificationId(
+          area.land_classification?.land_classification_id || "",
+        );
       }
     } catch (err) {
       console.error("Failed to fetch area:", err);
@@ -282,15 +304,16 @@ export default function Pre_Assessment() {
     }
   }
 
-  async function fetchAssessments() {
+   async function fetchAssessments() {
     if (!id || !token) return;
     try {
-      const res = await fetch(`${API}/area/${id}/pre-assessments/`, {
+      const res = await fetch(`${API}/area/${id}/meta_data/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok && Array.isArray(data)) {
         setAssessments(data);
+        console.log(data)
       }
     } catch (err) {
       console.error("Failed to fetch assessments:", err);
@@ -317,6 +340,22 @@ export default function Pre_Assessment() {
     }
   }
 
+  // ✅ NEW: Fetch Land Classifications
+  async function fetchLandClassifications() {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API}/get_land_classifications_list/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setLandClassifications(data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch land classifications:", err);
+    }
+  }
+
   // ─────────────────────────────────────────────
   // Action Handlers
   // ─────────────────────────────────────────────
@@ -324,26 +363,26 @@ export default function Pre_Assessment() {
     if (!areaData || !id || !token) return;
 
     const reforestationData = {
-      assessment_type: "pre_assessment" as const,
+      assessment_type: "meta_data" as const, // ✅ Updated type
       validated_by: `GIS-SPEC-${CURRENT_USER_ID}`,
       validation_date: new Date().toISOString(),
       permits_verified: legality === "legal" && permits.length > 0,
-      security_clearance:
-        preAssessmentStatus === "approved" ? "cleared" : "pending",
+      security_clearance: metaDataStatus === "approved" ? "cleared" : "pending",
       legal_status_decision: legality,
+      // ✅ NEW: Safety & Land Classification decisions
+      verified_safety_level: safetyLevel,
+      verified_land_classification_id: landClassificationId || null,
       rejection_reason:
-        preAssessmentStatus === "rejected"
-          ? "Failed pre-assessment criteria"
+        metaDataStatus === "rejected"
+          ? "Failed meta data verification criteria"
           : null,
       required_actions:
-        preAssessmentStatus === "approved"
-          ? ["obtain_denr_permit_before_planting"]
-          : [],
-      document_verification_notes: `Legality: ${legality}, Status: ${preAssessmentStatus}, Permits: ${permits.length} verified`,
-      pre_assessment_acceptance:
-        preAssessmentStatus === "approved"
+        metaDataStatus === "approved" ? ["proceed_to_mcda_layers"] : [],
+      document_verification_notes: `Legality: ${legality}, Status: ${metaDataStatus}, Safety: ${safetyLevel}, Land Class: ${landClassificationId}, Permits: ${permits.length} verified`,
+      meta_data_acceptance:
+        metaDataStatus === "approved"
           ? "ACCEPT"
-          : preAssessmentStatus === "rejected"
+          : metaDataStatus === "rejected"
             ? "REJECT"
             : "PENDING",
     };
@@ -357,8 +396,10 @@ export default function Pre_Assessment() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          pre_assessment_status: preAssessmentStatus,
+          pre_assessment_status: metaDataStatus, // Keep for backward compat
           legality,
+          safety: safetyLevel, // ✅ Save verified safety
+          land_classification_id: landClassificationId || null, // ✅ Save land classification
           reforestation_data: reforestationData,
         }),
       });
@@ -368,7 +409,7 @@ export default function Pre_Assessment() {
         setPSAlert({
           type: "success",
           title: "Success",
-          message: "Pre-assessment finalized.",
+          message: "Meta Data verification finalized.",
         });
         fetchArea();
         fetchPermits();
@@ -479,9 +520,12 @@ export default function Pre_Assessment() {
   useEffect(() => {
     if (id && token) {
       setLoading(true);
-      Promise.all([fetchArea(), fetchAssessments(), fetchPermits()]).finally(
-        () => setLoading(false),
-      );
+      Promise.all([
+        fetchArea(),
+        fetchAssessments(),
+        fetchPermits(),
+        fetchLandClassifications(), // ✅ Fetch land classifications
+      ]).finally(() => setLoading(false));
     }
   }, [id]);
 
@@ -493,7 +537,7 @@ export default function Pre_Assessment() {
       <div className="flex items-center justify-center h-screen bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-700 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading pre-assessment data...</p>
+          <p className="text-gray-600">Loading meta data verification...</p>
         </div>
       </div>
     );
@@ -525,11 +569,11 @@ export default function Pre_Assessment() {
         />
       )}
 
-      {/* LEFT PANEL - Inspector Pre-Assessment Submissions */}
+      {/* LEFT PANEL - Inspector Meta Data Submissions */}
       <div className="w-112.5 bg-white rounded-2xl shadow flex flex-col min-h-0 border border-gray-200">
         <div className="border-b p-5 bg-gray-50 rounded-t-2xl">
           <h2 className="text-xl font-bold text-green-700 flex items-center gap-2">
-            <ClipboardCheck size={20} /> Pre-Assessment Reviews
+            <ClipboardCheck size={20} /> Meta Data Reviews
           </h2>
           <p className="text-sm text-gray-500 truncate mt-1">{areaData.name}</p>
           <p className="text-xs text-gray-400 mt-1">
@@ -542,7 +586,7 @@ export default function Pre_Assessment() {
           {assessments.length === 0 ? (
             <div className="text-center py-10 text-gray-400 text-sm">
               <ClipboardCheck className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>No pre-assessments submitted yet.</p>
+              <p>No meta data submissions yet.</p>
               <p className="text-xs mt-1">
                 Onsite inspectors will appear here after submission.
               </p>
@@ -686,7 +730,7 @@ export default function Pre_Assessment() {
                     </div>
                   )}
 
-                  {/* ✅ NEW: Field Assessment Images Gallery */}
+                  {/* Field Assessment Images Gallery */}
                   <ImageGallery images={item.images} />
 
                   {/* Location Info */}
@@ -711,15 +755,15 @@ export default function Pre_Assessment() {
         </div>
       </div>
 
-      {/* RIGHT PANEL - GIS Specialist Finalization Form */}
+      {/* RIGHT PANEL - GIS Specialist Meta Data Finalization */}
       <div className="flex-1 bg-white rounded-2xl shadow p-8 flex flex-col gap-6 min-h-0 border border-gray-200 overflow-y-auto">
         <div>
           <h2 className="text-2xl font-bold text-green-700">
-            Pre-Assessment Finalization
+            Meta Data Verification
           </h2>
           <p className="text-sm text-gray-500 mt-1">
-            Review inspector submissions, upload verified permits, and finalize
-            area status.
+            Review inspector submissions, verify permits, set safety level &
+            land classification, and finalize area status.
           </p>
         </div>
 
@@ -828,6 +872,59 @@ export default function Pre_Assessment() {
           )}
         </div>
 
+        {/* ✅ NEW: Safety Level & Land Classification Section */}
+        <div className="grid grid-cols-2 gap-4">
+          {/* Safety Level */}
+          <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+            <h3 className="font-bold text-orange-800 flex items-center gap-2 mb-3">
+              <ThermometerSun size={16} /> Verified Safety Level
+            </h3>
+            <select
+              value={safetyLevel}
+              onChange={(e) =>
+                setSafetyLevel(e.target.value as AreaData["safety"])
+              }
+              className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-orange-300 focus:border-orange-500 outline-none bg-white"
+            >
+              <option value="safe">✅ Safe</option>
+              <option value="slightly">⚠️ Slightly Unsafe</option>
+              <option value="moderate">⚡ Moderate Risk</option>
+              <option value="danger">🚫 High Risk / Dangerous</option>
+            </select>
+            <p className="text-xs text-orange-700 mt-2">
+              Set based on inspector reports & site conditions.
+            </p>
+          </div>
+
+          {/* Land Classification */}
+          <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <h3 className="font-bold text-purple-800 flex items-center gap-2 mb-3">
+              <Layers size={16} /> Land Classification
+            </h3>
+            <select
+              value={landClassificationId}
+              onChange={(e) =>
+                setLandClassificationId(parseInt(e.target.value) || "")
+              }
+              className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-500 outline-none bg-white"
+              disabled={landClassifications.length === 0}
+            >
+              <option value="">-- Select Classification --</option>
+              {landClassifications.map((lc) => (
+                <option
+                  key={lc.land_classification_id}
+                  value={lc.land_classification_id}
+                >
+                  {lc.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-purple-700 mt-2">
+              Official land use designation for planning purposes.
+            </p>
+          </div>
+        </div>
+
         {/* Status Decision Section */}
         <div className="space-y-6 max-w-2xl">
           <div className="flex flex-col gap-2">
@@ -853,13 +950,13 @@ export default function Pre_Assessment() {
 
           <div className="flex flex-col gap-2">
             <label className="text-sm font-bold flex items-center gap-2 text-gray-700">
-              <ClipboardCheck size={18} className="text-green-600" />{" "}
-              Pre-Assessment Status
+              <ClipboardCheck size={18} className="text-green-600" /> Meta Data
+              Status
             </label>
             <select
-              value={preAssessmentStatus}
+              value={metaDataStatus}
               onChange={(e) =>
-                setPreAssessmentStatus(
+                setMetaDataStatus(
                   e.target.value as AreaData["pre_assessment_status"],
                 )
               }
@@ -867,13 +964,13 @@ export default function Pre_Assessment() {
             >
               <option value="pending">⏳ Pending Finalization</option>
               <option value="approved">
-                ✅ Approved (Proceed to Site MCDA)
+                ✅ Approved (Proceed to MCDA Layers)
               </option>
               <option value="rejected">❌ Rejected (Area Excluded)</option>
             </select>
             <p className="text-xs text-gray-500">
-              "Approved" enables Site creation. "Rejected" excludes this area
-              from reforestation.
+              "Approved" enables Safety, Boundary, and Survivability layers.
+              "Rejected" excludes this area.
             </p>
           </div>
 
@@ -914,7 +1011,7 @@ export default function Pre_Assessment() {
               </>
             ) : (
               <>
-                <Save size={18} /> Save Final Decision
+                <Save size={18} /> Save Verification
               </>
             )}
           </button>

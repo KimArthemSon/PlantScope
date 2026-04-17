@@ -3,12 +3,12 @@ from sites.models import Sites
 from accounts.models import User
 from django.core.validators import MaxValueValidator
 # Create your models here.
+
 class Application(models.Model):
     """Application model for seedling requests"""
     
     # Status choices
     STATUS_CHOICES = [
-        ('save_draft', 'Save Draft'),
         ('for_evaluation', 'For Evaluation'),
         ('for_head', 'For Head'),
         ('accepted', 'Accepted'),
@@ -76,7 +76,12 @@ class Application(models.Model):
         blank=True,
         null=True
     )
-   
+
+    total_members = models.IntegerField(
+        null=True,
+        blank=True
+    )
+
     # Seedling and Area Metrics
     total_request_seedling = models.IntegerField(
         default=50,
@@ -101,8 +106,7 @@ class Application(models.Model):
         default=0,
         help_text="Total seedlings actually planted"
     )
-    
-    
+    confirmed_at = models.DateField(null=True, blank=True)
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -130,13 +134,14 @@ class Application(models.Model):
                 )
 
 
-class MaintenanceReport(models.Model):
+class Maintenance_report(models.Model):
     """Maintenance report model for tracking application progress"""
     
     # Status choices
     REPORT_STATUS_CHOICES = [
-        ('completed', 'Completed'),
-        ('continue', 'Continue'),
+        ('for_evaluation', 'For Evaluation'),
+        ('for_head', 'For Head'),
+        ('accepted', 'Accepted'),
         ('rejected', 'Rejected'),
     ]
 
@@ -160,7 +165,16 @@ class MaintenanceReport(models.Model):
         blank=True,
         null=True
     )
-    
+
+    total_member_present = models.IntegerField(
+        null=True,
+        blank=True
+    )
+    group_picture = models.ImageField(
+        upload_to='maintenance_report_group_picture/',
+        blank=True,
+        null=True
+    )
     # Metrics
     total_seedling_planted = models.IntegerField(
         default=0,
@@ -180,6 +194,7 @@ class MaintenanceReport(models.Model):
         default=0,
         help_text="Total owned seedlings planted"
     )
+    
     
     # Status
     status = models.CharField(
@@ -240,7 +255,6 @@ class Reason(models.Model):
     
     # Status choices (same as Application status)
     STATUS_CHOICES = [
-        ('save_draft', 'Save Draft'),
         ('for_evaluation', 'For Evaluation'),
         ('for_head', 'For Head'),
         ('accepted', 'Accepted'),
@@ -250,12 +264,32 @@ class Reason(models.Model):
         ('under_monitoring', 'Under Monitoring'),
         ('completed', 'Completed'),
     ]
+    STATUS_LAYER = [
+        
+        ('new_program', 'New program'),
+        ('report', 'Report'),
+    ]
+    
+    status_layer = models.CharField(
+        max_length=50,
+        choices=STATUS_LAYER,
+        default='new_program'
+    )
 
     reason_id = models.AutoField(primary_key=True)
     application = models.ForeignKey(
         Application,
         on_delete=models.CASCADE,
-        related_name='reasons'
+        related_name='reasons',
+        null=True,
+        blank=True
+    )
+    maintenance_report = models.ForeignKey(
+        Maintenance_report,
+        on_delete=models.CASCADE,
+        related_name='reasons',
+        null=True,
+        blank=True
     )
     user = models.ForeignKey(
         User,
@@ -266,7 +300,7 @@ class Reason(models.Model):
     status = models.CharField(
         max_length=50,
         choices=STATUS_CHOICES,
-        default='save_draft'
+        default='for_evaluation'
     )
     created = models.DateTimeField(auto_now_add=True)
 
@@ -281,3 +315,45 @@ class Reason(models.Model):
 
     def __str__(self):
         return f"Reason for {self.application.title} - {self.get_status_display()}"
+    
+class Notification(models.Model):
+    NOTIFICATION_TYPES = [
+        ('maintenance_alert', 'Maintenance Alert'),
+        ('maintenance_report', 'Maintenance Report'),
+        ('application_update', 'Application Update'),
+        ('general', 'General'),
+    ]
+ 
+    # FK to your User model — adjust if your user model is named differently
+    user = models.ForeignKey(
+        User,  # or settings.AUTH_USER_MODEL
+        on_delete=models.CASCADE,
+        related_name='notifications'
+    )
+ 
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    notification_type = models.CharField(
+        max_length=50,
+        choices=NOTIFICATION_TYPES,
+        default='general'
+    )
+    # ID of related object (e.g. application_id or maintenance_report_id)
+    reference_id = models.IntegerField(null=True, blank=True)
+    is_read = models.BooleanField(default=False)
+ 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        verbose_name = "Notification"
+        verbose_name_plural = "Notifications"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_read']),
+            models.Index(fields=['created_at']),
+        ]
+ 
+    def __str__(self):
+        return f"[{self.notification_type}] {self.title} → {self.user}"
+ 

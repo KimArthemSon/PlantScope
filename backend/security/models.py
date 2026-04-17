@@ -19,7 +19,7 @@ class SecurityLog(models.Model):
         User,  
         null=True,
         blank=True,
-        on_delete=models.SET_NULL
+        on_delete=models.CASCADE
     )
 
     email = models.CharField(max_length=150)

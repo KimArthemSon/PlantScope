@@ -35,7 +35,12 @@ import SidebarGISS from "./components/layout/SidebarGISSpecialist";
 import OfficialSites from "./pages/approved/OfficialSites";
 import Site_information from "./pages/approved/site_information";
 import Ormoc_City from "./pages/head/maintain/ormoc_city";
-
+import Application from "./pages/dataManager/application/application";
+import Evaluation_application from "./pages/dataManager/application/evaluation";
+import Evaluation_confirmation from "./pages/head/application/evaluation_confirmation";
+import Application_confirmation from "./pages/head/application/application_confirmation";
+import Monitoring from "./pages/dataManager/monitoring/application";
+import Maintenance_report from "./pages/dataManager/monitoring/maintenance_report";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -115,6 +120,15 @@ export default function App() {
             path="/reforestation_area_site"
             element={<Reforestation_area_site />}
           />
+          <Route path="/evaluation/:application_id" element={<Evaluation_confirmation />} />
+          <Route
+            path="/applications"
+            element={<Application_confirmation />}
+          />
+          <Route
+            path="/monitoring"
+            element={<Monitoring />}
+          />
 
           <Route
             path="/reforestation_area_analysis"
@@ -178,6 +192,19 @@ export default function App() {
             element={<Classified_area_form />}
           />
 
+          <Route path="/DataManager/evaluation/:application_id" element={<Evaluation_application />} />
+          <Route
+            path="/DataManager/applications"
+            element={<Application />}
+          />
+          <Route
+            path="/DataManager/monitoring"
+            element={<Monitoring />}
+          />
+           <Route
+            path="/DataManager/maintenance_evaluation"
+            element={<Maintenance_report />}
+          />
           <Route
             path="/DataManager/maintenance/Classified_area_form/"
             element={<Classified_area_form />}

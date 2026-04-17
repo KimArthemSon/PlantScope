@@ -28,10 +28,7 @@ export default function Login() {
     password: "",
   });
   const [loading, setLoading] = useState(false);
-  const handleSubmit = () => {
-    console.log("Login submitted:", formData);
-    router.replace({ pathname: "/" });
-  };
+
   const handleLogin = async () => {
     if (!formData.email || !formData.password) {
       Alert.alert("Error", "Please enter email and password");
@@ -52,22 +49,26 @@ export default function Login() {
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        Alert.alert("Error", errorData.message || "Invalid credentials");
+        Alert.alert("Error", errorData.error || "Invalid credentials");
         return;
       }
 
       const data = await res.json();
 
-      if (data.user_role !== "OnsiteInspector") {
+      if (data.user_role === "OnsiteInspector") {
+        await SecureStore.setItemAsync("token", data.token);
+        Alert.alert("Success", `Welcome, ${data.email}!`);
+        router.replace("/home");
+      } else if (data.user_role === "treeGrowers") {
+        await SecureStore.setItemAsync("token", data.token);
+        Alert.alert("Success", `Welcome, ${data.email}!`);
+        router.replace("/tree_growers/application");
+      } else {
         Alert.alert("Error", "Access denied: Insufficient permissions");
         return;
       }
 
       // 💾 Store token — ONE LINE, DONE ✅
-      await SecureStore.setItemAsync("token", data.token);
-
-      Alert.alert("Success", `Welcome, ${data.email}!`);
-      router.replace("/tree_growers/dashboard");
     } catch (error) {
       console.error("Login error:", error);
       Alert.alert(

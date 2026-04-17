@@ -188,31 +188,6 @@ export default function SidebarGISS() {
                   ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
                 `}
               >
-                Sites
-              </span>
-            </Link>
-            {/* Site */}
-            <Link
-              to="/GISS/analysis"
-              className={`
-                flex flex-row items-center transition-all duration-200 rounded-md
-                px-6 py-3 justify-center
-                ${
-                  location.pathname === "/GISS/analysis"
-                    ? "bg-white/25 text-white shadow-inner"
-                    : "text-white/80 hover:bg-white/10 hover:text-white"
-                }
-              `}
-            >
-              <span className="mr-auto">
-                <BarChart3 size={20} />
-              </span>
-              <span
-                className={`
-                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
-                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
-                `}
-              >
                 Analysis
               </span>
             </Link>
@@ -241,9 +216,35 @@ export default function SidebarGISS() {
                 Official Sites
               </span>
             </Link>
+            {/* Analysis */}
+            <Link
+              to="/GISS/analysis"
+              className={`
+                flex flex-row items-center transition-all duration-200 rounded-md
+                px-6 py-3 justify-center
+                ${
+                  location.pathname === "/GISS/analysis"
+                    ? "bg-white/25 text-white shadow-inner"
+                    : "text-white/80 hover:bg-white/10 hover:text-white"
+                }
+              `}
+            >
+              <span className="mr-auto">
+                <BarChart3 size={20} />
+              </span>
+              <span
+                className={`
+                  text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
+                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
+                `}
+              >
+                Reports
+              </span>
+            </Link>
+            
 
             {/* Reports */}
-            <Link
+            {/* <Link
               to="/GISS/reports"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
@@ -266,7 +267,7 @@ export default function SidebarGISS() {
               >
                 Reports
               </span>
-            </Link>
+            </Link> */}
           </nav>
         </div>
 
