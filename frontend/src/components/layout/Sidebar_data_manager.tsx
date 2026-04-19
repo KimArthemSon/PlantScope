@@ -251,7 +251,7 @@ export default function Sidebar_data_manager() {
                 flex flex-row items-center transition-all duration-200 rounded-md
                 px-6 py-3 justify-center
                 ${
-                  location.pathname === "/monitoring"
+                  location.pathname === "/DataManager/monitoring"
                     ? "bg-white/25 text-white shadow-inner"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }

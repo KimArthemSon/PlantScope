@@ -2,8 +2,6 @@
 import { useState, useCallback, useRef } from "react";
 import L from "leaflet";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 export type MCDALayer = "safety" | "boundary_verification" | "survivability";
 
 export interface AssessmentImage {
@@ -92,8 +90,6 @@ export interface FieldAssessmentsResponse {
   data: FieldAssessmentEntry[];
 }
 
-// ─── Marker colours per layer ─────────────────────────────────────────────────
-
 const LAYER_MARKER_COLORS: Record<MCDALayer, string> = {
   safety: "#EF4444",
   boundary_verification: "#F59E0B",
@@ -106,14 +102,10 @@ const LAYER_EMOJIS: Record<MCDALayer, string> = {
   survivability: "🌱",
 };
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
-
 export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
 
-  const [assessments, setAssessments] = useState<
-    Record<MCDALayer, FieldAssessmentEntry[]>
-  >({
+  const [assessments, setAssessments] = useState<Record<MCDALayer, FieldAssessmentEntry[]>>({
     safety: [],
     boundary_verification: [],
     survivability: [],
@@ -127,17 +119,14 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
 
   const [activeLayer, setActiveLayer] = useState<MCDALayer>("safety");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-
-  // ── NEW: tracks which field_assessment_id is waiting for a map click ──────
   const [locationTargetId, setLocationTargetId] = useState<number | null>(null);
 
-  // ── place markers on map ───────────────────────────────────────────────────
+  // ── place markers ──────────────────────────────────────────────────────────
   const placeMarkers = useCallback(
     (entries: FieldAssessmentEntry[], layer: MCDALayer) => {
       const map = mapRef.current;
       if (!map) return;
 
-      // Remove old markers for this layer
       markersRef.current.forEach((marker, key) => {
         if (key.startsWith(`${layer}-`)) {
           map.removeLayer(marker);
@@ -156,21 +145,15 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
           icon: L.divIcon({
             className: "field-assessment-marker",
             html: `<div style="
-              background:${color};
-              width:30px;height:30px;
-              border-radius:50%;
-              border:3px solid white;
-              box-shadow:0 2px 8px rgba(0,0,0,0.35);
+              background:${color};width:30px;height:30px;border-radius:50%;
+              border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35);
               display:flex;align-items:center;justify-content:center;
               font-size:13px;cursor:pointer;
             ">${emoji}</div>
             <div style="
-              position:absolute;top:-6px;right:-6px;
-              background:white;color:${color};
-              font-size:9px;font-weight:700;
-              width:16px;height:16px;border-radius:50%;
-              display:flex;align-items:center;justify-content:center;
-              border:1px solid ${color};
+              position:absolute;top:-6px;right:-6px;background:white;color:${color};
+              font-size:9px;font-weight:700;width:16px;height:16px;border-radius:50%;
+              display:flex;align-items:center;justify-content:center;border:1px solid ${color};
             ">F${idx + 1}</div>`,
             iconSize: [30, 30],
             iconAnchor: [15, 30],
@@ -190,7 +173,8 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     [mapRef]
   );
 
-  // ── fetch ──────────────────────────────────────────────────────────────────
+  // ── fetchLayer: full load — resets activeLayer + selectedIndex
+  //    Use for initial load and tab switches only. ───────────────────────────
   const fetchLayer = useCallback(
     async (areaId: string, layer: MCDALayer) => {
       setLoading((prev) => ({ ...prev, [layer]: true }));
@@ -217,7 +201,37 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     [placeMarkers]
   );
 
-  // ── fly to marker ──────────────────────────────────────────────────────────
+  // ── refreshLayer: silently re-fetches data + markers WITHOUT changing
+  //    activeLayer or selectedIndex.
+  //    ALWAYS use this after a location update — using fetchLayer instead
+  //    resets selectedIndex which unmounts FieldAssessmentPanel which
+  //    destroys the Leaflet map DOM node. ────────────────────────────────────
+  const refreshLayer = useCallback(
+    async (areaId: string, layer: MCDALayer) => {
+      setLoading((prev) => ({ ...prev, [layer]: true }));
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          `http://127.0.0.1:8000/api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json: FieldAssessmentsResponse = await res.json();
+        const entries = json.data ?? [];
+
+        // ✅ Only update data + markers. Never touch activeLayer or selectedIndex.
+        setAssessments((prev) => ({ ...prev, [layer]: entries }));
+        placeMarkers(entries, layer);
+      } catch (err) {
+        console.error(`refreshLayer(${layer}) error:`, err);
+      } finally {
+        setLoading((prev) => ({ ...prev, [layer]: false }));
+      }
+    },
+    [placeMarkers]
+  );
+
+  // ── flyToMarker ────────────────────────────────────────────────────────────
   const flyToMarker = useCallback(
     (layer: MCDALayer, idx: number) => {
       const map = mapRef.current;
@@ -231,7 +245,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     [mapRef]
   );
 
-  // ── update location ────────────────────────────────────────────────────────
+  // ── updateLocation ─────────────────────────────────────────────────────────
   const updateLocation = useCallback(
     async (
       fieldAssessmentId: number,
@@ -258,7 +272,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         const json = await res.json();
         if (!res.ok) throw new Error(json.message ?? `HTTP ${res.status}`);
 
-        // Update location in local state immediately
+        // Optimistic local state patch
         setAssessments((prev) => {
           const updated = { ...prev };
           (Object.keys(updated) as MCDALayer[]).forEach((layer) => {
@@ -298,9 +312,9 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     selectedIndex,
     setSelectedIndex,
     fetchLayer,
+    refreshLayer,
     flyToMarker,
     updateLocation,
-    // NEW exports
     locationTargetId,
     setLocationTargetId,
   };

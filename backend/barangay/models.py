@@ -8,4 +8,3 @@ class Barangay(models.Model):
     description = models.CharField(max_length=255)
     coordinate = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
-    

@@ -255,6 +255,7 @@ export default function Application_confirmation() {
                       {app.title}
                     </td>
                     <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
+                      
                       {app.classification}
                     </td>
                     <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">

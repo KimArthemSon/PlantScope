@@ -27,7 +27,7 @@ def get_restricted_zones_for_area(request, reforestation_area_id):
                 "name": reforestation_area.name,
                 "description": reforestation_area.description,
                 "coordinate": reforestation_area.coordinate,
-                "area_img": reforestation_area.area_img.url
+                # "area_img": reforestation_area.area_img.url if  reforestation_area.area_img.url else None
             },
             "barangay" : {
                 "name": reforestation_area.barangay.name,
@@ -42,7 +42,7 @@ def get_restricted_zones_for_area(request, reforestation_area_id):
                 "name": classified_area.name,
                 "description": classified_area.description,
                 "polygon": classified_area.polygon,
-                "land_classification_name": classified_area.land_classification.name
+                "land_classification_name": classified_area.land_classification.name if classified_area.land_classification.name else None
             })
         data["classified_area"] = classified_areas
         

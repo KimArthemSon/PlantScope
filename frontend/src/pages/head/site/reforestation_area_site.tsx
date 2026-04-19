@@ -2,10 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import {
   Trash2,
   Edit,
-  Plus,
   ChevronRight,
   ChevronLeft,
-  User,
   VerifiedIcon,
   Leaf,
   SlidersHorizontal,
@@ -119,7 +117,7 @@ function countActiveFilters(filter: Filter): number {
   let count = 0;
   if (filter.legality !== "All") count++;
   if (filter.safety !== "All") count++;
-  if (filter.pre_assessment_status !== "Pending") count++;
+  if (filter.pre_assessment_status !== "pending") count++;
   if (filter.barangay_id !== "All") count++;
   if (filter.land_classification_id !== "All") count++;
   return count;
@@ -845,7 +843,19 @@ export default function Reforestation_areas() {
                       {index + 1 + (filter.page - 1) * filter.entries}
                     </td>
                     <td className="py-3 px-5">{area.name}</td>
-                    <td className="py-3 px-5">{area.pre_assessment_status}</td>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        area.pre_assessment_status === "pending"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : area.pre_assessment_status === "approved"
+                            ? "bg-green-100 text-green-700"
+                            : area.pre_assessment_status === "rejected"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-gray-100 text-gray-700"
+                      }`}
+                    >
+                      {area.pre_assessment_status}
+                    </span>
                     <td className="py-3 px-5">{area.barangay.name}</td>
                     <td className="py-3 px-5">
                       {area.land_classification?.name ?? (
@@ -853,29 +863,51 @@ export default function Reforestation_areas() {
                       )}
                     </td>
                     <td className="py-3 px-5">
-                      {area.legality === "legal"
-                        ? "Legal"
-                        : area.legality === "pending"
-                          ? "Pending"
-                          : "Illegal"}
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          area.legality === "pending"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : area.legality === "legal"
+                              ? "bg-green-100 text-green-700"
+                              : area.legality === "illegal"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {area.legality}
+                      </span>
                     </td>
-                    <td className="py-3 px-5">{area.safety}</td>
+                    <td className="py-3 px-5">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          area.safety === "safe"
+                            ? "bg-green-100 text-green-700"
+                            : area.safety === "slightly"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : area.safety === "moderate"
+                                ? "bg-orange-100 text-orange-700"
+                                : area.safety === "danger"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {area.safety}
+                      </span>
+                    </td>
                     <td className="py-3 px-5">{area.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
-                        
-                       
-                          <button
-                            onClick={() =>
-                              navigate(
-                                `${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
-                              )
-                            }
-                            className="cursor-pointer"
-                          >
-                            <VerifiedIcon size={18} />
-                          </button>
-                      
+                        <button
+                          onClick={() =>
+                            navigate(
+                              `${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
+                            )
+                          }
+                          className="cursor-pointer"
+                        >
+                          <VerifiedIcon size={18} />
+                        </button>
+
                         <button
                           onClick={() =>
                             navigate(
@@ -886,16 +918,17 @@ export default function Reforestation_areas() {
                         >
                           <List size={18} />
                         </button>
-                        {userRole !== "DataManager" && area.pre_assessment_status == 'rejected' && (
-                          <button
-                            onClick={() =>
-                              setDelete(area.reforestation_area_id)
-                            }
-                            className="text-red-500 cursor-pointer"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
+                        {userRole !== "DataManager" &&
+                          area.pre_assessment_status == "rejected" && (
+                            <button
+                              onClick={() =>
+                                setDelete(area.reforestation_area_id)
+                              }
+                              className="text-red-500 cursor-pointer"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
                       </div>
                     </td>
                   </tr>

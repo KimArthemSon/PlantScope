@@ -268,7 +268,7 @@ def list_users(request):
             FROM accounts_user AS u
             JOIN accounts_profile AS a ON u.id = a.users_id
             WHERE u.email LIKE %s AND u.user_role LIKE %s AND u.user_role != %s
-            ORDER BY u.created_at
+            ORDER BY u.created_at desc
             LIMIT %s OFFSET %s
             ''',
             [f"%{search}%", f"%{role}%", "treeGrowers", entries, offset]

@@ -618,6 +618,7 @@ export default function Reforestation_areas() {
               <tr>
                 <th className="py-3 px-5 text-left">No</th>
                 <th className="py-3 px-5 text-left">Name</th>
+                <th className="py-3 px-5 text-left">Status</th>
                 <th className="py-3 px-5 text-left">Barangay</th>
                 <th className="py-3 px-5 text-left">Land Classification</th>
                 <th className="py-3 px-5 text-left">Legality</th>
@@ -637,20 +638,60 @@ export default function Reforestation_areas() {
                       {index + 1 + (filter.page - 1) * filter.entries}
                     </td>
                     <td className="py-3 px-5">{area.name}</td>
+                    <td className="py-3 px-5">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          area.pre_assessment_status === "pending"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : area.pre_assessment_status === "approved"
+                              ? "bg-green-100 text-green-700"
+                              : area.pre_assessment_status === "rejected"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {area.pre_assessment_status}
+                      </span>
+                    </td>
                     <td className="py-3 px-5">{area.barangay.name}</td>
+
                     <td className="py-3 px-5">
                       {area.land_classification?.name ?? (
                         <span className="text-gray-400 italic">N/A</span>
                       )}
                     </td>
                     <td className="py-3 px-5">
-                      {area.legality === "legal"
-                        ? "Legal"
-                        : area.legality === "pending"
-                          ? "Pending"
-                          : "Illegal"}
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          area.legality === "pending"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : area.legality === "legal"
+                              ? "bg-green-100 text-green-700"
+                              : area.legality === "illegal"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {area.legality}
+                      </span>
                     </td>
-                    <td className="py-3 px-5">{area.safety}</td>
+                    <td className="py-3 px-5">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          area.safety === "safe"
+                            ? "bg-green-100 text-green-700"
+                            : area.safety === "slightly"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : area.safety === "moderate"
+                                ? "bg-orange-100 text-orange-700"
+                                : area.safety === "danger"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {area.safety}
+                      </span>
+                    </td>
                     <td className="py-3 px-5">{area.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">

@@ -11,15 +11,15 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════
 # 🔑 EARTH ENGINE INITIALIZATION
 # ═══════════════════════════════════════════════════════════════
-try:
-    ee.Initialize(project='plant-scope-ee')
-    logger.info("✅ Earth Engine initialized successfully")
-except Exception as e:
-    logger.error(f"❌ Earth Engine init failed: {e}")
-    raise RuntimeError(
-        "Earth Engine failed to initialize. "
-        "Run: python -c \"import ee; ee.Authenticate()\""
-    ) from e
+# try:
+#     ee.Initialize(project='plant-scope-ee')
+#     logger.info("✅ Earth Engine initialized successfully")
+# except Exception as e:
+#     logger.error(f"❌ Earth Engine init failed: {e}")
+#     raise RuntimeError(
+#         "Earth Engine failed to initialize. "
+#         "Run: python -c \"import ee; ee.Authenticate()\""
+#     ) from e
 
 
 # ═══════════════════════════════════════════════════════════════

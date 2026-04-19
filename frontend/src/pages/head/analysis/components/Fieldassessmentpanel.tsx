@@ -232,7 +232,7 @@ const AssessmentDetail = ({
             </button>
           ) : (
             <button
-              onClick={onAddLocation}
+              onClick={()=>onAddLocation()}
               className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded-full font-medium border transition w-full justify-center
                 ${hasLocation
                   ? "bg-green-50 text-green-700 border-green-300 hover:bg-green-100"

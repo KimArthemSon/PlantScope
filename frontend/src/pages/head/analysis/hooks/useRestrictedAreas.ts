@@ -183,7 +183,11 @@ export function useRestrictedAreas(mapRef: React.RefObject<L.Map | null>) {
           }
         );
 
-        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        if (!res.ok) {
+            const data = await res.json()
+            console.log(data.error)
+           throw new Error(`Server error: ${res.status}`);
+        }
 
         const raw = await res.json();
         // Normalize API typo: backend sends "reforestation_aree" (double-e)

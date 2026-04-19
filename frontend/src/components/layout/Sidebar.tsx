@@ -143,6 +143,7 @@ export default function Sidebar() {
                 Map
               </span>
             </Link>
+{/* 
             <Link
               to="/reforestation-areas"
               className={`
@@ -166,7 +167,7 @@ export default function Sidebar() {
               >
                 Reforestation Area
               </span>
-            </Link>
+            </Link> */}
 
             {/* Maintenance Dropdown */}
             {/* <MaintenanceDropdown
@@ -175,7 +176,7 @@ export default function Sidebar() {
               setMaintenanceOpen={setMaintenanceOpen}
             /> */}
             {/* Analysis */}
-            <Link
+            {/* <Link
               to="/reforestation_area_site"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
@@ -198,7 +199,7 @@ export default function Sidebar() {
               >
                 Analysis
               </span>
-            </Link>
+            </Link> */}
 
             {/* Site Verification */}
             {/* <Link
@@ -227,7 +228,7 @@ export default function Sidebar() {
             </Link> */}
 
             {/* Official Sites */}
-            <Link
+            {/* <Link
               to="/official-reforestation"
               className={`
                 flex flex-row items-center transition-all duration-200 rounded-md
@@ -250,7 +251,7 @@ export default function Sidebar() {
               >
                 Official Sites
               </span>
-            </Link>
+            </Link> */}
 
             <Link
               to="/applications"
@@ -326,7 +327,7 @@ export default function Sidebar() {
                 Reports
               </span>
             </Link> */}
-            {/* Site */}
+            {/* reports */}
             <Link
               to="/analysis"
               className={`

@@ -275,7 +275,15 @@ export default function Monitoring() {
                       {app.title}
                     </td>
                     <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {app.status}
+                       <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          app.status === 'accepted'
+                            ? "bg-yellow-100 text-green-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {app.status}
+                      </span>
                     </td>
                     <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
                       {app.classification}

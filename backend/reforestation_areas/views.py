@@ -174,10 +174,12 @@ def update_reforestation_areas(request, reforestation_area_id):
     area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
 
     try:
+        img = None
         # Handle multipart/form-data (file uploads) vs application/json
         if request.content_type and 'multipart/form-data' in request.content_type:
             data = request.POST
             reforestation_data_raw = data.get('reforestation_data')
+            img = request.FILES.get('area_img', None)
             reforestation_data = json.loads(reforestation_data_raw) if reforestation_data_raw else None
         else:
             body = json.loads(request.body)
@@ -185,10 +187,14 @@ def update_reforestation_areas(request, reforestation_area_id):
             reforestation_data = data.get('reforestation_data')
 
         # Apply only provided fields (partial update safe)
+        
         if 'name' in data:
             if Reforestation_areas.objects.exclude(reforestation_area_id=reforestation_area_id).filter(name__iexact=data['name']).exists():
                 return JsonResponse({'error': 'Name already exists'}, status=409)
             area.name = data['name'].strip()
+        
+        if img:
+            area.area_img = img
         if 'legality' in data:
             area.legality = data['legality']
         if 'pre_assessment_status' in data:

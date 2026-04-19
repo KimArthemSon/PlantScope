@@ -15,6 +15,7 @@ interface User {
   id: number;
   email: string;
   user_role: string;
+  is_active: boolean;
   profile_img: string;
 }
 
@@ -72,6 +73,7 @@ export default function Accounts() {
 
       const data = await response.json();
       setUsers(data.accounts);
+
       setFilter((prev) => ({ ...prev, total_page: data.total_pages }));
     } catch (err) {
       setPSAlert({
@@ -222,6 +224,7 @@ export default function Accounts() {
                 <th className="py-3 px-5 text-left text-[.9rem]">Profile</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Email</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Role</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -244,6 +247,17 @@ export default function Accounts() {
                     </td>
                     <td className="py-3 px-5 text-[.9rem]">{user.email}</td>
                     <td className="py-3 px-5 text-[.9rem]">{user.user_role}</td>
+                    <td className="py-3 px-5 text-[.9rem]">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          user.is_active
+                            ? "bg-yellow-100 text-green-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {user.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
                         <button
