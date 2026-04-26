@@ -14,4 +14,6 @@ urlpatterns = [
     path('alert_tree_grower/', views.alert_tree_grower,name='alert_tree_grower'),
     path('get_notifications/', views.get_notifications, name='get_notifications'),
     path('mark_notification_read/<int:notification_id>/', views.mark_notification_read, name='mark_notification_read'),
+    path('get_orientation_dates/', views.get_orientation_dates, name='get_orientation_dates'),
+
 ]

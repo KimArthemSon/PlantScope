@@ -415,6 +415,8 @@ def get_me(request):
         data = {
             'id': user.id,
             'email': user.email,
+            'profile_img': user.profile.profile_img.url if hasattr(user, 'profile') and user.profile.profile_img else None,
+            'full_name': user.profile.first_name + " " + user.profile.last_name,
             'user_role': getattr(user, "user_role", None),
         }
 

@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
   X,
   RotateCcw,
+  Eye,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -695,6 +696,16 @@ export default function Reforestation_areas() {
                     <td className="py-3 px-5">{area.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
+                        <button
+                          onClick={() =>
+                            navigate(
+                              `${useruserRole}/maintenance/view_reforestation_area/${area.reforestation_area_id}`,
+                            )
+                          }
+                          className="cursor-pointer"
+                        >
+                          <Eye size={18} />
+                        </button>
                         {userRole !== "DataManager" && (
                           <button
                             onClick={() =>
@@ -707,16 +718,19 @@ export default function Reforestation_areas() {
                             <User size={18} />
                           </button>
                         )}
-                        <button
-                          onClick={() =>
-                            navigate(
-                              `${useruserRole}/maintenance/reforestation_area_form/${area.reforestation_area_id}`,
-                            )
-                          }
-                          className="cursor-pointer"
-                        >
-                          <Edit size={18} />
-                        </button>
+                        {userRole !== "GISSpecialist" && (
+                          <button
+                            onClick={() =>
+                              navigate(
+                                `${useruserRole}/maintenance/reforestation_area_form/${area.reforestation_area_id}`,
+                              )
+                            }
+                            className="cursor-pointer"
+                          >
+                            <Edit size={18} />
+                          </button>
+                        )}
+
                         {/* {userRole !== "DataManager" && (
                           <button
                             onClick={() =>

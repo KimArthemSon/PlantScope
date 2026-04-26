@@ -333,20 +333,7 @@ export default function AnalysisPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-green-50/30 to-gray-50">
       {/* ================= HEADER ================= */}
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-6 px-6 shadow-lg">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-3 mb-2">
-            <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">
-              Reforestation Analysis
-            </h1>
-          </div>
-          <p className="text-green-100 ml-10">
-            Monitor progress, analyze site suitability, and track vegetation
-            health across Ormoc City
-          </p>
-        </div>
-      </header>
+     
 
       <main className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
         {/* ================= STATS ROW ================= */}

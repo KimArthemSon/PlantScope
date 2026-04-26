@@ -26,9 +26,8 @@
     "noUncheckedSideEffectImports": true,
 
     /* PATH ALIAS FOR @ */
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src"]

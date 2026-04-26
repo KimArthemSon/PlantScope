@@ -843,7 +843,8 @@ export default function Reforestation_areas() {
                       {index + 1 + (filter.page - 1) * filter.entries}
                     </td>
                     <td className="py-3 px-5">{area.name}</td>
-                    <span
+                    <td className="py-3 px-5">
+                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold ${
                         area.pre_assessment_status === "pending"
                           ? "bg-yellow-100 text-yellow-700"
@@ -856,6 +857,8 @@ export default function Reforestation_areas() {
                     >
                       {area.pre_assessment_status}
                     </span>
+                    </td>
+                    
                     <td className="py-3 px-5">{area.barangay.name}</td>
                     <td className="py-3 px-5">
                       {area.land_classification?.name ?? (

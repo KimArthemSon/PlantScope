@@ -826,7 +826,7 @@ export default function Map() {
         </button>
 
         {/* NDVI PANEL */}
-        {userRole != "DataManager" && (
+        {userRole != "DataManager" && userRole != "CityENROHead" && (
           <div className="relative ml-auto">
             {isNdviPenelOpen && (
               <div className="absolute top-[-240px] w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md">
@@ -910,7 +910,7 @@ export default function Map() {
         )}
 
         {/* Create PANEL - With Potential Sites Integration */}
-        {userRole != "DataManager" && (
+        {userRole != "DataManager" && userRole != "CityENROHead" &&  (
           <div className="relative">
             <form
               onSubmit={onSubmit}
@@ -1124,7 +1124,7 @@ export default function Map() {
         )}
 
         {/* Draw PANEL */}
-        {userRole != "DataManager" && (
+        {userRole != "DataManager" && userRole != "CityENROHead" && (
           <div className="relative">
             <div
               className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${

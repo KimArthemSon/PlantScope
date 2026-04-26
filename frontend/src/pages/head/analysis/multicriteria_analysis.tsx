@@ -145,6 +145,52 @@ export default function MulticriteriaAnalysis() {
     geotiffLayerRef.current?.setOpacity(opacity);
   }, [opacity]);
 
+  // ── FIX: Robust map size invalidation with ResizeObserver ─────────────────
+  const isPickingLocation = fieldAssessments.locationTargetId !== null;
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    let timeoutId: NodeJS.Timeout;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const invalidate = () => {
+      const container = map.getContainer();
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      
+      if (width > 0 && height > 0) {
+        map.invalidateSize({ animate: false, pan: false, debounceMoveend: true });
+      }
+    };
+
+    if ('ResizeObserver' in window) {
+      resizeObserver = new ResizeObserver(() => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(invalidate, 50);
+      });
+      resizeObserver.observe(map.getContainer());
+    } else {
+      const onResize = () => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(invalidate, 100);
+      };
+      window.addEventListener('resize', onResize);
+      return () => {
+        clearTimeout(timeoutId);
+        window.removeEventListener('resize', onResize);
+      };
+    }
+
+    timeoutId = setTimeout(invalidate, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      resizeObserver?.disconnect();
+    };
+  }, [isPickingLocation, isPlacingMarker, isDrawing]);
+
   useEffect(() => {
     if (currentGeorasterRef.current && geotiffLayerRef.current && mapRef.current) {
       mapRef.current.removeLayer(geotiffLayerRef.current);
@@ -153,10 +199,6 @@ export default function MulticriteriaAnalysis() {
   }, [renderMode]);
 
   // ── LOCATION PLACEMENT ────────────────────────────────────────────────────
-  // FIX: Use refreshLayer (not fetchLayer) after success so that
-  // selectedIndex / activeLayer are never reset. Resetting selectedIndex
-  // causes the conditional that wraps FieldAssessmentPanel to unmount it,
-  // which destroys the Leaflet map DOM node.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -177,13 +219,11 @@ export default function MulticriteriaAnalysis() {
     let isCancelled = false;
 
     const handleClick = async (e: L.LeafletMouseEvent) => {
-      // Remove any existing temp marker synchronously
       if (locationTempMarkerRef.current) {
         map.removeLayer(locationTempMarkerRef.current);
         locationTempMarkerRef.current = null;
       }
 
-      // Place pulse marker at clicked spot
       locationTempMarkerRef.current = L.marker(e.latlng, {
         icon: L.divIcon({
           className: "",
@@ -193,11 +233,9 @@ export default function MulticriteriaAnalysis() {
         }),
       }).addTo(map);
 
-      // Stop listening immediately
       map.off("click", handleClick);
       map.getContainer().style.cursor = "";
 
-      // Call API
       const result = await fieldAssessments.updateLocation(
         targetId,
         e.latlng.lat,
@@ -207,13 +245,11 @@ export default function MulticriteriaAnalysis() {
 
       if (isCancelled) return;
 
-      // Clean up temp marker
       if (locationTempMarkerRef.current) {
         map.removeLayer(locationTempMarkerRef.current);
         locationTempMarkerRef.current = null;
       }
 
-      // Clear picking state
       fieldAssessments.setLocationTargetId(null);
 
       if (result.success) {
@@ -223,8 +259,6 @@ export default function MulticriteriaAnalysis() {
           message: "Assessment location updated successfully.",
         });
 
-        // ✅ refreshLayer preserves selectedIndex + activeLayer
-        //    so FieldAssessmentPanel stays mounted and the map stays visible
         if (areaId) {
           await fieldAssessments.refreshLayer(areaId, fieldAssessments.activeLayer);
         }
@@ -638,8 +672,6 @@ export default function MulticriteriaAnalysis() {
     }
   }, [validatingSite, sites, areaId]);
 
-  const isPickingLocation = fieldAssessments.locationTargetId !== null;
-
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex min-h-dvh bg-gray-50 flex-col">
@@ -747,14 +779,24 @@ export default function MulticriteriaAnalysis() {
         <div className="flex gap-3 flex-1 min-h-0">
           {/* MAP COLUMN */}
           <div className="flex-[3] flex flex-col gap-2 min-w-0">
+            {/* ✅ FIX: Static CSS classes only - no conditional border/ring changes */}
             <div
               ref={mapContainerRef}
-              className={`w-full rounded-lg shadow-inner border-2 relative overflow-hidden transition-all
-                ${isPickingLocation ? "border-orange-400 ring-2 ring-orange-300"
-                  : isPlacingMarker ? "border-purple-400 ring-2 ring-purple-300"
-                  : "border-gray-300"}
-                h-[65vh] min-h-[450px]`}
+              className="w-full rounded-lg shadow-inner border-2 border-gray-300 relative overflow-hidden h-[65vh] min-h-[450px]"
             >
+              {/* ✅ Visual feedback overlay - doesn't affect map container dimensions */}
+              {(isPickingLocation || isPlacingMarker || isDrawing) && (
+                <div className={`absolute inset-0 pointer-events-none z-[400] transition-opacity duration-200
+                  ${isPickingLocation ? 'opacity-100' : 'opacity-0'}`}>
+                  {isPickingLocation && (
+                    <div className="absolute inset-4 border-2 border-dashed border-orange-400/50 rounded-lg animate-pulse" />
+                  )}
+                  {isPlacingMarker && (
+                    <div className="absolute inset-4 border-2 border-dashed border-purple-400/50 rounded-lg animate-pulse" />
+                  )}
+                </div>
+              )}
+
               {!mapRef.current && (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
                   <div className="text-center text-gray-400">
@@ -1042,13 +1084,8 @@ export default function MulticriteriaAnalysis() {
             </div>
           </div>
 
-          {/* Assessment Detail Panel
-              FIX: Always render FieldAssessmentPanel — never conditionally
-              unmount it based on selectedIndex. Use CSS to show/hide the
-              empty state instead. This keeps the component mounted so the
-              Leaflet map in the parent is never affected by its lifecycle. */}
+          {/* Assessment Detail Panel */}
           <div className="w-[45%]">
-            {/* Empty state shown via CSS when nothing is selected */}
             {(fieldAssessments.assessments[fieldAssessments.activeLayer] ?? []).length === 0 ? (
               <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 min-h-[120px] flex items-center justify-center">
                 <div>
@@ -1057,9 +1094,6 @@ export default function MulticriteriaAnalysis() {
                 </div>
               </div>
             ) : (
-              // ✅ FieldAssessmentPanel is now ALWAYS mounted when there are
-              //    entries, regardless of selectedIndex value. The panel itself
-              //    handles showing the "select an entry" prompt internally.
               <FieldAssessmentPanel
                 areaId={areaId}
                 assessments={fieldAssessments.assessments}
@@ -1067,19 +1101,19 @@ export default function MulticriteriaAnalysis() {
                 activeLayer={fieldAssessments.activeLayer}
                 selectedIndex={fieldAssessments.selectedIndex}
                 locationTargetId={fieldAssessments.locationTargetId}
-                onLayerChange={(layer: MCDALayer) => {
+                onLayerChange={(layer) => {
                   fieldAssessments.setActiveLayer(layer);
                   if (!fieldAssessments.assessments[layer].length && areaId)
                     fieldAssessments.fetchLayer(areaId, layer);
                 }}
-                onSelectEntry={(idx: any) => {
+                onSelectEntry={(idx) => {
                   fieldAssessments.setSelectedIndex(idx);
                   fieldAssessments.flyToMarker(fieldAssessments.activeLayer, idx);
                 }}
-                onFetchLayer={(layer: MCDALayer) => {
+                onFetchLayer={(layer) => {
                   if (areaId) fieldAssessments.fetchLayer(areaId, layer);
                 }}
-                onAddLocation={(faId: any) => fieldAssessments.setLocationTargetId(faId)}
+                onAddLocation={(faId) => fieldAssessments.setLocationTargetId(faId)}
               />
             )}
           </div>

@@ -104,7 +104,7 @@ const LAYER_EMOJIS: Record<MCDALayer, string> = {
 
 export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
-
+  
   const [assessments, setAssessments] = useState<Record<MCDALayer, FieldAssessmentEntry[]>>({
     safety: [],
     boundary_verification: [],
@@ -121,18 +121,37 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [locationTargetId, setLocationTargetId] = useState<number | null>(null);
 
-  // ── place markers ──────────────────────────────────────────────────────────
+  const removeLayerMarkers = useCallback(
+    (layer: MCDALayer) => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      const keysToRemove: string[] = [];
+      markersRef.current.forEach((_, key) => {
+        if (key.startsWith(`${layer}-`)) keysToRemove.push(key);
+      });
+
+      keysToRemove.forEach((key) => {
+        const marker = markersRef.current.get(key);
+        if (marker) {
+          try {
+            map.removeLayer(marker);
+          } catch {
+            // marker may already be detached — ignore
+          }
+          markersRef.current.delete(key);
+        }
+      });
+    },
+    [mapRef]
+  );
+
   const placeMarkers = useCallback(
     (entries: FieldAssessmentEntry[], layer: MCDALayer) => {
       const map = mapRef.current;
       if (!map) return;
 
-      markersRef.current.forEach((marker, key) => {
-        if (key.startsWith(`${layer}-`)) {
-          map.removeLayer(marker);
-          markersRef.current.delete(key);
-        }
-      });
+      removeLayerMarkers(layer);
 
       const color = LAYER_MARKER_COLORS[layer];
       const emoji = LAYER_EMOJIS[layer];
@@ -170,11 +189,9 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         markersRef.current.set(`${layer}-${idx}`, marker);
       });
     },
-    [mapRef]
+    [mapRef, removeLayerMarkers]
   );
 
-  // ── fetchLayer: full load — resets activeLayer + selectedIndex
-  //    Use for initial load and tab switches only. ───────────────────────────
   const fetchLayer = useCallback(
     async (areaId: string, layer: MCDALayer) => {
       setLoading((prev) => ({ ...prev, [layer]: true }));
@@ -201,11 +218,6 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     [placeMarkers]
   );
 
-  // ── refreshLayer: silently re-fetches data + markers WITHOUT changing
-  //    activeLayer or selectedIndex.
-  //    ALWAYS use this after a location update — using fetchLayer instead
-  //    resets selectedIndex which unmounts FieldAssessmentPanel which
-  //    destroys the Leaflet map DOM node. ────────────────────────────────────
   const refreshLayer = useCallback(
     async (areaId: string, layer: MCDALayer) => {
       setLoading((prev) => ({ ...prev, [layer]: true }));
@@ -219,7 +231,6 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         const json: FieldAssessmentsResponse = await res.json();
         const entries = json.data ?? [];
 
-        // ✅ Only update data + markers. Never touch activeLayer or selectedIndex.
         setAssessments((prev) => ({ ...prev, [layer]: entries }));
         placeMarkers(entries, layer);
       } catch (err) {
@@ -231,7 +242,6 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     [placeMarkers]
   );
 
-  // ── flyToMarker ────────────────────────────────────────────────────────────
   const flyToMarker = useCallback(
     (layer: MCDALayer, idx: number) => {
       const map = mapRef.current;
@@ -245,7 +255,6 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     [mapRef]
   );
 
-  // ── updateLocation ─────────────────────────────────────────────────────────
   const updateLocation = useCallback(
     async (
       fieldAssessmentId: number,
@@ -272,7 +281,6 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         const json = await res.json();
         if (!res.ok) throw new Error(json.message ?? `HTTP ${res.status}`);
 
-        // Optimistic local state patch
         setAssessments((prev) => {
           const updated = { ...prev };
           (Object.keys(updated) as MCDALayer[]).forEach((layer) => {

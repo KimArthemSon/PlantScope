@@ -465,7 +465,7 @@ export default function SitesForArea() {
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
                           onClick={() =>
                             navigate(
-                              `${userPath}/reforestation/site/${id}/information/${site.site_id}`,
+                              `${userPath}/official-reforestation/site/${id}/information/${site.site_id}`,
                             )
                           }
                           title="View Details"

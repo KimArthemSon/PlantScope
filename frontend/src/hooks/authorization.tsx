@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
 
+interface UserData{
+  id: number;
+  email: string;
+  profile_img: string ;
+  full_name: string ;
+  user_role: string;
+}
+
 export type UserRole =
   | "CityENROHead"
   | "DataManager"
@@ -9,7 +17,8 @@ export type UserRole =
 export const useAuthorize = (requiredRole?: UserRole) => {
   const [isAuthorized, setIsAuthorized] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
+  const [user_data, set_userData] = useState<UserData | null>(null);
+   
   useEffect(() => {
     const checkIfStillLogin = async () => {
       const token = localStorage.getItem("token");
@@ -27,7 +36,7 @@ export const useAuthorize = (requiredRole?: UserRole) => {
             Authorization: `Bearer ${token}`,
           },
         });
-
+     
         if (!response.ok) {
           setIsAuthorized(false);
           setIsLoading(false);
@@ -35,7 +44,7 @@ export const useAuthorize = (requiredRole?: UserRole) => {
         }
 
         const data = await response.json();
-
+        set_userData(data);
         // role check
         if (requiredRole && data.user_role !== requiredRole) {
           setIsAuthorized(false);
@@ -52,7 +61,7 @@ export const useAuthorize = (requiredRole?: UserRole) => {
     checkIfStillLogin();
   }, [requiredRole]);
 
-  return { isAuthorized, isLoading };
+  return { isAuthorized, isLoading, user_data };
 };
 
 

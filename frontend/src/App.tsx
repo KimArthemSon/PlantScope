@@ -5,6 +5,7 @@ import Sidebar from "./components/layout/Sidebar";
 import Analysis from "./pages/head/analysis/analysis";
 import Reforestation_areas from "./pages/head/reforestation_areas/reforestation_area";
 // import GenralMap from "./pages/general map/GeneralMap";
+import Calendar from "./pages/dataManager/calendar/calendar";
 import Registration from "./pages/auth/registration";
 import OfficailPlantingSites from "./pages/approved/official_reforestation";
 import SiteVerification from "./pages/siteVerification/siteVerification";
@@ -41,6 +42,7 @@ import Evaluation_confirmation from "./pages/head/application/evaluation_confirm
 import Application_confirmation from "./pages/head/application/application_confirmation";
 import Monitoring from "./pages/dataManager/monitoring/application";
 import Maintenance_report from "./pages/dataManager/monitoring/maintenance_report";
+import ViewReforestationArea from "./pages/head/reforestation_areas/view_reforestation_area";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -105,7 +107,6 @@ export default function App() {
             element={<Multicriteria_analysis />}
           />
 
-
           <Route path="/reforestation/site/:id" element={<Sites />} />
 
           <Route
@@ -120,16 +121,13 @@ export default function App() {
             path="/reforestation_area_site"
             element={<Reforestation_area_site />}
           />
-          <Route path="/evaluation/:application_id" element={<Evaluation_confirmation />} />
           <Route
-            path="/applications"
-            element={<Application_confirmation />}
+            path="/evaluation/:application_id"
+            element={<Evaluation_confirmation />}
           />
-          <Route
-            path="/monitoring"
-            element={<Monitoring />}
-          />
-
+          <Route path="/applications" element={<Application_confirmation />} />
+          <Route path="/monitoring" element={<Monitoring />} />
+          <Route path="/calendar" element={<Calendar />} />
           <Route
             path="/reforestation_area_analysis"
             element={<Reforestation_area_analysis />}
@@ -178,6 +176,8 @@ export default function App() {
         <Route element={<Sidebar_data_manager />}>
           <Route path="/dashboard-data-manager" element={<DashboardAFA />} />
 
+          <Route path="/DataManager/calendar" element={<Calendar />} />
+          
           <Route
             path="/DataManager/maintenance/ormoc-city"
             element={<Ormoc_City />}
@@ -192,16 +192,13 @@ export default function App() {
             element={<Classified_area_form />}
           />
 
-          <Route path="/DataManager/evaluation/:application_id" element={<Evaluation_application />} />
           <Route
-            path="/DataManager/applications"
-            element={<Application />}
+            path="/DataManager/evaluation/:application_id"
+            element={<Evaluation_application />}
           />
+          <Route path="/DataManager/applications" element={<Application />} />
+          <Route path="/DataManager/monitoring" element={<Monitoring />} />
           <Route
-            path="/DataManager/monitoring"
-            element={<Monitoring />}
-          />
-           <Route
             path="/DataManager/maintenance_evaluation"
             element={<Maintenance_report />}
           />
@@ -224,6 +221,10 @@ export default function App() {
           <Route
             path="/DataManager/maintenance/reforestation_area_form/:id"
             element={<Reforestation_area_form />}
+          />
+          <Route
+            path="/DataManager/maintenance/view_reforestation_area/:id"
+            element={<ViewReforestationArea />}
           />
 
           <Route
@@ -288,6 +289,10 @@ export default function App() {
           <Route
             path="/GISS/maintenance/reforestation_area_form/:id"
             element={<Reforestation_area_form />}
+          />
+          <Route
+            path="/GISS/maintenance/view_reforestation_area/:id"
+            element={<ViewReforestationArea />}
           />
 
           <Route path="/GISS/reforestation/site/:id" element={<Sites />} />

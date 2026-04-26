@@ -51,14 +51,7 @@ export default function LogTrail() {
   }
   return (
     <div className="flex flex-col">
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-6 px-6 shadow-lg">
-        <div className="max-w-10xl mx-auto flex items-center">
-          <div className="flex items-center gap-3 mb-2">
-            <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">Activity Log</h1>
-          </div>
-        </div>
-      </header>
+    
       <div className="flex-1 p-8 min-h-screen">
 
         {loading && (

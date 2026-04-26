@@ -1,18 +1,14 @@
 // src/pages/GISS/multicriteria_analysis/components/FieldAssessmentPanel.tsx
-// ── CHANGES: added onAddLocation prop + "Add/Update Location" button in AssessmentDetail header ──
-
 import { useState } from "react";
 import {
   Shield, MapPin, Leaf, ChevronRight, User,
   Calendar, AlertTriangle, CheckCircle, XCircle,
-  Eye, Image as ImageIcon, Search, RefreshCw, X,
+  Eye, Image as ImageIcon, RefreshCw, X,
 } from "lucide-react";
 import type {
   MCDALayer, FieldAssessmentEntry,
   SafetyData, BoundaryVerificationData, SurvivabilityData,
 } from "../hooks/useFieldAssessments";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
 
 const LAYERS: {
   id: MCDALayer; label: string; short: string;
@@ -24,8 +20,6 @@ const LAYERS: {
 ];
 
 const BASE_URL = "http://127.0.0.1:8000";
-
-// ─── Small helpers ────────────────────────────────────────────────────────────
 
 const Badge = ({ value, positive }: { value: boolean | null; positive?: boolean }) => {
   if (value === null || value === undefined) return <span className="text-gray-400 text-xs">—</span>;
@@ -57,8 +51,6 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
     <div className="space-y-2">{children}</div>
   </div>
 );
-
-// ─── Layer-specific detail renderers ─────────────────────────────────────────
 
 const SafetyDetail = ({ d }: { d: SafetyData }) => (
   <div className="space-y-4">
@@ -161,8 +153,6 @@ const SurvivabilityDetail = ({ d }: { d: SurvivabilityData }) => (
   </div>
 );
 
-// ─── Assessment detail panel ──────────────────────────────────────────────────
-
 const AssessmentDetail = ({
   entry, index, layer,
   isPickingLocation,
@@ -221,7 +211,7 @@ const AssessmentDetail = ({
           )}
         </div>
 
-        {/* ── Add / Update Location button ── */}
+        {/* Add / Update Location button */}
         <div className="mt-2">
           {isPickingLocation ? (
             <button
@@ -232,7 +222,7 @@ const AssessmentDetail = ({
             </button>
           ) : (
             <button
-              onClick={()=>onAddLocation()}
+              onClick={onAddLocation}
               className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded-full font-medium border transition w-full justify-center
                 ${hasLocation
                   ? "bg-green-50 text-green-700 border-green-300 hover:bg-green-100"
@@ -280,19 +270,17 @@ const AssessmentDetail = ({
   );
 };
 
-// ─── Main panel ───────────────────────────────────────────────────────────────
-
 interface FieldAssessmentPanelProps {
   areaId: string | null;
   assessments: Record<MCDALayer, FieldAssessmentEntry[]>;
   loading: Record<MCDALayer, boolean>;
   activeLayer: MCDALayer;
   selectedIndex: number | null;
-  locationTargetId: number | null;           // NEW
+  locationTargetId: number | null;
   onLayerChange: (layer: MCDALayer) => void;
   onSelectEntry: (index: number) => void;
   onFetchLayer: (layer: MCDALayer) => void;
-  onAddLocation: (fieldAssessmentId: number) => void;  // NEW
+  onAddLocation: (fieldAssessmentId: number | null) => void;  // ✅ Accept null
 }
 
 export default function FieldAssessmentPanel({
@@ -386,10 +374,7 @@ export default function FieldAssessmentPanel({
           </button>
         </div>
       ) : (
-        /* Two-pane: list | detail */
         <div className="flex flex-1 overflow-hidden">
-        
-
           {/* Detail */}
           <div className="flex-1 overflow-hidden">
             {selected ? (
@@ -399,7 +384,7 @@ export default function FieldAssessmentPanel({
                 layer={activeLayer}
                 isPickingLocation={locationTargetId === selected.field_assessment_data.field_assessment_id}
                 onAddLocation={() => onAddLocation(selected.field_assessment_data.field_assessment_id)}
-                onCancelLocation={() => onAddLocation(-1)} // -1 signals cancel; parent sets null
+                onCancelLocation={() => onAddLocation(null)} 
               />
             ) : (
               <div className="flex-1 h-full flex flex-col items-center justify-center text-center p-4 text-gray-400">

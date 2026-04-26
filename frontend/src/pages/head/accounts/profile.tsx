@@ -114,7 +114,11 @@ export function Profile() {
       }));
       setIsLoading(false);
     } catch (err) {
-      setPSAlert({ type: "error", title: "Error", message: "Failed to load users." });
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to load users.",
+      });
       setIsLoading(false);
     }
   }
@@ -142,7 +146,10 @@ export function Profile() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setProfile((prev) => ({ ...prev, preview_profile: reader.result as string }));
+        setProfile((prev) => ({
+          ...prev,
+          preview_profile: reader.result as string,
+        }));
       };
       reader.readAsDataURL(file);
     } else {
@@ -153,10 +160,23 @@ export function Profile() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsLoading(true);
-    if ((action == "Update" && profile.password.length != 0) || action == "Create") {
-      if (!passwordConstraints.length || !passwordConstraints.lower || !passwordConstraints.upper || !passwordConstraints.number || !passwordConstraints.symbol) {
+    if (
+      (action == "Update" && profile.password.length != 0) ||
+      action == "Create"
+    ) {
+      if (
+        !passwordConstraints.length ||
+        !passwordConstraints.lower ||
+        !passwordConstraints.upper ||
+        !passwordConstraints.number ||
+        !passwordConstraints.symbol
+      ) {
         setIsLoading(false);
-        setPSAlert({ type: "error", title: "Bad password", message: "Password does not meet all requirements." });
+        setPSAlert({
+          type: "error",
+          title: "Bad password",
+          message: "Password does not meet all requirements.",
+        });
         return;
       }
     }
@@ -177,7 +197,7 @@ export function Profile() {
     form_data.append("contact", profile.contact);
     form_data.append("gender", profile.gender);
     form_data.append("is_active", profile.is_active);
-    
+
     if (profile_img) form_data.append("profile_img", profile_img);
     if (action === "Create") handleCreate(form_data);
     else handleUpdate(form_data);
@@ -197,12 +217,20 @@ export function Profile() {
         setIsLoading(false);
         return;
       }
-      setPSAlert({ type: "success", title: "Account Created", message: data.message });
+      setPSAlert({
+        type: "success",
+        title: "Account Created",
+        message: data.message,
+      });
       setTimeout(() => navigate("/account-management/"), 3000);
       setIsLoading(false);
     } catch (err: any) {
       setIsLoading(false);
-      setPSAlert({ type: "error", title: "Error", message: "Failed to create user." });
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to create user.",
+      });
     }
   }
 
@@ -221,7 +249,11 @@ export function Profile() {
         setPSAlert({ type: "error", title: "Error", message: data.error });
         return;
       }
-      setPSAlert({ type: "success", title: "Profile Updated", message: data.message });
+      setPSAlert({
+        type: "success",
+        title: "Profile Updated",
+        message: data.message,
+      });
       setIsLoading(false);
     } catch (e) {
       setIsLoading(false);
@@ -239,7 +271,8 @@ export function Profile() {
 
   const iconClass = "text-emerald-600 shrink-0 w-4 h-4";
 
-  const labelClass = "text-xs font-semibold text-stone-500 uppercase tracking-wider";
+  const labelClass =
+    "text-xs font-semibold text-stone-500 uppercase tracking-wider";
 
   const constraints = [
     { key: "length", label: "At least 8 characters" },
@@ -256,8 +289,8 @@ export function Profile() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@600&display=swap');
 
-        .profile-page * { font-family: 'DM Sans', sans-serif; }
-        .profile-heading { font-family: 'Playfair Display', serif; }
+        .profile-page * { font-family: 'Poppins', sans-serif; }
+        .profile-heading { font-family: 'Poppins', sans-serif; }
 
         .profile-page {
           background: #f7f6f3;
@@ -461,12 +494,18 @@ export function Profile() {
                 <h1 className="profile-heading text-2xl text-white font-semibold leading-tight">
                   {profile.first_name || profile.last_name
                     ? `${profile.first_name} ${profile.last_name}`
-                    : action === "Create" ? "New Account" : "Edit Profile"}
+                    : action === "Create"
+                      ? "New Account"
+                      : "Edit Profile"}
                 </h1>
                 <div className="flex items-center gap-3 mt-2">
-                  <span className="role-badge">{profile.user_role.replace(/([A-Z])/g, " $1").trim()}</span>
+                  <span className="role-badge">
+                    {profile.user_role.replace(/([A-Z])/g, " $1").trim()}
+                  </span>
                   {profile.email && (
-                    <span className="text-white/50 text-sm">{profile.email}</span>
+                    <span className="text-white/50 text-sm">
+                      {profile.email}
+                    </span>
                   )}
                 </div>
               </div>
@@ -480,7 +519,6 @@ export function Profile() {
           className="max-w-4xl mx-auto px-8 pb-16 -mt-6 relative z-20"
         >
           <div className="grid grid-cols-1 gap-6">
-
             {/* ── PERSONAL INFO CARD ── */}
             <div className="section-card p-6">
               <div className="flex items-center gap-3 mb-6">
@@ -488,8 +526,12 @@ export function Profile() {
                   <User size={16} />
                 </div>
                 <div>
-                  <h2 className="profile-heading text-lg text-stone-800">Personal Information</h2>
-                  <p className="text-xs text-stone-400 mt-0.5">Basic details about this user</p>
+                  <h2 className="profile-heading text-lg text-stone-800">
+                    Personal Information
+                  </h2>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Basic details about this user
+                  </p>
                 </div>
               </div>
 
@@ -505,7 +547,12 @@ export function Profile() {
                       className={inputField}
                       placeholder="e.g. Maria"
                       value={profile.first_name}
-                      onChange={(e) => setProfile((p) => ({ ...p, first_name: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({
+                          ...p,
+                          first_name: e.target.value,
+                        }))
+                      }
                     />
                   </div>
                 </div>
@@ -520,7 +567,12 @@ export function Profile() {
                       className={inputField}
                       placeholder="e.g. Santos"
                       value={profile.middle_name}
-                      onChange={(e) => setProfile((p) => ({ ...p, middle_name: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({
+                          ...p,
+                          middle_name: e.target.value,
+                        }))
+                      }
                     />
                   </div>
                 </div>
@@ -536,7 +588,9 @@ export function Profile() {
                       className={inputField}
                       placeholder="e.g. Dela Cruz"
                       value={profile.last_name}
-                      onChange={(e) => setProfile((p) => ({ ...p, last_name: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({ ...p, last_name: e.target.value }))
+                      }
                     />
                   </div>
                 </div>
@@ -552,7 +606,9 @@ export function Profile() {
                       className={inputField}
                       placeholder="e.g. +63 912 345 6789"
                       value={profile.contact}
-                      onChange={(e) => setProfile((p) => ({ ...p, contact: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({ ...p, contact: e.target.value }))
+                      }
                     />
                   </div>
                 </div>
@@ -565,7 +621,12 @@ export function Profile() {
                     <select
                       className={inputField + " cursor-pointer"}
                       value={profile.gender}
-                      onChange={(e) => setProfile((p) => ({ ...p, gender: e.target.value as Gender }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({
+                          ...p,
+                          gender: e.target.value as Gender,
+                        }))
+                      }
                     >
                       <option value="M">Male</option>
                       <option value="F">Female</option>
@@ -584,7 +645,9 @@ export function Profile() {
                       type="date"
                       className={inputField}
                       value={profile.birthday}
-                      onChange={(e) => setProfile((p) => ({ ...p, birthday: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({ ...p, birthday: e.target.value }))
+                      }
                     />
                   </div>
                 </div>
@@ -600,7 +663,9 @@ export function Profile() {
                       className={inputField}
                       placeholder="e.g. Brgy. San Isidro, Ormoc City, Leyte"
                       value={profile.address}
-                      onChange={(e) => setProfile((p) => ({ ...p, address: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({ ...p, address: e.target.value }))
+                      }
                     />
                   </div>
                 </div>
@@ -614,8 +679,12 @@ export function Profile() {
                   <Shield size={16} />
                 </div>
                 <div>
-                  <h2 className="profile-heading text-lg text-stone-800">Account & Security</h2>
-                  <p className="text-xs text-stone-400 mt-0.5">Login credentials and access level</p>
+                  <h2 className="profile-heading text-lg text-stone-800">
+                    Account & Security
+                  </h2>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Login credentials and access level
+                  </p>
                 </div>
               </div>
 
@@ -631,7 +700,9 @@ export function Profile() {
                       className={inputField}
                       placeholder="example@enro.gov.ph"
                       value={profile.email}
-                      onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({ ...p, email: e.target.value }))
+                      }
                     />
                   </div>
                 </div>
@@ -644,7 +715,12 @@ export function Profile() {
                     <select
                       className={inputField + " cursor-pointer"}
                       value={profile.user_role}
-                      onChange={(e) => setProfile((p) => ({ ...p, user_role: e.target.value as UserRole }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({
+                          ...p,
+                          user_role: e.target.value as UserRole,
+                        }))
+                      }
                     >
                       <option value="CityENROHead">City ENRO Head</option>
                       <option value="OnsiteInspector">Onsite Inspector</option>
@@ -662,7 +738,9 @@ export function Profile() {
                     <select
                       className={inputField + " cursor-pointer"}
                       value={profile.is_active}
-                      onChange={(e) => setProfile((p) => ({ ...p, is_active: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({ ...p, is_active: e.target.value }))
+                      }
                     >
                       <option value="true">Active</option>
                       <option value="false">Inactive</option>
@@ -678,7 +756,9 @@ export function Profile() {
                   <label className={labelClass}>
                     Password
                     {action === "Update" && (
-                      <span className="ml-2 normal-case font-normal text-stone-400">(leave blank to keep current)</span>
+                      <span className="ml-2 normal-case font-normal text-stone-400">
+                        (leave blank to keep current)
+                      </span>
                     )}
                   </label>
                   <div className={inputBase}>
@@ -689,7 +769,9 @@ export function Profile() {
                       className={inputField}
                       placeholder="Enter password"
                       value={profile.password}
-                      onChange={(e) => setProfile((p) => ({ ...p, password: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({ ...p, password: e.target.value }))
+                      }
                     />
                     <button
                       type="button"
@@ -709,9 +791,10 @@ export function Profile() {
                           width: `${(Object.values(passwordConstraints).filter(Boolean).length / 5) * 100}%`,
                           background: allConstraintsMet
                             ? "#16a34a"
-                            : Object.values(passwordConstraints).filter(Boolean).length >= 3
-                            ? "#f59e0b"
-                            : "#ef4444",
+                            : Object.values(passwordConstraints).filter(Boolean)
+                                  .length >= 3
+                              ? "#f59e0b"
+                              : "#ef4444",
                         }}
                       />
                     </div>
@@ -726,7 +809,11 @@ export function Profile() {
                       >
                         <CheckCircle2
                           size={13}
-                          className={passwordConstraints[key] ? "text-emerald-500" : "text-stone-300"}
+                          className={
+                            passwordConstraints[key]
+                              ? "text-emerald-500"
+                              : "text-stone-300"
+                          }
                           strokeWidth={passwordConstraints[key] ? 2.5 : 1.5}
                         />
                         {label}
@@ -741,11 +828,13 @@ export function Profile() {
                   <div
                     className={
                       inputBase +
-                      (profile.confirm_pass && profile.password !== profile.confirm_pass
+                      (profile.confirm_pass &&
+                      profile.password !== profile.confirm_pass
                         ? " !border-red-400 !ring-2 !ring-red-100"
-                        : profile.confirm_pass && profile.password === profile.confirm_pass
-                        ? " !border-emerald-400"
-                        : "")
+                        : profile.confirm_pass &&
+                            profile.password === profile.confirm_pass
+                          ? " !border-emerald-400"
+                          : "")
                     }
                   >
                     <Lock className={iconClass} />
@@ -755,14 +844,25 @@ export function Profile() {
                       className={inputField}
                       placeholder="Re-enter password"
                       value={profile.confirm_pass}
-                      onChange={(e) => setProfile((p) => ({ ...p, confirm_pass: e.target.value }))}
+                      onChange={(e) =>
+                        setProfile((p) => ({
+                          ...p,
+                          confirm_pass: e.target.value,
+                        }))
+                      }
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPasswordConfirm(!showPasswordConfirm)}
+                      onClick={() =>
+                        setShowPasswordConfirm(!showPasswordConfirm)
+                      }
                       className="text-stone-400 hover:text-emerald-600 transition-colors"
                     >
-                      {showPasswordConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                      {showPasswordConfirm ? (
+                        <EyeOff size={16} />
+                      ) : (
+                        <Eye size={16} />
+                      )}
                     </button>
                   </div>
                   {profile.confirm_pass && (

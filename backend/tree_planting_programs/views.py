@@ -699,7 +699,26 @@ def mark_notification_read(request, notification_id):
 
     
    
-
-
+@csrf_exempt
+def get_orientation_dates(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET Allowed'}, status=405)
+    
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+    
+    applications = Application.objects.filter(orientation_date__isnull=False).order_by('orientation_date')
+    
+    data = []
+    for app in applications:
+        data.append({
+            "application_id": app.application_id,
+            "title": app.title,
+            "orientation_date": app.orientation_date.isoformat(),
+            "status": app.status,
+        })
+    
+    return JsonResponse(data, safe=False, status=200)
 
 

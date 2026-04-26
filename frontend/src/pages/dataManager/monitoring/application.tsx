@@ -138,14 +138,7 @@ export default function Monitoring() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-6 px-8 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-center">
-          <div className="flex items-center gap-3 mb-2 mr-auto">
-            <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">Monitoring</h1>
-          </div>
-        </div>
-      </header>
+    
       <main className="flex-1 p-8 max-w-409">
         {/* Header */}
 

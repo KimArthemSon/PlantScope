@@ -138,21 +138,8 @@ export default function Accounts() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-6 px-6 shadow-lg">
-        <div className="max-w-10xl mx-auto flex items-center">
-          <div className="flex items-center gap-3 mb-2">
-            <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">Accounts</h1>
-          </div>
-          <button
-            onClick={() => navigate("/account-management/profile/")}
-            className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
-          >
-            <Plus size={20} /> Add New Account
-          </button>
-        </div>
-      </header>
-      <main className="flex-1 p-8 max-w-[1636px]">
+     
+      <main className="flex-1 p-8 max-w-[1636px] mt-10">
         {/* Header */}
 
         {/* Filters */}
@@ -212,6 +199,12 @@ export default function Accounts() {
             }}
             className="border border-black rounded-md p-2 w-80 text-[.8rem]"
           />
+          <button
+            onClick={() => navigate("/account-management/profile/")}
+            className="flex items-center justify-center gap-2 bg-[#1a6b44] hover:bg-[#0f4a2f] hover:text-white text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer"
+          >
+            <Plus size={20} /> Add New Account
+          </button>
         </div>
 
         {/* Table */}
