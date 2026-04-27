@@ -12,14 +12,21 @@ import math
 def get_land_classifications_list(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    if request.GET.get('for_reforestation', '').strip().lower() == 'true':
+        classifications = (
+            LandClassification.objects
+            .filter(for_reforestation=True)
+            .order_by('created_at')
+            .values('land_classification_id', 'name')  # only these fields
+        )
+    else:
+        classifications = (
+            LandClassification.objects
+            .filter(for_reforestation=False)
+            .order_by('created_at')
+            .values('land_classification_id', 'name')  # only these fields
+        )
 
-    classifications = (
-    LandClassification.objects
-    .order_by('created_at')
-    .values('land_classification_id', 'name')  # only these fields
-    )
-
-    
     data = [
          {'land_classification_id': c['land_classification_id'], 'name': c['name']}
          for c in classifications
@@ -35,7 +42,7 @@ def get_land_classifications(request):
 
     # Get parameters with defaults
     search = request.GET.get('search', '').strip()
-    
+    for_reforestation = request.GET.get('for_reforestation', '').strip().lower()
     # Safe integer conversion
     try:
         entries = int(request.GET.get('entries', 10))
@@ -60,7 +67,9 @@ def get_land_classifications(request):
     # Apply search filter
     if search:
         classifications = classifications.filter(name__icontains=search)
-
+    # Apply for_reforestation filter    if for_reforestation in ['true', 'false']:
+    if for_reforestation in ['true', 'false']:
+        classifications = classifications.filter(for_reforestation=(for_reforestation == 'true'))
     # Get total count before slicing
     total = classifications.count()
     total_page = math.ceil(total / entries) if total > 0 else 1
@@ -86,6 +95,7 @@ def get_land_classification(request, classification_id):
     data = {
         'land_classification_id': classification.land_classification_id,
         'name': classification.name,
+        'for_reforestation': classification.for_reforestation,
         'description': classification.description,
         'created_at': classification.created_at
     }
@@ -99,11 +109,12 @@ def create_land_classification(request):
     try:
         data = json.loads(request.body)
         name = data['name']
+        for_reforestation = data.get('for_reforestation', False)  # default to False if not provided
         description = data['description']
     except KeyError:
         return JsonResponse({'error': 'Missing fields'}, status=400)
 
-    classification = LandClassification.objects.create(name=name, description=description)
+    classification = LandClassification.objects.create(name=name, description=description, for_reforestation=for_reforestation)
     return JsonResponse({'data': classification.land_classification_id}, status=200)
 
 
@@ -114,6 +125,7 @@ def update_land_classification(request, classification_id):
     try:
         data = json.loads(request.body)
         name = data['name']
+        for_reforestation = data.get('for_reforestation', False)  # default to False if not provided
         description = data['description']
     except KeyError:
         return JsonResponse({'error': 'Missing fields'}, status=400)
@@ -121,6 +133,7 @@ def update_land_classification(request, classification_id):
     classification = get_object_or_404(LandClassification, pk=classification_id)
     classification.name = name
     classification.description = description
+    classification.for_reforestation = for_reforestation
     classification.save()
     return JsonResponse({'message': 'Successfully updated!'}, status=200)
 

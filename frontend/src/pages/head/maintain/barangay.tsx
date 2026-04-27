@@ -5,13 +5,10 @@ import {
   Plus,
   ChevronRight,
   ChevronLeft,
-  Delete,
   Info,
-  Leaf,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
-import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
 
 interface Barangay {
@@ -66,7 +63,6 @@ export default function Barangays() {
 
   const [barangayIdDelete, setBarangayIdDelete] = useState<number | null>(null);
 
-  const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
   const inputWrapper =
@@ -248,33 +244,6 @@ export default function Barangays() {
         onDelete={handleDelete}
       />
 
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-center">
-          <div className="flex items-center gap-3 mb-2">
-            <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">Barangays</h1>
-          </div>
-
-          <div className="flex items-center mt-5 mb-10 ml-auto">
-            <button
-              onClick={() => {
-                setIsOpenAddEditModal(true);
-                setAction("Add");
-                setBarangay({
-                  name: "",
-                  description: "",
-                  lat: 0,
-                  lng: 0,
-                });
-              }}
-              className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
-            >
-              <Plus size={20} /> Add new Barangay
-            </button>
-          </div>
-        </div>
-      </header>
-
       <main className="flex-1 p-8 flex flex-col items-center">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4 w-full max-w-406">
@@ -310,6 +279,16 @@ export default function Barangays() {
             onKeyDown={(e) => e.key === "Enter" && fetchBarangays()}
             className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
+          <button
+            onClick={() => {
+              setIsOpenAddEditModal(true);
+              setAction("Add");
+              setBarangay({ name: "", description: "", lat: 0, lng: 0 });
+            }}
+            className="flex items-center justify-center gap-2 bg-[#1a6b44] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer"
+          >
+            <Plus size={20} /> Add new Barangay
+          </button>
         </div>
 
         {/* Table */}
@@ -451,10 +430,11 @@ export default function Barangays() {
   ${isOpenAddEditModal ? "scale-100 opacity-100" : "scale-95 opacity-0"}`}
         >
           <div className="flex justify-items-start items-center gap-10 w-full bg-green-600 rounded-t-lg p-2">
-            <Delete
-              size={66}
-              className="text-white bg-green-500 p-3 rounded-full mb-2"
-            />
+            {action === "Add" ? (
+              <Plus size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+            ) : (
+              <Edit size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+            )}
             <h2 className="text-lg font-semibold text-white">
               {action} Barangay
             </h2>

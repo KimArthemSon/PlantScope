@@ -5,9 +5,7 @@ import {
   Plus,
   ChevronRight,
   ChevronLeft,
-  Delete,
   Info,
-  Leaf,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
@@ -244,32 +242,7 @@ export default function Tree_species() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <header className="bg-linear-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-center">
-          <div className="flex items-center gap-3 mb-2">
-            <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">Tree Species</h1>
-          </div>
-          <div className="flex items-center mt-5 mb-10 ml-auto">
-            <button
-              onClick={() => {
-                setIsOpenAddEditModal(true);
-                setAction("Add");
-                setTree_specie({
-                  name: "",
-                  description: "",
-                });
-              }}
-              className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
-            >
-              <Plus size={20} /> Add new tree specie
-            </button>
-          </div>
-        </div>
-      </header>
       <main className="flex-1 p-8 max-w-409">
-        {/* Header */}
-
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
           <label>Show entries: </label>
@@ -303,11 +276,21 @@ export default function Tree_species() {
             }
             onKeyDown={(e) => {
               if (e.key === "Enter") {
-                fetchtree_species(); // call your fetch function on Enter
+                fetchtree_species();
               }
             }}
             className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
+          <button
+            onClick={() => {
+              setIsOpenAddEditModal(true);
+              setAction("Add");
+              setTree_specie({ name: "", description: "" });
+            }}
+            className="flex items-center justify-center gap-2 bg-[#1a6b44] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer"
+          >
+            <Plus size={20} /> Add new tree specie
+          </button>
         </div>
 
         {/* Table */}
@@ -440,12 +423,12 @@ export default function Tree_species() {
         `}
         >
           <div className="flex justify-items-start items-center gap-10 w-full bg-green-600 rounded-t-lg p-2">
-            <Delete
-              size={66}
-              className="text-white bg-green-500 p-3 rounded-full mb-2"
-            />
-
-            <h2 className="text-lg font-semibold text-white">{action}</h2>
+            {action === "Add" ? (
+              <Plus size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+            ) : (
+              <Edit size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+            )}
+            <h2 className="text-lg font-semibold text-white">{action} Tree Specie</h2>
           </div>
 
           <div className="flex flex-col p-6 w-full gap-5">

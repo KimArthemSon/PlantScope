@@ -184,9 +184,10 @@ function NotificationPanel({ notes, onMarkAll, onDismiss, onClose }: NotifPanelP
 interface ProfileDropdownProps {
   user: UserData | null;
   onLogout: () => void;
+  onNavigate: (path: string) => void;
 }
 
-function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
+function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
   return (
     <div className="absolute right-0 top-full mt-3 w-[280px] z-50
       bg-[#0a3320]/95 backdrop-blur-xl border border-white/10
@@ -216,11 +217,12 @@ function ProfileDropdown({ user, onLogout }: ProfileDropdownProps) {
       {/* Menu items */}
       <div className="py-2">
         {[
-          { icon: <User size={14} />,     label: "My Profile", sub: "View & edit info"       },
-          { icon: <Mail size={14} />,     label: "Inbox",      sub: "3 unread messages"      },
-          { icon: <Settings size={14} />, label: "Settings",   sub: "Preferences & security" },
+          { icon: <User size={14} />,     label: "My Profile", sub: "View & edit info",       path: "/GISS/my-profile" },
+          { icon: <Mail size={14} />,     label: "Inbox",      sub: "3 unread messages",      path: null               },
+          { icon: <Settings size={14} />, label: "Settings",   sub: "Preferences & security", path: null               },
         ].map((item) => (
           <button key={item.label}
+            onClick={() => item.path && onNavigate(item.path)}
             className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left cursor-pointer group">
             <span className="text-white/40 group-hover:text-emerald-400 transition-colors">{item.icon}</span>
             <div>
@@ -253,8 +255,8 @@ export default function SidebarGISS() {
   const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
-  const notifRef = useRef<HTMLDivElement>(null);
-  const profileRef = useRef<HTMLDivElement>(null);
+  const notifRef: any = useRef<HTMLDivElement>(null);
+  const profileRef: any = useRef<HTMLDivElement>(null);
   useOutsideClick(notifRef, () => setShowNotifs(false));
   useOutsideClick(profileRef, () => setShowProfile(false));
 
@@ -489,6 +491,7 @@ export default function SidebarGISS() {
                 <ProfileDropdown
                   user={user_data ?? null}
                   onLogout={handleLogout}
+                  onNavigate={(path) => { setShowProfile(false); navigate(path); }}
                 />
               )}
             </div>

@@ -5,22 +5,25 @@ import {
   Plus,
   ChevronRight,
   ChevronLeft,
-  Delete,
   Info,
   Leaf,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
+
 interface Land_classifications {
   land_classification_id: number;
   name: string;
   description: string;
+  for_reforestation: boolean;
   created_at: string;
 }
+
 interface Land_classification {
   name: string;
   description: string;
+  for_reforestation: boolean;
 }
 
 interface Filter {
@@ -28,6 +31,7 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
+  for_reforestation: string; // '', 'true', or 'false'
 }
 
 export default function Land_classifications() {
@@ -38,12 +42,14 @@ export default function Land_classifications() {
     useState<Land_classification>({
       name: "",
       description: "",
+      for_reforestation: false,
     });
   const [filter, setFilter] = useState<Filter>({
     search: "",
     entries: 10,
     page: 1,
     total_page: 1,
+    for_reforestation: "",
   });
 
   const [isOpenAddEditModal, setIsOpenAddEditModal] = useState(false);
@@ -81,6 +87,11 @@ export default function Land_classifications() {
         entries: filter.entries.toString(),
       });
 
+      // Only append for_reforestation if a filter is selected
+      if (filter.for_reforestation !== "") {
+        params.append("for_reforestation", filter.for_reforestation);
+      }
+
       const response = await fetch(
         `http://127.0.0.1:8000/api/get_land_classifications/?${params.toString()}`,
         {
@@ -107,7 +118,7 @@ export default function Land_classifications() {
 
   useEffect(() => {
     fetchLand_classifications();
-  }, [filter.page, filter.entries]); // refetch when filters change
+  }, [filter.page, filter.entries, filter.for_reforestation]);
 
   const setDelete = (Land_classification_id: number) => {
     setLand_classification_idDelete(Land_classification_id);
@@ -131,7 +142,7 @@ export default function Land_classifications() {
         message: data.message,
       });
       setIsDeleteModalOpen(false);
-      fetchLand_classifications(); // refresh list after delete
+      fetchLand_classifications();
     } else {
       setPSAlert({
         type: "failed",
@@ -253,36 +264,9 @@ export default function Land_classifications() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-center">
-          <div className="flex items-center gap-3 mb-2">
-            <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">
-              Land Classification
-            </h1>
-          </div>
-          <div className="flex items-center mt-5 mb-10 ml-auto">
-            <button
-              onClick={() => {
-                setIsOpenAddEditModal(true);
-                setAction("Add");
-                setLand_classification({
-                  name: "",
-                  description: "",
-                });
-              }}
-              className="flex items-center justify-center gap-2 bg-white hover:bg-[#0f4a2f] hover:text-white text-black h-10 px-3 py-2 ml-auto rounded-lg text-[.8rem] cursor-pointer"
-            >
-              <Plus size={20} /> Add new land classification
-            </button>
-          </div>
-        </div>
-      </header>
       <main className="flex-1 p-8 max-w-409">
-        {/* Header */}
-
         {/* Filters */}
-        <div className="flex items-center mb-7 gap-4">
+        <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label>Show entries: </label>
           <select
             value={filter.entries}
@@ -301,6 +285,23 @@ export default function Land_classifications() {
             <option value={100}>100</option>
           </select>
 
+          {/* For Reforestation Filter */}
+          <select
+            value={filter.for_reforestation}
+            onChange={(e) =>
+              setFilter((prev) => ({
+                ...prev,
+                for_reforestation: e.target.value,
+                page: 1,
+              }))
+            }
+            className="border border-black p-2 rounded-md text-[.8rem]"
+          >
+            <option value="">All Classifications</option>
+            <option value="true">For Reforestation</option>
+            <option value="false">Not For Reforestation</option>
+          </select>
+
           <input
             type="text"
             placeholder="Search Land_classifications..."
@@ -309,16 +310,26 @@ export default function Land_classifications() {
               setFilter((prev) => ({
                 ...prev,
                 search: e.target.value,
-                page: 1, // reset page when typing
+                page: 1,
               }))
             }
             onKeyDown={(e) => {
               if (e.key === "Enter") {
-                fetchLand_classifications(); // call your fetch function on Enter
+                fetchLand_classifications();
               }
             }}
             className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
+          <button
+            onClick={() => {
+              setIsOpenAddEditModal(true);
+              setAction("Add");
+              setLand_classification({ name: "", description: "", for_reforestation: false });
+            }}
+            className="flex items-center justify-center gap-2 bg-[#1a6b44] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer"
+          >
+            <Plus size={20} /> Add new land classification
+          </button>
         </div>
 
         {/* Table */}
@@ -332,7 +343,10 @@ export default function Land_classifications() {
                 <th className="py-3 px-5 text-left text-[.9rem]">
                   Description
                 </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created_at</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">
+                  For Reforestation
+                </th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Created At</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -351,6 +365,18 @@ export default function Land_classifications() {
                       {Land_classification.description}
                     </td>
                     <td className="py-3 px-5 text-[.9rem]">
+                      {Land_classification.for_reforestation ? (
+                        <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 border border-green-300 text-xs font-semibold px-2.5 py-1 rounded-full">
+                          <Leaf size={12} />
+                          Yes
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 border border-gray-300 text-xs font-semibold px-2.5 py-1 rounded-full">
+                          No
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-5 text-[.9rem]">
                       {Land_classification.created_at}
                     </td>
                     <td className="py-3 px-5">
@@ -364,8 +390,8 @@ export default function Land_classifications() {
                             setAction("Edit");
                             setLand_classification({
                               name: Land_classifications[index].name,
-                              description:
-                                Land_classifications[index].description,
+                              description: Land_classifications[index].description,
+                              for_reforestation: Land_classifications[index].for_reforestation,
                             });
                           }}
                           className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
@@ -389,7 +415,7 @@ export default function Land_classifications() {
               ) : (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="text-center py-5 text-gray-500 italic"
                   >
                     No Land_classifications found.
@@ -454,12 +480,12 @@ export default function Land_classifications() {
         `}
         >
           <div className="flex justify-items-start items-center gap-10 w-full bg-green-600 rounded-t-lg p-2">
-            <Delete
-              size={66}
-              className="text-white bg-green-500 p-3 rounded-full mb-2"
-            />
-
-            <h2 className="text-lg font-semibold text-white">{action}</h2>
+            {action === "Add" ? (
+              <Plus size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+            ) : (
+              <Edit size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+            )}
+            <h2 className="text-lg font-semibold text-white">{action} Land Classification</h2>
           </div>
 
           <div className="flex flex-col p-6 w-full gap-5">
@@ -482,6 +508,7 @@ export default function Land_classifications() {
                 />
               </div>
             </div>
+
             <div className="flex flex-col">
               <label className="font-bold text-[1rem] mr-auto">
                 Description:
@@ -489,7 +516,7 @@ export default function Land_classifications() {
               <div className={inputWrapper}>
                 <textarea
                   className="w-full min-h-50 outline-0 p-2"
-                  placeholder="Descriptions "
+                  placeholder="Descriptions"
                   required
                   value={Land_classification.description}
                   onChange={(e) => {
@@ -500,6 +527,36 @@ export default function Land_classifications() {
                   }}
                 ></textarea>
               </div>
+            </div>
+
+            {/* For Reforestation Toggle */}
+            <div className="flex items-center justify-between border border-black rounded-md p-3">
+              <div className="flex items-center gap-2">
+                <Leaf size={20} className="text-green-700" />
+                <label className="font-bold text-[1rem]">For Reforestation:</label>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setLand_classification((prev) => ({
+                    ...prev,
+                    for_reforestation: !prev.for_reforestation,
+                  }))
+                }
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 focus:outline-none ${
+                  Land_classification.for_reforestation
+                    ? "bg-green-500"
+                    : "bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-300 ${
+                    Land_classification.for_reforestation
+                      ? "translate-x-6"
+                      : "translate-x-1"
+                  }`}
+                />
+              </button>
             </div>
 
             <div className="flex flex-cols items-center w-full gap-2">

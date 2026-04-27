@@ -139,8 +139,7 @@ export default function Application_confirmation() {
       />
      
       <main className="flex-1 p-8 max-w-409">
-        {/* Header */}
-
+    
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
           <label>Show entries: </label>

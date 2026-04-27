@@ -43,6 +43,7 @@ import Application_confirmation from "./pages/head/application/application_confi
 import Monitoring from "./pages/dataManager/monitoring/application";
 import Maintenance_report from "./pages/dataManager/monitoring/maintenance_report";
 import ViewReforestationArea from "./pages/head/reforestation_areas/view_reforestation_area";
+import MyProfile from "./pages/dataManager/MyProfile";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -158,6 +159,7 @@ export default function App() {
           />
 
           <Route path="/map" element={<Map />} />
+          <Route path="/my-profile" element={<MyProfile />} />
 
           <Route
             path="/reports"
@@ -270,6 +272,7 @@ export default function App() {
             element={<Site_information />}
           />
           <Route path="/DataManager/map" element={<Map />} />
+          <Route path="/DataManager/my-profile" element={<MyProfile />} />
           <Route
             path="/reports"
             element={<Placeholder title="Reports & Dashboard" />}
@@ -333,6 +336,7 @@ export default function App() {
             element={<Site_information />}
           />
           <Route path="/GISS/map" element={<Map />} />
+          <Route path="/GISS/my-profile" element={<MyProfile />} />
           <Route
             path="/reports"
             element={<Placeholder title="Reports & Dashboard" />}

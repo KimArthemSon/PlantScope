@@ -5,6 +5,7 @@ class LandClassification(models.Model):
     land_classification_id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=100)
     description = models.CharField(max_length=255)
+    for_reforestation = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
    

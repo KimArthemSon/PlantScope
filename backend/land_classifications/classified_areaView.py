@@ -124,7 +124,8 @@ def get_classified_areas(request):
 
     # Get parameters with defaults
     search = request.GET.get('search', '').strip()
-    
+    landClassification_id = request.GET.get('land_classification_id', '').strip()
+    barangay_id = request.GET.get('barangay_id', '').strip()
     try:
         entries = int(request.GET.get('entries', 10))
         page = int(request.GET.get('page', 1))
@@ -151,7 +152,10 @@ def get_classified_areas(request):
     # Apply search filter if exists
     if search:
         classified_areas = classified_areas.filter(name__icontains=search)
-
+    if landClassification_id:
+        classified_areas = classified_areas.filter(land_classification__land_classification_id=landClassification_id)
+    if barangay_id:
+        classified_areas = classified_areas.filter(barangay__barangay_id=barangay_id)
     # Get total count before slicing
     total = classified_areas.count()
     total_page = math.ceil(total / entries) if total > 0 else 1

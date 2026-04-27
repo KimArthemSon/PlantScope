@@ -457,17 +457,6 @@ export default function Reforestation_areas() {
         onDelete={handleDelete}
       />
 
-      {/* ── HEADER ────────────────────────────────────────── */}
-      <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white py-3 px-6 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-center">
-          <div className="flex items-center gap-3 mb-2">
-            <Leaf size={32} className="text-green-300" />
-            <h1 className="text-3xl md:text-4xl font-bold">Analysis</h1>
-          </div>
-          <div className="flex items-center mt-5 mb-10 px-3 py-2 ml-auto"></div>
-        </div>
-      </header>
-
       <main className="flex-1 p-8 max-w-7xl mx-auto">
         {/* Overview Stats Dashboard */}
         <section className="mb-8">
@@ -844,21 +833,21 @@ export default function Reforestation_areas() {
                     </td>
                     <td className="py-3 px-5">{area.name}</td>
                     <td className="py-3 px-5">
-                     <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        area.pre_assessment_status === "pending"
-                          ? "bg-yellow-100 text-yellow-700"
-                          : area.pre_assessment_status === "approved"
-                            ? "bg-green-100 text-green-700"
-                            : area.pre_assessment_status === "rejected"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-gray-100 text-gray-700"
-                      }`}
-                    >
-                      {area.pre_assessment_status}
-                    </span>
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          area.pre_assessment_status === "pending"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : area.pre_assessment_status === "approved"
+                              ? "bg-green-100 text-green-700"
+                              : area.pre_assessment_status === "rejected"
+                                ? "bg-red-100 text-red-700"
+                                : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {area.pre_assessment_status}
+                      </span>
                     </td>
-                    
+
                     <td className="py-3 px-5">{area.barangay.name}</td>
                     <td className="py-3 px-5">
                       {area.land_classification?.name ?? (
@@ -900,16 +889,18 @@ export default function Reforestation_areas() {
                     <td className="py-3 px-5">{area.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
-                        <button
-                          onClick={() =>
-                            navigate(
-                              `${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
-                            )
-                          }
-                          className="cursor-pointer"
-                        >
-                          <VerifiedIcon size={18} />
-                        </button>
+                        {userRole !== "GISSpecialist" && (
+                          <button
+                            onClick={() =>
+                              navigate(
+                                `${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
+                              )
+                            }
+                            className="cursor-pointer"
+                          >
+                            <VerifiedIcon size={18} />
+                          </button>
+                        )}
 
                         <button
                           onClick={() =>
