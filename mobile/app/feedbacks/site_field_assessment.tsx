@@ -1,60 +1,40 @@
 import { useRouter, useLocalSearchParams } from "expo-router";
 import React, { useState, useEffect } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
+  View, Text, StyleSheet, ScrollView,
+  TouchableOpacity, Alert, ActivityIndicator,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 import {
-  PlusCircle,
-  CheckCircle,
-  Edit3,
-  HardHat,
-  Scale,
-  Sprout,
-  Database, // ✅ New icon for Meta Data
+  HardHat, Scale, Sprout, Database,
 } from "lucide-react-native";
 
 const API = api + "/api";
 
-// ✅ Updated to 4 layers: Safety, Boundary Verification, Meta Data, Survivability
+/* ---------- LAYERS ---------- */
+
 export const LAYERS = [
-   { 
-    id: "meta_data",  // ✅ NEW: Combined pre-assessment fields
-    label: "Meta Data", 
-    icon: Database, 
-    color: "#8b5cf6"  // Purple to distinguish
-  },
-  { id: "safety", label: "Safety", icon: HardHat, color: "#ef4444" },
-  { 
-    id: "boundary_verification",
-    label: "Boundary Verification", 
-    icon: Scale, 
-    color: "#3b82f6" 
-  },
- 
-  { id: "survivability", label: "Survivability", icon: Sprout, color: "#16a34a" },
+  { id: "meta_data",            label: "Meta Data",             icon: Database, color: "#8B5CF6", bg: "#F5F3FF" },
+  { id: "safety",               label: "Safety",                icon: HardHat,  color: "#EF4444", bg: "#FEF2F2" },
+  { id: "boundary_verification",label: "Boundary Verification", icon: Scale,    color: "#3B82F6", bg: "#EFF6FF" },
+  { id: "survivability",        label: "Survivability",         icon: Sprout,   color: "#16A34A", bg: "#F0FDF4" },
 ];
 
+type LayerStatus = "done" | "draft" | "pending";
+
+/* ---------- SCREEN ---------- */
+
 export default function SiteFieldAssessment() {
-  const { areaId, areaName } = useLocalSearchParams<{
-    areaId: string;
-    areaName: string;
-  }>();
-
+  const { areaId, areaName } = useLocalSearchParams<{ areaId: string; areaName: string }>();
   const [assessments, setAssessments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
+  const [loading, setLoading]         = useState(true);
+  const router   = useRouter();
+  const insets   = useSafeAreaInsets();
 
-  useEffect(() => {
-    fetchAssessments();
-  }, []);
+  useEffect(() => { fetchAssessments(); }, []);
 
   const fetchAssessments = async () => {
     try {
@@ -64,19 +44,25 @@ export default function SiteFieldAssessment() {
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (res.ok) setAssessments(await res.json());
-    } catch (err) {
-      Alert.alert("Error", "Failed to load assessments");
+    } catch {
+      Alert.alert("Error", "Failed to load assessments.");
     } finally {
       setLoading(false);
     }
   };
 
-  const getLayerStatus = (layerId: string) => {
-    const layerAssessments = assessments.filter((a) => a.layer === layerId);
-    if (layerAssessments.some((a) => a.is_submitted)) return "done";
-    if (layerAssessments.some((a) => !a.is_submitted)) return "draft";
+  const getStatus = (layerId: string): LayerStatus => {
+    const list = assessments.filter((a) => a.layer === layerId);
+    if (list.some((a) => a.is_submitted))  return "done";
+    if (list.some((a) => !a.is_submitted)) return "draft";
     return "pending";
   };
+
+  const getCount = (layerId: string, submitted: boolean) =>
+    assessments.filter((a) => a.layer === layerId && a.is_submitted === submitted).length;
+
+  const completedCount = LAYERS.filter((l) => getStatus(l.id) === "done").length;
+  const progressPct    = (completedCount / LAYERS.length) * 100;
 
   const handleLayerPress = (layerId: string, layerName: string) => {
     router.push({
@@ -85,208 +71,300 @@ export default function SiteFieldAssessment() {
     });
   };
 
+  /* ---- Loading ---- */
   if (loading) {
     return (
-      <View style={styles.centerContent}>
+      <View style={styles.loadingScreen}>
         <ActivityIndicator size="large" color="#0F4A2F" />
-        <Text style={styles.loadingText}>Loading assessment layers...</Text>
+        <Text style={styles.loadingText}>Loading assessment layers…</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.areaName}>{areaName}</Text>
-        <Text style={styles.areaSubtitle}>Field Assessment</Text>
+    <View style={styles.root}>
+
+      {/* ── Header ── */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+        </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle} numberOfLines={1}>{areaName}</Text>
+          <Text style={styles.headerSub}>Field Assessment</Text>
+        </View>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Info Banner - ✅ Updated for 4 layers */}
-        <View style={styles.infoBanner}>
-          <Text style={styles.infoBannerTitle}>4-Layer MCDA Assessment</Text>
-          <Text style={styles.infoBannerText}>
-            Complete all four layers — Safety, Boundary Verification, Meta Data, and Survivability —
-            before submitting to the GIS Specialist. Meta Data combines permits, security, and site context.
-          </Text>
+        {/* ── Progress Card ── */}
+        <View style={styles.progressCard}>
+          <View style={styles.progressRow}>
+            <View>
+              <Text style={styles.progressLabel}>Overall Progress</Text>
+              <Text style={styles.progressSub}>
+                {completedCount} of {LAYERS.length} layers submitted
+              </Text>
+            </View>
+            <Text style={styles.progressPct}>{Math.round(progressPct)}%</Text>
+          </View>
+
+          <View style={styles.progressBg}>
+            <View style={[styles.progressFill, { width: `${progressPct}%` as any }]} />
+          </View>
+
+          {/* Layer dots */}
+          <View style={styles.dotRow}>
+            {LAYERS.map((l) => {
+              const s = getStatus(l.id);
+              return (
+                <View key={l.id} style={styles.dotItem}>
+                  <View style={[
+                    styles.dot,
+                    s === "done"  && { backgroundColor: "#5FD08A" },
+                    s === "draft" && { backgroundColor: "#F59E0B" },
+                    s === "pending" && { backgroundColor: "rgba(255,255,255,0.25)" },
+                  ]} />
+                  <Text style={styles.dotLabel}>{l.label.split(" ")[0]}</Text>
+                </View>
+              );
+            })}
+          </View>
         </View>
 
-        {/* Layer Cards - ✅ Now renders 4 cards automatically */}
-        <Text style={styles.sectionTitle}>Assessment Layers</Text>
+        {/* ── Layer Grid ── */}
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>Assessment Layers</Text>
+          <View style={styles.countBadge}>
+            <Text style={styles.countText}>{LAYERS.length} Layers</Text>
+          </View>
+        </View>
+
         <View style={styles.grid}>
           {LAYERS.map((layer) => {
-            const status = getLayerStatus(layer.id);
-            const submittedCount = assessments.filter(
-              (a) => a.layer === layer.id && a.is_submitted,
-            ).length;
-            const draftCount = assessments.filter(
-              (a) => a.layer === layer.id && !a.is_submitted,
-            ).length;
+            const status        = getStatus(layer.id);
+            const submittedCnt  = getCount(layer.id, true);
+            const draftCnt      = getCount(layer.id, false);
+            const Icon          = layer.icon;
 
             return (
               <TouchableOpacity
                 key={layer.id}
                 style={[
-                  styles.layerCard,
-                  status === "draft" && styles.layerCardDraft,
-                  status === "done" && styles.layerCardDone,
+                  styles.card,
+                  status === "draft" && styles.cardDraft,
+                  status === "done"  && styles.cardDone,
                 ]}
                 onPress={() => handleLayerPress(layer.id, layer.label)}
-                activeOpacity={0.7}
+                activeOpacity={0.75}
               >
-                <View
-                  style={[
-                    styles.iconBox,
-                    { backgroundColor: `${layer.color}15` },
-                  ]}
-                >
-                  <layer.icon size={24} color={layer.color} strokeWidth={2} />
-                </View>
-                <Text style={styles.layerLabel}>{layer.label}</Text>
-                <View style={styles.statusRow}>
-                  {status === "done" && (
-                    <View style={styles.badgeDone}>
-                      <CheckCircle size={12} color="#155724" />
-                      <Text style={styles.badgeTextDone}>
-                        {submittedCount} Submitted
-                      </Text>
-                    </View>
-                  )}
-                  {status === "draft" && (
-                    <View style={styles.badgeDraft}>
-                      <Edit3 size={12} color="#856404" />
-                      <Text style={styles.badgeTextDraft}>
-                        {draftCount} Draft
-                      </Text>
-                    </View>
-                  )}
-                  {status === "pending" && (
-                    <Text style={styles.pendingText}>Tap to start</Text>
-                  )}
+                {/* Colored top accent */}
+                <View style={[styles.cardAccent, { backgroundColor: layer.color }]} />
+
+                <View style={styles.cardInner}>
+                  {/* Icon */}
+                  <View style={[styles.iconCircle, { backgroundColor: layer.bg }]}>
+                    <Icon size={22} color={layer.color} strokeWidth={2} />
+                  </View>
+
+                  {/* Label */}
+                  <Text style={styles.cardLabel} numberOfLines={2}>{layer.label}</Text>
+
+                  {/* Status badge */}
+                  <View style={styles.cardFooter}>
+                    {status === "done" && (
+                      <View style={styles.badgeDone}>
+                        <Ionicons name="checkmark-circle" size={11} color="#15803D" />
+                        <Text style={styles.badgeDoneText}>{submittedCnt} Submitted</Text>
+                      </View>
+                    )}
+                    {status === "draft" && (
+                      <View style={styles.badgeDraft}>
+                        <Ionicons name="create-outline" size={11} color="#92400E" />
+                        <Text style={styles.badgeDraftText}>{draftCnt} Draft</Text>
+                      </View>
+                    )}
+                    {status === "pending" && (
+                      <Text style={styles.pendingText}>Tap to start</Text>
+                    )}
+                    <Ionicons name="chevron-forward" size={13} color="#9CA3AF" />
+                  </View>
                 </View>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <View style={{ height: 40 }} />
+        {/* ── Info Banner ── */}
+        <View style={styles.infoBanner}>
+          <View style={styles.infoBannerIcon}>
+            <MaterialCommunityIcons name="information-outline" size={18} color="#0F4A2F" />
+          </View>
+          <Text style={styles.infoText}>
+            Complete all four layers before submitting to the GIS Specialist.
+            Meta Data combines permits, security, and site context.
+          </Text>
+        </View>
+
       </ScrollView>
     </View>
   );
 }
 
+/* ---------- STYLES ---------- */
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  centerContent: { flex: 1, justifyContent: "center", alignItems: "center" },
-  loadingText: { marginTop: 10, color: "#64748b" },
+  root: { flex: 1, backgroundColor: "#F4F7F5" },
+
+  /* Loading */
+  loadingScreen: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
+  loadingText:   { color: "#6B7280", fontSize: 14 },
+
+  /* Header */
   header: {
-    backgroundColor: "#fff",
-    padding: 16,
-    paddingTop: 50,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    backgroundColor: "#0F4A2F",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingBottom: 14,
   },
-  areaName: { fontSize: 18, fontWeight: "bold", color: "#0f172a" },
-  areaSubtitle: { fontSize: 13, color: "#64748b", marginTop: 2 },
-  content: { flex: 1 },
-  contentContainer: { paddingHorizontal: 16, paddingBottom: 40 },
-  infoBanner: {
-    backgroundColor: "#f5f3ff", // ✅ Purple tint for Meta Data theme
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: "#c4b5fd",
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    justifyContent: "center", alignItems: "center",
   },
-  infoBannerTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#5b21b6", // ✅ Darker purple
-    marginBottom: 4,
+  headerCenter: { flex: 1, alignItems: "center" },
+  headerTitle:  { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
+  headerSub:    { fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 1 },
+
+  /* Scroll */
+  scroll:   { flex: 1 },
+  content:  { padding: 16 },
+
+  /* Progress card */
+  progressCard: {
+    backgroundColor: "#0F4A2F",
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 20,
   },
-  infoBannerText: { fontSize: 13, color: "#6d28d9", lineHeight: 18 },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#334155",
-    marginTop: 20,
+  progressRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     marginBottom: 12,
   },
+  progressLabel: { fontSize: 13, color: "#B7D3C6", fontWeight: "600" },
+  progressSub:   { fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 2 },
+  progressPct:   { fontSize: 26, fontWeight: "800", color: "#FFFFFF" },
+  progressBg: {
+    height: 6, backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 3, overflow: "hidden", marginBottom: 14,
+  },
+  progressFill: { height: "100%", backgroundColor: "#5FD08A", borderRadius: 3 },
+  dotRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  dotItem:  { alignItems: "center", gap: 4 },
+  dot: {
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: "rgba(255,255,255,0.25)",
+  },
+  dotLabel: { fontSize: 9, color: "rgba(255,255,255,0.5)", fontWeight: "600" },
+
+  /* Section row */
+  sectionRow: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12,
+  },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: "#0F2D1C" },
+  countBadge: {
+    backgroundColor: "#E6F4EC",
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10,
+  },
+  countText: { fontSize: 11, color: "#0F4A2F", fontWeight: "700" },
+
+  /* Layer card grid */
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 16,
+  },
+  card: {
+    width: "47%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    overflow: "hidden",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    borderWidth: 1,
+    borderColor: "#F3F4F6",
+  },
+  cardDraft: {
+    borderColor: "#FCD34D",
+    borderWidth: 1.5,
+    backgroundColor: "#FFFBEB",
+  },
+  cardDone: {
+    borderColor: "#86EFAC",
+    borderWidth: 1.5,
+    backgroundColor: "#F0FDF4",
+  },
+  cardAccent: { height: 4, width: "100%" },
+  cardInner:  { padding: 14 },
+  iconCircle: {
+    width: 46, height: 46, borderRadius: 14,
+    justifyContent: "center", alignItems: "center",
+    marginBottom: 10,
+  },
+  cardLabel: {
+    fontSize: 13, fontWeight: "700", color: "#0F2D1C",
+    marginBottom: 8, lineHeight: 18,
+  },
+  cardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
   },
-  layerCard: {
-    width: "48%",
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 16,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: "#f1f5f9",
-  },
-  layerCardDraft: {
-    borderColor: "#fbbf24",
-    borderWidth: 2,
-    backgroundColor: "#fffbeb",
-  },
-  layerCardDone: {
-    borderColor: "#86efac",
-    borderWidth: 1,
-    backgroundColor: "#f0fdf4",
-  },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  layerLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1e293b",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-  },
   badgeDone: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#dcfce7",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10,
   },
-  badgeTextDone: { fontSize: 10, color: "#155724", fontWeight: "700" },
+  badgeDoneText: { fontSize: 10, color: "#15803D", fontWeight: "700" },
   badgeDraft: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fef3c7",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10,
   },
-  badgeTextDraft: { fontSize: 10, color: "#856404", fontWeight: "700" },
-  pendingText: { fontSize: 11, color: "#94a3b8", fontStyle: "italic" },
+  badgeDraftText: { fontSize: 10, color: "#92400E", fontWeight: "700" },
+  pendingText:    { fontSize: 11, color: "#9CA3AF", fontStyle: "italic" },
+
+  /* Info banner */
+  infoBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    backgroundColor: "#E6F4EC",
+    borderRadius: 12,
+    padding: 14,
+  },
+  infoBannerIcon: {
+    width: 30, height: 30, borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center", alignItems: "center",
+    flexShrink: 0,
+  },
+  infoText: {
+    flex: 1, fontSize: 12, color: "#0F4A2F", lineHeight: 18,
+  },
 });

@@ -24,6 +24,9 @@ import {
   File,
   AreaChart,
   Info,
+  MapPin,
+  Search,
+  X,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { useUserRole } from "@/hooks/authorization";
@@ -146,6 +149,15 @@ export default function Map() {
   const [isUsingPotentialSites, setIsUsingPotentialSites] = useState(false);
   const [analyzedSitesForSave, setAnalyzedSitesForSave] = useState<any[]>([]);
 
+  const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(false);
+  const [searchLat, setSearchLat] = useState("");
+  const [searchLng, setSearchLng] = useState("");
+  const [searchMarkerPosition, setSearchMarkerPosition] = useState<[number, number] | null>(null);
+
+  // Reforestation Area Search State
+  const [areaSearchQuery, setAreaSearchQuery] = useState("");
+  const [showAreaDropdown, setShowAreaDropdown] = useState(false);
+
   const [isPickingMarker, setIsPickingMarker] = useState(false);
   const [isNdviPenelOpen, setIsNdviPenelOpen] = useState(false);
   const [isFormPenelOpen, setIsFormPenelOpen] = useState(false);
@@ -196,6 +208,15 @@ export default function Map() {
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
     iconSize: [25, 41],
     iconAnchor: [12, 41],
+  });
+
+  const redIcon = new L.Icon({
+    iconUrl:
+      "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
   });
 
   const { userRole, isLoading } = useUserRole();
@@ -598,7 +619,31 @@ export default function Map() {
     setIsFormPenelOpen(false);
     setIsDrawPenelOpen(false);
     setIsFilterPenelOpen(false);
+    setIsSearchPanelOpen(false);
   }
+
+  const goToCoordinate = () => {
+    const lat = parseFloat(searchLat);
+    const lng = parseFloat(searchLng);
+    if (isNaN(lat) || isNaN(lng)) {
+      setPSAlert({
+        type: "failed",
+        title: "Invalid Coordinates",
+        message: "Please enter valid latitude and longitude values.",
+      });
+      return;
+    }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      setPSAlert({
+        type: "failed",
+        title: "Out of Range",
+        message: "Latitude must be between -90 and 90, longitude between -180 and 180.",
+      });
+      return;
+    }
+    setSearchMarkerPosition([lat, lng]);
+    mapRef.current?.flyTo([lat, lng], 16);
+  };
 
   // ✅ REPLACE onSubmit WITH THIS FIXED VERSION (only the relevant parts changed)
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -766,6 +811,109 @@ export default function Map() {
           onClose={() => setPSAlert(null)}
         />
       )}
+
+      {/* Search Reforestation Areas - Upper Left */}
+      <div className="absolute top-4 left-4 z-[1001] w-[280px]">
+        <div className="bg-white rounded-xl shadow-lg border border-gray-200">
+          <div className="flex items-center gap-2 px-3 py-2.5">
+            <Search size={15} className="text-gray-400 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="Search reforestation areas..."
+              value={areaSearchQuery}
+              onChange={(e) => {
+                setAreaSearchQuery(e.target.value);
+                setShowAreaDropdown(e.target.value.length > 0);
+              }}
+              onFocus={() => {
+                if (areaSearchQuery.length > 0) setShowAreaDropdown(true);
+              }}
+              onBlur={() => setTimeout(() => setShowAreaDropdown(false), 200)}
+              className="flex-1 text-[.75rem] outline-none placeholder-gray-400 bg-transparent"
+            />
+            {areaSearchQuery && (
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setAreaSearchQuery("");
+                  setShowAreaDropdown(false);
+                }}
+                className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          {showAreaDropdown && (
+            <div className="border-t border-gray-100 max-h-[300px] overflow-y-auto rounded-b-xl">
+              {reforestation_areas.filter((area) =>
+                area.name.toLowerCase().includes(areaSearchQuery.toLowerCase()) ||
+                area.barangay.name.toLowerCase().includes(areaSearchQuery.toLowerCase())
+              ).length > 0 ? (
+                reforestation_areas
+                  .filter(
+                    (area) =>
+                      area.name.toLowerCase().includes(areaSearchQuery.toLowerCase()) ||
+                      area.barangay.name.toLowerCase().includes(areaSearchQuery.toLowerCase())
+                  )
+                  .map((area, idx) => {
+                    const safetyColor: Record<string, string> = {
+                      safe: "bg-green-100 text-green-700",
+                      slightly: "bg-yellow-100 text-yellow-700",
+                      moderate: "bg-orange-100 text-orange-700",
+                      danger: "bg-red-100 text-red-700",
+                    };
+                    const safetyLabel: Record<string, string> = {
+                      safe: "Low Risk",
+                      slightly: "Slight Risk",
+                      moderate: "Moderate",
+                      danger: "High Risk",
+                    };
+                    return (
+                      <button
+                        key={idx}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          if (area.coordinate) {
+                            const lat = Number(area.coordinate[0]);
+                            const lng = Number(area.coordinate[1]);
+                            if (!isNaN(lat) && !isNaN(lng)) {
+                              mapRef.current?.flyTo([lat, lng], 16);
+                            }
+                          }
+                          setAreaSearchQuery(area.name);
+                          setShowAreaDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 flex flex-col gap-0.5 border-b border-gray-50 last:border-b-0 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[.75rem] font-semibold text-[#0f4a2f] truncate">
+                            {area.name}
+                          </span>
+                          <span
+                            className={`text-[.6rem] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                              safetyColor[area.safety] || "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {safetyLabel[area.safety] || area.safety}
+                          </span>
+                        </div>
+                        <span className="text-[.68rem] text-gray-500 flex items-center gap-1">
+                          <MapPin size={10} /> {area.barangay.name}
+                        </span>
+                      </button>
+                    );
+                  })
+              ) : (
+                <div className="px-3 py-3 text-[.75rem] text-gray-500 text-center">
+                  No areas found for "{areaSearchQuery}"
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Statistics Panel */}
       {suitablePolygons && siteStats.total > 0 && (
@@ -1194,7 +1342,7 @@ export default function Map() {
         {/* Filter PANEL */}
         <div className="relative">
           <div
-            className={`absolute top-[-250px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
+            className={`absolute top-[-120px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
               isFilterPenelOpen
                 ? "opacity-100 pointer-events-auto"
                 : "opacity-0 pointer-events-none"
@@ -1240,6 +1388,62 @@ export default function Map() {
             className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
           >
             <Filter size={16} /> Filter
+          </button>
+        </div>
+
+        {/* Search Coordinate PANEL */}
+        <div className="relative">
+          <div
+            className={`absolute top-[-230px] right-0 w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${
+              isSearchPanelOpen
+                ? "opacity-100 pointer-events-auto"
+                : "opacity-0 pointer-events-none"
+            }`}
+          >
+            <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
+              <h2 className="text-white text-[.8rem]">Search Coordinate</h2>
+            </div>
+            <div>
+              <label className="text-[.7rem] text-gray-600">Latitude</label>
+              <input
+                type="number"
+                placeholder="e.g. 11.02"
+                value={searchLat}
+                onChange={(e) => setSearchLat(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
+                className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <div>
+              <label className="text-[.7rem] text-gray-600">Longitude</label>
+              <input
+                type="number"
+                placeholder="e.g. 124.61"
+                value={searchLng}
+                onChange={(e) => setSearchLng(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
+                className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <button
+              onClick={goToCoordinate}
+              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer mt-1"
+            >
+              <MapPin size={14} /> Go to Location
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              if (isSearchPanelOpen) {
+                closeAll();
+              } else {
+                closeAll();
+                setIsSearchPanelOpen(true);
+              }
+            }}
+            className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+          >
+            <MapPin size={16} /> Search
           </button>
         </div>
       </div>
@@ -1425,6 +1629,29 @@ export default function Map() {
         {markerPosition && (
           <Marker position={markerPosition} icon={greenIcon}>
             <Popup>Selected Location</Popup>
+          </Marker>
+        )}
+
+        {/* Search Coordinate Marker */}
+        {searchMarkerPosition && (
+          <Marker position={searchMarkerPosition} icon={redIcon}>
+            <Popup>
+              <div className="text-sm flex flex-col gap-1 min-w-[160px]">
+                <strong className="text-[#0f4a2f]">📍 Searched Location</strong>
+                <span className="text-gray-600 text-xs">
+                  Lat: {searchMarkerPosition[0].toFixed(6)}
+                </span>
+                <span className="text-gray-600 text-xs">
+                  Lng: {searchMarkerPosition[1].toFixed(6)}
+                </span>
+                <button
+                  onClick={() => setSearchMarkerPosition(null)}
+                  className="mt-2 flex items-center justify-center gap-1 bg-red-500 hover:bg-red-600 text-white h-7 px-2 py-1 rounded text-[.7rem] cursor-pointer"
+                >
+                  Remove Marker
+                </button>
+              </div>
+            </Popup>
           </Marker>
         )}
 

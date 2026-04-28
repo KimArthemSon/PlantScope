@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take photos with GPS coordinates for field assessments",
+        "NSLocationWhenInUseUsageDescription": "Record your location to stamp photos with coordinates for field assessments",
+        "NSPhotoLibraryAddUsageDescription": "Save captured photos to your library"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +24,14 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "CAMERA",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "output": "static",
@@ -40,7 +52,21 @@
         }
       ],
       "expo-secure-store",
-      "react-native-image-marker"
+      "react-native-image-marker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to take photos for field assessments",
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for video recording",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to stamp photos with GPS coordinates"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -26,6 +26,7 @@ export default function RootLayout() {
 
         {/* Tabs after login */}
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="editProfile" options={{ headerShown: false }} />
 
         <Stack.Screen
           name="modal"

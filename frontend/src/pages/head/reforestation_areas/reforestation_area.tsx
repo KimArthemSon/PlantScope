@@ -717,16 +717,17 @@ export default function Reforestation_areas() {
                           </button>
                         )}
 
-                        {/* {userRole !== "DataManager" && (
-                          <button
-                            onClick={() =>
-                              setDelete(area.reforestation_area_id)
-                            }
-                            className="text-red-500 cursor-pointer"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )} */}
+                        {userRole !== "DataManager" &&
+                          area.pre_assessment_status === "rejected" && (
+                            <button
+                              onClick={() =>
+                                setDelete(area.reforestation_area_id)
+                              }
+                              className="text-red-500 cursor-pointer"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
                       </div>
                     </td>
                   </tr>

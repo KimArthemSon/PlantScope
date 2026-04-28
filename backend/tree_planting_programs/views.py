@@ -722,3 +722,26 @@ def get_orientation_dates(request):
     return JsonResponse(data, safe=False, status=200)
 
 
+@csrf_exempt
+def get_all_accepted_tree_growers_accounts(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET Allowed'}, status=405)
+    
+    accepted_apps = Application.objects.filter(status='accepted').select_related('user__organization')
+    
+    data = []
+    for app in accepted_apps:
+        data.append({
+            "application_id": app.application_id,
+            "organization_name": app.user.organization.organization_name,
+            "org_email": app.user.organization.email,
+            "org_profile": app.user.organization.profile_img.url if app.user.organization.profile_img else None,
+            "title": app.title,
+            "classification": app.classification,
+            "status": app.status,
+            "total_members": app.total_members,
+            "total_request_seedling": app.total_request_seedling,
+            "created_at": app.created_at.strftime("%d/%m/%Y"),
+        })
+    
+    return JsonResponse(data, safe=False, status=200)

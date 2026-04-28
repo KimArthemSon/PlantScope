@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import Navbar from "../../components/layout/nav.tsx";
+import "../../global css/homePage.css";
 import { useNavigate } from "react-router-dom";
 export default function Privacy_policy() {
   const [menuActive, setMenuActive] = useState(false);
@@ -59,9 +60,7 @@ export default function Privacy_policy() {
 
   return (
     <div className="min-h-screen">
-      <div className="min-h-screen bg-[#0F4A2F] text-white">
-        {/* Loader with wrapper ref — imports are unchanged */}
-
+      <div className="min-h-screen bg-[#0F4A2F] text-white homeContainer">
         {/* Navbar with correct prop names */}
         <Navbar
           menuActive={menuActive}

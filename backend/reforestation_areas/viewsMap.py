@@ -5,7 +5,7 @@ from django.http import JsonResponse
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 import json
-
+from ormoc_city.models import Ormoc_City
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════════
@@ -134,9 +134,19 @@ def ndvi_canopy(request):
             {"error": f"Invalid date format. Use YYYY-MM-DD. Details: {str(e)}"}, 
             status=400
         )
-
+    ormoc_record = Ormoc_City.objects.first()
+    if not ormoc_record:
+        return JsonResponse(
+            {"error": "No Ormoc City data found in database. Please add a record with marker and polygon."}, 
+            status=500
+        )
+    ormoc_polygon = ormoc_record.polygon
     # Ormoc City ROI
-    roi = ee.Geometry.Rectangle([124.43, 11.00, 124.65, 11.15])
+    new_polygon = []
+    for coord in ormoc_polygon:
+        new_polygon.append([coord[1], coord[0]])
+    print(f"📍 Using Ormoc City polygon: {new_polygon}")
+    roi = ee.Geometry.Polygon(new_polygon)
     
     # Fetch processed Sentinel-2 median image
     s2_median = get_sentinel2_median(roi, start, end)

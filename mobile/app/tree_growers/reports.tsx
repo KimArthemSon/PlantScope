@@ -1,741 +1,674 @@
-import { useState } from 'react';
-import { useRouter, useSegments } from 'expo-router';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, StatusBar, Dimensions, Image } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  Modal,
+} from "react-native";
+import * as SecureStore from "expo-secure-store";
+import { Ionicons } from "@expo/vector-icons";
+import { api } from "@/constants/url_fixed";
 
-type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+const API_BASE = api + "/api";
 
-const { width } = Dimensions.get('window');
-const CARD_MARGIN = 16;
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-export default function TreeGrowersApp() {
-  const router = useRouter();
-  const segments = useSegments();
-  const currentRoute = segments[segments.length - 1] ?? 'dashboard';
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [selectedMenu, setSelectedMenu] = useState<'profile' | 'notification' | 'logout' | null>(null);
-  const isProfileActive = selectedMenu === 'profile' || currentRoute === 'profile';
-  const isNotificationActive = selectedMenu === 'notification' || currentRoute === 'notification';
-  const isLogoutActive = selectedMenu === 'logout';
+type ApplicationSummary = {
+  application_id: number;
+  title: string;
+  description: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  orientation_date: string | null;
+  total_request_seedling: number;
+  total_seedling_provided: number;
+  total_seedling_planted: number;
+  total_seedling_survived: number;
+  total_area_planted: string;
+};
 
-  const actions: { icon: IconName; label: string; gradient: string[] }[] = [
-    { icon: 'sprout', label: 'Plant Trees', gradient: ['#1b5e20', '#2e7d32'] },
-    { icon: 'white-balance-sunny', label: 'Monitor', gradient: ['#e65100', '#f57c00'] },
-    { icon: 'chart-line', label: 'Growth', gradient: ['#1b5e20', '#2e7d32'] },
+type Report = {
+  maintenance_report_id: number;
+  title: string;
+  description: string;
+  status: string;
+  total_seedling_planted: number;
+  total_seedling_survived: number;
+  total_area_planted: string;
+  total_owned_seedling_planted: number;
+  total_member_present: number | null;
+  created_at: string;
+  submitted_at: string | null;
+};
+
+type FilterKey = "all" | "for_evaluation" | "accepted" | "rejected" | "for_head";
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string; icon: string }> = {
+  for_evaluation: { label: "For Evaluation", bg: "#FFF8E1", text: "#F57F17", dot: "#F9A825", icon: "time-outline" },
+  for_head:       { label: "For Head Review", bg: "#E3F2FD", text: "#1565C0", dot: "#1976D2", icon: "person-outline" },
+  accepted:       { label: "Accepted",        bg: "#E8F5E9", text: "#2E7D32", dot: "#388E3C", icon: "checkmark-circle-outline" },
+  rejected:       { label: "Rejected",        bg: "#FFEBEE", text: "#C62828", dot: "#D32F2F", icon: "close-circle-outline" },
+  pending:        { label: "Pending",         bg: "#FFF8E1", text: "#F57F17", dot: "#F9A825", icon: "time-outline" },
+  for_endorsement:{ label: "For Endorsement", bg: "#E3F2FD", text: "#1565C0", dot: "#1976D2", icon: "send-outline" },
+  active:         { label: "Active",          bg: "#E8F5E9", text: "#2E7D32", dot: "#388E3C", icon: "checkmark-circle-outline" },
+};
+
+const getConf = (s: string) =>
+  STATUS_CONFIG[s] ?? { label: s, bg: "#F5F5F5", text: "#555", dot: "#999", icon: "ellipse-outline" };
+
+const fmt = (iso: string) => {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
+};
+
+const safeFloat = (v: string | number) => {
+  const n = parseFloat(String(v));
+  return isNaN(n) ? "0.00" : n.toFixed(2);
+};
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+const StatusBadge = ({ status, small }: { status: string; small?: boolean }) => {
+  const c = getConf(status);
+  return (
+    <View style={[badge.wrap, { backgroundColor: c.bg }, small && badge.small]}>
+      <View style={[badge.dot, { backgroundColor: c.dot }]} />
+      <Text style={[badge.text, { color: c.text }, small && badge.smallText]}>{c.label}</Text>
+    </View>
+  );
+};
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+export default function ReportsScreen() {
+  const [application, setApplication] = useState<ApplicationSummary | null>(null);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [selected, setSelected] = useState<Report | null>(null);
+
+  const fetchAll = useCallback(async (isRefresh = false) => {
+    try {
+      if (!isRefresh) setLoading(true);
+      setError(null);
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) throw new Error("Not authenticated.");
+
+      const appRes = await fetch(`${API_BASE}/get_tree_grower_application/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!appRes.ok) throw new Error(`Failed to load application (${appRes.status})`);
+      const appData = await appRes.json();
+      const app: ApplicationSummary = appData.application;
+      setApplication(app);
+
+      const repRes = await fetch(
+        `${API_BASE}/get_tree_grower_maintenance_reports/${app.application_id}/`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (repRes.ok) {
+        const repData = await repRes.json();
+        setReports(Array.isArray(repData) ? repData : repData.reports ?? []);
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchAll(); }, []);
+
+  const onRefresh = () => { setRefreshing(true); fetchAll(true); };
+
+  const FILTERS: { key: FilterKey; label: string }[] = [
+    { key: "all",            label: "All" },
+    { key: "for_evaluation", label: "Pending" },
+    { key: "for_head",       label: "Review" },
+    { key: "accepted",       label: "Accepted" },
+    { key: "rejected",       label: "Rejected" },
   ];
 
-  const activities: { icon: IconName; title: string; description: string; time: string; iconColor: string; bgColor: string }[] = [
-    {
-      icon: 'check-circle',
-      title: 'Planting Complete',
-      description: '50 Oak saplings successfully planted in Section A',
-      time: '2 hours ago',
-      iconColor: '#2e7d32',
-      bgColor: '#e8f5e9',
-    },
-    {
-      icon: 'water',
-      title: 'Watering Reminder',
-      description: 'Zone B needs watering - optimal time is now',
-      time: '5 hours ago',
-      iconColor: '#1976d2',
-      bgColor: '#e3f2fd',
-    },
-    {
-      icon: 'alert-circle',
-      title: 'Care Required',
-      description: 'Pine trees in Section C show signs of nutrient deficiency',
-      time: '1 day ago',
-      iconColor: '#f57c00',
-      bgColor: '#fff3e0',
-    },
-    {
-      icon: 'check-circle',
-      title: 'Growth Milestone',
-      description: 'Maple trees reached 2m height - ready for transplant',
-      time: '2 days ago',
-      iconColor: '#2e7d32',
-      bgColor: '#e8f5e9',
-    },
-  ];
+  const filtered = filter === "all"
+    ? reports
+    : reports.filter((r) =>
+        filter === "for_evaluation"
+          ? r.status === "for_evaluation" || r.status === "pending"
+          : r.status === filter
+      );
 
-  const stats: { icon: IconName; label: string; value: string; change: string }[] = [
-    { label: 'Trees Planted', value: '2,456', change: '+12.5%', icon: 'pine-tree' },
-    { label: 'Growing', value: '1,824', change: '+8.2%', icon: 'sprout' },
-    { label: 'Need Care', value: '47', change: '-3.1%', icon: 'water' },
-    { label: 'Harvested', value: '632', change: '+15.3%', icon: 'leaf' },
-  ];
+  const counts = {
+    accepted: reports.filter((r) => r.status === "accepted").length,
+    rejected: reports.filter((r) => r.status === "rejected").length,
+    pending: reports.filter((r) => r.status === "for_evaluation" || r.status === "pending").length,
+  };
+
+  // ── Loading ──
+  if (loading) {
+    return (
+      <View style={s.center}>
+        <ActivityIndicator size="large" color="#0F4A2F" />
+        <Text style={s.loadingTxt}>Loading history…</Text>
+      </View>
+    );
+  }
+
+  // ── Error ──
+  if (error || !application) {
+    return (
+      <View style={s.center}>
+        <View style={s.errIconWrap}>
+          <Ionicons name="document-text-outline" size={36} color="#0F4A2F" />
+        </View>
+        <Text style={s.errTitle}>Couldn't Load</Text>
+        <Text style={s.errMsg}>{error ?? "No application found."}</Text>
+        <TouchableOpacity style={s.retryBtn} onPress={() => fetchAll()}>
+          <Ionicons name="refresh" size={16} color="#fff" />
+          <Text style={s.retryTxt}>Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1b5e20" />
+    <View style={s.container}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0F4A2F" />
+        }
+        contentContainerStyle={s.scroll}
+      >
+        {/* ── Application Card ── */}
+        <View style={s.appCard}>
+          <View style={s.appCardTop}>
+            <View style={s.appIconWrap}>
+              <Ionicons name="leaf" size={22} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.appCardTitle} numberOfLines={2}>{application.title}</Text>
+              <Text style={s.appCardSub}>Tree Planting Program</Text>
+            </View>
+            <StatusBadge status={application.status} />
+          </View>
 
-      {/* Header
-      <View style={styles.header}>
-        <View style={styles.topBar}>
-          <View style={styles.topBarLeft}>
-            <View style={styles.logoContainer}>
-              <View style={styles.headerProfileCard}>
-                <Image
-                  source={require('../../assets/images/logo.jpg')}
-                  style={styles.headerProfileAvatar}
+          {/* Progress bar: survived / planted */}
+          {application.total_seedling_planted > 0 && (
+            <View style={s.progressSection}>
+              <View style={s.progressRow}>
+                <Text style={s.progressLabel}>Survival Rate</Text>
+                <Text style={s.progressPct}>
+                  {Math.round((application.total_seedling_survived / application.total_seedling_planted) * 100)}%
+                </Text>
+              </View>
+              <View style={s.progressTrack}>
+                <View
+                  style={[
+                    s.progressFill,
+                    {
+                      width: `${Math.min(
+                        100,
+                        Math.round((application.total_seedling_survived / application.total_seedling_planted) * 100)
+                      )}%`,
+                    },
+                  ]}
                 />
               </View>
-              <Text style={styles.logoText}>Plantscope</Text>
+            </View>
+          )}
+
+          {/* Stats row */}
+          <View style={s.statsRow}>
+            {[
+              { label: "Requested", value: application.total_request_seedling, icon: "leaf-outline" },
+              { label: "Planted",   value: application.total_seedling_planted,  icon: "earth-outline" },
+              { label: "Survived",  value: application.total_seedling_survived, icon: "heart-outline" },
+            ].map((m, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <View style={s.statsDivider} />}
+                <View style={s.statItem}>
+                  <Text style={s.statVal}>{m.value.toLocaleString()}</Text>
+                  <Text style={s.statLbl}>{m.label}</Text>
+                </View>
+              </React.Fragment>
+            ))}
+          </View>
+
+          {/* Key dates */}
+          <View style={s.datesWrap}>
+            <View style={s.dateChip}>
+              <Ionicons name="calendar-outline" size={12} color="#5FD08A" />
+              <Text style={s.dateChipTxt}>Submitted {fmt(application.created_at)}</Text>
+            </View>
+            {application.orientation_date && (
+              <View style={s.dateChip}>
+                <Ionicons name="people-outline" size={12} color="#5FD08A" />
+                <Text style={s.dateChipTxt}>Orientation {fmt(application.orientation_date)}</Text>
+              </View>
+            )}
+            <View style={s.dateChip}>
+              <Ionicons name="map-outline" size={12} color="#5FD08A" />
+              <Text style={s.dateChipTxt}>{safeFloat(application.total_area_planted)} ha planted</Text>
             </View>
           </View>
+        </View>
 
-          <View style={styles.topBarRight}>
-            <TouchableOpacity style={styles.headerIconButton}>
-              <MaterialCommunityIcons name="magnify" size={22} color="#ffffff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerIconButton}
-              onPress={() => setProfileMenuOpen(!profileMenuOpen)}
-            >
-              <MaterialCommunityIcons name="account-circle" size={22} color="#ffffff" />
-            </TouchableOpacity>
+        {/* ── Summary Chips ── */}
+        <View style={s.chipsRow}>
+          <View style={[s.chip, { backgroundColor: "#E8F5E9" }]}>
+            <Ionicons name="checkmark-circle-outline" size={16} color="#2E7D32" />
+            <Text style={[s.chipTxt, { color: "#2E7D32" }]}>{counts.accepted} Accepted</Text>
+          </View>
+          <View style={[s.chip, { backgroundColor: "#FFF8E1" }]}>
+            <Ionicons name="time-outline" size={16} color="#F57F17" />
+            <Text style={[s.chipTxt, { color: "#F57F17" }]}>{counts.pending} Pending</Text>
+          </View>
+          <View style={[s.chip, { backgroundColor: "#FFEBEE" }]}>
+            <Ionicons name="close-circle-outline" size={16} color="#C62828" />
+            <Text style={[s.chipTxt, { color: "#C62828" }]}>{counts.rejected} Rejected</Text>
           </View>
         </View>
 
-      </View> */}
+        {/* ── Filter Tabs ── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.filterScroll}
+        >
+          {FILTERS.map((f) => {
+            const active = filter === f.key;
+            const count = f.key === "all" ? reports.length
+              : f.key === "for_evaluation" ? counts.pending
+              : reports.filter((r) => r.status === f.key).length;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                style={[s.filterTab, active && s.filterTabActive]}
+                onPress={() => setFilter(f.key)}
+              >
+                <Text style={[s.filterTabTxt, active && s.filterTabTxtActive]}>{f.label}</Text>
+                {count > 0 && (
+                  <View style={[s.filterBadge, active && s.filterBadgeActive]}>
+                    <Text style={[s.filterBadgeTxt, active && s.filterBadgeTxtActive]}>{count}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
-      {profileMenuOpen && (
-        <View style={styles.overlay}>
-          <TouchableOpacity
-            style={styles.overlayBackdrop}
-            onPress={() => {
-              setSelectedMenu(null);
-              setProfileMenuOpen(false);
-            }}
-          />
-          <View style={styles.profileDropdownOverlay}>
-            <Text style={styles.profileDropdownTitle}>Account menu</Text>
+        {/* ── Section heading ── */}
+        <View style={s.historyHeader}>
+          <Text style={s.historyTitle}>Maintenance Reports</Text>
+          <Text style={s.historyCount}>{filtered.length} record{filtered.length !== 1 ? "s" : ""}</Text>
+        </View>
+
+        {/* ── Timeline ── */}
+        {filtered.length === 0 ? (
+          <View style={s.empty}>
+            <View style={s.emptyIcon}>
+              <Ionicons name="document-outline" size={36} color="#0F4A2F" />
+            </View>
+            <Text style={s.emptyTitle}>No Reports Found</Text>
+            <Text style={s.emptyMsg}>
+              {filter === "all"
+                ? "You haven't submitted any maintenance reports yet."
+                : `No reports with "${FILTERS.find((f) => f.key === filter)?.label}" status.`}
+            </Text>
+          </View>
+        ) : (
+          <View style={s.timeline}>
+            {filtered.map((report, idx) => {
+              const conf = getConf(report.status);
+              const isLast = idx === filtered.length - 1;
+              return (
                 <TouchableOpacity
-              style={[styles.profileMenuItem, isProfileActive && styles.profileMenuItemSelected]}
-              onPress={() => {
-                setSelectedMenu('profile');
-                setTimeout(() => {
-                  setProfileMenuOpen(false);
-                  router.push({ pathname: '/profile' });
-                }, 180);
-              }}
-            >
-              <MaterialCommunityIcons
-                name="account"
-                size={20}
-                color={isProfileActive ? '#1b5e20' : '#1b5e20'}
-                style={styles.profileMenuIcon}
-              />
-              <Text style={[styles.profileMenuText, isProfileActive && styles.profileMenuTextActive]}>Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.profileMenuItem, isNotificationActive && styles.profileMenuItemSelected]}
-              onPressIn={() => setSelectedMenu('notification')}
-              onPress={() => {
-                setTimeout(() => {
-                  setProfileMenuOpen(false);
-                  router.push({ pathname: './notification' });
-                }, 180);
-              }}
-            >
-              <MaterialCommunityIcons
-                name="bell-outline"
-                size={20}
-                color={isNotificationActive ? '#1b5e20' : '#1b5e20'}
-                style={styles.profileMenuIcon}
-              />
-              <Text style={[styles.profileMenuText, isNotificationActive && styles.profileMenuTextActive]}>Notifications</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.profileMenuItem, isLogoutActive && styles.profileMenuItemSelected]}
-              onPressIn={() => setSelectedMenu('logout')}
-              onPress={() => {
-                setTimeout(() => {
-                  setProfileMenuOpen(false);
-                  router.replace('/login');
-                }, 180);
-              }}
-            >
-              <MaterialCommunityIcons name="logout" size={20} color={isLogoutActive ? '#1b5e20' : '#1b5e20'} style={styles.profileMenuIcon} />
-              <Text style={[styles.profileMenuText, isLogoutActive && styles.profileMenuTextActive]}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Main Content */}
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Quick Actions */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Tree Care Actions</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.actionsGrid}>
-            {actions.map((action, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.actionCard}
-                activeOpacity={0.8}
-              >
-                <View
-                  style={[styles.actionIconContainer, { backgroundColor: action.gradient[0] }]}
+                  key={report.maintenance_report_id}
+                  onPress={() => setSelected(report)}
+                  activeOpacity={0.75}
+                  style={s.timelineItem}
                 >
-                  <MaterialCommunityIcons name={action.icon} size={26} color="#ffffff" />
-                </View>
-                <Text style={styles.actionLabel}>{action.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+                  {/* Vertical line */}
+                  <View style={s.timelineLeft}>
+                    <View style={[s.timelineDot, { backgroundColor: conf.dot }]}>
+                      <Ionicons name={conf.icon as any} size={12} color="#fff" />
+                    </View>
+                    {!isLast && <View style={s.timelineLine} />}
+                  </View>
 
-        {/* Garden Stats */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Garden Statistics</Text>
-            <TouchableOpacity style={styles.filterButton}>
-              <Text style={styles.filterText}>This Month</Text>
-              <MaterialCommunityIcons name="chevron-right" size={16} color="#6b7280" />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.statsGrid}>
-            {stats.map((stat, index) => (
-              <View key={index} style={styles.statCard}>
-                <View style={styles.statHeader}>
-                  <View style={styles.statIconContainer}>
-                    <MaterialCommunityIcons name={stat.icon} size={20} color="#1b5e20" />
-                  </View>
-                  <View style={styles.statBadge}>
-                    <MaterialCommunityIcons name="trending-up" size={12} color="#2e7d32" />
-                    <Text style={styles.statBadgeText}>{stat.change}</Text>
-                  </View>
-                </View>
-                <Text style={styles.statValue}>{stat.value}</Text>
-                <Text style={styles.statLabel}>{stat.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+                  {/* Card */}
+                  <View style={[s.reportCard, isLast && { marginBottom: 0 }]}>
+                    <View style={s.reportCardTop}>
+                      <Text style={s.reportCardTitle} numberOfLines={1}>{report.title}</Text>
+                      <StatusBadge status={report.status} small />
+                    </View>
 
-        {/* Activity Feed */}
-        <View style={[styles.section, styles.lastSection]}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>View All</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.activitiesList}>
-            {activities.map((activity, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.activityCard}
-                activeOpacity={0.7}
-              >
-                <View
-                  style={[styles.activityIconContainer, { backgroundColor: activity.bgColor }]}
-                >
-                  <MaterialCommunityIcons name={activity.icon} size={24} color={activity.iconColor} />
-                </View>
-                <View style={styles.activityContent}>
-                  <Text style={styles.activityTitle}>{activity.title}</Text>
-                  <Text
-                    style={styles.activityDescription}
-                    numberOfLines={2}
-                  >
-                    {activity.description}
-                  </Text>
-                  <View style={styles.activityFooter}>
-                    <MaterialCommunityIcons name="clock-outline" size={14} color="#9ca3af" />
-                    <Text style={styles.activityTime}>{activity.time}</Text>
+                    <Text style={s.reportCardDesc} numberOfLines={2}>{report.description}</Text>
+
+                    {/* Mini stats */}
+                    <View style={s.miniStats}>
+                      {[
+                        { icon: "leaf-outline",    label: "Planted",  val: report.total_seedling_planted },
+                        { icon: "heart-outline",   label: "Survived", val: report.total_seedling_survived },
+                        { icon: "map-outline",     label: "Area",     val: `${safeFloat(report.total_area_planted)} ha` },
+                        { icon: "people-outline",  label: "Members",  val: report.total_member_present ?? "—" },
+                      ].map((m, i) => (
+                        <View key={i} style={s.miniStatItem}>
+                          <Ionicons name={m.icon as any} size={13} color="#0F4A2F" />
+                          <Text style={s.miniStatVal}>{m.val}</Text>
+                          <Text style={s.miniStatLbl}>{m.label}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={s.reportCardFoot}>
+                      <View style={s.reportDateRow}>
+                        <Ionicons name="calendar-outline" size={12} color="#9CA3AF" />
+                        <Text style={s.reportDateTxt}>{fmt(report.created_at)}</Text>
+                      </View>
+                      <View style={s.reportCta}>
+                        <Text style={s.reportCtaTxt}>View Details</Text>
+                        <Ionicons name="chevron-forward" size={13} color="#0F4A2F" />
+                      </View>
+                    </View>
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        </View>
+        )}
+
+        <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* ── Detail Modal ── */}
+      <Modal
+        visible={!!selected}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSelected(null)}
+      >
+        <View style={m.overlay}>
+          <View style={m.panel}>
+            <View style={m.handle} />
+            {selected && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={m.headerRow}>
+                  <Text style={m.title}>{selected.title}</Text>
+                  <StatusBadge status={selected.status} />
+                </View>
+                <Text style={m.date}>Submitted on {fmt(selected.created_at)}</Text>
+                {selected.submitted_at && (
+                  <Text style={m.date}>Reviewed on {fmt(selected.submitted_at)}</Text>
+                )}
+
+                <Text style={m.desc}>{selected.description}</Text>
+
+                <Text style={m.sectionLabel}>Metrics</Text>
+                <View style={m.metricsBox}>
+                  {[
+                    { label: "Members Present",    value: selected.total_member_present ?? "—" },
+                    { label: "Seedlings Planted",  value: selected.total_seedling_planted },
+                    { label: "Seedlings Survived", value: selected.total_seedling_survived },
+                    { label: "Owned Seedlings",    value: selected.total_owned_seedling_planted },
+                    { label: "Area Planted",       value: `${safeFloat(selected.total_area_planted)} ha` },
+                  ].map((row, i) => (
+                    <View key={i} style={m.metricRow}>
+                      <Text style={m.metricLabel}>{row.label}</Text>
+                      <Text style={m.metricVal}>{row.value}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                {selected.status === "rejected" && (
+                  <View style={m.rejectedBox}>
+                    <Ionicons name="close-circle-outline" size={18} color="#C62828" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={m.rejectedTitle}>Report Rejected</Text>
+                      <Text style={m.rejectedMsg}>
+                        Please go to Application tab and submit an updated maintenance report.
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                <TouchableOpacity style={m.closeBtn} onPress={() => setSelected(null)}>
+                  <Text style={m.closeTxt}>Close</Text>
+                </TouchableOpacity>
+                <View style={{ height: 20 }} />
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#F4F7F5" },
+  scroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 },
+
+  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 32 },
+  loadingTxt: { marginTop: 14, color: "#6B7280", fontSize: 14 },
+
+  errIconWrap: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: "#E8F5E9", justifyContent: "center", alignItems: "center", marginBottom: 16,
   },
-  header: {
-    backgroundColor: '#1b5e20',
-    paddingTop: 0,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+  errTitle: { fontSize: 20, fontWeight: "700", color: "#111827", marginBottom: 6 },
+  errMsg: { fontSize: 14, color: "#6B7280", textAlign: "center", marginBottom: 24, lineHeight: 20 },
+  retryBtn: {
+    flexDirection: "row", gap: 6, alignItems: "center",
+    backgroundColor: "#0F4A2F", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12,
   },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  topBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  menuButton: {
-    padding: 4,
-  },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  logoText: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#ffffff',
-    letterSpacing: 0.5,
-  },
-  headerProfileCard: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    marginRight: 10,
-  },
-  headerProfileAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  topBarRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerIconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  notificationDot: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#ef4444',
-    borderWidth: 2,
-    borderColor: '#1b5e20',
-  },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 20,
-    justifyContent: 'flex-start',
-    alignItems: 'flex-end',
-  },
-  overlayBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  profileDropdownOverlay: {
-    width: 210,
-    marginTop: 82,
-    marginRight: 16,
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  profileDropdownTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1b5e20',
-    marginBottom: 12,
-  },
-  profileMenuItem: {
-    position: 'relative',
-    overflow: 'hidden',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 18,
-    marginBottom: 10,
-    backgroundColor: '#f8fafc',
-  },
-  profileMenuItemSelected: {
-    borderWidth: 2,
-    borderColor: '#2e7d32',
-    backgroundColor: '#e8f5e9',
-  },
-  menuItemGradient: {
-    display: 'none',
-  },
-  profileMenuIcon: {
-    marginRight: 10,
-    zIndex: 1,
-  },
-  profileMenuText: {
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '600',
-    zIndex: 1,
-  },
-  profileMenuTextActive: {
-    color: '#1b5e20',
-  },
-  profileMenuTextOnGradient: {
-    color: '#ffffff',
-  },
-  navBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginTop: 8,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  navButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 4,
-    position: 'relative',
-  },
-  navButtonActive: {},
-  navIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  navIconContainerActive: {
-    backgroundColor: '#2e7d32',
-    transform: [{ scale: 1.05 }],
-  },
-  navBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: '#ef4444',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#ffffff',
-  },
-  navBadgeText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  navLabel: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  navLabelActive: {
-    color: '#1b5e20',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 24,
-  },
-  profileCard: {
-    backgroundColor: '#ffffff',
+  retryTxt: { color: "#fff", fontWeight: "700", fontSize: 14 },
+
+  // Application card
+  appCard: {
+    backgroundColor: "#0F4A2F",
     borderRadius: 20,
     padding: 18,
-    marginHorizontal: CARD_MARGIN,
-    marginTop: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    elevation: 4,
-    shadowColor: '#1b5e20',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-  },
-  profileLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  profileAvatarContainer: {
-    position: 'relative',
-  },
-  profileAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 3,
-    borderColor: '#e8f5e9',
-  },
-  statusIndicator: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#10b981',
-    borderWidth: 3,
-    borderColor: '#ffffff',
-  },
-  profileInfo: {
-    marginLeft: 14,
-    flex: 1,
-  },
-  profileGreeting: {
-    fontSize: 13,
-    color: '#6b7280',
-    marginBottom: 2,
-  },
-  profileX: {
-    fontSize: 25,
-    color: '#6b7280',
-    marginBottom: 2,
-  },
-  profileNameImage: {
-    width: 100,
-    height: 40,
-    resizeMode: 'contain',
-    marginBottom: 2,
-  },
-  profileSubtitle: {
-    fontSize: 12,
-    color: '#2e7d32',
-    fontWeight: '600',
-  },
-  profileButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f0fdf4',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  section: {
-    paddingHorizontal: CARD_MARGIN,
-    marginTop: 24,
-  },
-  lastSection: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 14,
+    shadowColor: "#0F4A2F",
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
-  sectionTitle: {
-    fontSize: 19,
-    fontWeight: '700',
-    color: '#111827',
+  appCardTop: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 14 },
+  appIconWrap: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    justifyContent: "center", alignItems: "center",
   },
-  seeAllText: {
-    fontSize: 14,
-    color: '#2e7d32',
-    fontWeight: '600',
+  appCardTitle: { fontSize: 16, fontWeight: "800", color: "#fff", lineHeight: 22, flex: 1 },
+  appCardSub: { fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 2 },
+
+  progressSection: { marginBottom: 14 },
+  progressRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  progressLabel: { fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: "600" },
+  progressPct: { fontSize: 11, color: "#5FD08A", fontWeight: "700" },
+  progressTrack: {
+    height: 6, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 3, overflow: "hidden",
   },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    gap: 4,
-  },
-  filterText: {
-    fontSize: 13,
-    color: '#374151',
-    fontWeight: '600',
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  actionCard: {
-    width: (width - CARD_MARGIN * 2 - 24) / 3,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
-    alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-  },
-  actionIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  actionLabel: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  statCard: {
-    width: (width - CARD_MARGIN * 2 - 12) / 2,
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    borderWidth: 1,
-    borderColor: '#f0fdf4',
-  },
-  statHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  progressFill: { height: "100%", backgroundColor: "#5FD08A", borderRadius: 3 },
+
+  statsRow: {
+    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.2)",
+    borderRadius: 14,
+    paddingVertical: 12,
     marginBottom: 12,
   },
-  statIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#f0fdf4',
-    justifyContent: 'center',
-    alignItems: 'center',
+  statsDivider: { width: 1, backgroundColor: "rgba(255,255,255,0.12)" },
+  statItem: { flex: 1, alignItems: "center" },
+  statVal: { fontSize: 18, fontWeight: "800", color: "#fff" },
+  statLbl: { fontSize: 10, color: "rgba(255,255,255,0.6)", marginTop: 2 },
+
+  datesWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  dateChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
-  statBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0fdf4',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 2,
+  dateChipTxt: { fontSize: 11, color: "rgba(255,255,255,0.8)", fontWeight: "500" },
+
+  // Summary chips
+  chipsRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
+  chip: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 5, paddingVertical: 10, borderRadius: 12,
   },
-  statBadgeText: {
-    fontSize: 11,
-    color: '#2e7d32',
-    fontWeight: '700',
+  chipTxt: { fontSize: 12, fontWeight: "700" },
+
+  // Filter tabs
+  filterScroll: { paddingRight: 16, marginBottom: 0 },
+  filterTab: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 20, backgroundColor: "#fff",
+    marginRight: 8,
+    borderWidth: 1.5, borderColor: "#E5E7EB",
   },
-  statValue: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 4,
+  filterTabActive: { backgroundColor: "#0F4A2F", borderColor: "#0F4A2F" },
+  filterTabTxt: { fontSize: 13, fontWeight: "600", color: "#6B7280" },
+  filterTabTxtActive: { color: "#fff" },
+  filterBadge: {
+    minWidth: 20, height: 20, borderRadius: 10,
+    backgroundColor: "#E5E7EB", alignItems: "center", justifyContent: "center",
+    paddingHorizontal: 5,
   },
-  statLabel: {
-    fontSize: 13,
-    color: '#6b7280',
-    fontWeight: '500',
+  filterBadgeActive: { backgroundColor: "rgba(255,255,255,0.2)" },
+  filterBadgeTxt: { fontSize: 10, fontWeight: "700", color: "#6B7280" },
+  filterBadgeTxtActive: { color: "#fff" },
+
+  // History header
+  historyHeader: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    marginTop: 16, marginBottom: 12,
   },
-  activitiesList: {
-    gap: 12,
+  historyTitle: { fontSize: 16, fontWeight: "700", color: "#111827" },
+  historyCount: { fontSize: 12, color: "#9CA3AF", fontWeight: "500" },
+
+  // Timeline
+  timeline: { paddingLeft: 4 },
+  timelineItem: { flexDirection: "row", gap: 12, marginBottom: 12 },
+  timelineLeft: { alignItems: "center", width: 28, paddingTop: 2 },
+  timelineDot: {
+    width: 28, height: 28, borderRadius: 14,
+    justifyContent: "center", alignItems: "center",
+    zIndex: 1,
   },
-  activityCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    borderWidth: 1,
-    borderColor: '#f3f4f6',
+  timelineLine: {
+    flex: 1, width: 2, backgroundColor: "#E5E7EB",
+    marginTop: 4, marginBottom: -12,
   },
-  activityIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
+
+  // Report card
+  reportCard: {
+    flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 14,
+    shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  activityContent: {
-    flex: 1,
-    marginLeft: 14,
+  reportCardTop: {
+    flexDirection: "row", justifyContent: "space-between",
+    alignItems: "flex-start", gap: 8, marginBottom: 6,
   },
-  activityTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
+  reportCardTitle: { fontSize: 14, fontWeight: "700", color: "#111827", flex: 1 },
+  reportCardDesc: { fontSize: 12, color: "#6B7280", lineHeight: 17, marginBottom: 10 },
+
+  miniStats: {
+    flexDirection: "row", backgroundColor: "#F4F7F5",
+    borderRadius: 10, paddingVertical: 8, paddingHorizontal: 4,
+    marginBottom: 10,
   },
-  activityDescription: {
-    fontSize: 13,
-    color: '#6b7280',
-    lineHeight: 18,
-    marginBottom: 8,
+  miniStatItem: { flex: 1, alignItems: "center", gap: 2 },
+  miniStatVal: { fontSize: 13, fontWeight: "800", color: "#0F4A2F" },
+  miniStatLbl: { fontSize: 9, color: "#9CA3AF" },
+
+  reportCardFoot: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    borderTopWidth: 1, borderTopColor: "#F3F4F6", paddingTop: 8,
   },
-  activityFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  reportDateRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  reportDateTxt: { fontSize: 11, color: "#9CA3AF" },
+  reportCta: { flexDirection: "row", alignItems: "center", gap: 3 },
+  reportCtaTxt: { fontSize: 12, fontWeight: "700", color: "#0F4A2F" },
+
+  // Empty
+  empty: { alignItems: "center", paddingVertical: 56 },
+  emptyIcon: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: "#E8F5E9", justifyContent: "center", alignItems: "center", marginBottom: 16,
   },
-  activityTime: {
-    fontSize: 12,
-    color: '#9ca3af',
-    fontWeight: '500',
+  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#111827", marginBottom: 6 },
+  emptyMsg: { fontSize: 13, color: "#6B7280", textAlign: "center", maxWidth: 260, lineHeight: 20 },
+});
+
+const badge = StyleSheet.create({
+  wrap: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 20, gap: 5,
   },
+  small: { paddingHorizontal: 6, paddingVertical: 3 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  text: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
+  smallText: { fontSize: 9 },
+});
+
+const m = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
+  panel: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 20, paddingBottom: 32,
+    maxHeight: "88%",
+  },
+  handle: {
+    width: 40, height: 4, backgroundColor: "#E5E7EB",
+    borderRadius: 2, alignSelf: "center", marginTop: 12, marginBottom: 20,
+  },
+  headerRow: {
+    flexDirection: "row", justifyContent: "space-between",
+    alignItems: "flex-start", marginBottom: 6, gap: 8,
+  },
+  title: { fontSize: 18, fontWeight: "800", color: "#111827", flex: 1 },
+  date: { fontSize: 12, color: "#9CA3AF", marginBottom: 4 },
+  desc: { fontSize: 14, color: "#4B5563", lineHeight: 21, marginTop: 10, marginBottom: 16 },
+  sectionLabel: {
+    fontSize: 11, fontWeight: "700", color: "#6B7280",
+    textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10,
+  },
+  metricsBox: { backgroundColor: "#F4F7F5", borderRadius: 14, padding: 12, marginBottom: 16 },
+  metricRow: {
+    flexDirection: "row", justifyContent: "space-between",
+    paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: "#E9F0EC",
+  },
+  metricLabel: { fontSize: 13, color: "#6B7280" },
+  metricVal: { fontSize: 13, fontWeight: "700", color: "#0F4A2F" },
+  rejectedBox: {
+    backgroundColor: "#FFEBEE", borderRadius: 12, padding: 14,
+    marginBottom: 16, flexDirection: "row", gap: 10, alignItems: "flex-start",
+    borderLeftWidth: 4, borderLeftColor: "#D32F2F",
+  },
+  rejectedTitle: { fontSize: 13, fontWeight: "700", color: "#C62828", marginBottom: 3 },
+  rejectedMsg: { fontSize: 12, color: "#C62828", lineHeight: 17 },
+  closeBtn: {
+    backgroundColor: "#F4F7F5", borderRadius: 14, padding: 15, alignItems: "center", marginTop: 4,
+  },
+  closeTxt: { color: "#0F4A2F", fontWeight: "700", fontSize: 14 },
 });

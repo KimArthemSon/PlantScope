@@ -6,24 +6,29 @@ import {
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import MapView, { Marker, Polygon } from "react-native-maps";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 
 const screenHeight = Dimensions.get("window").height;
 const API_BASE_URL = api + "/api";
 
-// ✅ Updated type - pre_assessment_status kept for display only (no longer gates navigation)
 type ReforestationArea = {
   reforestation_area_id: string;
   assigned_onsite_inspector_id: string;
   name: string;
   barangay: string | null;
   coordinate: [number, number] | null;
-  pre_assessment_status: "pending" | "approved" | "rejected"; // ✅ Keep for UI display
+  pre_assessment_status: "pending" | "approved" | "rejected";
   assigned_at: string;
-  // Derived for UI
   latitude: number;
   longitude: number;
   coordDisplay: string;
+};
+
+const STATUS_CONFIG = {
+  approved: { bg: "#DCFCE7", text: "#15803D", dot: "#22C55E", label: "Approved" },
+  rejected: { bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444", label: "Rejected" },
+  pending:  { bg: "#FEF9C3", text: "#A16207", dot: "#F59E0B", label: "Pending"  },
 };
 
 const ReforestationAreas: React.FC = () => {
@@ -99,14 +104,10 @@ const ReforestationAreas: React.FC = () => {
   const openModal = (area: ReforestationArea) => { setSelectedArea(area); setModalVisible(true); };
   const closeModal = () => { setSelectedArea(null); setModalVisible(false); };
 
-  // ✅ UPDATED: Always navigate to Field Assessment (no status gating)
   const handleActionPress = (area: ReforestationArea) => {
     router.push({
-      pathname: "/feedbacks/site_field_assessment", // ✅ Direct to 4-layer MCDA screen
-      params: { 
-        areaId: area.reforestation_area_id, 
-        areaName: area.name 
-      },
+      pathname: "/feedbacks/site_field_assessment",
+      params: { areaId: area.reforestation_area_id, areaName: area.name },
     });
   };
 
@@ -119,133 +120,192 @@ const ReforestationAreas: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <TextInput 
-        style={styles.searchInput} 
-        placeholder="Search by name, barangay, or status..." 
-        value={searchText} 
-        onChangeText={setSearchText} 
-      />
-      
+
+      {/* Search Bar */}
+      <View style={styles.searchWrap}>
+        <Ionicons name="search-outline" size={18} color="#9CA3AF" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by name, barangay, or status…"
+          placeholderTextColor="#9CA3AF"
+          value={searchText}
+          onChangeText={setSearchText}
+        />
+        {searchText.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchText("")}>
+            <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Body */}
       {loading ? (
         <View style={styles.centerContent}>
           <ActivityIndicator size="large" color="#0F4A2F" />
-          <Text style={styles.loadingText}>Loading assigned areas...</Text>
+          <Text style={styles.loadingText}>Loading assigned areas…</Text>
         </View>
       ) : error ? (
         <View style={styles.centerContent}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#EF4444" />
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={fetchAssignedAreas}>
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={styles.retryText}>Try Again</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <Text style={styles.header}>Assigned Areas ({filteredAreas.length})</Text>
-          
-          {filteredAreas.map((area) => (
-            <View key={area.reforestation_area_id} style={styles.card}>
-              <View style={styles.cardInfo}>
-                <Text style={styles.cardName}>{area.name}</Text>
-                <Text style={styles.cardCoord}>{area.coordDisplay}</Text>
-                <Text style={styles.cardLocation}>{area.barangay}</Text>
-                
-                {/* ✅ Status badge kept for INFO ONLY - no longer gates actions */}
-                <View style={[styles.statusBadge, {
-                  backgroundColor: area.pre_assessment_status === "approved" ? "#d4edda" : 
-                                  area.pre_assessment_status === "rejected" ? "#f8d7da" : "#fff3cd",
-                }]}>
-                  <Text style={[styles.statusText, {
-                    color: area.pre_assessment_status === "approved" ? "#155724" : 
-                           area.pre_assessment_status === "rejected" ? "#721c24" : "#856404",
-                  }]}>{area.pre_assessment_status.toUpperCase()}</Text>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+
+          {/* Section Header */}
+          <View style={styles.sectionRow}>
+            <Text style={styles.sectionTitle}>Assigned Areas</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countText}>{filteredAreas.length}</Text>
+            </View>
+          </View>
+
+          {filteredAreas.map((area) => {
+            const s = STATUS_CONFIG[area.pre_assessment_status];
+            return (
+              <View key={area.reforestation_area_id} style={styles.card}>
+
+                {/* Left accent */}
+                <View style={[styles.cardAccent, { backgroundColor: s.dot }]} />
+
+                <View style={styles.cardBody}>
+                  {/* Top row: name + status badge */}
+                  <View style={styles.cardTopRow}>
+                    <Text style={styles.cardName} numberOfLines={1}>{area.name}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: s.bg }]}>
+                      <View style={[styles.statusDot, { backgroundColor: s.dot }]} />
+                      <Text style={[styles.statusText, { color: s.text }]}>{s.label}</Text>
+                    </View>
+                  </View>
+
+                  {/* Meta row */}
+                  <View style={styles.metaRow}>
+                    <Ionicons name="location-outline" size={13} color="#9CA3AF" />
+                    <Text style={styles.metaText}>{area.barangay}</Text>
+                  </View>
+                  <View style={styles.metaRow}>
+                    <Ionicons name="navigate-outline" size={13} color="#9CA3AF" />
+                    <Text style={styles.metaText}>{area.coordDisplay}</Text>
+                  </View>
+
+                  {/* Actions */}
+                  <View style={styles.cardActions}>
+                    <TouchableOpacity style={styles.viewBtn} onPress={() => openModal(area)} activeOpacity={0.75}>
+                      <Ionicons name="map-outline" size={14} color="#0F4A2F" />
+                      <Text style={styles.viewBtnText}>View Map</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.assessBtn} onPress={() => handleActionPress(area)} activeOpacity={0.85}>
+                      <Text style={styles.assessBtnText}>Start Assessment</Text>
+                      <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-              
-              <View style={styles.cardActions}>
-                <TouchableOpacity style={styles.viewBtn} onPress={() => openModal(area)}>
-                  <Text style={styles.viewText}>View</Text>
-                </TouchableOpacity>
-                
-                {/* ✅ UPDATED: Always enabled, always says "Start Field Assessment" */}
-                {/* <TouchableOpacity 
-                  style={[styles.actionBtn, { backgroundColor: "#0F4A2F", marginTop: 8 }]} 
-                  onPress={() => handleActionPress(area)}
-                >
-                  <Text style={styles.actionBtnText}>Start Field Assessment</Text>
-                </TouchableOpacity> */}
-              </View>
+            );
+          })}
+
+          {filteredAreas.length === 0 && (
+            <View style={styles.emptyState}>
+              <MaterialCommunityIcons name="tree-outline" size={52} color="#D1D5DB" />
+              <Text style={styles.emptyTitle}>No Areas Found</Text>
+              <Text style={styles.emptySubtitle}>No results for "{searchText}"</Text>
             </View>
-          ))}
-          
-          {filteredAreas.length === 0 && !loading && (
-            <Text style={styles.noResults}>No areas found matching "{searchText}".</Text>
           )}
         </ScrollView>
       )}
 
-      {/* Modal - Updated button logic */}
-      <Modal animationType="slide" transparent={true} visible={modalVisible} onRequestClose={closeModal}>
+      {/* Modal */}
+      <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {selectedArea && (
-              <>
-                <MapView style={styles.map} initialRegion={{
-                  latitude: selectedArea.latitude, 
-                  longitude: selectedArea.longitude, 
-                  latitudeDelta: 0.01, 
-                  longitudeDelta: 0.01,
-                }}>
-                  <Marker 
-                    coordinate={{ latitude: selectedArea.latitude, longitude: selectedArea.longitude }} 
-                    title={selectedArea.name} 
-                    description={selectedArea.barangay ?? ''} 
-                  />
-                  <Polygon coordinates={[
-                    { latitude: selectedArea.latitude + 0.002, longitude: selectedArea.longitude - 0.002 },
-                    { latitude: selectedArea.latitude + 0.002, longitude: selectedArea.longitude + 0.002 },
-                    { latitude: selectedArea.latitude - 0.002, longitude: selectedArea.longitude + 0.002 },
-                    { latitude: selectedArea.latitude - 0.002, longitude: selectedArea.longitude - 0.002 },
-                  ]} strokeColor="#0F4A2F" fillColor="rgba(15, 74, 47, 0.3)" strokeWidth={2} />
-                </MapView>
-                
-                <View style={styles.infoContainer}>
-                  <Text style={styles.infoTitle}>{selectedArea.name}</Text>
-                  <Text style={styles.infoText}>
-                    <Text style={''}>Barangay:</Text> {selectedArea.barangay}
-                  </Text>
-                  <Text style={styles.infoText}>
-                    <Text style={''}>Coordinates:</Text> {selectedArea.coordDisplay}
-                  </Text>
-                  <Text style={styles.infoText}>
-                    <Text style={''}>Status:</Text>{" "}
-                    {/* <Text style={{ 
-                      fontWeight: "bold", 
-                      color: selectedArea.pre_assessment_status === "approved" ? "green" : 
-                             selectedArea.pre_assessment_status === "rejected" ? "red" : "#856404" 
-                    }}>
-                      {selectedArea.pre_assessment_status.toUpperCase()}
-                    </Text> */}
-                  </Text>
-                  {/* ✅ Helpful hint about new workflow */}
-                  <Text style={styles.hintText}>
-                    💡 Field Assessment now includes Meta Data, Safety, Boundary Verification, and Survivability layers.
-                  </Text>
-                </View>
-                
-                <View style={styles.buttonRow}>
-                  <Pressable style={styles.closeBtn} onPress={closeModal}>
-                    <Text style={styles.closeText}>Close</Text>
-                  </Pressable>
-                  {/* ✅ UPDATED: Always enabled, consistent action */}
-                  <Pressable 
-                    style={[styles.feedbackBtn, { backgroundColor: "#0F4A2F" }]} 
-                    onPress={() => handleActionPress(selectedArea)}
+          <View style={styles.modalSheet}>
+            {selectedArea && (() => {
+              const s = STATUS_CONFIG[selectedArea.pre_assessment_status];
+              return (
+                <>
+                  {/* Drag handle */}
+                  <View style={styles.dragHandle} />
+
+                  {/* Map */}
+                  <MapView
+                    style={styles.map}
+                    initialRegion={{
+                      latitude: selectedArea.latitude,
+                      longitude: selectedArea.longitude,
+                      latitudeDelta: 0.01,
+                      longitudeDelta: 0.01,
+                    }}
                   >
-                    <Text style={styles.feedbackText}>Start Field Assessment</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
+                    <Marker
+                      coordinate={{ latitude: selectedArea.latitude, longitude: selectedArea.longitude }}
+                      title={selectedArea.name}
+                      description={selectedArea.barangay ?? ""}
+                    />
+                    <Polygon
+                      coordinates={[
+                        { latitude: selectedArea.latitude + 0.002, longitude: selectedArea.longitude - 0.002 },
+                        { latitude: selectedArea.latitude + 0.002, longitude: selectedArea.longitude + 0.002 },
+                        { latitude: selectedArea.latitude - 0.002, longitude: selectedArea.longitude + 0.002 },
+                        { latitude: selectedArea.latitude - 0.002, longitude: selectedArea.longitude - 0.002 },
+                      ]}
+                      strokeColor="#0F4A2F"
+                      fillColor="rgba(15,74,47,0.18)"
+                      strokeWidth={2}
+                    />
+                  </MapView>
+
+                  {/* Info */}
+                  <ScrollView style={styles.modalInfo} showsVerticalScrollIndicator={false}>
+                    <View style={styles.modalTitleRow}>
+                      <Text style={styles.modalTitle}>{selectedArea.name}</Text>
+                      <View style={[styles.statusBadge, { backgroundColor: s.bg }]}>
+                        <View style={[styles.statusDot, { backgroundColor: s.dot }]} />
+                        <Text style={[styles.statusText, { color: s.text }]}>{s.label}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoIconWrap}>
+                        <Ionicons name="location" size={16} color="#0F4A2F" />
+                      </View>
+                      <View>
+                        <Text style={styles.infoLabel}>Barangay</Text>
+                        <Text style={styles.infoValue}>{selectedArea.barangay}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.infoRow}>
+                      <View style={styles.infoIconWrap}>
+                        <Ionicons name="navigate" size={16} color="#0F4A2F" />
+                      </View>
+                      <View>
+                        <Text style={styles.infoLabel}>Coordinates</Text>
+                        <Text style={styles.infoValue}>{selectedArea.coordDisplay}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.hintBox}>
+                      <Ionicons name="information-circle-outline" size={16} color="#0F4A2F" />
+                      <Text style={styles.hintText}>
+                        Field Assessment includes Meta Data, Safety, Boundary Verification, and Survivability layers.
+                      </Text>
+                    </View>
+                  </ScrollView>
+
+                  {/* Buttons */}
+                  <View style={styles.modalBtnRow}>
+                    <Pressable style={styles.closeBtn} onPress={closeModal}>
+                      <Text style={styles.closeBtnText}>Close</Text>
+                    </Pressable>
+                    <Pressable style={styles.startBtn} onPress={() => handleActionPress(selectedArea)}>
+                      <Text style={styles.startBtnText}>Start Field Assessment</Text>
+                    </Pressable>
+                  </View>
+                </>
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -253,68 +313,312 @@ const ReforestationAreas: React.FC = () => {
   );
 };
 
+/* ---------- STYLES ---------- */
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFFFF", paddingHorizontal: 16, paddingTop: 10 },
-  centerContent: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
-  loadingText: { marginTop: 10, color: "#666" },
-  errorText: { color: "red", textAlign: "center", marginBottom: 15 },
-  retryBtn: { backgroundColor: "#0F4A2F", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
-  retryText: { color: "#fff", fontWeight: "bold" },
-  header: { fontSize: 22, fontWeight: "bold", color: "#000", marginBottom: 16, marginTop: 10 },
-  searchInput: { 
-    height: 44, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, 
-    paddingHorizontal: 12, marginBottom: 12, backgroundColor: "#f9f9f9" 
+  container: {
+    flex: 1,
+    backgroundColor: "#F4F7F5",
+    paddingHorizontal: 16,
+    paddingTop: 14,
   },
-  card: { 
-    flexDirection: "row", backgroundColor: "#fff", padding: 16, marginBottom: 12, 
-    borderRadius: 12, elevation: 3, shadowColor: "#000", shadowOpacity: 0.05, 
-    shadowRadius: 6, borderWidth: 1, borderColor: "#eee" 
+
+  /* Search */
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  cardInfo: { flex: 3, paddingRight: 10 },
-  cardName: { fontSize: 16, fontWeight: "bold", color: "#000" },
-  cardCoord: { fontSize: 12, color: "#666", marginTop: 2 },
-  cardLocation: { fontSize: 13, color: "#555", marginTop: 2 },
-  statusBadge: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, marginTop: 8 },
-  statusText: { fontSize: 11, fontWeight: "bold", textTransform: "uppercase" },
-  cardActions: { flex: 1, flexDirection: "column", justifyContent: "center", alignItems: "center" },
-  viewBtn: { 
-    width: "100%", backgroundColor: "#e9ecef", paddingVertical: 8, 
-    borderRadius: 8, alignItems: "center", marginBottom: 8 
+  searchIcon: { marginRight: 8 },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#0F2D1C",
   },
-  viewText: { color: "#0F4A2F", fontWeight: "600", fontSize: 12 },
-  actionBtn: { 
-    width: "100%", paddingVertical: 10, borderRadius: 8, 
-    alignItems: "center", justifyContent: "center" 
+
+  /* States */
+  centerContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
   },
-  actionBtnText: { color: "#fff", fontWeight: "bold", fontSize: 12, textAlign: "center" },
-  noResults: { textAlign: "center", marginTop: 20, color: "#888", fontSize: 16 },
-  modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
-  modalContent: { 
-    height: screenHeight * 0.85, backgroundColor: "#fff", 
-    borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 30 
+  loadingText: { color: "#6B7280", fontSize: 14, marginTop: 4 },
+  errorText: { color: "#EF4444", textAlign: "center", fontSize: 14 },
+  retryBtn: {
+    backgroundColor: "#0F4A2F",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
-  map: { width: "100%", height: 250, borderRadius: 12, marginBottom: 16, backgroundColor: "#eee" },
-  infoContainer: { flex: 1, marginBottom: 10 },
-  infoTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 10, color: "#000" },
-  infoText: { fontSize: 14, marginBottom: 8, color: "#333", lineHeight: 20 },
-  labelText: { fontWeight: "700", color: "#0F4A2F" },
-  hintText: { 
-    fontSize: 12, color: "#64748b", fontStyle: "italic", 
-    marginTop: 8, paddingHorizontal: 4, lineHeight: 16 
+  retryText: { color: "#FFF", fontWeight: "700" },
+
+  /* Section header */
+  sectionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+    gap: 8,
   },
-  buttonRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 10 },
-  closeBtn: { 
-    flex: 1, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#0F4A2F", 
-    borderRadius: 8, paddingVertical: 14, marginRight: 8, alignItems: "center" 
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F2D1C",
   },
-  closeText: { color: "#0F4A2F", textAlign: "center", fontWeight: "600" },
-  feedbackBtn: { 
-    flex: 1.5, backgroundColor: "#0F4A2F", borderRadius: 8, 
-    paddingVertical: 14, marginLeft: 8, alignItems: "center",
-    shadowColor: "#0F4A2F", shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 
+  countBadge: {
+    backgroundColor: "#0F4A2F",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
-  feedbackText: { color: "#FFF", textAlign: "center", fontWeight: "700", fontSize: 16 },
+  countText: { color: "#FFF", fontSize: 12, fontWeight: "700" },
+
+  /* Card */
+  card: {
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    marginBottom: 12,
+    overflow: "hidden",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  cardAccent: {
+    width: 4,
+  },
+  cardBody: {
+    flex: 1,
+    padding: 14,
+  },
+  cardTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 6,
+  },
+  cardName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0F2D1C",
+    flex: 1,
+    marginRight: 8,
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+    gap: 4,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 3,
+  },
+  metaText: {
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  cardActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+  },
+  viewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderWidth: 1.5,
+    borderColor: "#0F4A2F",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  viewBtnText: {
+    color: "#0F4A2F",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  assessBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#0F4A2F",
+    borderRadius: 8,
+    paddingVertical: 8,
+  },
+  assessBtnText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  /* Empty state */
+  emptyState: {
+    alignItems: "center",
+    paddingTop: 60,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#9CA3AF",
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: "#9CA3AF",
+  },
+
+  /* Modal */
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  modalSheet: {
+    height: screenHeight * 0.88,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: "hidden",
+  },
+  dragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#E5E7EB",
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  map: {
+    width: "100%",
+    height: 230,
+    backgroundColor: "#E5E7EB",
+  },
+  modalInfo: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  modalTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F2D1C",
+    flex: 1,
+    marginRight: 8,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 14,
+  },
+  infoIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#E6F4EC",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  infoLabel: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    fontWeight: "500",
+    marginBottom: 2,
+  },
+  infoValue: {
+    fontSize: 14,
+    color: "#0F2D1C",
+    fontWeight: "600",
+  },
+  hintBox: {
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: "#F0FDF4",
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  hintText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#15803D",
+    lineHeight: 17,
+  },
+
+  /* Modal buttons */
+  modalBtnRow: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+  },
+  closeBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: "#0F4A2F",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  closeBtnText: {
+    color: "#0F4A2F",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  startBtn: {
+    flex: 2,
+    backgroundColor: "#0F4A2F",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    shadowColor: "#0F4A2F",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  startBtnText: {
+    color: "#FFF",
+    fontWeight: "700",
+    fontSize: 14,
+  },
 });
 
 export default ReforestationAreas;

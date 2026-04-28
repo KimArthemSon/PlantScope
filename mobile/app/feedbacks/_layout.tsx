@@ -1,43 +1,5 @@
-import React from "react";
-import { TouchableOpacity } from "react-native";
-import { Stack, Tabs } from "expo-router";
-import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
+import { Stack } from "expo-router";
 
-export default function TabLayout() {
-  return (
-    <Stack
-      screenOptions={{
-        // 🌲 Header styling
-        headerShown: true,
-        headerStyle: {
-          backgroundColor: "#0F4A2F", // Header background color
-        },
-        headerTintColor: "#FFFFFF", // Header text color
-        headerTitleStyle: {
-          fontWeight: "bold",
-        },
-
-        // 🔔 Bell icon on the right
-        headerRight: () => (
-          <TouchableOpacity style={{ marginRight: 15 }}>
-            <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-        ),
-
-        // 🌲 Bottom navigation styling
-        tabBarStyle: {
-          backgroundColor: "#0F4A2F",
-          borderTopWidth: 0,
-          elevation: 0, // Android shadow
-        },
-
-        // 🎨 Icon & label colors
-        tabBarActiveTintColor: "#FFFFFF",
-        tabBarInactiveTintColor: "#B7D3C6",
-      }}
-    >
-      <Stack screenOptions={{ headerShown: false }} />
-    
-    </Stack>
-  );
+export default function FeedbacksLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
