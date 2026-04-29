@@ -185,74 +185,302 @@ function PrivacyPolicyModal({ visible, onClose }: PrivacyPolicyModalProps) {
         <View style={ppStyles.container}>
           <View style={ppStyles.header}>
             <Shield size={18} color="#4caf72" />
-            <Text style={ppStyles.title}>PlantScope Privacy Policy</Text>
+            <Text style={ppStyles.title}>Data Privacy Notice</Text>
           </View>
-          <Text style={ppStyles.effective}>Effective: January 23, 2026 · Philippine RA 10173</Text>
+          <Text style={ppStyles.effective}>Issued pursuant to Republic Act No. 10173 (Data Privacy Act of 2012)</Text>
           <ScrollView style={ppStyles.scroll} showsVerticalScrollIndicator={false}>
+
+            <Text style={ppStyles.sectionTitle}>PREAMBLE</Text>
             <Text style={ppStyles.body}>
-              This Privacy Policy explains how the <Text style={ppStyles.bold}>PlantScope Project</Text>, managed
-              by the <Text style={ppStyles.bold}>College of ICT & Engineering at Western Leyte College of Ormoc
-              City</Text>, collects, uses, and protects your personal data.
+              <Text style={ppStyles.bold}>PLANTSCOPE</Text> is a GIS-based reforestation monitoring and site
+              suitability assessment platform developed by students of the{' '}
+              <Text style={ppStyles.bold}>College of ICT and Engineering, Western Leyte College of Ormoc City</Text>,
+              in collaboration with the <Text style={ppStyles.bold}>City Environment and Natural Resources Office (City ENRO)</Text>{' '}
+              and the <Text style={ppStyles.bold}>City Planning and Development Office (CPDO)</Text> of Ormoc City.
+            </Text>
+            <Text style={ppStyles.body}>
+              This Data Privacy Notice explains how PLANTSCOPE collects, uses, stores, protects, and disposes of
+              personal data from its users, and informs all data subjects of their rights under Philippine law.
+            </Text>
+            <View style={ppStyles.highlightBox}>
+              <Text style={ppStyles.highlightText}>
+                By registering an account or accessing any feature of PLANTSCOPE, users acknowledge that they have
+                read and understood this notice.
+              </Text>
+            </View>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 1: PERSONAL INFORMATION CONTROLLER</Text>
+            <Text style={ppStyles.body}>
+              <Text style={ppStyles.bold}>Entity: </Text>City Environment and Natural Resources Office (City ENRO),
+              Ormoc City LGU, in coordination with the College of ICT and Engineering, Western Leyte College of Ormoc City{'\n'}
+              <Text style={ppStyles.bold}>Address: </Text>A. Bonifacio St., Ormoc City, Leyte, Philippines{'\n'}
+              <Text style={ppStyles.bold}>DPO / Contact: </Text>Designated Data Protection Officer (DPO) of Ormoc City LGU
+              or the PLANTSCOPE Data Manager{'\n'}
+              <Text style={ppStyles.bold}>Email: </Text>system.admin@plantscope.gov.ph{'\n'}
+              <Text style={ppStyles.bold}>Phone: </Text>+63-XXX-XXX-XXXX (to be assigned upon deployment)
             </Text>
 
-            <Text style={ppStyles.sectionTitle}>1. Information We Collect</Text>
+            <Text style={ppStyles.sectionTitle}>SECTION 2: PERSONAL DATA COLLECTED</Text>
             <Text style={ppStyles.body}>
-              {'• Full name, email address, mobile number, organizational affiliation\n'}
-              {'• Username and encrypted password; optional profile details\n'}
-              {'• IP address, browser type, operating system, device model\n'}
-              {'• GPS coordinates, map markers, drone imagery of reforestation sites\n'}
-              {'• Tree species, planting dates, survival metrics, soil conditions'}
+              PLANTSCOPE collects the following categories of personal data from its registered users, depending on
+              their assigned system role:
+            </Text>
+            <Text style={ppStyles.subHeading}>2.5 Community User / Tree Growers</Text>
+            <Text style={ppStyles.body}>
+              {'• Full name and affiliated organization/group\n'}
+              {'• Gender, birthday, address, contact details\n'}
+              {'• Username and encrypted password\n'}
+              {'• Registration details and program preferences\n'}
+              {'• Tree planting progress updates and assigned site records'}
             </Text>
 
-            <Text style={ppStyles.sectionTitle}>2. Purpose and Legal Basis</Text>
+            <Text style={ppStyles.sectionTitle}>SECTION 3: SENSITIVE PERSONAL INFORMATION</Text>
             <Text style={ppStyles.body}>
-              {'• Consent – newsletters, optional tracking\n'}
-              {'• Contract Performance – platform access and services\n'}
-              {'• Legal Obligation – environmental and national law compliance\n'}
-              {'• Legitimate Interest – security, analytics, service improvement\n'}
-              {'• Public Interest – reforestation monitoring and ecological research'}
+              The following data may qualify as sensitive or privileged under Section 3(l) of RA 10173:
+            </Text>
+            <Text style={ppStyles.body}>
+              <Text style={ppStyles.bold}>Precise GPS Coordinates: </Text>Location data tied to a person's presence
+              at a field site may reveal movement patterns or physical location.{'\n\n'}
+              <Text style={ppStyles.bold}>Geotagged Photographs: </Text>Photographs with embedded EXIF data contain
+              both visual and locational sensitive information.{'\n\n'}
+              <Text style={ppStyles.bold}>Community Group Affiliation: </Text>Affiliation with schools or civic
+              organizations may intersect with sensitive community information.
+            </Text>
+            <Text style={ppStyles.noteText}>* GPS coordinate submission by Onsite Inspectors is optional and voluntary.</Text>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 4: PURPOSE AND LEGAL BASIS FOR DATA PROCESSING</Text>
+            <Text style={ppStyles.body}>Processing is conducted on the basis of:</Text>
+            <Text style={ppStyles.body}>
+              {'• Consent of the data subject (for community users, upon registration)\n'}
+              {'• Fulfillment of a contract or quasi-contract (for LGU personnel)\n'}
+              {'• Compliance with legal obligations (RA 10173, RA 7160, environmental laws)\n'}
+              {'• Exercise of official authority or performance of a task in the public interest'}
             </Text>
 
-            <Text style={ppStyles.sectionTitle}>3. How We Use Your Data</Text>
+            <Text style={ppStyles.sectionTitle}>SECTION 5: HOW DATA IS USED AND PROCESSED</Text>
             <Text style={ppStyles.body}>
-              {'• Account access, mapping, data submission, dashboards\n'}
-              {'• Responding to inquiries and coordinating with partners\n'}
-              {'• Impact analysis of reforestation programs\n'}
-              {'• Security monitoring and legal compliance'}
+              <Text style={ppStyles.bold}>Collection: </Text>Data is gathered through the web platform, mobile field
+              application, and community registration portal.{'\n\n'}
+              <Text style={ppStyles.bold}>Storage: </Text>All data is stored in a PostgreSQL 13+ database deployed on
+              Ormoc City LGU infrastructure.{'\n\n'}
+              <Text style={ppStyles.bold}>Sharing: </Text>Personal data is shared only among authorized PLANTSCOPE
+              users for official duties. Data is <Text style={ppStyles.bold}>NOT</Text> sold, traded, or shared with
+              unauthorized third parties.{'\n\n'}
+              <Text style={ppStyles.bold}>Archiving & Disposal: </Text>Inactive records are managed through the
+              Archive Data Management module. Data subject to deletion is irreversibly removed per retention schedules.
             </Text>
 
-            <Text style={ppStyles.sectionTitle}>4. Data Sharing</Text>
+            <Text style={ppStyles.sectionTitle}>SECTION 6: DATA RETENTION PERIOD</Text>
             <Text style={ppStyles.body}>
-              We do not sell personal data. Information may be shared only with service providers and
-              government partners (WLC, ENRO Ormoc, DENR, LGUs), or when legally required.
+              {'• User Account Data (LGU Staff): Employment + 5 years\n'}
+              {'• User Account Data (Community Users): Active participation + 2 years\n'}
+              {'• Field Assessment Records: Minimum 10 years\n'}
+              {'• Finalized Site Records: Permanent or until superseded\n'}
+              {'• Audit Trail & Version History: Permanent\n'}
+              {'• GPS Coordinates & Geotagged Photos: Monitoring program + 5 years\n'}
+              {'• Community Program Records: Program duration + 5 years\n'}
+              {'• System & Session Logs: 1 year from record date'}
             </Text>
 
-            <Text style={ppStyles.sectionTitle}>5. Data Retention</Text>
+            <Text style={ppStyles.sectionTitle}>SECTION 7: SECURITY MEASURES</Text>
             <Text style={ppStyles.body}>
-              {'• User accounts: deleted within 30 days of deactivation\n'}
-              {'• Contact records: retained for 2 years\n'}
-              {'• GIS data: retained for long-term environmental monitoring\n'}
-              {'• Logs and analytics: anonymized or deleted after 90 days'}
+              PLANTSCOPE implements appropriate organizational, technical, and physical security measures in
+              accordance with Section 20 of RA 10173 and NPC Circular No. 16-01:
+            </Text>
+            <Text style={ppStyles.body}>
+              {'• Password hashing & encryption using industry-standard cryptographic methods; TLS/SSL for data in transit\n'}
+              {'• Role-Based Access Control (RBAC) with minimum necessary permissions per role\n'}
+              {'• Token-based authentication with session expiration and automatic logout\n'}
+              {'• Audit trails with timestamps; finalized site_data records are versioned and immutable\n'}
+              {'• Data minimization: only necessary data collected; optional fields clearly indicated'}
             </Text>
 
-            <Text style={ppStyles.sectionTitle}>6. Your Rights (RA 10173)</Text>
+            <Text style={ppStyles.sectionTitle}>SECTION 8: RIGHTS OF DATA SUBJECTS</Text>
+            <Text style={ppStyles.body}>In accordance with Chapter IV of RA 10173, all users are entitled to:</Text>
             <Text style={ppStyles.body}>
-              Right to be informed, access and correction, erasure or blocking, object to processing,
-              data portability, and lodge a complaint with the NPC (privacy.gov.ph).
+              {'• Right to be Informed\n'}
+              {'• Right to Access\n'}
+              {'• Right to Correction\n'}
+              {'• Right to Erasure or Blocking\n'}
+              {'• Right to Object\n'}
+              {'• Right to Data Portability\n'}
+              {'• Right to Lodge a Complaint with the NPC'}
+            </Text>
+            <Text style={ppStyles.body}>
+              Requests will be acknowledged within five (5) business days and acted upon within thirty (30) days.
             </Text>
 
-            <Text style={ppStyles.sectionTitle}>7. Security</Text>
+            <Text style={ppStyles.sectionTitle}>SECTION 9: CONTACT INFORMATION</Text>
             <Text style={ppStyles.body}>
-              SSL/TLS encryption, role-based access, administrator MFA, security audits, and incident
-              response compliant with NPC Circular No. 16-03.
+              <Text style={ppStyles.bold}>PRIMARY: </Text>PLANTSCOPE Data Manager (System Administrator){'\n'}
+              City Environment and Natural Resources Office (City ENRO), Ormoc City LGU{'\n'}
+              Email: system.admin@plantscope.gov.ph{'\n\n'}
+              <Text style={ppStyles.bold}>SECONDARY: </Text>Ormoc City LGU Data Protection Officer (DPO){'\n'}
+              Email: dpo@ormoccity.gov.ph{'\n'}
+              Office: Ormoc City Hall, A. Bonifacio St., Ormoc City{'\n\n'}
+              <Text style={ppStyles.bold}>REGULATORY AUTHORITY: </Text>National Privacy Commission (NPC){'\n'}
+              3F Core G Building, GSIS Complex, Roxas Blvd., Pasay City{'\n'}
+              Email: info@privacy.gov.ph | Website: www.privacy.gov.ph
             </Text>
 
-            <Text style={ppStyles.sectionTitle}>Contact</Text>
+            <View style={ppStyles.ackBox}>
+              <Text style={ppStyles.ackText}>
+                <Text style={ppStyles.bold}>ACKNOWLEDGMENT: </Text>By accessing or using PLANTSCOPE, you confirm
+                that you have read, understood, and agreed to this Data Privacy Notice.
+              </Text>
+              <Text style={ppStyles.ackSub}>PLANTSCOPE | Western Leyte College of Ormoc City | RA 10173 Compliant</Text>
+            </View>
+          </ScrollView>
+          <TouchableOpacity style={ppStyles.closeBtn} onPress={onClose}>
+            <Text style={ppStyles.closeText}>I Understand</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Terms & Conditions Modal ──────────────────────────────────────────────
+type TermsModalProps = {
+  visible: boolean;
+  onClose: () => void;
+};
+
+function TermsModal({ visible, onClose }: TermsModalProps) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={ppStyles.overlay}>
+        <View style={ppStyles.container}>
+          <View style={ppStyles.header}>
+            <FileText size={18} color="#4caf72" />
+            <Text style={ppStyles.title}>Terms and Conditions</Text>
+          </View>
+          <Text style={ppStyles.effective}>Governing access, registration, and use of the PLANTSCOPE System</Text>
+          <ScrollView style={ppStyles.scroll} showsVerticalScrollIndicator={false}>
+
+            <Text style={ppStyles.sectionTitle}>PREAMBLE</Text>
             <Text style={ppStyles.body}>
-              {'PlantScope Project Team · College of ICT & Engineering\n'}
-              {'Western Leyte College of Ormoc City\n'}
-              {'Email: plantscope@wlc.edu.ph · DPO: privacy@plantscope.ph'}
+              These Terms and Conditions govern the access, registration, and use of{' '}
+              <Text style={ppStyles.bold}>PLANTSCOPE</Text> — a GIS-Based Site Suitability Assessment and
+              Reforestation Monitoring System developed by students of the{' '}
+              <Text style={ppStyles.bold}>College of ICT and Engineering, Western Leyte College of Ormoc City</Text>,
+              in collaboration with the <Text style={ppStyles.bold}>City ENRO</Text> and{' '}
+              <Text style={ppStyles.bold}>CPDO</Text> of Ormoc City.
             </Text>
+            <View style={ppStyles.warningBox}>
+              <Text style={ppStyles.warningTitle}>⚠️ IMPORTANT – PLEASE READ CAREFULLY</Text>
+              <Text style={ppStyles.warningText}>
+                By registering an account, logging in, or otherwise accessing PLANTSCOPE, you acknowledge that you
+                have read, understood, and agree to be legally bound by these Terms and Conditions in their entirety.
+                If you do not agree, you must immediately discontinue use and request account deactivation from the
+                Data Manager.
+              </Text>
+            </View>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 1: SCOPE AND PURPOSE OF SYSTEM USE</Text>
+            <Text style={ppStyles.subHeading}>1.1 Scope</Text>
+            <Text style={ppStyles.body}>These Terms apply to all individuals who access, register, or use PLANTSCOPE, including:</Text>
+            <Text style={ppStyles.body}>
+              {'• City ENRO Head — primary authority for reforestation program oversight\n'}
+              {'• Data Manager (System Administrator) — maintains technical and data integrity\n'}
+              {'• GIS Specialists — perform technical site suitability validation\n'}
+              {'• Onsite Inspectors — collect and submit field assessment data via mobile app\n'}
+              {'• Community Users (Tree Growers) — register for the Public Tree Planting Program'}
+            </Text>
+            <Text style={ppStyles.subHeading}>1.2 Purpose</Text>
+            <Text style={ppStyles.body}>PLANTSCOPE is designed exclusively to support reforestation site assessment, field data collection, reforestation monitoring, community engagement, archive data management, and compliance & audit functions of Ormoc City.</Text>
+            <Text style={ppStyles.subHeading}>1.3 Non-Commercial Use</Text>
+            <Text style={ppStyles.body}>PLANTSCOPE is a non-commercial, government-deployed environmental management system. It shall not be used for commercial gain, private business operations, or activities outside the environmental mandate of the Ormoc City LGU.</Text>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 2: USER RESPONSIBILITIES AND ACCEPTABLE USE</Text>
+            <Text style={ppStyles.subHeading}>2.1 General Responsibilities of All Users</Text>
+            <Text style={ppStyles.body}>
+              <Text style={ppStyles.bold}>Account Security: </Text>Users are solely responsible for maintaining the confidentiality of their login credentials. Unauthorized use must be reported immediately to the Data Manager.{'\n\n'}
+              <Text style={ppStyles.bold}>Accuracy of Information: </Text>All data, records, and submissions must be accurate, truthful, and complete. Submission of false or misleading information is strictly prohibited.{'\n\n'}
+              <Text style={ppStyles.bold}>Role Compliance: </Text>Users must access and use only the features and data authorized for their assigned role.{'\n\n'}
+              <Text style={ppStyles.bold}>System Integrity: </Text>Users must not perform any action that compromises the integrity, availability, or security of the PLANTSCOPE system.{'\n\n'}
+              <Text style={ppStyles.bold}>Compliance with Laws: </Text>Users must comply with all applicable Philippine laws, including RA 10173, RA 7160, environmental protection laws, and civil service regulations.
+            </Text>
+            <Text style={ppStyles.subHeading}>2.2 Community User / Tree Grower Responsibilities</Text>
+            <Text style={ppStyles.body}>
+              {'• Provides accurate registration information including full name, contact details, and organizational affiliation\n'}
+              {'• Submits genuine and timely progress updates for assigned tree planting sites\n'}
+              {'• Complies with the assigned schedule and site allocation provided by the Data Manager\n'}
+              {'• Notifies the Data Manager of any change in contact information or organizational status\n'}
+              {'• Responsible for ensuring that participants they represent are aware of these Terms'}
+            </Text>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 3: PROHIBITED ACTIVITIES</Text>
+            <Text style={ppStyles.body}>The following activities are strictly prohibited on PLANTSCOPE. Violation may result in immediate account suspension and legal action under applicable Philippine laws:</Text>
+            <Text style={ppStyles.body}>
+              {'• Unauthorized access to accounts, data records, or system features not authorized for your role\n'}
+              {'• Sharing or transferring login credentials; logging in as another user\n'}
+              {'• Submitting data that is knowingly false, fabricated, or deliberately misleading\n'}
+              {'• Copying, exporting, or transmitting personal data or spatial records to unauthorized individuals\n'}
+              {'• Introducing malicious code, performing denial-of-service attacks, SQL injection, or technical interference\n'}
+              {'• Modifying or deleting any system record without proper authority\n'}
+              {'• Using personal data accessed through PLANTSCOPE for unauthorized purposes\n'}
+              {'• Using PLANTSCOPE for activities beyond its stated environmental management functions'}
+            </Text>
+            <View style={ppStyles.warningBox}>
+              <Text style={ppStyles.warningTitle}>⚖️ Legal Warning</Text>
+              <Text style={ppStyles.warningText}>
+                Violations may constitute criminal offenses under RA 10173 (Data Privacy Act), RA 10175 (Cybercrime Prevention Act), RA 3019 (Anti-Graft), and other applicable Philippine laws.
+              </Text>
+            </View>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 4: DATA OWNERSHIP AND HANDLING</Text>
+            <Text style={ppStyles.body}>
+              All data submitted to, processed by, or generated within PLANTSCOPE is the property of the{' '}
+              <Text style={ppStyles.bold}>Ormoc City Local Government Unit</Text>, acting through City ENRO and CPDO.
+              Personal data submitted by individual users remains subject to the rights of the data subject under RA 10173.
+            </Text>
+            <Text style={ppStyles.body}>
+              Personal data shall not be disclosed to private companies, commercial entities, or individuals not affiliated with the system's official mandate. Spatial data, GIS maps, and site records shall not be published or commercialized without prior written approval of the CPDO and City ENRO.
+            </Text>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 5: ACCOUNT MANAGEMENT AND ACCESS CONTROL</Text>
+            <Text style={ppStyles.body}>
+              Community user accounts require submission of a registration request through the community portal, subject to review from the Data Manager with final approval by the Head.{'\n\n'}
+              Providing false registration information is grounds for immediate account rejection or termination.
+            </Text>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 6: LIMITATION OF LIABILITY</Text>
+            <Text style={ppStyles.body}>
+              PLANTSCOPE is provided on an "as-is" and "as-available" basis. The development team and Western Leyte College of Ormoc City make no warranty that the system will operate without interruption, error, or defect at all times.{'\n\n'}
+              The system does not automatically verify the accuracy of user-submitted data. The PLANTSCOPE development team shall not be liable for decisions made based on inaccurate, incomplete, or false data submitted by users.
+            </Text>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 7: RA 10173 COMPLIANCE</Text>
+            <Text style={ppStyles.body}>
+              PLANTSCOPE is designed and operated in full compliance with Republic Act No. 10173 and its IRR, as enforced by the National Privacy Commission (NPC) of the Philippines. Key principles applied: Transparency, Legitimate Purpose, Proportionality, Data Security, Data Subject Rights, Data Retention & Disposal, and Breach Notification.
+            </Text>
+            <Text style={ppStyles.noteText}>
+              These Terms must be read in conjunction with the PLANTSCOPE Data Privacy Notice. In matters of data privacy, the Data Privacy Notice shall prevail.
+            </Text>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 8: ACCEPTANCE OF TERMS</Text>
+            <View style={ppStyles.ackBox}>
+              <Text style={ppStyles.body}>
+                {'1. I have read, understood, and voluntarily agree to comply with all provisions of these Terms and Conditions.\n\n'}
+                {'2. I have read and understood the PLANTSCOPE Data Privacy Notice and consent to the collection, processing, and use of my personal data as described therein.\n\n'}
+                {'3. I understand that continued use of PLANTSCOPE after any amendment constitutes my acceptance of the updated Terms.\n\n'}
+                {'4. I understand that violation of these Terms may result in account suspension, termination, and legal consequences under applicable Philippine law.\n\n'}
+                {'5. I affirm that all information I provide to the system is accurate, truthful, and complete.\n\n'}
+                {'6. I acknowledge that PLANTSCOPE is a government-deployed environmental management system and commit to using it exclusively for its stated purposes.'}
+              </Text>
+            </View>
+
+            <Text style={ppStyles.sectionTitle}>SECTION 9: GOVERNING LAW AND JURISDICTION</Text>
+            <Text style={ppStyles.body}>
+              These Terms and Conditions shall be governed by the laws of the Republic of the Philippines, including RA 10173, RA 10175, RA 7160, RA 3019, and NPC Circulars. Any dispute shall be subject to the jurisdiction of the appropriate government agencies and courts, with venue in{' '}
+              <Text style={ppStyles.bold}>Ormoc City, Leyte</Text>.
+            </Text>
+
+            <View style={ppStyles.ackBox}>
+              <Text style={ppStyles.ackText}>TERMS AND CONDITIONS – END OF DOCUMENT</Text>
+              <Text style={ppStyles.ackSub}>PLANTSCOPE | Western Leyte College of Ormoc City | College of ICT and Engineering | RA 10173 Compliant</Text>
+            </View>
           </ScrollView>
           <TouchableOpacity style={ppStyles.closeBtn} onPress={onClose}>
             <Text style={ppStyles.closeText}>I Understand</Text>
@@ -386,6 +614,7 @@ export default function Signup() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -691,15 +920,26 @@ export default function Signup() {
             </View>
 
             <View style={styles.privacyAgreementBox}>
+              <View style={styles.legalInfoBox}>
+                <Text style={styles.legalInfoText}>
+                  Before submitting, please read our{' '}
+                  <Text style={styles.privacyLink} onPress={() => setShowPrivacyPolicy(true)}>
+                    Data Privacy Notice
+                  </Text>
+                  {' '}and{' '}
+                  <Text style={styles.privacyLink} onPress={() => setShowTerms(true)}>
+                    Terms &amp; Conditions
+                  </Text>
+                  . Your field data, GPS coordinates, and photos are collected as part of the
+                  reforestation monitoring program.
+                </Text>
+              </View>
               <TouchableOpacity style={styles.checkRow} onPress={() => setAgreedToPrivacy(!agreedToPrivacy)} activeOpacity={0.7}>
                 <View style={[styles.checkbox, agreedToPrivacy && styles.checkboxChecked]}>
                   {agreedToPrivacy && <Check size={11} color="#ffffff" strokeWidth={3} />}
                 </View>
                 <Text style={styles.privacyText}>
-                  I have read and agree to the{' '}
-                  <Text style={styles.privacyLink} onPress={() => setShowPrivacyPolicy(true)}>
-                    Privacy Policy
-                  </Text>
+                  I agree to the Privacy Notice and Terms &amp; Conditions
                 </Text>
               </TouchableOpacity>
             </View>
@@ -799,6 +1039,10 @@ export default function Signup() {
       <PrivacyPolicyModal
         visible={showPrivacyPolicy}
         onClose={() => setShowPrivacyPolicy(false)}
+      />
+      <TermsModal
+        visible={showTerms}
+        onClose={() => setShowTerms(false)}
       />
     </KeyboardAvoidingView>
   );
@@ -1014,6 +1258,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(76,175,114,0.2)',
   },
+  legalInfoBox: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  legalInfoText: { color: '#a8c5b3', fontSize: 12, lineHeight: 19 },
   checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   checkbox: {
     width: 20,
@@ -1132,7 +1385,7 @@ const dpStyles = StyleSheet.create({
   confirmText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
 });
 
-// ─── Privacy Policy Styles ─────────────────────────────────────────────────
+// ─── Privacy Policy & Terms Styles ────────────────────────────────────────
 const ppStyles = StyleSheet.create({
   overlay: {
     flex: 1,
@@ -1145,7 +1398,7 @@ const ppStyles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 20,
     paddingBottom: Platform.OS === 'ios' ? 36 : 20,
-    maxHeight: '82%',
+    maxHeight: '88%',
     borderTopWidth: 1,
     borderTopColor: 'rgba(76,175,114,0.4)',
   },
@@ -1157,13 +1410,54 @@ const ppStyles = StyleSheet.create({
     fontSize: 11,
     color: '#4caf72',
     fontWeight: '700',
-    marginTop: 14,
-    marginBottom: 4,
+    marginTop: 16,
+    marginBottom: 6,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.8,
   },
-  body: { fontSize: 12, color: '#a8c5b3', lineHeight: 19 },
+  subHeading: {
+    fontSize: 12,
+    color: '#e0ece4',
+    fontWeight: '700',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  body: { fontSize: 12, color: '#a8c5b3', lineHeight: 19, marginBottom: 4 },
   bold: { fontWeight: '700', color: '#e0ece4' },
+  noteText: { fontSize: 11, color: '#4caf72', fontStyle: 'italic', marginTop: 6, marginBottom: 4 },
+  highlightBox: {
+    backgroundColor: 'rgba(76,175,114,0.1)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#4caf72',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 6,
+    marginVertical: 8,
+  },
+  highlightText: { fontSize: 12, color: '#e0ece4', fontStyle: 'italic', lineHeight: 18 },
+  warningBox: {
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#ef4444',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 6,
+    marginVertical: 8,
+  },
+  warningTitle: { fontSize: 12, color: '#ffffff', fontWeight: '700', marginBottom: 4 },
+  warningText: { fontSize: 11, color: '#a8c5b3', lineHeight: 17 },
+  ackBox: {
+    backgroundColor: 'rgba(76,175,114,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(76,175,114,0.35)',
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 16,
+    marginBottom: 4,
+    alignItems: 'center',
+  },
+  ackText: { fontSize: 12, color: '#e0ece4', fontWeight: '700', textAlign: 'center', marginBottom: 4 },
+  ackSub: { fontSize: 10, color: '#5a8a6a', textAlign: 'center' },
   closeBtn: {
     marginTop: 16,
     paddingVertical: 14,

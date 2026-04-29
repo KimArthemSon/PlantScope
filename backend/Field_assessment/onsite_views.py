@@ -311,7 +311,7 @@ def get_area_meta_data(request, reforestation_area_id):
         user = get_user_from_token(request)
         
         # ✅ Role check
-        allowed_roles = ["GISSpecialist", "CityENROHead"]
+        allowed_roles = ["DataManager", "CityENROHead"]
         if not user or user.user_role not in allowed_roles:
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 

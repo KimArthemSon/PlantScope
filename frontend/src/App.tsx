@@ -16,10 +16,11 @@ import Privacy_policy from "./pages/HomePage/privacy_policy";
 import DashboardAFA from "./pages/AFA/dashboardAFA";
 import DashboardGISS from "./pages/GISSpecialist/dashboardGISS";
 import Accounts from "./pages/head/accounts/accounts";
+import TreeGrowersAccounts from "./pages/head/accounts/treeGrowersAccounts";
 import Barangays from "./pages/head/maintain/barangay";
 import HomePage from "./pages/HomePage/homepage";
 import Reforestation_area_form from "./pages/head/reforestation_areas/reforestation_area_form";
-import LogTrail from "./pages/head/accounts/logTrail";
+import AuditTrail from "./pages/head/accounts/auditTrail";
 import { Profile } from "./pages/head/accounts/profile";
 import Map from "./pages/head/Map/map";
 import Classified_area_form from "./pages/head/maintain/classified_areas/classified_area_form";
@@ -44,6 +45,7 @@ import Monitoring from "./pages/dataManager/monitoring/application";
 import Maintenance_report from "./pages/dataManager/monitoring/maintenance_report";
 import ViewReforestationArea from "./pages/head/reforestation_areas/view_reforestation_area";
 import MyProfile from "./pages/dataManager/MyProfile";
+import Terms_and_Conditions from "./pages/HomePage/terms_and_Conditions";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -64,6 +66,7 @@ export default function App() {
         <Route path="/Login" element={<Login />} />
         <Route path="/register" element={<Registration />} />
         <Route path="/" element={<HomePage />} />
+        <Route path="/terms" element={<Terms_and_Conditions />} />
         <Route path="/privacy-policy" element={<Privacy_policy />} />
 
         <Route element={<Sidebar />}>
@@ -137,7 +140,7 @@ export default function App() {
           <Route path="/maintenance/tree-species" element={<Tree_species />} />
           <Route path="/maintenance/soils" element={<Soils />} />
 
-          <Route path="/Log-trail" element={<LogTrail />} />
+          <Route path="/Log-trail" element={<AuditTrail />} />
           <Route
             path="/reforestation-areas"
             element={<Reforestation_areas />}
@@ -173,13 +176,14 @@ export default function App() {
           <Route path="/account-management" element={<Accounts />} />
           <Route path="/account-management/profile/:id" element={<Profile />} />
           <Route path="/account-management/profile/" element={<Profile />} />
+          <Route path="/tree-growers" element={<TreeGrowersAccounts />} />
         </Route>
 
         <Route element={<Sidebar_data_manager />}>
           <Route path="/dashboard-data-manager" element={<DashboardAFA />} />
 
           <Route path="/DataManager/calendar" element={<Calendar />} />
-          
+
           <Route
             path="/DataManager/maintenance/ormoc-city"
             element={<Ormoc_City />}

@@ -10,7 +10,9 @@ urlpatterns = [
     path('update_user/<int:user_id>', views.update_user, name='update_user'),
     path('delete_user/<int:user_id>', views.delete_user, name='delete_user'),
     path('get_user/<int:user_id>',views.get_user, name='get_user'),
-    
+    path('list_tree_growers/', views.list_tree_growers, name='list_tree_growers'),
+    path('get_tree_grower_detail/<int:user_id>/', views.get_tree_grower_detail, name='get_tree_grower_detail'),
+    path('toggle_user_status/<int:user_id>/', views.toggle_user_status, name='toggle_user_status'),
 ]
 
 

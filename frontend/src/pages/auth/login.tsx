@@ -48,14 +48,14 @@ export default function Login() {
         }
 
         setTimeout(() => {
-          if (data.user_role === "FieldOfficer") {
-            navigate("/dashboard/Field-Officer");
-          } else if (data.user_role === "CityENROHead") {
+          if (data.user_role === "CityENROHead") {
             navigate("/dashboard");
+          } else if (data.user_role === "DataManager") {
+            navigate("/dashboard-data-manager");
+          } else if (data.user_role === "GISSpecialist") {
+            navigate("/dashboard/GISS");
           } else if (data.user_role === "AFA") {
             navigate("/dashboard/AFA");
-          } else {
-            // navigate("/dashboard/GISS");
           }
         }, 3000);
       }
@@ -254,31 +254,20 @@ export default function Login() {
         </div>
       </div>
 
-      <footer className="fixed flex items-center justify-center bottom-6 w-full z-50">
-        <div
-          className="flex items-center gap-4 w-110 px-5 py-2
-               text-sm font-medium text-white/80
-               bg-black/25 backdrop-blur-md
-               rounded-full border border-white/20
-               shadow-xl"
-        >
+      <footer className="fixed bottom-6 left-0 right-0 flex items-center justify-center z-50 pointer-events-none">
+        <div className="pointer-events-auto flex items-center gap-5 px-6 py-2.5 text-sm font-medium text-white/75 bg-black/30 backdrop-blur-md rounded-full border border-white/20 shadow-xl">
           <a
             href="/privacy-policy"
-            className="hover:text-white transition-colors"
+            className="hover:text-white transition-colors duration-200"
           >
             🔒 Privacy Policy
           </a>
-
-          <span className="text-white/40">|</span>
-
-          <a href="/terms" className="hover:text-white transition-colors">
+          <span className="text-white/30">|</span>
+          <a
+            href="/terms"
+            className="hover:text-white transition-colors duration-200"
+          >
             📜 Terms of Service
-          </a>
-
-          <span className="text-white/40">|</span>
-
-          <a href="/security" className="hover:text-white transition-colors">
-            🛡️ Security
           </a>
         </div>
       </footer>

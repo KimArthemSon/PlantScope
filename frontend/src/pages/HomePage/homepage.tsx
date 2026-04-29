@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, use } from "react";
 import Loader from "../../components/layout/loader.tsx";
 import Navbar from "../../components/layout/nav.tsx";
 import background from "../../assets/background.jpg";
@@ -10,6 +10,41 @@ import profile3 from "../../assets/profile3.jpg";
 import profile4 from "../../assets/profile4.jpg";
 import { useNavigate } from "react-router-dom";
 export default function App() {
+  const checkIfStillLogin = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      return;
+    }
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.token) {
+          localStorage.setItem("token", data.token);
+        }
+
+        if (data.user_role === "CityENROHead") {
+          navigate("/dashboard");
+        } else if (data.user_role === "DataManager") {
+          navigate("/dashboard-data-manager");
+        } else if (data.user_role === "GISSpecialist") {
+          navigate("/dashboard/GISS");
+        } else if (data.user_role === "AFA") {
+          navigate("/dashboard/AFA");
+        }
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+    }
+  };
+  useEffect(() => {
+    checkIfStillLogin();
+  }, []);
   const [menuActive, setMenuActive] = useState(false);
   const [activeSection, setActiveSection] = useState("home");
   const loaderRef = useRef<HTMLDivElement>(null);
@@ -102,8 +137,9 @@ export default function App() {
                 <p className="text-[#7CD56A] text-xl md:text-1xl tracking-wider fade-up-delay"></p>
 
                 <h2 className="text-1xl md:text-1xl font-bold leading-tight max-w-4xl mx-auto fade-up-delay-2">
-                  A GIS-Based Site Suitability Assessment and <br/>
-                  Reforestation Monitoring Systern with Geospatial Analytics for <br/>
+                  A GIS-Based Site Suitability Assessment and <br />
+                  Reforestation Monitoring Systern with Geospatial Analytics for{" "}
+                  <br />
                   Ormoc City
                 </h2>
                 <div className="flex flex-col sm:flex-row gap-6 justify-center pt-6 fade-up-delay-2">
@@ -1174,27 +1210,18 @@ export default function App() {
                 <ul className="space-y-2 text-white/70 text-sm">
                   <li>
                     <a
-                      href="#privacy"
-                      onClick={() => navigate("/privacy-policy")}
-                      className="hover:text-[#7CD56A] transition-colors cursor-pointer"
+                      href="/privacy-policy"
+                      className="hover:text-[#7CD56A] transition-colors"
                     >
-                      Privacy Policy
+                      Privacy Notice
                     </a>
                   </li>
                   <li>
                     <a
-                      href="#security"
+                      href="/terms"
                       className="hover:text-[#7CD56A] transition-colors"
                     >
-                      Security
-                    </a>
-                  </li>
-                  <li>
-                    <a
-                      href="#terms"
-                      className="hover:text-[#7CD56A] transition-colors"
-                    >
-                      Terms
+                      Terms & Conditions
                     </a>
                   </li>
                 </ul>

@@ -19,6 +19,7 @@ import {
   Shield,
   Clock,
   AlertTriangle,
+  Leaf,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
@@ -278,8 +279,9 @@ export default function Sidebar() {
     "/calendar":           "Calendar",
     "/monitoring":         "Monitoring",
     "/analysis":           "Report",
-    "/Log-trail":          "Log Trail",
+    "/Log-trail":          "Audit Trail",
     "/account-management": "Accounts",
+    "/tree-growers":       "Tree Growers",
   };
   const pageTitle = PAGE_TITLES[location.pathname] ?? "PlantScope";
 
@@ -359,8 +361,9 @@ export default function Sidebar() {
               { to: "/calendar",           icon: <Calendar size={20} />,        label: "Calendar"     },
               { to: "/monitoring",         icon: <MonitorDot size={20} />,      label: "Monitoring"   },
               { to: "/analysis",           icon: <BarChart3 size={20} />,       label: "Report"       },
-              { to: "/Log-trail",          icon: <Satellite size={20} />,       label: "Log Trail"    },
+              { to: "/Log-trail",          icon: <Satellite size={20} />,       label: "Audit Trail"  },
               { to: "/account-management", icon: <Users size={20} />,           label: "Accounts"     },
+              { to: "/tree-growers",       icon: <Leaf size={20} />,            label: "Tree Growers" },
             ].map(({ to, icon, label }) => (
               <Link key={to} to={to}
                 className={`flex flex-row items-center transition-all duration-200 rounded-md px-6 py-3 justify-center

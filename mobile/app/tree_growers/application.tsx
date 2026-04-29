@@ -248,13 +248,14 @@ const ApplicationPage: React.FC = () => {
       fd.append("total_owned_seedling_planted", form.total_owned_seedling_planted || "0");
       if (form.maintenance_report_file) fd.append("maintenance_report_file", form.maintenance_report_file as any);
       if (form.group_picture) fd.append("group_picture", form.group_picture as any);
-
+      console.log(API_BASE_URL);
       const res = await fetch(`${API_BASE_URL}/create_maintenance_report/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
       });
       const data = await res.json();
+      console.log("hello")
       if (!res.ok) throw new Error(data.error ?? "Submission failed.");
 
       Alert.alert("Success", "Maintenance report submitted successfully.");

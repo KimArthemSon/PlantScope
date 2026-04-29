@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView, Alert } from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
+import * as SecureStore from "expo-secure-store";
 
 /* ---------- DATA ---------- */
 
@@ -41,7 +42,14 @@ export default function ProfilePage() {
       "Are you sure you want to log out?",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Log Out", style: "destructive", onPress: () => router.replace("/login") },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: async () => {
+            await SecureStore.deleteItemAsync("token");
+            router.replace("/login");
+          },
+        },
       ]
     );
   };

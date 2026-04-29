@@ -1,7 +1,19 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
-  Mail, Phone, Info, Lock, Eye, EyeOff, Save,
-  Camera, Shield, User, Cake, UserX, MapPin, CheckCircle2,
+  Mail,
+  Phone,
+  Info,
+  Lock,
+  Eye,
+  EyeOff,
+  Save,
+  Camera,
+  Shield,
+  User,
+  Cake,
+  UserX,
+  MapPin,
+  CheckCircle2,
   ChevronLeft,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -54,14 +66,30 @@ export default function MyProfile() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const [passwordConstraints, setPasswordConstraints] = useState<PasswordConstraint>({
-    lower: false, upper: false, length: false, number: false, symbol: false,
-  });
+  const [passwordConstraints, setPasswordConstraints] =
+    useState<PasswordConstraint>({
+      lower: false,
+      upper: false,
+      length: false,
+      number: false,
+      symbol: false,
+    });
 
   const [profile, setProfile] = useState<FullProfile>({
-    id: 0, email: "", password: "", first_name: "", last_name: "",
-    middle_name: "", birthday: "", gender: "M", is_active: "true",
-    user_role: "", address: "", preview_profile: "", contact: "", confirm_pass: "",
+    id: 0,
+    email: "",
+    password: "",
+    first_name: "",
+    last_name: "",
+    middle_name: "",
+    birthday: "",
+    gender: "M",
+    is_active: "true",
+    user_role: "",
+    address: "",
+    preview_profile: "",
+    contact: "",
+    confirm_pass: "",
   });
 
   useEffect(() => {
@@ -71,13 +99,19 @@ export default function MyProfile() {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!meRes.ok) { navigate("/Login"); return; }
+        if (!meRes.ok) {
+          navigate("/Login");
+          return;
+        }
         const me = await meRes.json();
         setUserId(me.id);
 
-        const pRes = await fetch(`http://127.0.0.1:8000/api/get_user/${me.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const pRes = await fetch(
+          `http://127.0.0.1:8000/api/get_user/${me.id}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
         const data = await pRes.json();
         if (!pRes.ok) return;
 
@@ -88,7 +122,11 @@ export default function MyProfile() {
           preview_profile: data.profile_img ? `${api}${data.profile_img}` : "",
         });
       } catch {
-        setPSAlert({ type: "error", title: "Error", message: "Failed to load profile." });
+        setPSAlert({
+          type: "error",
+          title: "Error",
+          message: "Failed to load profile.",
+        });
       } finally {
         setIsLoading(false);
       }
@@ -124,11 +162,19 @@ export default function MyProfile() {
 
     if (profile.password.length > 0) {
       if (!Object.values(passwordConstraints).every(Boolean)) {
-        setPSAlert({ type: "error", title: "Weak Password", message: "Password does not meet all requirements." });
+        setPSAlert({
+          type: "error",
+          title: "Weak Password",
+          message: "Password does not meet all requirements.",
+        });
         return;
       }
       if (profile.password !== profile.confirm_pass) {
-        setPSAlert({ type: "error", title: "Mismatch", message: "Passwords do not match." });
+        setPSAlert({
+          type: "error",
+          title: "Mismatch",
+          message: "Passwords do not match.",
+        });
         return;
       }
     }
@@ -149,20 +195,31 @@ export default function MyProfile() {
     if (profileImg) fd.append("profile_img", profileImg);
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/update_user/${userId}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
+      const res = await fetch(
+        `http://127.0.0.1:8000/api/update_user/${userId}`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        },
+      );
       const data = await res.json();
       if (!res.ok) {
         setPSAlert({ type: "error", title: "Error", message: data.error });
       } else {
-        setPSAlert({ type: "success", title: "Saved", message: "Profile updated successfully." });
+        setPSAlert({
+          type: "success",
+          title: "Saved",
+          message: "Profile updated successfully.",
+        });
         setProfile((p) => ({ ...p, password: "", confirm_pass: "" }));
       }
     } catch {
-      setPSAlert({ type: "error", title: "Error", message: "Server error. Please try again." });
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Server error. Please try again.",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -171,10 +228,10 @@ export default function MyProfile() {
   const allMet = Object.values(passwordConstraints).every(Boolean);
   const constraints = [
     { key: "length", label: "At least 8 characters" },
-    { key: "lower",  label: "One lowercase letter"  },
-    { key: "upper",  label: "One uppercase letter"  },
-    { key: "number", label: "One number"             },
-    { key: "symbol", label: "One symbol"             },
+    { key: "lower", label: "One lowercase letter" },
+    { key: "upper", label: "One uppercase letter" },
+    { key: "number", label: "One number" },
+    { key: "symbol", label: "One symbol" },
   ] as const;
 
   const metCount = Object.values(passwordConstraints).filter(Boolean).length;
@@ -182,9 +239,11 @@ export default function MyProfile() {
   const inputBase =
     "flex items-center gap-3 bg-white border border-stone-200 rounded-xl px-4 py-3 mt-1.5 " +
     "focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-100 transition-all";
-  const inputField = "flex-1 text-sm text-stone-800 outline-none bg-transparent placeholder:text-stone-400";
+  const inputField =
+    "flex-1 text-sm text-stone-800 outline-none bg-transparent placeholder:text-stone-400";
   const iconCls = "text-emerald-600 shrink-0 w-4 h-4";
-  const labelCls = "text-xs font-semibold text-stone-500 uppercase tracking-wider";
+  const labelCls =
+    "text-xs font-semibold text-stone-500 uppercase tracking-wider";
 
   return (
     <>
@@ -277,13 +336,6 @@ export default function MyProfile() {
         {/* ── HERO ── */}
         <div className="mp-hero px-8 pt-8 pb-20 relative z-10">
           <div className="max-w-3xl mx-auto">
-            <button
-              onClick={() => navigate(-1)}
-              className="flex items-center gap-1.5 text-white/60 hover:text-white text-sm mb-7 transition-colors"
-            >
-              <ChevronLeft size={16} /> Back
-            </button>
-
             <div className="flex items-end gap-6">
               {/* Avatar */}
               <div className="mp-avatar-ring shrink-0">
@@ -302,7 +354,12 @@ export default function MyProfile() {
                     )}
                     <label className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 hover:opacity-100 transition-opacity cursor-pointer rounded-full">
                       <Camera size={20} className="text-white" />
-                      <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageChange}
+                        className="hidden"
+                      />
                     </label>
                   </div>
                 </div>
@@ -324,9 +381,13 @@ export default function MyProfile() {
                   <span className="text-white/45 text-sm">{profile.email}</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2.5">
-                  <span className={`w-2 h-2 rounded-full ${profile.is_active === "true" ? "bg-emerald-400" : "bg-stone-400"}`} />
+                  <span
+                    className={`w-2 h-2 rounded-full ${profile.is_active === "true" ? "bg-emerald-400" : "bg-stone-400"}`}
+                  />
                   <span className="text-white/50 text-xs font-medium">
-                    {profile.is_active === "true" ? "Active account" : "Inactive"}
+                    {profile.is_active === "true"
+                      ? "Active account"
+                      : "Inactive"}
                   </span>
                 </div>
               </div>
@@ -342,10 +403,16 @@ export default function MyProfile() {
           {/* ── PERSONAL INFO ── */}
           <div className="mp-card p-6">
             <div className="flex items-center gap-3 mb-6">
-              <div className="mp-section-icon"><User size={16} /></div>
+              <div className="mp-section-icon">
+                <User size={16} />
+              </div>
               <div>
-                <h2 className="font-bold text-stone-800 text-base">Personal Information</h2>
-                <p className="text-xs text-stone-400 mt-0.5">Your name, contact and location</p>
+                <h2 className="font-bold text-stone-800 text-base">
+                  Personal Information
+                </h2>
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Your name, contact and location
+                </p>
               </div>
             </div>
 
@@ -354,9 +421,15 @@ export default function MyProfile() {
                 <label className={labelCls}>First Name</label>
                 <div className={inputBase}>
                   <Info className={iconCls} />
-                  <input type="text" className={inputField} placeholder="First name"
+                  <input
+                    type="text"
+                    className={inputField}
+                    placeholder="First name"
                     value={profile.first_name}
-                    onChange={(e) => setProfile((p) => ({ ...p, first_name: e.target.value }))} />
+                    onChange={(e) =>
+                      setProfile((p) => ({ ...p, first_name: e.target.value }))
+                    }
+                  />
                 </div>
               </div>
 
@@ -364,9 +437,15 @@ export default function MyProfile() {
                 <label className={labelCls}>Middle Name</label>
                 <div className={inputBase}>
                   <Info className={iconCls} />
-                  <input type="text" className={inputField} placeholder="Middle name"
+                  <input
+                    type="text"
+                    className={inputField}
+                    placeholder="Middle name"
                     value={profile.middle_name}
-                    onChange={(e) => setProfile((p) => ({ ...p, middle_name: e.target.value }))} />
+                    onChange={(e) =>
+                      setProfile((p) => ({ ...p, middle_name: e.target.value }))
+                    }
+                  />
                 </div>
               </div>
 
@@ -374,9 +453,15 @@ export default function MyProfile() {
                 <label className={labelCls}>Last Name</label>
                 <div className={inputBase}>
                   <Info className={iconCls} />
-                  <input type="text" className={inputField} placeholder="Last name"
+                  <input
+                    type="text"
+                    className={inputField}
+                    placeholder="Last name"
                     value={profile.last_name}
-                    onChange={(e) => setProfile((p) => ({ ...p, last_name: e.target.value }))} />
+                    onChange={(e) =>
+                      setProfile((p) => ({ ...p, last_name: e.target.value }))
+                    }
+                  />
                 </div>
               </div>
 
@@ -384,9 +469,15 @@ export default function MyProfile() {
                 <label className={labelCls}>Contact Number</label>
                 <div className={inputBase}>
                   <Phone className={iconCls} />
-                  <input type="text" className={inputField} placeholder="+63 912 345 6789"
+                  <input
+                    type="text"
+                    className={inputField}
+                    placeholder="+63 912 345 6789"
                     value={profile.contact}
-                    onChange={(e) => setProfile((p) => ({ ...p, contact: e.target.value }))} />
+                    onChange={(e) =>
+                      setProfile((p) => ({ ...p, contact: e.target.value }))
+                    }
+                  />
                 </div>
               </div>
 
@@ -394,9 +485,13 @@ export default function MyProfile() {
                 <label className={labelCls}>Gender</label>
                 <div className={inputBase}>
                   <UserX className={iconCls} />
-                  <select className={inputField + " cursor-pointer"}
+                  <select
+                    className={inputField + " cursor-pointer"}
                     value={profile.gender}
-                    onChange={(e) => setProfile((p) => ({ ...p, gender: e.target.value }))}>
+                    onChange={(e) =>
+                      setProfile((p) => ({ ...p, gender: e.target.value }))
+                    }
+                  >
                     <option value="M">Male</option>
                     <option value="F">Female</option>
                     <option value="O">Other</option>
@@ -408,9 +503,14 @@ export default function MyProfile() {
                 <label className={labelCls}>Birthday</label>
                 <div className={inputBase}>
                   <Cake className={iconCls} />
-                  <input type="date" className={inputField}
+                  <input
+                    type="date"
+                    className={inputField}
                     value={profile.birthday}
-                    onChange={(e) => setProfile((p) => ({ ...p, birthday: e.target.value }))} />
+                    onChange={(e) =>
+                      setProfile((p) => ({ ...p, birthday: e.target.value }))
+                    }
+                  />
                 </div>
               </div>
 
@@ -418,10 +518,15 @@ export default function MyProfile() {
                 <label className={labelCls}>Address</label>
                 <div className={inputBase}>
                   <MapPin className={iconCls} />
-                  <input type="text" className={inputField}
+                  <input
+                    type="text"
+                    className={inputField}
                     placeholder="Brgy. San Isidro, Ormoc City, Leyte"
                     value={profile.address}
-                    onChange={(e) => setProfile((p) => ({ ...p, address: e.target.value }))} />
+                    onChange={(e) =>
+                      setProfile((p) => ({ ...p, address: e.target.value }))
+                    }
+                  />
                 </div>
               </div>
             </div>
@@ -430,10 +535,16 @@ export default function MyProfile() {
           {/* ── SECURITY ── */}
           <div className="mp-card p-6">
             <div className="flex items-center gap-3 mb-6">
-              <div className="mp-section-icon"><Shield size={16} /></div>
+              <div className="mp-section-icon">
+                <Shield size={16} />
+              </div>
               <div>
-                <h2 className="font-bold text-stone-800 text-base">Account & Security</h2>
-                <p className="text-xs text-stone-400 mt-0.5">Email and password settings</p>
+                <h2 className="font-bold text-stone-800 text-base">
+                  Account & Security
+                </h2>
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Email and password settings
+                </p>
               </div>
             </div>
 
@@ -443,8 +554,12 @@ export default function MyProfile() {
                 <label className={labelCls}>Email Address</label>
                 <div className={inputBase + " bg-stone-50"}>
                   <Mail className={iconCls} />
-                  <input type="email" className={inputField + " text-stone-400"} readOnly
-                    value={profile.email} />
+                  <input
+                    type="email"
+                    className={inputField + " text-stone-400"}
+                    readOnly
+                    value={profile.email}
+                  />
                   <span className="text-[10px] bg-stone-100 text-stone-400 px-2 py-0.5 rounded-full font-medium shrink-0">
                     Read-only
                   </span>
@@ -455,7 +570,9 @@ export default function MyProfile() {
               <div>
                 <label className={labelCls}>
                   New Password
-                  <span className="ml-2 normal-case font-normal text-stone-400">(leave blank to keep current)</span>
+                  <span className="ml-2 normal-case font-normal text-stone-400">
+                    (leave blank to keep current)
+                  </span>
                 </label>
                 <div className={inputBase}>
                   <Lock className={iconCls} />
@@ -464,9 +581,15 @@ export default function MyProfile() {
                     className={inputField}
                     placeholder="New password"
                     value={profile.password}
-                    onChange={(e) => setProfile((p) => ({ ...p, password: e.target.value }))} />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)}
-                    className="text-stone-400 hover:text-emerald-600 transition-colors shrink-0">
+                    onChange={(e) =>
+                      setProfile((p) => ({ ...p, password: e.target.value }))
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-stone-400 hover:text-emerald-600 transition-colors shrink-0"
+                  >
                     {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
@@ -475,16 +598,33 @@ export default function MyProfile() {
                 {profile.password.length > 0 && (
                   <>
                     <div className="mp-strength">
-                      <div className="mp-strength-fill" style={{
-                        width: `${(metCount / 5) * 100}%`,
-                        background: allMet ? "#16a34a" : metCount >= 3 ? "#f59e0b" : "#ef4444",
-                      }} />
+                      <div
+                        className="mp-strength-fill"
+                        style={{
+                          width: `${(metCount / 5) * 100}%`,
+                          background: allMet
+                            ? "#16a34a"
+                            : metCount >= 3
+                              ? "#f59e0b"
+                              : "#ef4444",
+                        }}
+                      />
                     </div>
                     <div className="mt-3 grid grid-cols-1 gap-1">
                       {constraints.map(({ key, label }) => (
-                        <div key={key} className={`flex items-center gap-2 text-xs ${passwordConstraints[key] ? "text-emerald-600" : "text-stone-400"}`}>
-                          <CheckCircle2 size={12} strokeWidth={passwordConstraints[key] ? 2.5 : 1.5}
-                            className={passwordConstraints[key] ? "text-emerald-500" : "text-stone-300"} />
+                        <div
+                          key={key}
+                          className={`flex items-center gap-2 text-xs ${passwordConstraints[key] ? "text-emerald-600" : "text-stone-400"}`}
+                        >
+                          <CheckCircle2
+                            size={12}
+                            strokeWidth={passwordConstraints[key] ? 2.5 : 1.5}
+                            className={
+                              passwordConstraints[key]
+                                ? "text-emerald-500"
+                                : "text-stone-300"
+                            }
+                          />
                           {label}
                         </div>
                       ))}
@@ -496,29 +636,46 @@ export default function MyProfile() {
               {/* Confirm Password */}
               <div>
                 <label className={labelCls}>Confirm Password</label>
-                <div className={
-                  inputBase +
-                  (profile.confirm_pass && profile.password !== profile.confirm_pass
-                    ? " !border-red-400 !ring-2 !ring-red-100"
-                    : profile.confirm_pass && profile.password === profile.confirm_pass
-                      ? " !border-emerald-400"
-                      : "")
-                }>
+                <div
+                  className={
+                    inputBase +
+                    (profile.confirm_pass &&
+                    profile.password !== profile.confirm_pass
+                      ? " !border-red-400 !ring-2 !ring-red-100"
+                      : profile.confirm_pass &&
+                          profile.password === profile.confirm_pass
+                        ? " !border-emerald-400"
+                        : "")
+                  }
+                >
                   <Lock className={iconCls} />
                   <input
                     type={showConfirm ? "text" : "password"}
                     className={inputField}
                     placeholder="Re-enter new password"
                     value={profile.confirm_pass}
-                    onChange={(e) => setProfile((p) => ({ ...p, confirm_pass: e.target.value }))} />
-                  <button type="button" onClick={() => setShowConfirm(!showConfirm)}
-                    className="text-stone-400 hover:text-emerald-600 transition-colors shrink-0">
+                    onChange={(e) =>
+                      setProfile((p) => ({
+                        ...p,
+                        confirm_pass: e.target.value,
+                      }))
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm(!showConfirm)}
+                    className="text-stone-400 hover:text-emerald-600 transition-colors shrink-0"
+                  >
                     {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
                 {profile.confirm_pass && (
-                  <p className={`text-xs mt-1.5 ${profile.password === profile.confirm_pass ? "text-emerald-600" : "text-red-500"}`}>
-                    {profile.password === profile.confirm_pass ? "✓ Passwords match" : "Passwords do not match"}
+                  <p
+                    className={`text-xs mt-1.5 ${profile.password === profile.confirm_pass ? "text-emerald-600" : "text-red-500"}`}
+                  >
+                    {profile.password === profile.confirm_pass
+                      ? "✓ Passwords match"
+                      : "Passwords do not match"}
                   </p>
                 )}
               </div>
@@ -527,7 +684,11 @@ export default function MyProfile() {
 
           {/* ── ACTIONS ── */}
           <div className="flex items-center justify-between pt-1">
-            <button type="button" className="mp-btn-ghost" onClick={() => navigate(-1)}>
+            <button
+              type="button"
+              className="mp-btn-ghost"
+              onClick={() => navigate(-1)}
+            >
               <ChevronLeft size={15} /> Cancel
             </button>
             <button type="submit" className="mp-btn-primary">

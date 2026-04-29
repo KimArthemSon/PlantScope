@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,27 +7,79 @@ import {
   StyleSheet,
   Image,
   Alert,
+  ActivityIndicator,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useRootNavigationState } from "expo-router";
 import { Mail, Lock, Eye, EyeOff, ChevronLeft } from "lucide-react-native";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
+
 export default function Login() {
   const router = useRouter();
+  const rootNavState = useRootNavigationState();
+  const [checking, setChecking] = useState(true);
+  const [redirectTo, setRedirectTo] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(
-    null,
-  );
+  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
+  const [formData, setFormData] = useState({ email: "", password: "" });
+  const [loading, setLoading] = useState(false);
+
   const inputStyleOverride = {
     outlineStyle: "none",
     outlineWidth: 0,
     outlineColor: "transparent",
   } as any;
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
-  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!rootNavState?.key || !redirectTo) return;
+    router.replace(redirectTo as any);
+  }, [rootNavState?.key, redirectTo]);
+
+  const checkAuth = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) {
+        setChecking(false);
+        return;
+      }
+
+      const res = await fetch(`${api}/api/get_me/`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) await SecureStore.setItemAsync("token", data.token);
+
+        if (data.user_role === "OnsiteInspector") {
+          setRedirectTo("/home");
+        } else if (data.user_role === "treeGrowers") {
+          setRedirectTo("/tree_growers/application");
+        } else {
+          await SecureStore.deleteItemAsync("token");
+          setChecking(false);
+        }
+      } else {
+        await SecureStore.deleteItemAsync("token");
+        setChecking(false);
+      }
+    } catch {
+      setChecking(false);
+    }
+  };
+
+  if (checking || redirectTo) {
+    return (
+      <View style={styles.splashRoot}>
+        <ActivityIndicator color="#4caf72" size="large" />
+      </View>
+    );
+  }
 
   const handleLogin = async () => {
     if (!formData.email || !formData.password) {
@@ -169,8 +221,12 @@ export default function Login() {
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.submitButton} onPress={handleLogin}>
-              <Text style={styles.submitButtonText}>Sign In</Text>
+            <TouchableOpacity
+              style={[styles.submitButton, loading && { opacity: 0.6 }]}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              <Text style={styles.submitButtonText}>{loading ? "Signing in…" : "Sign In"}</Text>
             </TouchableOpacity>
 
             <View style={styles.registerContainer}>
@@ -182,6 +238,16 @@ export default function Login() {
           </View>
 
           <Text style={styles.footer}>Protected by nature's encryption</Text>
+
+          <View style={styles.legalFooter}>
+            <TouchableOpacity onPress={() => router.push("/privacy_policy")}>
+              <Text style={styles.legalLink}>Privacy Notice</Text>
+            </TouchableOpacity>
+            <Text style={styles.legalSeparator}>·</Text>
+            <TouchableOpacity onPress={() => router.push("/terms_and_conditions")}>
+              <Text style={styles.legalLink}>Terms & Conditions</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </View>
@@ -189,6 +255,12 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
+  splashRoot: {
+    flex: 1,
+    backgroundColor: "#0d2a17",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   root: {
     flex: 1,
     width: "100%",
@@ -356,5 +428,21 @@ const styles = StyleSheet.create({
     color: "#a8c5b3",
     fontSize: 12,
     marginTop: 24,
+  },
+  legalFooter: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 12,
+    gap: 6,
+  },
+  legalLink: {
+    color: "#7CD56A",
+    fontSize: 12,
+    textDecorationLine: "underline",
+  },
+  legalSeparator: {
+    color: "#a8c5b3",
+    fontSize: 12,
   },
 });

@@ -545,7 +545,7 @@ def create_maintenance_report(request):
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST Allowed'}, status=405)
- 
+    print("hello")
     user = get_user_from_token(request)
     if not user:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
@@ -589,7 +589,7 @@ def create_maintenance_report(request):
     #     notification_type="maintenance_report",
     #     reference_id=report.maintenance_report_id,
     # )
- 
+   
     return JsonResponse({
         'message': 'Maintenance report submitted successfully!',
         'maintenance_report_id': report.maintenance_report_id,

@@ -9,13 +9,13 @@ import {
   Alert,
 } from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
-
+import * as SecureStore from "expo-secure-store";
 /* ---------- DATA ---------- */
 
 const STATS = [
-  { icon: "sprout",           value: "1,240", label: "Trees Planted" },
-  { icon: "folder-outline",   value: "3",     label: "Applications"  },
-  { icon: "clipboard-check",  value: "12",    label: "Reports"       },
+  { icon: "sprout", value: "1,240", label: "Trees Planted" },
+  { icon: "folder-outline", value: "3", label: "Applications" },
+  { icon: "clipboard-check", value: "12", label: "Reports" },
 ];
 
 const MENU: {
@@ -25,15 +25,19 @@ const MENU: {
   {
     section: "Account",
     items: [
-      { icon: "account-edit-outline", label: "Edit Profile",  path: "/editProfile" },
-      { icon: "bell-outline",         label: "Notifications", path: "/"            },
+      {
+        icon: "account-edit-outline",
+        label: "Edit Profile",
+        path: "/editProfile",
+      },
+      { icon: "bell-outline", label: "Notifications", path: "/" },
     ],
   },
   {
     section: "Support",
     items: [
       { icon: "help-circle-outline", label: "Help & Support", path: "/" },
-      { icon: "information-outline", label: "About",          path: "/" },
+      { icon: "information-outline", label: "About", path: "/" },
     ],
   },
 ];
@@ -44,14 +48,17 @@ export default function ProfilePage() {
   const router = useRouter();
 
   const handleLogout = () => {
-    Alert.alert(
-      "Log Out",
-      "Are you sure you want to log out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Log Out", style: "destructive", onPress: () => router.replace("/login") },
-      ]
-    );
+    Alert.alert("Log Out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Log Out",
+        style: "destructive",
+        onPress: async () => {
+          await SecureStore.deleteItemAsync("token");
+          router.replace("/login");
+        },
+      },
+    ]);
   };
 
   return (
@@ -82,7 +89,11 @@ export default function ProfilePage() {
       <View style={styles.statsRow}>
         {STATS.map((s) => (
           <View key={s.label} style={styles.statCard}>
-            <MaterialCommunityIcons name={s.icon as any} size={22} color="#0F4A2F" />
+            <MaterialCommunityIcons
+              name={s.icon as any}
+              size={22}
+              color="#0F4A2F"
+            />
             <Text style={styles.statValue}>{s.value}</Text>
             <Text style={styles.statLabel}>{s.label}</Text>
           </View>
@@ -105,7 +116,11 @@ export default function ProfilePage() {
                 activeOpacity={0.7}
               >
                 <View style={styles.menuIconWrap}>
-                  <MaterialCommunityIcons name={item.icon as any} size={18} color="#0F4A2F" />
+                  <MaterialCommunityIcons
+                    name={item.icon as any}
+                    size={18}
+                    color="#0F4A2F"
+                  />
                 </View>
                 <Text style={styles.menuLabel}>{item.label}</Text>
                 <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
@@ -125,7 +140,7 @@ export default function ProfilePage() {
         <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>PlantScope v2.0  ·  Tree Grower Module</Text>
+      <Text style={styles.version}>PlantScope v2.0 · Tree Grower Module</Text>
     </ScrollView>
   );
 }

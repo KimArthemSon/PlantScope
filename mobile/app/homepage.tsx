@@ -1,4 +1,4 @@
-﻿import React from 'react';
+﻿import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -7,12 +7,89 @@ import {
   ScrollView,
   ImageBackground,
   Image,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { MapPin, BarChart3, Globe, Mail, Phone, ChevronRight } from 'lucide-react-native';
+  ActivityIndicator,
+} from "react-native";
+import { useRouter, useRootNavigationState } from "expo-router";
+import {
+  MapPin,
+  BarChart3,
+  Globe,
+  Mail,
+  Phone,
+  ChevronRight,
+} from "lucide-react-native";
+import * as SecureStore from "expo-secure-store";
+import { api } from "@/constants/url_fixed";
 
 export default function HomePage() {
   const router = useRouter();
+  const rootNavState = useRootNavigationState();
+  const [checking, setChecking] = useState(true);
+  const [redirectTo, setRedirectTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  // Only navigate once the navigation stack is fully mounted
+  useEffect(() => {
+    if (!rootNavState?.key || !redirectTo) return;
+    router.replace(redirectTo as any);
+  }, [rootNavState?.key, redirectTo]);
+
+  const checkAuth = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) {
+        setChecking(false);
+        return;
+      }
+
+      const res = await fetch(`${api}/api/get_me/`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.token) await SecureStore.setItemAsync("token", data.token);
+
+        if (data.user_role === "OnsiteInspector") {
+          setRedirectTo("/home");
+        } else if (data.user_role === "treeGrowers") {
+          setRedirectTo("/tree_growers/application");
+        } else {
+          await SecureStore.deleteItemAsync("token");
+          setChecking(false);
+        }
+      } else {
+        await SecureStore.deleteItemAsync("token");
+        setChecking(false);
+      }
+    } catch {
+      setChecking(false);
+    }
+  };
+
+  if (checking || redirectTo) {
+    return (
+      <View style={splashStyles.root}>
+        <View style={splashStyles.logoCircle}>
+          <Image
+            source={require("../assets/images/logo.jpg")}
+            style={splashStyles.logo}
+          />
+        </View>
+        <Text style={splashStyles.title}>PlantScope</Text>
+        <Text style={splashStyles.subtitle}>Field Data Gathering App</Text>
+        <ActivityIndicator
+          color="#4caf72"
+          size="small"
+          style={splashStyles.spinner}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.page}>
@@ -20,13 +97,16 @@ export default function HomePage() {
         <View style={styles.brandRow}>
           <View style={styles.logoCircle}>
             <Image
-              source={require('../assets/images/logo.jpg')}
+              source={require("../assets/images/logo.jpg")}
               style={styles.logoImage}
             />
           </View>
-          <Text style={styles.brandTitle}>  PlantScope</Text>
+          <Text style={styles.brandTitle}> PlantScope</Text>
         </View>
-        <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/login')}>
+        <TouchableOpacity
+          style={styles.loginButton}
+          onPress={() => router.push("/login")}
+        >
           <Text style={styles.loginButtonText}>Login</Text>
         </TouchableOpacity>
       </View>
@@ -36,7 +116,7 @@ export default function HomePage() {
       >
         <ImageBackground
           source={{
-            uri: 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?w=1200&h=800&fit=crop',
+            uri: "https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?w=1200&h=800&fit=crop",
           }}
           style={styles.heroBackground}
           resizeMode="cover"
@@ -47,17 +127,27 @@ export default function HomePage() {
             <View style={styles.heroCard}>
               <View style={styles.heroLogoCircle}>
                 <Image
-                  source={require('../assets/images/logo.jpg')}
+                  source={require("../assets/images/logo.jpg")}
                   style={styles.heroLogoImage}
                 />
               </View>
-              <Text style={styles.heroTagline}>Data-Driven Reforestation Platform</Text>
-              <Text style={styles.heroDescription}>
-                GIS-enabled site identification system for strategic reforestation in Ormoc City, Leyte.
+              <Text style={styles.heroTagline}>
+                Data-Driven Reforestation Platform
               </Text>
-              <TouchableOpacity style={styles.ctaButton} onPress={() => router.push('/login')}>
+              <Text style={styles.heroDescription}>
+                GIS-enabled site identification system for strategic
+                reforestation in Ormoc City, Leyte.
+              </Text>
+              <TouchableOpacity
+                style={styles.ctaButton}
+                onPress={() => router.push("/login")}
+              >
                 <Text style={styles.ctaButtonText}>Explore Dashboard</Text>
-                <ChevronRight size={18} color="#0f4a2f" style={styles.ctaIcon} />
+                <ChevronRight
+                  size={18}
+                  color="#0f4a2f"
+                  style={styles.ctaIcon}
+                />
               </TouchableOpacity>
             </View>
           </View>
@@ -71,7 +161,8 @@ export default function HomePage() {
             </View>
             <Text style={styles.featureTitle}>GIS-Powered Mapping</Text>
             <Text style={styles.featureText}>
-              Multi-layer spatial analysis integrating elevation, slope, soil type, and water sources.
+              Multi-layer spatial analysis integrating elevation, slope, soil
+              type, and water sources.
             </Text>
           </View>
 
@@ -81,7 +172,8 @@ export default function HomePage() {
             </View>
             <Text style={styles.featureTitle}>Data-Driven Prioritization</Text>
             <Text style={styles.featureText}>
-              Scientific scoring system based on ecological restoration potential and climate resilience.
+              Scientific scoring system based on ecological restoration
+              potential and climate resilience.
             </Text>
           </View>
 
@@ -91,7 +183,8 @@ export default function HomePage() {
             </View>
             <Text style={styles.featureTitle}>Focused on Ormoc City</Text>
             <Text style={styles.featureText}>
-              Tailored for post-Yolanda recovery zones and degraded watersheds in Leyte.
+              Tailored for post-Yolanda recovery zones and degraded watersheds
+              in Leyte.
             </Text>
           </View>
         </View>
@@ -99,11 +192,15 @@ export default function HomePage() {
         <View style={[styles.section, styles.aboutSection]}>
           <Text style={styles.aboutTitle}>About PlantScope</Text>
           <Text style={styles.aboutText}>
-            A capstone project by students of Western Leyte College of Ormoc City, combining GIS with data analytics to identify and prioritize reforestation sites.
+            A capstone project by students of Western Leyte College of Ormoc
+            City, combining GIS with data analytics to identify and prioritize
+            reforestation sites.
           </Text>
           <View style={styles.aboutNote}>
             <Text style={styles.aboutNoteText}>
-              Our mission: Provide scientific tools for strategic reforestation planning, ensuring maximum ecological impact and sustainable forest recovery.
+              Our mission: Provide scientific tools for strategic reforestation
+              planning, ensuring maximum ecological impact and sustainable
+              forest recovery.
             </Text>
           </View>
         </View>
@@ -125,15 +222,21 @@ export default function HomePage() {
             </View>
             <View style={styles.contactInfo}>
               <Text style={styles.contactLabel}>Email</Text>
-              <Text style={styles.contactText}>marcxyver.gica@wlcormoc.edu.ph</Text>
+              <Text style={styles.contactText}>
+                marcxyver.gica@wlcormoc.edu.ph
+              </Text>
             </View>
           </View>
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Western Leyte College of Ormoc City</Text>
+          <Text style={styles.footerText}>
+            Western Leyte College of Ormoc City
+          </Text>
           <Text style={styles.footerText}>College of ICT & Engineering</Text>
-          <Text style={styles.footerSmall}>© 2025 PlantScope. All rights reserved.</Text>
+          <Text style={styles.footerSmall}>
+            © 2025 PlantScope. All rights reserved.
+          </Text>
         </View>
       </ScrollView>
     </View>
@@ -142,27 +245,27 @@ export default function HomePage() {
 
 const styles = StyleSheet.create({
   page: {
-    width: '100%',
+    width: "100%",
     flex: 1,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
+    backgroundColor: "#ffffff",
+    alignItems: "center",
   },
   scrollContent: {
     flexGrow: 1,
-    width: '100%',
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
+    width: "100%",
+    backgroundColor: "#ffffff",
+    alignItems: "center",
   },
   heroBackground: {
-    width: '100%',
+    width: "100%",
     minHeight: 680,
   },
   heroOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 74, 47, 0.8)',
+    backgroundColor: "rgba(15, 74, 47, 0.8)",
   },
   header: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
@@ -170,129 +273,129 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 40,
     paddingBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(45, 82, 65, 0.85)',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(45, 82, 65, 0.85)",
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: "rgba(255,255,255,0.1)",
   },
   brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   logoCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    overflow: 'hidden',
+    overflow: "hidden",
     borderWidth: 2,
-    borderColor: '#ffffff',
-    backgroundColor: 'transparent',
+    borderColor: "#ffffff",
+    backgroundColor: "transparent",
   },
   logoImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   brandTitle: {
-    color: '#ffffff',
+    color: "#ffffff",
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   loginButton: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: "rgba(255,255,255,0.9)",
     paddingVertical: 10,
     paddingHorizontal: 18,
     borderRadius: 999,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOpacity: 0.12,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
     elevation: 4,
   },
   loginButtonText: {
-    color: '#0f4a2f',
-    fontWeight: '700',
+    color: "#0f4a2f",
+    fontWeight: "700",
     fontSize: 14,
   },
   heroContent: {
-    width: '100%',
+    width: "100%",
     paddingHorizontal: 24,
     paddingTop: 160,
     paddingBottom: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   heroCard: {
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     borderRadius: 0,
     padding: 0,
     maxWidth: 640,
-    alignSelf: 'center',
+    alignSelf: "center",
     borderWidth: 0,
   },
   heroLogoCircle: {
     width: 112,
     height: 112,
     borderRadius: 56,
-    overflow: 'hidden',
+    overflow: "hidden",
     borderWidth: 2,
-    borderColor: '#ffffff',
-    backgroundColor: 'transparent',
-    alignSelf: 'center',
+    borderColor: "#ffffff",
+    backgroundColor: "transparent",
+    alignSelf: "center",
     marginBottom: 18,
   },
   heroLogoImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   heroTagline: {
     fontSize: 18,
-    color: '#bcbcbc',
-    fontWeight: '700',
+    color: "#bcbcbc",
+    fontWeight: "700",
     marginBottom: 16,
-    textAlign: 'center',
+    textAlign: "center",
   },
   heroDescription: {
-    color: 'rgb(230, 230, 230)',
+    color: "rgb(230, 230, 230)",
     fontSize: 16,
     lineHeight: 24,
     marginBottom: 22,
-    textAlign: 'center',
+    textAlign: "center",
   },
   ctaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#cad0c9',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#cad0c9",
     paddingVertical: 16,
     borderRadius: 999,
   },
   ctaButtonText: {
-    color: '#055502',
-    fontWeight: '700',
+    color: "#055502",
+    fontWeight: "700",
     fontSize: 16,
   },
   section: {
     paddingHorizontal: 24,
     paddingVertical: 32,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
   },
   sectionTitle: {
     fontSize: 28,
-    fontWeight: '800',
-    color: '#0f4a2f',
-    textAlign: 'center',
+    fontWeight: "800",
+    color: "#0f4a2f",
+    textAlign: "center",
     marginBottom: 24,
   },
   featureCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderWidth: 2,
-    borderColor: 'rgba(15, 74, 47, 0.12)',
+    borderColor: "rgba(15, 74, 47, 0.12)",
     borderRadius: 24,
     padding: 22,
     marginBottom: 16,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 8 },
     shadowRadius: 16,
@@ -302,90 +405,90 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#0f4a2f',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#0f4a2f",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 16,
   },
   featureTitle: {
     fontSize: 20,
-    fontWeight: '700',
-    color: '#0f4a2f',
+    fontWeight: "700",
+    color: "#0f4a2f",
     marginBottom: 10,
   },
   featureText: {
-    color: '#475569',
+    color: "#475569",
     fontSize: 15,
     lineHeight: 22,
   },
   aboutSection: {
-    backgroundColor: '#0f4a2f',
+    backgroundColor: "#0f4a2f",
   },
   aboutTitle: {
     fontSize: 28,
-    fontWeight: '800',
-    color: '#c9a961',
-    textAlign: 'center',
+    fontWeight: "800",
+    color: "#c9a961",
+    textAlign: "center",
     marginBottom: 16,
   },
   aboutText: {
-    color: 'rgba(255,255,255,0.9)',
+    color: "rgba(255,255,255,0.9)",
     fontSize: 16,
     lineHeight: 24,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 18,
   },
   aboutNote: {
     borderLeftWidth: 4,
-    borderLeftColor: '#c9a961',
+    borderLeftColor: "#c9a961",
     paddingLeft: 16,
   },
   aboutNoteText: {
-    color: 'rgba(255,255,255,0.9)',
+    color: "rgba(255,255,255,0.9)",
     fontSize: 16,
     lineHeight: 24,
   },
   contactCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 20,
-    backgroundColor: '#f8fafc',
+    backgroundColor: "#f8fafc",
     borderRadius: 20,
     borderWidth: 2,
-    borderColor: 'rgba(15, 74, 47, 0.1)',
+    borderColor: "rgba(15, 74, 47, 0.1)",
     marginBottom: 14,
   },
   contactIconBackground: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#0f4a2f',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#0f4a2f",
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 16,
   },
   contactInfo: {
     flex: 1,
   },
   contactLabel: {
-    color: '#0f4a2f',
-    fontWeight: '700',
+    color: "#0f4a2f",
+    fontWeight: "700",
     fontSize: 15,
     marginBottom: 4,
   },
   contactText: {
-    color: '#475569',
+    color: "#475569",
     fontSize: 14,
   },
   footer: {
-    width: '100%',
+    width: "100%",
     paddingHorizontal: 24,
     paddingVertical: 28,
-    backgroundColor: '#0f4a2f',
-    alignItems: 'center',
+    backgroundColor: "#0f4a2f",
+    alignItems: "center",
   },
   footerText: {
-    color: 'rgba(255,255,255,0.75)',
+    color: "rgba(255,255,255,0.75)",
     fontSize: 13,
     marginBottom: 6,
   },
@@ -393,7 +496,34 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   footerSmall: {
-    color: 'rgba(255,255,255,0.55)',
+    color: "rgba(255,255,255,0.55)",
     fontSize: 12,
   },
+});
+
+const splashStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#0d2a17",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "rgba(76,175,114,0.5)",
+    marginBottom: 20,
+  },
+  logo: { width: "100%", height: "100%" },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: 0.5,
+  },
+  subtitle: { fontSize: 13, color: "#5a8a6a", marginTop: 6, marginBottom: 28 },
+  spinner: { marginTop: 4 },
 });

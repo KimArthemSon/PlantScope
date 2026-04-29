@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from .models import User, profile, Organization
 from security.models import SecurityLog
-from security.views import log_event, is_lock
+from security.views import log_event, is_lock, log_activity
 import json
 import hashlib
 import jwt
@@ -13,6 +13,43 @@ import re
 from django.conf import settings
 from django.db import DatabaseError, connection, transaction
 from tree_planting_programs.models import Application 
+
+
+def _get_request_user(request):
+    """Return (User, email) of the JWT-authenticated caller, or (None, '') on failure."""
+    try:
+        header = request.headers.get('Authorization', '')
+        if not header.startswith('Bearer '):
+            return None, ''
+        payload = jwt.decode(
+            header.split(' ')[1], settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        user = User.objects.filter(id=payload.get('user_id')).first()
+        return user, (user.email if user else '')
+    except Exception:
+        return None, ''
+
+
+def record_activity(request, action_type, entity_type, entity_id=None,
+                    entity_label='', description='',
+                    old_data=None, new_data=None, changed_fields=None):
+    """Log a business operation performed by the JWT-authenticated caller."""
+    performer, email = _get_request_user(request)
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    log_activity(
+        performed_by=performer,
+        email=email,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_label=entity_label,
+        description=description,
+        old_data=old_data,
+        new_data=new_data,
+        changed_fields=changed_fields,
+        ip_address=ip,
+    )
 
 
 @csrf_exempt
@@ -156,6 +193,15 @@ def register_user(request):
             {'error': f'Missing fields, Please try again {e}'}, status=400)
     
 
+    record_activity(
+        request,
+        action_type='CREATE',
+        entity_type='User',
+        entity_id=user.id,
+        entity_label=email,
+        description=f'New {user_role} account registered.',
+        new_data={'email': email, 'user_role': user_role, 'is_active': user.is_active},
+    )
     return JsonResponse({'message': 'User registered successfully', 'user_id': user.id})
 
 @csrf_exempt
@@ -332,6 +378,20 @@ def update_user(request, user_id):
     password_regex = r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$'
 
     try:
+        # Snapshot before update
+        _old = {
+            'email':       user.email,
+            'user_role':   user.user_role,
+            'is_active':   user.is_active,
+            'first_name':  user_profile.first_name  if user_profile else '',
+            'middle_name': user_profile.middle_name if user_profile else '',
+            'last_name':   user_profile.last_name   if user_profile else '',
+            'birthday':    str(user_profile.birthday) if user_profile else '',
+            'contact':     user_profile.contact     if user_profile else '',
+            'address':     user_profile.address     if user_profile else '',
+            'gender':      user_profile.gender      if user_profile else '',
+        }
+
         # Use form-data instead of JSON
         email = request.POST.get('email', user.email)
         user_role = request.POST.get('user_role', user.user_role)
@@ -367,7 +427,6 @@ def update_user(request, user_id):
         user.save()
 
         # Update or create profile
-       
         user_profile.first_name = first_name
         user_profile.middle_name = middle_name
         user_profile.last_name = last_name
@@ -378,7 +437,27 @@ def update_user(request, user_id):
         if profile_img:
             user_profile.profile_img = profile_img
         user_profile.save()
-        
+
+        _new = {
+            'email': email, 'user_role': user_role, 'is_active': is_active,
+            'first_name': first_name, 'middle_name': middle_name, 'last_name': last_name,
+            'birthday': str(birthday), 'contact': contact, 'address': address, 'gender': gender,
+        }
+        _changed = [k for k in _old if str(_old[k]) != str(_new.get(k, ''))]
+        if password:
+            _changed.append('password')
+
+        record_activity(
+            request,
+            action_type='UPDATE',
+            entity_type='User',
+            entity_id=user_id,
+            entity_label=email,
+            description=f'User account updated. Fields changed: {", ".join(_changed) or "none"}.',
+            old_data=_old,
+            new_data=_new,
+            changed_fields=_changed,
+        )
 
         return JsonResponse({'message': 'User updated successfully'})
 
@@ -386,13 +465,25 @@ def update_user(request, user_id):
         print("Error:", e)
         return JsonResponse({'error': 'Something went wrong: ' + str(e)}, status=400)
 
-@csrf_exempt 
+@csrf_exempt
 def delete_user(request, user_id):
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
 
     user = get_object_or_404(User, id=user_id)
+    deleted_email = user.email
+    deleted_role = user.user_role
     user.delete()
+
+    record_activity(
+        request,
+        action_type='DELETE',
+        entity_type='User',
+        entity_id=user_id,
+        entity_label=deleted_email,
+        description=f'{deleted_role} account deleted.',
+        old_data={'email': deleted_email, 'user_role': deleted_role},
+    )
 
     return JsonResponse({'message': 'User deleted successfully'})
 
@@ -426,7 +517,131 @@ def get_me(request):
         print("Error:", e)
         return JsonResponse({'error': 'Invalid JSON input'}, status=400)
     
+@csrf_exempt
+def get_tree_grower_detail(request, user_id):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
+    try:
+        user = User.objects.get(id=user_id, user_role='treeGrowers')
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'Tree grower not found'}, status=404)
+
+    p   = getattr(user, 'profile', None)
+    org = getattr(user, 'organization', None)
+
+    return JsonResponse({
+        'id':         user.id,
+        'email':      user.email,
+        'is_active':  user.is_active,
+        'created_at': user.created_at,
+        'profile': {
+            'first_name':  p.first_name  if p else '',
+            'middle_name': p.middle_name if p else '',
+            'last_name':   p.last_name   if p else '',
+            'birthday':    str(p.birthday) if p else None,
+            'gender':      p.gender      if p else '',
+            'contact':     p.contact     if p else '',
+            'address':     p.address     if p else '',
+            'profile_img': '/media/' + p.profile_img.name if p and p.profile_img else None,
+        },
+        'organization': {
+            'organization_name': org.organization_name,
+            'email':             org.email,
+            'address':           org.address,
+            'contact':           org.contact,
+            'created_at':        org.created_at,
+            'profile_img':       '/media/' + org.profile_img.name if org.profile_img else None,
+        } if org else None,
+    })
+
+
+@csrf_exempt
+def toggle_user_status(request, user_id):
+    if request.method != 'PATCH':
+        return JsonResponse({'error': 'Only PATCH allowed'}, status=405)
+
+    user = get_object_or_404(User, id=user_id)
+    old_status = user.is_active
+    user.is_active = not old_status
+    user.save()
+
+    action = 'ACTIVATE' if user.is_active else 'DEACTIVATE'
+    record_activity(
+        request,
+        action_type='UPDATE',
+        entity_type='User',
+        entity_id=user_id,
+        entity_label=user.email,
+        description=f'User account {action.lower()}d.',
+        old_data={'is_active': old_status},
+        new_data={'is_active': user.is_active},
+        changed_fields=['is_active'],
+    )
+
+    return JsonResponse({'message': f'User {action.lower()}d successfully.', 'is_active': user.is_active})
+
+
+@csrf_exempt
+def list_tree_growers(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    search = request.GET.get('search', '').strip()
+    page = int(request.GET.get('page', 1))
+    entries = int(request.GET.get('entries', 10))
+
+    with connection.cursor() as cursor:
+        # 1️⃣ Get total count
+        cursor.execute(
+            '''
+            SELECT COUNT(*)
+            FROM accounts_user AS u
+            JOIN accounts_profile AS a ON u.id = a.users_id
+            WHERE u.email LIKE %s AND u.user_role = %s
+            ''',
+            [f"%{search}%", "treeGrowers"]
+        )
+        total_count_row = cursor.fetchone()
+        total_count = total_count_row[0] if total_count_row else 0
+        total_pages = max(math.ceil(total_count / entries), 1)
+
+        # 2️⃣ Fetch paginated rows
+        offset = (page - 1) * entries
+        cursor.execute(
+            '''
+            SELECT u.id, u.email, u.is_active, u.created_at,
+                   a.profile_img, a.first_name, a.last_name, a.contact, a.address
+            FROM accounts_user AS u
+            JOIN accounts_profile AS a ON u.id = a.users_id
+            WHERE u.email LIKE %s AND u.user_role = %s
+            ORDER BY u.created_at desc
+            LIMIT %s OFFSET %s
+            ''',
+            [f"%{search}%", "treeGrowers", entries, offset]
+        )
+
+        columns = [col[0] for col in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        users_list = [
+            {
+                'id':             user['id'],
+                'email':          user['email'],
+                'is_active':      user['is_active'],
+                'profile_img':    '/media/' + user['profile_img'] if user['profile_img'] else None,
+                'full_name':      f"{user['first_name']} {user['last_name']}".strip(),
+                'contact_number': user.get('contact', ''),
+                'address':        user.get('address', ''),
+            }
+            for user in rows
+        ]
+
+    response = {
+        'total_pages': total_pages,
+        'tree_growers': users_list,
+    }
+    return JsonResponse(response, safe=False)
     
     
     
