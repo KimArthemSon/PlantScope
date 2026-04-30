@@ -8,14 +8,31 @@ RECOVER_LOCK_TIME_MINUTES = 2
 ATTEMPT_LIMIT = 5
 
 
-def is_lock(ip_address):
+def get_lock_info(ip_address):
+    """Returns (is_locked, remaining_seconds, attempts_left)."""
     time_threshold = timezone.now() - timedelta(minutes=RECOVER_LOCK_TIME_MINUTES)
-    failed_count = SecurityLog.objects.filter(
-        ip_address=ip_address,
-        event_type=SecurityLog.LOGIN_FAILED,
-        timestamp__gte=time_threshold
-    ).count()
-    return failed_count >= ATTEMPT_LIMIT
+    timestamps = list(
+        SecurityLog.objects.filter(
+            ip_address=ip_address,
+            event_type=SecurityLog.LOGIN_FAILED,
+            timestamp__gte=time_threshold,
+        )
+        .order_by('timestamp')
+        .values_list('timestamp', flat=True)
+    )
+    count = len(timestamps)
+    if count >= ATTEMPT_LIMIT:
+        # Lock clears when the failure at index (count - ATTEMPT_LIMIT) ages out
+        critical = timestamps[count - ATTEMPT_LIMIT]
+        unlock_at = critical + timedelta(minutes=RECOVER_LOCK_TIME_MINUTES)
+        remaining = max(0, int((unlock_at - timezone.now()).total_seconds()))
+        return True, remaining, 0
+    return False, 0, ATTEMPT_LIMIT - count
+
+
+def is_lock(ip_address):
+    locked, _, _ = get_lock_info(ip_address)
+    return locked
 
 
 def log_event(user, email, event_type, ip_address=None, user_agent=None):

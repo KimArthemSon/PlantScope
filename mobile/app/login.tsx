@@ -23,6 +23,8 @@ export default function Login() {
   const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
 
   const inputStyleOverride = {
     outlineStyle: "none",
@@ -38,6 +40,14 @@ export default function Login() {
     if (!rootNavState?.key || !redirectTo) return;
     router.replace(redirectTo as any);
   }, [rootNavState?.key, redirectTo]);
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setTimeout(() => {
+      setLockoutSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [lockoutSeconds]);
 
   const checkAuth = async () => {
     try {
@@ -99,13 +109,23 @@ export default function Login() {
         }),
       });
 
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        Alert.alert("Error", errorData.error || "Invalid credentials");
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 403) {
+        const secs = data.remaining_seconds ?? 120;
+        setAttemptsLeft(0);
+        setLockoutSeconds(secs);
+        Alert.alert("Account Locked", `Too many failed attempts. Try again in ${secs} seconds.`);
         return;
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        setAttemptsLeft(data.attempts_left ?? null);
+        Alert.alert("Login Failed", data.error || "Invalid credentials");
+        return;
+      }
+
+      setAttemptsLeft(null);
 
       if (data.user_role === "OnsiteInspector") {
         await SecureStore.setItemAsync("token", data.token);
@@ -119,8 +139,6 @@ export default function Login() {
         Alert.alert("Error", "Access denied: Insufficient permissions");
         return;
       }
-
-      // 💾 Store token — ONE LINE, DONE ✅
     } catch (error) {
       console.error("Login error:", error);
       Alert.alert(
@@ -221,10 +239,28 @@ export default function Login() {
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
+            {lockoutSeconds > 0 ? (
+              <View style={styles.lockoutBanner}>
+                <Text style={styles.bannerIcon}>🔒</Text>
+                <Text style={styles.lockoutText}>
+                  Account locked — try again in{" "}
+                  <Text style={styles.lockoutCountdown}>{lockoutSeconds}s</Text>
+                </Text>
+              </View>
+            ) : attemptsLeft !== null && attemptsLeft > 0 ? (
+              <View style={styles.attemptsBanner}>
+                <Text style={styles.bannerIcon}>⚠️</Text>
+                <Text style={styles.attemptsText}>
+                  <Text style={styles.attemptsBold}>{attemptsLeft}</Text>
+                  {" "}{attemptsLeft === 1 ? "attempt" : "attempts"} remaining before lockout
+                </Text>
+              </View>
+            ) : null}
+
             <TouchableOpacity
-              style={[styles.submitButton, loading && { opacity: 0.6 }]}
+              style={[styles.submitButton, (loading || lockoutSeconds > 0) && { opacity: 0.5 }]}
               onPress={handleLogin}
-              disabled={loading}
+              disabled={loading || lockoutSeconds > 0}
             >
               <Text style={styles.submitButtonText}>{loading ? "Signing in…" : "Sign In"}</Text>
             </TouchableOpacity>
@@ -444,5 +480,50 @@ const styles = StyleSheet.create({
   legalSeparator: {
     color: "#a8c5b3",
     fontSize: 12,
+  },
+  lockoutBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(220, 38, 38, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(220, 38, 38, 0.4)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  lockoutText: {
+    color: "#fca5a5",
+    fontSize: 13,
+    fontWeight: "500",
+    flex: 1,
+  },
+  lockoutCountdown: {
+    fontWeight: "700",
+  },
+  attemptsBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(217, 119, 6, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(217, 119, 6, 0.4)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  attemptsText: {
+    color: "#fcd34d",
+    fontSize: 13,
+    fontWeight: "500",
+    flex: 1,
+  },
+  attemptsBold: {
+    fontWeight: "700",
+  },
+  bannerIcon: {
+    fontSize: 16,
   },
 });

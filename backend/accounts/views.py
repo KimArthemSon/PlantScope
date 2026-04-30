@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from .models import User, profile, Organization
 from security.models import SecurityLog
-from security.views import log_event, is_lock, log_activity
+from security.views import log_event, get_lock_info, log_activity
 import json
 import hashlib
 import jwt
@@ -69,13 +69,14 @@ def register_user(request):
         "address" , 
         "gender" ,
     ]
-
+    
     missing = [f for f in required_fields if not request.POST.get(f)]
 
     if not request.FILES.get('profile_img'):
         missing.append('profile_img')
-    
+    print(missing)
     if missing:
+        
         return JsonResponse({
             'error': 'Missing required fields',
             'fields': missing
@@ -86,7 +87,7 @@ def register_user(request):
     is_active =  request.POST.get('is_active').lower() == 'true'
     password = request.POST.get('password')
     first_name =  request.POST.get('first_name')
-    middle_name = request.POST.get('middle_name')
+    middle_name = request.POST.get('middle_name', '')
     last_name =  request.POST.get('last_name')
     birthday =  request.POST.get('birthday')
     contact = request.POST.get('contact')
@@ -216,24 +217,40 @@ def login_user(request):
         ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR"))
     except KeyError:
         return JsonResponse({'error': 'Missing fields, Please try again'}, status=400)
-    if is_lock(ip):
-            return JsonResponse({'error': 'Too many failed attempts. Try again later.'}, status=403)
-    
+    locked, remaining_seconds, attempts_left = get_lock_info(ip)
+    if locked:
+        return JsonResponse({
+            'error': 'Too many failed attempts. Try again later.',
+            'remaining_seconds': remaining_seconds,
+        }, status=403)
+
     try:
         user = User.objects.get(email=email)
     except User.DoesNotExist:
         log_event(None, email, SecurityLog.LOGIN_FAILED, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
-        return JsonResponse({'error': 'Login failed. Please check your credentials.'}, status=401)
-    
+        _, _, attempts_left = get_lock_info(ip)
+        return JsonResponse({
+            'error': 'Login failed. Please check your credentials.',
+            'attempts_left': attempts_left,
+        }, status=401)
+
     if not user.is_active:
         return JsonResponse({'error': 'Your account is deactivated!'}, status=401)
-    
+
     # Hash the input password and compare
     hashed_password = hashlib.sha256(password.encode()).hexdigest()
     if hashed_password != user.password:
-     
-        log_event(None, email, SecurityLog.LOGIN_FAILED, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
-        return JsonResponse({'error': 'Login failed. Please check your credentials.'}, status=401)
+        log_event(user, email, SecurityLog.LOGIN_FAILED, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
+        _, remaining_seconds, attempts_left = get_lock_info(ip)
+        if attempts_left == 0:
+            return JsonResponse({
+                'error': 'Too many failed attempts. Try again later.',
+                'remaining_seconds': remaining_seconds,
+            }, status=403)
+        return JsonResponse({
+            'error': 'Login failed. Please check your credentials.',
+            'attempts_left': attempts_left,
+        }, status=401)
     
 
     log_event(user, email, SecurityLog.LOGIN_SUCCESS, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
@@ -427,6 +444,8 @@ def update_user(request, user_id):
         user.save()
 
         # Update or create profile
+        if user_profile is None:
+            user_profile = profile(users=user)
         user_profile.first_name = first_name
         user_profile.middle_name = middle_name
         user_profile.last_name = last_name
@@ -534,7 +553,7 @@ def get_tree_grower_detail(request, user_id):
         'id':         user.id,
         'email':      user.email,
         'is_active':  user.is_active,
-        'created_at': user.created_at,
+        'created_at': str(user.created_at),
         'profile': {
             'first_name':  p.first_name  if p else '',
             'middle_name': p.middle_name if p else '',
@@ -550,7 +569,7 @@ def get_tree_grower_detail(request, user_id):
             'email':             org.email,
             'address':           org.address,
             'contact':           org.contact,
-            'created_at':        org.created_at,
+            'created_at':        str(org.created_at),
             'profile_img':       '/media/' + org.profile_img.name if org.profile_img else None,
         } if org else None,
     })

@@ -1,16 +1,54 @@
 import json
+import jwt
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Q, Prefetch
+from django.conf import settings
 from sites.models import Sites
 from reforestation_areas.models import Reforestation_areas
+from security.views import log_activity
 
 from accounts.models import User
 from .models import (
     Assigned_onsite_inspector,
     Field_assessment,
 )
+
+
+def _get_request_user(request):
+    try:
+        header = request.headers.get('Authorization', '')
+        if not header.startswith('Bearer '):
+            return None, ''
+        payload = jwt.decode(
+            header.split(' ')[1], settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        user = User.objects.filter(id=payload.get('user_id')).first()
+        return user, (user.email if user else '')
+    except Exception:
+        return None, ''
+
+
+def record_activity(request, action_type, entity_type, entity_id=None,
+                    entity_label='', description='',
+                    old_data=None, new_data=None, changed_fields=None):
+    performer, email = _get_request_user(request)
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    log_activity(
+        performed_by=performer,
+        email=email,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_label=entity_label,
+        description=description,
+        old_data=old_data,
+        new_data=new_data,
+        changed_fields=changed_fields,
+        ip_address=ip,
+    )
 
 
 # =====================================================
@@ -152,7 +190,17 @@ def assign_inspector(request):
     reforestation_area=area,
     user_id__in=to_remove
     ).delete()
-    
+
+    record_activity(
+        request,
+        action_type='UPDATE',
+        entity_type='InspectorAssignment',
+        entity_id=reforestation_area_id,
+        entity_label=f'Reforestation Area {reforestation_area_id}',
+        description=f'Inspector assignments updated. Added: {list(to_add) or "none"}, Removed: {list(to_remove) or "none"}.',
+        new_data={'assigned_added': list(to_add), 'assigned_removed': list(to_remove)},
+    )
+
     # Existing users will remain assigned automatically
     return JsonResponse({
     "status": "success",

@@ -15,12 +15,22 @@ export default function Login() {
     title: string;
     message: string;
   } | null>(null);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
 
   const navigate = useNavigate();
 
   useEffect(() => {
     checkIfStillLogin();
   }, []);
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setTimeout(() => {
+      setLockoutSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [lockoutSeconds]);
 
   const checkIfStillLogin = async () => {
     const token = localStorage.getItem("token");
@@ -93,6 +103,7 @@ export default function Login() {
 
       if (response.ok) {
         setIsLoading(false);
+        setAttemptsLeft(null);
         setPSAlert({
           type: "success",
           title: "Login Successful",
@@ -112,8 +123,18 @@ export default function Login() {
             navigate("/dashboard/GISS");
           }
         }, 3000);
+      } else if (response.status === 403) {
+        setIsLoading(false);
+        setAttemptsLeft(0);
+        setLockoutSeconds(data.remaining_seconds ?? 120);
+        setPSAlert({
+          type: "failed",
+          title: "Account Locked",
+          message: `Too many failed attempts. Try again in ${data.remaining_seconds ?? 120} seconds.`,
+        });
       } else {
         setIsLoading(false);
+        setAttemptsLeft(data.attempts_left ?? null);
         setPSAlert({
           type: "failed",
           title: "Login Failed",
@@ -234,10 +255,33 @@ export default function Login() {
                 </div>
               </div>
 
+              {/* Lockout / attempts feedback */}
+              {lockoutSeconds > 0 ? (
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+                  <span className="text-base">🔒</span>
+                  <span>
+                    Account locked — try again in{" "}
+                    <span className="font-bold tabular-nums">
+                      {lockoutSeconds}s
+                    </span>
+                  </span>
+                </div>
+              ) : attemptsLeft !== null && attemptsLeft > 0 ? (
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm font-medium">
+                  <span className="text-base">⚠️</span>
+                  <span>
+                    <span className="font-bold">{attemptsLeft}</span>{" "}
+                    {attemptsLeft === 1 ? "attempt" : "attempts"} remaining
+                    before lockout
+                  </span>
+                </div>
+              ) : null}
+
               {/* Login Button */}
               <button
                 type="submit"
-                className="mt-8 w-full bg-linear-to-r from-green-700 cursor-pointer to-green-800 text-white py-3 rounded-lg font-semibold text-lg hover:from-green-800 hover:to-green-900 transform hover:scale-[1.01] transition-all shadow-md flex items-center justify-center gap-2"
+                disabled={lockoutSeconds > 0}
+                className="mt-8 w-full bg-linear-to-r from-green-700 cursor-pointer to-green-800 text-white py-3 rounded-lg font-semibold text-lg hover:from-green-800 hover:to-green-900 transform hover:scale-[1.01] transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 Login
               </button>

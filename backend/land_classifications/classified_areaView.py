@@ -5,8 +5,47 @@ from .models import LandClassification, Classified_areas
 from barangay.models import Barangay
 from .models import Classified_areas
 from reforestation_areas.models import Reforestation_areas
+from django.conf import settings
+from security.views import log_activity
 import json
 import math
+import jwt
+
+
+def _get_request_user(request):
+    try:
+        from accounts.models import User
+        header = request.headers.get('Authorization', '')
+        if not header.startswith('Bearer '):
+            return None, ''
+        payload = jwt.decode(
+            header.split(' ')[1], settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        user = User.objects.filter(id=payload.get('user_id')).first()
+        return user, (user.email if user else '')
+    except Exception:
+        return None, ''
+
+
+def record_activity(request, action_type, entity_type, entity_id=None,
+                    entity_label='', description='',
+                    old_data=None, new_data=None, changed_fields=None):
+    performer, email = _get_request_user(request)
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    log_activity(
+        performed_by=performer,
+        email=email,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_label=entity_label,
+        description=description,
+        old_data=old_data,
+        new_data=new_data,
+        changed_fields=changed_fields,
+        ip_address=ip,
+    )
 
 @csrf_exempt 
 def get_barangay_classified_areas(request, barangay_id):
@@ -247,6 +286,21 @@ def create_classified_area(request):
         description=description
     )
 
+    record_activity(
+        request,
+        action_type='CREATE',
+        entity_type='ClassifiedArea',
+        entity_id=classified_area.classified_area_id,
+        entity_label=name,
+        description=f'Classified area "{name}" created.',
+        new_data={
+            'name': name,
+            'land_classification_id': land_classification_id,
+            'barangay_id': barangay_id,
+            'description': description,
+        },
+    )
+
     return JsonResponse(
         {'data': classified_area.classified_area_id, 'message': 'Created successfully'},
         status=201
@@ -285,12 +339,41 @@ def update_classified_area(request, classified_area_id):
         barangay_id=barangay_id
     )
 
+    _old = {
+        'name': classified_area.name,
+        'land_classification_id': classified_area.land_classification_id,
+        'barangay_id': classified_area.barangay_id,
+        'polygon': classified_area.polygon,
+        'description': classified_area.description,
+    }
+
     classified_area.name = name
     classified_area.land_classification = classification
     classified_area.barangay = barangay  # ✅ Added
     classified_area.polygon = polygon
     classified_area.description = description
     classified_area.save()
+
+    _new = {
+        'name': name,
+        'land_classification_id': land_classification_id,
+        'barangay_id': barangay_id,
+        'polygon': polygon,
+        'description': description,
+    }
+    _changed = [k for k in _old if str(_old[k]) != str(_new[k])]
+
+    record_activity(
+        request,
+        action_type='UPDATE',
+        entity_type='ClassifiedArea',
+        entity_id=classified_area_id,
+        entity_label=name,
+        description=f'Classified area "{name}" updated. Fields changed: {", ".join(_changed) or "none"}.',
+        old_data=_old,
+        new_data=_new,
+        changed_fields=_changed,
+    )
 
     return JsonResponse({'message': 'Successfully updated!'}, status=200)
 
@@ -303,6 +386,22 @@ def delete_classified_area(request, classified_area_id):
     classified_area = get_object_or_404(
         Classified_areas,
         classified_area_id=classified_area_id
+    )
+    deleted_name = classified_area.name
+
+    record_activity(
+        request,
+        action_type='DELETE',
+        entity_type='ClassifiedArea',
+        entity_id=classified_area_id,
+        entity_label=deleted_name,
+        description=f'Classified area "{deleted_name}" deleted.',
+        old_data={
+            'name': deleted_name,
+            'land_classification_id': classified_area.land_classification_id,
+            'barangay_id': classified_area.barangay_id,
+            'description': classified_area.description,
+        },
     )
 
     classified_area.delete()

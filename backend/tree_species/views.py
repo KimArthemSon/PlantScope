@@ -1,10 +1,49 @@
 import json
 import math
+import jwt
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db import IntegrityError
+from django.conf import settings
+from security.views import log_activity
 from .models import Tree_species
+
+
+def _get_request_user(request):
+    try:
+        from accounts.models import User
+        header = request.headers.get('Authorization', '')
+        if not header.startswith('Bearer '):
+            return None, ''
+        payload = jwt.decode(
+            header.split(' ')[1], settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        user = User.objects.filter(id=payload.get('user_id')).first()
+        return user, (user.email if user else '')
+    except Exception:
+        return None, ''
+
+
+def record_activity(request, action_type, entity_type, entity_id=None,
+                    entity_label='', description='',
+                    old_data=None, new_data=None, changed_fields=None):
+    performer, email = _get_request_user(request)
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    log_activity(
+        performed_by=performer,
+        email=email,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_label=entity_label,
+        description=description,
+        old_data=old_data,
+        new_data=new_data,
+        changed_fields=changed_fields,
+        ip_address=ip,
+    )
 
 
 # =========================
@@ -95,7 +134,7 @@ def create_tree_specie(request):
         )
 
     try:
-        Tree_species.objects.create(
+        specie = Tree_species.objects.create(
             name=name,
             description=description
         )
@@ -104,6 +143,16 @@ def create_tree_specie(request):
             {'error': 'Tree species with this name already exists'},
             status=409
         )
+
+    record_activity(
+        request,
+        action_type='CREATE',
+        entity_type='TreeSpecies',
+        entity_id=specie.tree_specie_id,
+        entity_label=name,
+        description=f'Tree species "{name}" created.',
+        new_data={'name': name, 'description': description},
+    )
 
     return JsonResponse(
         {'message': 'Successfully added'},
@@ -143,9 +192,26 @@ def update_tree_specie(request, tree_specie_id):
             status=409
         )
 
+    _old = {'name': tree_specie.name, 'description': tree_specie.description}
+
     tree_specie.name = name
     tree_specie.description = description
     tree_specie.save()
+
+    _new = {'name': name, 'description': description}
+    _changed = [k for k in _old if _old[k] != _new[k]]
+
+    record_activity(
+        request,
+        action_type='UPDATE',
+        entity_type='TreeSpecies',
+        entity_id=tree_specie_id,
+        entity_label=name,
+        description=f'Tree species "{name}" updated. Fields changed: {", ".join(_changed) or "none"}.',
+        old_data=_old,
+        new_data=_new,
+        changed_fields=_changed,
+    )
 
     return JsonResponse(
         {'message': 'Successfully updated'},
@@ -165,6 +231,18 @@ def delete_tree_specie(request, tree_specie_id):
         Tree_species,
         tree_specie_id=tree_specie_id
     )
+    deleted_name = tree_specie.name
+
+    record_activity(
+        request,
+        action_type='DELETE',
+        entity_type='TreeSpecies',
+        entity_id=tree_specie_id,
+        entity_label=deleted_name,
+        description=f'Tree species "{deleted_name}" deleted.',
+        old_data={'name': deleted_name, 'description': tree_specie.description},
+    )
+
     tree_specie.delete()
 
     return JsonResponse(

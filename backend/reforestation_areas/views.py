@@ -2,15 +2,53 @@ import json
 import math
 import os
 import logging
+import jwt
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.db import IntegrityError
 from django.conf import settings
 from accounts.helper import get_user_from_token  # ✅ Added missing import
+from security.views import log_activity
 from .models import Reforestation_areas, Potential_sites, PermitDocument
-from barangay.models import Barangay 
+from barangay.models import Barangay
 logger = logging.getLogger(__name__)
+
+
+def _get_request_user(request):
+    try:
+        from accounts.models import User
+        header = request.headers.get('Authorization', '')
+        if not header.startswith('Bearer '):
+            return None, ''
+        payload = jwt.decode(
+            header.split(' ')[1], settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        user = User.objects.filter(id=payload.get('user_id')).first()
+        return user, (user.email if user else '')
+    except Exception:
+        return None, ''
+
+
+def record_activity(request, action_type, entity_type, entity_id=None,
+                    entity_label='', description='',
+                    old_data=None, new_data=None, changed_fields=None):
+    performer, email = _get_request_user(request)
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    log_activity(
+        performed_by=performer,
+        email=email,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_label=entity_label,
+        description=description,
+        old_data=old_data,
+        new_data=new_data,
+        changed_fields=changed_fields,
+        ip_address=ip,
+    )
 
 
 def _serialize_area(area):
@@ -145,6 +183,16 @@ def create_reforestation_areas(request):
             area_img=area_img
         )
 
+        record_activity(
+            request,
+            action_type='CREATE',
+            entity_type='ReforestationArea',
+            entity_id=area.reforestation_area_id,
+            entity_label=name,
+            description=f'Reforestation area "{name}" created.',
+            new_data={'name': name, 'safety': safety, 'barangay_id': barangay_id, 'description': description},
+        )
+
         return JsonResponse({
             'message': 'Successfully added',
             'data': {
@@ -175,6 +223,15 @@ def update_reforestation_areas(request, reforestation_area_id):
 
     try:
         img = None
+        _old = {
+            'name': area.name,
+            'legality': area.legality,
+            'pre_assessment_status': area.pre_assessment_status,
+            'safety': area.safety,
+            'description': area.description,
+            'barangay_id': area.barangay_id,
+            'land_classification_id': area.land_classification_id,
+        }
         # Handle multipart/form-data (file uploads) vs application/json
         if request.content_type and 'multipart/form-data' in request.content_type:
             data = request.POST
@@ -219,6 +276,30 @@ def update_reforestation_areas(request, reforestation_area_id):
             area.reforestation_data = reforestation_data
 
         area.save()
+
+        _new = {
+            'name': area.name,
+            'legality': area.legality,
+            'pre_assessment_status': area.pre_assessment_status,
+            'safety': area.safety,
+            'description': area.description,
+            'barangay_id': area.barangay_id,
+            'land_classification_id': area.land_classification_id,
+        }
+        _changed = [k for k in _old if str(_old[k]) != str(_new[k])]
+
+        record_activity(
+            request,
+            action_type='UPDATE',
+            entity_type='ReforestationArea',
+            entity_id=reforestation_area_id,
+            entity_label=area.name,
+            description=f'Reforestation area "{area.name}" updated. Fields changed: {", ".join(_changed) or "none"}.',
+            old_data=_old,
+            new_data=_new,
+            changed_fields=_changed,
+        )
+
         return JsonResponse({'message': 'Successfully updated & finalized', 'data': _serialize_area(area)}, status=200)
 
     except json.JSONDecodeError:
@@ -233,6 +314,18 @@ def delete_reforestation_areas(request, reforestation_area_id):
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
     area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
+    deleted_name = area.name
+
+    record_activity(
+        request,
+        action_type='DELETE',
+        entity_type='ReforestationArea',
+        entity_id=reforestation_area_id,
+        entity_label=deleted_name,
+        description=f'Reforestation area "{deleted_name}" deleted.',
+        old_data={'name': deleted_name, 'safety': area.safety, 'barangay_id': area.barangay_id},
+    )
+
     area.delete()
     return JsonResponse({'message': 'Successfully deleted'}, status=200)
 
@@ -267,6 +360,17 @@ def delete_potential_site(request, potential_sites_id):
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
     site = get_object_or_404(Potential_sites, potential_sites_id=potential_sites_id)
+
+    record_activity(
+        request,
+        action_type='DELETE',
+        entity_type='PotentialSite',
+        entity_id=potential_sites_id,
+        entity_label=f'Potential Site {potential_sites_id}',
+        description=f'Potential site {potential_sites_id} deleted from reforestation area {site.reforestation_area_id}.',
+        old_data={'reforestation_area_id': site.reforestation_area_id},
+    )
+
     site.delete()
     return JsonResponse({'message': 'Successfully deleted'}, status=200)
 
@@ -297,6 +401,16 @@ def bulk_create_potential_sites(request):
                 ndvi_threshold=0.41
             )
             created_count += 1
+        record_activity(
+            request,
+            action_type='CREATE',
+            entity_type='PotentialSite',
+            entity_id=reforestation_area_id,
+            entity_label=f'Reforestation Area {reforestation_area_id}',
+            description=f'{created_count} potential site(s) bulk-created for reforestation area {reforestation_area_id}.',
+            new_data={'reforestation_area_id': reforestation_area_id, 'created_count': created_count},
+        )
+
         return JsonResponse({
             "success": True,
             "created_count": created_count,
@@ -373,6 +487,16 @@ def upload_permit(request, reforestation_area_id):
             verification_notes=verification_notes or None,
             uploaded_by=user
         )
+        record_activity(
+            request,
+            action_type='CREATE',
+            entity_type='PermitDocument',
+            entity_id=permit.permit_id,
+            entity_label=f'{document_type} - {permit_number or "no number"}',
+            description=f'Permit document "{document_type}" uploaded for reforestation area {reforestation_area_id}.',
+            new_data={'document_type': document_type, 'permit_number': permit_number, 'reforestation_area_id': reforestation_area_id},
+        )
+
         return JsonResponse({
             'message': 'Permit verified & uploaded',
             'permit_id': permit.permit_id,
@@ -395,6 +519,16 @@ def delete_permit(request, permit_id):
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
         permit = get_object_or_404(PermitDocument, permit_id=permit_id)
+
+        record_activity(
+            request,
+            action_type='DELETE',
+            entity_type='PermitDocument',
+            entity_id=permit_id,
+            entity_label=permit.document_type,
+            description=f'Permit document "{permit.document_type}" deleted from reforestation area {permit.reforestation_area_id}.',
+            old_data={'document_type': permit.document_type, 'permit_number': permit.permit_number, 'reforestation_area_id': permit.reforestation_area_id},
+        )
 
         # ✅ Auto-delete file from media/ using Django's storage API (safer than os.remove)
         if permit.file:

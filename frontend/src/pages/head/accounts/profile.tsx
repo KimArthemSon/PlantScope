@@ -81,7 +81,7 @@ export function Profile() {
     middle_name: "",
     birthday: "",
     gender: "M",
-    is_active: "",
+    is_active: "true",
     user_role: "CityENROHead",
     address: "",
     preview_profile: "",

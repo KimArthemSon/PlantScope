@@ -3,8 +3,29 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from accounts.helper import get_user_from_token
+from security.views import log_activity
 from .models import Assigned_onsite_inspector, Field_assessment, Field_assessment_images
 from reforestation_areas.models import Reforestation_areas
+
+
+def _record_activity(user, request, action_type, entity_type, entity_id=None,
+                     entity_label='', description='',
+                     old_data=None, new_data=None, changed_fields=None):
+    email = user.email if user else ''
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    log_activity(
+        performed_by=user,
+        email=email,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_label=entity_label,
+        description=description,
+        old_data=old_data,
+        new_data=new_data,
+        changed_fields=changed_fields,
+        ip_address=ip,
+    )
 
 def check_inspector_assignment(user, reforestation_area_id):
     if not user or user.user_role != "OnsiteInspector":
@@ -151,6 +172,17 @@ def create_field_assessment(request):
             field_assessment_data=field_data,
             is_submitted=False
         )
+
+        _record_activity(
+            user, request,
+            action_type='CREATE',
+            entity_type='FieldAssessment',
+            entity_id=fa.field_assessment_id,
+            entity_label=f'{fa.get_layer_display()} - Area {reforestation_area_id}',
+            description=f'Field assessment draft created for reforestation area {reforestation_area_id} (layer: {layer}).',
+            new_data={'layer': layer, 'reforestation_area_id': reforestation_area_id, 'assessment_date': assessment_date},
+        )
+
         return JsonResponse({'message': 'Draft created', 'field_assessment_id': fa.field_assessment_id, 'layer': fa.layer}, status=201)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
@@ -176,10 +208,21 @@ def update_field_assessment(request, field_assessment_id):
             return JsonResponse({'error': 'Cannot edit a submitted assessment'}, status=400)
 
         body = json.loads(request.body)
+        _changed = [k for k in ('assessment_date', 'location', 'field_assessment_data') if k in body]
         if 'assessment_date' in body: fa.assessment_date = body['assessment_date']
         if 'location' in body: fa.location = body['location']
         if 'field_assessment_data' in body: fa.field_assessment_data = body['field_assessment_data']
         fa.save()
+
+        _record_activity(
+            user, request,
+            action_type='UPDATE',
+            entity_type='FieldAssessment',
+            entity_id=field_assessment_id,
+            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
+            description=f'Field assessment {field_assessment_id} updated. Fields changed: {", ".join(_changed) or "none"}.',
+            changed_fields=_changed,
+        )
 
         return JsonResponse({'message': 'Draft updated', 'updated_at': fa.updated_at.isoformat()}, status=200)
     except json.JSONDecodeError:
@@ -209,6 +252,19 @@ def submit_field_assessment(request, field_assessment_id):
 
         fa.is_submitted = True
         fa.save()
+
+        _record_activity(
+            user, request,
+            action_type='UPDATE',
+            entity_type='FieldAssessment',
+            entity_id=field_assessment_id,
+            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
+            description=f'Field assessment {field_assessment_id} ({fa.get_layer_display()}) submitted.',
+            old_data={'is_submitted': False},
+            new_data={'is_submitted': True},
+            changed_fields=['is_submitted'],
+        )
+
         return JsonResponse({'message': f'{fa.get_layer_display()} submitted', 'submitted_at': fa.updated_at.isoformat()}, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -230,6 +286,16 @@ def delete_field_assessment(request, field_assessment_id):
             return JsonResponse({'error': 'Forbidden'}, status=403)
         if fa.is_submitted:
             return JsonResponse({'error': 'Cannot delete submitted'}, status=400)
+
+        _record_activity(
+            user, request,
+            action_type='DELETE',
+            entity_type='FieldAssessment',
+            entity_id=field_assessment_id,
+            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
+            description=f'Field assessment {field_assessment_id} ({fa.get_layer_display()}) deleted.',
+            old_data={'layer': fa.layer, 'assessment_date': fa.assessment_date.isoformat() if fa.assessment_date else None},
+        )
 
         fa.delete()
         return JsonResponse({'message': 'Deleted successfully'}, status=200)
@@ -262,6 +328,17 @@ def upload_field_assessment_image(request, field_assessment_id):
             img=request.FILES['image'],
             caption=request.POST.get('caption', '')
         )
+
+        _record_activity(
+            user, request,
+            action_type='CREATE',
+            entity_type='FieldAssessmentImage',
+            entity_id=img.field_assessment_images_id,
+            entity_label=f'Image for Assessment {field_assessment_id}',
+            description=f'Image uploaded to field assessment {field_assessment_id}.',
+            new_data={'field_assessment_id': field_assessment_id, 'layer': img.layer},
+        )
+
         return JsonResponse({'message': 'Uploaded', 'image_id': img.field_assessment_images_id, 'url': img.img.url if img.img else None}, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -286,6 +363,18 @@ def delete_field_assessment_image(request, image_id):
             return JsonResponse({'error': 'Forbidden'}, status=403)
         if img.field_assessment.is_submitted:
             return JsonResponse({'error': 'Cannot delete from submitted'}, status=400)
+
+        fa_id = img.field_assessment.field_assessment_id
+
+        _record_activity(
+            user, request,
+            action_type='DELETE',
+            entity_type='FieldAssessmentImage',
+            entity_id=image_id,
+            entity_label=f'Image {image_id} for Assessment {fa_id}',
+            description=f'Image {image_id} deleted from field assessment {fa_id}.',
+            old_data={'field_assessment_id': fa_id, 'layer': img.layer},
+        )
 
         if img.img:
             try: img.img.delete(save=False)

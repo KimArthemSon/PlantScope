@@ -3,8 +3,47 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import LandClassification, Classified_areas
 from barangay.models import Barangay
+from django.conf import settings
+from security.views import log_activity
 import json
 import math
+import jwt
+
+
+def _get_request_user(request):
+    try:
+        from accounts.models import User
+        header = request.headers.get('Authorization', '')
+        if not header.startswith('Bearer '):
+            return None, ''
+        payload = jwt.decode(
+            header.split(' ')[1], settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        user = User.objects.filter(id=payload.get('user_id')).first()
+        return user, (user.email if user else '')
+    except Exception:
+        return None, ''
+
+
+def record_activity(request, action_type, entity_type, entity_id=None,
+                    entity_label='', description='',
+                    old_data=None, new_data=None, changed_fields=None):
+    performer, email = _get_request_user(request)
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    log_activity(
+        performed_by=performer,
+        email=email,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_label=entity_label,
+        description=description,
+        old_data=old_data,
+        new_data=new_data,
+        changed_fields=changed_fields,
+        ip_address=ip,
+    )
 
 # -------------------- LandClassification Views --------------------
 
@@ -115,6 +154,17 @@ def create_land_classification(request):
         return JsonResponse({'error': 'Missing fields'}, status=400)
 
     classification = LandClassification.objects.create(name=name, description=description, for_reforestation=for_reforestation)
+
+    record_activity(
+        request,
+        action_type='CREATE',
+        entity_type='LandClassification',
+        entity_id=classification.land_classification_id,
+        entity_label=name,
+        description=f'Land classification "{name}" created.',
+        new_data={'name': name, 'description': description, 'for_reforestation': for_reforestation},
+    )
+
     return JsonResponse({'data': classification.land_classification_id}, status=200)
 
 
@@ -131,10 +181,33 @@ def update_land_classification(request, classification_id):
         return JsonResponse({'error': 'Missing fields'}, status=400)
 
     classification = get_object_or_404(LandClassification, pk=classification_id)
+
+    _old = {
+        'name': classification.name,
+        'description': classification.description,
+        'for_reforestation': classification.for_reforestation,
+    }
+
     classification.name = name
     classification.description = description
     classification.for_reforestation = for_reforestation
     classification.save()
+
+    _new = {'name': name, 'description': description, 'for_reforestation': for_reforestation}
+    _changed = [k for k in _old if _old[k] != _new[k]]
+
+    record_activity(
+        request,
+        action_type='UPDATE',
+        entity_type='LandClassification',
+        entity_id=classification_id,
+        entity_label=name,
+        description=f'Land classification "{name}" updated. Fields changed: {", ".join(_changed) or "none"}.',
+        old_data=_old,
+        new_data=_new,
+        changed_fields=_changed,
+    )
+
     return JsonResponse({'message': 'Successfully updated!'}, status=200)
 
 
@@ -144,6 +217,18 @@ def delete_land_classification(request, classification_id):
         return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
 
     classification = get_object_or_404(LandClassification, pk=classification_id)
+    deleted_name = classification.name
+
+    record_activity(
+        request,
+        action_type='DELETE',
+        entity_type='LandClassification',
+        entity_id=classification_id,
+        entity_label=deleted_name,
+        description=f'Land classification "{deleted_name}" deleted.',
+        old_data={'name': deleted_name, 'description': classification.description, 'for_reforestation': classification.for_reforestation},
+    )
+
     classification.delete()
     return JsonResponse({'message': 'Successfully deleted!'}, status=200)
 
