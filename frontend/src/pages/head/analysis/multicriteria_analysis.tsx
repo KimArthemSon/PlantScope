@@ -2,16 +2,18 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Leaf, Upload, Eye, EyeOff, Trash2, Info, Pen, MapPin,
-  Ruler, Layers, Palette, Flag, Building2, Pin, X,
-  CheckCircle, AlertTriangle, Save, Undo2,
+  Ruler, Layers, Palette, Flag, Pin, X,
+  CheckCircle, Save, Undo2, Target,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
+import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 import { useState, useEffect, useRef, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import * as esri from "esri-leaflet";
 
-import { LAND_CLASSIFICATION_COLORS } from "./types/types";
+import { usePotentialSites } from "./hooks/usePotentialSites";
+import type { PotentialSite } from "./hooks/usePotentialSites";
 import { useRestrictedAreas } from "./hooks/useRestrictedAreas";
 import { useFieldAssessments } from "./hooks/useFieldAssessments";
 import type { MCDALayer } from "./hooks/useFieldAssessments";
@@ -76,6 +78,13 @@ export default function MulticriteriaAnalysis() {
   const locationTempMarkerRef = useRef<L.Marker | null>(null);
 
   const [alert, setAlert] = useState<AlertState | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    variant: "danger" | "warning";
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [opacity, setOpacity] = useState(0.8);
   const [isLayerVisible, setIsLayerVisible] = useState(true);
   const [uploadStatus, setUploadStatus] = useState("Ready");
@@ -93,12 +102,16 @@ export default function MulticriteriaAnalysis() {
   const [showNameInput, setShowNameInput] = useState(false);
   const drawingPointsRef = useRef<L.Marker[]>([]);
 
+  const [showPotentialSites, setShowPotentialSites] = useState(false);
+  const potentialSiteLayersRef = useRef<L.Polygon[]>([]);
+
   const [showValidationPanel, setShowValidationPanel] = useState(false);
   const [validatingSite, setValidatingSite] = useState<SiteDetail | null>(null);
 
   const restricted = useRestrictedAreas(mapRef);
   const fieldAssessments = useFieldAssessments(mapRef);
   const sites = useSites();
+  const potentialSitesHook = usePotentialSites();
 
   useEffect(() => {
     if (restricted.alert) {
@@ -142,8 +155,50 @@ export default function MulticriteriaAnalysis() {
   }, [areaId]);
 
   useEffect(() => {
+    if (areaId) potentialSitesHook.fetchPotentialSites(areaId);
+  }, [areaId]);
+
+  useEffect(() => {
     geotiffLayerRef.current?.setOpacity(opacity);
   }, [opacity]);
+
+  // ── Potential sites rendering ─────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    potentialSiteLayersRef.current.forEach((l) => map.removeLayer(l));
+    potentialSiteLayersRef.current = [];
+
+    if (!showPotentialSites) return;
+
+    potentialSitesHook.potentialSites.forEach((site: PotentialSite) => {
+      if (!site.polygon_coordinates?.coordinates?.length) return;
+      // GeoJSON stores [lng, lat]; Leaflet needs [lat, lng]
+      const coords = site.polygon_coordinates.coordinates[0].map(
+        ([lng, lat]) => [lat, lng] as [number, number],
+      );
+      const score = site.suitability_score;
+      const color = score >= 0.7 ? "#16a34a" : score >= 0.4 ? "#ca8a04" : "#dc2626";
+      const poly = L.polygon(coords, {
+        color,
+        fillColor: color,
+        fillOpacity: 0.3,
+        weight: 2,
+        dashArray: "5 5",
+      })
+        .bindPopup(
+          `<div style="min-width:160px;font-family:sans-serif">
+            <strong style="font-size:12px">${site.site_id || `Potential Site ${site.potential_sites_id}`}</strong><br/>
+            <span style="font-size:11px;color:#555">Area: <b>${site.area_hectares.toFixed(2)} ha</b></span><br/>
+            <span style="font-size:11px;color:#555">Avg NDVI: <b>${site.avg_ndvi.toFixed(3)}</b></span><br/>
+            <span style="font-size:11px;color:#555">Suitability: <b>${(score * 100).toFixed(1)}%</b></span>
+          </div>`,
+        )
+        .addTo(map);
+      potentialSiteLayersRef.current.push(poly);
+    });
+  }, [showPotentialSites, potentialSitesHook.potentialSites]);
 
   // ── FIX: Robust map size invalidation with ResizeObserver ─────────────────
   const isPickingLocation = fieldAssessments.locationTargetId !== null;
@@ -152,7 +207,7 @@ export default function MulticriteriaAnalysis() {
     const map = mapRef.current;
     if (!map) return;
 
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: ReturnType<typeof setTimeout>;
     let resizeObserver: ResizeObserver | null = null;
 
     const invalidate = () => {
@@ -172,14 +227,15 @@ export default function MulticriteriaAnalysis() {
       });
       resizeObserver.observe(map.getContainer());
     } else {
+      const win = window as Window;
       const onResize = () => {
         clearTimeout(timeoutId);
         timeoutId = setTimeout(invalidate, 100);
       };
-      window.addEventListener('resize', onResize);
+      win.addEventListener('resize', onResize);
       return () => {
         clearTimeout(timeoutId);
-        window.removeEventListener('resize', onResize);
+        win.removeEventListener('resize', onResize);
       };
     }
 
@@ -623,14 +679,22 @@ export default function MulticriteriaAnalysis() {
     }
   }, [sites]);
 
-  const handleDeleteSite = async (siteId: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete "${name}"? This action cannot be undone.`)) return;
-    const success = await sites.deleteSite(siteId, areaId!);
-    if (success) {
-      setAlert({ type: "success", title: "Site Deleted", message: `"${name}" has been deleted.` });
-    } else {
-      setAlert({ type: "error", title: "Delete Failed", message: sites.error ?? "Could not delete site." });
-    }
+  const handleDeleteSite = (siteId: number, name: string) => {
+    setConfirmDialog({
+      title: "Delete Site",
+      message: `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+      variant: "danger",
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const success = await sites.deleteSite(siteId, areaId!);
+        if (success) {
+          setAlert({ type: "success", title: "Site Deleted", message: `"${name}" has been deleted.` });
+        } else {
+          setAlert({ type: "error", title: "Delete Failed", message: sites.error ?? "Could not delete site." });
+        }
+      },
+    });
   };
 
   const handleTogglePin = async (siteId: number) => {
@@ -681,6 +745,16 @@ export default function MulticriteriaAnalysis() {
           title={alert.title}
           message={alert.message}
           onClose={() => setAlert(null)}
+        />
+      )}
+      {confirmDialog && (
+        <PlantScopeConfirm
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          variant={confirmDialog.variant}
+          confirmLabel={confirmDialog.confirmLabel}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
         />
       )}
 
@@ -750,6 +824,18 @@ export default function MulticriteriaAnalysis() {
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium
                     ${restricted.showAll ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}>
                   <Flag size={12} /> {restricted.showAll ? "Hide" : "Show"} Restricted
+                </button>
+                <button
+                  onClick={() => setShowPotentialSites((v) => !v)}
+                  disabled={potentialSitesHook.loading}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40
+                    ${showPotentialSites ? "bg-teal-600 hover:bg-teal-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}>
+                  <Target size={12} />
+                  {potentialSitesHook.loading
+                    ? "Loading..."
+                    : showPotentialSites
+                    ? `Hide Potential (${potentialSitesHook.potentialSites.length})`
+                    : `Potential Sites (${potentialSitesHook.potentialSites.length})`}
                 </button>
               </>
             )}
@@ -838,6 +924,18 @@ export default function MulticriteriaAnalysis() {
                   </div>
                 </div>
               )}
+              {showPotentialSites && potentialSitesHook.potentialSites.length > 0 && (
+                <div className="absolute top-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-teal-200 z-[1000]">
+                  <p className="text-[10px] font-bold text-gray-700 mb-1.5 flex items-center gap-1">
+                    <Target size={10} className="text-teal-600" /> Potential Sites
+                  </p>
+                  <div className="flex flex-col gap-1 text-[9px] text-gray-600">
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-[#16a34a]" /><span>≥70% suitability</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-[#ca8a04]" /><span>40–70%</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-[#dc2626]" /><span>&lt;40%</span></div>
+                  </div>
+                </div>
+              )}
               {layerInfo?.dataType === "NDVI / Index" && renderMode !== "grayscale" && (
                 <div className="absolute bottom-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-green-200 z-[1000]">
                   <p className="text-[10px] font-bold text-gray-700 mb-1.5 flex items-center gap-1">
@@ -871,6 +969,11 @@ export default function MulticriteriaAnalysis() {
                 {areaId && restricted.restrictedData && (
                   <span className="flex items-center gap-1 text-indigo-600">
                     <Flag size={12} /> {restricted.restrictedData.classified_area?.length ?? 0} zones
+                  </span>
+                )}
+                {showPotentialSites && potentialSitesHook.potentialSites.length > 0 && (
+                  <span className="flex items-center gap-1 text-teal-600">
+                    <Target size={12} /> {potentialSitesHook.potentialSites.length} potential site{potentialSitesHook.potentialSites.length !== 1 ? "s" : ""}
                   </span>
                 )}
                 {isPickingLocation && (

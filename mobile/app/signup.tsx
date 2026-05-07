@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { api } from '@/constants/url_fixed';
 import {
@@ -40,6 +40,7 @@ const MONTHS = [
 
 const STEPS = [
   { label: 'Account', icon: '🔐' },
+  { label: 'Verify', icon: '📧' },
   { label: 'Personal', icon: '👤' },
   { label: 'Organization', icon: '🌿' },
   { label: 'Review', icon: '✅' },
@@ -616,6 +617,18 @@ export default function Signup() {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
 
+  // OTP state
+  const [otp, setOtp] = useState('');
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const otpInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -675,7 +688,8 @@ export default function Signup() {
         return 'Password needs uppercase, lowercase, number, special char and 8+ characters.';
       if (formData.password !== formData.confirmPassword) return 'Passwords do not match.';
     }
-    if (step === 1) {
+    // step 1 = OTP — validated separately by verifyOtp()
+    if (step === 2) {
       if (!formData.first_name) return 'First name is required.';
       if (!formData.last_name) return 'Last name is required.';
       if (!formData.birthday) return 'Birthday is required.';
@@ -684,7 +698,7 @@ export default function Signup() {
       if (!formData.gender) return 'Gender is required.';
       if (!formData.profile_img) return 'Profile image is required.';
     }
-    if (step === 2) {
+    if (step === 3) {
       if (!formData.organization_name) return 'Organization name is required.';
       if (!formData.org_email) return 'Organization email is required.';
       if (!formData.org_address) return 'Organization address is required.';
@@ -699,13 +713,74 @@ export default function Signup() {
     return null;
   };
 
+  const sendOtp = async () => {
+    setSendingOtp(true);
+    try {
+      const res = await fetch(api + '/api/send_otp/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        Alert.alert('Error', json.error ?? 'Failed to send verification code.');
+        return;
+      }
+      setOtp('');
+      setResendCooldown(60);
+      setStep(1);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Network error.');
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (otp.length !== 6) {
+      Alert.alert('Invalid Code', 'Please enter the 6-digit code sent to your email.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(api + '/api/verify_otp/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email, otp }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        Alert.alert('Verification Failed', json.error ?? 'Incorrect code.');
+        return;
+      }
+      setStep(2);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Network error.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const goNext = () => {
+    if (step === 0) {
+      const err = validateStep();
+      if (err) { Alert.alert('Missing Info', err); return; }
+      sendOtp();
+      return;
+    }
+    if (step === 1) {
+      verifyOtp();
+      return;
+    }
     const err = validateStep();
     if (err) { Alert.alert('Missing Info', err); return; }
     setStep((s) => s + 1);
   };
 
-  const goBack = () => setStep((s) => s - 1);
+  const goBack = () => {
+    if (step === 1) { setOtp(''); }
+    setStep((s) => s - 1);
+  };
 
   const handleSubmit = async () => {
     if (!agreedToPrivacy) {
@@ -830,6 +905,66 @@ export default function Signup() {
       case 1:
         return (
           <>
+            <Text style={styles.stepTitle}>Verify Your Email</Text>
+            <Text style={styles.stepSubtitle}>Enter the 6-digit code sent to your email</Text>
+
+            <View style={styles.otpEmailBadge}>
+              <Mail size={14} color="#4caf72" />
+              <Text style={styles.otpEmailText} numberOfLines={1}>{formData.email}</Text>
+            </View>
+
+            <View style={styles.otpWrapper}>
+              <TextInput
+                ref={otpInputRef}
+                style={[styles.otpHiddenInput, inputStyleOverride]}
+                value={otp}
+                onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, '').slice(0, 6))}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+              />
+              <TouchableOpacity
+                style={styles.otpBoxRow}
+                onPress={() => otpInputRef.current?.focus()}
+                activeOpacity={1}
+              >
+                {Array(6).fill(null).map((_, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.otpBox,
+                      otp.length > i && styles.otpBoxFilled,
+                      otp.length === i && styles.otpBoxCursor,
+                    ]}
+                  >
+                    <Text style={styles.otpBoxText}>{otp[i] ?? ''}</Text>
+                  </View>
+                ))}
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.otpNote}>
+              Didn't receive the code? Check your spam folder or{' '}
+            </Text>
+            <TouchableOpacity
+              onPress={sendOtp}
+              disabled={resendCooldown > 0 || sendingOtp}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.otpResend, (resendCooldown > 0 || sendingOtp) && styles.otpResendDisabled]}>
+                {sendingOtp
+                  ? 'Sending…'
+                  : resendCooldown > 0
+                    ? `Resend in ${resendCooldown}s`
+                    : 'Resend Code'}
+              </Text>
+            </TouchableOpacity>
+          </>
+        );
+
+      case 2:
+        return (
+          <>
             <Text style={styles.stepTitle}>Personal Information</Text>
             <Text style={styles.stepSubtitle}>Tell us a little about yourself</Text>
 
@@ -855,7 +990,7 @@ export default function Signup() {
           </>
         );
 
-      case 2:
+      case 3:
         return (
           <>
             <Text style={styles.stepTitle}>Organization & Project</Text>
@@ -878,7 +1013,7 @@ export default function Signup() {
           </>
         );
 
-      case 3:
+      case 4:
         return (
           <>
             <Text style={styles.stepTitle}>Review Your Application</Text>
@@ -999,10 +1134,17 @@ export default function Signup() {
                   </TouchableOpacity>
                 )}
 
-                {step < 3 ? (
-                  <TouchableOpacity style={[styles.nextButton, step === 0 && styles.nextButtonFull]} onPress={goNext} activeOpacity={0.8}>
-                    <Text style={styles.nextButtonText}>Continue</Text>
-                    <ChevronRight size={18} color="#fff" />
+                {step < 4 ? (
+                  <TouchableOpacity
+                    style={[styles.nextButton, step === 0 && styles.nextButtonFull, (sendingOtp || loading) && styles.nextButtonDisabled]}
+                    onPress={goNext}
+                    disabled={sendingOtp || loading}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.nextButtonText}>
+                      {step === 0 && sendingOtp ? 'Sending Code…' : step === 1 && loading ? 'Verifying…' : step === 1 ? 'Verify Email' : 'Continue'}
+                    </Text>
+                    {!(sendingOtp || loading) && <ChevronRight size={18} color="#fff" />}
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
@@ -1083,7 +1225,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     width: '100%',
   },
-  stepItem: { alignItems: 'center', width: 52 },
+  stepItem: { alignItems: 'center', width: 46 },
   stepConnector: {
     flex: 1,
     height: 2,
@@ -1282,6 +1424,59 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: '#4caf72', borderColor: '#4caf72' },
   privacyText: { flex: 1, color: '#a8c5b3', fontSize: 12, lineHeight: 18 },
   privacyLink: { color: '#4caf72', fontWeight: '700' },
+
+  // ── OTP step ──
+  otpEmailBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(76,175,114,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(76,175,114,0.25)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 22,
+  },
+  otpEmailText: { color: '#a8c5b3', fontSize: 13, flex: 1 },
+  otpWrapper: {
+    alignItems: 'center',
+    marginBottom: 20,
+    height: 54,
+  },
+  otpHiddenInput: {
+    position: 'absolute',
+    opacity: 0,
+    width: '100%',
+    height: 54,
+    zIndex: 10,
+  },
+  otpBoxRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  otpBox: {
+    width: 44,
+    height: 54,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: '#0b2211',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpBoxFilled: {
+    borderColor: '#4caf72',
+    backgroundColor: '#122b1a',
+  },
+  otpBoxCursor: {
+    borderColor: '#4caf72',
+    borderWidth: 2,
+  },
+  otpBoxText: { color: '#ffffff', fontSize: 22, fontWeight: '700' },
+  otpNote: { color: '#5a8a6a', fontSize: 12, textAlign: 'center', marginBottom: 4 },
+  otpResend: { color: '#4caf72', fontSize: 13, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
+  otpResendDisabled: { color: '#5a8a6a' },
 
   navRow: { flexDirection: 'row', marginTop: 20, gap: 10 },
   backButton: {

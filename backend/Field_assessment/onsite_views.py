@@ -385,6 +385,74 @@ def delete_field_assessment_image(request, image_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+# ─────────────────────────────────────────────
+# HEAD: UNSENT FIELD ASSESSMENT (set is_submitted=False)
+# ─────────────────────────────────────────────
+@csrf_exempt
+def head_unsent_field_assessment(request, field_assessment_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+    try:
+        user = get_user_from_token(request)
+        allowed_roles = ["DataManager", "CityENROHead"]
+        if not user or user.user_role not in allowed_roles:
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+        fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
+        if not fa.is_submitted:
+            return JsonResponse({'error': 'Assessment is not submitted'}, status=400)
+
+        fa.is_submitted = False
+        fa.save()
+
+        _record_activity(
+            user, request,
+            action_type='UPDATE',
+            entity_type='FieldAssessment',
+            entity_id=field_assessment_id,
+            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
+            description=f'Field assessment {field_assessment_id} marked as unsent by head user.',
+            old_data={'is_submitted': True},
+            new_data={'is_submitted': False},
+            changed_fields=['is_submitted'],
+        )
+
+        return JsonResponse({'message': 'Assessment marked as unsent'}, status=200)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────
+# HEAD: DELETE FIELD ASSESSMENT (any status)
+# ─────────────────────────────────────────────
+@csrf_exempt
+def head_delete_field_assessment(request, field_assessment_id):
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
+    try:
+        user = get_user_from_token(request)
+        allowed_roles = ["DataManager", "CityENROHead"]
+        if not user or user.user_role not in allowed_roles:
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+        fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
+
+        _record_activity(
+            user, request,
+            action_type='DELETE',
+            entity_type='FieldAssessment',
+            entity_id=field_assessment_id,
+            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
+            description=f'Field assessment {field_assessment_id} deleted by head user.',
+            old_data={'layer': fa.layer, 'is_submitted': fa.is_submitted},
+        )
+
+        fa.delete()
+        return JsonResponse({'message': 'Assessment deleted successfully'}, status=200)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 @csrf_exempt
 def get_area_meta_data(request, reforestation_area_id):
     """

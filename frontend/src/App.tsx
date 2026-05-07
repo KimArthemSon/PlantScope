@@ -22,7 +22,7 @@ import HomePage from "./pages/HomePage/homepage";
 import Reforestation_area_form from "./pages/head/reforestation_areas/reforestation_area_form";
 import AuditTrail from "./pages/head/accounts/auditTrail";
 import { Profile } from "./pages/head/accounts/profile";
-import Map from "./pages/head/Map/map";
+import Map from "./pages/head/Map/Map";
 import Classified_area_form from "./pages/head/maintain/classified_areas/classified_area_form";
 import Classified_areas from "./pages/head/maintain/classified_areas/classified_areas";
 import Assign_onsite_inspector from "./pages/head/reforestation_areas/assigning";

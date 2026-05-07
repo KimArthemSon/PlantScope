@@ -17,8 +17,10 @@ import {
   Image as ImageIcon,
   Layers, // ✅ For Land Classification
   ThermometerSun, // ✅ For Safety Level
+  RotateCcw,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
+import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 
 const API = "http://127.0.0.1:8000/api";
 const API_IMAGE = "http://127.0.0.1:8000/";
@@ -263,6 +265,13 @@ export default function MetaDataVerification() {
     title: string;
     message: string;
   } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    variant: "danger" | "warning";
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPermit, setUploadingPermit] = useState(false);
@@ -486,32 +495,85 @@ export default function MetaDataVerification() {
     }
   }
 
-  async function handleDeletePermit(permitId: number) {
-    if (!confirm("Delete this verified permit? This cannot be undone.")) return;
+  function handleDeletePermit(permitId: number) {
+    setConfirmDialog({
+      title: "Delete Permit",
+      message: "Delete this verified permit? This cannot be undone.",
+      variant: "danger",
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          const res = await fetch(`${API}/permits/${permitId}/delete/`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            setPSAlert({ type: "success", title: "Deleted", message: "Permit removed." });
+            fetchPermits();
+          } else {
+            const err = await res.json();
+            setPSAlert({ type: "error", title: "Failed", message: err.error || "Could not delete." });
+          }
+        } catch {
+          setPSAlert({ type: "error", title: "Error", message: "Network error." });
+        }
+      },
+    });
+  }
 
-    try {
-      const res = await fetch(`${API}/permits/${permitId}/delete/`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Deleted",
-          message: "Permit removed.",
-        });
-        fetchPermits();
-      } else {
-        const err = await res.json();
-        setPSAlert({
-          type: "error",
-          title: "Failed",
-          message: err.error || "Could not delete.",
-        });
-      }
-    } catch {
-      setPSAlert({ type: "error", title: "Error", message: "Network error." });
-    }
+  function handleUnsentAssessment(assessmentId: number) {
+    setConfirmDialog({
+      title: "Mark as Unsent",
+      message: "Mark this assessment as unsent? The inspector will be able to edit it again.",
+      variant: "warning",
+      confirmLabel: "Unsent",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          const res = await fetch(`${API}/field_assessments/${assessmentId}/unsent/`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            setPSAlert({ type: "success", title: "Unsent", message: "Assessment marked as unsent." });
+            fetchAssessments();
+          } else {
+            const data = await res.json();
+            setPSAlert({ type: "error", title: "Failed", message: data.error || "Could not unsent." });
+          }
+        } catch {
+          setPSAlert({ type: "error", title: "Error", message: "Network error." });
+        }
+      },
+    });
+  }
+
+  function handleDeleteAssessment(assessmentId: number) {
+    setConfirmDialog({
+      title: "Delete Assessment",
+      message: "Delete this field assessment? This cannot be undone.",
+      variant: "danger",
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          const res = await fetch(`${API}/field_assessments/${assessmentId}/head_delete/`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            setPSAlert({ type: "success", title: "Deleted", message: "Assessment deleted." });
+            fetchAssessments();
+          } else {
+            const data = await res.json();
+            setPSAlert({ type: "error", title: "Failed", message: data.error || "Could not delete." });
+          }
+        } catch {
+          setPSAlert({ type: "error", title: "Error", message: "Network error." });
+        }
+      },
+    });
   }
 
   // ─────────────────────────────────────────────
@@ -566,6 +628,16 @@ export default function MetaDataVerification() {
           title={PSalert.title}
           message={PSalert.message}
           onClose={() => setPSAlert(null)}
+        />
+      )}
+      {confirmDialog && (
+        <PlantScopeConfirm
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          variant={confirmDialog.variant}
+          confirmLabel={confirmDialog.confirmLabel}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
         />
       )}
 
@@ -748,6 +820,24 @@ export default function MetaDataVerification() {
                       )}
                     </div>
                   )}
+
+                  {/* Card Actions */}
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2">
+                    <button
+                      onClick={() => handleUnsentAssessment(item.field_assessment_id)}
+                      className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold text-yellow-700 bg-yellow-50 hover:bg-yellow-100 border border-yellow-200 rounded-lg py-1.5 transition-colors"
+                      title="Mark as unsent so the inspector can edit again"
+                    >
+                      <RotateCcw size={12} /> Unsent
+                    </button>
+                    <button
+                      onClick={() => handleDeleteAssessment(item.field_assessment_id)}
+                      className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg py-1.5 transition-colors"
+                      title="Permanently delete this assessment"
+                    >
+                      <Trash2 size={12} /> Delete
+                    </button>
+                  </div>
                 </div>
               );
             })

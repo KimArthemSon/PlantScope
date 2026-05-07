@@ -1,7 +1,11 @@
 import math
+import random
+import string
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
+from django.core.cache import cache
+from django.core.mail import send_mail
 from .models import User, profile, Organization
 from security.models import SecurityLog
 from security.views import log_event, get_lock_info, log_activity
@@ -12,7 +16,7 @@ from datetime import datetime, timedelta
 import re
 from django.conf import settings
 from django.db import DatabaseError, connection, transaction
-from tree_planting_programs.models import Application 
+from tree_planting_programs.models import Application
 
 
 def _get_request_user(request):
@@ -599,6 +603,76 @@ def toggle_user_status(request, user_id):
     )
 
     return JsonResponse({'message': f'User {action.lower()}d successfully.', 'is_active': user.is_active})
+
+
+@csrf_exempt
+def send_otp(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    email = body.get('email', '').strip().lower()
+    if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+        return JsonResponse({'error': 'A valid email is required.'}, status=400)
+
+    # Rate-limit: block if a fresh OTP was sent in the last 60 seconds
+    if cache.get(f'otp_cooldown_{email}'):
+        return JsonResponse({'error': 'Please wait before requesting a new code.'}, status=429)
+
+    otp_code = ''.join(random.choices(string.digits, k=6))
+    cache.set(f'otp_{email}', otp_code, timeout=600)       # 10-minute TTL
+    cache.set(f'otp_cooldown_{email}', True, timeout=60)   # 60-second resend lock
+
+    try:
+        send_mail(
+            subject='PlantScope – Email Verification Code',
+            message=(
+                f'Hello,\n\n'
+                f'Your PlantScope verification code is:\n\n'
+                f'  {otp_code}\n\n'
+                f'This code expires in 10 minutes. Do not share it with anyone.\n\n'
+                f'If you did not request this code, please ignore this email.\n\n'
+                f'– PlantScope System'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            fail_silently=False,
+        )
+    except Exception as e:
+        cache.delete(f'otp_{email}')
+        cache.delete(f'otp_cooldown_{email}')
+        return JsonResponse({'error': f'Failed to send email: {str(e)}'}, status=500)
+
+    return JsonResponse({'message': 'Verification code sent to your email.'}, status=200)
+
+
+@csrf_exempt
+def verify_otp(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    email = body.get('email', '').strip().lower()
+    otp_code = body.get('otp', '').strip()
+
+    if not email or not otp_code:
+        return JsonResponse({'error': 'Email and code are required.'}, status=400)
+
+    stored = cache.get(f'otp_{email}')
+    if stored is None:
+        return JsonResponse({'error': 'Code expired or not found. Please request a new one.'}, status=400)
+    if stored != otp_code:
+        return JsonResponse({'error': 'Incorrect code. Please try again.'}, status=400)
+
+    cache.delete(f'otp_{email}')
+    cache.delete(f'otp_cooldown_{email}')
+    return JsonResponse({'message': 'Email verified successfully.'}, status=200)
 
 
 @csrf_exempt

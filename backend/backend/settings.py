@@ -161,3 +161,21 @@ MEDIA_ROOT = BASE_DIR / 'media'
 JWT_SECRET = 'AKOANISECRET_super_secret_key_here'
 JWT_ALGORITHM = 'HS256'
 JWT_EXP_DELTA_SECONDS = 3600 * 5
+
+# Email (configure EMAIL_HOST_USER and EMAIL_HOST_PASSWORD via environment variables)
+import os
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'sonkimarthem@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'zcafvnmeapdgthpy')
+DEFAULT_FROM_EMAIL = os.environ.get('EMAIL_HOST_USER', 'noreply@plantscope.ph')
+
+# In-memory cache for OTP storage (10-minute TTL per OTP)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'plantscope-otp-cache',
+    }
+}

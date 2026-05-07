@@ -13,6 +13,8 @@ import {
   Map,
 } from "lucide-react";
 import type { SiteDetail } from "../types/siteTypes";
+import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
+import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 
 interface SiteValidationPanelProps {
   site: SiteDetail | null;
@@ -203,6 +205,18 @@ export default function SiteValidationPanel({
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [psAlert, setPsAlert] = useState<{
+    type: "success" | "failed" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    variant: "danger" | "warning";
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // ✅ useMemo hooks - always called, never skipped
   const activeLayerConfig = useMemo(() => {
@@ -271,86 +285,79 @@ export default function SiteValidationPanel({
 
   const handleSaveDraft = async () => {
     if (!validateForm()) {
-      alert("Please fix validation errors before saving.");
+      setPsAlert({ type: "failed", title: "Validation Error", message: "Please fix validation errors before saving." });
       return;
     }
     setSaving(true);
     try {
       const success = await onSaveDraft(activeLayer, formData);
-      alert(success ? "Draft saved successfully!" : "Failed to save draft. Please try again.");
+      setPsAlert(
+        success
+          ? { type: "success", title: "Draft Saved", message: "Draft saved successfully!" }
+          : { type: "error", title: "Save Failed", message: "Failed to save draft. Please try again." }
+      );
     } catch (err) {
       console.error("Save draft error:", err);
-      alert("Error saving draft: " + (err as Error).message);
+      setPsAlert({ type: "error", title: "Save Error", message: "Error saving draft: " + (err as Error).message });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleFinalize = async (decision: "ACCEPT" | "REJECT") => {
+  const handleFinalize = (decision: "ACCEPT" | "REJECT") => {
     if (!validateForm()) {
-      alert("Please complete all required fields in this layer before finalizing.");
+      setPsAlert({ type: "failed", title: "Incomplete Fields", message: "Please complete all required fields in this layer before finalizing." });
       return;
     }
 
     if (!site) return;
 
-    console.log("🔍 Finalize check - Draft MCDA ", {
-      safety: getLayerData(site.current_draft_mcda, "safety"),
-      boundary_verification: getLayerData(site.current_draft_mcda, "boundary_verification"),
-      survivability: getLayerData(site.current_draft_mcda, "survivability"),
-    });
-
     const incompleteLayers = LAYERS.filter((layer) => {
       const layerData = getLayerData(site.current_draft_mcda, layer.id);
       const acceptanceValue = layerData?.[layer.acceptanceField];
-      console.log(`Layer ${layer.id}: acceptanceField="${layer.acceptanceField}", value="${acceptanceValue}"`);
       return !acceptanceValue || acceptanceValue.trim() === "";
     });
 
     if (incompleteLayers.length > 0) {
       const layerNames = incompleteLayers.map((l) => l.label).join(", ");
-      const missingFields = incompleteLayers.map((l) => `${l.label} (${l.acceptanceField})`).join(", ");
-      alert(
-        `❌ Incomplete Validation\n\nThe following layers are missing acceptance decisions:\n• ${layerNames}\n\nRequired fields:\n• ${missingFields}\n\nPlease complete all 3 MCDA layers before finalizing the site.`
-      );
+      setPsAlert({
+        type: "error",
+        title: "Incomplete Validation",
+        message: `The following layers are missing acceptance decisions: ${layerNames}. Please complete all 3 MCDA layers before finalizing.`,
+      });
       return;
     }
 
-    const actionText = decision === "ACCEPT" ? "ACCEPT" : "REJECT";
-    if (!confirm(`⚠️ Confirm ${actionText}\n\nAre you sure you want to ${actionText.toLowerCase()} the site "${site.name}"?\n\nThis action will:\n• Archive the current draft version\n• Set site status to "${decision.toLowerCase()}"\n• Cannot be undone\n\nClick OK to proceed.`)) {
-      return;
-    }
-
-    try {
-      console.log(`🚀 Calling finalize API: decision=${decision}, siteId=${site.site_id}`);
-      const success = await onFinalize(decision);
-
-      if (success) {
-        const successMsg = decision === "ACCEPT"
-          ? `✅ Site "${site.name}" ACCEPTED successfully!\n\nThe site is now ready for planting allocation.`
-          : `❌ Site "${site.name}" REJECTED.\n\nThe site has been excluded from reforestation planning.`;
-        alert(successMsg);
-        onClose();
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("sitesListRefresh"));
+    setConfirmDialog({
+      title: `Confirm ${decision === "ACCEPT" ? "Accept" : "Reject"}`,
+      message: `Are you sure you want to ${decision.toLowerCase()} the site "${site.name}"? This will archive the draft and cannot be undone.`,
+      variant: decision === "ACCEPT" ? "warning" : "danger",
+      confirmLabel: decision === "ACCEPT" ? "Accept" : "Reject",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          const success = await onFinalize(decision);
+          if (success) {
+            setPsAlert({
+              type: "success",
+              title: decision === "ACCEPT" ? "Site Accepted" : "Site Rejected",
+              message: decision === "ACCEPT"
+                ? `"${site.name}" accepted. The site is ready for planting allocation.`
+                : `"${site.name}" rejected and excluded from reforestation planning.`,
+            });
+            onClose();
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("sitesListRefresh"));
+            }
+          } else {
+            setPsAlert({ type: "error", title: "Finalize Failed", message: "The server could not process your request. Ensure all 3 layers have saved acceptance decisions and try again." });
+          }
+        } catch (err: any) {
+          const errorMsg = (err as Error).message || "Unknown error";
+          setPsAlert({ type: "error", title: "Finalize Error", message: errorMsg });
         }
-      } else {
-        console.error("Finalize API returned failure:", success);
-        alert(`❌ Finalize Failed\n\nThe server could not process your request.\nPlease check:\n• All 3 layers have acceptance decisions saved\n• Your internet connection\n• Then try again.`);
-      }
-    } catch (err: any) {
-      console.error("💥 Finalize exception:", err);
-      let errorMsg = (err as Error).message || "Unknown error";
-      if (errorMsg.includes("missing") && errorMsg.includes("acceptance")) {
-        alert(`❌ Validation Error\n\n${errorMsg}\n\nPlease save drafts for all incomplete layers first, then try finalizing again.`);
-      } else if (errorMsg.includes("No draft") || errorMsg.includes("404")) {
-        alert(`❌ Data Error\n\n${errorMsg}\n\nThe site draft could not be found. Please refresh the page and try again.`);
-      } else if (errorMsg.includes("500") || errorMsg.includes("Internal")) {
-        alert(`❌ Server Error\n\n${errorMsg}\n\nPlease contact your system administrator if this persists.`);
-      } else {
-        alert(`❌ Error Finalizing Site\n\n${errorMsg}\n\nPlease try again or contact support if the issue persists.`);
-      }
-    }
+      },
+    });
   };
 
   // ✅ FIXED: Handler for LayerField onChange - Added missing "value:" parameter name
@@ -365,6 +372,24 @@ export default function SiteValidationPanel({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+      {psAlert && (
+        <PlantScopeAlert
+          type={psAlert.type}
+          title={psAlert.title}
+          message={psAlert.message}
+          onClose={() => setPsAlert(null)}
+        />
+      )}
+      {confirmDialog && (
+        <PlantScopeConfirm
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          variant={confirmDialog.variant}
+          confirmLabel={confirmDialog.confirmLabel}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+        />
+      )}
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className={`px-4 py-3 ${activeLayerConfig.bg} border-b ${activeLayerConfig.border} rounded-t-xl`}>

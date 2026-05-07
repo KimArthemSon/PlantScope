@@ -337,8 +337,11 @@ def delete_reforestation_areas(request, reforestation_area_id):
 def get_potential_sites(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
-    sites = Potential_sites.objects.all().values()
-    return JsonResponse({'data': list(sites)}, status=200)
+    area_id = request.GET.get('reforestation_area_id')
+    qs = Potential_sites.objects.all()
+    if area_id:
+        qs = qs.filter(reforestation_area_id=area_id)
+    return JsonResponse({'data': [s.to_dict() for s in qs]}, status=200)
 
 
 @csrf_exempt

@@ -62,6 +62,18 @@ urlpatterns = [
         name='submit_field_assessment'
     ),
 
+    # ── Head Actions (DataManager / CityENROHead) ───────────────────
+    path(
+        'field_assessments/<int:field_assessment_id>/unsent/',
+        onsite_views.head_unsent_field_assessment,
+        name='head_unsent_field_assessment'
+    ),
+    path(
+        'field_assessments/<int:field_assessment_id>/head_delete/',
+        onsite_views.head_delete_field_assessment,
+        name='head_delete_field_assessment'
+    ),
+
     # ── Images ──────────────────────────────────────────────────────
     path(
         'field_assessments/<int:field_assessment_id>/images/upload/',
