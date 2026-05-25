@@ -44,6 +44,7 @@ export const useAuthorize = (requiredRole?: UserRole) => {
         }
 
         const data = await response.json();
+        console.log(data)
         set_userData(data);
         // role check
         if (requiredRole && data.user_role !== requiredRole) {
@@ -93,6 +94,7 @@ export const useUserRole = () => {
         }
 
         const data = await response.json();
+        console.log(data)
         setUserRole(data.user_role || null);
       } catch (error) {
         setUserRole(null);

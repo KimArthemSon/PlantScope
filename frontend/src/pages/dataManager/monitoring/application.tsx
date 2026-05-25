@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, ChevronLeft, Leaf, VerifiedIcon } from "lucide-react";
+import { ChevronRight, ChevronLeft, Leaf, VerifiedIcon, Search } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
-import Delete_modal from "../../../components/layout/delete_modal";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface Application {
   application_id: number;
@@ -13,7 +14,7 @@ interface Application {
   title: string;
   total_members: number;
   total_request_seedling: number;
-  classification: string;
+  classification: "new" | "old";
   status: string;
   created_at: string;
 }
@@ -27,59 +28,82 @@ interface Filter {
   classification: string;
 }
 
+// ─── Status Config ──────────────────────────────────────────────────────────
+
+const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
+  accepted: { label: "Active", bg: "bg-green-100", text: "text-green-700" },
+  under_monitoring: { label: "Monitoring", bg: "bg-blue-100", text: "text-blue-700" },
+  completed: { label: "Completed", bg: "bg-gray-100", text: "text-gray-700" },
+  rejected: { label: "Rejected", bg: "bg-red-100", text: "text-red-700" },
+};
+
+// ─── Main Component ─────────────────────────────────────────────────────────
+
 export default function Monitoring() {
-  const [application, setApplication] = useState<Application[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [filter, setFilter] = useState<Filter>({
     search: "",
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "accepted",
+    status: "All", // Show both accepted and under_monitoring by default
     classification: "All",
   });
 
   const [loading, setLoading] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
     message: string;
   } | null>(null);
 
-  const [tree_specie_idDelete, settree_specie_IdDelete] = useState<
-    number | null
-  >(null);
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
+  const API_BASE = "http://127.0.0.1:8000";
 
-  // Fetch Application from backend
-  const fetchApplication = async () => {
+  // ─── Fetch Applications ───────────────────────────────────────────────────
+
+  const fetchApplications = async () => {
     setLoading(true);
     try {
+      // Build params - status filter handles both accepted and under_monitoring
       const params = new URLSearchParams({
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
-        classification: filter.classification.toString(),
-        status: filter.status.toString(),
+        classification: filter.classification,
       });
+      
+      // Only add status filter if not "All"
+      if (filter.status !== "All") {
+        params.append("status", filter.status);
+      }
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_applications/?${params.toString()}`,
+        `${API_BASE}/api/get_applications/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        },
+        }
       );
-      if (!response.ok) throw new Error("Failed to fetch Application.");
+      if (!response.ok) throw new Error("Failed to fetch applications.");
 
       const data = await response.json();
-      setApplication(data.data);
+      
+      // Client-side filter for monitoring statuses if "All" is selected
+      let apps = data.data;
+      if (filter.status === "All") {
+        apps = apps.filter((app: Application) => 
+          app.status === "accepted" || app.status === "under_monitoring"
+        );
+      }
+      
+      setApplications(apps);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
-    } catch (err) {
+    } catch (err: any) {
       setPSAlert({
         type: "error",
         title: "Failed",
-        message: "Failed to load Application.",
+        message: err.message || "Failed to load applications.",
       });
     } finally {
       setLoading(false);
@@ -87,41 +111,17 @@ export default function Monitoring() {
   };
 
   useEffect(() => {
-    fetchApplication();
-  }, [filter.page, filter.entries, filter.classification, filter.status]); // refetch when filters change
+    fetchApplications();
+  }, [filter.page, filter.entries, filter.classification, filter.status]);
 
-  const setDelete = (tree_specie_id: number) => {
-    settree_specie_IdDelete(tree_specie_id);
-    setIsDeleteModalOpen(true);
+  // ─── Navigate to Maintenance Report ───────────────────────────────────────
+
+  const handleViewReport = (applicationId: number) => {
+    // Navigate with application_id as route param
+    navigate(`/DataManager/maintenance_evaluation/${applicationId}`);
   };
 
-  const handleDelete = async () => {
-    if (!tree_specie_idDelete) return;
-    const response = await fetch(
-      `http://127.0.0.1:8000/api/delete_tree_specie/${tree_specie_idDelete}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    const data = await response.json();
-    if (response.ok) {
-      setPSAlert({
-        type: "success",
-        title: "Deleted",
-        message: data.message,
-      });
-      setIsDeleteModalOpen(false);
-      fetchApplication(); // refresh list after delete
-    } else {
-      setPSAlert({
-        type: "failed",
-        title: "Failed",
-        message: "Failed to delete tree specie.",
-      });
-      setIsDeleteModalOpen(false);
-    }
-  };
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
@@ -133,18 +133,17 @@ export default function Monitoring() {
           onClose={() => setPSAlert(null)}
         />
       )}
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
-    
-      <main className="flex-1 p-8 max-w-409">
+
+      <main className="flex-1 p-8 max-w-7xl">
         {/* Header */}
+        <div className="mb-7">
+          <h1 className="text-2xl font-bold text-[#0F4A2F]">Active Programs</h1>
+          <p className="text-sm text-gray-500">Monitor and evaluate ongoing tree planting applications</p>
+        </div>
 
         {/* Filters */}
-        <div className="flex items-center mb-7 gap-4">
-          <label>Show entries: </label>
+        <div className="flex items-center mb-7 gap-4 flex-wrap">
+          <label className="text-sm font-medium text-gray-600">Show entries:</label>
           <select
             value={filter.entries}
             onChange={(e) =>
@@ -154,7 +153,7 @@ export default function Monitoring() {
                 page: 1,
               }))
             }
-            className="border border-black p-2 rounded-md text-[.8rem]"
+            className="border border-gray-300 p-2 rounded-md text-sm focus:border-[#0F4A2F] focus:outline-none"
           >
             <option value={10}>10</option>
             <option value={25}>25</option>
@@ -162,8 +161,7 @@ export default function Monitoring() {
             <option value={100}>100</option>
           </select>
 
-          <label>classification:</label>
-
+          <label className="text-sm font-medium text-gray-600">Classification:</label>
           <select
             value={filter.classification}
             onChange={(e) =>
@@ -173,14 +171,14 @@ export default function Monitoring() {
                 page: 1,
               }))
             }
-            className="border border-black p-2 rounded-md text-[.8rem]"
+            className="border border-gray-300 p-2 rounded-md text-sm focus:border-[#0F4A2F] focus:outline-none"
           >
             <option value="All">All</option>
             <option value="new">New</option>
             <option value="old">Old</option>
           </select>
-          <label>status:</label>
 
+          <label className="text-sm font-medium text-gray-600">Status:</label>
           <select
             value={filter.status}
             onChange={(e) =>
@@ -190,133 +188,128 @@ export default function Monitoring() {
                 page: 1,
               }))
             }
-            className="border border-black p-2 rounded-md text-[.8rem]"
+            className="border border-gray-300 p-2 rounded-md text-sm focus:border-[#0F4A2F] focus:outline-none"
           >
-            <option value="accepted">Accepted</option>
+            <option value="All">All Active</option>
+            <option value="accepted">Active</option>
+            <option value="under_monitoring">Monitoring</option>
+            <option value="completed">Completed</option>
             <option value="rejected">Rejected</option>
           </select>
 
-          <input
-            type="text"
-            placeholder="Search Application..."
-            value={filter.search}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                search: e.target.value,
-                page: 1, // reset page when typing
-              }))
-            }
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                fetchApplication(); // call your fetch function on Enter
+          <div className="relative ml-auto">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search applications..."
+              value={filter.search}
+              onChange={(e) =>
+                setFilter((prev) => ({
+                  ...prev,
+                  search: e.target.value,
+                  page: 1,
+                }))
               }
-            }}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
-          />
+              onKeyDown={(e) => {
+                if (e.key === "Enter") fetchApplications();
+              }}
+              className="border border-gray-300 rounded-md pl-8 pr-3 py-2 w-72 text-sm focus:border-[#0F4A2F] focus:outline-none"
+            />
+          </div>
         </div>
 
         {/* Table */}
         <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200">
           {loading && <LoaderPending />}
-          <table className="relative min-w-full bg-white rounded-sm">
+          <table className="min-w-full bg-white rounded-sm">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Profile</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Organization</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Title</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Classification
-                </th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Classification</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Members</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Request seedling
-                </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created_at</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Created</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {application.length > 0 ? (
-                application.map((app, index) => (
-                  <tr
-                    key={app.application_id}
-                    className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition`}
-                  >
-                    <td className="py-3 px-5 text-[.9rem]">
-                      {index + 1 + (filter.page - 1) * filter.entries}
-                    </td>
-                    <td className="py-3 px-5">
-                      <div className="flex gap-5">
-                        <img
-                          src={"http://127.0.0.1:8000/" + app.org_profile}
-                          className="rounded-full h-15 w-15"
-                          alt="prfile image"
-                        />
-                        <div>
-                          <h4 className="font-bold text-[.8rem]">
-                            {app.organization_name}
-                          </h4>
-                          <span className="text-[#00000091] text-[.7rem]">
-                            {app.org_email}
-                          </span>
+              {applications.length > 0 ? (
+                applications.map((app, index) => {
+                  const statusConf = STATUS_CONFIG[app.status] || STATUS_CONFIG.accepted;
+                  return (
+                    <tr
+                      key={app.application_id}
+                      className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition hover:bg-[#0F4A2F05]`}
+                    >
+                      <td className="py-3 px-5 text-[.9rem]">
+                        {index + 1 + (filter.page - 1) * filter.entries}
+                      </td>
+                      <td className="py-3 px-5">
+                        <div className="flex items-center gap-3">
+                          {app.org_profile ? (
+                            <img
+                              src={`${API_BASE}/${app.org_profile}`}
+                              className="rounded-full h-12 w-12 object-cover border border-gray-200"
+                              alt="Organization"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24' fill='none' stroke='%230F4A2F' stroke-width='1'/%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M7 7h10M7 11h10M7 15h6'/%3E%3C/svg%3E";
+                              }}
+                            />
+                          ) : (
+                            <div className="h-12 w-12 rounded-full bg-green-50 flex items-center justify-center border border-gray-200">
+                              <Leaf size={20} className="text-green-300" />
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="font-bold text-[.85rem] text-gray-800">
+                              {app.organization_name}
+                            </h4>
+                            <span className="text-[.7rem] text-gray-500">
+                              {app.org_email}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {app.title}
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          app.status === 'accepted'
-                            ? "bg-yellow-100 text-green-700"
-                            : "bg-red-100 text-red-700"
-                        }`}
-                      >
-                        {app.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {app.classification}
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {app.total_members}
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {app.total_request_seedling}
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem]">{app.created_at}</td>
-                    <td className="py-3 px-5">
-                      <div className="flex gap-2">
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem] max-w-xs truncate" title={app.title}>
+                        {app.title}
+                      </td>
+                      <td className="py-3 px-5">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${statusConf.bg} ${statusConf.text}`}
+                        >
+                          {statusConf.label}
+                        </span>
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem] capitalize">
+                        {app.classification}
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem]">
+                        {app.total_members}
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem] text-gray-500">
+                        {app.created_at}
+                      </td>
+                      <td className="py-3 px-5">
                         <button
-                          onClick={() => {
-                            navigate(
-                              "/DataManager/maintenance_evaluation/",
-                            );
-                          }}
-                          className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
+                          onClick={() => handleViewReport(app.application_id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0F4A2F] text-white text-xs font-semibold hover:bg-[#1a6b44] transition-colors"
+                          title="View maintenance reports"
                         >
-                          <VerifiedIcon size={18} />
+                          <VerifiedIcon size={14} />
+                          View Reports
                         </button>
-                        {/* <button
-                          onClick={() => setDelete(app.application_id)}
-                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
-                        >
-                          <Trash2 size={18} />
-                        </button> */}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
-                  <td
-                    colSpan={5}
-                    className="text-center py-5 text-gray-500 italic"
-                  >
-                    No Application found.
+                  <td colSpan={8} className="text-center py-10 text-gray-500">
+                    {filter.search 
+                      ? `No results for "${filter.search}"` 
+                      : "No applications found."}
                   </td>
                 </tr>
               )}
@@ -325,43 +318,55 @@ export default function Monitoring() {
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center gap-1 mt-5 w-full">
-          <button
-            disabled={filter.page <= 1}
-            onClick={() =>
-              setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
-            }
-            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer"
-          >
-            <ChevronLeft size={19} />
-          </button>
+        {filter.total_page > 1 && (
+          <div className="flex items-center gap-1 mt-5 w-full">
+            <button
+              disabled={filter.page <= 1}
+              onClick={() =>
+                setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
+              }
+              className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+            >
+              <ChevronLeft size={16} /> Prev
+            </button>
 
-          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map(
-            (p) => (
-              <button
-                key={p}
-                onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
-                className={`px-2 py-1 border rounded-md cursor-pointer text-[.8rem] ${
-                  p === filter.page
-                    ? "bg-green-600 text-white"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                {p}
-              </button>
-            ),
-          )}
+            {Array.from({ length: Math.min(5, filter.total_page) }, (_, i) => {
+              let pageNum;
+              if (filter.total_page <= 5) {
+                pageNum = i + 1;
+              } else if (filter.page <= 3) {
+                pageNum = i + 1;
+              } else if (filter.page >= filter.total_page - 2) {
+                pageNum = filter.total_page - 4 + i;
+              } else {
+                pageNum = filter.page - 2 + i;
+              }
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setFilter((prev) => ({ ...prev, page: pageNum }))}
+                  className={`px-3 py-1.5 border rounded-lg cursor-pointer text-sm ${
+                    pageNum === filter.page
+                      ? "bg-[#0F4A2F] text-white"
+                      : "text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
 
-          <button
-            disabled={filter.page >= filter.total_page}
-            onClick={() =>
-              setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
-            }
-            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 cursor-pointer"
-          >
-            <ChevronRight size={19} />
-          </button>
-        </div>
+            <button
+              disabled={filter.page >= filter.total_page}
+              onClick={() =>
+                setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
+              }
+              className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+            >
+              Next <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );

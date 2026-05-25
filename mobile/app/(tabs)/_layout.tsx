@@ -78,13 +78,31 @@ export default function TabLayout() {
       />
 
       {/* Grow — floating center */}
+
       <Tabs.Screen
         name="Area"
+        options={{
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "eye" : "eye-outline"}
+              size={24}
+              color={color}
+            />
+          ),
+          tabBarLabel: "Assessment",
+        }}
+      />
+      <Tabs.Screen
+        name="map"
         options={{
           tabBarLabel: () => null,
           tabBarIcon: () => (
             <View style={styles.centerButton}>
-              <MaterialCommunityIcons name="sprout" size={28} color="#FFFFFF" />
+              <MaterialCommunityIcons
+                name="map"
+                size={28}
+                color="#FFFFFF"
+              />
             </View>
           ),
           tabBarButton: (props) => (
@@ -99,7 +117,19 @@ export default function TabLayout() {
           ),
         }}
       />
-
+      <Tabs.Screen
+        name="monitoring"
+        options={{
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "clipboard" : "clipboard-outline"}
+              size={24}
+              color={color}
+            />
+          ),
+          tabBarLabel: "Monitoring",
+        }}
+      />
       <Tabs.Screen
         name="profile"
         options={{

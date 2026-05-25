@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 import re
 from django.conf import settings
 from django.db import DatabaseError, connection, transaction
-from tree_planting_programs.models import Application
+from tree_planting_programs.models import Application, SeedlingRequest
 
 
 def _get_request_user(request):
@@ -60,154 +60,194 @@ def record_activity(request, action_type, entity_type, entity_id=None,
 def register_user(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
-    
-    required_fields = [
-        'email',
-        'password',
-        'user_role',
-        'first_name',
-        'last_name',
-        "is_active" , 
-        "birthday" , 
-        "contact" ,
-        "address" , 
-        "gender" ,
-    ]
-    
-    missing = [f for f in required_fields if not request.POST.get(f)]
 
-    if not request.FILES.get('profile_img'):
+    data = request.POST
+    files = request.FILES
+
+    # 1️ Validate required fields
+    required_fields = ['email', 'password', 'user_role', 'first_name', 'last_name',
+                       'birthday', 'contact', 'address', 'gender']
+    missing = [f for f in required_fields if not data.get(f)]
+
+    if not files.get('profile_img'):
         missing.append('profile_img')
-    print(missing)
+
     if missing:
-        
-        return JsonResponse({
-            'error': 'Missing required fields',
-            'fields': missing
-        }, status=400)
+        return JsonResponse({'error': 'Missing required fields', 'fields': missing}, status=400)
+
+    # 2️⃣ Extract & sanitize basic user data
+    email = data.get('email').strip().lower()
+    password = data.get('password')
+    user_role = data.get('user_role')
+    first_name = data.get('first_name').strip()
+    middle_name = data.get('middle_name', '').strip()
+    last_name = data.get('last_name').strip()
+    contact = data.get('contact').strip()
+    address = data.get('address').strip()
+    gender = data.get('gender')
     
-    email = request.POST.get('email')
-    user_role = request.POST.get('user_role')
-    is_active =  request.POST.get('is_active').lower() == 'true'
-    password = request.POST.get('password')
-    first_name =  request.POST.get('first_name')
-    middle_name = request.POST.get('middle_name', '')
-    last_name =  request.POST.get('last_name')
-    birthday =  request.POST.get('birthday')
-    contact = request.POST.get('contact')
-    address =  request.POST.get('address')
-    profile_img = request.FILES.get('profile_img')
-    gender = request.POST.get('gender')
+    # Default to active, but treeGrowers will be set inactive later
+    is_active_input = data.get('is_active', 'true').lower()
+    is_active = is_active_input in ['true', '1', 'yes']
 
-    organization_name = ""
-    total_members = 0
-    org_email = ""
-    org_address = ""
-    org_contact = ""
-    org_profile = ""
-    title = ""
-    description = ""
-    status =  "for_evaluation"
-    # Dates
-    project_duration = 0  
-    # Files 
-    maintenance_plan = ""  
-    # Seedling and Area Metrics
-    total_request_seedling = ""
-
-    if user_role == 'treeGrowers':
-        #org
-        is_active = False
-        organization_name = request.POST.get('organization_name')
-        org_email = request.POST.get('org_email')
-        org_address = request.POST.get('org_address')
-        org_contact = request.POST.get('org_contact')
-        org_profile = request.FILES.get('org_profile')
-       
-        #application
-
-        title = request.POST.get('title')
-        total_members = request.POST.get('total_members')
-        description = request.POST.get('description')
-        # Dates
-        project_duration = int(request.POST.get('project_duration', 0))
-        #Files 
-        maintenance_plan = request.FILES.get('maintenance_plan')
-        #Seedling and Area Metrics
-        total_request_seedling = int(request.POST.get('total_request_seedling', 0))
-
-    
+    # 3️⃣ Validate password format
     password_regex = r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$'
-
     if not re.match(password_regex, password):
         return JsonResponse({
             'error': 'Password must contain uppercase, lowercase, number, special character, and be at least 8 characters long.'
         }, status=400)
 
-   
+    # 4️⃣ Check email uniqueness
     if User.objects.filter(email=email).exists():
         return JsonResponse({'error': 'Email already exists'}, status=400)
 
-   
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    # 5️⃣ Parse birthday safely
+    try:
+        birthday = datetime.strptime(data.get('birthday'), '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'error': 'Invalid birthday format. Use YYYY-MM-DD.'}, status=400)
+
+    # 6️⃣ Handle treeGrower-specific data
+    org_data = {}
+    app_data = {}
+    seedling_data = {}
+
+    if user_role == 'treeGrowers':
+        is_active = False  # Requires approval before activation
+        
+        # Organization validation
+        org_required = ['organization_name', 'org_email', 'org_address', 'org_contact']
+        org_missing = [f for f in org_required if not data.get(f)]
+        if not files.get('org_profile'):
+            org_missing.append('org_profile')
+        if org_missing:
+            return JsonResponse({'error': 'Missing organization fields', 'fields': org_missing}, status=400)
+
+        org_data = {
+            'organization_name': data.get('organization_name').strip(),
+            'org_email': data.get('org_email').strip(),
+            'org_address': data.get('org_address').strip(),
+            'org_contact': data.get('org_contact').strip(),
+            'org_profile': files.get('org_profile'),
+        }
+
+        # Application validation
+        app_required = ['title', 'description', 'total_members', 'project_duration']
+        app_missing = [f for f in app_required if not data.get(f)]
+        if not files.get('maintenance_plan'):
+            app_missing.append('maintenance_plan')
+        if app_missing:
+            return JsonResponse({'error': 'Missing application fields', 'fields': app_missing}, status=400)
+
+        try:
+            total_members = int(data.get('total_members'))
+            project_duration = int(data.get('project_duration'))
+        except ValueError:
+            return JsonResponse({'error': 'total_members and project_duration must be valid integers.'}, status=400)
+
+        app_data = {
+            'title': data.get('title').strip(),
+            'description': data.get('description').strip(),
+            'total_members': total_members,
+            'project_duration': project_duration,
+            'maintenance_plan': files.get('maintenance_plan'),
+        }
+
+        # Seedling Request validation
+        if not data.get('no_request_seedling') or not data.get('seedling_type'):
+            return JsonResponse({'error': 'Missing seedling request fields: no_request_seedling, seedling_type'}, status=400)
+
+        try:
+            no_request_seedling = int(data.get('no_request_seedling'))
+            # Expect JSON string from mobile: {"mahogany": 30, "narra": 20}
+            seedling_type = json.loads(data.get('seedling_type'))
+            if not isinstance(seedling_type, dict):
+                raise ValueError("seedling_type must be a JSON object")
+        except (ValueError, json.JSONDecodeError) as e:
+            return JsonResponse({'error': f'Invalid seedling data: {str(e)}'}, status=400)
+
+        seedling_data = {
+            'no_request_seedling': no_request_seedling,
+            'description': data.get('seedling_description', '').strip(),
+        }
+
+    # 7️⃣ Database Transaction
     try:
         with transaction.atomic():
-            
+            # Create User
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
             user = User.objects.create(
-            email=email,
-            password=hashed_password,
-            user_role=user_role,
-            is_active=is_active
+                email=email,
+                password=hashed_password,
+                user_role=user_role,
+                is_active=is_active
             )
 
+            # Create Profile
             profile.objects.create(
-            users = user,
-            first_name = first_name,
-            middle_name = middle_name,
-            last_name = last_name,
-            birthday = birthday,
-            contact = contact,
-            address = address,
-            profile_img = profile_img,
-            gender = gender,
+                users=user,
+                first_name=first_name,
+                middle_name=middle_name,
+                last_name=last_name,
+                birthday=birthday,
+                contact=contact,
+                address=address,
+                profile_img=files.get('profile_img'),
+                gender=gender,
             )
 
-            if  user_role == 'treeGrowers':
+            if user_role == 'treeGrowers':
+                # Create Organization
                 Organization.objects.create(
-                        organization_name =organization_name ,
-                        users=user,
-                        email = org_email ,
-                        address =org_address ,
-                        contact =org_contact ,
-                        profile_img = org_profile,
+                    organization_name=org_data['organization_name'],
+                    users=user,
+                    email=org_data['org_email'],
+                    address=org_data['org_address'],
+                    contact=org_data['org_contact'],
+                    profile_img=org_data['org_profile'],
                 )
-                Application.objects.create(
-                    user = user,
-                    title = title,
-                    description = description,
-                    classification = 'new',
-                    status="for_evaluation",
-                    project_duration = project_duration ,    
-                    maintenance_plan = maintenance_plan,
-                    total_request_seedling =  total_request_seedling,
-                    total_members=total_members
-                )
-    except Exception as e:
-        print(e)
-        return JsonResponse(
-            {'error': f'Missing fields, Please try again {e}'}, status=400)
-    
 
-    record_activity(
-        request,
-        action_type='CREATE',
-        entity_type='User',
-        entity_id=user.id,
-        entity_label=email,
-        description=f'New {user_role} account registered.',
-        new_data={'email': email, 'user_role': user_role, 'is_active': user.is_active},
-    )
-    return JsonResponse({'message': 'User registered successfully', 'user_id': user.id})
+                # Create Application (site remains NULL, assigned later by DataManager)
+                application = Application.objects.create(
+                    user=user,
+                    title=app_data['title'],
+                    description=app_data['description'],
+                    classification='new',
+                    status='for_evaluation',
+                    project_duration=app_data['project_duration'],
+                    maintenance_plan=app_data['maintenance_plan'],
+                    total_members=app_data['total_members'],
+                )
+
+                # Create Seedling Request (linked to application)
+                SeedlingRequest.objects.create(
+                    application=application,
+                    no_request_seedling=seedling_data['no_request_seedling'],
+                    description=seedling_data.get('description'),
+                    status='pending',
+                )
+
+        # 8️⃣ Activity Logging
+        record_activity(
+            request,
+            action_type='CREATE',
+            entity_type='User',
+            entity_id=user.id,
+            entity_label=email,
+            description=f'New {user_role} account registered.',
+            new_data={'email': email, 'user_role': user_role, 'is_active': user.is_active},
+        )
+
+        return JsonResponse({
+            'message': 'Registration successful',
+            'user_id': user.id,
+            'next_step': 'awaiting_evaluation' if user_role == 'treeGrowers' else 'active'
+        }, status=201)
+
+    except Exception as e:
+        # In production, use logging.error() instead of print()
+        print(f"Registration failed: {str(e)}")
+        return JsonResponse({'error': 'Registration failed. Please try again.'}, status=500)
 
 @csrf_exempt
 def login_user(request):

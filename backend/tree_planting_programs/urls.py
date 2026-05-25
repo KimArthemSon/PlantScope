@@ -1,19 +1,26 @@
 from django.urls import path
 from . import views
-urlpatterns = [
-    path('get_applications/', views.get_applications, name='get_applications'),
-    path('get_tree_grower_application/', views.get_tree_grower_application, name='get_tree_grower_application'),
-    path('get_application/<int:application_id>/', views.get_application, name='get_application'),
-    path('evaluate_application/<int:application_id>/', views.evaluate_application, name='evaluate_application'),
-    path('confirmation_application/<int:application_id>/', views.confirmation_application, name='confirmation_application'),
-    path('create_maintenance_report/', views.create_maintenance_report, name='create_maintenance_report'),
-    path('evaluate_miantenance_report/<int:maintenance_report_id>/', views.evaluate_miantenance_report, name='evaluate_miantenance_report'),
-    path('confirmation_maintenance/<int:maintenance_report_id>/', views.confirmation_maintenance, name='confirmation_maintenance'),
-    path('get_all_maintenance_reports/', views.get_all_maintenance_reports,name='get_all_maintenance_reports'),
-    path('get_tree_grower_maintenance_reports/<int:application_id>/', views.get_tree_grower_maintenance_reports, name='get_tree_grower_maintenance_reports'),
-    path('alert_tree_grower/', views.alert_tree_grower,name='alert_tree_grower'),
-    path('get_notifications/', views.get_notifications, name='get_notifications'),
-    path('mark_notification_read/<int:notification_id>/', views.mark_notification_read, name='mark_notification_read'),
-    path('get_orientation_dates/', views.get_orientation_dates, name='get_orientation_dates'),
 
+urlpatterns = [
+    # ─── APPLICATIONS ───────────────────────────────────────────────
+    path('get_applications/', views.get_applications, name='get_applications'),
+    path('get_application/<int:application_id>/', views.get_application, name='get_application'),
+    path('get_ongoing_applications/', views.get_ongoing_applications, name='get_ongoing_applications'),
+    path('get_tree_grower_application/', views.get_tree_grower_application, name='get_tree_grower_application'),
+    # ─── WORKFLOW & STATUS TRANSITIONS ──────────────────────────────
+    path('evaluate_application/<int:application_id>/', views.evaluate_application, name='evaluate_application'),
+    path('confirm_application/<int:application_id>/', views.confirm_application, name='confirm_application'),
+    path('complete_application/<int:application_id>/', views.complete_application, name='complete_application'),
+
+    # ─── SEEDLING REQUESTS (Assistance / Additional) ────────────────
+    path('get_seedling_requests/', views.get_seedling_requests, name='get_seedling_requests'),
+    path('create_seedling_request/', views.create_seedling_request, name='create_seedling_request'),
+    path('update_seedling_request/<int:request_id>/', views.update_seedling_request, name='update_seedling_request'),
+    path('delete_seedling_request/<int:request_id>/', views.delete_seedling_request, name='delete_seedling_request'),
+
+    # ─── PROGRESS REPORTS (Onsite Monitoring) ───────────────────────
+    path('get_progress_reports/', views.get_progress_reports, name='get_progress_reports'),
+   
+    path('create_progress_report/', views.create_progress_report, name='create_progress_report'),
+    path('update_progress_report/<int:report_id>/', views.update_progress_report, name='update_progress_report'),
 ]

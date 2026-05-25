@@ -46,6 +46,7 @@ import Maintenance_report from "./pages/dataManager/monitoring/maintenance_repor
 import ViewReforestationArea from "./pages/head/reforestation_areas/view_reforestation_area";
 import MyProfile from "./pages/dataManager/MyProfile";
 import Terms_and_Conditions from "./pages/HomePage/terms_and_Conditions";
+import Request from "./pages/dataManager/monitoring/request";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -205,7 +206,7 @@ export default function App() {
           <Route path="/DataManager/applications" element={<Application />} />
           <Route path="/DataManager/monitoring" element={<Monitoring />} />
           <Route
-            path="/DataManager/maintenance_evaluation"
+            path="/DataManager/maintenance_evaluation/:application_id"
             element={<Maintenance_report />}
           />
           <Route
@@ -262,6 +263,10 @@ export default function App() {
           <Route
             path="/DataManager/reforestation-areas"
             element={<Reforestation_areas />}
+          />
+           <Route
+            path="/DataManager/request"
+            element={<Request />}
           />
           <Route
             path="/DataManager/official-reforestation"

@@ -230,9 +230,7 @@ export default function Application() {
                   Classification
                 </th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Members</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Request seedling
-                </th>
+               
                 <th className="py-3 px-5 text-left text-[.9rem]">Created_at</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
@@ -276,9 +274,7 @@ export default function Application() {
                     <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
                       {app.total_members}
                     </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {app.total_request_seedling}
-                    </td>
+                  
                     <td className="py-3 px-5 text-[.9rem]">{app.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
