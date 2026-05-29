@@ -12,7 +12,6 @@ import { api } from "@/constants/url_fixed";
 const API_BASE = api;
 
 /* ---------- LAYER CONFIG ---------- */
-
 const LAYER_CONFIG: Record<string, { color: string; bg: string; icon: string }> = {
   meta_data:             { color: "#8B5CF6", bg: "#F5F3FF", icon: "database-outline"       },
   safety:                { color: "#EF4444", bg: "#FEF2F2", icon: "shield-alert-outline"    },
@@ -24,23 +23,23 @@ const getLayer = (id: string) =>
   LAYER_CONFIG[id] ?? { color: "#0F4A2F", bg: "#E6F4EC", icon: "layers-outline" };
 
 /* ---------- TYPES ---------- */
-
+// ✅ UPDATED: One assessment holds ALL layers; no per-layer filtering
 type Assessment = {
   field_assessment_id: number;
   reforestation_area_id: number;
   reforestation_area_name: string;
-  layer: "safety" | "boundary_verification" | "survivability" | "meta_data";
-  layer_display: string;
+  // REMOVED: layer, layer_display (not in response anymore)
   assessment_date: string | null;
   location: { latitude: number; longitude: number; gps_accuracy_meters?: number } | null;
   is_submitted: boolean;
   image_count: number;
   created_at: string;
   updated_at: string;
+  // Optional: field_assessment_data for status checks
+  field_assessment_data?: Record<string, any>;
 };
 
 /* ---------- HELPERS ---------- */
-
 const getFormPath = (layerId: string) =>
   layerId === "meta_data" ? "/feedbacks/meta_data_form" : "/feedbacks/multicriteria_layer_form";
 
@@ -48,7 +47,6 @@ const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
 
 /* ---------- SCREEN ---------- */
-
 export default function LayerAssessmentList() {
   const { areaId, areaName, layerId, layerName } = useLocalSearchParams<{
     areaId: string; areaName: string;
@@ -67,8 +65,9 @@ export default function LayerAssessmentList() {
   const fetchAssessments = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
+      // ✅ REMOVED: &layer=${layerId} - backend now returns ONE assessment per area
       const res = await fetch(
-        `${API_BASE}/api/field_assessments/?reforestation_area_id=${areaId}&layer=${layerId}`,
+        `${API_BASE}/api/field_assessments/?reforestation_area_id=${areaId}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) {
@@ -119,21 +118,33 @@ export default function LayerAssessmentList() {
   };
 
   const handleEdit = (a: Assessment) => {
-    const path = getFormPath(a.layer);
-    if (a.layer === "meta_data") {
+    const path = getFormPath(layerId); // ✅ Always use current layerId, not a.layer
+    if (layerId === "meta_data") {
       router.push({ pathname: path, params: { areaId, id: a.field_assessment_id.toString(), isEdit: "true" } });
     } else {
-      router.push({ pathname: path, params: { areaId, layerId: a.layer, layerName: a.layer_display, assessmentId: a.field_assessment_id.toString(), isEdit: "true" } });
+      router.push({ pathname: path, params: { areaId, layerId, layerName, assessmentId: a.field_assessment_id.toString(), isEdit: "true" } });
     }
   };
 
   const handleView = (a: Assessment) => {
-    const path = getFormPath(a.layer);
-    if (a.layer === "meta_data") {
+    const path = getFormPath(layerId); // ✅ Always use current layerId
+    if (layerId === "meta_data") {
       router.push({ pathname: path, params: { areaId, id: a.field_assessment_id.toString(), isEdit: "false" } });
     } else {
-      router.push({ pathname: path, params: { areaId, layerId: a.layer, layerName: a.layer_display, assessmentId: a.field_assessment_id.toString(), isEdit: "false" } });
+      router.push({ pathname: path, params: { areaId, layerId, layerName, assessmentId: a.field_assessment_id.toString(), isEdit: "false" } });
     }
+  };
+
+  // ✅ Status logic: check if field_assessment_data has data for this layer
+  const getLayerStatus = (assessment: Assessment): "done" | "draft" | "pending" => {
+    if (assessment.is_submitted) return "done";
+    const data = assessment.field_assessment_data || {};
+    // Check if this layer has any data (simplified: check for overall_note or similar)
+    const layerData = data[layerId];
+    if (layerData && (layerData.overall_note || Object.keys(layerData).length > 0)) {
+      return "draft";
+    }
+    return "pending";
   };
 
   const drafts    = assessments.filter((a) => !a.is_submitted);
@@ -144,6 +155,7 @@ export default function LayerAssessmentList() {
   const renderItem = ({ item, index }: { item: Assessment; index: number }) => {
     const isFirstSubmitted = item.is_submitted && index === drafts.length;
     const hasLoc = item.location?.latitude && item.location?.longitude;
+    const status = getLayerStatus(item); // ✅ Use new status logic
 
     return (
       <>
@@ -366,7 +378,6 @@ export default function LayerAssessmentList() {
 }
 
 /* ---------- STYLES ---------- */
-
 const styles = StyleSheet.create({
   root:          { flex: 1, backgroundColor: "#F4F7F5" },
   loadingScreen: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },

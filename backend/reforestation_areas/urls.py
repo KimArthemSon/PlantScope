@@ -23,4 +23,9 @@ urlpatterns = [
     path('permits/<int:reforestation_area_id>/list/', views.list_permits, name='list_permits'),
     path('permits/<int:reforestation_area_id>/upload/', views.upload_permit, name='upload_permit'),
     path('permits/<int:permit_id>/delete/', views.delete_permit, name='delete_permit'),
+
+     # ✅ NEW: Meta Data Verification endpoints
+    path('reforestation-areas/<int:reforestation_area_id>/verification/', views.get_area_verification, name='get_area_verification'),
+    path('update_reforestation-areas/<int:reforestation_area_id>/verification/', views.update_area_verification, name='update_area_verification'),
+    path('reforestation-areas/<int:reforestation_area_id>/verification/', views.get_area_verification, name='get_area_verification'),
 ]

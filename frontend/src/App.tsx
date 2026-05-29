@@ -26,7 +26,7 @@ import Map from "./pages/head/Map/Map";
 import Classified_area_form from "./pages/head/maintain/classified_areas/classified_area_form";
 import Classified_areas from "./pages/head/maintain/classified_areas/classified_areas";
 import Assign_onsite_inspector from "./pages/head/reforestation_areas/assigning";
-import Pre_Assessment from "./pages/head/reforestation_areas/pre_assessment";
+import MetaDataVerification from "./pages/head/reforestation_areas/meta_data";
 import Reforestation_area_site from "./pages/head/site/reforestation_area_site";
 import Sites from "./pages/head/site/sites";
 import Reforestation_area_analysis from "./pages/head/analysis/reforestation_areas_analysis";
@@ -47,6 +47,8 @@ import ViewReforestationArea from "./pages/head/reforestation_areas/view_refores
 import MyProfile from "./pages/dataManager/MyProfile";
 import Terms_and_Conditions from "./pages/HomePage/terms_and_Conditions";
 import Request from "./pages/dataManager/monitoring/request";
+import Animals from "./pages/head/maintain/animals";
+import Reports from "./pages/dataManager/reports/reports";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -102,7 +104,7 @@ export default function App() {
             path="/assign_onsite_inpsector/:id"
             element={<Assign_onsite_inspector />}
           />
-          <Route path="/legality-and-safety/:id" element={<Pre_Assessment />} />
+          <Route path="/legality-and-safety/:id" element={<MetaDataVerification />} />
           <Route
             path="/maintenance/reforestation_area_form/:id"
             element={<Reforestation_area_form />}
@@ -165,10 +167,7 @@ export default function App() {
           <Route path="/map" element={<Map />} />
           <Route path="/my-profile" element={<MyProfile />} />
 
-          <Route
-            path="/reports"
-            element={<Placeholder title="Reports & Dashboard" />}
-          />
+          <Route path="/reports" element={<Reports />} />
           {/* <Route
           path="/history"
           element={<Placeholder title="History / Recordkeeping" />}
@@ -222,8 +221,8 @@ export default function App() {
             element={<Assign_onsite_inspector />}
           />
           <Route
-            path="/DataManager/legality-and-safety/:id"
-            element={<Pre_Assessment />}
+            path="/DataManager/verification/meta-data/:id"
+            element={<MetaDataVerification />}
           />
           <Route
             path="/DataManager/maintenance/reforestation_area_form/:id"
@@ -258,16 +257,17 @@ export default function App() {
             path="/DataManager/maintenance/tree-species"
             element={<Tree_species />}
           />
+          <Route
+            path="/DataManager/maintenance/Animals"
+            element={<Animals />}
+          />
           <Route path="/DataManager/maintenance/soils" element={<Soils />} />
 
           <Route
             path="/DataManager/reforestation-areas"
             element={<Reforestation_areas />}
           />
-           <Route
-            path="/DataManager/request"
-            element={<Request />}
-          />
+          <Route path="/DataManager/request" element={<Request />} />
           <Route
             path="/DataManager/official-reforestation"
             element={<OfficailPlantingSites />}
@@ -282,10 +282,7 @@ export default function App() {
           />
           <Route path="/DataManager/map" element={<Map />} />
           <Route path="/DataManager/my-profile" element={<MyProfile />} />
-          <Route
-            path="/reports"
-            element={<Placeholder title="Reports & Dashboard" />}
-          />
+          <Route path="/DataManager/reports" element={<Reports />} />
         </Route>
         <Route element={<SidebarGISS />}>
           <Route path="/dashboard/GISS" element={<DashboardGISS />} />
@@ -296,7 +293,7 @@ export default function App() {
           />
           <Route
             path="/GISS/legality-and-safety/:id"
-            element={<Pre_Assessment />}
+            element={<MetaDataVerification />}
           />
           <Route
             path="/GISS/maintenance/reforestation_area_form/:id"

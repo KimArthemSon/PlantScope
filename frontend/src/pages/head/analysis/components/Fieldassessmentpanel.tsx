@@ -1,13 +1,11 @@
-// src/pages/GISS/multicriteria_analysis/components/FieldAssessmentPanel.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Shield, MapPin, Leaf, ChevronRight, User,
   Calendar, AlertTriangle, CheckCircle, XCircle,
   Eye, Image as ImageIcon, RefreshCw, X,
 } from "lucide-react";
 import type {
-  MCDALayer, FieldAssessmentEntry,
-  SafetyData, BoundaryVerificationData, SurvivabilityData,
+  MCDALayer, FieldAssessmentEntry, LayerData,
 } from "../hooks/useFieldAssessments";
 
 const LAYERS: {
@@ -19,139 +17,78 @@ const LAYERS: {
   { id: "survivability",         label: "Survivability",        short: "L3", icon: Leaf,   color: "text-emerald-600",bg: "bg-emerald-50", border: "border-emerald-200"},
 ];
 
-const BASE_URL = "http://127.0.0.1:8000";
-
-const Badge = ({ value, positive }: { value: boolean | null; positive?: boolean }) => {
-  if (value === null || value === undefined) return <span className="text-gray-400 text-xs">—</span>;
-  const ok = positive ? value : !value;
-  return (
-    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-      {ok ? <CheckCircle size={10} /> : <XCircle size={10} />}
-      {value ? "Yes" : "No"}
-    </span>
-  );
+// ✅ UPDATED: Handle both full URLs and relative paths from API
+const getImageUrl = (url: string | null): string | null => {
+ 
+  if (!url) return null;
+  
+  // If already a full URL (starts with http), return as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+   
+    return url;
+  }
+  // Otherwise, prepend BASE_URL for relative paths
+  return `http://127.0.0.1:8000${url}`;
 };
 
-const Chip = ({ label }: { label: string }) => (
-  <span className="inline-block bg-gray-100 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded-full border border-gray-200">
-    {label.replace(/_/g, " ")}
-  </span>
-);
+// ✅ Recursively render flexible layer data
+const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: number }) => {
+  const entries = Object.entries(data);
+  
+  if (entries.length === 0) {
+    return <p className="text-xs text-gray-400 italic">No data recorded</p>;
+  }
 
-const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
-  <div className="flex flex-col gap-0.5">
-    <span className="text-[9px] uppercase tracking-widest text-gray-400 font-semibold">{label}</span>
-    <div className="text-xs text-gray-800 font-medium">{value ?? <span className="text-gray-300 italic">not reported</span>}</div>
-  </div>
-);
-
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className="space-y-2">
-    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 border-b border-gray-100 pb-1">{title}</p>
-    <div className="space-y-2">{children}</div>
-  </div>
-);
-
-const SafetyDetail = ({ d }: { d: SafetyData }) => (
-  <div className="space-y-4">
-    <Section title="🌊 Flood">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Water line (cm)" value={d.flood_water_line_cm != null ? `${d.flood_water_line_cm} cm` : null} />
-        <Field label="Debris line visible" value={<Badge value={d.flood_debris_line_visible} positive={false} />} />
-      </div>
-      <Field label="Flood notes" value={d.flood_notes} />
-    </Section>
-    <Section title="⛰️ Landslide">
-      <Field label="Indicators observed" value={
-        d.landslide_indicators_observed?.length
-          ? <div className="flex flex-wrap gap-1">{d.landslide_indicators_observed.map(i => <Chip key={i} label={i} />)}</div>
-          : null
-      } />
-      <Field label="Landslide notes" value={d.landslide_notes} />
-    </Section>
-    <Section title="🪨 Erosion">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Type" value={d.erosion_type ? <Chip label={d.erosion_type} /> : null} />
-        <Field label="Area affected" value={d.erosion_area_estimate_pct != null ? `${d.erosion_area_estimate_pct}%` : null} />
-      </div>
-      <Field label="Signs" value={d.erosion_signs} />
-      <Field label="Severity" value={d.erosion_severity_description} />
-    </Section>
-    <Section title="💬 Inspector Notes">
-      <Field label="General comment" value={d.inspector_comment} />
-      <Field label="Hazard proximity" value={d.hazard_proximity_notes} />
-    </Section>
-  </div>
-);
-
-const BoundaryDetail = ({ d }: { d: BoundaryVerificationData }) => (
-  <div className="space-y-4">
-    <Section title="📍 Markers & Boundary">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Markers status" value={d.boundary_markers_status ? <Chip label={d.boundary_markers_status} /> : null} />
-        <Field label="Deviation" value={d.boundary_deviation_meters != null ? `${d.boundary_deviation_meters} m` : null} />
-      </div>
-      <Field label="Boundary notes" value={d.boundary_notes} />
-    </Section>
-    <Section title="⚠️ Compliance Checks">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Within 20m riparian buffer" value={<Badge value={d.within_riparian_buffer_20m} positive={false} />} />
-        <Field label="Encroachment detected" value={<Badge value={d.encroachment_detected} positive={false} />} />
-        <Field label="Slope >30° crossing" value={<Badge value={d.slope_boundary_check} positive={false} />} />
-        {d.encroachment_detected && (
-          <Field label="Encroachment type" value={d.encroachment_type ? <Chip label={d.encroachment_type} /> : null} />
-        )}
-      </div>
-    </Section>
-    {d.boundary_coordinates_feedback?.length > 0 && (
-      <Section title="🗺️ Coordinate Feedback">
-        <div className="space-y-2">
-          {d.boundary_coordinates_feedback.map((pt, i) => (
-            <div key={i} className="bg-gray-50 rounded-lg p-2 border border-gray-200 text-xs space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-gray-800">{pt.marker_name}</span>
-                <Chip label={pt.confidence} />
-              </div>
-              <div className="text-gray-500 font-mono text-[10px]">{pt.latitude}, {pt.longitude}</div>
-              {pt.notes && <div className="text-gray-600">{pt.notes}</div>}
+  return (
+    <div className={`space-y-2 ${level > 0 ? 'ml-2 border-l-2 border-gray-100 pl-2' : ''}`}>
+      {entries.map(([key, value]) => {
+        // Handle nested objects recursively
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+          return (
+            <div key={key} className="space-y-1">
+              <p className={`text-[10px] font-bold uppercase text-gray-500 ${level === 0 ? 'border-b border-gray-100 pb-1' : ''}`}>
+                {key.replace(/_/g, ' ')}
+              </p>
+              <LayerDataRenderer data={value as LayerData} level={level + 1} />
             </div>
-          ))}
-        </div>
-      </Section>
-    )}
-  </div>
-);
-
-const SurvivabilityDetail = ({ d }: { d: SurvivabilityData }) => (
-  <div className="space-y-4">
-    <Section title="🌍 Soil">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Texture" value={d.soil_texture ? <Chip label={d.soil_texture} /> : null} />
-        <Field label="Depth" value={d.soil_depth_cm != null ? `${d.soil_depth_cm} cm` : null} />
-        <Field label="Moisture feel" value={d.soil_moisture_feel ? <Chip label={d.soil_moisture_feel} /> : null} />
-        <Field label="Drainage" value={d.soil_drainage_observed ? <Chip label={d.soil_drainage_observed} /> : null} />
-      </div>
-      <Field label="Soil notes" value={d.soil_notes} />
-    </Section>
-    <Section title="💧 Water">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Days since rainfall" value={d.days_since_last_rainfall != null ? `${d.days_since_last_rainfall} days` : null} />
-        <Field label="Micro-topography" value={d.micro_topography ? <Chip label={d.micro_topography} /> : null} />
-        <Field label="Stress symptoms" value={d.water_stress_symptoms ? <Chip label={d.water_stress_symptoms} /> : null} />
-      </div>
-      <Field label="Water availability" value={d.water_availability_notes} />
-    </Section>
-    <Section title="🌿 Vegetation">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Invasive cover" value={d.invasive_cover_estimate_pct != null ? `${d.invasive_cover_estimate_pct}%` : null} />
-        <Field label="Native seedlings / 100m²" value={d.natural_regeneration_seedlings_count != null ? `${d.natural_regeneration_seedlings_count}` : null} />
-      </div>
-      <Field label="Invasive species" value={d.invasive_species_present ? <Chip label={String(d.invasive_species_present)} /> : null} />
-      <Field label="Vegetation notes" value={d.vegetation_notes} />
-      <Field label="Microclimate notes" value={d.microclimate_notes} />
-    </Section>
-  </div>
-);
+          );
+        }
+        
+        // Handle arrays
+        if (Array.isArray(value)) {
+          return (
+            <div key={key} className="flex flex-col gap-0.5">
+              <span className="text-[9px] uppercase tracking-widest text-gray-400 font-semibold">
+                {key.replace(/_/g, ' ')}
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {value.map((item, i) => (
+                  <span key={i} className="inline-block bg-gray-100 text-gray-700 text-[10px] font-medium px-2 py-0.5 rounded-full border border-gray-200">
+                    {String(item).replace(/_/g, ' ')}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        
+        // Render simple key-value pairs
+        return (
+          <div key={key} className="flex flex-col gap-0.5">
+            <span className="text-[9px] uppercase tracking-widest text-gray-400 font-semibold">
+              {key.replace(/_/g, ' ')}
+            </span>
+            <div className="text-xs text-gray-800 font-medium">
+              {value != null && value !== '' 
+                ? String(value) 
+                : <span className="text-gray-300 italic">not reported</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 const AssessmentDetail = ({
   entry, index, layer,
@@ -167,19 +104,21 @@ const AssessmentDetail = ({
   onCancelLocation: () => void;
 }) => {
   const [imgError, setImgError] = useState<Record<number, boolean>>({});
-  const fad = entry.field_assessment_data;
-  const innerData = fad.field_assessment_data;
-  const loc = fad.location;
+  const loc = entry.location;
   const layerMeta = LAYERS.find((l) => l.id === layer)!;
   const hasLocation = !!loc?.latitude;
 
+  useEffect(()=>{
+   console.log("hello",entry)
+  }, [entry]
+)
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Header */}
       <div className={`p-3 ${layerMeta.bg} border-b ${layerMeta.border}`}>
         <div className="flex items-center gap-3">
-          {entry.profile_image ? (
-            <img src={`${BASE_URL}${entry.profile_image}`} alt={entry.full_name}
+          {entry.inspector.profile_image ? (
+            <img src={getImageUrl(entry.inspector.profile_image)} alt={entry.inspector.full_name}
               className="w-9 h-9 rounded-full object-cover border-2 border-white shadow"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           ) : (
@@ -188,15 +127,15 @@ const AssessmentDetail = ({
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-gray-900 truncate">F{index + 1} — {entry.full_name}</p>
-            <p className="text-[10px] text-gray-500 truncate">{entry.email}</p>
+            <p className="text-sm font-bold text-gray-900 truncate">F{index + 1} — {entry.inspector.full_name}</p>
+            <p className="text-[10px] text-gray-500 truncate">{entry.inspector.email}</p>
           </div>
         </div>
 
         {/* Date + GPS row */}
         <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-600 flex-wrap">
           <span className="flex items-center gap-1">
-            <Calendar size={10} /> {fad.assessment_date}
+            <Calendar size={10} /> {entry.assessment_date}
           </span>
           {loc ? (
             <span className="flex items-center gap-1">
@@ -237,33 +176,42 @@ const AssessmentDetail = ({
 
       {/* Layer data */}
       <div className="p-3 flex-1 overflow-y-auto space-y-4">
-        {layer === "safety" && <SafetyDetail d={innerData as SafetyData} />}
-        {layer === "boundary_verification" && <BoundaryDetail d={innerData as BoundaryVerificationData} />}
-        {layer === "survivability" && <SurvivabilityDetail d={innerData as SurvivabilityData} />}
+        <div className="space-y-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 border-b border-gray-100 pb-1">
+            {layerMeta.label} Assessment
+          </p>
+          <LayerDataRenderer data={entry.layer_data} />
+        </div>
 
         {/* Photos */}
-        {fad.images?.length > 0 && (
-          <Section title={`📸 Photos (${fad.images.length})`}>
+        {entry.images?.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 border-b border-gray-100 pb-1">
+              📸 Photos ({entry.images.length})
+            </p>
             <div className="grid grid-cols-2 gap-2">
-              {fad.images.map((img) => (
-                <div key={img.id} className="relative group rounded-lg overflow-hidden border border-gray-200 bg-gray-50 aspect-square">
-                  {!imgError[img.id] ? (
-                    <img src={`${BASE_URL}${img.url}`} alt={img.caption}
-                      className="w-full h-full object-cover transition group-hover:scale-105"
-                      onError={() => setImgError((p) => ({ ...p, [img.id]: true }))} />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                      <ImageIcon size={20} />
-                      <span className="text-[9px] mt-1">Photo unavailable</span>
+              {entry.images.map((img) => {
+                const imgUrl = getImageUrl(img.url);
+                return (
+                  <div key={img.id} className="relative group rounded-lg overflow-hidden border border-gray-200 bg-gray-50 aspect-square">
+                    {imgUrl && !imgError[img.id] ? (
+                      <img src={imgUrl} alt={img.description}
+                        className="w-full h-full object-cover transition group-hover:scale-105"
+                        onError={() => setImgError((p) => ({ ...p, [img.id]: true }))} />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                        <ImageIcon size={20} />
+                        <span className="text-[9px] mt-1">Photo unavailable</span>
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] px-1.5 py-0.5 truncate opacity-0 group-hover:opacity-100 transition">
+                      {img.layer.replace(/_/g, ' ')} - {img.description}
                     </div>
-                  )}
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] px-1.5 py-0.5 truncate opacity-0 group-hover:opacity-100 transition">
-                    {img.caption}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          </Section>
+          </div>
         )}
       </div>
     </div>
@@ -280,7 +228,7 @@ interface FieldAssessmentPanelProps {
   onLayerChange: (layer: MCDALayer) => void;
   onSelectEntry: (index: number) => void;
   onFetchLayer: (layer: MCDALayer) => void;
-  onAddLocation: (fieldAssessmentId: number | null) => void;  // ✅ Accept null
+  onAddLocation: (fieldAssessmentId: number | null) => void;
 }
 
 export default function FieldAssessmentPanel({
@@ -302,8 +250,8 @@ export default function FieldAssessmentPanel({
   const filtered = search
     ? entries.filter(
         (e) =>
-          e.full_name.toLowerCase().includes(search.toLowerCase()) ||
-          e.email.toLowerCase().includes(search.toLowerCase())
+          e.inspector.full_name.toLowerCase().includes(search.toLowerCase()) ||
+          e.inspector.email.toLowerCase().includes(search.toLowerCase())
       )
     : entries;
 
@@ -327,7 +275,7 @@ export default function FieldAssessmentPanel({
             <RefreshCw size={10} className={loading[activeLayer] ? "animate-spin" : ""} /> Refresh
           </button>
         ) : (
-          <span className="text-[10px] text-gray-400 italic">Save site first</span>
+          <span className="text-[10px] text-gray-400 italic">No area selected</span>
         )}
       </div>
 
@@ -354,8 +302,8 @@ export default function FieldAssessmentPanel({
       {!areaId ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-gray-400">
           <Eye size={28} className="mb-2 opacity-30" />
-          <p className="text-sm font-medium text-gray-500">No site selected</p>
-          <p className="text-xs mt-1">No area selected</p>
+          <p className="text-sm font-medium text-gray-500">No area selected</p>
+          <p className="text-xs mt-1">Select a reforestation area to view assessments</p>
         </div>
       ) : loading[activeLayer] ? (
         <div className="flex-1 flex items-center justify-center">
@@ -368,23 +316,23 @@ export default function FieldAssessmentPanel({
         <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-gray-400">
           <AlertTriangle size={24} className="mb-2 opacity-40" />
           <p className="text-sm font-medium text-gray-500">No assessments</p>
-          <p className="text-xs mt-1">No {layerMeta.label} data for this site</p>
+          <p className="text-xs mt-1">No {layerMeta.label} data for this area</p>
           <button onClick={() => onFetchLayer(activeLayer)} className={`mt-3 text-xs font-medium ${layerMeta.color} hover:underline`}>
             Try again
           </button>
         </div>
       ) : (
         <div className="flex flex-1 overflow-hidden">
-          {/* Detail */}
+          {/* Detail Panel */}
           <div className="flex-1 overflow-hidden">
             {selected ? (
               <AssessmentDetail
                 entry={selected}
                 index={selectedIndex!}
                 layer={activeLayer}
-                isPickingLocation={locationTargetId === selected.field_assessment_data.field_assessment_id}
-                onAddLocation={() => onAddLocation(selected.field_assessment_data.field_assessment_id)}
-                onCancelLocation={() => onAddLocation(null)} 
+                isPickingLocation={locationTargetId === selected.field_assessment_id}
+                onAddLocation={() => onAddLocation(selected.field_assessment_id)}
+                onCancelLocation={() => onAddLocation(null)}
               />
             ) : (
               <div className="flex-1 h-full flex flex-col items-center justify-center text-center p-4 text-gray-400">

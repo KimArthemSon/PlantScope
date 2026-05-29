@@ -482,7 +482,7 @@ def confirm_application(request, application_id):
                 app.user.is_active = True
                 app.user.save()
                 # Move to monitoring phase
-                workflow_status = 'under_monitoring'
+                workflow_status = 'accepted'
             else:
                 # Rejected - stay as rejected
                 workflow_status = 'rejected'

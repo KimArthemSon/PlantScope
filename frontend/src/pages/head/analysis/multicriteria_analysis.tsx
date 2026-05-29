@@ -16,7 +16,7 @@ import { usePotentialSites } from "./hooks/usePotentialSites";
 import type { PotentialSite } from "./hooks/usePotentialSites";
 import { useRestrictedAreas } from "./hooks/useRestrictedAreas";
 import { useFieldAssessments } from "./hooks/useFieldAssessments";
-import type { MCDALayer } from "./hooks/useFieldAssessments";
+import type { MCDALayer, FieldAssessmentEntry } from "./hooks/useFieldAssessments";
 import FieldAssessmentPanel from "./components/Fieldassessmentpanel";
 
 import SiteList from "./components/SiteList";
@@ -174,7 +174,6 @@ export default function MulticriteriaAnalysis() {
 
     potentialSitesHook.potentialSites.forEach((site: PotentialSite) => {
       if (!site.polygon_coordinates?.coordinates?.length) return;
-      // GeoJSON stores [lng, lat]; Leaflet needs [lat, lng]
       const coords = site.polygon_coordinates.coordinates[0].map(
         ([lng, lat]) => [lat, lng] as [number, number],
       );
@@ -706,10 +705,15 @@ export default function MulticriteriaAnalysis() {
     }
   };
 
-  const handleSaveDraft = useCallback(async (layerName: string, data: any): Promise<boolean> => {
+  // ✅ RESTORED: Site validation handlers (unchanged logic)
+  const handleSaveDraft = useCallback(async (data: {
+    safety_note?: string;
+    survivability_note?: string;
+    final_note?: string;
+  }): Promise<boolean> => {
     if (!validatingSite) return false;
     try {
-      const result = await sites.updateLayer(validatingSite.site_id, layerName, data);
+      const result = await sites.saveValidationDraft(data);
       if (result) {
         await sites.fetchSiteDetail(validatingSite.site_id);
         return true;
@@ -721,10 +725,10 @@ export default function MulticriteriaAnalysis() {
     }
   }, [validatingSite, sites]);
 
-  const handleFinalizeSite = useCallback(async (decision: "ACCEPT" | "REJECT"): Promise<boolean> => {
+  const handleFinalizeSite = useCallback(async (decision: "ACCEPT" | "REJECT", note: string): Promise<boolean> => {
     if (!validatingSite) return false;
     try {
-      const result = await sites.finalizeSite(validatingSite.site_id, decision);
+      const result = await sites.finalizeSite(decision, note);
       if (result) {
         if (areaId) await sites.fetchSites(areaId);
         return true;
@@ -865,12 +869,10 @@ export default function MulticriteriaAnalysis() {
         <div className="flex gap-3 flex-1 min-h-0">
           {/* MAP COLUMN */}
           <div className="flex-[3] flex flex-col gap-2 min-w-0">
-            {/* ✅ FIX: Static CSS classes only - no conditional border/ring changes */}
             <div
               ref={mapContainerRef}
               className="w-full rounded-lg shadow-inner border-2 border-gray-300 relative overflow-hidden h-[65vh] min-h-[450px]"
             >
-              {/* ✅ Visual feedback overlay - doesn't affect map container dimensions */}
               {(isPickingLocation || isPlacingMarker || isDrawing) && (
                 <div className={`absolute inset-0 pointer-events-none z-[400] transition-opacity duration-200
                   ${isPickingLocation ? 'opacity-100' : 'opacity-0'}`}>
@@ -1087,7 +1089,7 @@ export default function MulticriteriaAnalysis() {
                 })}
               </div>
 
-              {/* Assessment entries */}
+              {/* Assessment entries - ✅ FIXED: Match new API structure */}
               <div className="flex-1 overflow-y-auto min-h-0">
                 {!areaId ? (
                   <div className="p-4 text-center text-gray-400"><p className="text-xs">No area selected</p></div>
@@ -1100,10 +1102,10 @@ export default function MulticriteriaAnalysis() {
                       className="mt-2 text-xs text-blue-500 hover:underline">Try again</button>
                   </div>
                 ) : (
-                  (fieldAssessments.assessments[fieldAssessments.activeLayer] ?? []).map((entry, idx) => {
+                  (fieldAssessments.assessments[fieldAssessments.activeLayer] ?? []).map((entry: FieldAssessmentEntry, idx) => {
                     const isSelected = idx === fieldAssessments.selectedIndex;
-                    const faId = entry.field_assessment_data.field_assessment_id;
-                    const hasLocation = !!entry.field_assessment_data.location?.latitude;
+                    const faId = entry.field_assessment_id; // ✅ Direct access (not nested)
+                    const hasLocation = !!entry.location?.latitude;
                     const isThisPickingLocation = fieldAssessments.locationTargetId === faId;
 
                     return (
@@ -1115,21 +1117,21 @@ export default function MulticriteriaAnalysis() {
                         className={`w-full text-left px-3 py-2.5 border-b border-gray-50 transition
                           ${isSelected ? "bg-blue-50 border-l-2 border-l-blue-500" : "hover:bg-gray-50"}`}>
                         <div className="flex items-center gap-2">
-                          {entry.profile_image && (
-                            <img src={`http://127.0.0.1:8000${entry.profile_image}`} alt=""
+                          {entry.inspector.profile_image && (
+                            <img src={`http://127.0.0.1:8000${entry.inspector.profile_image}`} alt=""
                               className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-gray-200"
                               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                           )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-1">
-                              <span className="text-xs font-semibold text-gray-800 truncate">{entry.full_name}</span>
+                              <span className="text-xs font-semibold text-gray-800 truncate">{entry.inspector.full_name}</span>
                               <span className="text-[10px] font-bold text-gray-400 flex-shrink-0">F{idx + 1}</span>
                             </div>
                             <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-[10px] text-gray-500">{entry.field_assessment_data.assessment_date}</span>
-                              {entry.field_assessment_data.images?.length > 0 && (
+                              <span className="text-[10px] text-gray-500">{entry.assessment_date}</span>
+                              {entry.images?.length > 0 && (
                                 <span className="text-[10px] text-blue-500 flex items-center gap-0.5">
-                                  📷 {entry.field_assessment_data.images.length}
+                                  📷 {entry.images.length}
                                 </span>
                               )}
                             </div>
@@ -1223,6 +1225,7 @@ export default function MulticriteriaAnalysis() {
         </div>
       </main>
 
+      {/* Site Validation Panel */}
       <SiteValidationPanel
         site={validatingSite}
         isOpen={showValidationPanel}

@@ -21,7 +21,6 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('api/', include('accounts.urls')),
     path('api/security/', include('security.url')),
-    path('api/',include('soils.urls')),
     path('api/',include('tree_species.urls')),
     path('api/',include('land_classifications.urls')),
     path('api/',include('reforestation_areas.urls')),
@@ -29,6 +28,7 @@ urlpatterns = [
     path('api/',include('barangay.urls')),
     path('api/',include('sites.urls')),
     path('api/',include('ormoc_city.urls')),
+    path('api/',include('animals.urls')),
     path('api/',include('tree_planting_programs.urls')),
 ]
 

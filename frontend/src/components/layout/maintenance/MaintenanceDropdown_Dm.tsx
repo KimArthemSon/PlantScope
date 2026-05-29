@@ -6,6 +6,7 @@ import {
   Map,
   Box,
   Home,
+  Footprints,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
@@ -109,6 +110,20 @@ export default function MaintenanceDropdown_Dm({
           >
             <TreePine size={16} />
             <span>Tree Species</span>
+          </Link>
+          <Link
+            to="/DataManager/maintenance/Animals"
+            className={`
+    flex items-center gap-3 px-4 py-3 text-[.75rem] rounded-md
+    ${
+      location.pathname === "/DataManager/maintenance/Animals"
+        ? "bg-white/20 text-white"
+        : "text-white/70 hover:bg-white/10 hover:text-white"
+    }
+  `}
+          >
+            <Footprints size={16} />
+            <span>Animals</span>
           </Link>
           <Link
             to="/DataManager/maintenance/land-classification"

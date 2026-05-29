@@ -37,7 +37,7 @@ import {
 } from "recharts";
 
 // ─────────────────────────────────────────────────────────────
-// Types & Interfaces
+// Types & Interfaces (UPDATED)
 // ─────────────────────────────────────────────────────────────
 interface Barangay {
   barangay_id: number;
@@ -49,101 +49,87 @@ interface LandClassification {
   name: string;
 }
 
+// ✅ UPDATED: Removed legality, safety, pre_assessment_status
+// Added verification_status from AreaMetaDataVerification
 interface ReforestationArea {
   reforestation_area_id: number;
   name: string;
-  legality: string;
-  safety: string;
   polygon_coordinate: any;
   coordinate: any;
   barangay: {
     barangay_id: number;
     name: string;
-  };
+  } | null;
   land_classification: {
     land_classification_id: number;
     name: string;
   } | null;
-  pre_assessment_status: string;
   description: string;
   area_img: string | null;
+  permit_count: number;
+  verification_status: "pending" | "draft" | "verified" | "rejected";
+  verification_decision_note: string | null;
   created_at: string;
 }
 
+// ✅ UPDATED: Filter interface matches new backend params
 interface Filter {
   search: string;
   entries: number;
   page: number;
   total_page: number;
-  legality: string;
-  safety: string;
-  pre_assessment_status: string;
+  verification_status: string; // Replaces pre_assessment_status
   barangay_id: string;
   land_classification_id: string;
 }
 
 interface OverviewStats {
   total_areas: number;
-  pending_assessments: number;
-  in_progress: number;
-  completed: number;
+  pending_verification: number;
+  verified: number;
   rejected: number;
-  avg_completion_rate: number;
+  draft: number;
+  avg_verification_rate: number;
 }
 
-// ✅ NEW: Chart data point interface
+// ✅ NEW: Chart data point interface (uses verification status)
 interface ChartDataPoint {
   period: string;
   pending: number;
-  in_progress: number;
-  completed: number;
+  verified: number;
+  rejected: number;
 }
 
 const DEFAULT_FILTER: Omit<Filter, "total_page"> = {
   search: "",
   entries: 10,
   page: 1,
-  legality: "All",
-  safety: "All",
-  pre_assessment_status: "pending",
+  verification_status: "All", // Changed from pre_assessment_status
   barangay_id: "All",
   land_classification_id: "All",
 };
 
 // ─────────────────────────────────────────────────────────────
-// Helper: count active filters
+// Helper: count active filters (UPDATED)
 // ─────────────────────────────────────────────────────────────
 function countActiveFilters(filter: Filter): number {
   let count = 0;
-  if (filter.legality !== "All") count++;
-  if (filter.safety !== "All") count++;
-  if (filter.pre_assessment_status !== "pending") count++;
+  if (filter.verification_status !== "All") count++;
   if (filter.barangay_id !== "All") count++;
   if (filter.land_classification_id !== "All") count++;
   return count;
 }
 
-// ✅ NEW: Generate mock chart data (replace with API call)
+// ✅ UPDATED: Generate chart data using verification_status
 function generateChartData(areas: ReforestationArea[]): ChartDataPoint[] {
-  // Group areas by month created
   const monthlyData: Record<
     string,
-    { pending: number; in_progress: number; completed: number }
+    { pending: number; verified: number; rejected: number }
   > = {};
 
   const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
   ];
 
   // Initialize last 6 months
@@ -151,7 +137,7 @@ function generateChartData(areas: ReforestationArea[]): ChartDataPoint[] {
   for (let i = 5; i >= 0; i--) {
     const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const key = `${months[date.getMonth()]} ${String(date.getFullYear()).slice(-2)}`;
-    monthlyData[key] = { pending: 0, in_progress: 0, completed: 0 };
+    monthlyData[key] = { pending: 0, verified: 0, rejected: 0 };
   }
 
   // Populate with actual data
@@ -159,11 +145,13 @@ function generateChartData(areas: ReforestationArea[]): ChartDataPoint[] {
     const created = new Date(area.created_at);
     const key = `${months[created.getMonth()]} ${String(created.getFullYear()).slice(-2)}`;
     if (monthlyData[key]) {
-      if (area.pre_assessment_status === "pending") monthlyData[key].pending++;
-      else if (area.pre_assessment_status === "approved")
-        monthlyData[key].in_progress++;
-      else if (area.pre_assessment_status === "rejected")
-        monthlyData[key].completed++; // Treat rejected as "finalized"
+      if (area.verification_status === "pending" || area.verification_status === "draft") {
+        monthlyData[key].pending++;
+      } else if (area.verification_status === "verified") {
+        monthlyData[key].verified++;
+      } else if (area.verification_status === "rejected") {
+        monthlyData[key].rejected++;
+      }
     }
   });
 
@@ -176,9 +164,7 @@ function generateChartData(areas: ReforestationArea[]): ChartDataPoint[] {
 export default function Reforestation_areas() {
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [landClassifications, setLandClassifications] = useState<
-    LandClassification[]
-  >([]);
+  const [landClassifications, setLandClassifications] = useState<LandClassification[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const filterPanelRef = useRef<HTMLDivElement>(null);
 
@@ -199,13 +185,12 @@ export default function Reforestation_areas() {
 
   const [overviewStats, setOverviewStats] = useState<OverviewStats>({
     total_areas: 0,
-    pending_assessments: 0,
-    in_progress: 0,
-    completed: 0,
+    pending_verification: 0,
+    verified: 0,
     rejected: 0,
-    avg_completion_rate: 0,
+    draft: 0,
+    avg_verification_rate: 0,
   });
-  const [statsLoading, setStatsLoading] = useState(false);
 
   // ✅ NEW: Chart data state
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -278,7 +263,7 @@ export default function Reforestation_areas() {
     fetchLandClassifications();
   }, [token]);
 
-  // ── Fetch Areas ────────────────────────────────────────────
+  // ── Fetch Areas (UPDATED API CALL) ─────────────────────────
   const fetchAreas = async () => {
     setLoading(true);
     try {
@@ -286,9 +271,8 @@ export default function Reforestation_areas() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
-        legality: filter.legality,
-        safety: filter.safety,
-        pre_assessment_status: filter.pre_assessment_status,
+        // ✅ REMOVED: legality, safety, pre_assessment_status
+        verification_status: filter.verification_status, // ✅ NEW
         barangay_id: filter.barangay_id,
         land_classification_id: filter.land_classification_id,
       });
@@ -301,9 +285,9 @@ export default function Reforestation_areas() {
       setAreas(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
 
-      // Update overview stats
+      // Update overview stats with new verification-based logic
       setOverviewStats(computeOverviewStats(data.data));
-      // ✅ Update chart data
+      // ✅ Update chart data with verification trends
       setChartData(generateChartData(data.data));
     } catch {
       setPSAlert({
@@ -321,9 +305,7 @@ export default function Reforestation_areas() {
   }, [
     filter.page,
     filter.entries,
-    filter.legality,
-    filter.safety,
-    filter.pre_assessment_status,
+    filter.verification_status, // ✅ UPDATED
     filter.barangay_id,
     filter.land_classification_id,
   ]);
@@ -377,34 +359,29 @@ export default function Reforestation_areas() {
 
   const activeFilterCount = countActiveFilters(filter);
 
-  // ✅ Helper to compute overview stats
+  // ✅ UPDATED: Helper to compute overview stats using verification_status
   function computeOverviewStats(areas: ReforestationArea[]): OverviewStats {
     const total = areas.length;
     const pending = areas.filter(
-      (a) => a.pre_assessment_status === "pending",
+      (a) => a.verification_status === "pending" || a.verification_status === "draft"
     ).length;
-    const rejected = areas.filter(
-      (a) => a.pre_assessment_status === "rejected",
-    ).length;
-    const approved = areas.filter(
-      (a) => a.pre_assessment_status === "approved",
-    ).length;
-    const in_progress = Math.floor(approved * 0.6);
-    const completed = approved - in_progress;
-    const completionRate =
-      total > 0 ? Math.round(((in_progress + completed) / total) * 100) : 0;
+    const verified = areas.filter((a) => a.verification_status === "verified").length;
+    const rejected = areas.filter((a) => a.verification_status === "rejected").length;
+    const draft = areas.filter((a) => a.verification_status === "draft").length;
+    
+    const verificationRate = total > 0 ? Math.round((verified / total) * 100) : 0;
 
     return {
       total_areas: total,
-      pending_assessments: pending,
-      in_progress,
-      completed,
+      pending_verification: pending,
+      verified,
       rejected,
-      avg_completion_rate: completionRate,
+      draft,
+      avg_verification_rate: verificationRate,
     };
   }
 
-  // ✅ Stat card component
+  // ✅ Stat card component (unchanged structure, updated usage)
   const StatCard = ({
     title,
     value,
@@ -458,27 +435,23 @@ export default function Reforestation_areas() {
       />
 
       <main className="flex-1 p-8 max-w-7xl mx-auto">
-        {/* Overview Stats Dashboard */}
+        {/* Overview Stats Dashboard (UPDATED) */}
         <section className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <FileText size={18} className="text-[#0F4A2F]" />
-              Analysis Assessment Overview
+              Verification Overview
             </h2>
             <button
               onClick={fetchAreas}
               className="text-xs text-[#0F4A2F] hover:underline flex items-center gap-1"
-              disabled={statsLoading}
             >
-              <RotateCcw
-                size={12}
-                className={statsLoading ? "animate-spin" : ""}
-              />
+              <RotateCcw size={12} />
               Refresh
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             <StatCard
               title="Total Areas"
               value={overviewStats.total_areas}
@@ -486,23 +459,23 @@ export default function Reforestation_areas() {
               color="bg-[#0F4A2F]"
             />
             <StatCard
-              title="Pending Assessment"
-              value={overviewStats.pending_assessments}
+              title="Pending Verification"
+              value={overviewStats.pending_verification}
               icon={Clock}
               color="bg-amber-500"
             />
             <StatCard
-              title="In Progress"
-              value={overviewStats.in_progress}
+              title="Draft"
+              value={overviewStats.draft}
               icon={Edit}
               color="bg-blue-500"
             />
             <StatCard
-              title="Completed"
-              value={overviewStats.completed}
+              title="Verified"
+              value={overviewStats.verified}
               icon={CheckCircle}
               color="bg-green-600"
-              trend={overviewStats.completed > 0 ? "+2 this week" : undefined}
+              trend={overviewStats.verified > 0 ? "+2 this week" : undefined}
             />
             <StatCard
               title="Rejected"
@@ -510,16 +483,29 @@ export default function Reforestation_areas() {
               icon={AlertCircle}
               color="bg-red-500"
             />
-            <StatCard
-              title="Completion Rate"
-              value={`${overviewStats.avg_completion_rate}%`}
-              icon={TrendingUp}
-              color="bg-purple-600"
-            />
+            {/* Removed Completion Rate - replaced with Verification Rate below */}
+          </div>
+          
+          {/* Verification Rate Summary */}
+          <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-green-800 font-medium">
+                Overall Verification Rate
+              </span>
+              <span className="text-lg font-bold text-green-700">
+                {overviewStats.avg_verification_rate}%
+              </span>
+            </div>
+            <div className="mt-2 h-2 bg-green-100 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-green-600 rounded-full transition-all duration-300"
+                style={{ width: `${overviewStats.avg_verification_rate}%` }}
+              />
+            </div>
           </div>
         </section>
 
-        {/* ── TOOLBAR ───────────────────────────────────────── */}
+        {/* ── TOOLBAR (UPDATED FILTERS) ────────────────────── */}
         <div className="flex items-center flex-wrap mb-4 gap-3">
           <label className="text-sm text-gray-600">Show:</label>
           <select
@@ -585,70 +571,32 @@ export default function Reforestation_areas() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1">
+                  {/* ✅ REMOVED: Legality, Safety, Pre-assessment filters */}
+                  
+                  {/* ✅ NEW: Verification Status Filter */}
+                  <div className="flex flex-col gap-1 col-span-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Legality
+                      Verification Status
                     </label>
                     <select
-                      value={filter.legality}
+                      value={filter.verification_status}
                       onChange={(e) =>
                         setFilter((prev) => ({
                           ...prev,
-                          legality: e.target.value,
+                          verification_status: e.target.value,
                           page: 1,
                         }))
                       }
                       className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
                     >
                       <option value="All">All</option>
-                      <option value="legal">Legal</option>
-                      <option value="pending">Pending</option>
-                      <option value="illegal">Illegal</option>
+                      <option value="pending">Pending Review</option>
+                      <option value="draft">Draft</option>
+                      <option value="verified">Verified ✓</option>
+                      <option value="rejected">Rejected ✗</option>
                     </select>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Safety
-                    </label>
-                    <select
-                      value={filter.safety}
-                      onChange={(e) =>
-                        setFilter((prev) => ({
-                          ...prev,
-                          safety: e.target.value,
-                          page: 1,
-                        }))
-                      }
-                      className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
-                    >
-                      <option value="All">All</option>
-                      <option value="safe">Safe</option>
-                      <option value="slightly">Slightly Unsafe</option>
-                      <option value="moderate">Moderate Risk</option>
-                      <option value="danger">High Risk</option>
-                    </select>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Meta Data
-                    </label>
-                    <select
-                      value={filter.pre_assessment_status}
-                      onChange={(e) =>
-                        setFilter((prev) => ({
-                          ...prev,
-                          pre_assessment_status: e.target.value,
-                          page: 1,
-                        }))
-                      }
-                      className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
-                    >
-                      {/* <option value="All">All</option> */}
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                  </div>
+                  
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       Barangay
@@ -672,7 +620,7 @@ export default function Reforestation_areas() {
                       ))}
                     </select>
                   </div>
-                  <div className="flex flex-col gap-1 col-span-2">
+                  <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       Land Classification
                     </label>
@@ -703,49 +651,21 @@ export default function Reforestation_areas() {
             )}
           </div>
 
-          {/* Active filter badges */}
+          {/* Active filter badges (UPDATED) */}
           {activeFilterCount > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
-              {filter.legality !== "All" && (
+              {filter.verification_status !== "All" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Legality: {filter.legality}
+                  Verification: {filter.verification_status}
                   <button
                     onClick={() =>
-                      setFilter((p) => ({ ...p, legality: "All", page: 1 }))
+                      setFilter((p) => ({ ...p, verification_status: "All", page: 1 }))
                     }
                   >
                     <X size={11} />
                   </button>
                 </span>
               )}
-              {filter.safety !== "All" && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Safety: {filter.safety}
-                  <button
-                    onClick={() =>
-                      setFilter((p) => ({ ...p, safety: "All", page: 1 }))
-                    }
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              )}
-              {/* {filter.pre_assessment_status !== "All" && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Pre-assessment: {filter.pre_assessment_status}
-                  <button
-                    onClick={() =>
-                      setFilter((p) => ({
-                        ...p,
-                        pre_assessment_status: "All",
-                        page: 1,
-                      }))
-                    }
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              )} */}
               {filter.barangay_id !== "All" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
                   Barangay:{" "}
@@ -804,7 +724,7 @@ export default function Reforestation_areas() {
           />
         </div>
 
-        {/* ── TABLE ─────────────────────────────────────────── */}
+        {/* ── TABLE (UPDATED COLUMNS) ───────────────────────── */}
         <div className="overflow-x-auto shadow-lg border border-gray-200">
           {loading && <LoaderPending />}
           <table className="min-w-full bg-white">
@@ -812,11 +732,10 @@ export default function Reforestation_areas() {
               <tr>
                 <th className="py-3 px-5 text-left">No</th>
                 <th className="py-3 px-5 text-left">Name</th>
-                <th className="py-3 px-5 text-left">Status</th>
+                <th className="py-3 px-5 text-left">Verification Status</th>
                 <th className="py-3 px-5 text-left">Barangay</th>
                 <th className="py-3 px-5 text-left">Land Classification</th>
-                <th className="py-3 px-5 text-left">Legality</th>
-                <th className="py-3 px-5 text-left">Safety</th>
+                <th className="py-3 px-5 text-left">Permits</th>
                 <th className="py-3 px-5 text-left">Created</th>
                 <th className="py-3 px-5 text-left">Actions</th>
               </tr>
@@ -831,72 +750,63 @@ export default function Reforestation_areas() {
                     <td className="py-3 px-5">
                       {index + 1 + (filter.page - 1) * filter.entries}
                     </td>
-                    <td className="py-3 px-5">{area.name}</td>
+                    <td className="py-3 px-5 font-medium">{area.name}</td>
+                    
+                    {/* ✅ UPDATED: Verification Status Badge */}
                     <td className="py-3 px-5">
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          area.pre_assessment_status === "pending"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : area.pre_assessment_status === "approved"
-                              ? "bg-green-100 text-green-700"
-                              : area.pre_assessment_status === "rejected"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-gray-100 text-gray-700"
+                        className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 ${
+                          area.verification_status === "pending"
+                            ? "bg-amber-100 text-amber-700"
+                            : area.verification_status === "draft"
+                            ? "bg-blue-100 text-blue-700"
+                            : area.verification_status === "verified"
+                            ? "bg-green-100 text-green-700"
+                            : area.verification_status === "rejected"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-700"
                         }`}
                       >
-                        {area.pre_assessment_status}
+                        {area.verification_status === "verified" && <CheckCircle size={12} />}
+                        {area.verification_status === "rejected" && <AlertCircle size={12} />}
+                        {area.verification_status === "pending" && <Clock size={12} />}
+                        {area.verification_status === "draft" && <Edit size={12} />}
+                        {area.verification_status.charAt(0).toUpperCase() + area.verification_status.slice(1)}
                       </span>
+                      {area.verification_decision_note && (
+                        <p className="text-[.65rem] text-gray-500 mt-1 max-w-[180px] truncate" title={area.verification_decision_note}>
+                          {area.verification_decision_note}
+                        </p>
+                      )}
                     </td>
 
-                    <td className="py-3 px-5">{area.barangay.name}</td>
+                    <td className="py-3 px-5">{area.barangay?.name ?? <span className="text-gray-400 italic">N/A</span>}</td>
                     <td className="py-3 px-5">
                       {area.land_classification?.name ?? (
                         <span className="text-gray-400 italic">N/A</span>
                       )}
                     </td>
+                    
+                    {/* ✅ NEW: Permit Count Column */}
                     <td className="py-3 px-5">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          area.legality === "pending"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : area.legality === "legal"
-                              ? "bg-green-100 text-green-700"
-                              : area.legality === "illegal"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {area.legality}
+                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-700 text-xs font-bold">
+                        {area.permit_count}
                       </span>
                     </td>
-                    <td className="py-3 px-5">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          area.safety === "safe"
-                            ? "bg-green-100 text-green-700"
-                            : area.safety === "slightly"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : area.safety === "moderate"
-                                ? "bg-orange-100 text-orange-700"
-                                : area.safety === "danger"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {area.safety}
-                      </span>
-                    </td>
+                    
                     <td className="py-3 px-5">{area.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
-                        {userRole !== "GISSpecialist" && (
+                        {/* ✅ UPDATED: Navigate to Meta Data Verification */}
+                        {userRole !== "treeGrowers" && (
                           <button
                             onClick={() =>
                               navigate(
-                                `${useruserRole}/legality-and-safety/${area.reforestation_area_id}`,
+                                `${useruserRole}/verification/meta-data/${area.reforestation_area_id}`,
                               )
                             }
-                            className="cursor-pointer"
+                            className="cursor-pointer text-green-700 hover:text-green-900 p-1 rounded hover:bg-green-50"
+                            title="Verify Meta Data"
                           >
                             <VerifiedIcon size={18} />
                           </button>
@@ -908,17 +818,20 @@ export default function Reforestation_areas() {
                               `${useruserRole}/reforestation/site/${area.reforestation_area_id}`,
                             )
                           }
-                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1"
+                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50"
+                          title="View Sites"
                         >
                           <List size={18} />
                         </button>
+                        
                         {userRole !== "DataManager" &&
-                          area.pre_assessment_status == "rejected" && (
+                          area.verification_status === "rejected" && (
                             <button
                               onClick={() =>
                                 setDelete(area.reforestation_area_id)
                               }
-                              className="text-red-500 cursor-pointer"
+                              className="text-red-500 cursor-pointer hover:bg-red-50 p-1 rounded"
+                              title="Delete Area"
                             >
                               <Trash2 size={18} />
                             </button>
@@ -929,10 +842,7 @@ export default function Reforestation_areas() {
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="text-center py-5 text-gray-500 italic"
-                  >
+                  <td colSpan={8} className="text-center py-5 text-gray-500 italic">
                     No areas found
                   </td>
                 </tr>
@@ -974,26 +884,23 @@ export default function Reforestation_areas() {
           </button>
         </div>
 
-        {/* ✅ NEW: Line Graph Section at Bottom */}
+        {/* ✅ Line Graph Section (UPDATED: Verification Trends) */}
         <section className="mt-12 mb-4">
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
                 <BarChart3 size={18} className="text-[#0F4A2F]" />
-                Assessment Trends (Last 6 Months)
+                Verification Trends (Last 6 Months)
               </h2>
               <div className="flex items-center gap-4 text-xs">
                 <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-full bg-amber-500"></span>{" "}
-                  Pending
+                  <span className="w-3 h-3 rounded-full bg-amber-500"></span> Pending
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-full bg-blue-500"></span> In
-                  Progress
+                  <span className="w-3 h-3 rounded-full bg-green-600"></span> Verified
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-full bg-green-600"></span>{" "}
-                  Completed
+                  <span className="w-3 h-3 rounded-full bg-red-500"></span> Rejected
                 </span>
               </div>
             </div>
@@ -1024,9 +931,7 @@ export default function Reforestation_areas() {
                     }}
                     labelStyle={{ fontWeight: "600", color: "#0F4A2F" }}
                   />
-                  <Legend
-                    wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }}
-                  />
+                  <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }} />
 
                   <Line
                     type="monotone"
@@ -1034,47 +939,32 @@ export default function Reforestation_areas() {
                     name="Pending"
                     stroke="#f59e0b"
                     strokeWidth={2}
-                    dot={{
-                      r: 3,
-                      fill: "#f59e0b",
-                      strokeWidth: 2,
-                      stroke: "#fff",
-                    }}
+                    dot={{ r: 3, fill: "#f59e0b", strokeWidth: 2, stroke: "#fff" }}
                     activeDot={{ r: 5 }}
                   />
                   <Line
                     type="monotone"
-                    dataKey="in_progress"
-                    name="In Progress"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={{
-                      r: 3,
-                      fill: "#3b82f6",
-                      strokeWidth: 2,
-                      stroke: "#fff",
-                    }}
-                    activeDot={{ r: 5 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="completed"
-                    name="Completed"
+                    dataKey="verified"
+                    name="Verified"
                     stroke="#16a34a"
                     strokeWidth={2}
-                    dot={{
-                      r: 3,
-                      fill: "#16a34a",
-                      strokeWidth: 2,
-                      stroke: "#fff",
-                    }}
+                    dot={{ r: 3, fill: "#16a34a", strokeWidth: 2, stroke: "#fff" }}
+                    activeDot={{ r: 5 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="rejected"
+                    name="Rejected"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: "#ef4444", strokeWidth: 2, stroke: "#fff" }}
                     activeDot={{ r: 5 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
-            {/* Optional: Summary stats below chart */}
+            {/* Summary stats below chart */}
             <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4 text-center">
               <div>
                 <p className="text-2xl font-bold text-amber-600">
@@ -1083,16 +973,16 @@ export default function Reforestation_areas() {
                 <p className="text-xs text-gray-500">Total Pending</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-blue-600">
-                  {chartData.reduce((sum, d) => sum + d.in_progress, 0)}
+                <p className="text-2xl font-bold text-green-600">
+                  {chartData.reduce((sum, d) => sum + d.verified, 0)}
                 </p>
-                <p className="text-xs text-gray-500">Total In Progress</p>
+                <p className="text-xs text-gray-500">Total Verified</p>
               </div>
               <div>
-                <p className="text-2xl font-bold text-green-600">
-                  {chartData.reduce((sum, d) => sum + d.completed, 0)}
+                <p className="text-2xl font-bold text-red-600">
+                  {chartData.reduce((sum, d) => sum + d.rejected, 0)}
                 </p>
-                <p className="text-xs text-gray-500">Total Completed</p>
+                <p className="text-xs text-gray-500">Total Rejected</p>
               </div>
             </div>
           </div>

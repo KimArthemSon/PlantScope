@@ -278,7 +278,7 @@ export default function Sidebar() {
     "/applications":       "Applications",
     "/calendar":           "Calendar",
     "/monitoring":         "Monitoring",
-    "/analysis":           "Report",
+    "/reports":           "Report",
     "/Log-trail":          "Audit Trail",
     "/account-management": "Accounts",
     "/tree-growers":       "Tree Growers",
@@ -360,7 +360,7 @@ export default function Sidebar() {
               { to: "/applications",       icon: <ListCheck size={20} />,       label: "Applications" },
               { to: "/calendar",           icon: <Calendar size={20} />,        label: "Calendar"     },
               { to: "/monitoring",         icon: <MonitorDot size={20} />,      label: "Monitoring"   },
-              { to: "/analysis",           icon: <BarChart3 size={20} />,       label: "Report"       },
+              { to: "/reports",           icon: <BarChart3 size={20} />,       label: "Report"       },
               { to: "/Log-trail",          icon: <Satellite size={20} />,       label: "Audit Trail"  },
               { to: "/account-management", icon: <Users size={20} />,           label: "Accounts"     },
               { to: "/tree-growers",       icon: <Leaf size={20} />,            label: "Tree Growers" },
@@ -391,8 +391,8 @@ export default function Sidebar() {
       {/* ── Main content ── */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden bg-[rgba(255,255,255,0.1)]">
 
-        {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
-        <header className="ps-header bg-gradient-to-r from-[#0F4A2F] via-[#0d4028] to-[#0b3622]
+        {/* ══ HEADER ══════════════════════════════════════════════════════════ 0b3622 */}
+        <header className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
           border-b border-white/[0.07] px-6 h-[68px] flex items-center gap-4
           shadow-[0_4px_40px_rgba(0,0,0,0.35)] sticky top-0 z-30">
 

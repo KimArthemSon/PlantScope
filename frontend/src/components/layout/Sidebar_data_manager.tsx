@@ -587,7 +587,7 @@ export default function Sidebar_data_manager() {
       <main className="flex-1 overflow-y-auto overflow-x-auto bg-[rgba(255,255,255,0.1)]">
         {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
         <header
-          className="ps-header bg-gradient-to-r from-[#0F4A2F] via-[#0d4028] to-[#0b3622]
+          className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
           border-b border-white/[0.07] px-6 h-[68px] flex items-center gap-4
           shadow-[0_4px_40px_rgba(0,0,0,0.35)] sticky top-0 z-30"
         >

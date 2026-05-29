@@ -118,15 +118,6 @@ interface ProvisionEntry {
   provided_by: string;
 }
 
-// Provider options (reusable)
-const PROVIDER_OPTIONS = [
-  "ENRO Nursery",
-  "Partner NGO",
-  "LGU Supply",
-  "Private Donor",
-  "Community Nursery",
-];
-
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
 function SectionHeader({
@@ -188,7 +179,7 @@ function SeedlingBadge({
   );
 }
 
-// NEW: Species row with quantity + provider dropdown
+// NEW: Species row with quantity + provider text input
 function SpeciesQuantityRow({
   entry,
   onQuantityChange,
@@ -248,17 +239,13 @@ function SpeciesQuantityRow({
               size={14}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
             />
-            <select
+            <input
+              type="text"
               value={entry.provided_by}
               onChange={(e) => onProviderChange(entry.species, e.target.value)}
+              placeholder="Enter provider name..."
               className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F]"
-            >
-              {PROVIDER_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
+            />
           </div>
         </div>
       </div>
@@ -452,7 +439,7 @@ export default function Evaluation_application() {
     if (newSpecies && !provisionEntries.some((e) => e.species === newSpecies)) {
       setProvisionEntries([
         ...provisionEntries,
-        { species: newSpecies, quantity: 1, provided_by: PROVIDER_OPTIONS[0] },
+        { species: newSpecies, quantity: 1, provided_by: "" },
       ]);
       setNewSpecies("");
     }

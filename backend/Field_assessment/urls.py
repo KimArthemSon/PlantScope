@@ -1,34 +1,33 @@
 from django.urls import path
 from . import onsite_views
 from . import views
+
 urlpatterns = [
-    
-     path(
+    # ── Web/Admin: Inspector Assignment Management ──────────────────────
+    path(
         'get_assigned_list/<int:reforestation_area_id>/',
         views.get_assigned_list,
         name='get_assigned_list'
     ),
     path(
-    'get_unassigned_inspectors/<int:reforestation_area_id>/',
-    views.get_unassigned_inspectors,
-    name='get_unassigned_inspectors'
+        'get_unassigned_inspectors/<int:reforestation_area_id>/',
+        views.get_unassigned_inspectors,
+        name='get_unassigned_inspectors'
     ),
-
-  
     path(
         'assign_inspector/',
         views.assign_inspector,
         name='assign_inspector'
     ),
 
-    # ── Assigned Areas ──────────────────────────────────────────────
+    # ── Mobile: Fetch Assigned Areas ───────────────────────────────────
     path(
         'get_assigned_reforestation_area/',
         onsite_views.get_assigned_reforestation_area,
         name='get_assigned_reforestation_area'
     ),
 
-    # ── Field Assessment CRUD ───────────────────────────────────────
+    # ── Mobile: Field Assessment CRUD ──────────────────────────────────
     path(
         'field_assessments/',
         onsite_views.get_field_assessments,
@@ -55,14 +54,14 @@ urlpatterns = [
         name='delete_field_assessment'
     ),
 
-    # ── Submission ──────────────────────────────────────────────────
+    # ── Mobile: Submission Workflow ────────────────────────────────────
     path(
         'field_assessments/<int:field_assessment_id>/submit/',
         onsite_views.submit_field_assessment,
         name='submit_field_assessment'
     ),
 
-    # ── Head Actions (DataManager / CityENROHead) ───────────────────
+    # ── Web/Admin: Head Override Actions ───────────────────────────────
     path(
         'field_assessments/<int:field_assessment_id>/unsent/',
         onsite_views.head_unsent_field_assessment,
@@ -74,7 +73,7 @@ urlpatterns = [
         name='head_delete_field_assessment'
     ),
 
-    # ── Images ──────────────────────────────────────────────────────
+    # ── Mobile/Web: Image & Geocam Management ──────────────────────────
     path(
         'field_assessments/<int:field_assessment_id>/images/upload/',
         onsite_views.upload_field_assessment_image,
@@ -85,9 +84,8 @@ urlpatterns = [
         onsite_views.delete_field_assessment_image,
         name='delete_field_assessment_image'
     ),
-    path(
-        'area/<int:reforestation_area_id>/meta_data/',
-        onsite_views.get_area_meta_data,
-        name='get_area_meta_data'
-    ),
+
+    # ── Web/GIS: Area-Level Assessment Retrieval ───────────────────────
+   # ✅ GIS/ENRO Review endpoint (THIS IS WHAT YOU NEED):
+    path('area/<int:reforestation_area_id>/meta-data/', onsite_views.get_area_meta_data, name='get_area_meta_data'),
 ]

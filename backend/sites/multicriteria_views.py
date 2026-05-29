@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from .models import Sites, Site_data
 from Field_assessment.models import Field_assessment # Importing from onsite app
-from mcda_weight_config.models import McdaWeightsConfig
+
 
 logger = logging.getLogger(__name__)
 

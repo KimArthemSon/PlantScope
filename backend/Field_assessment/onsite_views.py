@@ -1,11 +1,24 @@
 import json
+from decimal import Decimal, InvalidOperation
+from django.core.serializers.json import DjangoJSONEncoder
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from accounts.helper import get_user_from_token
 from security.views import log_activity
 from .models import Assigned_onsite_inspector, Field_assessment, Field_assessment_images
-from reforestation_areas.models import Reforestation_areas
+
+# ✅ Valid layer codes for image uploads (matches IMAGE_LAYER_CHOICES in models)
+VALID_IMAGE_LAYERS = [
+    'meta_land_title', 'meta_tax_decl', 'meta_other_doc',
+    'safety_flood', 'safety_landslide', 'safety_erosion', 'safety_other',
+    'surv_soil', 'surv_water', 'surv_animal', 'surv_slope',
+    'bound_verification'
+]
+
+# ✅ Ormoc City approximate GPS bounds for basic validation (FIXED: consistent ORMOC prefix)
+ORMOC_LAT_MIN, ORMOC_LAT_MAX = 10.90, 11.25
+ORMOC_LNG_MIN, ORMOC_LNG_MAX = 124.40, 124.80
 
 
 def _record_activity(user, request, action_type, entity_type, entity_id=None,
@@ -27,6 +40,7 @@ def _record_activity(user, request, action_type, entity_type, entity_id=None,
         ip_address=ip,
     )
 
+
 def check_inspector_assignment(user, reforestation_area_id):
     if not user or user.user_role != "OnsiteInspector":
         return False
@@ -34,6 +48,7 @@ def check_inspector_assignment(user, reforestation_area_id):
         user=user,
         reforestation_area_id=reforestation_area_id
     ).exists()
+
 
 # ─────────────────────────────────────────────
 # 1. GET ASSIGNED REFORESTATION AREAS
@@ -47,7 +62,9 @@ def get_assigned_reforestation_area(request):
         if not user or user.user_role != "OnsiteInspector":
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-        records = Assigned_onsite_inspector.objects.filter(user=user).select_related('reforestation_area', 'reforestation_area__barangay')
+        records = Assigned_onsite_inspector.objects.filter(user=user).select_related(
+            'reforestation_area', 'reforestation_area__barangay'
+        )
         data = [{
             "assigned_onsite_inspector_id": r.assigned_onsite_inspector_id,
             "reforestation_area_id": r.reforestation_area.reforestation_area_id,
@@ -61,6 +78,7 @@ def get_assigned_reforestation_area(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
 # ─────────────────────────────────────────────
 # 2. GET FIELD ASSESSMENTS (LIST)
 # ─────────────────────────────────────────────
@@ -73,18 +91,22 @@ def get_field_assessments(request):
         if not user or user.user_role != "OnsiteInspector":
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-        q = Field_assessment.objects.filter(assigned_onsite_inspector__user=user).select_related('assigned_onsite_inspector__reforestation_area')
-        if aid := request.GET.get('reforestation_area_id'): q = q.filter(assigned_onsite_inspector__reforestation_area_id=aid)
-        if layer := request.GET.get('layer'): q = q.filter(layer=layer)
-        if request.GET.get('is_submitted') is not None: q = q.filter(is_submitted=(request.GET['is_submitted'].lower() == 'true'))
+        q = Field_assessment.objects.filter(
+            assigned_onsite_inspector__user=user
+        ).select_related('assigned_onsite_inspector__reforestation_area')
+        
+        if aid := request.GET.get('reforestation_area_id'):
+            q = q.filter(assigned_onsite_inspector__reforestation_area_id=aid)
+        
+        if request.GET.get('is_submitted') is not None:
+            q = q.filter(is_submitted=(request.GET['is_submitted'].lower() == 'true'))
+            
         q = q.order_by('-updated_at')
 
         data = [{
             "field_assessment_id": fa.field_assessment_id,
             "reforestation_area_id": fa.assigned_onsite_inspector.reforestation_area_id,
             "reforestation_area_name": fa.assigned_onsite_inspector.reforestation_area.name,
-            "layer": fa.layer,
-            "layer_display": fa.get_layer_display(),
             "assessment_date": fa.assessment_date.isoformat() if fa.assessment_date else None,
             "location": fa.location,
             "is_submitted": fa.is_submitted,
@@ -95,6 +117,7 @@ def get_field_assessments(request):
         return JsonResponse(data, safe=False, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
 
 # ─────────────────────────────────────────────
 # 3. GET FIELD ASSESSMENT DETAIL
@@ -109,23 +132,28 @@ def get_field_assessment_detail(request, field_assessment_id):
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
         fa = get_object_or_404(
-            Field_assessment.objects.select_related('assigned_onsite_inspector__user', 'assigned_onsite_inspector__reforestation_area'),
+            Field_assessment.objects.select_related(
+                'assigned_onsite_inspector__user',
+                'assigned_onsite_inspector__reforestation_area'
+            ).prefetch_related('images'),  # ✅ Added for performance
             field_assessment_id=field_assessment_id
         )
         if fa.assigned_onsite_inspector.user != user:
             return JsonResponse({'error': 'Forbidden'}, status=403)
 
+        # ✅ Enriched image payload with Geocam fields
         images = [{
             "image_id": img.field_assessment_images_id,
             "layer": img.layer,
-            "url": img.img.url if img.img else None,
-            "caption": img.caption or "",
+            "url": request.build_absolute_uri(img.img.url) if img.img else None,  # ✅ Absolute URL for mobile
+            "latitude": float(img.latitude) if img.latitude is not None else None,
+            "longitude": float(img.longitude) if img.longitude is not None else None,
+            "description": img.description or "",
             "created_at": img.created_at.isoformat(),
         } for img in fa.images.order_by('created_at')]
 
         return JsonResponse({
             "field_assessment_id": fa.field_assessment_id,
-            "layer": fa.layer,
             "assessment_date": fa.assessment_date.isoformat() if fa.assessment_date else None,
             "location": fa.location,
             "field_assessment_data": fa.field_assessment_data,
@@ -133,9 +161,10 @@ def get_field_assessment_detail(request, field_assessment_id):
             "images": images,
             "created_at": fa.created_at.isoformat(),
             "updated_at": fa.updated_at.isoformat(),
-        }, status=200)
+        }, encoder=DjangoJSONEncoder, status=200)  # ✅ Safe Decimal serialization
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
 
 # ─────────────────────────────────────────────
 # 4. CREATE FIELD ASSESSMENT (DRAFT)
@@ -151,22 +180,29 @@ def create_field_assessment(request):
 
         body = json.loads(request.body)
         reforestation_area_id = body.get('reforestation_area_id')
-        layer = body.get('layer', 'pre_assessment')
         assessment_date = body.get('assessment_date')
-        location = body.get('location')
+        raw_location = body.get('location')
         field_data = body.get('field_assessment_data', {})
 
         if not reforestation_area_id or not assessment_date:
             return JsonResponse({'error': 'reforestation_area_id and assessment_date are required'}, status=400)
-        if layer not in dict(Field_assessment.LAYER_CHOICES):
-            return JsonResponse({'error': f'Invalid layer. Allowed: {list(dict(Field_assessment.LAYER_CHOICES).keys())}'}, status=400)
         if not check_inspector_assignment(user, reforestation_area_id):
             return JsonResponse({'error': 'You are not assigned to this area'}, status=403)
 
-        assignment = Assigned_onsite_inspector.objects.get(user=user, reforestation_area_id=reforestation_area_id)
+        # ✅ Validate location if provided
+        location = None
+        if raw_location and isinstance(raw_location, dict):
+            if 'latitude' not in raw_location or 'longitude' not in raw_location:
+                return JsonResponse({'error': 'Invalid location: must contain latitude and longitude'}, status=400)
+            location = raw_location
+
+        assignment = get_object_or_404(
+            Assigned_onsite_inspector, 
+            user=user, 
+            reforestation_area_id=reforestation_area_id
+        )
         fa = Field_assessment.objects.create(
             assigned_onsite_inspector=assignment,
-            layer=layer,
             assessment_date=assessment_date,
             location=location,
             field_assessment_data=field_data,
@@ -178,16 +214,20 @@ def create_field_assessment(request):
             action_type='CREATE',
             entity_type='FieldAssessment',
             entity_id=fa.field_assessment_id,
-            entity_label=f'{fa.get_layer_display()} - Area {reforestation_area_id}',
-            description=f'Field assessment draft created for reforestation area {reforestation_area_id} (layer: {layer}).',
-            new_data={'layer': layer, 'reforestation_area_id': reforestation_area_id, 'assessment_date': assessment_date},
+            entity_label=f'Assessment {fa.field_assessment_id} - Area {reforestation_area_id}',
+            description=f'Field assessment draft created for reforestation area {reforestation_area_id}.',
+            new_data={'reforestation_area_id': reforestation_area_id, 'assessment_date': assessment_date, 'location': location},
         )
 
-        return JsonResponse({'message': 'Draft created', 'field_assessment_id': fa.field_assessment_id, 'layer': fa.layer}, status=201)
+        return JsonResponse({
+            'message': 'Draft created', 
+            'field_assessment_id': fa.field_assessment_id
+        }, status=201)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
 
 # ─────────────────────────────────────────────
 # 5. UPDATE FIELD ASSESSMENT (DRAFT ONLY)
@@ -209,6 +249,7 @@ def update_field_assessment(request, field_assessment_id):
 
         body = json.loads(request.body)
         _changed = [k for k in ('assessment_date', 'location', 'field_assessment_data') if k in body]
+        
         if 'assessment_date' in body: fa.assessment_date = body['assessment_date']
         if 'location' in body: fa.location = body['location']
         if 'field_assessment_data' in body: fa.field_assessment_data = body['field_assessment_data']
@@ -219,7 +260,7 @@ def update_field_assessment(request, field_assessment_id):
             action_type='UPDATE',
             entity_type='FieldAssessment',
             entity_id=field_assessment_id,
-            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
+            entity_label=f'Assessment {field_assessment_id}',
             description=f'Field assessment {field_assessment_id} updated. Fields changed: {", ".join(_changed) or "none"}.',
             changed_fields=_changed,
         )
@@ -229,6 +270,7 @@ def update_field_assessment(request, field_assessment_id):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
 
 # ─────────────────────────────────────────────
 # 6. SUBMIT FIELD ASSESSMENT
@@ -258,16 +300,20 @@ def submit_field_assessment(request, field_assessment_id):
             action_type='UPDATE',
             entity_type='FieldAssessment',
             entity_id=field_assessment_id,
-            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
-            description=f'Field assessment {field_assessment_id} ({fa.get_layer_display()}) submitted.',
+            entity_label=f'Assessment {field_assessment_id}',
+            description=f'Field assessment {field_assessment_id} submitted.',
             old_data={'is_submitted': False},
             new_data={'is_submitted': True},
             changed_fields=['is_submitted'],
         )
 
-        return JsonResponse({'message': f'{fa.get_layer_display()} submitted', 'submitted_at': fa.updated_at.isoformat()}, status=200)
+        return JsonResponse({
+            'message': 'Assessment submitted', 
+            'submitted_at': fa.updated_at.isoformat()
+        }, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
 
 # ─────────────────────────────────────────────
 # 7. DELETE FIELD ASSESSMENT (DRAFT ONLY)
@@ -285,16 +331,16 @@ def delete_field_assessment(request, field_assessment_id):
         if fa.assigned_onsite_inspector.user != user:
             return JsonResponse({'error': 'Forbidden'}, status=403)
         if fa.is_submitted:
-            return JsonResponse({'error': 'Cannot delete submitted'}, status=400)
+            return JsonResponse({'error': 'Cannot delete submitted assessment'}, status=400)
 
         _record_activity(
             user, request,
             action_type='DELETE',
             entity_type='FieldAssessment',
             entity_id=field_assessment_id,
-            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
-            description=f'Field assessment {field_assessment_id} ({fa.get_layer_display()}) deleted.',
-            old_data={'layer': fa.layer, 'assessment_date': fa.assessment_date.isoformat() if fa.assessment_date else None},
+            entity_label=f'Assessment {field_assessment_id}',
+            description=f'Field assessment {field_assessment_id} deleted.',
+            old_data={'assessment_date': fa.assessment_date.isoformat() if fa.assessment_date else None},
         )
 
         fa.delete()
@@ -302,9 +348,10 @@ def delete_field_assessment(request, field_assessment_id):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
 # ─────────────────────────────────────────────
-# 8. UPLOAD IMAGE
-# ─────────────────────────────────────────────
+# 8. UPLOAD IMAGE (Geocam + Layer Code)
+# ────────────────────────────────────────────
 @csrf_exempt
 def upload_field_assessment_image(request, field_assessment_id):
     if request.method != 'POST':
@@ -318,15 +365,34 @@ def upload_field_assessment_image(request, field_assessment_id):
         if fa.assigned_onsite_inspector.user != user:
             return JsonResponse({'error': 'Forbidden'}, status=403)
         if fa.is_submitted:
-            return JsonResponse({'error': 'Cannot add to submitted'}, status=400)
+            return JsonResponse({'error': 'Cannot add images to submitted assessment'}, status=400)
         if 'image' not in request.FILES:
-            return JsonResponse({'error': 'No image provided'}, status=400)
+            return JsonResponse({'error': 'No image file provided'}, status=400)
+
+        # ✅ Extract & validate Geocam data
+        layer = request.POST.get('layer')
+        if layer not in VALID_IMAGE_LAYERS:
+            return JsonResponse({'error': f'Invalid layer. Allowed: {VALID_IMAGE_LAYERS}'}, status=400)
+
+        try:
+            lat = Decimal(request.POST.get('latitude'))
+            lng = Decimal(request.POST.get('longitude'))
+        except (InvalidOperation, TypeError):
+            return JsonResponse({'error': 'Invalid latitude/longitude format'}, status=400)
+
+        # ✅ FIXED: Use consistent ORMOC_* constants (was ORMOG_LNG_MIN typo)
+        if not (ORMOC_LAT_MIN <= lat <= ORMOC_LAT_MAX and ORMOC_LNG_MIN <= lng <= ORMOC_LNG_MAX):
+            return JsonResponse({'error': 'Coordinates out of Ormoc City bounds'}, status=400)
+
+        description = request.POST.get('description', '')
 
         img = Field_assessment_images.objects.create(
             field_assessment=fa,
-            layer=request.POST.get('layer', fa.layer),
+            layer=layer,
             img=request.FILES['image'],
-            caption=request.POST.get('caption', '')
+            latitude=lat,
+            longitude=lng,
+            description=description
         )
 
         _record_activity(
@@ -335,13 +401,18 @@ def upload_field_assessment_image(request, field_assessment_id):
             entity_type='FieldAssessmentImage',
             entity_id=img.field_assessment_images_id,
             entity_label=f'Image for Assessment {field_assessment_id}',
-            description=f'Image uploaded to field assessment {field_assessment_id}.',
-            new_data={'field_assessment_id': field_assessment_id, 'layer': img.layer},
+            description=f'Geocam image uploaded to assessment {field_assessment_id} (layer: {layer}).',
+            new_data={'field_assessment_id': field_assessment_id, 'layer': layer},
         )
 
-        return JsonResponse({'message': 'Uploaded', 'image_id': img.field_assessment_images_id, 'url': img.img.url if img.img else None}, status=201)
+        return JsonResponse({
+            'message': 'Image uploaded', 
+            'image_id': img.field_assessment_images_id, 
+            'url': request.build_absolute_uri(img.img.url) if img.img else None  # ✅ Absolute URL
+        }, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
 
 # ─────────────────────────────────────────────
 # 9. DELETE IMAGE
@@ -362,7 +433,7 @@ def delete_field_assessment_image(request, image_id):
         if img.field_assessment.assigned_onsite_inspector.user != user:
             return JsonResponse({'error': 'Forbidden'}, status=403)
         if img.field_assessment.is_submitted:
-            return JsonResponse({'error': 'Cannot delete from submitted'}, status=400)
+            return JsonResponse({'error': 'Cannot delete images from submitted assessment'}, status=400)
 
         fa_id = img.field_assessment.field_assessment_id
 
@@ -372,13 +443,15 @@ def delete_field_assessment_image(request, image_id):
             entity_type='FieldAssessmentImage',
             entity_id=image_id,
             entity_label=f'Image {image_id} for Assessment {fa_id}',
-            description=f'Image {image_id} deleted from field assessment {fa_id}.',
+            description=f'Image {image_id} deleted from assessment {fa_id}.',
             old_data={'field_assessment_id': fa_id, 'layer': img.layer},
         )
 
         if img.img:
-            try: img.img.delete(save=False)
-            except: pass
+            try: 
+                img.img.delete(save=False)
+            except Exception: 
+                pass
         img.delete()
         return JsonResponse({'message': 'Image deleted'}, status=200)
     except Exception as e:
@@ -386,7 +459,7 @@ def delete_field_assessment_image(request, image_id):
 
 
 # ─────────────────────────────────────────────
-# HEAD: UNSENT FIELD ASSESSMENT (set is_submitted=False)
+# HEAD: UNSENT FIELD ASSESSMENT
 # ─────────────────────────────────────────────
 @csrf_exempt
 def head_unsent_field_assessment(request, field_assessment_id):
@@ -410,7 +483,7 @@ def head_unsent_field_assessment(request, field_assessment_id):
             action_type='UPDATE',
             entity_type='FieldAssessment',
             entity_id=field_assessment_id,
-            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
+            entity_label=f'Assessment {field_assessment_id}',
             description=f'Field assessment {field_assessment_id} marked as unsent by head user.',
             old_data={'is_submitted': True},
             new_data={'is_submitted': False},
@@ -423,7 +496,7 @@ def head_unsent_field_assessment(request, field_assessment_id):
 
 
 # ─────────────────────────────────────────────
-# HEAD: DELETE FIELD ASSESSMENT (any status)
+# HEAD: DELETE FIELD ASSESSMENT
 # ─────────────────────────────────────────────
 @csrf_exempt
 def head_delete_field_assessment(request, field_assessment_id):
@@ -442,9 +515,9 @@ def head_delete_field_assessment(request, field_assessment_id):
             action_type='DELETE',
             entity_type='FieldAssessment',
             entity_id=field_assessment_id,
-            entity_label=f'{fa.get_layer_display()} - Assessment {field_assessment_id}',
+            entity_label=f'Assessment {field_assessment_id}',
             description=f'Field assessment {field_assessment_id} deleted by head user.',
-            old_data={'layer': fa.layer, 'is_submitted': fa.is_submitted},
+            old_data={'is_submitted': fa.is_submitted},
         )
 
         fa.delete()
@@ -453,43 +526,38 @@ def head_delete_field_assessment(request, field_assessment_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+# ─────────────────────────────────────────────
+# GET AREA ASSESSMENTS (For GIS/ENRO Review)
+# ─────────────────────────────────────────────
 @csrf_exempt
 def get_area_meta_data(request, reforestation_area_id):
     """
-    GET: For GIS Specialists only.
-    Fetches ALL submitted pre-assessments for a specific Reforestation Area,
-    regardless of which onsite inspector submitted them.
-    Includes full image data from Field_assessment_images.
+    GET: For GIS Specialists / ENRO Heads.
+    Fetches ALL submitted assessments for a specific Reforestation Area.
+    Includes full image data with Geocam coordinates & layer codes.
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
     
     try:
         user = get_user_from_token(request)
-        
-        # ✅ Role check
-        allowed_roles = ["DataManager", "CityENROHead"]
+        allowed_roles = ["DataManager", "CityENROHead", "GISSpecialist"]
         if not user or user.user_role not in allowed_roles:
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-        # ✅ Optimized query: prefetch images to avoid N+1
         assessments = Field_assessment.objects.filter(
             assigned_onsite_inspector__reforestation_area_id=reforestation_area_id,
-            layer='meta_data',
             is_submitted=True
         ).select_related(
             'assigned_onsite_inspector__user',
             'assigned_onsite_inspector__user__profile'
-        ).prefetch_related(
-            'images'  # ✅ Prefetch all related images in ONE query
-        ).order_by('-created_at')
+        ).prefetch_related('images').order_by('-created_at')
 
         data = []
         for fa in assessments:
             inspector_user = fa.assigned_onsite_inspector.user if fa.assigned_onsite_inspector else None
             profile = getattr(inspector_user, 'profile', None) if inspector_user else None
             
-            # Build full name & profile img safely
             if profile:
                 full_name = f"{profile.first_name} {profile.middle_name + ' ' if profile.middle_name else ''}{profile.last_name}".strip()
                 profile_img_url = profile.profile_img.url if profile.profile_img else None
@@ -497,16 +565,17 @@ def get_area_meta_data(request, reforestation_area_id):
                 full_name = inspector_user.email if inspector_user else "Unknown Inspector"
                 profile_img_url = None
 
-            # ✅ BUILD IMAGES ARRAY from prefetched data
             images_data = [
                 {
                     "image_id": img.field_assessment_images_id,
-                    "url": img.img.url if img.img else None,
-                    "caption": img.caption or "",
+                    "url": request.build_absolute_uri(img.img.url) if img.img else None,  # ✅ Absolute URL
                     "layer": img.layer,
+                    "latitude": float(img.latitude) if img.latitude is not None else None,
+                    "longitude": float(img.longitude) if img.longitude is not None else None,
+                    "description": img.description or "",
                     "created_at": img.created_at.isoformat(),
                 }
-                for img in fa.images.all()  # ✅ No extra query - already prefetched
+                for img in fa.images.all()
             ]
 
             data.append({
@@ -519,17 +588,16 @@ def get_area_meta_data(request, reforestation_area_id):
                 "location": fa.location,
                 "field_assessment_data": fa.field_assessment_data,
                 "is_submitted": fa.is_submitted,
-                "image_count": len(images_data),  # ✅ Accurate count from actual list
-                "images": images_data,            # ✅ SEND ACTUAL IMAGE DATA
+                "image_count": len(images_data),
+                "images": images_data,
                 "created_at": fa.created_at.isoformat(),
                 "submitted_at": fa.updated_at.isoformat(),
             })
 
-        return JsonResponse(data, safe=False, status=200)
+        return JsonResponse(data, safe=False, encoder=DjangoJSONEncoder, status=200)  # ✅ Safe serialization
         
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
-        logger.error(f"❌ Error in get_area_pre_assessments_for_gis: {e}", exc_info=True)
+        logger.error(f"❌ Error in get_area_meta_data: {e}", exc_info=True)
         return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
-

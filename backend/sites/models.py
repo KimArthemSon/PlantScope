@@ -2,6 +2,7 @@ from django.db import models, transaction
 from reforestation_areas.models import Reforestation_areas
 from tree_species.models import Tree_species
 import math
+import json
 
 # ─────────────────────────────────────────────
 # SITES (Main Entity)
@@ -86,44 +87,27 @@ class Sites(models.Model):
         ]
 
     # ─────────────────────────────────────────
-    # PURE-PYTHON AREA CALCULATION (No GDAL Required)
+    # PURE-PYTHON AREA CALCULATION
     # ─────────────────────────────────────────
     def calculate_area_from_polygon(self) -> float:
-        """
-        Calculate area in hectares from polygon_coordinates using Haversine + Shoelace.
-        Pure Python implementation - NO GDAL/GeoDjango dependency.
-        Suitable for site-scale polygons (< 100 ha) in Philippines.
-        """
         if not self.polygon_coordinates or len(self.polygon_coordinates) < 3:
             return 0.0
-        
         return self._calculate_area_haversine(self.polygon_coordinates)
 
     def _calculate_area_haversine(self, coords: list) -> float:
-        """
-        Approximate polygon area using Shoelace formula with Haversine distance.
-        Accurate enough for small areas (< 100 ha) at Philippine latitudes.
-        Returns area in hectares.
-        """
         if len(coords) < 3:
             return 0.0
         
-        # Convert coordinates to meters using local scale factor
-        # Philippines average latitude ~10°N
         lat_rad = math.radians(sum(c[0] for c in coords) / len(coords))
-        
-        # Scale factors at latitude (meters per degree)
         meters_per_deg_lat = 111132.92 - 559.82 * math.cos(2*lat_rad) + 1.175 * math.cos(4*lat_rad)
         meters_per_deg_lng = 111412.84 * math.cos(lat_rad) - 93.5 * math.cos(3*lat_rad)
         
-        # Convert coords to local meters (easting, northing)
         local_coords = []
         for lat, lng in coords:
-            x = (lng - coords[0][1]) * meters_per_deg_lng  # relative to first point
+            x = (lng - coords[0][1]) * meters_per_deg_lng
             y = (lat - coords[0][0]) * meters_per_deg_lat
             local_coords.append((x, y))
         
-        # Shoelace formula for area
         area_sqm = 0
         n = len(local_coords)
         for i in range(n):
@@ -131,23 +115,25 @@ class Sites(models.Model):
             x2, y2 = local_coords[(i + 1) % n]
             area_sqm += (x1 * y2 - x2 * y1)
         
-        area_hectares = abs(area_sqm) / 2 / 10000  # sq meters → hectares
+        area_hectares = abs(area_sqm) / 2 / 10000
         return round(area_hectares, 4)
 
     def calculate_centroid(self) -> list | None:
-        """Auto-calculate centroid [lat, lng] from polygon."""
         if not self.polygon_coordinates or len(self.polygon_coordinates) < 3:
             return None
-        
         lats = [p[0] for p in self.polygon_coordinates]
         lngs = [p[1] for p in self.polygon_coordinates]
         return [round(sum(lats) / len(lats), 6), round(sum(lngs) / len(lngs), 6)]
 
 
 # ─────────────────────────────────────────────
-# SITE DATA (MCDA Result — Versioned, 3-Layer)
+# SITE DATA (Simplified MCDA Validation)
 # ─────────────────────────────────────────────
 class Site_data(models.Model):
+    """
+    Stores GIS Specialist validation for a site.
+    Simplified structure: decision notes for Safety + Survivability + ONE final decision.
+    """
     site_data_id = models.BigAutoField(primary_key=True)
 
     site = models.ForeignKey(
@@ -167,8 +153,25 @@ class Site_data(models.Model):
     validated_by = models.CharField(max_length=100, null=True, blank=True)
     validated_at = models.DateTimeField(null=True, blank=True)
 
-    site_data = models.JSONField(default=dict)
-    field_assessment_snapshot = models.JSONField(default=dict)
+    # ✅ SIMPLIFIED JSONB STRUCTURE
+    site_data = models.JSONField(
+        default=dict,
+        help_text="""
+        {
+          "safety": { "decision_note": "Text..." },
+          "survivability": { "decision_note": "Text..." },
+          "final_decision": "ACCEPT" | "REJECT",
+          "final_decision_note": "Overall explanation...",
+          "validated_at": "...",
+          "validated_by": "..."
+        }
+        """
+    )
+    
+    field_assessment_snapshot = models.JSONField(
+        default=dict,
+        help_text="Snapshot of field assessment IDs used as evidence"
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -177,8 +180,8 @@ class Site_data(models.Model):
         return f"Site #{self.site.site_id} — v{self.version} [{state}]"
 
     class Meta:
-        verbose_name = "Site MCDA Data"
-        verbose_name_plural = "Site MCDA Data"
+        verbose_name = "Site Validation Data"
+        verbose_name_plural = "Site Validation Data"
         ordering = ['-version']
         constraints = [
             models.UniqueConstraint(
@@ -188,94 +191,21 @@ class Site_data(models.Model):
             )
         ]
 
-    # ─────────────────────────────────────────
-    # SCHEMA VALIDATION HELPERS (Document 2)
-    # ─────────────────────────────────────────
-    ALLOWED_LAYERS = ['safety', 'boundary_verification', 'survivability']
-    REQUIRED_BASE_FIELDS = ['acceptance', 'validation_notes', 'validated_location', 'inspector_reference']
-    
-    LAYER_SPECIFIC_FIELDS = {
-        'safety': ['safety_risk_level'],
-        'boundary_verification': ['boundary_compliance_status'],
-        'survivability': ['overall_survivability_decision', 'species_recommendations'],
-    }
-
-    def get_layer_validation(self, layer_name: str) -> dict:
-        """Return layer data with Document 2 schema guarantees."""
-        layer_data = self.site_data.get(layer_name, {})
-        base = {
-            "acceptance": layer_data.get("acceptance"),
-            "validation_notes": layer_data.get("validation_notes", ""),
-            "validated_location": layer_data.get("validated_location"),
-            "inspector_reference": layer_data.get("inspector_reference"),
-            "validated_at": layer_data.get("validated_at"),
-            "validated_by": layer_data.get("validated_by"),
-        }
-        if layer_name in self.LAYER_SPECIFIC_FIELDS:
-            for field in self.LAYER_SPECIFIC_FIELDS[layer_name]:
-                base[field] = layer_data.get(field)
-        return base
-
-    def is_layer_complete(self, layer_name: str) -> tuple[bool, list[str]]:
-        """Check if layer has all Document 2 required fields."""
-        layer_data = self.site_data.get(layer_name, {})
-        missing = []
+    # ✅ Simplified validation helpers
+    def can_finalize(self) -> tuple[bool, str]:
+        """Check if site has required decision notes before finalizing."""
+        data = self.site_data
         
-        for field in self.REQUIRED_BASE_FIELDS:
-            if field not in layer_data or not layer_data[field]:
-                missing.append(field)
+        # Check decision notes exist (optional but recommended)
+        safety_note = data.get('safety', {}).get('decision_note', '').strip()
+        survivability_note = data.get('survivability', {}).get('decision_note', '').strip()
+        final_note = data.get('final_decision_note', '').strip()
         
-        if layer_name in self.LAYER_SPECIFIC_FIELDS:
-            for field in self.LAYER_SPECIFIC_FIELDS[layer_name]:
-                if field not in layer_data:
-                    missing.append(field)
+        # Final decision is required
+        if not data.get('final_decision'):
+            return False, "Final decision (Accept/Reject) is required"
         
-        if 'validated_location' in layer_data and layer_data['validated_location']:
-            loc = layer_data['validated_location']
-            for loc_field in ['latitude', 'longitude', 'assigned_by', 'assignment_method']:
-                if loc_field not in loc:
-                    missing.append(f"validated_location.{loc_field}")
-        
-        if 'inspector_reference' in layer_data and layer_data['inspector_reference']:
-            ref = layer_data['inspector_reference']
-            if 'source_assessment_id' not in ref:
-                missing.append("inspector_reference.source_assessment_id")
-        
-        return (len(missing) == 0, missing)
-
-    def can_finalize(self) -> tuple[bool, dict]:
-        """Check if site can be finalized per Document 2 approval cascade."""
-        details = {
-            'all_layers_validated': True,
-            'all_layers_complete': True,
-            'has_rejection': False,
-            'rejection_layer': None,
-            'missing_fields': {}
-        }
-        
-        for layer in self.ALLOWED_LAYERS:
-            layer_data = self.site_data.get(layer, {})
-            if not layer_data.get('acceptance'):
-                details['all_layers_validated'] = False
-                continue
-            
-            is_complete, missing = self.is_layer_complete(layer)
-            if not is_complete:
-                details['all_layers_complete'] = False
-                details['missing_fields'][layer] = missing
-            
-            if layer_data.get('acceptance') == 'REJECT':
-                details['has_rejection'] = True
-                details['rejection_layer'] = layer
-        
-        if details['has_rejection']:
-            return (False, {**details, 'reason': 'REJECT found in layer'})
-        if not details['all_layers_validated']:
-            return (False, {**details, 'reason': 'Not all layers have acceptance decision'})
-        if not details['all_layers_complete']:
-            return (False, {**details, 'reason': 'Schema incomplete for some layers'})
-        
-        return (True, {**details, 'reason': 'Ready for finalization'})
+        return True, "Ready for finalization"
 
 
 # ─────────────────────────────────────────────
@@ -312,7 +242,7 @@ class Site_species_recommendation(models.Model):
 
 
 # ─────────────────────────────────────────────
-# SITE IMAGES (Evidence for MCDA Layers)
+# SITE IMAGES (Evidence for MCDA Review)
 # ─────────────────────────────────────────────
 class Site_images(models.Model):
     site_image_id = models.BigAutoField(primary_key=True)
@@ -320,7 +250,6 @@ class Site_images(models.Model):
 
     LAYER_CHOICES = (
         ('safety', 'Safety'),
-        ('boundary_verification', 'Boundary Verification'),
         ('survivability', 'Survivability'),
         ('general', 'General'),
     )

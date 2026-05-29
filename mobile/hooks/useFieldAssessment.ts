@@ -1,68 +1,50 @@
 import { useState } from "react";
 import * as SecureStore from "expo-secure-store";
-import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import { Alert } from "react-native";
 import { api } from "@/constants/url_fixed";
+import { getStrictLayerCode } from "@/utils/layerCodes";
 
-// ✅ Base URL: The 'api' constant usually includes the port
 const API_BASE = `${api}/api`;
-
-// ─────────────────────────────────────────────
-// TypeScript Interfaces
-// ─────────────────────────────────────────────
-
-export interface AssessmentData {
-  layer: string;
-  assessment_date: string;
-  location: {
-    latitude: number;
-    longitude: number;
-    gps_accuracy_meters?: number;
-  } | null;
-  // Layer-specific fields (Safety, Boundary, Survivability, etc.)
-  [key: string]: any;
-}
 
 export interface AssessmentImage {
   image_id: number;
   url: string;
-  caption: string;
   layer: string;
+  latitude: number | null;
+  longitude: number | null;
+  description: string;
   created_at: string;
 }
 
 export interface AssessmentResponse {
   field_assessment_id: number;
-  layer: string;
   is_submitted: boolean;
   assessment_date: string;
   location: any;
-  field_assessment_data: AssessmentData;
+  field_assessment_data: Record<string, any>;
   images: AssessmentImage[];
   created_at: string;
   updated_at: string;
 }
 
-export interface SoilItem {
-  soil_id: number;
-  name: string;
-  description: string;
-}
-
-// ✅ Hook Return Type Interface
 export interface UseFieldAssessmentReturn {
   saving: boolean;
   uploading: boolean;
-  handleSave: (data: any, submit?: boolean) => Promise<boolean>;
-  uploadImage: (currentAssessmentId: string | number) => Promise<boolean>;
+  handleSave: (data: any, submit?: boolean) => Promise<number | null>;
+  uploadImage: (
+    assessmentId: number,
+    photoData: {
+      uri: string;
+      latitude: number;
+      longitude: number;
+      accuracy?: number;
+    },
+    options?: { subLayerCode?: string; description?: string },
+  ) => Promise<boolean>;
   deleteImage: (imageId: number) => Promise<boolean>;
   fetchAssessmentData: () => Promise<AssessmentResponse | null>;
-  fetchSoils: () => Promise<SoilItem[]>;
 }
-
-// ─────────────────────────────────────────────
-// Main Hook
-// ─────────────────────────────────────────────
 
 export const useFieldAssessment = (
   areaId: string,
@@ -73,25 +55,28 @@ export const useFieldAssessment = (
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  /**
-   * 1. SAVE DRAFT OR SUBMIT
-   */
   const handleSave = async (
     data: any,
     submit: boolean = false,
-  ): Promise<boolean> => {
+  ): Promise<number | null> => {
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync("token");
       if (!token) throw new Error("Authentication token missing");
 
+      // ✅ EXPECTS: data already has { [layerId]: { ... }, location?, assessment_date? }
+      // Extract top-level fields
+      const { location, assessment_date, ...layerData } = data;
+
+      // ✅ Build payload with nested structure
       const payload = {
         reforestation_area_id: parseInt(areaId),
-        layer: layerId,
         assessment_date:
-          data.assessment_date || new Date().toISOString().split("T")[0],
-        location: data.location || null,
-        field_assessment_data: data, // ✅ FIXED: Added colon ':'
+          assessment_date || new Date().toISOString().split("T")[0],
+        location: location || null,
+        field_assessment_data: {
+          [layerId]: layerData, // ← Creates { boundary_verification: { overall_note: "..." } }
+        },
       };
 
       const isEdit = !!assessmentId;
@@ -99,10 +84,8 @@ export const useFieldAssessment = (
         ? `${API_BASE}/field_assessments/${assessmentId}/update/`
         : `${API_BASE}/field_assessments/create/`;
 
-      const method = isEdit ? "PUT" : "POST";
-
       const res = await fetch(url, {
-        method,
+        method: isEdit ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -111,135 +94,148 @@ export const useFieldAssessment = (
       });
 
       const resData = await res.json();
+      if (!res.ok)
+        throw new Error(resData.error || "Failed to save assessment.");
 
-      if (res.ok) {
-        const savedId = resData.field_assessment_id || assessmentId;
+      const savedId = resData.field_assessment_id || assessmentId;
 
-        if (submit && savedId) {
-          return await handleSubmit(savedId, token);
-        } else {
-          Alert.alert("Success", isEdit ? "Draft updated." : "Draft saved.");
-          if (onRefresh) onRefresh();
-          return true;
+      if (submit && savedId) {
+        const subRes = await fetch(
+          `${API_BASE}/field_assessments/${savedId}/submit/`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        if (subRes.ok) {
+          Alert.alert("Success", "Assessment submitted!");
+          onRefresh?.();
+          return savedId;
         }
-      } else {
-        Alert.alert("Error", resData.error || "Failed to save assessment.");
-        return false;
+        const err = await subRes.json().catch(() => ({}));
+        throw new Error(err.error || "Submission failed.");
       }
+
+      Alert.alert("Saved", isEdit ? "Draft updated." : "Draft saved.");
+      onRefresh?.();
+      return savedId;
     } catch (error: any) {
       console.error("Save Error:", error);
-      Alert.alert("Network Error", "Could not connect to server.");
-      return false;
+      Alert.alert("Error", error.message || "Network error while saving.");
+      return null;
     } finally {
       setSaving(false);
     }
   };
 
-  /**
-   * Helper: Submits (locks) the assessment
-   */
-  const handleSubmit = async (id: number, token: string): Promise<boolean> => {
-    try {
-      const res = await fetch(`${API_BASE}/field_assessments/${id}/submit/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (res.ok) {
-        Alert.alert("Success", "Assessment submitted to GIS Specialist!");
-        if (onRefresh) onRefresh();
-        return true;
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        Alert.alert("Submit Failed", errData.error || "Could not submit.");
-        return false;
-      }
-    } catch (err) {
-      Alert.alert("Error", "Network error during submission.");
-      return false;
-    }
-  };
-
-  /**
-   * 2. UPLOAD IMAGE
-   */
+  // ✅ FIXED: Accept photoData instead of launching camera
   const uploadImage = async (
-    currentAssessmentId: string | number,
+    assessmentId: number,
+    photoData: {
+      uri: string;
+      latitude: number;
+      longitude: number;
+      accuracy?: number;
+    },
+    options?: { subLayerCode?: string; description?: string },
   ): Promise<boolean> => {
-    if (!currentAssessmentId) {
-      Alert.alert(
-        "Action Required",
-        "Please save the draft first to enable image uploads.",
-      );
-      return false;
-    }
-
-    const permissionResult =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (permissionResult.status !== "granted") {
-      Alert.alert("Permission Denied", "Please allow access to photos.");
-      return false;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 0.8,
-    });
-
-    if (result.canceled || !result.assets?.[0]) return false;
-
     setUploading(true);
     try {
       const token = await SecureStore.getItemAsync("token");
+      console.log("🔐 [Upload] Token retrieved:", token ? "✓" : "✗");
+
       const formData = new FormData();
 
-      // @ts-ignore - React Native FormData type definition issue
+      const imageUri = photoData.uri;
+      const fileName = `geocam_${Date.now()}.jpg`;
+
+      // @ts-ignore - React Native FormData accepts this format
       formData.append("image", {
-        uri: result.assets[0].uri,
-        name: `field_photo_${Date.now()}.jpg`,
+        uri: imageUri,
+        name: fileName,
         type: "image/jpeg",
       });
 
-      formData.append("caption", "Field assessment photo");
-      formData.append("layer", layerId);
+      const layerCode = getStrictLayerCode(layerId, options?.subLayerCode);
+      console.log("🏷️ [Upload] Layer code:", layerCode);
+      formData.append("layer", layerCode);
 
-      const res = await fetch(
-        `${API_BASE}/field_assessments/${currentAssessmentId}/images/upload/`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
+      // ✅ Use the GPS coordinates from the captured photo
+      formData.append("latitude", photoData.latitude.toString());
+      formData.append("longitude", photoData.longitude.toString());
+      
+      if (photoData.accuracy != null) {
+        formData.append("gps_accuracy", photoData.accuracy.toString());
+      }
+
+      const description =
+        options?.description ||
+        `Boundary marker at ${photoData.latitude.toFixed(6)}, ${photoData.longitude.toFixed(6)}`;
+      formData.append("description", description);
+      console.log("📝 [Upload] Description:", description);
+
+      const uploadUrl = `${API_BASE}/field_assessments/${assessmentId}/images/upload/`;
+      console.log("🌐 [Upload] POST to:", uploadUrl);
+
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          // ✅ DO NOT set Content-Type for FormData - React Native sets it automatically
         },
+        body: formData,
+      });
+
+      console.log(
+        "📡 [Upload] Response status:",
+        res.status,
+        res.ok ? "(OK)" : "(ERROR)",
       );
 
+      const responseText = await res.text();
+      console.log("📄 [Upload] Response body:", responseText);
+
       if (res.ok) {
-        Alert.alert("Success", "Photo uploaded.");
-        if (onRefresh) onRefresh();
+        const responseData = JSON.parse(responseText);
+        console.log("✅ [Upload] Success:", responseData);
+        Alert.alert("Success", "Geocam image uploaded.");
+        onRefresh?.();
         return true;
       } else {
-        const err = await res.json().catch(() => ({}));
-        Alert.alert("Upload Failed", err.error || "Server error.");
+        try {
+          const errData = JSON.parse(responseText);
+          console.error("❌ [Upload] Backend error:", errData);
+          Alert.alert(
+            "Upload Failed",
+            errData.error || `Server error: ${res.status}`,
+          );
+        } catch (parseErr) {
+          console.error(
+            "❌ [Upload] Failed to parse error response:",
+            responseText,
+          );
+          Alert.alert(
+            "Upload Failed",
+            `Server returned ${res.status}: ${responseText.substring(0, 100)}`,
+          );
+        }
         return false;
       }
-    } catch (error) {
-      Alert.alert("Error", "Failed to upload image.");
+    } catch (error: any) {
+      console.error("💥 [Upload] CRITICAL ERROR:", error);
+      Alert.alert(
+        "Upload Error",
+        `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
       return false;
     } finally {
       setUploading(false);
     }
   };
 
-  /**
-   * 3. DELETE IMAGE
-   */
   const deleteImage = async (imageId: number): Promise<boolean> => {
     try {
       const token = await SecureStore.getItemAsync("token");
-
       const res = await fetch(
         `${API_BASE}/field_assessments/images/${imageId}/delete/`,
         {
@@ -247,68 +243,38 @@ export const useFieldAssessment = (
           headers: { Authorization: `Bearer ${token}` },
         },
       );
-
       if (res.ok) {
-        if (onRefresh) onRefresh();
+        onRefresh?.();
         return true;
-      } else {
-        Alert.alert("Error", "Failed to delete image.");
-        return false;
       }
-    } catch (error) {
+      throw new Error("Delete failed.");
+    } catch {
       Alert.alert("Error", "Network error deleting image.");
       return false;
     }
   };
 
-  /**
-   * 4. FETCH ASSESSMENT DATA
-   */
   const fetchAssessmentData = async (): Promise<AssessmentResponse | null> => {
     if (!assessmentId) return null;
-
     try {
       const token = await SecureStore.getItemAsync("token");
-      if (!token) throw new Error("Authentication token missing");
-
       const res = await fetch(
         `${API_BASE}/field_assessments/${assessmentId}/`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
       );
-
-      if (res.ok) {
-        return await res.json();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        Alert.alert("Error", err.error || "Failed to fetch assessment");
-        return null;
-      }
+      if (res.ok) return await res.json();
+      throw new Error("Failed to fetch.");
     } catch (error: any) {
-      console.error("Fetch assessment error:", error);
-      Alert.alert("Error", "Network error while loading assessment");
+      Alert.alert(
+        "Error",
+        error.message || "Network error loading assessment.",
+      );
       return null;
     }
   };
 
-  /**
-   * 5. FETCH SOILS (For Survivability Form)
-   */
-  const fetchSoils = async (): Promise<SoilItem[]> => {
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${API_BASE}/soils/list/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) return await res.json();
-      return [];
-    } catch (e) {
-      return [];
-    }
-  };
-
-  // ✅ Return ALL functions
   return {
     saving,
     uploading,
@@ -316,6 +282,5 @@ export const useFieldAssessment = (
     uploadImage,
     deleteImage,
     fetchAssessmentData,
-    fetchSoils,
   };
 };

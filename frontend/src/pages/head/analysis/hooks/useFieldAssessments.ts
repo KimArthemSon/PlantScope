@@ -1,13 +1,16 @@
-// src/pages/GISS/multicriteria_analysis/hooks/useFieldAssessments.ts
 import { useState, useCallback, useRef } from "react";
 import L from "leaflet";
 
 export type MCDALayer = "safety" | "boundary_verification" | "survivability";
 
+// ✅ Match actual API response structure
 export interface AssessmentImage {
   id: number;
   url: string;
-  caption: string;
+  layer: string;  // e.g., "safety_flood", "surv_soil", "bound_verification"
+  description: string;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 export interface AssessmentLocation {
@@ -16,78 +19,32 @@ export interface AssessmentLocation {
   gps_accuracy_meters: number;
 }
 
-export interface SafetyData {
-  layer: "safety";
-  location: AssessmentLocation;
-  flood_notes: string | null;
-  erosion_type: string | null;
-  erosion_signs: string | null;
-  landslide_notes: string | null;
-  inspector_comment: string | null;
-  flood_water_line_cm: number | null;
-  hazard_proximity_notes: string | null;
-  erosion_area_estimate_pct: number | null;
-  flood_debris_line_visible: boolean | null;
-  erosion_severity_description: string | null;
-  landslide_indicators_observed: string[];
+// ✅ Flexible structure for layer data (matches your API)
+export interface LayerData {
+  [key: string]: any;
 }
 
-export interface BoundaryVerificationData {
-  layer: "boundary_verification";
-  location: AssessmentLocation;
-  boundary_notes: string | null;
-  encroachment_type: string | null;
-  slope_boundary_check: boolean | null;
-  encroachment_detected: boolean | null;
-  boundary_markers_status: string | null;
-  boundary_deviation_meters: number | null;
-  within_riparian_buffer_20m: boolean | null;
-  boundary_coordinates_feedback: Array<{
-    notes: string;
-    latitude: number;
-    longitude: number;
-    confidence: string;
-    marker_name: string;
-  }>;
-}
-
-export interface SurvivabilityData {
-  layer: "survivability";
-  location: AssessmentLocation;
-  soil_notes: string | null;
-  soil_texture: string | null;
-  soil_depth_cm: number | null;
-  micro_topography: string | null;
-  vegetation_notes: string | null;
-  microclimate_notes: string | null;
-  soil_moisture_feel: string | null;
-  water_stress_symptoms: string | null;
-  soil_drainage_observed: string | null;
-  days_since_last_rainfall: number | null;
-  invasive_species_present: string | null;
-  water_availability_notes: string | null;
-  invasive_cover_estimate_pct: number | null;
-  natural_regeneration_seedlings_count: number | null;
-}
-
-export type LayerData = SafetyData | BoundaryVerificationData | SurvivabilityData;
-
-export interface FieldAssessmentEntry {
+export interface InspectorInfo {
   email: string;
   full_name: string;
-  profile_image: string;
-  field_assessment_data: {
-    field_assessment_id: number;
-    layer: MCDALayer;
-    location: AssessmentLocation;
-    field_assessment_data: LayerData;
-    assessment_date: string;
-    images: AssessmentImage[];
-  };
+  profile_image: string | null;
+}
+
+// ✅ Match actual API response structure
+export interface FieldAssessmentEntry {
+  field_assessment_id: number;
+  inspector: InspectorInfo;
+  assessment_date: string;
+  location: AssessmentLocation | null;
+  layer_data: LayerData;  // Flexible nested structure
+  images: AssessmentImage[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface FieldAssessmentsResponse {
   data: FieldAssessmentEntry[];
+  count: number;
 }
 
 const LAYER_MARKER_COLORS: Record<MCDALayer, string> = {
@@ -157,7 +114,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
       const emoji = LAYER_EMOJIS[layer];
 
       entries.forEach((entry, idx) => {
-        const loc = entry.field_assessment_data?.location;
+        const loc = entry.location;
         if (!loc?.latitude || !loc?.longitude) return;
 
         const marker = L.marker([loc.latitude, loc.longitude], {
@@ -181,8 +138,8 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         }).addTo(map);
 
         marker.bindPopup(`
-          <strong>F${idx + 1} — ${entry.full_name}</strong><br/>
-          <span style="font-size:11px;color:#666">${entry.field_assessment_data.assessment_date}</span><br/>
+          <strong>F${idx + 1} — ${entry.inspector.full_name}</strong><br/>
+          <span style="font-size:11px;color:#666">${entry.assessment_date}</span><br/>
           <span style="font-size:10px;color:#999">GPS ±${loc.gps_accuracy_meters}m</span>
         `);
 
@@ -204,7 +161,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json: FieldAssessmentsResponse = await res.json();
         const entries = json.data ?? [];
-
+       
         setAssessments((prev) => ({ ...prev, [layer]: entries }));
         placeMarkers(entries, layer);
         setActiveLayer(layer);
@@ -265,7 +222,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
       try {
         const token = localStorage.getItem("token");
         const res = await fetch(
-          "http://127.0.0.1:8000/api/update_field_assessment_location/",
+          "http://127.0.0.1:8000/api/update_field_assessment_coordinate/",
           {
             method: "POST",
             headers: {
@@ -281,20 +238,15 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         const json = await res.json();
         if (!res.ok) throw new Error(json.message ?? `HTTP ${res.status}`);
 
+        // Update state with correct structure
         setAssessments((prev) => {
           const updated = { ...prev };
           (Object.keys(updated) as MCDALayer[]).forEach((layer) => {
             updated[layer] = updated[layer].map((entry) => {
-              if (
-                entry.field_assessment_data.field_assessment_id ===
-                fieldAssessmentId
-              ) {
+              if (entry.field_assessment_id === fieldAssessmentId) {
                 return {
                   ...entry,
-                  field_assessment_data: {
-                    ...entry.field_assessment_data,
-                    location: { latitude, longitude, gps_accuracy_meters },
-                  },
+                  location: { latitude, longitude, gps_accuracy_meters },
                 };
               }
               return entry;

@@ -3,20 +3,23 @@ import type { Site, SiteDetail } from "../types/siteTypes";
 
 const BASE_URL = "http://127.0.0.1:8000";
 
-// ✅ HELPER: Convert Leaflet [lat, lng] → GeoJSON [lng, lat]
-export const toGeoJSONCoords = (coords: [number, number][]): [number, number][] => {
-  return coords.map(([lat, lng]) => [lat, lng]);
+export const toGeoJSONCoords = (
+  coords: [number, number][],
+): [number, number][] => {
+  return coords.map(([lat, lng]) => [lat, lng]); // Leaflet [lat,lng] → GeoJSON [lng,lat]
 };
 
-// ✅ HELPER: Calculate centroid in GeoJSON format [lng, lat]
-export const calculateGeoJSONCentroid = (coords: [number, number][]): [number, number] | null => {
+export const calculateGeoJSONCentroid = (
+  coords: [number, number][],
+): [number, number] | null => {
   if (!coords || coords.length === 0) return null;
-  const sum = coords.reduce((acc, [lat, lng]) => {
-    return [acc[0] + lat, acc[1] + lng];
-  }, [0, 0]);
+  const sum = coords.reduce(
+    (acc, [lat, lng]) => [acc[0] + lat, acc[1] + lng],
+    [0, 0],
+  );
   const avgLat = sum[0] / coords.length;
   const avgLng = sum[1] / coords.length;
-  return [avgLng, avgLat]; // ✅ Return [lng, lat] for GeoJSON
+  return [avgLng, avgLat]; // GeoJSON format [lng, lat]
 };
 
 export function useSites() {
@@ -25,94 +28,87 @@ export function useSites() {
   const [selectedSite, setSelectedSite] = useState<SiteDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Helper: Robust fetch with JSON validation
-  const fetchWithAuth = useCallback(async (url: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem("token");
-    const headers = {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    };
+  const fetchWithAuth = useCallback(
+    async (url: string, options: RequestInit = {}) => {
+      const token = localStorage.getItem("token");
+      const headers = {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...options.headers,
+      };
+      const res = await fetch(url, { ...options, headers });
+      const contentType = res.headers.get("content-type");
+      if (!res.ok || !contentType?.includes("application/json")) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    },
+    [],
+  );
 
-    const res = await fetch(url, { ...options, headers });
-    
-    // Handle non-JSON error responses
-    const contentType = res.headers.get("content-type");
-    if (!res.ok || !contentType?.includes("application/json")) {
-      const text = await res.text();
-      throw new Error(text || `HTTP ${res.status}: ${res.statusText}`);
-    }
-    
-    return res.json();
-  }, []);
+  const fetchSites = useCallback(
+    async (areaId: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await fetchWithAuth(
+          `${BASE_URL}/api/get_sites/${areaId}/`,
+        );
+        setSites(data.data || []);
+      } catch (err: any) {
+        console.error("fetchSites error:", err);
+        setError(err.message || "Failed to fetch sites");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchWithAuth],
+  );
 
-  const fetchSites = useCallback(async (areaId: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchWithAuth(`${BASE_URL}/api/list_sites/${areaId}/`);
-      setSites(data.data || []);
-    } catch (err: any) {
-      console.error("fetchSites error:", err);
-      setError(err.message || "Failed to fetch sites");
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchWithAuth]);
-
-  const fetchSiteDetail = useCallback(async (siteId: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchWithAuth(`${BASE_URL}/api/get_site/${siteId}/`);
-      setSelectedSite(data);
-      return data;
-    } catch (err: any) {
-      console.error("fetchSiteDetail error:", err);
-      setError(err.message || "Failed to fetch site details");
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchWithAuth]);
+  const fetchSiteDetail = useCallback(
+    async (siteId: number) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await fetchWithAuth(`${BASE_URL}/api/get_site/${siteId}/`);
+        setSelectedSite(data);
+        return data;
+      } catch (err: any) {
+        console.error("fetchSiteDetail error:", err);
+        setError(err.message || "Failed to fetch site details");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchWithAuth],
+  );
 
   const createSite = useCallback(
     async (
       areaId: string,
       name: string,
-      polygon_coordinates: [number, number][], // ✅ Input: Leaflet [lat, lng]
+      polygon_coordinates: [number, number][],
       total_area_hectares: number,
       ndvi_value?: number,
     ) => {
       try {
-        // ✅ CONVERT: Leaflet [lat,lng] → GeoJSON [lng,lat]
         const geojsonCoords = toGeoJSONCoords(polygon_coordinates);
         const centerCoordinate = calculateGeoJSONCentroid(polygon_coordinates);
-        
-        console.log("Creating site:", {
-          name,
-          areaId,
-          coordsCount: polygon_coordinates.length,
-          firstLeaflet: polygon_coordinates[0],
-          firstGeoJSON: geojsonCoords[0],
-        });
-
         const data = await fetchWithAuth(`${BASE_URL}/api/sites/create_site/`, {
           method: "POST",
           body: JSON.stringify({
             reforestation_area_id: parseInt(areaId),
             name,
-            polygon_coordinates: geojsonCoords, // ✅ Send GeoJSON format
+            polygon_coordinates: geojsonCoords,
             total_area_hectares,
             ndvi_value,
-            center_coordinate: centerCoordinate, // ✅ GeoJSON [lng, lat]
+            center_coordinate: centerCoordinate,
           }),
         });
-
-        // ✅ Refresh sites list after successful creation
         await fetchSites(areaId);
         return data;
-        
       } catch (err: any) {
         console.error("createSite error:", err);
         setError(err.message || "Failed to create site");
@@ -125,20 +121,21 @@ export function useSites() {
   const updatePolygon = useCallback(
     async (
       siteId: number,
-      polygon_coordinates: [number, number][], // ✅ Input: Leaflet [lat, lng]
+      polygon_coordinates: [number, number][],
       ndvi_value?: number,
     ) => {
       try {
-        // ✅ CONVERT coordinates
         const geojsonCoords = toGeoJSONCoords(polygon_coordinates);
-        
-        const data = await fetchWithAuth(`${BASE_URL}/api/update_polygon/${siteId}/`, {
-          method: "PUT",
-          body: JSON.stringify({
-            polygon_coordinates: geojsonCoords, // ✅ Send GeoJSON format
-            ndvi_value,
-          }),
-        });
+        const data = await fetchWithAuth(
+          `${BASE_URL}/api/update_polygon/${siteId}/`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              polygon_coordinates: geojsonCoords,
+              ndvi_value,
+            }),
+          },
+        );
         return data;
       } catch (err: any) {
         console.error("updatePolygon error:", err);
@@ -166,55 +163,85 @@ export function useSites() {
     [fetchWithAuth, fetchSites],
   );
 
-  const updateLayer = useCallback(
-    async (siteId: number, layerName: string, layerData: any) => {
+  // ✅ UPDATED: Save validation draft (simplified - matches mobile spec)
+  const saveValidationDraft = useCallback(
+    async (data: {
+      safety_note?: string;
+      survivability_note?: string;
+      final_note?: string;
+    }) => {
       try {
-        const data = await fetchWithAuth(
-          `${BASE_URL}/api/update_layer/${siteId}/${layerName}/`,
-          {
-            method: "PUT",
-            body: JSON.stringify(layerData),
-          },
+        if (!selectedSite) return false;
+        const payload: Record<string, any> = {};
+        if (data.safety_note)
+          payload.safety = { decision_note: data.safety_note };
+        if (data.survivability_note)
+          payload.survivability = { decision_note: data.survivability_note };
+        if (data.final_note) payload.final_decision_note = data.final_note;
+
+        const result = await fetchWithAuth(
+          `${BASE_URL}/api/site/${selectedSite.site_id}/validation/draft/`,
+          { method: "PUT", body: JSON.stringify(payload) },
         );
-        return data;
+        // Refresh site detail to get updated validation data
+        await fetchSiteDetail(selectedSite.site_id);
+        return !!result;
       } catch (err: any) {
-        console.error("updateLayer error:", err);
-        setError(err.message || "Failed to update layer");
-        return null;
+        console.error("saveValidationDraft error:", err);
+        setError(err.message || "Failed to save validation draft");
+        return false;
       }
     },
-    [fetchWithAuth],
+    [fetchWithAuth, selectedSite, fetchSiteDetail],
   );
 
+  // ✅ UPDATED: Finalize site (simplified - ONE decision for entire site)
   const finalizeSite = useCallback(
-    async (siteId: number, decision: "ACCEPT" | "REJECT") => {
+    async (decision: "ACCEPT" | "REJECT", note: string) => {
       try {
-        const data = await fetchWithAuth(`${BASE_URL}/api/finalize_site/${siteId}/`, {
-          method: "POST",
-          body: JSON.stringify({ decision }),
-        });
-        return data;
+        if (!selectedSite) return false;
+        const result = await fetchWithAuth(
+          `${BASE_URL}/api/site/${selectedSite.site_id}/validation/finalize/`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              final_decision: decision,
+              final_decision_note: note,
+            }),
+          },
+        );
+        // Refresh sites list after finalization
+        if (result) {
+          const areaId = new URLSearchParams(window.location.search).get(
+            "areaId",
+          );
+          if (areaId) await fetchSites(areaId);
+        }
+        return !!result;
       } catch (err: any) {
         console.error("finalizeSite error:", err);
         setError(err.message || "Failed to finalize site");
-        return null;
+        return false;
+      }
+    },
+    [fetchWithAuth, selectedSite, fetchSites],
+  );
+
+  const togglePin = useCallback(
+    async (siteId: number) => {
+      try {
+        await fetchWithAuth(`${BASE_URL}/api/toggle_pin/${siteId}/`, {
+          method: "POST",
+        });
+        return true;
+      } catch (err: any) {
+        console.error("togglePin error:", err);
+        setError(err.message || "Failed to toggle pin");
+        return false;
       }
     },
     [fetchWithAuth],
   );
-
-  const togglePin = useCallback(async (siteId: number) => {
-    try {
-      await fetchWithAuth(`${BASE_URL}/api/toggle_pin/${siteId}/`, {
-        method: "POST",
-      });
-      return true;
-    } catch (err: any) {
-      console.error("togglePin error:", err);
-      setError(err.message || "Failed to toggle pin");
-      return false;
-    }
-  }, [fetchWithAuth]);
 
   return {
     sites,
@@ -226,8 +253,8 @@ export function useSites() {
     createSite,
     updatePolygon,
     deleteSite,
-    updateLayer,
-    finalizeSite,
+    saveValidationDraft, // ✅ Renamed from updateLayer
+    finalizeSite, // ✅ Updated signature
     togglePin,
     setSelectedSite,
     setError,

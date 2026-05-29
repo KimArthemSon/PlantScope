@@ -47,7 +47,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'accounts',
     'security',
-    'soils',
     'tree_species',
     'barangay',
     'land_classifications',
@@ -55,7 +54,8 @@ INSTALLED_APPS = [
     'Field_assessment',
     'sites',
     'ormoc_city',
-    'tree_planting_programs'
+    'tree_planting_programs',
+    'animals'
 ]
 
 MIDDLEWARE = [

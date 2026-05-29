@@ -5,7 +5,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Switch,
   Alert,
   StyleSheet,
   Image,
@@ -20,7 +19,6 @@ import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
-import ImageMarker from "react-native-image-marker";
 
 import { useFieldAssessment } from "@/hooks/useFieldAssessment";
 import { api } from "@/constants/url_fixed";
@@ -28,21 +26,9 @@ import { api } from "@/constants/url_fixed";
 const API_BASE = `${api}/api`;
 const { width: SW, height: SH } = Dimensions.get("window");
 
-const MARKER_STATUS_OPTIONS = [
-  "all_intact",
-  "some_missing",
-  "none_visible",
-  "replaced_temporarily",
-  "other",
-];
-const ENCROACHMENT_TYPES = [
-  "residential_structure",
-  "agricultural_clearing",
-  "livestock_grazing",
-  "illegal_logging",
-  "none",
-  "other",
-];
+// ─────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────
 
 interface LocationData {
   latitude: number;
@@ -54,63 +40,34 @@ interface LocationData {
   accuracy?: number;
 }
 
-function GPSStampOverlay({ location }: { location: LocationData }) {
-  const place = location.barangay
-    ? `${location.barangay}, ${location.city || ""}`
-    : location.city || "Unknown Location";
-  return (
-    <View style={cam.stampWrapper} pointerEvents="none">
-      <View style={cam.stampCard}>
-        <View style={cam.stampBrand}>
-          <Ionicons name="leaf" size={10} color="#4ADE80" />
-          <Text style={cam.stampBrandText}> PlantScope · Field Assessment</Text>
-        </View>
-        <View style={cam.stampDivider} />
-        <View style={cam.stampRow}>
-          <Ionicons name="location" size={11} color="#F87171" />
-          <Text style={cam.stampPlace} numberOfLines={1}>
-            {" "}
-            {place}
-          </Text>
-        </View>
-        <Text style={cam.stampCoords}>
-          {location.latitude.toFixed(6)}° {location.longitude.toFixed(6)}°
-        </Text>
-        <View style={cam.stampFooterRow}>
-          <Text style={cam.stampTime}>{location.timestamp}</Text>
-          {location.accuracy != null && (
-            <View style={cam.accuracyPill}>
-              <Text style={cam.accuracyPillText}>
-                ±{Math.round(location.accuracy)}m
-              </Text>
-            </View>
-          )}
-        </View>
-      </View>
-    </View>
-  );
+interface BoundaryImage {
+  image_id: number;
+  url: string;
+  layer: string;
+  latitude: number | null;
+  longitude: number | null;
+  description: string;
+  created_at: string;
 }
 
-function GPSStampCamera({
-  onImageCaptured,
+// ─────────────────────────────────────────────
+// GPS CAMERA COMPONENT (SimpleGeocam)
+// ─────────────────────────────────────────────
+
+function SimpleGeocam({
+  onCapture,
   onClose,
 }: {
-  onImageCaptured: (uri: string, location: LocationData) => void;
+  onCapture: (uri: string, location: LocationData) => void;
   onClose: () => void;
 }) {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [locationPermission, requestLocationPermission] =
     Location.useForegroundPermissions();
   const [capturing, setCapturing] = useState(false);
-  const [stamping, setStamping] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(
     null,
   );
-  const [photoPreview, setPhotoPreview] = useState<{
-    uri: string;
-    location: LocationData;
-  } | null>(null);
-  const [showMap, setShowMap] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
   const getCurrentLocation = async (): Promise<LocationData | null> => {
@@ -173,14 +130,13 @@ function GPSStampCamera({
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.9,
         base64: false,
-        exif: true,
       });
       if (!photo?.uri) {
         Alert.alert("Error", "Failed to capture photo.");
         return;
       }
-      setPhotoPreview({ uri: photo.uri, location: locData });
-      console.log("📸 Photo taken:", photo.uri);
+      console.log("📸 Photo captured:", { uri: photo.uri, gps: locData });
+      onCapture(photo.uri, locData);
     } catch (error) {
       console.error("📸 Take picture error:", error);
       Alert.alert(
@@ -189,73 +145,6 @@ function GPSStampCamera({
       );
     } finally {
       setCapturing(false);
-    }
-  };
-
-  const handleUsePhoto = async () => {
-    if (!photoPreview) {
-      Alert.alert("Error", "No photo to process.");
-      return;
-    }
-    setStamping(true);
-    try {
-      const { location } = photoPreview;
-      const place = location.barangay
-        ? `${location.barangay}, ${location.city || ""}`
-        : location.city || "Unknown Location";
-      const stampText = `PlantScope • Field Assessment\n📍 ${place}\n📍 ${location.latitude.toFixed(6)}°, ${location.longitude.toFixed(6)}°\n🕐 ${location.timestamp}\n📏 ±${Math.round(location.accuracy || 0)}m`;
-      console.log("🎨 Stamping image with GPS data...");
-      const markedImagePath = await ImageMarker.markImage({
-        src:
-          Platform.OS === "ios"
-            ? photoPreview.uri.replace("file://", "")
-            : photoPreview.uri,
-        marker: {
-          text: stampText,
-          X: 20,
-          Y: SH - 180,
-          fontName: Platform.OS === "ios" ? "Menlo" : "monospace",
-          fontSize: 11,
-          fontColor: "#FFFFFF",
-          overlayColor: "rgba(0,0,0,0.75)",
-          padding: 12,
-          borderRadius: 10,
-          borderColor: "rgba(74,222,128,0.4)",
-          borderWidth: 1,
-          lineHeight: 16,
-        },
-        quality: 90,
-      });
-      if (!markedImagePath) throw new Error("ImageMarker returned null");
-      console.log("✅ Photo stamped successfully:", markedImagePath);
-      const finalUri =
-        Platform.OS === "android" && !markedImagePath.startsWith("file://")
-          ? `file://${markedImagePath}`
-          : markedImagePath;
-      onImageCaptured(finalUri, location);
-      setPhotoPreview(null);
-    } catch (error) {
-      console.error("❌ ImageMarker error:", error);
-      Alert.alert(
-        "Stamp Failed",
-        "Could not add GPS stamp. Use original photo instead?",
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-            onPress: () => setStamping(false),
-          },
-          {
-            text: "Use Original",
-            onPress: () => {
-              onImageCaptured(photoPreview.uri, photoPreview.location);
-              setPhotoPreview(null);
-            },
-          },
-        ],
-      );
-    } finally {
-      setStamping(false);
     }
   };
 
@@ -275,7 +164,7 @@ function GPSStampCamera({
         </View>
         <Text style={cam.permTitle}>Permissions Required</Text>
         <Text style={cam.permText}>
-          Camera and location access are needed to capture GPS-stamped photos.
+          Camera and location access are needed to capture GPS photos.
         </Text>
         <TouchableOpacity
           style={cam.permBtn}
@@ -289,86 +178,6 @@ function GPSStampCamera({
         <TouchableOpacity style={cam.permCancelBtn} onPress={onClose}>
           <Text style={cam.permCancelText}>Cancel</Text>
         </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (photoPreview) {
-    return (
-      <View style={cam.previewContainer}>
-        <View style={{ width: SW, height: SH - 100, backgroundColor: "#000" }}>
-          <Image
-            source={{ uri: photoPreview.uri }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-          />
-          <View style={cam.stampWrapper} pointerEvents="none">
-            <View style={cam.stampCard}>
-              <View style={cam.stampBrand}>
-                <Ionicons name="leaf" size={10} color="#4ADE80" />
-                <Text style={cam.stampBrandText}>
-                  {" "}
-                  PlantScope · Field Assessment
-                </Text>
-              </View>
-              <View style={cam.stampDivider} />
-              <View style={cam.stampRow}>
-                <Ionicons name="location" size={11} color="#F87171" />
-                <Text style={cam.stampPlace} numberOfLines={1}>
-                  {" "}
-                  {photoPreview.location.barangay
-                    ? `${photoPreview.location.barangay}, ${photoPreview.location.city || ""}`
-                    : photoPreview.location.city || "Unknown Location"}
-                </Text>
-              </View>
-              <Text style={cam.stampCoords}>
-                {photoPreview.location.latitude.toFixed(6)}°{" "}
-                {photoPreview.location.longitude.toFixed(6)}°
-              </Text>
-              <View style={cam.stampFooterRow}>
-                <Text style={cam.stampTime}>
-                  {photoPreview.location.timestamp}
-                </Text>
-                {photoPreview.location.accuracy != null && (
-                  <View style={cam.accuracyPill}>
-                    <Text style={cam.accuracyPillText}>
-                      ±{Math.round(photoPreview.location.accuracy)}m
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          </View>
-        </View>
-        <View style={cam.previewActions}>
-          <TouchableOpacity
-            style={cam.retakeBtn}
-            onPress={() => setPhotoPreview(null)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="camera-outline" size={18} color="#0F4A2F" />
-            <Text style={cam.retakeBtnText}>Retake</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={cam.usePhotoBtn}
-            onPress={handleUsePhoto}
-            disabled={stamping}
-            activeOpacity={0.8}
-          >
-            {stamping ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={18}
-                  color="#fff"
-                />
-                <Text style={cam.usePhotoBtnText}>Use Photo</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
       </View>
     );
   }
@@ -390,223 +199,128 @@ function GPSStampCamera({
 
   return (
     <View style={cam.root}>
-      <CameraView ref={cameraRef} style={cam.camera} facing="back">
-        <View style={cam.topBar}>
-          <TouchableOpacity
-            style={cam.iconBtn}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="close" size={22} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[cam.locationPill, !hasGPS && cam.locationPillDim]}
-            onPress={() => hasGPS && setShowMap(true)}
-            activeOpacity={0.8}
-          >
+      <CameraView ref={cameraRef} style={cam.camera} facing="back" />
+
+      {/* Top Bar */}
+      <View style={cam.topBar}>
+        <TouchableOpacity
+          style={cam.iconBtn}
+          onPress={onClose}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="close" size={22} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[cam.locationPill, !hasGPS && cam.locationPillDim]}
+          activeOpacity={0.8}
+        >
+          <View
+            style={[
+              cam.gpsDot,
+              { backgroundColor: hasGPS ? "#4ADE80" : "#F59E0B" },
+            ]}
+          />
+          <Text style={cam.locationPillText} numberOfLines={1}>
+            {hasGPS
+              ? currentLocation!.city || currentLocation!.barangay || "Located"
+              : "Getting GPS…"}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={cam.iconBtnGreen}
+          onPress={getCurrentLocation}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="refresh" size={16} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Reticle */}
+      <View style={cam.reticle} pointerEvents="none">
+        <View style={[cam.bracket, cam.bTL]} />
+        <View style={[cam.bracket, cam.bTR]} />
+        <View style={[cam.bracket, cam.bBL]} />
+        <View style={[cam.bracket, cam.bBR]} />
+        <View style={cam.reticleDot} />
+      </View>
+
+      {/* GPS Card */}
+      <View style={cam.gpsCard}>
+        <View style={cam.gpsCardHeader}>
+          <View style={cam.gpsCardLeft}>
             <View
               style={[
-                cam.gpsDot,
+                cam.gpsStatusDot,
                 { backgroundColor: hasGPS ? "#4ADE80" : "#F59E0B" },
               ]}
             />
-            <Text style={cam.locationPillText} numberOfLines={1}>
-              {hasGPS
-                ? currentLocation!.city ||
-                  currentLocation!.barangay ||
-                  "Located"
-                : "Getting GPS…"}
+            <Text style={cam.gpsCardLabel}>
+              {hasGPS ? "GPS Active" : "Acquiring GPS…"}
             </Text>
-            {hasGPS && (
-              <Ionicons
-                name="chevron-forward"
-                size={12}
-                color="rgba(0,0,0,0.4)"
-              />
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={cam.iconBtnGreen}
-            onPress={getCurrentLocation}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="refresh" size={16} color="#fff" />
-          </TouchableOpacity>
-        </View>
-        <View style={cam.reticle} pointerEvents="none">
-          <View style={[cam.bracket, cam.bTL]} />
-          <View style={[cam.bracket, cam.bTR]} />
-          <View style={[cam.bracket, cam.bBL]} />
-          <View style={[cam.bracket, cam.bBR]} />
-          <View style={cam.reticleDot} />
-        </View>
-        <View style={cam.gpsCard}>
-          <View style={cam.gpsCardHeader}>
-            <View style={cam.gpsCardLeft}>
+          </View>
+          <View style={cam.signalBars}>
+            {[1, 2, 3, 4, 5].map((n) => (
               <View
+                key={n}
                 style={[
-                  cam.gpsStatusDot,
-                  { backgroundColor: hasGPS ? "#4ADE80" : "#F59E0B" },
+                  cam.signalBar,
+                  { height: 4 + n * 3, opacity: n <= signalLevel ? 1 : 0.2 },
                 ]}
               />
-              <Text style={cam.gpsCardLabel}>
-                {hasGPS ? "GPS Active" : "Acquiring GPS…"}
-              </Text>
-            </View>
-            <View style={cam.signalBars}>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <View
-                  key={n}
-                  style={[
-                    cam.signalBar,
-                    { height: 4 + n * 3, opacity: n <= signalLevel ? 1 : 0.2 },
-                  ]}
-                />
-              ))}
-            </View>
+            ))}
           </View>
-          {hasGPS ? (
-            <>
-              <Text style={cam.gpsLocation} numberOfLines={1}>
-                {currentLocation!.barangay
-                  ? `${currentLocation!.barangay}, ${currentLocation!.city}`
-                  : currentLocation!.city || "Unknown"}
-              </Text>
-              <Text style={cam.gpsCoords}>
-                {currentLocation!.latitude.toFixed(6)}°{" "}
-                {currentLocation!.longitude.toFixed(6)}°
-              </Text>
-              <View style={cam.gpsFooter}>
-                <Text style={cam.gpsTimestamp}>
-                  {currentLocation!.timestamp}
-                </Text>
-                {accuracy != null && (
-                  <View style={cam.gpsPill}>
-                    <Text style={cam.gpsPillText}>
-                      ±{Math.round(accuracy)}m
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </>
-          ) : (
-            <Text style={cam.gpsWaiting}>Searching for satellites…</Text>
-          )}
         </View>
-        <View style={cam.captureArea}>
-          <TouchableOpacity
-            style={[cam.captureRing, !hasGPS && { opacity: 0.4 }]}
-            onPress={takePicture}
-            disabled={capturing || !hasGPS}
-            activeOpacity={0.8}
-          >
-            {capturing ? (
-              <ActivityIndicator color="#0F4A2F" size="large" />
-            ) : (
-              <View style={cam.captureCore} />
-            )}
-          </TouchableOpacity>
-          <Text style={cam.captureHint}>
-            {hasGPS ? "Tap to capture" : "Waiting for GPS…"}
-          </Text>
-        </View>
-      </CameraView>
-      <Modal
-        visible={showMap}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowMap(false)}
-      >
-        <View style={cam.mapModalBg}>
-          <View style={cam.mapModalSheet}>
-            <View style={cam.mapHandle} />
-            <View style={cam.mapModalHeader}>
-              <Text style={cam.mapModalTitle}>Your Location</Text>
-              <TouchableOpacity onPress={() => setShowMap(false)}>
-                <Ionicons name="close" size={22} color="#0F4A2F" />
-              </TouchableOpacity>
-            </View>
-            {currentLocation ? (
-              <>
-                <MapView
-                  style={cam.map}
-                  initialRegion={{
-                    latitude: currentLocation.latitude,
-                    longitude: currentLocation.longitude,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
-                  showsUserLocation
-                  showsMyLocationButton
-                >
-                  <Marker
-                    coordinate={{
-                      latitude: currentLocation.latitude,
-                      longitude: currentLocation.longitude,
-                    }}
-                    title={currentLocation.city || "Current Location"}
-                    description={
-                      currentLocation.barangay
-                        ? `${currentLocation.barangay}, ${currentLocation.city}`
-                        : currentLocation.address
-                    }
-                  />
-                </MapView>
-                <View style={cam.mapInfoBox}>
-                  {[
-                    {
-                      icon: "location",
-                      label: "Coordinates",
-                      value: `${currentLocation.latitude.toFixed(6)}°, ${currentLocation.longitude.toFixed(6)}°`,
-                    },
-                    {
-                      icon: "business",
-                      label: "Location",
-                      value: [currentLocation.barangay, currentLocation.city]
-                        .filter(Boolean)
-                        .join(", "),
-                    },
-                    {
-                      icon: "time-outline",
-                      label: "Time",
-                      value: currentLocation.timestamp,
-                    },
-                    ...(currentLocation.accuracy != null
-                      ? [
-                          {
-                            icon: "radio-outline",
-                            label: "Accuracy",
-                            value: `±${Math.round(currentLocation.accuracy)} meters`,
-                          },
-                        ]
-                      : []),
-                  ].map((row) => (
-                    <View key={row.label} style={cam.mapInfoRow}>
-                      <Ionicons
-                        name={row.icon as any}
-                        size={14}
-                        color="#0F4A2F"
-                        style={{ marginRight: 6 }}
-                      />
-                      <Text style={cam.mapInfoLabel}>{row.label}:</Text>
-                      <Text style={cam.mapInfoValue}>{row.value}</Text>
-                    </View>
-                  ))}
+        {hasGPS ? (
+          <>
+            <Text style={cam.gpsLocation} numberOfLines={1}>
+              {currentLocation!.barangay
+                ? `${currentLocation!.barangay}, ${currentLocation!.city}`
+                : currentLocation!.city || "Unknown"}
+            </Text>
+            <Text style={cam.gpsCoords}>
+              {currentLocation!.latitude.toFixed(6)}°{" "}
+              {currentLocation!.longitude.toFixed(6)}°
+            </Text>
+            <View style={cam.gpsFooter}>
+              <Text style={cam.gpsTimestamp}>{currentLocation!.timestamp}</Text>
+              {accuracy != null && (
+                <View style={cam.gpsPill}>
+                  <Text style={cam.gpsPillText}>±{Math.round(accuracy)}m</Text>
                 </View>
-              </>
-            ) : (
-              <View style={cam.centerFill}>
-                <ActivityIndicator size="large" color="#0F4A2F" />
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
+              )}
+            </View>
+          </>
+        ) : (
+          <Text style={cam.gpsWaiting}>Searching for satellites…</Text>
+        )}
+      </View>
+
+      {/* Capture Area */}
+      <View style={cam.captureArea}>
+        <TouchableOpacity
+          style={[cam.captureRing, !hasGPS && { opacity: 0.4 }]}
+          onPress={takePicture}
+          disabled={capturing || !hasGPS}
+          activeOpacity={0.8}
+        >
+          {capturing ? (
+            <ActivityIndicator color="#0F4A2F" size="large" />
+          ) : (
+            <View style={cam.captureCore} />
+          )}
+        </TouchableOpacity>
+        <Text style={cam.captureHint}>
+          {hasGPS ? "Tap to capture" : "Waiting for GPS…"}
+        </Text>
+      </View>
     </View>
   );
 }
 
-// ─── Camera Styles (unchanged) ────────────────
+// ─────────────────────────────────────────────
+// CAMERA STYLES
+// ─────────────────────────────────────────────
+
 const cam = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
   camera: { flex: 1 },
@@ -708,6 +422,7 @@ const cam = StyleSheet.create({
     marginTop: -80,
     justifyContent: "center",
     alignItems: "center",
+    pointerEvents: "none",
   },
   bracket: {
     position: "absolute",
@@ -735,6 +450,7 @@ const cam = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
     padding: 14,
+    zIndex: 10,
   },
   gpsCardHeader: {
     flexDirection: "row",
@@ -792,6 +508,7 @@ const cam = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
+    zIndex: 10,
   },
   captureRing: {
     width: 80,
@@ -819,135 +536,11 @@ const cam = StyleSheet.create({
     marginTop: 10,
     fontWeight: "600",
   },
-  stampWrapper: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 14,
-  },
-  stampCard: {
-    backgroundColor: "rgba(0,0,0,0.80)",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    padding: 12,
-  },
-  stampBrand: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  stampBrandText: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.55)",
-    fontWeight: "600",
-    letterSpacing: 0.5,
-  },
-  stampDivider: {
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    marginBottom: 8,
-  },
-  stampRow: { flexDirection: "row", alignItems: "center", marginBottom: 3 },
-  stampPlace: { fontSize: 14, fontWeight: "800", color: "#FFFFFF", flex: 1 },
-  stampCoords: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#4ADE80",
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    marginBottom: 6,
-  },
-  stampFooterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  stampTime: { fontSize: 11, color: "rgba(255,255,255,0.5)" },
-  accuracyPill: {
-    backgroundColor: "rgba(74,222,128,0.2)",
-    borderRadius: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: "rgba(74,222,128,0.35)",
-  },
-  accuracyPillText: { fontSize: 10, color: "#4ADE80", fontWeight: "700" },
-  previewContainer: { flex: 1, backgroundColor: "#000" },
-  previewActions: {
-    flexDirection: "row",
-    gap: 12,
-    backgroundColor: "#111",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-  },
-  retakeBtn: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-    borderWidth: 1.5,
-    borderColor: "#0F4A2F",
-    borderRadius: 12,
-    paddingVertical: 13,
-    backgroundColor: "#fff",
-  },
-  retakeBtnText: { color: "#0F4A2F", fontWeight: "700", fontSize: 14 },
-  usePhotoBtn: {
-    flex: 1.5,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#0F4A2F",
-    borderRadius: 12,
-    paddingVertical: 13,
-  },
-  usePhotoBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  mapModalBg: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end",
-  },
-  mapModalSheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "82%",
-    paddingBottom: 24,
-  },
-  mapHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#E5E7EB",
-    alignSelf: "center",
-    marginVertical: 10,
-  },
-  mapModalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 18,
-    paddingBottom: 12,
-  },
-  mapModalTitle: { fontSize: 17, fontWeight: "800", color: "#0F4A2F" },
-  map: { width: "100%", height: 280 },
-  mapInfoBox: {
-    margin: 14,
-    backgroundColor: "#F4F7F5",
-    borderRadius: 12,
-    padding: 14,
-    gap: 8,
-  },
-  mapInfoRow: { flexDirection: "row", alignItems: "flex-start" },
-  mapInfoLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#6B7280",
-    minWidth: 80,
-  },
-  mapInfoValue: { flex: 1, fontSize: 12, color: "#0F4A2F", fontWeight: "600" },
 });
 
-// ─── Form Sub-Components ──────────────────────
+// ─────────────────────────────────────────────
+// FORM SUB-COMPONENTS
+// ─────────────────────────────────────────────
 
 type SectionCardProps = {
   title: string;
@@ -958,7 +551,6 @@ type SectionCardProps = {
   step: number;
   children: React.ReactNode;
 };
-
 const SectionCard = ({
   title,
   subtitle,
@@ -974,14 +566,20 @@ const SectionCard = ({
       <View style={styles.cardHeader}>
         <View style={[styles.iconBadge, { backgroundColor: accentColor }]}>
           {iconLib === "mci" ? (
-            <MaterialCommunityIcons name={iconName as any} size={18} color="#fff" />
+            <MaterialCommunityIcons
+              name={iconName as any}
+              size={18}
+              color="#fff"
+            />
           ) : (
             <Ionicons name={iconName as any} size={18} color="#fff" />
           )}
         </View>
         <View style={styles.cardTitleGroup}>
           <Text style={styles.cardTitle}>{title}</Text>
-          {subtitle ? <Text style={styles.cardSubtitle}>{subtitle}</Text> : null}
+          {subtitle ? (
+            <Text style={styles.cardSubtitle}>{subtitle}</Text>
+          ) : null}
         </View>
         <View style={[styles.stepBadge, { borderColor: accentColor }]}>
           <Text style={[styles.stepText, { color: accentColor }]}>{step}</Text>
@@ -992,118 +590,67 @@ const SectionCard = ({
   </View>
 );
 
-const FieldLabel = ({ label, optional }: { label: string; optional?: boolean }) => (
+const FieldLabel = ({
+  label,
+  optional,
+}: {
+  label: string;
+  optional?: boolean;
+}) => (
   <View style={styles.fieldLabelRow}>
     <Text style={styles.fieldLabel}>{label}</Text>
     {optional && <Text style={styles.optionalTag}>optional</Text>}
   </View>
 );
 
-const ToggleRow = ({
-  label,
-  sublabel,
-  value,
-  onChange,
-  disabled,
-  activeColor = "#0F4A2F",
-}: {
-  label: string;
-  sublabel?: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-  activeColor?: string;
-}) => (
-  <View style={[styles.toggleRow, value && { borderLeftColor: activeColor, borderLeftWidth: 3 }]}>
-    <View style={styles.toggleLabelGroup}>
-      <Text style={styles.toggleLabel}>{label}</Text>
-      {sublabel && <Text style={styles.toggleSublabel}>{sublabel}</Text>}
-    </View>
-    <Switch
-      value={value}
-      onValueChange={disabled ? () => {} : onChange}
-      disabled={disabled}
-      trackColor={{ false: "#E5E7EB", true: activeColor }}
-      thumbColor="#FFFFFF"
-    />
-  </View>
-);
-
-const ChipGroup = ({
-  options,
-  selected,
-  onSelect,
-  disabled,
-  activeColor = "#0F4A2F",
-}: {
-  options: string[];
-  selected: string;
-  onSelect: (v: string) => void;
-  disabled?: boolean;
-  activeColor?: string;
-}) => (
-  <View style={styles.chipContainer}>
-    {options.map((opt) => {
-      const active = selected === opt;
-      return (
-        <TouchableOpacity
-          key={opt}
-          style={[
-            styles.chip,
-            active && { backgroundColor: activeColor, borderColor: activeColor },
-          ]}
-          onPress={() => !disabled && onSelect(opt)}
-          disabled={disabled}
-          activeOpacity={0.75}
-        >
-          {active && (
-            <Ionicons name="checkmark" size={12} color="#fff" style={{ marginRight: 4 }} />
-          )}
-          <Text style={[styles.chipText, active && styles.chipTextActive]}>
-            {opt.replace(/_/g, " ")}
-          </Text>
-        </TouchableOpacity>
-      );
-    })}
-  </View>
-);
-
-// ─── Main Form ────────────────────────────────
+// ─────────────────────────────────────────────
+// MAIN FORM COMPONENT
+// ─────────────────────────────────────────────
 
 export default function BoundaryVerificationForm() {
   const params = useLocalSearchParams();
   const areaId = params.areaId as string;
   const assessmentId = params.assessmentId as string | undefined;
   const layerId = "boundary_verification";
+
   const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
     useFieldAssessment(areaId, layerId, assessmentId);
 
-  const [markersStatus, setMarkersStatus] = useState("");
-  const [deviationMeters, setDeviationMeters] = useState("");
-  const [withinRiparian, setWithinRiparian] = useState(false);
-  const [encroachmentDetected, setEncroachmentDetected] = useState(false);
-  const [encroachmentType, setEncroachmentType] = useState("none");
-  const [slopeBoundaryCheck, setSlopeBoundaryCheck] = useState(false);
-  const [boundaryLat, setBoundaryLat] = useState("");
-  const [boundaryLng, setBoundaryLng] = useState("");
-  const [markerName, setMarkerName] = useState("");
-  const [boundaryNotes, setBoundaryNotes] = useState("");
+  const [overallNote, setOverallNote] = useState("");
+  const [locationContext, setLocationContext] = useState("");
+
   const [locationLat, setLocationLat] = useState("");
   const [locationLng, setLocationLng] = useState("");
   const [locationAccuracy, setLocationAccuracy] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
-  const [images, setImages] = useState<any[]>([]);
+
+  const [images, setImages] = useState<BoundaryImage[]>([]);
   const [isViewMode, setIsViewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!assessmentId);
   const [showGPSCamera, setShowGPSCamera] = useState(false);
+  
+  // ✅ NEW: Custom modal state for photo note
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState<{
+    uri: string;
+    location: LocationData;
+    numericAssessmentId: number;
+  } | null>(null);
+  const [pendingNote, setPendingNote] = useState("");
 
+  // Load existing data
   useEffect(() => {
     if (assessmentId) {
       (async () => {
         const data = await fetchAssessmentData();
         if (data) {
           populateForm(data.field_assessment_data || {});
+          if (data.location) {
+            setLocationLat(data.location.latitude?.toString() || "");
+            setLocationLng(data.location.longitude?.toString() || "");
+            setLocationAccuracy(data.location.gps_accuracy_meters?.toString() || "");
+          }
           setImages(data.images || []);
           setIsViewMode(!!data.is_submitted);
         }
@@ -1115,26 +662,14 @@ export default function BoundaryVerificationForm() {
   }, [assessmentId]);
 
   const populateForm = (data: any) => {
-    setMarkersStatus(data.boundary_markers_status || "");
-    setDeviationMeters(data.boundary_deviation_meters?.toString() || "");
-    setWithinRiparian(data.within_riparian_buffer_20m || false);
-    setEncroachmentDetected(data.encroachment_detected || false);
-    setEncroachmentType(data.encroachment_type || "none");
-    setSlopeBoundaryCheck(data.slope_boundary_check || false);
-    setBoundaryNotes(data.boundary_notes || "");
-    if (
-      Array.isArray(data.boundary_coordinates_feedback) &&
-      data.boundary_coordinates_feedback.length > 0
-    ) {
-      const first = data.boundary_coordinates_feedback[0];
-      setBoundaryLat(first.latitude?.toString() || "");
-      setBoundaryLng(first.longitude?.toString() || "");
-      setMarkerName(first.marker_name || "");
-    }
-    if (data.location) {
-      setLocationLat(data.location.latitude?.toString() || "");
-      setLocationLng(data.location.longitude?.toString() || "");
-      setLocationAccuracy(data.location.gps_accuracy_meters?.toString() || "");
+    const bv = data?.boundary_verification || data || {};
+    setOverallNote(bv?.overall_note || "");
+    setLocationContext(bv?.location_context || "");
+    const loc = bv?.location || data?.location || null;
+    if (loc?.latitude != null && loc?.longitude != null) {
+      setLocationLat(loc.latitude.toString());
+      setLocationLng(loc.longitude.toString());
+      setLocationAccuracy(loc.gps_accuracy_meters?.toString() || "");
     }
   };
 
@@ -1161,92 +696,103 @@ export default function BoundaryVerificationForm() {
     }
   };
 
-  const handleGPSPhotoCaptured = async (uri: string, location: LocationData) => {
+  // ✅ FIXED: Use custom modal instead of Alert.prompt
+  const handleGPSPhotoCaptured = async (
+    uri: string,
+    location: LocationData,
+  ) => {
+    console.log("🎯 [Geocam] Photo captured, opening custom note modal");
     setShowGPSCamera(false);
-    if (!assessmentId) {
-      Alert.alert("Action Required", "Please save the draft first to get an ID for image uploads.");
+    
+    const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
+    console.log("🔍 [Geocam] assessmentId:", assessmentId, "-> numeric:", numericAssessmentId);
+    
+    if (!numericAssessmentId || isNaN(numericAssessmentId)) {
+      Alert.alert(
+        "Action Required",
+        "Please save the draft first to get an ID for image uploads.",
+      );
       return;
     }
+
+    // ✅ Store photo data and show custom modal
+    setPendingPhoto({ uri, location, numericAssessmentId });
+    setPendingNote("");
+    setShowNoteModal(true);
+  };
+
+  // ✅ Handle note submission from custom modal - DIRECT UPLOAD
+  const handleNoteSubmit = async (note: string) => {
+    if (!pendingPhoto) return;
+    
+    console.log("📝 [Geocam] User entered note:", note);
+    
+    // ✅ Upload directly with the captured photo data
+    setUploading(true);
     try {
-      const formData = new FormData();
-      let fileUri = uri;
-      if (Platform.OS === "ios") {
-        fileUri = uri.replace("file://", "");
-      } else if (Platform.OS === "android") {
-        if (!uri.startsWith("file://") && !uri.startsWith("content://")) {
-          fileUri = `file://${uri}`;
+      const ok = await uploadImage(
+        pendingPhoto.numericAssessmentId,
+        {
+          uri: pendingPhoto.uri,
+          latitude: pendingPhoto.location.latitude,
+          longitude: pendingPhoto.location.longitude,
+          accuracy: pendingPhoto.location.accuracy,
+        },
+        {
+          subLayerCode: "verification",
+          description: note || `Boundary marker at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
         }
-      }
-      const imageFile: any = {
-        uri: fileUri,
-        type: "image/jpeg",
-        name: `gps_photo_${Date.now()}.jpg`,
-        fileName: `gps_photo_${Date.now()}.jpg`,
-      };
-      formData.append("image", imageFile);
-      formData.append("assessment_id", assessmentId);
-      formData.append("layer", layerId);
-      formData.append("gps_data", JSON.stringify(location));
-      const token = await SecureStore.getItemAsync("token");
-      console.log("📤 Uploading to:", `${API_BASE}/upload_assessment_image/`);
-      const resp = await fetch(`${API_BASE}/upload_assessment_image/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      const result = await resp.json();
-      if (resp.ok) {
-        console.log("✅ Upload successful:", result);
+      );
+      
+      if (ok) {
+        console.log("🔄 [Geocam] Refreshing data...");
         const data = await fetchAssessmentData();
-        if (data) setImages(data.images || []);
-        Alert.alert("Success", "GPS-stamped photo uploaded!");
+        if (data) {
+          console.log("📸 [Geocam] Refreshed images count:", data.images?.length);
+          setImages(data.images || []);
+        }
+        Alert.alert("Success", "Photo uploaded with GPS data!");
       } else {
-        console.error("❌ Upload failed:", result);
-        Alert.alert("Upload Failed", result.error || result.message || "Please try again.");
+        console.warn("❌ [Geocam] Upload returned false");
+        Alert.alert("Upload Failed", "Could not upload photo. Please try again.");
       }
     } catch (error) {
-      console.error("❌ Upload error:", error);
-      Alert.alert("Upload Error", `Failed to upload photo: ${error instanceof Error ? error.message : "Unknown error"}`);
+      console.error("💥 [Geocam] CRITICAL ERROR:", error);
+      Alert.alert(
+        "Upload Error",
+        `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    } finally {
+      setUploading(false);
+      // Reset modal state
+      setShowNoteModal(false);
+      setPendingPhoto(null);
+      setPendingNote("");
     }
   };
 
+  const [uploading, setUploading] = useState(false);
+
   const buildPayload = () => {
-    const location =
-      locationLat && locationLng
-        ? {
-            latitude: parseFloat(locationLat),
-            longitude: parseFloat(locationLng),
-            gps_accuracy_meters: locationAccuracy ? parseFloat(locationAccuracy) : undefined,
-          }
-        : null;
-    const boundaryCoordinatesFeedback =
-      boundaryLat && boundaryLng
-        ? [
-            {
-              latitude: parseFloat(boundaryLat),
-              longitude: parseFloat(boundaryLng),
-              marker_name: markerName || null,
-              confidence: "high",
-              notes: boundaryNotes || null,
-            },
-          ]
-        : null;
     return {
-      layer: "boundary_verification",
-      boundary_markers_status: markersStatus || null,
-      boundary_deviation_meters: deviationMeters ? parseFloat(deviationMeters) : null,
-      within_riparian_buffer_20m: withinRiparian,
-      encroachment_detected: encroachmentDetected,
-      encroachment_type: encroachmentType || null,
-      slope_boundary_check: slopeBoundaryCheck,
-      boundary_coordinates_feedback: boundaryCoordinatesFeedback,
-      boundary_notes: boundaryNotes || null,
-      location,
+      overall_note: overallNote || null,
+      location_context: locationContext || null,
+      location:
+        locationLat && locationLng
+          ? {
+              latitude: parseFloat(locationLat),
+              longitude: parseFloat(locationLng),
+              gps_accuracy_meters: locationAccuracy
+                ? parseFloat(locationAccuracy)
+                : undefined,
+            }
+          : null,
     };
   };
 
   const handleDraft = async () => {
-    const ok = await handleSave(buildPayload(), false);
+    const payload = buildPayload();
+    const ok = await handleSave(payload, false);
     if (ok) {
       if (assessmentId) {
         const data = await fetchAssessmentData();
@@ -1279,19 +825,7 @@ export default function BoundaryVerificationForm() {
     );
   };
 
-  const handlePickImage = async () => {
-    if (!assessmentId) {
-      Alert.alert("Action Required", "Save the draft first before uploading images.");
-      return;
-    }
-    const ok = await uploadImage(assessmentId);
-    if (ok) {
-      const d = await fetchAssessmentData();
-      if (d) setImages(d.images || []);
-    }
-  };
-
-  const handleDeleteImage = async (img: any) => {
+  const handleDeleteImage = async (img: BoundaryImage) => {
     Alert.alert("Delete Photo", "Remove this photo?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -1304,6 +838,14 @@ export default function BoundaryVerificationForm() {
         },
       },
     ]);
+  };
+
+  const getImageUrl = (imgUrl: string) => {
+    if (!imgUrl) return "";
+    if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://")) {
+      return imgUrl;
+    }
+    return `${api}${imgUrl}`;
   };
 
   if (loading) {
@@ -1319,9 +861,10 @@ export default function BoundaryVerificationForm() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-
-        {/* View Mode Banner */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {isViewMode && (
           <View style={styles.viewModeBanner}>
             <Ionicons name="eye-outline" size={16} color="#fff" />
@@ -1329,198 +872,54 @@ export default function BoundaryVerificationForm() {
           </View>
         )}
 
-        {/* SECTION 1: Boundary Markers */}
+        {/* SECTION 1: Overall Assessment */}
         <SectionCard
-          title="Boundary Markers"
-          subtitle="Physical marker condition and deviation"
-          iconName="location-outline"
-          accentColor="#B45309"
+          title="Overall Assessment"
+          subtitle="Summary notes for GIS Specialist"
+          iconName="document-text-outline"
+          iconLib="ion"
+          accentColor="#0F766E"
           step={1}
         >
-          <FieldLabel label="Marker Status" />
-          <ChipGroup
-            options={MARKER_STATUS_OPTIONS}
-            selected={markersStatus}
-            onSelect={setMarkersStatus}
-            disabled={isViewMode}
-            activeColor="#B45309"
+          <FieldLabel label="Overall Note" />
+          <TextInput
+            style={[styles.textArea, isViewMode && styles.disabledInput]}
+            multiline
+            value={overallNote}
+            onChangeText={setOverallNote}
+            placeholder="e.g. All boundary markers intact, minor deviation at northwest corner."
+            placeholderTextColor="#94A3B8"
+            editable={!isViewMode}
+            textAlignVertical="top"
           />
-          {markersStatus === "other" && (
-            <>
-              <FieldLabel label="Describe Marker Condition" />
-              <TextInput
-                style={[styles.textArea, isViewMode && styles.disabledInput]}
-                multiline
-                value={boundaryNotes}
-                onChangeText={setBoundaryNotes}
-                placeholder="Describe marker condition…"
-                placeholderTextColor="#94A3B8"
-                editable={!isViewMode}
-                textAlignVertical="top"
-              />
-            </>
-          )}
-
-          <FieldLabel label="Deviation from Planned Polygon (meters)" optional />
-          <View style={[styles.inputRow, isViewMode && styles.disabledInput]}>
-            <MaterialCommunityIcons name="ruler" size={15} color="#94A3B8" />
-            <TextInput
-              style={styles.inputField}
-              keyboardType="numeric"
-              value={deviationMeters}
-              onChangeText={setDeviationMeters}
-              placeholder="e.g. 2.5"
-              placeholderTextColor="#94A3B8"
-              editable={!isViewMode}
-            />
-          </View>
-        </SectionCard>
-
-        {/* SECTION 2: Spatial Compliance */}
-        <SectionCard
-          title="Spatial Compliance"
-          subtitle="Buffer zones, encroachment & slope"
-          iconName="shield-checkmark-outline"
-          accentColor="#1D4ED8"
-          step={2}
-        >
-          <ToggleRow
-            label="Within 20m Riparian Buffer?"
-            sublabel="Proximity to water bodies"
-            value={withinRiparian}
-            onChange={setWithinRiparian}
-            disabled={isViewMode}
-            activeColor="#3B82F6"
-          />
-          <ToggleRow
-            label="Encroachment Detected?"
-            sublabel="Land use violation within boundary"
-            value={encroachmentDetected}
-            onChange={setEncroachmentDetected}
-            disabled={isViewMode}
-            activeColor="#EF4444"
-          />
-          {encroachmentDetected && (
-            <>
-              <FieldLabel label="Encroachment Type" />
-              <ChipGroup
-                options={ENCROACHMENT_TYPES}
-                selected={encroachmentType}
-                onSelect={setEncroachmentType}
-                disabled={isViewMode}
-                activeColor="#EF4444"
-              />
-              {encroachmentType === "other" && (
-                <>
-                  <FieldLabel label="Describe Encroachment" />
-                  <TextInput
-                    style={[styles.textArea, isViewMode && styles.disabledInput]}
-                    multiline
-                    value={boundaryNotes}
-                    onChangeText={setBoundaryNotes}
-                    placeholder="Describe encroachment type…"
-                    placeholderTextColor="#94A3B8"
-                    editable={!isViewMode}
-                    textAlignVertical="top"
-                  />
-                </>
-              )}
-            </>
-          )}
-          <ToggleRow
-            label="Boundary crosses >30° slope?"
-            sublabel="Steep terrain flag"
-            value={slopeBoundaryCheck}
-            onChange={setSlopeBoundaryCheck}
-            disabled={isViewMode}
-            activeColor="#F59E0B"
+          <FieldLabel label="Location Context" />
+          <TextInput
+            style={[styles.textArea, isViewMode && styles.disabledInput]}
+            multiline
+            value={locationContext}
+            onChangeText={setLocationContext}
+            placeholder="e.g. Mid-slope, 50m from creek, accessible via trail."
+            placeholderTextColor="#94A3B8"
+            editable={!isViewMode}
+            textAlignVertical="top"
           />
         </SectionCard>
 
-        {/* SECTION 3: Boundary Coordinate Feedback */}
-        <SectionCard
-          title="Boundary Coordinate Feedback"
-          subtitle="One key boundary point for GIS verification"
-          iconName="document-text-outline"
-          accentColor="#0F766E"
-          step={3}
-        >
-          <View style={styles.coordRow}>
-            <View style={styles.coordHalf}>
-              <FieldLabel label="Latitude" optional />
-              <View style={[styles.inputRow, isViewMode && styles.disabledInput]}>
-                <Ionicons name="navigate-outline" size={13} color="#94A3B8" />
-                <TextInput
-                  style={styles.inputField}
-                  keyboardType="decimal-pad"
-                  value={boundaryLat}
-                  onChangeText={setBoundaryLat}
-                  placeholder="e.g. 11.0"
-                  placeholderTextColor="#94A3B8"
-                  editable={!isViewMode}
-                />
-              </View>
-            </View>
-            <View style={styles.coordHalf}>
-              <FieldLabel label="Longitude" optional />
-              <View style={[styles.inputRow, isViewMode && styles.disabledInput]}>
-                <Ionicons name="navigate-outline" size={13} color="#94A3B8" />
-                <TextInput
-                  style={styles.inputField}
-                  keyboardType="decimal-pad"
-                  value={boundaryLng}
-                  onChangeText={setBoundaryLng}
-                  placeholder="e.g. 124.6"
-                  placeholderTextColor="#94A3B8"
-                  editable={!isViewMode}
-                />
-              </View>
-            </View>
-          </View>
-
-          <FieldLabel label="Marker Name" optional />
-          <View style={[styles.inputRow, isViewMode && styles.disabledInput]}>
-            <Ionicons name="flag-outline" size={15} color="#94A3B8" />
-            <TextInput
-              style={styles.inputField}
-              value={markerName}
-              onChangeText={setMarkerName}
-              placeholder="e.g. BM-01_Northwest"
-              placeholderTextColor="#94A3B8"
-              editable={!isViewMode}
-            />
-          </View>
-
-          {boundaryLat !== "" && boundaryLng !== "" && (
-            <View style={styles.coordPreview}>
-              <Ionicons name="location" size={13} color="#0F766E" />
-              <Text style={[styles.coordPreviewText, { color: "#0F766E" }]}>
-                {boundaryLat}, {boundaryLng}
-                {markerName ? `  ·  ${markerName}` : ""}
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.hintBox}>
-            <Ionicons name="information-circle-outline" size={14} color="#0F766E" />
-            <Text style={[styles.hintText, { color: "#0F766E" }]}>
-              This single point helps the GIS Specialist verify boundary alignment.
-            </Text>
-          </View>
-        </SectionCard>
-
-        {/* SECTION 4: Assessment Location */}
+        {/* SECTION 2: Assessment Location */}
         <SectionCard
           title="Assessment Location"
           subtitle="Your GPS position during this assessment"
           iconName="locate-outline"
+          iconLib="ion"
           accentColor="#0F4A2F"
-          step={4}
+          step={2}
         >
           <View style={styles.coordRow}>
             <View style={styles.coordHalf}>
               <FieldLabel label="Latitude" optional />
-              <View style={[styles.inputRow, isViewMode && styles.disabledInput]}>
+              <View
+                style={[styles.inputRow, isViewMode && styles.disabledInput]}
+              >
                 <Ionicons name="navigate-outline" size={13} color="#94A3B8" />
                 <TextInput
                   style={styles.inputField}
@@ -1535,7 +934,9 @@ export default function BoundaryVerificationForm() {
             </View>
             <View style={styles.coordHalf}>
               <FieldLabel label="Longitude" optional />
-              <View style={[styles.inputRow, isViewMode && styles.disabledInput]}>
+              <View
+                style={[styles.inputRow, isViewMode && styles.disabledInput]}
+              >
                 <Ionicons name="navigate-outline" size={13} color="#94A3B8" />
                 <TextInput
                   style={styles.inputField}
@@ -1549,10 +950,13 @@ export default function BoundaryVerificationForm() {
               </View>
             </View>
           </View>
-
           <FieldLabel label="GPS Accuracy (meters)" optional />
           <View style={[styles.inputRow, isViewMode && styles.disabledInput]}>
-            <MaterialCommunityIcons name="signal-distance-variant" size={15} color="#94A3B8" />
+            <MaterialCommunityIcons
+              name="signal-distance-variant"
+              size={15}
+              color="#94A3B8"
+            />
             <TextInput
               style={styles.inputField}
               keyboardType="numeric"
@@ -1563,7 +967,6 @@ export default function BoundaryVerificationForm() {
               editable={!isViewMode}
             />
           </View>
-
           {!isViewMode && (
             <TouchableOpacity
               style={[styles.gpsBtn, gettingLocation && styles.gpsBtnLoading]}
@@ -1578,13 +981,16 @@ export default function BoundaryVerificationForm() {
                 </>
               ) : (
                 <>
-                  <MaterialCommunityIcons name="crosshairs-gps" size={16} color="#fff" />
+                  <MaterialCommunityIcons
+                    name="crosshairs-gps"
+                    size={16}
+                    color="#fff"
+                  />
                   <Text style={styles.gpsBtnText}>Use Current Location</Text>
                 </>
               )}
             </TouchableOpacity>
           )}
-
           {locationLat !== "" && locationLng !== "" && (
             <View style={styles.coordPreview}>
               <Ionicons name="location" size={13} color="#0F4A2F" />
@@ -1594,104 +1000,26 @@ export default function BoundaryVerificationForm() {
               </Text>
             </View>
           )}
-
           <View style={styles.hintBox}>
-            <Ionicons name="information-circle-outline" size={14} color="#0F4A2F" />
+            <Ionicons
+              name="information-circle-outline"
+              size={14}
+              color="#0F4A2F"
+            />
             <Text style={styles.hintText}>
               Optional — leave blank if the assessment was done remotely.
             </Text>
           </View>
         </SectionCard>
 
-        {/* SECTION 5: Area Context Map */}
+        {/* SECTION 3: Boundary Markers (Geocam Only) */}
         <SectionCard
-          title="Area Context Map"
-          subtitle="Approximate reference — not editable"
-          iconName="map-outline"
-          accentColor="#475569"
-          step={5}
-        >
-          <View style={styles.mapContainer}>
-            <MapView
-              style={styles.mapPreview}
-              scrollEnabled={false}
-              zoomEnabled={false}
-              pitchEnabled={false}
-              rotateEnabled={false}
-              initialRegion={{
-                latitude: locationLat ? parseFloat(locationLat) : 11.0,
-                longitude: locationLng ? parseFloat(locationLng) : 124.6,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              }}
-            >
-              {locationLat && locationLng && (
-                <Marker
-                  coordinate={{
-                    latitude: parseFloat(locationLat),
-                    longitude: parseFloat(locationLng),
-                  }}
-                  title="Assessment Location"
-                />
-              )}
-              {boundaryLat && boundaryLng && (
-                <Marker
-                  coordinate={{
-                    latitude: parseFloat(boundaryLat),
-                    longitude: parseFloat(boundaryLng),
-                  }}
-                  title={markerName || "Boundary Point"}
-                  pinColor="#0F4A2F"
-                />
-              )}
-            </MapView>
-            {/* Legend overlay */}
-            <View style={styles.mapLegend}>
-              <View style={styles.mapLegendRow}>
-                <View style={[styles.mapLegendDot, { backgroundColor: "#EF4444" }]} />
-                <Text style={styles.mapLegendText}>Your location</Text>
-              </View>
-              <View style={styles.mapLegendRow}>
-                <View style={[styles.mapLegendDot, { backgroundColor: "#0F4A2F" }]} />
-                <Text style={styles.mapLegendText}>Boundary point</Text>
-              </View>
-            </View>
-          </View>
-          <View style={styles.hintBox}>
-            <Ionicons name="information-circle-outline" size={14} color="#0F4A2F" />
-            <Text style={styles.hintText}>
-              Final boundary will be drawn by the GIS Specialist using drone imagery.
-            </Text>
-          </View>
-        </SectionCard>
-
-        {/* SECTION 6: Boundary Notes */}
-        <SectionCard
-          title="Boundary Notes"
-          subtitle="Additional field observations"
-          iconName="create-outline"
-          accentColor="#6D28D9"
-          step={6}
-        >
-          <TextInput
-            style={[styles.textArea, isViewMode && styles.disabledInput]}
-            multiline
-            value={boundaryNotes}
-            onChangeText={setBoundaryNotes}
-            placeholder="e.g. BM-02 wooden stake tilted ~15°. No encroachment along perimeter."
-            placeholderTextColor="#94A3B8"
-            editable={!isViewMode}
-            textAlignVertical="top"
-          />
-        </SectionCard>
-
-        {/* SECTION 7: Photos */}
-        <SectionCard
-          title="Photo Evidence"
-          subtitle={`${images.length} photo${images.length !== 1 ? "s" : ""} · Gallery or GPS-stamped`}
-          iconName="images-outline"
+          title="Boundary Markers"
+          subtitle={`${images.length} GPS photo${images.length !== 1 ? "s" : ""} · Tap to add`}
+          iconName="map-marker"
+          iconLib="mci"
           accentColor="#0369A1"
-          step={7}
+          step={3}
         >
           <ScrollView
             horizontal
@@ -1701,18 +1029,38 @@ export default function BoundaryVerificationForm() {
             {images.map((img) => (
               <View key={img.image_id} style={styles.thumbWrapper}>
                 <TouchableOpacity
-                  onPress={() => setPreviewImage(api + img.url)}
+                  onPress={() => setPreviewImage(getImageUrl(img.url))}
                   activeOpacity={0.85}
                 >
                   <Image
-                    source={{ uri: api + img.url }}
+                    source={{ uri: getImageUrl(img.url) }}
                     style={styles.thumb}
                     resizeMode="cover"
                   />
                   <View style={styles.thumbOverlay}>
                     <Ionicons name="eye-outline" size={14} color="#fff" />
                   </View>
+                  
+                  {(img.latitude != null && img.longitude != null) && (
+                    <View style={styles.thumbCoords}>
+                      <Text style={styles.thumbCoordsText}>
+                        {typeof img.latitude === 'number' ? img.latitude.toFixed(4) : img.latitude}, 
+                        {typeof img.longitude === 'number' ? img.longitude.toFixed(4) : img.longitude}
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
+                
+                {img.description ? (
+                  <Text style={styles.thumbNote} numberOfLines={1}>
+                    {img.description}
+                  </Text>
+                ) : (
+                  <Text style={[styles.thumbNote, { color: "#94A3B8", fontStyle: "italic" }]}>
+                    No note
+                  </Text>
+                )}
+                
                 {!isViewMode && (
                   <TouchableOpacity
                     style={styles.deletePhotoBtn}
@@ -1726,36 +1074,35 @@ export default function BoundaryVerificationForm() {
             ))}
 
             {!isViewMode && (
-              <>
-                <TouchableOpacity
-                  style={styles.addPhotoBtn}
-                  onPress={handlePickImage}
-                  activeOpacity={0.75}
-                >
-                  <MaterialCommunityIcons name="image-plus" size={26} color="#0369A1" />
-                  <Text style={styles.addPhotoBtnText}>Gallery</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.addPhotoBtn, styles.addPhotoBtnGPS]}
-                  onPress={() => setShowGPSCamera(true)}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons name="camera-outline" size={26} color="#0F4A2F" />
-                  <Text style={[styles.addPhotoBtnText, { color: "#0F4A2F" }]}>GPS Cam</Text>
-                </TouchableOpacity>
-              </>
+              <TouchableOpacity
+                style={[styles.addPhotoBtn, styles.addPhotoBtnGPS]}
+                onPress={() => setShowGPSCamera(true)}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="camera-outline" size={26} color="#0F4A2F" />
+                <Text style={[styles.addPhotoBtnText, { color: "#0F4A2F" }]}>
+                  Add Marker Photo
+                </Text>
+              </TouchableOpacity>
             )}
           </ScrollView>
 
           {images.length === 0 && isViewMode && (
-            <Text style={styles.emptyGallery}>No photos attached to this assessment.</Text>
+            <Text style={styles.emptyGallery}>
+              No boundary marker photos attached.
+            </Text>
           )}
 
           {!isViewMode && (
             <View style={styles.hintBox}>
-              <Ionicons name="information-circle-outline" size={14} color="#0369A1" />
+              <Ionicons
+                name="information-circle-outline"
+                size={14}
+                color="#0369A1"
+              />
               <Text style={[styles.hintText, { color: "#0369A1" }]}>
-                "Gallery" picks existing photos · "GPS Cam" captures with coordinates burned in
+                Each photo automatically captures GPS coordinates. Add a note to
+                describe the marker (e.g., "BM-01 concrete post, intact").
               </Text>
             </View>
           )}
@@ -1773,11 +1120,19 @@ export default function BoundaryVerificationForm() {
             disabled={saving}
             activeOpacity={0.8}
           >
-            <MaterialCommunityIcons name="content-save-outline" size={16} color="#0F4A2F" />
+            <MaterialCommunityIcons
+              name="content-save-outline"
+              size={16}
+              color="#0F4A2F"
+            />
             <Text style={styles.footerBtnDraftText}>Save Draft</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.footerBtn, styles.footerBtnSubmit, saving && styles.footerBtnDisabled]}
+            style={[
+              styles.footerBtn,
+              styles.footerBtnSubmit,
+              saving && styles.footerBtnDisabled,
+            ]}
             onPress={handleSubmit}
             disabled={saving}
             activeOpacity={0.8}
@@ -1821,21 +1176,147 @@ export default function BoundaryVerificationForm() {
         transparent={false}
         onRequestClose={() => setShowGPSCamera(false)}
       >
-        <GPSStampCamera
-          onImageCaptured={handleGPSPhotoCaptured}
+        <SimpleGeocam
+          onCapture={handleGPSPhotoCaptured}
           onClose={() => setShowGPSCamera(false)}
         />
+      </Modal>
+      
+      {/* ✅ NEW: Custom Note Modal (Expo Go Compatible) */}
+      <Modal
+        visible={showNoteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNoteModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.modal}>
+            <Text style={modalStyles.title}>Add Note for This Photo</Text>
+            <Text style={modalStyles.subtitle}>Describe this boundary marker (optional)</Text>
+            
+            <TextInput
+              style={modalStyles.input}
+              placeholder="e.g., BM-01 concrete post, intact"
+              placeholderTextColor="#9CA3AF"
+              value={pendingNote}
+              onChangeText={setPendingNote}
+              autoFocus
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+            
+            <View style={modalStyles.buttons}>
+              <TouchableOpacity
+                style={modalStyles.cancelBtn}
+                onPress={() => {
+                  setShowNoteModal(false);
+                  setPendingPhoto(null);
+                  setPendingNote("");
+                }}
+              >
+                <Text style={modalStyles.cancelBtnText}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={modalStyles.saveBtn}
+                onPress={() => handleNoteSubmit(pendingNote)}
+              >
+                <Text style={modalStyles.saveBtnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
 }
 
-// ─── Form Styles ──────────────────────────────
+// ─────────────────────────────────────────────
+// CUSTOM MODAL STYLES
+// ─────────────────────────────────────────────
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modal: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    width: "100%",
+    maxWidth: 400,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F2D1C",
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 16,
+  },
+  input: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 12,
+    fontSize: 14,
+    color: "#1E293B",
+    minHeight: 80,
+    marginBottom: 20,
+  },
+  buttons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12,
+  },
+  cancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  cancelBtnText: {
+    color: "#6B7280",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  saveBtn: {
+    backgroundColor: "#0F4A2F",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  saveBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+});
+
+// ─────────────────────────────────────────────
+// FORM STYLES
+// ─────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F1F5F9" },
-  centerContent: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F1F5F9" },
+  centerContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+  },
   scrollContent: { padding: 16, paddingTop: 12 },
-
   loadingCard: {
     backgroundColor: "#fff",
     borderRadius: 16,
@@ -1849,8 +1330,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   loadingText: { fontSize: 14, color: "#475569", fontWeight: "500" },
-
-  // View Mode Banner
   viewModeBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1862,8 +1341,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   viewModeBannerText: { color: "#fff", fontWeight: "600", fontSize: 13 },
-
-  // Card
   card: {
     backgroundColor: "#fff",
     borderRadius: 14,
@@ -1876,11 +1353,7 @@ const styles = StyleSheet.create({
     elevation: 3,
     overflow: "hidden",
   },
-  cardAccent: {
-    width: 4,
-    borderTopLeftRadius: 14,
-    borderBottomLeftRadius: 14,
-  },
+  cardAccent: { width: 4, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
   cardInner: { flex: 1, padding: 16 },
   cardHeader: {
     flexDirection: "row",
@@ -1897,7 +1370,12 @@ const styles = StyleSheet.create({
   },
   cardTitleGroup: { flex: 1 },
   cardTitle: { fontSize: 15, fontWeight: "700", color: "#1E293B" },
-  cardSubtitle: { fontSize: 11, color: "#94A3B8", marginTop: 1, fontWeight: "500" },
+  cardSubtitle: {
+    fontSize: 11,
+    color: "#94A3B8",
+    marginTop: 1,
+    fontWeight: "500",
+  },
   stepBadge: {
     width: 26,
     height: 26,
@@ -1908,9 +1386,12 @@ const styles = StyleSheet.create({
   },
   stepText: { fontSize: 11, fontWeight: "700" },
   cardBody: { gap: 10 },
-
-  // Field label
-  fieldLabelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
+  fieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 2,
+  },
   fieldLabel: { fontSize: 12, fontWeight: "600", color: "#64748B" },
   optionalTag: {
     fontSize: 10,
@@ -1921,8 +1402,6 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
   },
-
-  // Inputs
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1950,8 +1429,6 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
     opacity: 0.7,
   },
-
-  // Coordinate layout
   coordRow: { flexDirection: "row", gap: 10 },
   coordHalf: { flex: 1 },
   coordPreview: {
@@ -1965,41 +1442,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#BBF7D0",
   },
-  coordPreviewText: { fontSize: 12, color: "#166534", fontWeight: "600", flex: 1 },
-
-  // Toggle row
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderLeftWidth: 1,
-    borderLeftColor: "#E2E8F0",
+  coordPreviewText: {
+    fontSize: 12,
+    color: "#166534",
+    fontWeight: "600",
+    flex: 1,
   },
-  toggleLabelGroup: { flex: 1, marginRight: 8 },
-  toggleLabel: { fontSize: 13, fontWeight: "600", color: "#334155" },
-  toggleSublabel: { fontSize: 11, color: "#94A3B8", marginTop: 1 },
-
-  // Chips
-  chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: "#CBD5E1",
-    backgroundColor: "#fff",
-  },
-  chipText: { fontSize: 12, color: "#475569", fontWeight: "600" },
-  chipTextActive: { color: "#fff", fontWeight: "700" },
-
-  // GPS Button
   gpsBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -2013,8 +1461,6 @@ const styles = StyleSheet.create({
   },
   gpsBtnLoading: { opacity: 0.8 },
   gpsBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-
-  // Hint box
   hintBox: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -2024,34 +1470,17 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   hintText: { flex: 1, fontSize: 11, color: "#0F4A2F", lineHeight: 16 },
-
-  // Map
-  mapContainer: { borderRadius: 10, overflow: "hidden", position: "relative" },
-  mapPreview: { width: "100%", height: 190, backgroundColor: "#E2E8F0" },
-  mapLegend: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 8,
-    padding: 8,
-    gap: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  mapLegendRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  mapLegendDot: { width: 8, height: 8, borderRadius: 4 },
-  mapLegendText: { fontSize: 10, color: "#334155", fontWeight: "600" },
-
-  // Gallery
   galleryContent: { paddingVertical: 4, gap: 10 },
-  thumbWrapper: { position: "relative" },
-  thumb: { width: 90, height: 90, borderRadius: 10, backgroundColor: "#E2E8F0" },
+  thumbWrapper: { position: "relative", width: 90 },
+  thumb: {
+    width: 90,
+    height: 90,
+    borderRadius: 10,
+    backgroundColor: "#E2E8F0",
+  },
   thumbOverlay: {
     position: "absolute",
-    bottom: 0,
+    bottom: 28,
     left: 0,
     right: 0,
     height: 28,
@@ -2060,6 +1489,30 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 10,
     justifyContent: "center",
     alignItems: "center",
+  },
+  thumbCoords: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+  },
+  thumbCoordsText: {
+    fontSize: 9,
+    color: "#4ADE80",
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  thumbNote: {
+    fontSize: 9,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 4,
+    paddingHorizontal: 2,
   },
   deletePhotoBtn: {
     position: "absolute",
@@ -2086,14 +1539,14 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: "#F0F9FF",
   },
-  addPhotoBtnGPS: {
-    borderColor: "#BBF7D0",
-    backgroundColor: "#F0FDF4",
-  },
+  addPhotoBtnGPS: { borderColor: "#BBF7D0", backgroundColor: "#F0FDF4" },
   addPhotoBtnText: { fontSize: 10, color: "#0369A1", fontWeight: "600" },
-  emptyGallery: { fontSize: 13, color: "#94A3B8", textAlign: "center", paddingVertical: 12 },
-
-  // Footer
+  emptyGallery: {
+    fontSize: 13,
+    color: "#94A3B8",
+    textAlign: "center",
+    paddingVertical: 12,
+  },
   footer: {
     position: "absolute",
     bottom: 0,
@@ -2131,8 +1584,6 @@ const styles = StyleSheet.create({
   footerBtnSubmit: { backgroundColor: "#0F4A2F" },
   footerBtnSubmitText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   footerBtnDisabled: { opacity: 0.65 },
-
-  // Modal
   previewModal: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.92)",

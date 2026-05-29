@@ -1,8 +1,7 @@
-// src/pages/GISS/multicriteria_analysis/components/SiteList.tsx
 import { useState } from "react";
 import { 
   MapPin, Trash2, CheckCircle, XCircle, Pin, 
-  AlertTriangle, Layers, Ruler, TrendingUp 
+  AlertTriangle, Layers, Ruler, FileText 
 } from "lucide-react";
 import type { Site } from "../types/siteTypes";
 
@@ -16,21 +15,32 @@ interface SiteListProps {
   areaId: string | null;
 }
 
-const LAYER_COLORS: Record<string, string> = {
-  ACCEPT: "bg-green-100 text-green-700 border-green-300",
-  REJECT: "bg-red-100 text-red-700 border-red-300",
-  ACCEPT_WITH_MITIGATION: "bg-yellow-100 text-yellow-700 border-yellow-300",
-  ACCEPT_WITH_ADJUSTMENT: "bg-blue-100 text-blue-700 border-blue-300",
-  ACCEPT_WITH_CONDITIONS: "bg-purple-100 text-purple-700 border-purple-300",
-  PENDING: "bg-gray-100 text-gray-600 border-gray-300",
-};
-
 const STATUS_CONFIG: Record<string, { icon: any; color: string; label: string }> = {
   pending: { icon: AlertTriangle, color: "text-amber-600", label: "Pending" },
   under_review: { icon: Layers, color: "text-blue-600", label: "Under Review" },
   accepted: { icon: CheckCircle, color: "text-green-600", label: "Accepted" },
   rejected: { icon: XCircle, color: "text-red-600", label: "Rejected" },
   completed: { icon: CheckCircle, color: "text-emerald-600", label: "Completed" },
+};
+
+// ✅ NEW: Get validation badge for simplified workflow
+const getValidationBadge = (validation: any) => {
+  if (validation.final_decision === "ACCEPT") {
+    return { icon: CheckCircle, color: "bg-green-100 text-green-700", label: "Accepted" };
+  }
+  if (validation.final_decision === "REJECT") {
+    return { icon: XCircle, color: "bg-red-100 text-red-700", label: "Rejected" };
+  }
+  if (validation.is_ready_to_finalize) {
+    return { icon: FileText, color: "bg-blue-100 text-blue-700", label: "Ready to Finalize" };
+  }
+  if (validation.has_safety_note && validation.has_survivability_note) {
+    return { icon: FileText, color: "bg-purple-100 text-purple-700", label: "Notes Added" };
+  }
+  if (validation.has_safety_note || validation.has_survivability_note) {
+    return { icon: AlertTriangle, color: "bg-yellow-100 text-yellow-700", label: "In Progress" };
+  }
+  return { icon: AlertTriangle, color: "bg-gray-100 text-gray-700", label: "Not Started" };
 };
 
 export default function SiteList({
@@ -99,7 +109,8 @@ export default function SiteList({
         {filteredSites.map((site) => {
           const StatusIcon = STATUS_CONFIG[site.status]?.icon || AlertTriangle;
           const statusColor = STATUS_CONFIG[site.status]?.color || "text-gray-600";
-          const progress = site.validation_progress;
+          const validationBadge = getValidationBadge(site.validation);
+          const ValidationIcon = validationBadge.icon;
           
           return (
             <div
@@ -131,40 +142,32 @@ export default function SiteList({
               <div className="flex items-center gap-3 mb-2 text-[10px] text-gray-600">
                 <span className="flex items-center gap-1">
                   <Ruler size={10} />
-                  {site.area_hectares.toFixed(2)} ha
+                  {site.metrics.area_hectares.toFixed(2)} ha
                 </span>
-                {site.ndvi !== null && (
+                {site.metrics.ndvi !== null && (
                   <span className="flex items-center gap-1">
-                    <TrendingUp size={10} />
-                    NDVI: {site.ndvi.toFixed(2)}
+                    <span>NDVI: {site.metrics.ndvi.toFixed(2)}</span>
                   </span>
                 )}
               </div>
 
-              {/* Validation Progress */}
+              {/* ✅ UPDATED: Simplified Validation Status */}
               <div className="mb-2">
-                <div className="flex items-center justify-between text-[10px] mb-1">
-                  <span className="text-gray-500">Validation</span>
-                  <span className="font-medium text-gray-700">
-                    {progress.completed}/{progress.total} layers
-                  </span>
-                </div>
-                <div className="flex gap-1">
-                  {(["safety", "boundary_verification", "survivability"] as const).map((layer) => {
-                    const status = progress.layer_status[layer] || "PENDING";
-                    const colorClass = LAYER_COLORS[status] || LAYER_COLORS.PENDING;
-                    const label = layer === "safety" ? "S" : layer === "boundary_verification" ? "B" : "V";
-                    
-                    return (
-                      <span
-                        key={layer}
-                        className={`flex-1 text-center text-[9px] font-medium px-1 py-0.5 rounded border ${colorClass}`}
-                        title={`${layer}: ${status}`}
-                      >
-                        {label}
-                      </span>
-                    );
-                  })}
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${validationBadge.color}`}
+                >
+                  <ValidationIcon size={10} />
+                  {validationBadge.label}
+                </span>
+                
+                {/* Show note indicators */}
+                <div className="flex gap-1 mt-1">
+                  {site.validation.has_safety_note && (
+                    <span className="text-[9px] text-blue-600" title="Safety note added">Safety ✓</span>
+                  )}
+                  {site.validation.has_survivability_note && (
+                    <span className="text-[9px] text-purple-600" title="Survivability note added">Survivability ✓</span>
+                  )}
                 </div>
               </div>
 
@@ -178,7 +181,7 @@ export default function SiteList({
                 </button>
                 <button
                   onClick={() => onValidateSite(site)}
-                  disabled={progress.completed === 0 && site.status !== "pending"}
+                  disabled={!site.validation.has_safety_note && !site.validation.has_survivability_note && site.status !== "pending"}
                   className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 text-[10px] font-medium px-2 py-1 rounded transition disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Validate

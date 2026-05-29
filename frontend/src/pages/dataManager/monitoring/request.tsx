@@ -41,7 +41,7 @@ interface Filter {
 
 // Helper to parse nested seedling_type into array for editing
 const parseProvisionToArray = (
-  seedlingType: Record<string, { quantity: number; provided_by: string }>
+  seedlingType: Record<string, { quantity: number; provided_by: string }>,
 ) => {
   return Object.entries(seedlingType).map(([species, data]) => ({
     species,
@@ -52,7 +52,7 @@ const parseProvisionToArray = (
 
 // Helper to convert array back to nested object for API
 const formatProvisionToObject = (
-  arr: { species: string; quantity: number; provided_by: string }[]
+  arr: { species: string; quantity: number; provided_by: string }[],
 ) => {
   const obj: Record<string, { quantity: number; provided_by: string }> = {};
   arr.forEach((item) => {
@@ -162,7 +162,7 @@ export default function Request() {
         `${API_BASE}/api/get_seedling_requests/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       if (!response.ok) throw new Error("Failed to fetch seedling requests.");
 
@@ -233,12 +233,12 @@ export default function Request() {
         `${API_BASE}/api/get_application/${request.application_id}/`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       if (res.ok) {
         const appData = await res.json();
         const fullRequest = appData.seedling_requests?.find(
-          (r: any) => r.request_id === request.request_id
+          (r: any) => r.request_id === request.request_id,
         );
         if (fullRequest) {
           setDetailModal({
@@ -254,7 +254,10 @@ export default function Request() {
     setDetailModal({ visible: true, request });
   };
 
-  const openActionModal = (type: "accept" | "reject", request: SeedlingRequest) => {
+  const openActionModal = (
+    type: "accept" | "reject",
+    request: SeedlingRequest,
+  ) => {
     let provision: any[] = [];
     if (type === "accept") {
       // Parse current seedling type into editable array
@@ -272,7 +275,10 @@ export default function Request() {
 
   // Helpers for editing provision list
   const addSpecies = () => {
-    if (newSpecies && !actionModal.provision.some((p) => p.species === newSpecies)) {
+    if (
+      newSpecies &&
+      !actionModal.provision.some((p) => p.species === newSpecies)
+    ) {
       setActionModal((prev) => ({
         ...prev,
         provision: [
@@ -294,7 +300,7 @@ export default function Request() {
   const updateProvisionItem = (
     index: number,
     field: "species" | "quantity" | "provided_by",
-    value: string | number
+    value: string | number,
   ) => {
     setActionModal((prev) => {
       const newProvision = [...prev.provision];
@@ -317,13 +323,14 @@ export default function Request() {
     // Validation for Accept: Ensure at least one valid species
     if (actionModal.type === "accept") {
       const hasValid = actionModal.provision.some(
-        (p) => p.species.trim() && p.quantity > 0
+        (p) => p.species.trim() && p.quantity > 0,
       );
       if (!hasValid) {
         setPSAlert({
           type: "failed",
           title: "Invalid Data",
-          message: "Please provide at least one valid species with quantity > 0.",
+          message:
+            "Please provide at least one valid species with quantity > 0.",
         });
         return;
       }
@@ -338,7 +345,9 @@ export default function Request() {
 
       // If accepting, include the edited provision
       if (actionModal.type === "accept") {
-        body.seedling_provision = formatProvisionToObject(actionModal.provision);
+        body.seedling_provision = formatProvisionToObject(
+          actionModal.provision,
+        );
       }
 
       const response = await fetch(
@@ -350,7 +359,7 @@ export default function Request() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
-        }
+        },
       );
 
       const data = await response.json();
@@ -362,7 +371,13 @@ export default function Request() {
         message: data.message || `Request ${actionModal.type}d successfully.`,
       });
 
-      setActionModal({ visible: false, type: null, request: null, reason: "", provision: [] });
+      setActionModal({
+        visible: false,
+        type: null,
+        request: null,
+        reason: "",
+        provision: [],
+      });
       setDetailModal({ visible: false, request: null });
       fetchRequests();
     } catch (err: any) {
@@ -378,7 +393,7 @@ export default function Request() {
 
   // Filter available species for autocomplete
   const availableSpecies = treeSpeciesList.filter(
-    (s) => !actionModal.provision.some((p) => p.species === s)
+    (s) => !actionModal.provision.some((p) => p.species === s),
   );
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -399,9 +414,13 @@ export default function Request() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-[#0F4A2F]">Request Details</h3>
+              <h3 className="text-lg font-bold text-[#0F4A2F]">
+                Request Details
+              </h3>
               <button
-                onClick={() => setDetailModal({ visible: false, request: null })}
+                onClick={() =>
+                  setDetailModal({ visible: false, request: null })
+                }
                 className="text-gray-400 hover:text-gray-600"
               >
                 <XCircle size={20} />
@@ -409,30 +428,50 @@ export default function Request() {
             </div>
 
             <div className="p-4 bg-gray-50 rounded-xl mb-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Application</p>
-              <p className="font-bold text-gray-800">{detailModal.request.application_title}</p>
-              <p className="text-sm text-gray-600">{detailModal.request.organization_name}</p>
-              <p className="text-xs text-gray-400">{detailModal.request.org_email}</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                Application
+              </p>
+              <p className="font-bold text-gray-800">
+                {detailModal.request.application_title}
+              </p>
+              <p className="text-sm text-gray-600">
+                {detailModal.request.organization_name}
+              </p>
+              <p className="text-xs text-gray-400">
+                {detailModal.request.org_email}
+              </p>
             </div>
 
             <div className="mb-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Seedlings Requested</p>
-              <SeedlingBreakdown seedlingType={detailModal.request.seedling_type} />
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                Seedlings Requested
+              </p>
+              <SeedlingBreakdown
+                seedlingType={detailModal.request.seedling_type}
+              />
               <p className="mt-3 text-sm font-bold text-[#0F4A2F]">
-                Total: {detailModal.request.no_request_seedling.toLocaleString()} seedlings
+                Total:{" "}
+                {detailModal.request.no_request_seedling.toLocaleString()}{" "}
+                seedlings
               </p>
             </div>
 
             {detailModal.request.description && (
               <div className="mb-4">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Description</p>
-                <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg">{detailModal.request.description}</p>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  Description
+                </p>
+                <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg">
+                  {detailModal.request.description}
+                </p>
               </div>
             )}
 
             {(detailModal.request as any).request_file && (
               <div className="mb-4">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Attachment</p>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  Attachment
+                </p>
                 <a
                   href={`${API_BASE}${(detailModal.request as any).request_file}`}
                   target="_blank"
@@ -445,14 +484,24 @@ export default function Request() {
             )}
 
             <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                detailModal.request.status === "pending" ? "bg-yellow-100 text-yellow-700" :
-                detailModal.request.status === "accepted" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-              }`}>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                  detailModal.request.status === "pending"
+                    ? "bg-yellow-100 text-yellow-700"
+                    : detailModal.request.status === "accepted"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-red-100 text-red-700"
+                }`}
+              >
                 {detailModal.request.status.toUpperCase()}
               </span>
               <span className="text-xs text-gray-400">
-                Submitted: {detailModal.request.submitted_at ? new Date(detailModal.request.submitted_at).toLocaleDateString("en-PH") : "N/A"}
+                Submitted:{" "}
+                {detailModal.request.submitted_at
+                  ? new Date(
+                      detailModal.request.submitted_at,
+                    ).toLocaleDateString("en-PH")
+                  : "N/A"}
               </span>
             </div>
 
@@ -482,10 +531,20 @@ export default function Request() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-[#0F4A2F]">
-                {actionModal.type === "accept" ? "Review & Provide Seedlings" : "Reject Request"}
+                {actionModal.type === "accept"
+                  ? "Review & Provide Seedlings"
+                  : "Reject Request"}
               </h3>
               <button
-                onClick={() => setActionModal({ visible: false, type: null, request: null, reason: "", provision: [] })}
+                onClick={() =>
+                  setActionModal({
+                    visible: false,
+                    type: null,
+                    request: null,
+                    reason: "",
+                    provision: [],
+                  })
+                }
                 className="text-gray-400 hover:text-gray-600"
               >
                 <XCircle size={20} />
@@ -496,18 +555,28 @@ export default function Request() {
               {/* Left: Current Request Info */}
               <div className="space-y-4">
                 <div className="p-4 bg-gray-50 rounded-xl">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Applying For</p>
-                  <p className="font-bold text-gray-800">{actionModal.request.application_title}</p>
-                  <p className="text-sm text-gray-600">{actionModal.request.organization_name}</p>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                    Applying For
+                  </p>
+                  <p className="font-bold text-gray-800">
+                    {actionModal.request.application_title}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {actionModal.request.organization_name}
+                  </p>
                 </div>
-                
+
                 {actionModal.type === "accept" && (
-                   <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-                     <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">Instructions</p>
-                     <p className="text-sm text-blue-800">
-                       Review the requested seedlings below. You can edit species, quantities, or providers to match available stock.
-                     </p>
-                   </div>
+                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                    <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-2">
+                      Instructions
+                    </p>
+                    <p className="text-sm text-blue-800">
+                      Review the requested seedlings below. You can edit
+                      species, quantities, or providers to match available
+                      stock.
+                    </p>
+                  </div>
                 )}
               </div>
 
@@ -517,7 +586,9 @@ export default function Request() {
                 {actionModal.type === "accept" && (
                   <div className="border border-gray-200 rounded-xl p-4 bg-white">
                     <div className="flex items-center justify-between mb-3">
-                      <label className="text-sm font-semibold text-gray-700">Seedling Provision</label>
+                      <label className="text-sm font-semibold text-gray-700">
+                        Seedling Provision
+                      </label>
                       <div className="flex gap-2">
                         <select
                           value={newSpecies}
@@ -529,7 +600,9 @@ export default function Request() {
                             {loadingSpecies ? "Loading…" : "+ Add species"}
                           </option>
                           {availableSpecies.map((s) => (
-                            <option key={s} value={s}>{s}</option>
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
                           ))}
                         </select>
                         <button
@@ -541,16 +614,27 @@ export default function Request() {
                         </button>
                       </div>
                     </div>
-                    
+
                     <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
                       {actionModal.provision.map((item, idx) => (
-                        <div key={idx} className="flex flex-wrap gap-2 items-end p-2 bg-gray-50 rounded-lg border border-gray-100">
+                        <div
+                          key={idx}
+                          className="flex flex-wrap gap-2 items-end p-2 bg-gray-50 rounded-lg border border-gray-100"
+                        >
                           <div className="flex-1 min-w-[100px]">
-                            <label className="block text-[10px] text-gray-500 mb-1">Species</label>
+                            <label className="block text-[10px] text-gray-500 mb-1">
+                              Species
+                            </label>
                             <input
                               type="text"
                               value={item.species}
-                              onChange={(e) => updateProvisionItem(idx, "species", e.target.value)}
+                              onChange={(e) =>
+                                updateProvisionItem(
+                                  idx,
+                                  "species",
+                                  e.target.value,
+                                )
+                              }
                               placeholder="e.g. Narra"
                               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:border-[#0F4A2F] focus:outline-none"
                               list={`species-list-${idx}`}
@@ -563,21 +647,37 @@ export default function Request() {
                             </datalist>
                           </div>
                           <div className="w-20">
-                            <label className="block text-[10px] text-gray-500 mb-1">Qty</label>
+                            <label className="block text-[10px] text-gray-500 mb-1">
+                              Qty
+                            </label>
                             <input
                               type="number"
                               min="1"
                               value={item.quantity}
-                              onChange={(e) => updateProvisionItem(idx, "quantity", parseInt(e.target.value) || 0)}
+                              onChange={(e) =>
+                                updateProvisionItem(
+                                  idx,
+                                  "quantity",
+                                  parseInt(e.target.value) || 0,
+                                )
+                              }
                               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:border-[#0F4A2F] focus:outline-none"
                             />
                           </div>
                           <div className="flex-1 min-w-[100px]">
-                            <label className="block text-[10px] text-gray-500 mb-1">Provided By</label>
+                            <label className="block text-[10px] text-gray-500 mb-1">
+                              Provided By
+                            </label>
                             <input
                               type="text"
                               value={item.provided_by}
-                              onChange={(e) => updateProvisionItem(idx, "provided_by", e.target.value)}
+                              onChange={(e) =>
+                                updateProvisionItem(
+                                  idx,
+                                  "provided_by",
+                                  e.target.value,
+                                )
+                              }
                               placeholder="e.g. ENRO Nursery"
                               className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:border-[#0F4A2F] focus:outline-none"
                             />
@@ -592,7 +692,9 @@ export default function Request() {
                         </div>
                       ))}
                       {actionModal.provision.length === 0 && (
-                        <p className="text-sm text-gray-400 italic text-center py-2">No species added.</p>
+                        <p className="text-sm text-gray-400 italic text-center py-2">
+                          No species added.
+                        </p>
                       )}
                     </div>
                   </div>
@@ -606,8 +708,14 @@ export default function Request() {
                   <textarea
                     rows={3}
                     value={actionModal.reason}
-                    onChange={(e) => setActionModal((p) => ({ ...p, reason: e.target.value }))}
-                    placeholder={actionModal.type === "accept" ? "e.g. Approved - adjusted for stock availability" : "e.g. Rejected - insufficient stock"}
+                    onChange={(e) =>
+                      setActionModal((p) => ({ ...p, reason: e.target.value }))
+                    }
+                    placeholder={
+                      actionModal.type === "accept"
+                        ? "e.g. Approved - adjusted for stock availability"
+                        : "e.g. Rejected - insufficient stock"
+                    }
                     className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] transition-colors"
                   />
                 </div>
@@ -616,7 +724,15 @@ export default function Request() {
 
             <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
               <button
-                onClick={() => setActionModal({ visible: false, type: null, request: null, reason: "", provision: [] })}
+                onClick={() =>
+                  setActionModal({
+                    visible: false,
+                    type: null,
+                    request: null,
+                    reason: "",
+                    provision: [],
+                  })
+                }
                 disabled={submitting}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
               >
@@ -626,27 +742,45 @@ export default function Request() {
                 onClick={handleActionSubmit}
                 disabled={submitting || !actionModal.reason.trim()}
                 className={`flex-1 py-2.5 rounded-xl text-white text-sm font-bold transition-all ${
-                  actionModal.type === "accept" ? "bg-[#0F4A2F] hover:bg-[#1a6b44]" : "bg-red-500 hover:bg-red-600"
-                } ${(submitting || !actionModal.reason.trim()) ? "opacity-50 cursor-not-allowed" : ""}`}
+                  actionModal.type === "accept"
+                    ? "bg-[#0F4A2F] hover:bg-[#1a6b44]"
+                    : "bg-red-500 hover:bg-red-600"
+                } ${submitting || !actionModal.reason.trim() ? "opacity-50 cursor-not-allowed" : ""}`}
               >
-                {submitting ? "Processing…" : actionModal.type === "accept" ? "Confirm & Accept" : "Confirm Rejection"}
+                {submitting
+                  ? "Processing…"
+                  : actionModal.type === "accept"
+                    ? "Confirm & Accept"
+                    : "Confirm Rejection"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <main className="flex-1 p-8 max-w-6xl">
+      <main className="flex-1 p-8">
         <div className="mb-7">
-          <h1 className="text-2xl font-bold text-[#0F4A2F]">Seedling Requests</h1>
-          <p className="text-sm text-gray-500">Review and manage TreeGrower seedling assistance requests</p>
+          <h1 className="text-2xl font-bold text-[#0F4A2F]">
+            Seedling Requests
+          </h1>
+          <p className="text-sm text-gray-500">
+            Review and manage TreeGrower seedling assistance requests
+          </p>
         </div>
 
         <div className="flex items-center mb-7 gap-4 flex-wrap">
-          <label className="text-sm font-medium text-gray-600">Show entries:</label>
+          <label className="text-sm font-medium text-gray-600">
+            Show entries:
+          </label>
           <select
             value={filter.entries}
-            onChange={(e) => setFilter((prev) => ({ ...prev, entries: Number(e.target.value), page: 1 }))}
+            onChange={(e) =>
+              setFilter((prev) => ({
+                ...prev,
+                entries: Number(e.target.value),
+                page: 1,
+              }))
+            }
             className="border border-gray-300 p-2 rounded-md text-sm"
           >
             <option value={10}>10</option>
@@ -658,7 +792,13 @@ export default function Request() {
           <label className="text-sm font-medium text-gray-600">Status:</label>
           <select
             value={filter.status}
-            onChange={(e) => setFilter((prev) => ({ ...prev, status: e.target.value, page: 1 }))}
+            onChange={(e) =>
+              setFilter((prev) => ({
+                ...prev,
+                status: e.target.value,
+                page: 1,
+              }))
+            }
             className="border border-gray-300 p-2 rounded-md text-sm"
           >
             <option value="pending">Pending</option>
@@ -671,19 +811,29 @@ export default function Request() {
             type="text"
             placeholder="Search by application or organization..."
             value={filter.search}
-            onChange={(e) => setFilter((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
-            onKeyDown={(e) => { if (e.key === "Enter") fetchRequests(); }}
+            onChange={(e) =>
+              setFilter((prev) => ({
+                ...prev,
+                search: e.target.value,
+                page: 1,
+              }))
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") fetchRequests();
+            }}
             className="border border-gray-300 rounded-md p-2 w-80 text-sm ml-auto"
           />
         </div>
 
-        <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200">
+        <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200 w-full">
           {loading && <LoaderPending />}
           <table className="min-w-full bg-white rounded-sm">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Application</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">
+                  Application
+                </th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Seedlings</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Submitted</th>
@@ -692,64 +842,94 @@ export default function Request() {
             </thead>
             <tbody>
               {requests.length > 0 ? (
-                requests.slice((filter.page - 1) * filter.entries, filter.page * filter.entries).map((req, index) => (
-                  <tr key={req.request_id} className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition`}>
-                    <td className="py-3 px-5 text-[.9rem]">{index + 1 + (filter.page - 1) * filter.entries}</td>
-                    <td className="py-3 px-5">
-                      <div>
-                        <h4 className="font-bold text-[.8rem]">{req.application_title}</h4>
-                        <span className="text-[#00000091] text-[.7rem]">{req.organization_name}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem]">
-                      <span className="font-semibold text-[#0F4A2F]">{req.no_request_seedling.toLocaleString()}</span>
-                    </td>
-                    <td className="py-3 px-5">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        req.status === "pending" ? "bg-yellow-100 text-yellow-700" :
-                        req.status === "accepted" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                      }`}>
-                        {req.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem]">
-                      {req.submitted_at ? new Date(req.submitted_at).toLocaleDateString("en-PH") : "N/A"}
-                    </td>
-                    <td className="py-3 px-5">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleView(req)}
-                          className="text-[#0F4A2F] px-3 py-1 rounded-md flex items-center gap-1 hover:bg-[#0F4A2F0D] transition-colors"
-                          title="View details"
+                requests
+                  .slice(
+                    (filter.page - 1) * filter.entries,
+                    filter.page * filter.entries,
+                  )
+                  .map((req, index) => (
+                    <tr
+                      key={req.request_id}
+                      className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition`}
+                    >
+                      <td className="py-3 px-5 text-[.9rem]">
+                        {index + 1 + (filter.page - 1) * filter.entries}
+                      </td>
+                      <td className="py-3 px-5">
+                        <div>
+                          <h4 className="font-bold text-[.8rem]">
+                            {req.application_title}
+                          </h4>
+                          <span className="text-[#00000091] text-[.7rem]">
+                            {req.organization_name}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem]">
+                        <span className="font-semibold text-[#0F4A2F]">
+                          {req.no_request_seedling.toLocaleString()}
+                        </span>
+                      </td>
+                      <td className="py-3 px-5">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            req.status === "pending"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : req.status === "accepted"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-red-100 text-red-700"
+                          }`}
                         >
-                          <Eye size={16} />
-                        </button>
-                        {req.status === "pending" && (
-                          <>
-                            <button
-                              onClick={() => openActionModal("accept", req)}
-                              className="text-green-600 px-3 py-1 rounded-md flex items-center gap-1 hover:bg-green-50 transition-colors"
-                              title="Accept & Edit"
-                            >
-                              <CheckCircle2 size={16} />
-                            </button>
-                            <button
-                              onClick={() => openActionModal("reject", req)}
-                              className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 hover:bg-red-50 transition-colors"
-                              title="Reject request"
-                            >
-                              <XCircle size={16} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem]">
+                        {req.submitted_at
+                          ? new Date(req.submitted_at).toLocaleDateString(
+                              "en-PH",
+                            )
+                          : "N/A"}
+                      </td>
+                      <td className="py-3 px-5">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleView(req)}
+                            className="text-[#0F4A2F] px-3 py-1 rounded-md flex items-center gap-1 hover:bg-[#0F4A2F0D] transition-colors"
+                            title="View details"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          {req.status === "pending" && (
+                            <>
+                              <button
+                                onClick={() => openActionModal("accept", req)}
+                                className="text-green-600 px-3 py-1 rounded-md flex items-center gap-1 hover:bg-green-50 transition-colors"
+                                title="Accept & Edit"
+                              >
+                                <CheckCircle2 size={16} />
+                              </button>
+                              <button
+                                onClick={() => openActionModal("reject", req)}
+                                className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 hover:bg-red-50 transition-colors"
+                                title="Reject request"
+                              >
+                                <XCircle size={16} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-gray-500 italic">
-                    {filter.search ? `No results for "${filter.search}"` : "No seedling requests found."}
+                  <td
+                    colSpan={6}
+                    className="text-center py-8 text-gray-500 italic"
+                  >
+                    {filter.search
+                      ? `No results for "${filter.search}"`
+                      : "No seedling requests found."}
                   </td>
                 </tr>
               )}
@@ -761,7 +941,9 @@ export default function Request() {
           <div className="flex items-center gap-1 mt-5 w-full">
             <button
               disabled={filter.page <= 1}
-              onClick={() => setFilter((prev) => ({ ...prev, page: prev.page - 1 }))}
+              onClick={() =>
+                setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
+              }
               className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer disabled:opacity-50"
             >
               <ChevronLeft size={19} />
@@ -770,14 +952,19 @@ export default function Request() {
               let pageNum;
               if (filter.total_page <= 5) pageNum = i + 1;
               else if (filter.page <= 3) pageNum = i + 1;
-              else if (filter.page >= filter.total_page - 2) pageNum = filter.total_page - 4 + i;
+              else if (filter.page >= filter.total_page - 2)
+                pageNum = filter.total_page - 4 + i;
               else pageNum = filter.page - 2 + i;
               return (
                 <button
                   key={pageNum}
-                  onClick={() => setFilter((prev) => ({ ...prev, page: pageNum }))}
+                  onClick={() =>
+                    setFilter((prev) => ({ ...prev, page: pageNum }))
+                  }
                   className={`px-3 py-1 border rounded-md cursor-pointer text-[.8rem] ${
-                    pageNum === filter.page ? "bg-[#0F4A2F] text-white" : "text-gray-700 hover:bg-gray-100"
+                    pageNum === filter.page
+                      ? "bg-[#0F4A2F] text-white"
+                      : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
                   {pageNum}
@@ -786,7 +973,9 @@ export default function Request() {
             })}
             <button
               disabled={filter.page >= filter.total_page}
-              onClick={() => setFilter((prev) => ({ ...prev, page: prev.page + 1 }))}
+              onClick={() =>
+                setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
+              }
               className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50"
             >
               <ChevronRight size={19} />

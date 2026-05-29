@@ -1,17 +1,23 @@
 import json
 import math
-import os
 import logging
 import jwt
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
-from django.db import IntegrityError
 from django.conf import settings
-from accounts.helper import get_user_from_token  # ✅ Added missing import
+from django.utils import timezone
+from accounts.helper import get_user_from_token
 from security.views import log_activity
-from .models import Reforestation_areas, Potential_sites, PermitDocument
+from .models import Reforestation_areas, Potential_sites, PermitDocument, AreaMetaDataVerification
 from barangay.models import Barangay
+
+# Optional: Link to external field_assessment app (graceful fallback if not installed)
+try:
+    from Field_assessment.models import FieldAssessment
+except ImportError:
+    FieldAssessment = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,13 +58,15 @@ def record_activity(request, action_type, entity_type, entity_id=None,
 
 
 def _serialize_area(area):
-    """✅ Consistent JSON response for all GET endpoints - includes permit_count for React"""
+    """
+    Serializes Reforestation Area for React.
+    Includes verification status summary for dashboard badges/status pills.
+    """
+    verification = getattr(area, 'meta_verification', None)
+    
     return {
         'reforestation_area_id': area.reforestation_area_id,
         'name': area.name,
-        'legality': area.legality,
-        'pre_assessment_status': area.pre_assessment_status,
-        'safety': area.safety,
         'polygon_coordinate': area.polygon_coordinate,
         'coordinate': area.coordinate,
         'barangay': {
@@ -71,14 +79,15 @@ def _serialize_area(area):
         } if area.land_classification else None,
         'description': area.description,
         'area_img': area.area_img.url if area.area_img else None,
-        'reforestation_data': area.reforestation_data,
-        'permit_count': area.permit_documents.count(),  # ✅ Added for React permit badge
+        'permit_count': area.permit_documents.count(),
+        'verification_status': verification.status if verification else 'pending',
+        'verification_decision_note': verification.decision_note if verification else None,
         'created_at': area.created_at.strftime("%d/%m/%y"),
     }
 
 
 # ─────────────────────────────────────────────
-# REFORESTATION AREA CRUD
+# REFORESTATION AREA CRUD (Spatial/Basic Data Only)
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_all_reforestation_areas(request):
@@ -94,11 +103,9 @@ def get_reforestation_areas(request):
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     search = request.GET.get('search', '').strip()
-    legality = request.GET.get('legality', 'All')
-    safety = request.GET.get('safety', 'All')
     barangay_id = request.GET.get('barangay_id', 'All')
     land_classification_id = request.GET.get('land_classification_id', 'All')
-    pre_status = request.GET.get('pre_assessment_status', 'All')
+    verification_status = request.GET.get('verification_status', 'All')
 
     try:
         entries = max(1, int(request.GET.get('entries', 10)))
@@ -111,16 +118,12 @@ def get_reforestation_areas(request):
     
     if search:
         areas = areas.filter(name__icontains=search)
-    if legality != 'All':
-        areas = areas.filter(legality=legality)
-    if safety != 'All':
-        areas = areas.filter(safety=safety)
     if barangay_id != 'All':
         areas = areas.filter(barangay_id=barangay_id)
     if land_classification_id != 'All':
         areas = areas.filter(land_classification_id=land_classification_id)
-    if pre_status != 'All':
-        areas = areas.filter(pre_assessment_status=pre_status)
+    if verification_status != 'All':
+        areas = areas.filter(meta_verification__status=verification_status)
 
     total = areas.count()
     total_page = math.ceil(total / entries) if total > 0 else 0
@@ -145,17 +148,11 @@ def get_reforestation_area(request, reforestation_area_id):
 
 @csrf_exempt
 def create_reforestation_areas(request):
-    """
-    ✅ KEPT EXACTLY AS REQUESTED.
-    New columns (legality, pre_assessment_status, reforestation_data)
-    automatically use defaults/nulls so your form never breaks.
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
 
     try:
         name = request.POST.get('name', '').strip()
-        safety = request.POST.get('safety', 'danger')
         barangay_id = int(request.POST.get('barangay_id', '').strip())
         description = request.POST.get('description', '').strip()
         polygon_coordinate = request.POST.get('polygon_coordinate')
@@ -175,7 +172,6 @@ def create_reforestation_areas(request):
 
         area = Reforestation_areas.objects.create(
             name=name,
-            safety=safety,
             polygon_coordinate=polygon_coordinate,
             coordinate=coordinate,
             barangay_id=barangay_id,
@@ -184,21 +180,15 @@ def create_reforestation_areas(request):
         )
 
         record_activity(
-            request,
-            action_type='CREATE',
-            entity_type='ReforestationArea',
-            entity_id=area.reforestation_area_id,
-            entity_label=name,
+            request, action_type='CREATE', entity_type='ReforestationArea',
+            entity_id=area.reforestation_area_id, entity_label=name,
             description=f'Reforestation area "{name}" created.',
-            new_data={'name': name, 'safety': safety, 'barangay_id': barangay_id, 'description': description},
+            new_data={'name': name, 'barangay_id': barangay_id, 'description': description},
         )
 
         return JsonResponse({
             'message': 'Successfully added',
-            'data': {
-                'reforestation_area_id': area.reforestation_area_id,
-                'name': area.name
-            }
+            'data': {'reforestation_area_id': area.reforestation_area_id, 'name': area.name}
         }, status=201)
 
     except json.JSONDecodeError:
@@ -212,10 +202,7 @@ def create_reforestation_areas(request):
 
 @csrf_exempt
 def update_reforestation_areas(request, reforestation_area_id):
-    """
-    PUT/POST: GIS Specialist manual review & finalization.
-    Accepts partial updates from your Right Panel form.
-    """
+    """PUT/POST: Updates ONLY spatial & basic area details."""
     if request.method not in ['PUT', 'POST']:
         return JsonResponse({'error': 'Only PUT/POST allowed'}, status=405)
 
@@ -224,27 +211,20 @@ def update_reforestation_areas(request, reforestation_area_id):
     try:
         img = None
         _old = {
-            'name': area.name,
-            'legality': area.legality,
-            'pre_assessment_status': area.pre_assessment_status,
-            'safety': area.safety,
-            'description': area.description,
-            'barangay_id': area.barangay_id,
-            'land_classification_id': area.land_classification_id,
+            'name': area.name, 'description': area.description,
+            'barangay_id': area.barangay_id, 'land_classification_id': area.land_classification_id,
         }
-        # Handle multipart/form-data (file uploads) vs application/json
+        
         if request.content_type and 'multipart/form-data' in request.content_type:
             data = request.POST
-            reforestation_data_raw = data.get('reforestation_data')
             img = request.FILES.get('area_img', None)
-            reforestation_data = json.loads(reforestation_data_raw) if reforestation_data_raw else None
         else:
-            body = json.loads(request.body)
-            data = body
-            reforestation_data = data.get('reforestation_data')
+            try:
+                body = json.loads(request.body)
+                data = body
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON format'}, status=400)
 
-        # Apply only provided fields (partial update safe)
-        
         if 'name' in data:
             if Reforestation_areas.objects.exclude(reforestation_area_id=reforestation_area_id).filter(name__iexact=data['name']).exists():
                 return JsonResponse({'error': 'Name already exists'}, status=409)
@@ -252,19 +232,12 @@ def update_reforestation_areas(request, reforestation_area_id):
         
         if img:
             area.area_img = img
-        if 'legality' in data:
-            area.legality = data['legality']
-        if 'pre_assessment_status' in data:
-            area.pre_assessment_status = data['pre_assessment_status']
-        if 'safety' in data:
-            area.safety = data['safety']
         if 'barangay_id' in data:
             area.barangay_id = data['barangay_id']
         if 'land_classification_id' in data:
             area.land_classification_id = data['land_classification_id']
         if 'description' in data:
             area.description = data['description']
-
         if 'polygon_coordinate' in data:
             val = data['polygon_coordinate']
             area.polygon_coordinate = json.loads(val) if isinstance(val, str) else val
@@ -272,38 +245,23 @@ def update_reforestation_areas(request, reforestation_area_id):
             val = data['coordinate']
             area.coordinate = json.loads(val) if isinstance(val, str) else val
 
-        if reforestation_data is not None:
-            area.reforestation_data = reforestation_data
-
         area.save()
 
         _new = {
-            'name': area.name,
-            'legality': area.legality,
-            'pre_assessment_status': area.pre_assessment_status,
-            'safety': area.safety,
-            'description': area.description,
-            'barangay_id': area.barangay_id,
-            'land_classification_id': area.land_classification_id,
+            'name': area.name, 'description': area.description,
+            'barangay_id': area.barangay_id, 'land_classification_id': area.land_classification_id,
         }
         _changed = [k for k in _old if str(_old[k]) != str(_new[k])]
 
         record_activity(
-            request,
-            action_type='UPDATE',
-            entity_type='ReforestationArea',
-            entity_id=reforestation_area_id,
-            entity_label=area.name,
-            description=f'Reforestation area "{area.name}" updated. Fields changed: {", ".join(_changed) or "none"}.',
-            old_data=_old,
-            new_data=_new,
-            changed_fields=_changed,
+            request, action_type='UPDATE', entity_type='ReforestationArea',
+            entity_id=reforestation_area_id, entity_label=area.name,
+            description=f'Area updated. Fields changed: {", ".join(_changed) or "none"}.',
+            old_data=_old, new_data=_new, changed_fields=_changed,
         )
 
-        return JsonResponse({'message': 'Successfully updated & finalized', 'data': _serialize_area(area)}, status=200)
+        return JsonResponse({'message': 'Successfully updated', 'data': _serialize_area(area)}, status=200)
 
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON format'}, status=400)
     except Exception as e:
         logger.error(f"Update error: {e}", exc_info=True)
         return JsonResponse({'error': f'Failed to update area: {str(e)[:100]}'}, status=500)
@@ -317,13 +275,10 @@ def delete_reforestation_areas(request, reforestation_area_id):
     deleted_name = area.name
 
     record_activity(
-        request,
-        action_type='DELETE',
-        entity_type='ReforestationArea',
-        entity_id=reforestation_area_id,
-        entity_label=deleted_name,
-        description=f'Reforestation area "{deleted_name}" deleted.',
-        old_data={'name': deleted_name, 'safety': area.safety, 'barangay_id': area.barangay_id},
+        request, action_type='DELETE', entity_type='ReforestationArea',
+        entity_id=reforestation_area_id, entity_label=deleted_name,
+        description=f'Area "{deleted_name}" deleted.',
+        old_data={'name': deleted_name, 'barangay_id': area.barangay_id},
     )
 
     area.delete()
@@ -331,7 +286,7 @@ def delete_reforestation_areas(request, reforestation_area_id):
 
 
 # =====================================================
-# POTENTIAL SITES CRUD (UNCHANGED AS REQUESTED)
+# POTENTIAL SITES CRUD (UNCHANGED)
 # =====================================================
 @csrf_exempt
 def get_potential_sites(request):
@@ -365,15 +320,11 @@ def delete_potential_site(request, potential_sites_id):
     site = get_object_or_404(Potential_sites, potential_sites_id=potential_sites_id)
 
     record_activity(
-        request,
-        action_type='DELETE',
-        entity_type='PotentialSite',
-        entity_id=potential_sites_id,
-        entity_label=f'Potential Site {potential_sites_id}',
-        description=f'Potential site {potential_sites_id} deleted from reforestation area {site.reforestation_area_id}.',
+        request, action_type='DELETE', entity_type='PotentialSite',
+        entity_id=potential_sites_id, entity_label=f'Potential Site {potential_sites_id}',
+        description=f'Potential site {potential_sites_id} deleted.',
         old_data={'reforestation_area_id': site.reforestation_area_id},
     )
-
     site.delete()
     return JsonResponse({'message': 'Successfully deleted'}, status=200)
 
@@ -387,7 +338,7 @@ def bulk_create_potential_sites(request):
         reforestation_area_id = data.get('reforestation_area_id')
         sites = data.get('sites')
         if not reforestation_area_id or not sites or not isinstance(sites, list):
-            return JsonResponse({"error": "Missing required fields: 'reforestation_area_id' and 'sites' array"}, status=400)
+            return JsonResponse({"error": "Missing required fields"}, status=400)
 
         reforestation_area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
         created_count = 0
@@ -404,39 +355,177 @@ def bulk_create_potential_sites(request):
                 ndvi_threshold=0.41
             )
             created_count += 1
+            
         record_activity(
-            request,
-            action_type='CREATE',
-            entity_type='PotentialSite',
-            entity_id=reforestation_area_id,
-            entity_label=f'Reforestation Area {reforestation_area_id}',
-            description=f'{created_count} potential site(s) bulk-created for reforestation area {reforestation_area_id}.',
+            request, action_type='CREATE', entity_type='PotentialSite',
+            entity_id=reforestation_area_id, entity_label=f'Area {reforestation_area_id}',
+            description=f'{created_count} potential site(s) bulk-created.',
             new_data={'reforestation_area_id': reforestation_area_id, 'created_count': created_count},
         )
 
-        return JsonResponse({
-            "success": True,
-            "created_count": created_count,
-            "message": f"Successfully saved {created_count} potential site(s)"
-        }, status=201)
+        return JsonResponse({"success": True, "created_count": created_count, "message": f"Saved {created_count} sites"}, status=201)
     except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON in request body"}, status=400)
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
     except Exception as e:
-        logger.error(f"❌ Error in bulk_create_potential_sites: {e}", exc_info=True)
+        logger.error(f"Error in bulk_create_potential_sites: {e}", exc_info=True)
         return JsonResponse({"error": f"Server error: {str(e)[:200]}"}, status=500)
 
 
 # ─────────────────────────────────────────────
-# ✅ PERMIT DOCUMENT CRUD (GIS Specialist Only)
+# AREA META DATA VERIFICATION (Admin Consolidation)
+# ─────────────────────────────────────────────
+@csrf_exempt
+def get_area_verification(request, reforestation_area_id):
+    """
+    GET: Returns current verification record + list of field assessments for the left panel.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
+    
+    # Get or create placeholder verification record
+    verification, _ = AreaMetaDataVerification.objects.get_or_create(
+        reforestation_area=area,
+        defaults={'status': 'pending'}
+    )
+
+    # Fetch field assessments from external app (if available)
+    assessments_data = []
+    if FieldAssessment:
+        assessments = FieldAssessment.objects.filter(
+            reforestation_area=area, status='submitted'
+        ).order_by('-assessment_date').values(
+            'assessment_id', 'inspector__first_name', 'inspector__last_name', 
+            'inspector__email', 'assessment_date', 'inspector_data', 'status'
+        )
+        for a in assessments:
+            # Parse raw JSON safely
+            try:
+                a['inspector_data'] = json.loads(a['inspector_data']) if a['inspector_data'] else {}
+            except:
+                a['inspector_data'] = {}
+            assessments_data.append(a)
+
+    return JsonResponse({
+        'verification': {
+            'id': verification.id,
+            'status': verification.status,
+            'verified_security_concerns': verification.verified_security_concerns,
+            'verified_accessibility': verification.verified_accessibility,
+            'verified_land_classification_id': verification.verified_land_classification_id,
+            'verified_land_classification_name': verification.verified_land_classification.name if verification.verified_land_classification else None,
+            'decision_note': verification.decision_note,
+            'referenced_assessment_ids': verification.referenced_assessment_ids,
+            'verified_by': verification.verified_by.email if verification.verified_by else None,
+            'verified_at': verification.verified_at.isoformat() if verification.verified_at else None,
+        },
+        'field_assessments': assessments_data,
+        'area_info': _serialize_area(area)
+    }, status=200)
+
+
+@csrf_exempt
+def update_area_verification(request, reforestation_area_id):
+    """
+    PUT/POST: Save Draft, Accept, or Reject.
+    Expects JSON payload matching AreaMetaDataVerification fields.
+    """
+    if request.method not in ['PUT', 'POST']:
+        return JsonResponse({'error': 'Only PUT/POST allowed'}, status=405)
+
+    area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
+    user, _ = _get_request_user(request)
+
+    try:
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            try:
+                data = json.loads(request.POST.get('verification_data', '{}'))
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid verification_data JSON'}, status=400)
+        else:
+            try:
+                data = json.loads(request.body)
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        verification, created = AreaMetaDataVerification.objects.get_or_create(
+            reforestation_area=area,
+            defaults={'status': 'draft', 'verified_by': user}
+        )
+
+        _old = {
+            'status': verification.status,
+            'security_concerns': verification.verified_security_concerns,
+            'accessibility': verification.verified_accessibility,
+            'land_classification_id': verification.verified_land_classification_id,
+            'decision_note': verification.decision_note
+        }
+
+        # Update consolidation fields
+        if 'verified_security_concerns' in data:
+            verification.verified_security_concerns = data['verified_security_concerns']
+        if 'verified_accessibility' in data:
+            verification.verified_accessibility = data['verified_accessibility']
+        if 'verified_land_classification_id' in data:
+            verification.verified_land_classification_id = data['verified_land_classification_id']
+        if 'decision_note' in data:
+            verification.decision_note = data['decision_note']
+        if 'referenced_assessment_ids' in data:
+            verification.referenced_assessment_ids = data['referenced_assessment_ids']
+        if 'status' in data:
+            verification.status = data['status']
+
+        # Auto-set timestamps & auditor on final decision
+        if verification.status in ['verified', 'rejected']:
+            verification.verified_by = user
+            verification.verified_at = timezone.now()
+        else:
+            verification.verified_by = user  # Track who saved draft
+
+        verification.save()
+
+        _new = {
+            'status': verification.status,
+            'security_concerns': verification.verified_security_concerns,
+            'accessibility': verification.verified_accessibility,
+            'land_classification_id': verification.verified_land_classification_id,
+            'decision_note': verification.decision_note
+        }
+        _changed = [k for k in _old if str(_old[k]) != str(_new[k])]
+
+        record_activity(
+            request, action_type='UPDATE' if not created else 'CREATE', 
+            entity_type='AreaMetaDataVerification', entity_id=verification.id,
+            entity_label=f"Verification: {area.name}",
+            description=f'Verification status changed to {verification.status}. Fields: {", ".join(_changed) or "none"}.',
+            old_data=_old, new_data=_new, changed_fields=_changed,
+        )
+
+        return JsonResponse({
+            'message': f'Verification {verification.status}',
+            'data': {
+                'id': verification.id,
+                'status': verification.status,
+                'verified_at': verification.verified_at.isoformat() if verification.verified_at else None
+            }
+        }, status=200)
+
+    except Exception as e:
+        logger.error(f"Verification update error: {e}", exc_info=True)
+        return JsonResponse({'error': f'Failed to update verification: {str(e)[:100]}'}, status=500)
+
+
+# ─────────────────────────────────────────────
+# PERMIT DOCUMENT CRUD (UNCHANGED, MINOR CLEANUP)
 # ─────────────────────────────────────────────
 @csrf_exempt
 def list_permits(request, reforestation_area_id):
-    """GET: List all verified permits for an area (GIS Specialist only)"""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
     try:
         user = get_user_from_token(request)
-        allowed_roles = ["GISSpecialist", "CityENROHead"]
+        allowed_roles = ["GISSpecialist", "CityENROHead", "DataManager", "Admin"]
         if not user or user.user_role not in allowed_roles:
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
@@ -460,12 +549,11 @@ def list_permits(request, reforestation_area_id):
 
 @csrf_exempt
 def upload_permit(request, reforestation_area_id):
-    """POST multipart: GIS Specialist uploads a VERIFIED permit"""
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
     try:
         user = get_user_from_token(request)
-        allowed_roles = ["GISSpecialist", "CityENROHead"]
+        allowed_roles = ["GISSpecialist", "CityENROHead", "DataManager", "Admin"]
         if not user or user.user_role not in allowed_roles:
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
@@ -491,12 +579,9 @@ def upload_permit(request, reforestation_area_id):
             uploaded_by=user
         )
         record_activity(
-            request,
-            action_type='CREATE',
-            entity_type='PermitDocument',
-            entity_id=permit.permit_id,
-            entity_label=f'{document_type} - {permit_number or "no number"}',
-            description=f'Permit document "{document_type}" uploaded for reforestation area {reforestation_area_id}.',
+            request, action_type='CREATE', entity_type='PermitDocument',
+            entity_id=permit.permit_id, entity_label=f'{document_type} - {permit_number or "no number"}',
+            description=f'Permit "{document_type}" uploaded for area {reforestation_area_id}.',
             new_data={'document_type': document_type, 'permit_number': permit_number, 'reforestation_area_id': reforestation_area_id},
         )
 
@@ -512,31 +597,26 @@ def upload_permit(request, reforestation_area_id):
 
 @csrf_exempt
 def delete_permit(request, permit_id):
-    """DELETE: Remove a verified permit (GIS Specialist only)"""
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
     try:
         user = get_user_from_token(request)
-        allowed_roles = ["GISSpecialist", "CityENROHead"]
+        allowed_roles = ["GISSpecialist", "CityENROHead", "DataManager", "Admin"]
         if not user or user.user_role not in allowed_roles:
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
         permit = get_object_or_404(PermitDocument, permit_id=permit_id)
 
         record_activity(
-            request,
-            action_type='DELETE',
-            entity_type='PermitDocument',
-            entity_id=permit_id,
-            entity_label=permit.document_type,
-            description=f'Permit document "{permit.document_type}" deleted from reforestation area {permit.reforestation_area_id}.',
+            request, action_type='DELETE', entity_type='PermitDocument',
+            entity_id=permit_id, entity_label=permit.document_type,
+            description=f'Permit "{permit.document_type}" deleted from area {permit.reforestation_area_id}.',
             old_data={'document_type': permit.document_type, 'permit_number': permit.permit_number, 'reforestation_area_id': permit.reforestation_area_id},
         )
 
-        # ✅ Auto-delete file from media/ using Django's storage API (safer than os.remove)
         if permit.file:
             try:
-                permit.file.delete(save=False)  # Uses Django storage backend
+                permit.file.delete(save=False)
             except Exception as file_err:
                 logger.warning(f"Could not delete file for permit {permit_id}: {file_err}")
 
@@ -544,4 +624,38 @@ def delete_permit(request, permit_id):
         return JsonResponse({'message': 'Permit deleted'}, status=200)
     except Exception as e:
         logger.error(f"Delete permit error: {e}", exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
+    
+@csrf_exempt
+def get_area_verification(request, reforestation_area_id):
+    """
+    GET: Return the saved verification record for an area.
+    Endpoint: GET /api/reforestation-areas/{id}/verification/
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    
+    try:
+        area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
+        
+        # Get or create verification record
+        verification, _ = AreaMetaDataVerification.objects.get_or_create(
+            reforestation_area=area,
+            defaults={'status': 'pending'}
+        )
+        
+        return JsonResponse({
+            'id': verification.id,
+            'status': verification.status,
+            'verified_security_concerns': verification.verified_security_concerns or [],
+            'verified_accessibility': verification.verified_accessibility or [],
+            'verified_land_classification_id': verification.verified_land_classification_id,
+            'decision_note': verification.decision_note or '',
+            'referenced_assessment_ids': verification.referenced_assessment_ids or [],
+            'verified_by': verification.verified_by.email if verification.verified_by else None,
+            'verified_at': verification.verified_at.isoformat() if verification.verified_at else None,
+        }, status=200)
+        
+    except Exception as e:
+        logger.error(f"Error fetching verification: {e}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
