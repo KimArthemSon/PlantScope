@@ -248,7 +248,7 @@ export default function Reforestation_areas() {
     const fetchLandClassifications = async () => {
       try {
         const res = await fetch(
-          "http://127.0.0.1:8000/api/get_land_classifications_list/",
+          "http://127.0.0.1:8000/api/get_land_classifications_list/?for_reforestation=true",
           { headers: { Authorization: `Bearer ${token}` } },
         );
         if (res.ok) {
@@ -282,6 +282,7 @@ export default function Reforestation_areas() {
       );
       if (!response.ok) throw new Error("Failed");
       const data = await response.json();
+      console.log(data)
       setAreas(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
 
@@ -732,7 +733,7 @@ export default function Reforestation_areas() {
               <tr>
                 <th className="py-3 px-5 text-left">No</th>
                 <th className="py-3 px-5 text-left">Name</th>
-                <th className="py-3 px-5 text-left">Verification Status</th>
+                <th className="py-3 px-5 text-left">Status</th>
                 <th className="py-3 px-5 text-left">Barangay</th>
                 <th className="py-3 px-5 text-left">Land Classification</th>
                 <th className="py-3 px-5 text-left">Permits</th>
@@ -798,7 +799,7 @@ export default function Reforestation_areas() {
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
                         {/* ✅ UPDATED: Navigate to Meta Data Verification */}
-                        {userRole !== "treeGrowers" && (
+                        {userRole !== "GISSpecialist" && (
                           <button
                             onClick={() =>
                               navigate(

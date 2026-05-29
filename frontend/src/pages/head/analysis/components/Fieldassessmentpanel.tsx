@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Shield, MapPin, Leaf, ChevronRight, User,
   Calendar, AlertTriangle, CheckCircle, XCircle,
-  Eye, Image as ImageIcon, RefreshCw, X,
+  Eye, Image as ImageIcon, RefreshCw, X, Camera,
 } from "lucide-react";
 import type {
   MCDALayer, FieldAssessmentEntry, LayerData,
@@ -17,21 +17,14 @@ const LAYERS: {
   { id: "survivability",         label: "Survivability",        short: "L3", icon: Leaf,   color: "text-emerald-600",bg: "bg-emerald-50", border: "border-emerald-200"},
 ];
 
-// ✅ UPDATED: Handle both full URLs and relative paths from API
 const getImageUrl = (url: string | null): string | null => {
- 
   if (!url) return null;
-  
-  // If already a full URL (starts with http), return as-is
   if (url.startsWith('http://') || url.startsWith('https://')) {
-   
     return url;
   }
-  // Otherwise, prepend BASE_URL for relative paths
   return `http://127.0.0.1:8000${url}`;
 };
 
-// ✅ Recursively render flexible layer data
 const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: number }) => {
   const entries = Object.entries(data);
   
@@ -42,7 +35,6 @@ const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: numbe
   return (
     <div className={`space-y-2 ${level > 0 ? 'ml-2 border-l-2 border-gray-100 pl-2' : ''}`}>
       {entries.map(([key, value]) => {
-        // Handle nested objects recursively
         if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
           return (
             <div key={key} className="space-y-1">
@@ -54,7 +46,6 @@ const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: numbe
           );
         }
         
-        // Handle arrays
         if (Array.isArray(value)) {
           return (
             <div key={key} className="flex flex-col gap-0.5">
@@ -72,7 +63,6 @@ const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: numbe
           );
         }
         
-        // Render simple key-value pairs
         return (
           <div key={key} className="flex flex-col gap-0.5">
             <span className="text-[9px] uppercase tracking-widest text-gray-400 font-semibold">
@@ -90,31 +80,30 @@ const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: numbe
   );
 };
 
-const AssessmentDetail = ({
-  entry, index, layer,
-  isPickingLocation,
-  onAddLocation,
-  onCancelLocation,
-}: {
+interface AssessmentDetailProps {
   entry: FieldAssessmentEntry;
   index: number;
   layer: MCDALayer;
   isPickingLocation: boolean;
   onAddLocation: () => void;
   onCancelLocation: () => void;
-}) => {
+  onPhotoClick?: (photo: any) => void;
+}
+
+const AssessmentDetail = ({
+  entry, index, layer,
+  isPickingLocation,
+  onAddLocation,
+  onCancelLocation,
+  onPhotoClick,
+}: AssessmentDetailProps) => {
   const [imgError, setImgError] = useState<Record<number, boolean>>({});
   const loc = entry.location;
   const layerMeta = LAYERS.find((l) => l.id === layer)!;
   const hasLocation = !!loc?.latitude;
 
-  useEffect(()=>{
-   console.log("hello",entry)
-  }, [entry]
-)
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      {/* Header */}
       <div className={`p-3 ${layerMeta.bg} border-b ${layerMeta.border}`}>
         <div className="flex items-center gap-3">
           {entry.inspector.profile_image ? (
@@ -132,7 +121,6 @@ const AssessmentDetail = ({
           </div>
         </div>
 
-        {/* Date + GPS row */}
         <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-600 flex-wrap">
           <span className="flex items-center gap-1">
             <Calendar size={10} /> {entry.assessment_date}
@@ -150,7 +138,6 @@ const AssessmentDetail = ({
           )}
         </div>
 
-        {/* Add / Update Location button */}
         <div className="mt-2">
           {isPickingLocation ? (
             <button
@@ -174,7 +161,6 @@ const AssessmentDetail = ({
         </div>
       </div>
 
-      {/* Layer data */}
       <div className="p-3 flex-1 overflow-y-auto space-y-4">
         <div className="space-y-3">
           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 border-b border-gray-100 pb-1">
@@ -183,7 +169,6 @@ const AssessmentDetail = ({
           <LayerDataRenderer data={entry.layer_data} />
         </div>
 
-        {/* Photos */}
         {entry.images?.length > 0 && (
           <div className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 border-b border-gray-100 pb-1">
@@ -193,7 +178,11 @@ const AssessmentDetail = ({
               {entry.images.map((img) => {
                 const imgUrl = getImageUrl(img.url);
                 return (
-                  <div key={img.id} className="relative group rounded-lg overflow-hidden border border-gray-200 bg-gray-50 aspect-square">
+                  <div 
+                    key={img.id} 
+                    className="relative group rounded-lg overflow-hidden border border-gray-200 bg-gray-50 aspect-square cursor-pointer"
+                    onClick={() => onPhotoClick?.(img)}
+                  >
                     {imgUrl && !imgError[img.id] ? (
                       <img src={imgUrl} alt={img.description}
                         className="w-full h-full object-cover transition group-hover:scale-105"
@@ -207,6 +196,12 @@ const AssessmentDetail = ({
                     <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] px-1.5 py-0.5 truncate opacity-0 group-hover:opacity-100 transition">
                       {img.layer.replace(/_/g, ' ')} - {img.description}
                     </div>
+                    {/* GPS indicator badge */}
+                    {img.latitude && img.longitude && (
+                      <div className="absolute top-1 right-1 bg-blue-500 text-white text-[8px] px-1.5 py-0.5 rounded-full shadow flex items-center gap-0.5">
+                        <Camera size={8} /> GPS
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -229,6 +224,9 @@ interface FieldAssessmentPanelProps {
   onSelectEntry: (index: number) => void;
   onFetchLayer: (layer: MCDALayer) => void;
   onAddLocation: (fieldAssessmentId: number | null) => void;
+  onPhotoClick?: (photo: any) => void;
+  showPhotoMarkers: boolean;
+  onTogglePhotoMarkers: (show: boolean) => void;
 }
 
 export default function FieldAssessmentPanel({
@@ -242,6 +240,9 @@ export default function FieldAssessmentPanel({
   onSelectEntry,
   onFetchLayer,
   onAddLocation,
+  onPhotoClick,
+  showPhotoMarkers,
+  onTogglePhotoMarkers,
 }: FieldAssessmentPanelProps) {
   const [search, setSearch] = useState("");
 
@@ -264,7 +265,6 @@ export default function FieldAssessmentPanel({
 
   return (
     <div className="bg-white rounded-lg shadow-md flex flex-col overflow-hidden" style={{ height: "100%" }}>
-      {/* Title */}
       <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
         <h3 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
           <Eye size={15} className="text-blue-500" /> Field Assessments
@@ -279,7 +279,6 @@ export default function FieldAssessmentPanel({
         )}
       </div>
 
-      {/* Layer tabs */}
       <div className="flex border-b border-gray-100">
         {LAYERS.map((l) => {
           const count = assessments[l.id]?.length ?? 0;
@@ -298,7 +297,23 @@ export default function FieldAssessmentPanel({
         })}
       </div>
 
-      {/* Content */}
+      {/* ✅ Toggle Photo Markers Button */}
+      {selected && selected.images?.length > 0 && (
+        <div className="px-3 py-2 border-b border-gray-100 bg-blue-50">
+          <button
+            onClick={() => onTogglePhotoMarkers(!showPhotoMarkers)}
+            className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg transition w-full justify-center
+              ${showPhotoMarkers 
+                ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            <Camera size={14} />
+            {showPhotoMarkers ? 'Hide Photo Locations' : 'Show Photo Locations'}
+            <span className="text-[10px] opacity-75">({selected.images.length} photos)</span>
+          </button>
+        </div>
+      )}
+
       {!areaId ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center p-4 text-gray-400">
           <Eye size={28} className="mb-2 opacity-30" />
@@ -323,7 +338,6 @@ export default function FieldAssessmentPanel({
         </div>
       ) : (
         <div className="flex flex-1 overflow-hidden">
-          {/* Detail Panel */}
           <div className="flex-1 overflow-hidden">
             {selected ? (
               <AssessmentDetail
@@ -333,6 +347,7 @@ export default function FieldAssessmentPanel({
                 isPickingLocation={locationTargetId === selected.field_assessment_id}
                 onAddLocation={() => onAddLocation(selected.field_assessment_id)}
                 onCancelLocation={() => onAddLocation(null)}
+                onPhotoClick={onPhotoClick}
               />
             ) : (
               <div className="flex-1 h-full flex flex-col items-center justify-center text-center p-4 text-gray-400">

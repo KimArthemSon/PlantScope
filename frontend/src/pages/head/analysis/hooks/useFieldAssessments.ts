@@ -3,11 +3,10 @@ import L from "leaflet";
 
 export type MCDALayer = "safety" | "boundary_verification" | "survivability";
 
-// ✅ Match actual API response structure
 export interface AssessmentImage {
   id: number;
   url: string;
-  layer: string;  // e.g., "safety_flood", "surv_soil", "bound_verification"
+  layer: string;
   description: string;
   latitude: number | null;
   longitude: number | null;
@@ -19,7 +18,6 @@ export interface AssessmentLocation {
   gps_accuracy_meters: number;
 }
 
-// ✅ Flexible structure for layer data (matches your API)
 export interface LayerData {
   [key: string]: any;
 }
@@ -30,13 +28,12 @@ export interface InspectorInfo {
   profile_image: string | null;
 }
 
-// ✅ Match actual API response structure
 export interface FieldAssessmentEntry {
   field_assessment_id: number;
   inspector: InspectorInfo;
   assessment_date: string;
   location: AssessmentLocation | null;
-  layer_data: LayerData;  // Flexible nested structure
+  layer_data: LayerData;
   images: AssessmentImage[];
   created_at: string;
   updated_at: string;
@@ -59,8 +56,13 @@ const LAYER_EMOJIS: Record<MCDALayer, string> = {
   survivability: "🌱",
 };
 
+// ✅ Photo marker color (blue)
+const PHOTO_MARKER_COLOR = "#3B82F6";
+
 export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  // ✅ Track photo markers by assessment ID
+  const photoMarkersRef = useRef<Map<number, L.Marker[]>>(new Map());
   
   const [assessments, setAssessments] = useState<Record<MCDALayer, FieldAssessmentEntry[]>>({
     safety: [],
@@ -77,6 +79,8 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
   const [activeLayer, setActiveLayer] = useState<MCDALayer>("safety");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [locationTargetId, setLocationTargetId] = useState<number | null>(null);
+  // ✅ NEW: Toggle for showing photo markers
+  const [showPhotoMarkers, setShowPhotoMarkers] = useState(true);
 
   const removeLayerMarkers = useCallback(
     (layer: MCDALayer) => {
@@ -94,7 +98,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
           try {
             map.removeLayer(marker);
           } catch {
-            // marker may already be detached — ignore
+            // ignore
           }
           markersRef.current.delete(key);
         }
@@ -103,12 +107,49 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     [mapRef]
   );
 
+  // ✅ Remove photo markers for a specific assessment
+  const removePhotoMarkers = useCallback((assessmentId: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const markers = photoMarkersRef.current.get(assessmentId);
+    if (markers) {
+      markers.forEach((marker) => {
+        try {
+          map.removeLayer(marker);
+        } catch {
+          // ignore
+        }
+      });
+      photoMarkersRef.current.delete(assessmentId);
+    }
+  }, [mapRef]);
+
+  // ✅ Remove all photo markers
+  const removeAllPhotoMarkers = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    photoMarkersRef.current.forEach((markers) => {
+      markers.forEach((marker) => {
+        try {
+          map.removeLayer(marker);
+        } catch {
+          // ignore
+        }
+      });
+    });
+    photoMarkersRef.current.clear();
+  }, [mapRef]);
+
   const placeMarkers = useCallback(
     (entries: FieldAssessmentEntry[], layer: MCDALayer) => {
       const map = mapRef.current;
       if (!map) return;
 
       removeLayerMarkers(layer);
+      // Clear all photo markers when changing layer
+      removeAllPhotoMarkers();
 
       const color = LAYER_MARKER_COLORS[layer];
       const emoji = LAYER_EMOJIS[layer];
@@ -146,8 +187,57 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         markersRef.current.set(`${layer}-${idx}`, marker);
       });
     },
-    [mapRef, removeLayerMarkers]
+    [mapRef, removeLayerMarkers, removeAllPhotoMarkers]
   );
+
+  // ✅ Place photo markers for a selected assessment
+  const placePhotoMarkers = useCallback((entry: FieldAssessmentEntry) => {
+    const map = mapRef.current;
+    if (!map || !entry.images || entry.images.length === 0) return;
+
+    // Remove existing photo markers for this assessment
+    removePhotoMarkers(entry.field_assessment_id);
+
+    const photoMarkers: L.Marker[] = [];
+
+    entry.images.forEach((img, idx) => {
+      if (!img.latitude || !img.longitude) return;
+
+      // Create camera icon marker
+      const marker = L.marker([img.latitude, img.longitude], {
+        icon: L.divIcon({
+          className: "photo-marker",
+          html: `<div style="
+            background:${PHOTO_MARKER_COLOR};width:24px;height:24px;border-radius:50%;
+            border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);
+            display:flex;align-items:center;justify-content:center;
+            font-size:11px;cursor:pointer;
+          ">📷</div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 24],
+          popupAnchor: [0, -24],
+        }),
+      }).addTo(map);
+
+      // Create popup with photo info
+      const layerName = img.layer.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      marker.bindPopup(`
+        <div style="min-width:150px;">
+          <strong style="font-size:12px;color:${PHOTO_MARKER_COLOR}">📷 Photo ${idx + 1}</strong><br/>
+          <span style="font-size:11px;color:#666">${layerName}</span><br/>
+          <span style="font-size:10px;color:#999">${img.description || 'No description'}</span><br/>
+          <span style="font-size:9px;color:#aaa">${img.latitude.toFixed(5)}, ${img.longitude.toFixed(5)}</span>
+        </div>
+      `);
+
+      photoMarkers.push(marker);
+    });
+
+    // Store markers for cleanup
+    if (photoMarkers.length > 0) {
+      photoMarkersRef.current.set(entry.field_assessment_id, photoMarkers);
+    }
+  }, [mapRef, removePhotoMarkers]);
 
   const fetchLayer = useCallback(
     async (areaId: string, layer: MCDALayer) => {
@@ -166,13 +256,18 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         placeMarkers(entries, layer);
         setActiveLayer(layer);
         setSelectedIndex(entries.length > 0 ? 0 : null);
+        
+        // Place photo markers for first entry if exists
+        if (entries.length > 0 && showPhotoMarkers) {
+          placePhotoMarkers(entries[0]);
+        }
       } catch (err) {
         console.error(`fetchLayer(${layer}) error:`, err);
       } finally {
         setLoading((prev) => ({ ...prev, [layer]: false }));
       }
     },
-    [placeMarkers]
+    [placeMarkers, placePhotoMarkers, showPhotoMarkers]
   );
 
   const refreshLayer = useCallback(
@@ -238,7 +333,6 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         const json = await res.json();
         if (!res.ok) throw new Error(json.message ?? `HTTP ${res.status}`);
 
-        // Update state with correct structure
         setAssessments((prev) => {
           const updated = { ...prev };
           (Object.keys(updated) as MCDALayer[]).forEach((layer) => {
@@ -277,5 +371,10 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     updateLocation,
     locationTargetId,
     setLocationTargetId,
+    // ✅ Export photo marker functions and state
+    placePhotoMarkers,
+    removePhotoMarkers,
+    showPhotoMarkers,
+    setShowPhotoMarkers,
   };
 }

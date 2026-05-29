@@ -19,6 +19,7 @@ class Reforestation_areas(models.Model):
         Barangay, null=True, blank=True, on_delete=models.SET_NULL,
         related_name='reforestation_areas'
     )
+    
     land_classification = models.ForeignKey(
         LandClassification, on_delete=models.RESTRICT, blank=True, null=True,
         related_name='reforestation_areas'

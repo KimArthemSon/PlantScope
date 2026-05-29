@@ -13,6 +13,10 @@ import {
   Target,
   Pin,
   PinOff,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  FileText,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -20,13 +24,15 @@ import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
 
 // =========================
-// INTERFACES (Aligned with Backend v2.0)
+// INTERFACES (UPDATED: Simplified Validation)
 // =========================
-interface ValidationProgress {
-  validated_layers: number;
-  total_layers: number; // Always 8
-  rejected_layers: number;
-  is_complete: boolean;
+
+// ✅ SIMPLIFIED: No more complex layer tracking
+interface ValidationStatus {
+  has_safety_note: boolean;
+  has_survivability_note: boolean;
+  final_decision: "ACCEPT" | "REJECT" | null;
+  is_ready_to_finalize: boolean;
 }
 
 interface SiteMetrics {
@@ -41,7 +47,7 @@ interface Site {
   status: string;
   is_pinned: boolean;
   created_at: string;
-  validation_progress: ValidationProgress;
+  validation: ValidationStatus; // ✅ Changed from validation_progress
   metrics: SiteMetrics;
 }
 
@@ -65,7 +71,7 @@ export default function SitesForArea() {
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "accepted",
+    status: "accepted", // ✅ Changed default to "all"
     pinned_only: false,
   });
   const [loading, setLoading] = useState(false);
@@ -113,6 +119,7 @@ export default function SitesForArea() {
       if (!response.ok) throw new Error("Failed to fetch sites");
 
       const data = await response.json();
+      console.log(data);
       setSites(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch {
@@ -207,16 +214,59 @@ export default function SitesForArea() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-green-100 text-green-800";
       case "accepted":
-        return "bg-blue-100 text-blue-800";
+        return "bg-green-100 text-green-800";
       case "rejected":
         return "bg-red-100 text-red-800";
       case "under_review":
-        return "bg-purple-100 text-purple-800";
+        return "bg-blue-100 text-blue-800";
       default:
         return "bg-yellow-100 text-yellow-800";
     }
+  };
+
+  // ✅ NEW: Get validation badge for simplified status
+  const getValidationBadge = (validation: ValidationStatus) => {
+    if (validation.final_decision === "ACCEPT") {
+      return {
+        icon: CheckCircle,
+        color: "bg-green-100 text-green-700",
+        label: "Accepted",
+      };
+    }
+    if (validation.final_decision === "REJECT") {
+      return {
+        icon: XCircle,
+        color: "bg-red-100 text-red-700",
+        label: "Rejected",
+      };
+    }
+    if (validation.is_ready_to_finalize) {
+      return {
+        icon: FileText,
+        color: "bg-blue-100 text-blue-700",
+        label: "Ready",
+      };
+    }
+    if (validation.has_safety_note && validation.has_survivability_note) {
+      return {
+        icon: FileText,
+        color: "bg-purple-100 text-purple-700",
+        label: "Notes Added",
+      };
+    }
+    if (validation.has_safety_note || validation.has_survivability_note) {
+      return {
+        icon: AlertCircle,
+        color: "bg-yellow-100 text-yellow-700",
+        label: "In Progress",
+      };
+    }
+    return {
+      icon: AlertCircle,
+      color: "bg-gray-100 text-gray-700",
+      label: "Not Started",
+    };
   };
 
   return (
@@ -303,7 +353,7 @@ export default function SitesForArea() {
                   `${userPath}/analysis/multicriteria-analysis/new?areaId=${id}`,
                 )
               }
-              className="flex items-center justify-center gap-2 bg-[#0f4a2f] hover:bg-[#0a3321] hover:text-white text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer"
+              className="flex items-center justify-center gap-2 bg-[#0f4a2f] hover:bg-[#0a3321] hover:text-white text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer transition-colors"
             >
               <Plus size={20} /> Add new site
             </button>
@@ -326,6 +376,8 @@ export default function SitesForArea() {
                 <th className="py-3 px-5 text-left text-sm font-semibold">
                   Status
                 </th>
+
+                {/* ✅ UPDATED: Validation Column - Simplified */}
                 <th className="py-3 px-5 text-left text-sm font-semibold">
                   <Target size={14} className="inline mr-1 -mt-0.5" />
                   Validation
@@ -346,12 +398,8 @@ export default function SitesForArea() {
             <tbody>
               {sites.length > 0 ? (
                 sites.map((site, index) => {
-                  const percent =
-                    site.validation_progress.total_layers > 0
-                      ? (site.validation_progress.validated_layers /
-                          site.validation_progress.total_layers) *
-                        100
-                      : 0;
+                  const validationBadge = getValidationBadge(site.validation);
+                  const ValidationIcon = validationBadge.icon;
 
                   return (
                     <tr
@@ -399,41 +447,35 @@ export default function SitesForArea() {
                         </span>
                       </td>
 
-                      {/* Validation Progress */}
-                      <td className="py-3 px-5 w-48">
-                        <div className="flex flex-col gap-1">
-                          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                            <div
-                              className={`h-2 rounded-full transition-all duration-500 ${
-                                site.validation_progress.rejected_layers > 0
-                                  ? "bg-red-500"
-                                  : site.validation_progress.is_complete
-                                    ? "bg-green-600"
-                                    : "bg-blue-500"
-                              }`}
-                              style={{ width: `${percent}%` }}
-                            />
+                      {/* ✅ UPDATED: Simplified Validation Status */}
+                      <td className="py-3 px-5">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${validationBadge.color}`}
+                          >
+                            <ValidationIcon size={12} />
+                            {validationBadge.label}
+                          </span>
+
+                          {/* Show note indicators */}
+                          <div className="flex gap-1">
+                            {site.validation.has_safety_note && (
+                              <span
+                                className="text-[10px] text-blue-600"
+                                title="Safety note added"
+                              >
+                                S
+                              </span>
+                            )}
+                            {site.validation.has_survivability_note && (
+                              <span
+                                className="text-[10px] text-purple-600"
+                                title="Survivability note added"
+                              >
+                                V
+                              </span>
+                            )}
                           </div>
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-medium text-gray-700">
-                              {site.validation_progress.validated_layers}/
-                              {site.validation_progress.total_layers} layers
-                            </span>
-                            <span className="text-gray-500">
-                              {Math.round(percent)}%
-                            </span>
-                          </div>
-                          {site.validation_progress.rejected_layers > 0 && (
-                            <div className="text-[10px] text-red-600 font-medium">
-                              ⚠ {site.validation_progress.rejected_layers}{" "}
-                              rejected
-                            </div>
-                          )}
-                          {site.validation_progress.is_complete && (
-                            <div className="text-[10px] text-green-600 font-medium">
-                              ✓ Ready to finalize
-                            </div>
-                          )}
                         </div>
                       </td>
 
@@ -448,6 +490,7 @@ export default function SitesForArea() {
                         {new Date(site.created_at).toLocaleDateString()}
                       </td>
 
+                      {/* ✅ EXACT ACTION COLUMN - PRESERVED AS REQUESTED */}
                       <td className="py-3 px-5 flex gap-2">
                         <button
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
@@ -476,7 +519,7 @@ export default function SitesForArea() {
               ) : (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     className="text-center py-10 text-gray-500 italic"
                   >
                     <div className="flex flex-col items-center gap-2">

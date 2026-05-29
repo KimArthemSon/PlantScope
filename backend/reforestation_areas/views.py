@@ -430,6 +430,7 @@ def update_area_verification(request, reforestation_area_id):
     """
     PUT/POST: Save Draft, Accept, or Reject.
     Expects JSON payload matching AreaMetaDataVerification fields.
+    ✅ FIXED: Syncs verified_land_classification to parent Reforestation_areas table
     """
     if request.method not in ['PUT', 'POST']:
         return JsonResponse({'error': 'Only PUT/POST allowed'}, status=405)
@@ -467,8 +468,15 @@ def update_area_verification(request, reforestation_area_id):
             verification.verified_security_concerns = data['verified_security_concerns']
         if 'verified_accessibility' in data:
             verification.verified_accessibility = data['verified_accessibility']
+            
+        # ✅ FIXED: Land Classification sync between verification and area
         if 'verified_land_classification_id' in data:
-            verification.verified_land_classification_id = data['verified_land_classification_id']
+            lc_id = data['verified_land_classification_id']
+            # Update verification record (using _id suffix for direct ID assignment)
+            verification.verified_land_classification_id = lc_id
+            # ✅ Sync to parent Reforestation_areas table (using _id suffix)
+            area.land_classification_id = lc_id
+            
         if 'decision_note' in data:
             verification.decision_note = data['decision_note']
         if 'referenced_assessment_ids' in data:
@@ -483,7 +491,9 @@ def update_area_verification(request, reforestation_area_id):
         else:
             verification.verified_by = user  # Track who saved draft
 
+        # ✅ SAVE BOTH RECORDS - critical for persistence
         verification.save()
+        area.save()  # ← THIS WAS MISSING - now land_classification persists to DB
 
         _new = {
             'status': verification.status,
@@ -514,6 +524,7 @@ def update_area_verification(request, reforestation_area_id):
     except Exception as e:
         logger.error(f"Verification update error: {e}", exc_info=True)
         return JsonResponse({'error': f'Failed to update verification: {str(e)[:100]}'}, status=500)
+
 
 
 # ─────────────────────────────────────────────

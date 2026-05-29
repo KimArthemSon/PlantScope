@@ -1,26 +1,23 @@
 import { useEffect, useState, useRef } from "react";
 import {
-  Trash2,
-  Edit,
-  Plus,
   ChevronRight,
   ChevronLeft,
-  User,
-  VerifiedIcon,
-  Leaf,
   SlidersHorizontal,
   X,
   RotateCcw,
   List,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Edit,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
-import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
 
 // ─────────────────────────────────────────────────────────────
-// Types & Interfaces
+// Types & Interfaces (UPDATED: Removed legality/safety/pre_assessment)
 // ─────────────────────────────────────────────────────────────
 interface Barangay {
   barangay_id: number;
@@ -35,21 +32,21 @@ interface LandClassification {
 interface ReforestationArea {
   reforestation_area_id: number;
   name: string;
-  legality: string;
-  safety: string;
   polygon_coordinate: any;
   coordinate: any;
   barangay: {
     barangay_id: number;
     name: string;
-  };
+  } | null;
   land_classification: {
     land_classification_id: number;
     name: string;
   } | null;
-  pre_assessment_status: string;
   description: string;
   area_img: string | null;
+  permit_count: number;
+  verification_status: "pending" | "draft" | "verified" | "rejected";
+  verification_decision_note: string | null;
   created_at: string;
 }
 
@@ -58,32 +55,27 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
-  legality: string;
-  safety: string;
-  pre_assessment_status: string;
+  verification_status: string; // ✅ Replaced old statuses
   barangay_id: string;
   land_classification_id: string;
 }
 
+// ✅ Default to "verified" since this is for Official Reforestation Areas
 const DEFAULT_FILTER: Omit<Filter, "total_page"> = {
   search: "",
   entries: 10,
   page: 1,
-  legality: "All",
-  safety: "All",
-  pre_assessment_status: "approved",
+  verification_status: "verified",
   barangay_id: "All",
   land_classification_id: "All",
 };
 
 // ─────────────────────────────────────────────────────────────
-// Helper: count active (non-default) filters
+// Helper: count active filters
 // ─────────────────────────────────────────────────────────────
 function countActiveFilters(filter: Filter): number {
   let count = 0;
-  if (filter.legality !== "All") count++;
-  if (filter.safety !== "All") count++;
-  if (filter.pre_assessment_status !== "All") count++;
+  if (filter.verification_status !== "All") count++;
   if (filter.barangay_id !== "All") count++;
   if (filter.land_classification_id !== "All") count++;
   return count;
@@ -92,9 +84,7 @@ function countActiveFilters(filter: Filter): number {
 export default function Reforestation_areas() {
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [landClassifications, setLandClassifications] = useState<
-    LandClassification[]
-  >([]);
+  const [landClassifications, setLandClassifications] = useState<LandClassification[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const filterPanelRef = useRef<HTMLDivElement>(null);
 
@@ -104,9 +94,6 @@ export default function Reforestation_areas() {
   });
 
   const [loading, setLoading] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
@@ -153,9 +140,7 @@ export default function Reforestation_areas() {
       try {
         const res = await fetch(
           "http://127.0.0.1:8000/api/get_barangay_list/",
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         if (res.ok) {
           const data = await res.json();
@@ -168,7 +153,7 @@ export default function Reforestation_areas() {
     const fetchLandClassifications = async () => {
       try {
         const res = await fetch(
-          "http://127.0.0.1:8000/api/get_land_classifications_list/",
+          "http://127.0.0.1:8000/api/get_land_classifications_list/?for_reforestation=true",
           { headers: { Authorization: `Bearer ${token}` } },
         );
         if (res.ok) {
@@ -191,11 +176,10 @@ export default function Reforestation_areas() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
-        legality: filter.legality,
-        safety: filter.safety,
-        pre_assessment_status: filter.pre_assessment_status,
-        barangay_id: filter.barangay_id,
-        land_classification_id: filter.land_classification_id,
+        // ✅ Use verification_status (legality, safety, pre_assessment_status removed)
+        ...(filter.verification_status !== "All" && { verification_status: filter.verification_status }),
+        ...(filter.barangay_id !== "All" && { barangay_id: filter.barangay_id }),
+        ...(filter.land_classification_id !== "All" && { land_classification_id: filter.land_classification_id }),
       });
       const response = await fetch(
         `http://127.0.0.1:8000/api/get_reforestation_areas/?${params}`,
@@ -221,50 +205,10 @@ export default function Reforestation_areas() {
   }, [
     filter.page,
     filter.entries,
-    filter.legality,
-    filter.safety,
-    filter.pre_assessment_status,
+    filter.verification_status,
     filter.barangay_id,
     filter.land_classification_id,
   ]);
-
-  // ── Delete ─────────────────────────────────────────────────
-  const setDelete = (id: number) => {
-    setDeleteId(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/delete_reforestation_areas/${deleteId}/`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
-      );
-      const data = await response.json();
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Deleted",
-          message: data.message,
-        });
-        fetchAreas();
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.message || "Delete failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong.",
-      });
-    }
-    setIsDeleteModalOpen(false);
-  };
 
   // ── Reset all filters ──────────────────────────────────────
   const resetFilters = () => {
@@ -289,16 +233,7 @@ export default function Reforestation_areas() {
         />
       )}
 
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
-
-      {/* ── HEADER ────────────────────────────────────────── */}
-      
-
-      <main className="flex-1 p-8 max-w-409">
+      <main className="flex-1 p-8 max-w-7xl mx-auto">
         {/* ── TOOLBAR ───────────────────────────────────────── */}
         <div className="flex items-center flex-wrap mb-4 gap-3">
           {/* Entries */}
@@ -369,72 +304,29 @@ export default function Reforestation_areas() {
 
                 {/* Filter grid */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1">
+                  {/* ✅ Verification Status Filter */}
+                  <div className="flex flex-col gap-1 col-span-2">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Legality
+                      Verification Status
                     </label>
                     <select
-                      value={filter.legality}
+                      value={filter.verification_status}
                       onChange={(e) =>
                         setFilter((prev) => ({
                           ...prev,
-                          legality: e.target.value,
+                          verification_status: e.target.value,
                           page: 1,
                         }))
                       }
                       className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
                     >
                       <option value="All">All</option>
-                      <option value="legal">Legal</option>
-                      <option value="pending">Pending</option>
-                      <option value="illegal">Illegal</option>
+                      <option value="pending">Pending Review</option>
+                      <option value="draft">Draft</option>
+                      <option value="verified">Verified ✓</option>
+                      <option value="rejected">Rejected ✗</option>
                     </select>
                   </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Safety
-                    </label>
-                    <select
-                      value={filter.safety}
-                      onChange={(e) =>
-                        setFilter((prev) => ({
-                          ...prev,
-                          safety: e.target.value,
-                          page: 1,
-                        }))
-                      }
-                      className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
-                    >
-                      <option value="All">All</option>
-                      <option value="safe">Safe</option>
-                      <option value="slightly">Slightly Unsafe</option>
-                      <option value="moderate">Moderate Risk</option>
-                      <option value="danger">High Risk</option>
-                    </select>
-                  </div>
-
-                  {/* <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Meta Data
-                    </label>
-                    <select
-                      value={filter.pre_assessment_status}
-                      onChange={(e) =>
-                        setFilter((prev) => ({
-                          ...prev,
-                          pre_assessment_status: e.target.value,
-                          page: 1,
-                        }))
-                      }
-                      className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
-                    >
-                      <option value="All">All</option>
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                  </div> */}
 
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -460,7 +352,7 @@ export default function Reforestation_areas() {
                     </select>
                   </div>
 
-                  <div className="flex flex-col gap-1 col-span-2">
+                  <div className="flex flex-col gap-1">
                     <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                       Land Classification
                     </label>
@@ -494,51 +386,23 @@ export default function Reforestation_areas() {
           {/* Active filter badges */}
           {activeFilterCount > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
-              {filter.legality !== "All" && (
+              {filter.verification_status !== "All" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Legality: {filter.legality}
+                  Verification: {filter.verification_status}
                   <button
                     onClick={() =>
-                      setFilter((p) => ({ ...p, legality: "All", page: 1 }))
+                      setFilter((p) => ({ ...p, verification_status: "All", page: 1 }))
                     }
                   >
                     <X size={11} />
                   </button>
                 </span>
               )}
-              {filter.safety !== "All" && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Safety: {filter.safety}
-                  <button
-                    onClick={() =>
-                      setFilter((p) => ({ ...p, safety: "All", page: 1 }))
-                    }
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              )}
-              {/* {filter.pre_assessment_status !== "All" && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Meta Data: {filter.pre_assessment_status}
-                  <button
-                    onClick={() =>
-                      setFilter((p) => ({
-                        ...p,
-                        pre_assessment_status: "All",
-                        page: 1,
-                      }))
-                    }
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              )} */}
               {filter.barangay_id !== "All" && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
                   Barangay:{" "}
                   {barangays.find(
-                    (b) => String(b.barangay_id) === filter.barangay_id,
+                    (b) => String(b.barangay_id) === String(filter.barangay_id),
                   )?.name ?? filter.barangay_id}
                   <button
                     onClick={() =>
@@ -555,7 +419,7 @@ export default function Reforestation_areas() {
                   {landClassifications.find(
                     (lc) =>
                       String(lc.land_classification_id) ===
-                      filter.land_classification_id,
+                      String(filter.land_classification_id),
                   )?.name ?? filter.land_classification_id}
                   <button
                     onClick={() =>
@@ -600,10 +464,10 @@ export default function Reforestation_areas() {
               <tr>
                 <th className="py-3 px-5 text-left">No</th>
                 <th className="py-3 px-5 text-left">Name</th>
+                <th className="py-3 px-5 text-left">Status</th>
                 <th className="py-3 px-5 text-left">Barangay</th>
                 <th className="py-3 px-5 text-left">Land Classification</th>
-                <th className="py-3 px-5 text-left">Legality</th>
-                <th className="py-3 px-5 text-left">Safety</th>
+                <th className="py-3 px-5 text-left">Permits</th>
                 <th className="py-3 px-5 text-left">Created</th>
                 <th className="py-3 px-5 text-left">Actions</th>
               </tr>
@@ -618,58 +482,58 @@ export default function Reforestation_areas() {
                     <td className="py-3 px-5">
                       {index + 1 + (filter.page - 1) * filter.entries}
                     </td>
-                    <td className="py-3 px-5">{area.name}</td>
-                    <td className="py-3 px-5">{area.barangay.name}</td>
+                    <td className="py-3 px-5 font-medium">{area.name}</td>
+                    
+                    {/* Verification Status Badge */}
+                    <td className="py-3 px-5">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 ${
+                          area.verification_status === "pending"
+                            ? "bg-amber-100 text-amber-700"
+                            : area.verification_status === "draft"
+                            ? "bg-blue-100 text-blue-700"
+                            : area.verification_status === "verified"
+                            ? "bg-green-100 text-green-700"
+                            : area.verification_status === "rejected"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {area.verification_status === "verified" && <CheckCircle size={12} />}
+                        {area.verification_status === "rejected" && <AlertCircle size={12} />}
+                        {area.verification_status === "pending" && <Clock size={12} />}
+                        {area.verification_status === "draft" && <Edit size={12} />}
+                        {area.verification_status.charAt(0).toUpperCase() + area.verification_status.slice(1)}
+                      </span>
+                      {area.verification_decision_note && (
+                        <p className="text-[.65rem] text-gray-500 mt-1 max-w-[180px] truncate" title={area.verification_decision_note}>
+                          {area.verification_decision_note}
+                        </p>
+                      )}
+                    </td>
+
+                    <td className="py-3 px-5">
+                      {area.barangay?.name ?? <span className="text-gray-400 italic">N/A</span>}
+                    </td>
                     <td className="py-3 px-5">
                       {area.land_classification?.name ?? (
                         <span className="text-gray-400 italic">N/A</span>
                       )}
                     </td>
+                    
+                    {/* Permit Count */}
                     <td className="py-3 px-5">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          area.legality === "pending"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : area.legality === "legal"
-                              ? "bg-green-100 text-green-700"
-                              : area.legality === "illegal"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {area.legality}
+                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-700 text-xs font-bold">
+                        {area.permit_count}
                       </span>
                     </td>
-                    <td className="py-3 px-5">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          area.safety === "safe"
-                            ? "bg-green-100 text-green-700"
-                            : area.safety === "slightly"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : area.safety === "moderate"
-                                ? "bg-orange-100 text-orange-700"
-                                : area.safety === "danger"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {area.safety}
-                      </span>
-                    </td>
-                    <td className="py-3 px-5">{area.created_at}</td>
+                    
+                    <td className="py-3 px-5 text-sm">{area.created_at}</td>
+                    
+                    {/* ✅ EXACT ACTION COLUMN SNIPPET REQUESTED */}
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
-                        {/* <button
-                          onClick={() =>
-                            navigate(
-                              `${useruserRole}/maintenance/reforestation_area_form/${area.reforestation_area_id}`,
-                            )
-                          }
-                          className="cursor-pointer"
-                        >
-                          <Edit size={18} />
-                        </button> */}
+                      
                         <button
                           onClick={() =>
                             navigate(
@@ -680,26 +544,14 @@ export default function Reforestation_areas() {
                         >
                           <List size={18} />
                         </button>
-                        {/* {userRole !== "DataManager" && (
-                          <button
-                            onClick={() =>
-                              setDelete(area.reforestation_area_id)
-                            }
-                            className="text-red-500 cursor-pointer"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )} */}
+                      
                       </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="text-center py-5 text-gray-500 italic"
-                  >
+                  <td colSpan={8} className="text-center py-5 text-gray-500 italic">
                     No areas found
                   </td>
                 </tr>

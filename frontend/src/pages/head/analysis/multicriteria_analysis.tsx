@@ -2,7 +2,7 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Leaf, Upload, Eye, EyeOff, Trash2, Info, Pen, MapPin,
-  Ruler, Layers, Palette, Flag, Pin, X,
+  Ruler, Layers, Palette, Flag, Pin, X, Camera,
   CheckCircle, Save, Undo2, Target,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
@@ -334,6 +334,29 @@ export default function MulticriteriaAnalysis() {
       map.getContainer().style.cursor = "";
     };
   }, [fieldAssessments.locationTargetId]);
+
+  // ✅ NEW: Handle photo marker placement when assessment is selected
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const selectedEntry = fieldAssessments.assessments[fieldAssessments.activeLayer]?.[fieldAssessments.selectedIndex];
+    
+    if (selectedEntry && fieldAssessments.showPhotoMarkers) {
+      fieldAssessments.placePhotoMarkers(selectedEntry);
+    } else if (selectedEntry) {
+      // Remove photo markers if toggled off
+      fieldAssessments.removePhotoMarkers(selectedEntry.field_assessment_id);
+    }
+  }, [fieldAssessments.selectedIndex, fieldAssessments.activeLayer, fieldAssessments.assessments, fieldAssessments.showPhotoMarkers]);
+
+  // ✅ NEW: Handle photo click to fly to location
+  const handlePhotoClick = useCallback((photo: any) => {
+    const map = mapRef.current;
+    if (!map || !photo.latitude || !photo.longitude) return;
+    
+    map.flyTo([photo.latitude, photo.longitude], 18, { animate: true, duration: 0.8 });
+  }, []);
 
   // ── Color helpers ─────────────────────────────────────────────────────────
   const ndviToColor = (ndvi: number) => {
@@ -1189,7 +1212,7 @@ export default function MulticriteriaAnalysis() {
             </div>
           </div>
 
-          {/* Assessment Detail Panel */}
+          {/* Assessment Detail Panel - ✅ UPDATED with photo toggle */}
           <div className="w-[45%]">
             {(fieldAssessments.assessments[fieldAssessments.activeLayer] ?? []).length === 0 ? (
               <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 min-h-[120px] flex items-center justify-center">
@@ -1219,6 +1242,9 @@ export default function MulticriteriaAnalysis() {
                   if (areaId) fieldAssessments.fetchLayer(areaId, layer);
                 }}
                 onAddLocation={(faId) => fieldAssessments.setLocationTargetId(faId)}
+                onPhotoClick={handlePhotoClick}
+                showPhotoMarkers={fieldAssessments.showPhotoMarkers}
+                onTogglePhotoMarkers={fieldAssessments.setShowPhotoMarkers}
               />
             )}
           </div>

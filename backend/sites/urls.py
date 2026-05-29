@@ -47,7 +47,7 @@ urlpatterns = [
         name='get_field_assessments_by_layer_mcda'
     ),
     path(
-        'update_field_assessment_location/',
+        'update_field_assessment_coordinate/',
         extended_views.update_field_assessment_coordinate,
         name='update_field_assessment_coordinate'
     ),
