@@ -196,3 +196,52 @@ class Potential_sites(models.Model):
             'suitability_score': self.suitability_score,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
+
+class HazardProneSite(models.Model):
+    """
+    🚨 Hazard Prone Zones: Extracted high-risk areas (Class 4 & 5) 
+    that require avoidance or strict engineering mitigation.
+    Linked to the parent Reforestation Area upon saving.
+    """
+    HAZARD_TYPES = (
+        ('landslide', 'Landslide'),
+        ('flood', 'Flood'),
+        ('wildfire', 'Wildfire'),
+    )
+
+    hazard_site_id = models.BigAutoField(primary_key=True)
+    
+    reforestation_area = models.ForeignKey(
+        Reforestation_areas,
+        on_delete=models.CASCADE,
+        related_name='hazard_prone_sites'
+    )
+    
+    site_id = models.CharField(max_length=50, blank=True)
+    polygon_coordinates = models.JSONField(null=True, blank=True)
+    
+    area_hectares = models.FloatField(default=0)
+    hazard_type = models.CharField(max_length=20, choices=HAZARD_TYPES)
+    risk_class = models.IntegerField(default=4, help_text="4 (High) or 5 (Very High)")
+    avg_hazard_index = models.FloatField(default=0, help_text="Average LSI/FSI/WSI score")
+    
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name_plural = "Hazard Prone Sites"
+    
+    def __str__(self):
+        return f"{self.hazard_type.upper()} Risk Zone - {self.reforestation_area.name}"
+        
+    def to_dict(self):
+        return {
+            'hazard_site_id': self.hazard_site_id,
+            'site_id': self.site_id,
+            'reforestation_area_id': self.reforestation_area.reforestation_area_id,
+            'polygon_coordinates': self.polygon_coordinates,
+            'area_hectares': self.area_hectares,
+            'hazard_type': self.hazard_type,
+            'risk_class': self.risk_class,
+            'avg_hazard_index': self.avg_hazard_index,
+        }

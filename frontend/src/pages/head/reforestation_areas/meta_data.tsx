@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ShieldCheck,
-  ShieldAlert, // ← ADD THIS LINE
+  ShieldAlert,
   AlertTriangle,
   ClipboardCheck,
   Save,
@@ -21,6 +21,7 @@ import {
   Loader2,
   Plus,
   Route,
+  Clock,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
@@ -29,7 +30,7 @@ const API = "http://127.0.0.1:8000/api";
 const API_IMAGE = "http://127.0.0.1:8000/";
 
 // ─────────────────────────────────────────────
-// Type Definitions (UPDATED to match actual API)
+// Type Definitions (UPDATED to match actual API + image linking)
 // ─────────────────────────────────────────────
 interface AreaData {
   reforestation_area_id: number;
@@ -44,15 +45,21 @@ interface AreaData {
   verification_decision_note: string | null;
 }
 
-// ✅ UPDATED: Match actual API structure
+// ✅ UPDATED: Extended to support image metadata from merged API response
 interface LegalDocument {
   note?: string;
   photo_url?: string | null;
   status?: "uploaded" | "missing";
+  // ✅ Added for image linking from assessment.images array
+  document_type?: string;
+  label?: string;
+  image_id?: number;
+  image_description?: string;
+  image_coords?: { lat: number; lng: number } | null;
 }
 
 interface FieldAssessment {
-  field_assessment_id: number; // ✅ Changed from assessment_id
+  field_assessment_id: number;
   inspector_id: number;
   inspector_name: string;
   inspector_email: string;
@@ -61,7 +68,6 @@ interface FieldAssessment {
   location: any;
   field_assessment_data: {
     meta_data?: {
-      // ✅ Nested under meta_data
       legal_documents?: {
         land_title?: LegalDocument;
         tax_declaration?: LegalDocument;
@@ -82,7 +88,6 @@ interface FieldAssessment {
         route_description?: string;
       };
     };
-    // ✅ Also support flat structure (older assessments)
     accessibility?: string;
     security_concerns?: string[];
     land_classification_type?: string;
@@ -114,12 +119,6 @@ interface VerificationRecord {
   referenced_assessment_ids: number[] | null;
   verified_by: string | null;
   verified_at: string | null;
-}
-
-interface VerificationResponse {
-  verification: VerificationRecord;
-  field_assessments: FieldAssessment[];
-  area_info: AreaData;
 }
 
 interface PermitItem {
@@ -242,8 +241,21 @@ function VerificationStatusBadge({
   );
 }
 
+// ✅ UPDATED: DocumentCard with proper URL handling
 function DocumentCard({ doc, label }: { doc: LegalDocument; label: string }) {
+  // Check if we have a photo URL (from either JSON or merged image)
   const hasPhoto = doc.photo_url && doc.photo_url !== "null";
+  
+  // ✅ FIX: Check if URL is already absolute (starts with http)
+  const imageUrl = doc.photo_url 
+    ? (doc.photo_url.startsWith('http') 
+        ? doc.photo_url  // Already absolute
+        : `${API_IMAGE}${doc.photo_url}`  // Needs base URL prepended
+      )
+    : null;
+  
+  // Check if we have image preview data (merged from assessment.images)
+  const hasImagePreview = doc.image_id && imageUrl;
 
   return (
     <div className="p-3 rounded-lg border bg-green-50 border-green-200">
@@ -252,11 +264,53 @@ function DocumentCard({ doc, label }: { doc: LegalDocument; label: string }) {
           <CheckCircle size={16} className="text-green-600" />
           <span className="font-bold text-xs text-green-800">{label}</span>
         </div>
+        {/* Show image ID badge if we have merged image data */}
+        {doc.image_id && (
+          <span className="text-[10px] text-gray-500 bg-white px-2 py-0.5 rounded">
+            IMG #{doc.image_id}
+          </span>
+        )}
       </div>
 
-      {hasPhoto && (
+      {/* ✅ Image Preview Section - Shows when image is merged from assessment.images */}
+      {hasImagePreview && imageUrl && (
+        <div className="mb-2">
+          <a
+            href={imageUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block rounded-lg overflow-hidden border border-green-200 hover:border-green-400 transition"
+          >
+            <img 
+              src={imageUrl} 
+              alt={doc.image_description || label}
+              className="w-full h-24 object-cover"
+              onError={(e) => {
+                console.error('Image failed to load:', imageUrl);
+                // Hide broken images gracefully
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          </a>
+          {/* Show image description if available */}
+          {doc.image_description && (
+            <p className="text-[10px] text-gray-500 mt-1 italic">
+              "{doc.image_description}"
+            </p>
+          )}
+          {/* Show GPS coordinates if available */}
+          {doc.image_coords && (
+            <p className="text-[9px] text-gray-400">
+              📍 {doc.image_coords.lat.toFixed(4)}, {doc.image_coords.lng.toFixed(4)}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Fallback: Show "View Document" link if we have photo_url but no preview data */}
+      {hasPhoto && !hasImagePreview && imageUrl && (
         <a
-          href={`${API_IMAGE}${doc.photo_url}`}
+          href={imageUrl}
           target="_blank"
           rel="noreferrer"
           className="flex items-center gap-2 text-xs text-blue-600 hover:underline mb-2"
@@ -265,6 +319,7 @@ function DocumentCard({ doc, label }: { doc: LegalDocument; label: string }) {
         </a>
       )}
 
+      {/* Inspector Note */}
       {doc.note && (
         <div className="bg-white p-2 rounded border border-gray-100">
           <p className="text-[10px] uppercase font-semibold text-gray-400 mb-1">
@@ -393,12 +448,12 @@ export default function MetaDataVerification() {
   });
 
   // ─────────────────────────────────────────────
-  // API Calls (UPDATED to use correct endpoint)
+  // API Calls
   // ─────────────────────────────────────────────
   async function fetchAreaVerification() {
     if (!id || !token) return;
     try {
-      // 1. Fetch field assessments (existing)
+      // 1. Fetch field assessments with meta-data images
       const assessmentsRes = await fetch(`${API}/area/${id}/meta-data/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -407,7 +462,7 @@ export default function MetaDataVerification() {
         setFieldAssessments(assessmentsData || []);
       }
 
-      // 2. ✅ NEW: Fetch saved verification record
+      // 2. Fetch saved verification record
       const verificationRes = await fetch(
         `${API}/reforestation-areas/${id}/verification/`,
         { headers: { Authorization: `Bearer ${token}` } },
@@ -415,12 +470,10 @@ export default function MetaDataVerification() {
       if (verificationRes.ok) {
         const verificationData = await verificationRes.json();
 
-        // Populate form fields with saved data
         setVerifiedSecurityConcerns(
           verificationData.verified_security_concerns || [],
         );
 
-        // Handle accessibility (backend may return array or single object)
         const backendAcc = verificationData.verified_accessibility;
         if (Array.isArray(backendAcc)) {
           setVerifiedAccessibility(
@@ -451,7 +504,7 @@ export default function MetaDataVerification() {
         );
       }
 
-      // 3. Fetch area info (existing)
+      // 3. Fetch area info
       try {
         const areaRes = await fetch(`${API}/get_reforestation_area/${id}/`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -521,7 +574,6 @@ export default function MetaDataVerification() {
         status: status,
       };
 
-      // ✅ FIXED: Use correct Django URL pattern
       const res = await fetch(
         `${API}/update_reforestation-areas/${id}/verification/`,
         {
@@ -547,7 +599,7 @@ export default function MetaDataVerification() {
           title: "Success",
           message: `Verification ${action}.`,
         });
-        fetchAreaVerification(); // Refresh to get updated status
+        fetchAreaVerification();
       } else {
         setPSAlert({
           type: "error",
@@ -761,36 +813,87 @@ export default function MetaDataVerification() {
     setVerifiedAccessibility((prev) => prev.filter((e) => e.id !== entryId));
   }
 
-  // ✅ Helper to extract legal documents from assessment
-  function getLegalDocuments(assessment: FieldAssessment) {
+  // ✅ UPDATED: Extract legal documents AND attach matching images from assessment.images
+  function getLegalDocuments(assessment: FieldAssessment): LegalDocument[] {
     const metaData = assessment.field_assessment_data.meta_data;
     if (!metaData?.legal_documents) return [];
 
-    const docs = [];
+    const docs: LegalDocument[] = [];
     const legalDocs = metaData.legal_documents;
+    
+    // ✅ Build a Map of images by layer code for O(1) lookup
+    const imagesByLayer = new Map(
+      assessment.images.map(img => [img.layer, img])
+    );
 
+    // ── Land Title ─────────────────────────────────────
     if (legalDocs.land_title) {
+      const landTitleImg = imagesByLayer.get('meta_land_title');
       docs.push({
         ...legalDocs.land_title,
         document_type: "land_title",
         label: "Land Title",
+        // ✅ Prioritize image URL from assessment.images over JSON photo_url
+        photo_url: landTitleImg?.url || legalDocs.land_title.photo_url,
+        image_id: landTitleImg?.image_id,
+        image_description: landTitleImg?.description,
+        image_coords: landTitleImg?.latitude && landTitleImg?.longitude 
+          ? { lat: landTitleImg.latitude, lng: landTitleImg.longitude } 
+          : null,
       });
     }
+    
+    // ── Tax Declaration ─────────────────────────────────
     if (legalDocs.tax_declaration) {
+      const taxDeclImg = imagesByLayer.get('meta_tax_decl');
       docs.push({
         ...legalDocs.tax_declaration,
         document_type: "tax_declaration",
         label: "Tax Declaration",
+        photo_url: taxDeclImg?.url || legalDocs.tax_declaration.photo_url,
+        image_id: taxDeclImg?.image_id,
+        image_description: taxDeclImg?.description,
+        image_coords: taxDeclImg?.latitude && taxDeclImg?.longitude 
+          ? { lat: taxDeclImg.latitude, lng: taxDeclImg.longitude } 
+          : null,
       });
     }
-    if (legalDocs.other_documents) {
+    
+    // ── Other Documents (array) ─────────────────────────
+    if (legalDocs.other_documents?.length) {
       legalDocs.other_documents.forEach((doc, idx) => {
+        // For other docs, use the first meta_other_doc image
+        // (If you have multiple other docs, enhance this logic to match by index or ID)
+        const otherImg = assessment.images.find(img => img.layer === 'meta_other_doc');
         docs.push({
           ...doc,
           document_type: "other",
           label: `Other Document ${idx + 1}`,
+          photo_url: otherImg?.url || doc.photo_url,
+          image_id: otherImg?.image_id,
+          image_description: otherImg?.description,
+          image_coords: otherImg?.latitude && otherImg?.longitude 
+            ? { lat: otherImg.latitude, lng: otherImg.longitude } 
+            : null,
         });
       });
+    }
+    // ✅ EDGE CASE: If other_documents is empty but we have a meta_other_doc image, show it anyway
+    else if (imagesByLayer.has('meta_other_doc')) {
+      const otherImg = imagesByLayer.get('meta_other_doc');
+      if (otherImg) {
+        docs.push({
+          document_type: "other",
+          label: "Other Document",
+          photo_url: otherImg.url,
+          image_id: otherImg.image_id,
+          image_description: otherImg.description,
+          image_coords: otherImg.latitude && otherImg.longitude 
+            ? { lat: otherImg.latitude, lng: otherImg.longitude } 
+            : null,
+          note: "", // Empty note since no JSON data
+        });
+      }
     }
 
     return docs;
@@ -921,7 +1024,11 @@ export default function MetaDataVerification() {
                     </h3>
                     <div className="grid gap-2">
                       {legalDocs.map((doc, idx) => (
-                        <DocumentCard key={idx} doc={doc} label={doc.label} />
+                        <DocumentCard 
+                          key={`${doc.document_type}-${idx}`} 
+                          doc={doc} 
+                          label={doc.label || doc.document_type || "Document"} 
+                        />
                       ))}
                       {!legalDocs.length && (
                         <p className="text-xs text-gray-400 italic">

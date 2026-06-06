@@ -228,25 +228,49 @@ export default function SitesForArea() {
   // ✅ NEW: Get validation badge color
   const getValidationBadge = (validation: ValidationStatus) => {
     if (validation.final_decision === "ACCEPT") {
-      return { icon: CheckCircle, color: "bg-green-100 text-green-700", label: "Accepted" };
+      return {
+        icon: CheckCircle,
+        color: "bg-green-100 text-green-700",
+        label: "Accepted",
+      };
     }
     if (validation.final_decision === "REJECT") {
-      return { icon: XCircle, color: "bg-red-100 text-red-700", label: "Rejected" };
+      return {
+        icon: XCircle,
+        color: "bg-red-100 text-red-700",
+        label: "Rejected",
+      };
     }
     if (validation.is_ready_to_finalize) {
-      return { icon: FileText, color: "bg-blue-100 text-blue-700", label: "Ready to Finalize" };
+      return {
+        icon: FileText,
+        color: "bg-blue-100 text-blue-700",
+        label: "Ready to Finalize",
+      };
     }
     if (validation.has_safety_note && validation.has_survivability_note) {
-      return { icon: FileText, color: "bg-purple-100 text-purple-700", label: "Notes Added" };
+      return {
+        icon: FileText,
+        color: "bg-purple-100 text-purple-700",
+        label: "Notes Added",
+      };
     }
     if (validation.has_safety_note || validation.has_survivability_note) {
-      return { icon: AlertCircle, color: "bg-yellow-100 text-yellow-700", label: "In Progress" };
+      return {
+        icon: AlertCircle,
+        color: "bg-yellow-100 text-yellow-700",
+        label: "In Progress",
+      };
     }
-    return { icon: AlertCircle, color: "bg-gray-100 text-gray-700", label: "Not Started" };
+    return {
+      icon: AlertCircle,
+      color: "bg-gray-100 text-gray-700",
+      label: "Not Started",
+    };
   };
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
+    <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
       {/* ALERT */}
       {PSalert && (
         <PlantScopeAlert
@@ -264,7 +288,7 @@ export default function SitesForArea() {
         onDelete={handleDelete}
       />
 
-      <main className="flex-1 p-8 max-w-10xl">
+      <main className="flex-1 p-8 w-full max-w-609">
         {/* FILTERS */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm">Show:</label>
@@ -342,13 +366,17 @@ export default function SitesForArea() {
           <table className="min-w-full bg-white">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
-                <th className="py-3 px-5 text-left text-sm font-semibold">No</th>
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  No
+                </th>
                 <th className="py-3 px-5 text-left text-sm font-semibold">
                   <Pin size={14} className="inline mr-1 -mt-0.5" />
                   Name
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">Status</th>
-                
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  Status
+                </th>
+
                 {/* ✅ UPDATED: Validation Column - Simplified */}
                 <th className="py-3 px-5 text-left text-sm font-semibold">
                   <Target size={14} className="inline mr-1 -mt-0.5" />
@@ -359,8 +387,12 @@ export default function SitesForArea() {
                   <Ruler size={14} className="inline mr-1 -mt-0.5" />
                   Area (ha)
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">Created</th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">Actions</th>
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  Created
+                </th>
+                <th className="py-3 px-5 text-left text-sm font-semibold">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -424,14 +456,24 @@ export default function SitesForArea() {
                             <ValidationIcon size={12} />
                             {validationBadge.label}
                           </span>
-                          
+
                           {/* Show note indicators */}
                           <div className="flex gap-1">
                             {site.validation.has_safety_note && (
-                              <span className="text-[10px] text-blue-600" title="Safety note added">S</span>
+                              <span
+                                className="text-[10px] text-blue-600"
+                                title="Safety note added"
+                              >
+                                S
+                              </span>
                             )}
                             {site.validation.has_survivability_note && (
-                              <span className="text-[10px] text-purple-600" title="Survivability note added">V</span>
+                              <span
+                                className="text-[10px] text-purple-600"
+                                title="Survivability note added"
+                              >
+                                V
+                              </span>
                             )}
                           </div>
                         </div>

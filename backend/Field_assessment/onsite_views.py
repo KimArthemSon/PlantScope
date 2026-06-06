@@ -7,6 +7,11 @@ from django.shortcuts import get_object_or_404
 from accounts.helper import get_user_from_token
 from security.views import log_activity
 from .models import Assigned_onsite_inspector, Field_assessment, Field_assessment_images
+from django.db.models import Prefetch
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ✅ Valid layer codes for image uploads (matches IMAGE_LAYER_CHOICES in models)
 VALID_IMAGE_LAYERS = [
@@ -50,33 +55,109 @@ def check_inspector_assignment(user, reforestation_area_id):
     ).exists()
 
 
-# ─────────────────────────────────────────────
-# 1. GET ASSIGNED REFORESTATION AREAS
-# ─────────────────────────────────────────────
 @csrf_exempt
 def get_assigned_reforestation_area(request):
+    """
+    GET: Fetch reforestation areas assigned to the onsite inspector.
+    
+    Returns area info + optional meta verification status from AreaMetaDataVerification.
+    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    
     try:
         user = get_user_from_token(request)
         if not user or user.user_role != "OnsiteInspector":
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-        records = Assigned_onsite_inspector.objects.filter(user=user).select_related(
-            'reforestation_area', 'reforestation_area__barangay'
+        records = Assigned_onsite_inspector.objects.filter(
+            user=user
+        ).select_related(
+            'reforestation_area', 
+            'reforestation_area__barangay',
+            'reforestation_area__land_classification'
+        ).prefetch_related(
+            'reforestation_area__meta_verification'  # OneToOne relation
         )
-        data = [{
-            "assigned_onsite_inspector_id": r.assigned_onsite_inspector_id,
-            "reforestation_area_id": r.reforestation_area.reforestation_area_id,
-            "name": r.reforestation_area.name,
-            "barangay": r.reforestation_area.barangay.name if r.reforestation_area.barangay else None,
-            "coordinate": r.reforestation_area.coordinate,
-            "pre_assessment_status": r.reforestation_area.pre_assessment_status,
-            "assigned_at": r.created_at.isoformat()
-        } for r in records]
+        
+        data = []
+        for r in records:
+            area = r.reforestation_area
+            
+            # ✅ Get verification status from AreaMetaDataVerification (OneToOne)
+            meta_verification = getattr(area, 'meta_verification', None)
+            verification_status = meta_verification.status if meta_verification else 'pending'
+            
+            # ✅ Parse coordinate for map display
+            coordinate = area.coordinate
+            lat, lng, coord_display = _parse_coordinate(coordinate)
+            
+            # ✅ Parse polygon coordinate if available
+            polygon_coordinate = area.polygon_coordinate
+            
+            data.append({
+                "assigned_onsite_inspector_id": r.assigned_onsite_inspector_id,
+                "reforestation_area_id": area.reforestation_area_id,
+                "name": area.name,
+                "description": area.description,
+                "barangay": {
+                    "id": area.barangay.barangay_id if area.barangay else None,
+                    "name": area.barangay.name if area.barangay else None,
+                } if area.barangay else None,
+                "land_classification": {
+                    "id": area.land_classification.land_classification_id if area.land_classification else None,
+                    "name": area.land_classification.name if area.land_classification else None,
+                } if area.land_classification else None,
+                "coordinate": coordinate,  # Raw JSON for flexibility
+                "polygon_coordinate": polygon_coordinate,  # Raw JSON for polygon rendering
+                "latitude": lat,  # Parsed for map centering
+                "longitude": lng,
+                "coord_display": coord_display,
+                "area_img": f"http://127.0.0.1:8000{area.area_img.url}" if area.area_img else None,
+                # ✅ Verification status from meta_verification table
+                "verification_status": verification_status,
+                "verified_at": meta_verification.verified_at.isoformat() if meta_verification and meta_verification.verified_at else None,
+                "assigned_at": r.created_at.isoformat()
+            })
+            
         return JsonResponse(data, safe=False, status=200)
+        
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
+
+
+def _parse_coordinate(coordinate):
+    """Helper: Parse coordinate JSON/string to lat/lng for map display."""
+    default_lat, default_lng = 11.0, 124.6
+    default_display = "No Coordinates"
+    
+    if not coordinate:
+        return default_lat, default_lng, default_display
+    
+    try:
+        # Handle JSON array: [lat, lng]
+        if isinstance(coordinate, list) and len(coordinate) >= 2:
+            lat, lng = float(coordinate[0]), float(coordinate[1])
+            return lat, lng, f"{lat:.4f}° N, {lng:.4f}° E"
+        
+        # Handle JSON object: {"latitude": x, "longitude": y}
+        if isinstance(coordinate, dict):
+            lat = float(coordinate.get('latitude', default_lat))
+            lng = float(coordinate.get('longitude', default_lng))
+            return lat, lng, f"{lat:.4f}° N, {lng:.4f}° E"
+        
+        # Handle string: "lat, lng"
+        if isinstance(coordinate, str) and ',' in coordinate:
+            parts = coordinate.split(',')
+            if len(parts) >= 2:
+                lat, lng = float(parts[0].strip()), float(parts[1].strip())
+                return lat, lng, f"{lat:.4f}° N, {lng:.4f}° E"
+                
+    except (ValueError, TypeError, KeyError):
+        pass
+    
+    return default_lat, default_lng, default_display
+
 
 
 # ─────────────────────────────────────────────
@@ -84,39 +165,83 @@ def get_assigned_reforestation_area(request):
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_field_assessments(request):
+    """
+    GET: Fetch field assessments for onsite inspector.
+    
+    Query Parameters:
+    - reforestation_area_id: Filter by area (optional)
+    - is_submitted: Filter by submission status (optional)
+    - layer: Filter by layer key in field_assessment_data (optional)
+             Valid values: 'meta_data', 'safety', 'boundary_verification', 'survivability'
+    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    
     try:
         user = get_user_from_token(request)
         if not user or user.user_role != "OnsiteInspector":
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
+        # Base queryset
         q = Field_assessment.objects.filter(
             assigned_onsite_inspector__user=user
-        ).select_related('assigned_onsite_inspector__reforestation_area')
+        ).select_related(
+            'assigned_onsite_inspector__reforestation_area'
+        )
         
+        # Filter by reforestation area
         if aid := request.GET.get('reforestation_area_id'):
             q = q.filter(assigned_onsite_inspector__reforestation_area_id=aid)
         
+        # Filter by submission status
         if request.GET.get('is_submitted') is not None:
             q = q.filter(is_submitted=(request.GET['is_submitted'].lower() == 'true'))
             
+        # ✅ NEW: Filter by layer in field_assessment_data JSON
+        layer = request.GET.get('layer')
+        if layer:
+            # Valid layer keys
+            VALID_LAYERS = ['meta_data', 'safety', 'boundary_verification', 'survivability']
+            if layer not in VALID_LAYERS:
+                return JsonResponse({
+                    'error': f'Invalid layer. Allowed: {VALID_LAYERS}',
+                    'success': False
+                }, status=400)
+            
+            # Filter 1: Check if JSON field has the layer key
+            q = q.filter(field_assessment_data__has_key=layer)
+            
+            # Note: We'll do empty dict filtering in Python below for clarity
+        
         q = q.order_by('-updated_at')
 
-        data = [{
-            "field_assessment_id": fa.field_assessment_id,
-            "reforestation_area_id": fa.assigned_onsite_inspector.reforestation_area_id,
-            "reforestation_area_name": fa.assigned_onsite_inspector.reforestation_area.name,
-            "assessment_date": fa.assessment_date.isoformat() if fa.assessment_date else None,
-            "location": fa.location,
-            "is_submitted": fa.is_submitted,
-            "image_count": fa.images.count(),
-            "created_at": fa.created_at.isoformat(),
-            "updated_at": fa.updated_at.isoformat(),
-        } for fa in q]
+        data = []
+        for fa in q:
+            # ✅ NEW: Skip if layer filter is set but layer data is empty
+            if layer:
+                layer_data = fa.field_assessment_data.get(layer)
+                # Skip if layer data is None, empty dict, or empty list
+                if not layer_data or (isinstance(layer_data, (dict, list)) and not layer_data):
+                    continue
+            
+            data.append({
+                "field_assessment_id": fa.field_assessment_id,
+                "reforestation_area_id": fa.assigned_onsite_inspector.reforestation_area_id,
+                "reforestation_area_name": fa.assigned_onsite_inspector.reforestation_area.name,
+                "assessment_date": fa.assessment_date.isoformat() if fa.assessment_date else None,
+                "location": fa.location,
+                "is_submitted": fa.is_submitted,
+                "image_count": fa.images.count(),
+                # ✅ Include layer data if requested (for debugging/preview)
+                "layer_data": fa.field_assessment_data.get(layer) if layer else None,
+                "created_at": fa.created_at.isoformat(),
+                "updated_at": fa.updated_at.isoformat(),
+            })
+            
         return JsonResponse(data, safe=False, status=200)
+        
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': str(e), 'success': False}, status=500)
 
 
 # ─────────────────────────────────────────────
@@ -533,21 +658,33 @@ def head_delete_field_assessment(request, field_assessment_id):
 def get_area_meta_data(request, reforestation_area_id):
     """
     GET: For GIS Specialists / ENRO Heads.
-    Fetches ALL submitted assessments for a specific Reforestation Area.
-    Includes full image data with Geocam coordinates & layer codes.
+    Fetches ONLY submitted assessments containing 'meta_data' for a specific Reforestation Area.
+    Returns ONLY meta-related images (land_title, tax_decl, other_doc).
+    
+    FIX: Uses fa.images.all() which correctly accesses the related images 
+    defined by related_name='images' in Field_assessment_images model.
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
     
     try:
+        # 1. Authentication & Authorization
         user = get_user_from_token(request)
         allowed_roles = ["DataManager", "CityENROHead", "GISSpecialist"]
+        
         if not user or user.user_role not in allowed_roles:
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
+        # 2. Define meta-related layer codes (must match IMAGE_LAYER_CHOICES)
+        META_LAYER_CODES = ['meta_land_title', 'meta_tax_decl', 'meta_other_doc']
+
+        # 3. Query assessments with prefetched images
+        # We use simple prefetch_related('images') so that fa.images.all() works correctly.
+        # This avoids issues with 'to_attr' hiding the data from the default accessor.
         assessments = Field_assessment.objects.filter(
             assigned_onsite_inspector__reforestation_area_id=reforestation_area_id,
-            is_submitted=True
+            is_submitted=True,
+            field_assessment_data__has_key='meta_data'  # DB-level JSON key filter
         ).select_related(
             'assigned_onsite_inspector__user',
             'assigned_onsite_inspector__user__profile'
@@ -555,6 +692,12 @@ def get_area_meta_data(request, reforestation_area_id):
 
         data = []
         for fa in assessments:
+            # Skip if meta_data is empty (extra safety check)
+            meta_data = fa.field_assessment_data.get('meta_data')
+            if not meta_data or (isinstance(meta_data, (dict, list)) and not meta_data):
+                continue
+                
+            # ── Inspector info ───────────────────────────────────────────
             inspector_user = fa.assigned_onsite_inspector.user if fa.assigned_onsite_inspector else None
             profile = getattr(inspector_user, 'profile', None) if inspector_user else None
             
@@ -565,19 +708,24 @@ def get_area_meta_data(request, reforestation_area_id):
                 full_name = inspector_user.email if inspector_user else "Unknown Inspector"
                 profile_img_url = None
 
-            images_data = [
-                {
-                    "image_id": img.field_assessment_images_id,
-                    "url": request.build_absolute_uri(img.img.url) if img.img else None,  # ✅ Absolute URL
-                    "layer": img.layer,
-                    "latitude": float(img.latitude) if img.latitude is not None else None,
-                    "longitude": float(img.longitude) if img.longitude is not None else None,
-                    "description": img.description or "",
-                    "created_at": img.created_at.isoformat(),
-                }
-                for img in fa.images.all()
-            ]
+            # ── Build images list (ONLY meta-related) ─────────────────────
+            # ✅ CORRECT USAGE: fa.images is the RelatedManager created by related_name='images'
+            # .all() retrieves the list of images for this assessment.
+            images_data = []
+            for img in fa.images.all():
+                # Filter by layer code. Ensure img.layer is not None.
+                if img.layer and img.layer in META_LAYER_CODES:
+                    images_data.append({
+                        "image_id": img.field_assessment_images_id,
+                        "url": request.build_absolute_uri(img.img.url) if img.img else None,
+                        "layer": img.layer,
+                        "latitude": float(img.latitude) if img.latitude is not None else None,
+                        "longitude": float(img.longitude) if img.longitude is not None else None,
+                        "description": img.description or "",
+                        "created_at": img.created_at.isoformat(),
+                    })
 
+            # ── Build assessment object ──────────────────────────────────
             data.append({
                 "field_assessment_id": fa.field_assessment_id,
                 "inspector_id": inspector_user.id if inspector_user else None,
@@ -586,18 +734,16 @@ def get_area_meta_data(request, reforestation_area_id):
                 "inspector_profile_img": profile_img_url,
                 "assessment_date": fa.assessment_date.isoformat() if fa.assessment_date else None,
                 "location": fa.location,
-                "field_assessment_data": fa.field_assessment_data,
+                "field_assessment_data": fa.field_assessment_data,  # Full JSON for frontend parsing
                 "is_submitted": fa.is_submitted,
-                "image_count": len(images_data),
-                "images": images_data,
+                "image_count": len(images_data),  # Count reflects filtered meta images
+                "images": images_data,  # Only meta-related images
                 "created_at": fa.created_at.isoformat(),
                 "submitted_at": fa.updated_at.isoformat(),
             })
 
-        return JsonResponse(data, safe=False, encoder=DjangoJSONEncoder, status=200)  # ✅ Safe serialization
+        return JsonResponse(data, safe=False, encoder=DjangoJSONEncoder, status=200)
         
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"❌ Error in get_area_meta_data: {e}", exc_info=True)
         return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)

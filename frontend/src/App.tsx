@@ -104,7 +104,10 @@ export default function App() {
             path="/assign_onsite_inpsector/:id"
             element={<Assign_onsite_inspector />}
           />
-          <Route path="/legality-and-safety/:id" element={<MetaDataVerification />} />
+          <Route
+            path="/legality-and-safety/:id"
+            element={<MetaDataVerification />}
+          />
           <Route
             path="/maintenance/reforestation_area_form/:id"
             element={<Reforestation_area_form />}
@@ -277,6 +280,10 @@ export default function App() {
             element={<OfficialSites />}
           />
           <Route
+            path="/DataManager/reforestation/site/:id/information/:site_id"
+            element={<Site_information />}
+          />
+          <Route
             path="/DataManager/official-reforestation/site/:id/information/:site_id"
             element={<Site_information />}
           />
@@ -336,6 +343,10 @@ export default function App() {
           <Route
             path="/GISS/official-reforestation/site/:id"
             element={<OfficialSites />}
+          />
+           <Route
+            path="/GISS/reforestation/site/:id/information/:site_id"
+            element={<Site_information />}
           />
           <Route
             path="/GISS/official-reforestation/site/:id/information/:site_id"

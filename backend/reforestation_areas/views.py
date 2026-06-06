@@ -11,7 +11,7 @@ from accounts.helper import get_user_from_token
 from security.views import log_activity
 from .models import Reforestation_areas, Potential_sites, PermitDocument, AreaMetaDataVerification
 from barangay.models import Barangay
-
+from . import gee_helpers
 # Optional: Link to external field_assessment app (graceful fallback if not installed)
 try:
     from Field_assessment.models import FieldAssessment

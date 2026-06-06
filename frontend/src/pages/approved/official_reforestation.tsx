@@ -84,7 +84,9 @@ function countActiveFilters(filter: Filter): number {
 export default function Reforestation_areas() {
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [landClassifications, setLandClassifications] = useState<LandClassification[]>([]);
+  const [landClassifications, setLandClassifications] = useState<
+    LandClassification[]
+  >([]);
   const [showFilters, setShowFilters] = useState(false);
   const filterPanelRef = useRef<HTMLDivElement>(null);
 
@@ -177,9 +179,15 @@ export default function Reforestation_areas() {
         page: filter.page.toString(),
         entries: filter.entries.toString(),
         // ✅ Use verification_status (legality, safety, pre_assessment_status removed)
-        ...(filter.verification_status !== "All" && { verification_status: filter.verification_status }),
-        ...(filter.barangay_id !== "All" && { barangay_id: filter.barangay_id }),
-        ...(filter.land_classification_id !== "All" && { land_classification_id: filter.land_classification_id }),
+        ...(filter.verification_status !== "All" && {
+          verification_status: filter.verification_status,
+        }),
+        ...(filter.barangay_id !== "All" && {
+          barangay_id: filter.barangay_id,
+        }),
+        ...(filter.land_classification_id !== "All" && {
+          land_classification_id: filter.land_classification_id,
+        }),
       });
       const response = await fetch(
         `http://127.0.0.1:8000/api/get_reforestation_areas/?${params}`,
@@ -223,7 +231,7 @@ export default function Reforestation_areas() {
 
   // ── Render ─────────────────────────────────────────────────
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
+    <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -233,7 +241,7 @@ export default function Reforestation_areas() {
         />
       )}
 
-      <main className="flex-1 p-8 max-w-7xl mx-auto">
+      <main className="flex-1 p-8 w-full max-w-609">
         {/* ── TOOLBAR ───────────────────────────────────────── */}
         <div className="flex items-center flex-wrap mb-4 gap-3">
           {/* Entries */}
@@ -391,7 +399,11 @@ export default function Reforestation_areas() {
                   Verification: {filter.verification_status}
                   <button
                     onClick={() =>
-                      setFilter((p) => ({ ...p, verification_status: "All", page: 1 }))
+                      setFilter((p) => ({
+                        ...p,
+                        verification_status: "All",
+                        page: 1,
+                      }))
                     }
                   >
                     <X size={11} />
@@ -483,7 +495,7 @@ export default function Reforestation_areas() {
                       {index + 1 + (filter.page - 1) * filter.entries}
                     </td>
                     <td className="py-3 px-5 font-medium">{area.name}</td>
-                    
+
                     {/* Verification Status Badge */}
                     <td className="py-3 px-5">
                       <span
@@ -491,49 +503,62 @@ export default function Reforestation_areas() {
                           area.verification_status === "pending"
                             ? "bg-amber-100 text-amber-700"
                             : area.verification_status === "draft"
-                            ? "bg-blue-100 text-blue-700"
-                            : area.verification_status === "verified"
-                            ? "bg-green-100 text-green-700"
-                            : area.verification_status === "rejected"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-gray-100 text-gray-700"
+                              ? "bg-blue-100 text-blue-700"
+                              : area.verification_status === "verified"
+                                ? "bg-green-100 text-green-700"
+                                : area.verification_status === "rejected"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-gray-100 text-gray-700"
                         }`}
                       >
-                        {area.verification_status === "verified" && <CheckCircle size={12} />}
-                        {area.verification_status === "rejected" && <AlertCircle size={12} />}
-                        {area.verification_status === "pending" && <Clock size={12} />}
-                        {area.verification_status === "draft" && <Edit size={12} />}
-                        {area.verification_status.charAt(0).toUpperCase() + area.verification_status.slice(1)}
+                        {area.verification_status === "verified" && (
+                          <CheckCircle size={12} />
+                        )}
+                        {area.verification_status === "rejected" && (
+                          <AlertCircle size={12} />
+                        )}
+                        {area.verification_status === "pending" && (
+                          <Clock size={12} />
+                        )}
+                        {area.verification_status === "draft" && (
+                          <Edit size={12} />
+                        )}
+                        {area.verification_status.charAt(0).toUpperCase() +
+                          area.verification_status.slice(1)}
                       </span>
                       {area.verification_decision_note && (
-                        <p className="text-[.65rem] text-gray-500 mt-1 max-w-[180px] truncate" title={area.verification_decision_note}>
+                        <p
+                          className="text-[.65rem] text-gray-500 mt-1 max-w-[180px] truncate"
+                          title={area.verification_decision_note}
+                        >
                           {area.verification_decision_note}
                         </p>
                       )}
                     </td>
 
                     <td className="py-3 px-5">
-                      {area.barangay?.name ?? <span className="text-gray-400 italic">N/A</span>}
+                      {area.barangay?.name ?? (
+                        <span className="text-gray-400 italic">N/A</span>
+                      )}
                     </td>
                     <td className="py-3 px-5">
                       {area.land_classification?.name ?? (
                         <span className="text-gray-400 italic">N/A</span>
                       )}
                     </td>
-                    
+
                     {/* Permit Count */}
                     <td className="py-3 px-5">
                       <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-700 text-xs font-bold">
                         {area.permit_count}
                       </span>
                     </td>
-                    
+
                     <td className="py-3 px-5 text-sm">{area.created_at}</td>
-                    
+
                     {/* ✅ EXACT ACTION COLUMN SNIPPET REQUESTED */}
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
-                      
                         <button
                           onClick={() =>
                             navigate(
@@ -544,14 +569,16 @@ export default function Reforestation_areas() {
                         >
                           <List size={18} />
                         </button>
-                      
                       </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="text-center py-5 text-gray-500 italic">
+                  <td
+                    colSpan={8}
+                    className="text-center py-5 text-gray-500 italic"
+                  >
                     No areas found
                   </td>
                 </tr>

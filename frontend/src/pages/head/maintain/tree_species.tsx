@@ -228,7 +228,7 @@ export default function Tree_species() {
   }
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
+    <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -242,7 +242,7 @@ export default function Tree_species() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <main className="flex-1 p-8 max-w-409">
+      <main className="flex-1 p-8 w-full max-w-609">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
           <label>Show entries: </label>
@@ -424,11 +424,19 @@ export default function Tree_species() {
         >
           <div className="flex justify-items-start items-center gap-10 w-full bg-green-600 rounded-t-lg p-2">
             {action === "Add" ? (
-              <Plus size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+              <Plus
+                size={66}
+                className="text-white bg-green-500 p-3 rounded-full mb-2"
+              />
             ) : (
-              <Edit size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+              <Edit
+                size={66}
+                className="text-white bg-green-500 p-3 rounded-full mb-2"
+              />
             )}
-            <h2 className="text-lg font-semibold text-white">{action} Tree Specie</h2>
+            <h2 className="text-lg font-semibold text-white">
+              {action} Tree Specie
+            </h2>
           </div>
 
           <div className="flex flex-col p-6 w-full gap-5">

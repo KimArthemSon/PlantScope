@@ -179,3 +179,6 @@ CACHES = {
         'LOCATION': 'plantscope-otp-cache',
     }
 }
+
+FIRMS_API_TOKEN = "c777ac613cd493b3a6f045edc974ce62"  # ← Replace with your NASA token
+FIRMS_API_BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api"

@@ -229,7 +229,7 @@ export default function Animals() {
   }
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
+    <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -243,7 +243,7 @@ export default function Animals() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <main className="flex-1 p-8 max-w-409">
+      <main className="flex-1 p-8 w-full max-w-609">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
           <label>Show entries: </label>

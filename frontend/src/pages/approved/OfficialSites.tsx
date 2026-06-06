@@ -270,7 +270,7 @@ export default function SitesForArea() {
   };
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
+    <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
       {/* ALERT */}
       {PSalert && (
         <PlantScopeAlert
@@ -288,7 +288,7 @@ export default function SitesForArea() {
         onDelete={handleDelete}
       />
 
-      <main className="flex-1 p-8 max-w-10xl">
+      <main className="flex-1 p-8 w-full max-w-609">
         {/* FILTERS */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm">Show:</label>

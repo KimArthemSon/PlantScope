@@ -250,7 +250,7 @@ export default function Land_classifications() {
   }
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
+    <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -264,7 +264,7 @@ export default function Land_classifications() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <main className="flex-1 p-8 max-w-409">
+      <main className="flex-1 p-8 w-full max-w-609">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label>Show entries: </label>
@@ -324,7 +324,11 @@ export default function Land_classifications() {
             onClick={() => {
               setIsOpenAddEditModal(true);
               setAction("Add");
-              setLand_classification({ name: "", description: "", for_reforestation: false });
+              setLand_classification({
+                name: "",
+                description: "",
+                for_reforestation: false,
+              });
             }}
             className="flex items-center justify-center gap-2 bg-[#1a6b44] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer"
           >
@@ -390,8 +394,10 @@ export default function Land_classifications() {
                             setAction("Edit");
                             setLand_classification({
                               name: Land_classifications[index].name,
-                              description: Land_classifications[index].description,
-                              for_reforestation: Land_classifications[index].for_reforestation,
+                              description:
+                                Land_classifications[index].description,
+                              for_reforestation:
+                                Land_classifications[index].for_reforestation,
                             });
                           }}
                           className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
@@ -481,11 +487,19 @@ export default function Land_classifications() {
         >
           <div className="flex justify-items-start items-center gap-10 w-full bg-green-600 rounded-t-lg p-2">
             {action === "Add" ? (
-              <Plus size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+              <Plus
+                size={66}
+                className="text-white bg-green-500 p-3 rounded-full mb-2"
+              />
             ) : (
-              <Edit size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
+              <Edit
+                size={66}
+                className="text-white bg-green-500 p-3 rounded-full mb-2"
+              />
             )}
-            <h2 className="text-lg font-semibold text-white">{action} Land Classification</h2>
+            <h2 className="text-lg font-semibold text-white">
+              {action} Land Classification
+            </h2>
           </div>
 
           <div className="flex flex-col p-6 w-full gap-5">
@@ -533,7 +547,9 @@ export default function Land_classifications() {
             <div className="flex items-center justify-between border border-black rounded-md p-3">
               <div className="flex items-center gap-2">
                 <Leaf size={20} className="text-green-700" />
-                <label className="font-bold text-[1rem]">For Reforestation:</label>
+                <label className="font-bold text-[1rem]">
+                  For Reforestation:
+                </label>
               </div>
               <button
                 type="button"

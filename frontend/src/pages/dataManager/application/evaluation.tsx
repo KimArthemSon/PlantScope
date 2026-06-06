@@ -91,7 +91,7 @@ interface ReforestationArea {
   reforestation_area_id: number;
   name: string;
   legality: string;
-  pre_assessment_status: string;
+  verification_status: string;
   safety: string;
   barangay: { barangay_id: number; name: string } | null;
   land_classification: { land_classification_id: number; name: string } | null;
@@ -392,6 +392,7 @@ export default function Evaluation_application() {
         );
         if (!res.ok) throw new Error();
         const data = await res.json();
+        console.log("Hi ", data);
         setAreas(data.data ?? []);
       } catch {
         setPSAlert({
@@ -580,8 +581,7 @@ export default function Evaluation_application() {
   // ─── Filtered lists ─────────────────────────────────────────────────────
   const filteredAreas = areas.filter(
     (a) =>
-      a.pre_assessment_status === "approved" &&
-      a.legality === "legal" &&
+      a.verification_status === "verified" &&
       a.name.toLowerCase().includes(areaSearch.toLowerCase()),
   );
   const filteredSites = sites.filter((s) =>
@@ -1207,7 +1207,7 @@ export default function Evaluation_application() {
                     <div className="flex-1 overflow-y-auto max-h-72 flex flex-col gap-2">
                       {filteredAreas.length === 0 ? (
                         <div className="text-center py-8 text-gray-300 text-sm">
-                          No approved legal areas found
+                          No verified legal areas found
                         </div>
                       ) : (
                         filteredAreas.map((area) => (
@@ -1224,11 +1224,6 @@ export default function Evaluation_application() {
                               {area.barangay && (
                                 <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full flex items-center gap-1">
                                   <MapPin size={10} /> {area.barangay.name}
-                                </span>
-                              )}
-                              {area.safety && (
-                                <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                  <Shield size={10} /> {area.safety}
                                 </span>
                               )}
                               {area.land_classification && (
@@ -1313,11 +1308,6 @@ export default function Evaluation_application() {
                                 {site.area_hectares && (
                                   <span>{site.area_hectares} ha</span>
                                 )}
-                                <span>
-                                  {site.validation_progress.completed}/
-                                  {site.validation_progress.total} layers
-                                  validated
-                                </span>
                               </div>
                             </button>
                           ))

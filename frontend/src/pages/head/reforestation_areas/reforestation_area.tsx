@@ -89,7 +89,9 @@ function countActiveFilters(filter: Filter): number {
 export default function Reforestation_areas() {
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [landClassifications, setLandClassifications] = useState<LandClassification[]>([]);
+  const [landClassifications, setLandClassifications] = useState<
+    LandClassification[]
+  >([]);
   const [showFilters, setShowFilters] = useState(false);
   const filterPanelRef = useRef<HTMLDivElement>(null);
 
@@ -147,7 +149,7 @@ export default function Reforestation_areas() {
       try {
         const res = await fetch(
           "http://127.0.0.1:8000/api/get_barangay_list/",
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         if (res.ok) {
           const data = await res.json();
@@ -161,7 +163,7 @@ export default function Reforestation_areas() {
       try {
         const res = await fetch(
           "http://127.0.0.1:8000/api/get_land_classifications_list/",
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         if (res.ok) {
           const data = await res.json();
@@ -183,13 +185,19 @@ export default function Reforestation_areas() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
-        ...(filter.verification_status !== "All" && { verification_status: filter.verification_status }),
-        ...(filter.barangay_id !== "All" && { barangay_id: filter.barangay_id }),
-        ...(filter.land_classification_id !== "All" && { land_classification_id: filter.land_classification_id }),
+        ...(filter.verification_status !== "All" && {
+          verification_status: filter.verification_status,
+        }),
+        ...(filter.barangay_id !== "All" && {
+          barangay_id: filter.barangay_id,
+        }),
+        ...(filter.land_classification_id !== "All" && {
+          land_classification_id: filter.land_classification_id,
+        }),
       });
       const response = await fetch(
         `http://127.0.0.1:8000/api/get_reforestation_areas/?${params}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!response.ok) throw new Error("Failed");
       const data = await response.json();
@@ -227,7 +235,7 @@ export default function Reforestation_areas() {
     try {
       const response = await fetch(
         `http://127.0.0.1:8000/api/delete_reforestation_areas/${deleteId}/`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
+        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
       );
       const data = await response.json();
       if (response.ok) {
@@ -267,7 +275,7 @@ export default function Reforestation_areas() {
 
   // ── Render ─────────────────────────────────────────────────
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
+    <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -283,7 +291,7 @@ export default function Reforestation_areas() {
         onDelete={handleDelete}
       />
 
-      <main className="flex-1 p-8 max-w-7xl mx-auto">
+      <main className="flex-1 p-8 w-full max-w-609">
         {/* ── TOOLBAR ───────────────────────────────────────── */}
         <div className="flex items-center flex-wrap mb-4 gap-3">
           {/* Entries */}
@@ -438,7 +446,11 @@ export default function Reforestation_areas() {
                   Verification: {filter.verification_status}
                   <button
                     onClick={() =>
-                      setFilter((p) => ({ ...p, verification_status: "All", page: 1 }))
+                      setFilter((p) => ({
+                        ...p,
+                        verification_status: "All",
+                        page: 1,
+                      }))
                     }
                   >
                     <X size={11} />
@@ -449,7 +461,7 @@ export default function Reforestation_areas() {
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
                   Barangay:{" "}
                   {barangays.find(
-                    (b) => String(b.barangay_id) === String(filter.barangay_id)
+                    (b) => String(b.barangay_id) === String(filter.barangay_id),
                   )?.name ?? filter.barangay_id}
                   <button
                     onClick={() =>
@@ -466,7 +478,7 @@ export default function Reforestation_areas() {
                   {landClassifications.find(
                     (lc) =>
                       String(lc.land_classification_id) ===
-                      String(filter.land_classification_id)
+                      String(filter.land_classification_id),
                   )?.name ?? filter.land_classification_id}
                   <button
                     onClick={() =>
@@ -546,28 +558,40 @@ export default function Reforestation_areas() {
                           area.verification_status === "pending"
                             ? "bg-amber-100 text-amber-700"
                             : area.verification_status === "draft"
-                            ? "bg-blue-100 text-blue-700"
-                            : area.verification_status === "verified"
-                            ? "bg-green-100 text-green-700"
-                            : area.verification_status === "rejected"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-gray-100 text-gray-700"
+                              ? "bg-blue-100 text-blue-700"
+                              : area.verification_status === "verified"
+                                ? "bg-green-100 text-green-700"
+                                : area.verification_status === "rejected"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-gray-100 text-gray-700"
                         }`}
                       >
-                        {area.verification_status === "verified" && <CheckCircle size={12} />}
-                        {area.verification_status === "rejected" && <AlertCircle size={12} />}
-                        {area.verification_status === "pending" && <Clock size={12} />}
-                        {area.verification_status.charAt(0).toUpperCase() + area.verification_status.slice(1)}
+                        {area.verification_status === "verified" && (
+                          <CheckCircle size={12} />
+                        )}
+                        {area.verification_status === "rejected" && (
+                          <AlertCircle size={12} />
+                        )}
+                        {area.verification_status === "pending" && (
+                          <Clock size={12} />
+                        )}
+                        {area.verification_status.charAt(0).toUpperCase() +
+                          area.verification_status.slice(1)}
                       </span>
                       {area.verification_decision_note && (
-                        <p className="text-[.65rem] text-gray-500 mt-1 max-w-[180px] truncate" title={area.verification_decision_note}>
+                        <p
+                          className="text-[.65rem] text-gray-500 mt-1 max-w-[180px] truncate"
+                          title={area.verification_decision_note}
+                        >
                           {area.verification_decision_note}
                         </p>
                       )}
                     </td>
 
                     <td className="py-3 px-5">
-                      {area.barangay?.name ?? <span className="text-gray-400 italic">N/A</span>}
+                      {area.barangay?.name ?? (
+                        <span className="text-gray-400 italic">N/A</span>
+                      )}
                     </td>
                     <td className="py-3 px-5">
                       {area.land_classification?.name ?? (
@@ -627,7 +651,9 @@ export default function Reforestation_areas() {
                         {userRole !== "DataManager" &&
                           area.verification_status === "rejected" && (
                             <button
-                              onClick={() => setDelete(area.reforestation_area_id)}
+                              onClick={() =>
+                                setDelete(area.reforestation_area_id)
+                              }
                               className="text-red-500 cursor-pointer"
                               title="Delete Area"
                             >
@@ -640,7 +666,10 @@ export default function Reforestation_areas() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="text-center py-5 text-gray-500 italic">
+                  <td
+                    colSpan={8}
+                    className="text-center py-5 text-gray-500 italic"
+                  >
                     No areas found
                   </td>
                 </tr>
@@ -653,25 +682,31 @@ export default function Reforestation_areas() {
         <div className="flex items-center gap-1 mt-5">
           <button
             disabled={filter.page <= 1}
-            onClick={() => setFilter((prev) => ({ ...prev, page: prev.page - 1 }))}
+            onClick={() =>
+              setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
+            }
             className="px-2 py-1 border rounded-md ml-auto"
           >
             <ChevronLeft size={19} />
           </button>
-          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map((p) => (
-            <button
-              key={p}
-              onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
-              className={`px-2 py-1 border rounded-md text-[.8rem] ${
-                p === filter.page ? "bg-green-600 text-white" : ""
-              }`}
-            >
-              {p}
-            </button>
-          ))}
+          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map(
+            (p) => (
+              <button
+                key={p}
+                onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
+                className={`px-2 py-1 border rounded-md text-[.8rem] ${
+                  p === filter.page ? "bg-green-600 text-white" : ""
+                }`}
+              >
+                {p}
+              </button>
+            ),
+          )}
           <button
             disabled={filter.page >= filter.total_page}
-            onClick={() => setFilter((prev) => ({ ...prev, page: prev.page + 1 }))}
+            onClick={() =>
+              setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
+            }
             className="px-2 py-1 border rounded-md"
           >
             <ChevronRight size={19} />

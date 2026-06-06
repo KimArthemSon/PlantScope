@@ -124,7 +124,7 @@ def get_site(request, site_id):
         "center_coordinate": site.center_coordinate,
         "ndvi_value": site.ndvi_value,
         "area_hectares": site.total_area_hectares,
-        "current_draft_mcda": current_sd.site_data if current_sd else {},
+        "validation_data": current_sd.site_data if current_sd else {},
         "finalized_mcda": finalized_sd.site_data if finalized_sd else {},
         "species_recommendations": [
             {"id": r.tree_species.tree_specie_id, "name": r.tree_species.name, "rank": r.priority_rank, "notes": r.notes}

@@ -124,7 +124,7 @@ export default function Application() {
   };
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
+    <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -138,8 +138,8 @@ export default function Application() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      
-      <main className="flex-1 p-8 max-w-409">
+
+      <main className="flex-1 p-8 w-full max-w-609">
         {/* Header */}
 
         {/* Filters */}
@@ -230,7 +230,7 @@ export default function Application() {
                   Classification
                 </th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Members</th>
-               
+
                 <th className="py-3 px-5 text-left text-[.9rem]">Created_at</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
@@ -274,7 +274,7 @@ export default function Application() {
                     <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
                       {app.total_members}
                     </td>
-                  
+
                     <td className="py-3 px-5 text-[.9rem]">{app.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
