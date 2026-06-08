@@ -1,7 +1,6 @@
 from django.urls import path
 from . import views
 from . import views_ndvi
-from . import views_hazard
 from . import views_fire
 from . import hazard_analysis
 urlpatterns = [
@@ -31,18 +30,18 @@ urlpatterns = [
     path('suitable-sites/', views_ndvi.suitable_sites, name='suitable_sites'),
     path('ndvi-trend/', views_ndvi.ndvi_trend, name='ndvi_trend'),
 
-    # ═══════════════════════════════════════════════════════════
-    # 🛡️ HAZARD ENDPOINTS (Storm Surge & Seismic REMOVED)
-    # ═══════════════════════════════════════════════════════════
-    path('landslide-risk/', views_hazard.landslide_risk_map, name='landslide_risk_map'),
-    # path('flood-risk/', views_hazard.flood_risk_map, name='flood_risk_map'),
-    # path('wildfire-risk/', views_hazard.wildfire_risk_map, name='wildfire_risk_map'),
+    # # ═══════════════════════════════════════════════════════════
+    # # 🛡️ HAZARD ENDPOINTS (Storm Surge & Seismic REMOVED)
+    # # ═══════════════════════════════════════════════════════════
+    # path('landslide-risk/', views_hazard.landslide_risk_map, name='landslide_risk_map'),
+    # # path('flood-risk/', views_hazard.flood_risk_map, name='flood_risk_map'),
+    # # path('wildfire-risk/', views_hazard.wildfire_risk_map, name='wildfire_risk_map'),
     
-    # path('landslide-prone-sites/', views_hazard.extract_landslide_prone, name='extract_landslide_prone'),
-    # path('flood-prone-sites/', views_hazard.extract_flood_prone, name='extract_flood_prone'),
-    path('wildfire-prone-sites/', views_hazard.extract_wildfire_prone, name='extract_wildfire_prone'),
-    path('hazard-prone-sites/bulk-create/', views_hazard.bulk_create_hazard_sites, name='bulk_create_hazard_sites'),
-    path('debug-landslide-extraction/', views_hazard.debug_landslide_extraction, name='debug_landslide_extraction'),
+    # # path('landslide-prone-sites/', views_hazard.extract_landslide_prone, name='extract_landslide_prone'),
+    # # path('flood-prone-sites/', views_hazard.extract_flood_prone, name='extract_flood_prone'),
+    # path('wildfire-prone-sites/', views_hazard.extract_wildfire_prone, name='extract_wildfire_prone'),
+    # path('hazard-prone-sites/bulk-create/', views_hazard.bulk_create_hazard_sites, name='bulk_create_hazard_sites'),
+    # path('debug-landslide-extraction/', views_hazard.debug_landslide_extraction, name='debug_landslide_extraction'),
 
      path('firms-fire-data/', views_fire.get_firms_fire_data, name='firms_fire_data'),
     path('firms-fire-count/', views_fire.get_firms_fire_count, name='firms_fire_count'),

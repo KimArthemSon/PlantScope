@@ -1,9 +1,26 @@
 // src/pages/GISS/multicriteria_analysis/index.tsx
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  Leaf, Upload, Eye, EyeOff, Trash2, Info, Pen, MapPin,
-  Ruler, Layers, Palette, Flag, Pin, X, Camera,
-  CheckCircle, Save, Undo2, Target,
+  Leaf,
+  Upload,
+  Eye,
+  EyeOff,
+  Trash2,
+  Info,
+  Pen,
+  MapPin,
+  Ruler,
+  Layers,
+  Palette,
+  Flag,
+  Pin,
+  X,
+  Camera,
+  CheckCircle,
+  Save,
+  Undo2,
+  Target,
+  Shield,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
@@ -16,8 +33,13 @@ import { usePotentialSites } from "./hooks/usePotentialSites";
 import type { PotentialSite } from "./hooks/usePotentialSites";
 import { useRestrictedAreas } from "./hooks/useRestrictedAreas";
 import { useFieldAssessments } from "./hooks/useFieldAssessments";
-import type { MCDALayer, FieldAssessmentEntry } from "./hooks/useFieldAssessments";
+import type {
+  MCDALayer,
+  FieldAssessmentEntry,
+} from "./hooks/useFieldAssessments";
 import FieldAssessmentPanel from "./components/Fieldassessmentpanel";
+import { useHazardLayers } from "./hooks/useHazardLayers";
+import HazardAssessmentPanel from "./components/HazardAssessmentPanel";
 
 import SiteList from "./components/SiteList";
 import SiteValidationPanel from "./components/SiteValidationPanel";
@@ -91,10 +113,14 @@ export default function MulticriteriaAnalysis() {
   const [layerInfo, setLayerInfo] = useState<LayerInfo | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [polygonArea, setPolygonArea] = useState<number | null>(null);
-  const [polygonCoordinates, setPolygonCoordinates] = useState<[number, number][]>([]);
+  const [polygonCoordinates, setPolygonCoordinates] = useState<
+    [number, number][]
+  >([]);
   const [renderMode, setRenderMode] = useState<RenderMode>("auto");
   const [isPlacingMarker, setIsPlacingMarker] = useState(false);
-  const [placedMarkers, setPlacedMarkers] = useState<{ id: number; latlng: L.LatLng; label: string }[]>([]);
+  const [placedMarkers, setPlacedMarkers] = useState<
+    { id: number; latlng: L.LatLng; label: string }[]
+  >([]);
   const placedMarkersRef = useRef<Map<number, L.Marker>>(new Map());
   const markerIdCounter = useRef(0);
 
@@ -134,7 +160,9 @@ export default function MulticriteriaAnalysis() {
 
       esri.basemapLayer("Imagery").addTo(mapRef.current);
       esri.basemapLayer("ImageryLabels").addTo(mapRef.current);
-      L.control.scale({ imperial: false, position: "bottomleft" }).addTo(mapRef.current);
+      L.control
+        .scale({ imperial: false, position: "bottomleft" })
+        .addTo(mapRef.current);
 
       loadGeoRasterLibs();
       if (areaId) {
@@ -178,7 +206,8 @@ export default function MulticriteriaAnalysis() {
         ([lng, lat]) => [lat, lng] as [number, number],
       );
       const score = site.suitability_score;
-      const color = score >= 0.7 ? "#16a34a" : score >= 0.4 ? "#ca8a04" : "#dc2626";
+      const color =
+        score >= 0.7 ? "#16a34a" : score >= 0.4 ? "#ca8a04" : "#dc2626";
       const poly = L.polygon(coords, {
         color,
         fillColor: color,
@@ -213,13 +242,17 @@ export default function MulticriteriaAnalysis() {
       const container = map.getContainer();
       const width = container.clientWidth;
       const height = container.clientHeight;
-      
+
       if (width > 0 && height > 0) {
-        map.invalidateSize({ animate: false, pan: false, debounceMoveend: true });
+        map.invalidateSize({
+          animate: false,
+          pan: false,
+          debounceMoveend: true,
+        });
       }
     };
 
-    if ('ResizeObserver' in window) {
+    if ("ResizeObserver" in window) {
       resizeObserver = new ResizeObserver(() => {
         clearTimeout(timeoutId);
         timeoutId = setTimeout(invalidate, 50);
@@ -231,10 +264,10 @@ export default function MulticriteriaAnalysis() {
         clearTimeout(timeoutId);
         timeoutId = setTimeout(invalidate, 100);
       };
-      win.addEventListener('resize', onResize);
+      win.addEventListener("resize", onResize);
       return () => {
         clearTimeout(timeoutId);
-        win.removeEventListener('resize', onResize);
+        win.removeEventListener("resize", onResize);
       };
     }
 
@@ -247,7 +280,11 @@ export default function MulticriteriaAnalysis() {
   }, [isPickingLocation, isPlacingMarker, isDrawing]);
 
   useEffect(() => {
-    if (currentGeorasterRef.current && geotiffLayerRef.current && mapRef.current) {
+    if (
+      currentGeorasterRef.current &&
+      geotiffLayerRef.current &&
+      mapRef.current
+    ) {
       mapRef.current.removeLayer(geotiffLayerRef.current);
       createGeoRasterLayer(currentGeorasterRef.current);
     }
@@ -315,7 +352,10 @@ export default function MulticriteriaAnalysis() {
         });
 
         if (areaId) {
-          await fieldAssessments.refreshLayer(areaId, fieldAssessments.activeLayer);
+          await fieldAssessments.refreshLayer(
+            areaId,
+            fieldAssessments.activeLayer,
+          );
         }
       } else {
         setAlert({
@@ -340,22 +380,33 @@ export default function MulticriteriaAnalysis() {
     const map = mapRef.current;
     if (!map) return;
 
-    const selectedEntry = fieldAssessments.assessments[fieldAssessments.activeLayer]?.[fieldAssessments.selectedIndex];
-    
+    const selectedEntry =
+      fieldAssessments.assessments[fieldAssessments.activeLayer]?.[
+        fieldAssessments.selectedIndex
+      ];
+
     if (selectedEntry && fieldAssessments.showPhotoMarkers) {
       fieldAssessments.placePhotoMarkers(selectedEntry);
     } else if (selectedEntry) {
       // Remove photo markers if toggled off
       fieldAssessments.removePhotoMarkers(selectedEntry.field_assessment_id);
     }
-  }, [fieldAssessments.selectedIndex, fieldAssessments.activeLayer, fieldAssessments.assessments, fieldAssessments.showPhotoMarkers]);
+  }, [
+    fieldAssessments.selectedIndex,
+    fieldAssessments.activeLayer,
+    fieldAssessments.assessments,
+    fieldAssessments.showPhotoMarkers,
+  ]);
 
   // ✅ NEW: Handle photo click to fly to location
   const handlePhotoClick = useCallback((photo: any) => {
     const map = mapRef.current;
     if (!map || !photo.latitude || !photo.longitude) return;
-    
-    map.flyTo([photo.latitude, photo.longitude], 18, { animate: true, duration: 0.8 });
+
+    map.flyTo([photo.latitude, photo.longitude], 18, {
+      animate: true,
+      duration: 0.8,
+    });
   }, []);
 
   // ── Color helpers ─────────────────────────────────────────────────────────
@@ -370,38 +421,54 @@ export default function MulticriteriaAnalysis() {
 
   const grayscaleToColor = (value: number, min: number, max: number) => {
     if (max === min) return "rgba(128,128,128,1)";
-    const g = Math.round(Math.max(0, Math.min(1, (value - min) / (max - min))) * 255);
+    const g = Math.round(
+      Math.max(0, Math.min(1, (value - min) / (max - min))) * 255,
+    );
     return `rgba(${g},${g},${g},1)`;
   };
 
   const autoScaleBand = (value: number, bandIndex: number, georaster: any) => {
     const min = georaster.mins?.[bandIndex] ?? 0;
     const max = georaster.maxes?.[bandIndex] ?? 255;
-    return max === min ? 128 : Math.max(0, Math.min(255, Math.round(((value - min) / (max - min)) * 255)));
+    return max === min
+      ? 128
+      : Math.max(
+          0,
+          Math.min(255, Math.round(((value - min) / (max - min)) * 255)),
+        );
   };
 
-  const createColorFunction = (georaster: any, mode: RenderMode) => (pixelValues: number[]): string => {
-    const valid = pixelValues.filter((v) => v != null && !isNaN(v) && v !== georaster.noDataValue);
-    if (!valid.length) return "rgba(0,0,0,0)";
-    const numBands = pixelValues.length;
-    const alpha = numBands >= 4 ? Math.max(0, Math.min(1, pixelValues[3] / 255)) : 1;
-    if (mode === "ndvi" || (mode === "auto" && numBands === 1)) {
-      const value = pixelValues[0];
-      const min = georaster.mins?.[0] ?? -1;
-      const max = georaster.maxes?.[0] ?? 1;
-      const ndviValue = min < -1 || max > 1 ? ((value - min) / (max - min)) * 2 - 1 : value;
-      return ndviToColor(ndviValue).replace(", 1)", `, ${alpha})`);
-    }
-    if (mode === "rgb" || (mode === "auto" && numBands >= 3)) {
-      const r = autoScaleBand(pixelValues[0], 0, georaster);
-      const g = autoScaleBand(pixelValues[1], 1, georaster);
-      const b = autoScaleBand(pixelValues[2], 2, georaster);
-      return `rgba(${r},${g},${b},${alpha})`;
-    }
-    const min = georaster.mins?.[0] ?? 0;
-    const max = georaster.maxes?.[0] ?? 255;
-    return grayscaleToColor(pixelValues[0], min, max).replace(", 1)", `, ${alpha})`);
-  };
+  const createColorFunction =
+    (georaster: any, mode: RenderMode) =>
+    (pixelValues: number[]): string => {
+      const valid = pixelValues.filter(
+        (v) => v != null && !isNaN(v) && v !== georaster.noDataValue,
+      );
+      if (!valid.length) return "rgba(0,0,0,0)";
+      const numBands = pixelValues.length;
+      const alpha =
+        numBands >= 4 ? Math.max(0, Math.min(1, pixelValues[3] / 255)) : 1;
+      if (mode === "ndvi" || (mode === "auto" && numBands === 1)) {
+        const value = pixelValues[0];
+        const min = georaster.mins?.[0] ?? -1;
+        const max = georaster.maxes?.[0] ?? 1;
+        const ndviValue =
+          min < -1 || max > 1 ? ((value - min) / (max - min)) * 2 - 1 : value;
+        return ndviToColor(ndviValue).replace(", 1)", `, ${alpha})`);
+      }
+      if (mode === "rgb" || (mode === "auto" && numBands >= 3)) {
+        const r = autoScaleBand(pixelValues[0], 0, georaster);
+        const g = autoScaleBand(pixelValues[1], 1, georaster);
+        const b = autoScaleBand(pixelValues[2], 2, georaster);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+      const min = georaster.mins?.[0] ?? 0;
+      const max = georaster.maxes?.[0] ?? 255;
+      return grayscaleToColor(pixelValues[0], min, max).replace(
+        ", 1)",
+        `, ${alpha})`,
+      );
+    };
 
   const createGeoRasterLayer = (georaster: any) => {
     geotiffLayerRef.current = new GeoRasterLayer({
@@ -413,7 +480,9 @@ export default function MulticriteriaAnalysis() {
       debugLevel: 0,
     });
     geotiffLayerRef.current.addTo(mapRef.current!);
-    mapRef.current?.fitBounds(geotiffLayerRef.current.getBounds(), { padding: [20, 20] });
+    mapRef.current?.fitBounds(geotiffLayerRef.current.getBounds(), {
+      padding: [20, 20],
+    });
   };
 
   // ── File upload ───────────────────────────────────────────────────────────
@@ -422,18 +491,25 @@ export default function MulticriteriaAnalysis() {
     if (!file || !mapRef.current) return;
     try {
       await loadGeoRasterLibs();
-      if (typeof parseGeoraster !== "function") throw new Error("parseGeoraster failed to load.");
+      if (typeof parseGeoraster !== "function")
+        throw new Error("parseGeoraster failed to load.");
       setUploadStatus("⏳ Reading file...");
       const georaster = await parseGeoraster(await file.arrayBuffer());
       currentGeorasterRef.current = georaster;
       setUploadStatus("⏳ Rendering layer...");
-      if (geotiffLayerRef.current) mapRef.current.removeLayer(geotiffLayerRef.current);
+      if (geotiffLayerRef.current)
+        mapRef.current.removeLayer(geotiffLayerRef.current);
       createGeoRasterLayer(georaster);
       setIsLayerVisible(true);
       const range = (georaster.maxes?.[0] ?? 0) - (georaster.mins?.[0] ?? 0);
       let dataType = "Unknown";
       if (georaster.numberOfRasters === 1) {
-        dataType = range <= 2.1 && georaster.mins?.[0] >= -1.5 ? "NDVI / Index" : georaster.maxes?.[0] > 1000 ? "Elevation / Continuous" : "Grayscale";
+        dataType =
+          range <= 2.1 && georaster.mins?.[0] >= -1.5
+            ? "NDVI / Index"
+            : georaster.maxes?.[0] > 1000
+              ? "Elevation / Continuous"
+              : "Grayscale";
       } else if (georaster.numberOfRasters >= 3) {
         dataType = "RGB / Multispectral";
       }
@@ -441,13 +517,28 @@ export default function MulticriteriaAnalysis() {
       setLayerInfo({
         name: file.name,
         size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-        bounds: { N: bounds.getNorth().toFixed(4), S: bounds.getSouth().toFixed(4), E: bounds.getEast().toFixed(4), W: bounds.getWest().toFixed(4) },
+        bounds: {
+          N: bounds.getNorth().toFixed(4),
+          S: bounds.getSouth().toFixed(4),
+          E: bounds.getEast().toFixed(4),
+          W: bounds.getWest().toFixed(4),
+        },
         bands: georaster.numberOfRasters,
         dataType,
       });
-      setRenderMode(dataType === "NDVI / Index" ? "ndvi" : dataType === "RGB / Multispectral" ? "rgb" : "auto");
+      setRenderMode(
+        dataType === "NDVI / Index"
+          ? "ndvi"
+          : dataType === "RGB / Multispectral"
+            ? "rgb"
+            : "auto",
+      );
       setUploadStatus("✅ Loaded successfully!");
-      setAlert({ type: "success", title: "Upload Complete", message: `GeoTIFF loaded: ${dataType}.` });
+      setAlert({
+        type: "success",
+        title: "Upload Complete",
+        message: `GeoTIFF loaded: ${dataType}.`,
+      });
     } catch (err: any) {
       setUploadStatus(`❌ Error: ${err.message}`);
       setAlert({ type: "error", title: "Upload Failed", message: err.message });
@@ -456,7 +547,9 @@ export default function MulticriteriaAnalysis() {
 
   const toggleLayerVisibility = () => {
     if (!geotiffLayerRef.current || !mapRef.current) return;
-    isLayerVisible ? mapRef.current.removeLayer(geotiffLayerRef.current) : geotiffLayerRef.current.addTo(mapRef.current);
+    isLayerVisible
+      ? mapRef.current.removeLayer(geotiffLayerRef.current)
+      : geotiffLayerRef.current.addTo(mapRef.current);
     setIsLayerVisible(!isLayerVisible);
   };
 
@@ -476,10 +569,15 @@ export default function MulticriteriaAnalysis() {
   // ── Polygon drawing ───────────────────────────────────────────────────────
   const calculatePolygonArea = (coords: [number, number][]): number => {
     if (coords.length < 3) return 0;
-    const latRad = ((coords.reduce((s, c) => s + c[0], 0) / coords.length) * Math.PI) / 180;
-    const mLat = 111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
+    const latRad =
+      ((coords.reduce((s, c) => s + c[0], 0) / coords.length) * Math.PI) / 180;
+    const mLat =
+      111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
     const mLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
-    const local = coords.map(([lat, lng]) => [(lng - coords[0][1]) * mLng, (lat - coords[0][0]) * mLat]);
+    const local = coords.map(([lat, lng]) => [
+      (lng - coords[0][1]) * mLng,
+      (lat - coords[0][0]) * mLat,
+    ]);
     let area = 0;
     for (let i = 0; i < local.length; i++) {
       const [x1, y1] = local[i];
@@ -497,7 +595,12 @@ export default function MulticriteriaAnalysis() {
     drawingPointsRef.current.forEach((m) => mapRef.current?.removeLayer(m));
     drawingPointsRef.current = [];
 
-    setAlert({ type: "success", title: "Drawing Mode", message: "Click to place points. Double-click or press 'Finish' to complete." });
+    setAlert({
+      type: "success",
+      title: "Drawing Mode",
+      message:
+        "Click to place points. Double-click or press 'Finish' to complete.",
+    });
 
     const coords: [number, number][] = [];
 
@@ -527,7 +630,11 @@ export default function MulticriteriaAnalysis() {
     mapRef.current.off("dblclick");
 
     if (coords.length < 3) {
-      setAlert({ type: "failed", title: "Invalid Polygon", message: "Need at least 3 points to create a polygon." });
+      setAlert({
+        type: "failed",
+        title: "Invalid Polygon",
+        message: "Need at least 3 points to create a polygon.",
+      });
       setIsDrawing(false);
       drawingPointsRef.current.forEach((m) => mapRef.current!.removeLayer(m));
       drawingPointsRef.current = [];
@@ -540,14 +647,21 @@ export default function MulticriteriaAnalysis() {
 
     polygonRef.current?.remove();
     polygonRef.current = L.polygon(coords, {
-      color: "#0F4A2F", fillColor: "#0F4A2F", fillOpacity: 0.3, weight: 2,
+      color: "#0F4A2F",
+      fillColor: "#0F4A2F",
+      fillOpacity: 0.3,
+      weight: 2,
     }).addTo(mapRef.current!);
 
     const area = calculatePolygonArea(coords);
     setPolygonArea(area);
     setIsDrawing(false);
     setShowNameInput(true);
-    setAlert({ type: "success", title: "Polygon Created", message: `${coords.length} points drawn. Enter site name to save.` });
+    setAlert({
+      type: "success",
+      title: "Polygon Created",
+      message: `${coords.length} points drawn. Enter site name to save.`,
+    });
   };
 
   const undoLastPoint = () => {
@@ -639,14 +753,28 @@ export default function MulticriteriaAnalysis() {
   // ── Save site ─────────────────────────────────────────────────────────────
   const handleSaveSite = async () => {
     if (!polygonCoordinates.length || !areaId || !polygonArea) {
-      setAlert({ type: "failed", title: "Missing Data", message: "Draw a valid polygon with at least 3 points." });
+      setAlert({
+        type: "failed",
+        title: "Missing Data",
+        message: "Draw a valid polygon with at least 3 points.",
+      });
       return;
     }
-    const nameToUse = siteName.trim() || `Site-${Date.now().toString().slice(-4)}`;
+    const nameToUse =
+      siteName.trim() || `Site-${Date.now().toString().slice(-4)}`;
     try {
-      const data = await sites.createSite(areaId, nameToUse, polygonCoordinates, polygonArea);
+      const data = await sites.createSite(
+        areaId,
+        nameToUse,
+        polygonCoordinates,
+        polygonArea,
+      );
       if (data) {
-        setAlert({ type: "success", title: "Site Created", message: data.message ?? "Saved." });
+        setAlert({
+          type: "success",
+          title: "Site Created",
+          message: data.message ?? "Saved.",
+        });
         clearPolygon();
         setShowNameInput(false);
         setSiteName("");
@@ -657,49 +785,85 @@ export default function MulticriteriaAnalysis() {
         setAlert({ type: "error", title: "Save Failed", message: errorMsg });
       }
     } catch (err: any) {
-      setAlert({ type: "error", title: "Network Error", message: err.message || "Could not connect to server." });
+      setAlert({
+        type: "error",
+        title: "Network Error",
+        message: err.message || "Could not connect to server.",
+      });
     }
   };
 
   // ── Site handlers ─────────────────────────────────────────────────────────
-  const handleSelectSite = useCallback(async (site: Site) => {
-    try {
-      const detail = await sites.fetchSiteDetail(site.site_id);
-      if (detail && detail.polygon_coordinates?.length) {
-        if (polygonRef.current) mapRef.current?.removeLayer(polygonRef.current);
-        polygonRef.current = L.polygon(detail.polygon_coordinates, {
-          color: "#0F4A2F", fillColor: "#0F4A2F", fillOpacity: 0.3, weight: 2,
-        }).addTo(mapRef.current!);
-        mapRef.current?.fitBounds(polygonRef.current.getBounds(), { padding: [20, 20] });
-        setPolygonCoordinates(detail.polygon_coordinates);
-        setPolygonArea(detail.area_hectares);
+  const handleSelectSite = useCallback(
+    async (site: Site) => {
+      try {
+        const detail = await sites.fetchSiteDetail(site.site_id);
+        if (detail && detail.polygon_coordinates?.length) {
+          if (polygonRef.current)
+            mapRef.current?.removeLayer(polygonRef.current);
+          polygonRef.current = L.polygon(detail.polygon_coordinates, {
+            color: "#0F4A2F",
+            fillColor: "#0F4A2F",
+            fillOpacity: 0.3,
+            weight: 2,
+          }).addTo(mapRef.current!);
+          mapRef.current?.fitBounds(polygonRef.current.getBounds(), {
+            padding: [20, 20],
+          });
+          setPolygonCoordinates(detail.polygon_coordinates);
+          setPolygonArea(detail.area_hectares);
+        }
+      } catch (err: any) {
+        setAlert({
+          type: "error",
+          title: "Load Failed",
+          message: err.message || "Could not load site details.",
+        });
       }
-    } catch (err: any) {
-      setAlert({ type: "error", title: "Load Failed", message: err.message || "Could not load site details." });
-    }
-  }, [mapRef, polygonRef, sites]);
+    },
+    [mapRef, polygonRef, sites],
+  );
 
-  const handleValidateSite = useCallback(async (site: Site) => {
-    try {
-      sites.setError(null);
-      setAlert({ type: "success", title: "Loading", message: `Loading details for "${site.name}"...` });
-      const detail = await sites.fetchSiteDetail(site.site_id);
-      if (sites.error) {
-        setAlert({ type: "error", title: "Validation Error", message: sites.error });
+  const handleValidateSite = useCallback(
+    async (site: Site) => {
+      try {
         sites.setError(null);
-        return;
+        setAlert({
+          type: "success",
+          title: "Loading",
+          message: `Loading details for "${site.name}"...`,
+        });
+        const detail = await sites.fetchSiteDetail(site.site_id);
+        if (sites.error) {
+          setAlert({
+            type: "error",
+            title: "Validation Error",
+            message: sites.error,
+          });
+          sites.setError(null);
+          return;
+        }
+        if (!detail) {
+          setAlert({
+            type: "error",
+            title: "Data Not Found",
+            message: `Could not load details for site "${site.name}".`,
+          });
+          return;
+        }
+        setValidatingSite(detail);
+        setShowValidationPanel(true);
+        setAlert(null);
+      } catch (err: any) {
+        setAlert({
+          type: "error",
+          title: "Validation Failed",
+          message: err.message || "An unexpected error occurred.",
+        });
       }
-      if (!detail) {
-        setAlert({ type: "error", title: "Data Not Found", message: `Could not load details for site "${site.name}".` });
-        return;
-      }
-      setValidatingSite(detail);
-      setShowValidationPanel(true);
-      setAlert(null);
-    } catch (err: any) {
-      setAlert({ type: "error", title: "Validation Failed", message: err.message || "An unexpected error occurred." });
-    }
-  }, [sites]);
+    },
+    [sites],
+  );
 
   const handleDeleteSite = (siteId: number, name: string) => {
     setConfirmDialog({
@@ -711,9 +875,17 @@ export default function MulticriteriaAnalysis() {
         setConfirmDialog(null);
         const success = await sites.deleteSite(siteId, areaId!);
         if (success) {
-          setAlert({ type: "success", title: "Site Deleted", message: `"${name}" has been deleted.` });
+          setAlert({
+            type: "success",
+            title: "Site Deleted",
+            message: `"${name}" has been deleted.`,
+          });
         } else {
-          setAlert({ type: "error", title: "Delete Failed", message: sites.error ?? "Could not delete site." });
+          setAlert({
+            type: "error",
+            title: "Delete Failed",
+            message: sites.error ?? "Could not delete site.",
+          });
         }
       },
     });
@@ -724,45 +896,63 @@ export default function MulticriteriaAnalysis() {
       await sites.togglePin(siteId);
       if (areaId) await sites.fetchSites(areaId);
     } catch (err: any) {
-      setAlert({ type: "error", title: "Pin Update Failed", message: err.message || "Could not update pin status." });
+      setAlert({
+        type: "error",
+        title: "Pin Update Failed",
+        message: err.message || "Could not update pin status.",
+      });
     }
   };
 
   // ✅ RESTORED: Site validation handlers (unchanged logic)
-  const handleSaveDraft = useCallback(async (data: {
-    safety_note?: string;
-    survivability_note?: string;
-    final_note?: string;
-  }): Promise<boolean> => {
-    if (!validatingSite) return false;
-    try {
-      const result = await sites.saveValidationDraft(data);
-      if (result) {
-        await sites.fetchSiteDetail(validatingSite.site_id);
-        return true;
+  const handleSaveDraft = useCallback(
+    async (data: {
+      safety_note?: string;
+      survivability_note?: string;
+      final_note?: string;
+    }): Promise<boolean> => {
+      if (!validatingSite) return false;
+      try {
+        const result = await sites.saveValidationDraft(data);
+        if (result) {
+          await sites.fetchSiteDetail(validatingSite.site_id);
+          return true;
+        }
+        return false;
+      } catch (err: any) {
+        setAlert({
+          type: "error",
+          title: "Save Failed",
+          message: err.message || "Could not save draft.",
+        });
+        return false;
       }
-      return false;
-    } catch (err: any) {
-      setAlert({ type: "error", title: "Save Failed", message: err.message || "Could not save draft." });
-      return false;
-    }
-  }, [validatingSite, sites]);
+    },
+    [validatingSite, sites],
+  );
 
-  const handleFinalizeSite = useCallback(async (decision: "ACCEPT" | "REJECT", note: string): Promise<boolean> => {
-    if (!validatingSite) return false;
-    try {
-      const result = await sites.finalizeSite(decision, note);
-      if (result) {
-        if (areaId) await sites.fetchSites(areaId);
-        return true;
+  const handleFinalizeSite = useCallback(
+    async (decision: "ACCEPT" | "REJECT", note: string): Promise<boolean> => {
+      if (!validatingSite) return false;
+      try {
+        const result = await sites.finalizeSite(decision, note);
+        if (result) {
+          if (areaId) await sites.fetchSites(areaId);
+          return true;
+        }
+        return false;
+      } catch (err: any) {
+        setAlert({
+          type: "error",
+          title: "Finalize Failed",
+          message: err.message || "Could not finalize site.",
+        });
+        return false;
       }
-      return false;
-    } catch (err: any) {
-      setAlert({ type: "error", title: "Finalize Failed", message: err.message || "Could not finalize site." });
-      return false;
-    }
-  }, [validatingSite, sites, areaId]);
-
+    },
+    [validatingSite, sites, areaId],
+  );
+  const hazardLayers = useHazardLayers(mapRef);
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex min-h-dvh bg-gray-50 flex-col">
@@ -792,7 +982,8 @@ export default function MulticriteriaAnalysis() {
             <div>
               <h1 className="text-2xl md:text-3xl font-bold">MCDA Workspace</h1>
               <p className="text-xs text-green-100 opacity-90">
-                Area ID: {areaId} {siteId ? `| Site ID: ${siteId}` : "| New Site Creation"}
+                Area ID: {areaId}{" "}
+                {siteId ? `| Site ID: ${siteId}` : "| New Site Creation"}
               </p>
             </div>
           </div>
@@ -812,67 +1003,107 @@ export default function MulticriteriaAnalysis() {
             <label className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded cursor-pointer transition text-xs font-medium">
               <Upload size={12} />
               <span>Upload GeoTIFF</span>
-              <input id="geotiff-input" type="file" accept=".tif,.tiff" className="hidden" onChange={handleFileUpload} />
+              <input
+                id="geotiff-input"
+                type="file"
+                accept=".tif,.tiff"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
             </label>
-            <button onClick={toggleLayerVisibility} disabled={!geotiffLayerRef.current}
-              className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40">
-              {isLayerVisible ? <Eye size={12} /> : <EyeOff size={12} />} {isLayerVisible ? "Hide" : "Show"}
+            <button
+              onClick={toggleLayerVisibility}
+              disabled={!geotiffLayerRef.current}
+              className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40"
+            >
+              {isLayerVisible ? <Eye size={12} /> : <EyeOff size={12} />}{" "}
+              {isLayerVisible ? "Hide" : "Show"}
             </button>
-            <button onClick={clearLayer} disabled={!geotiffLayerRef.current}
-              className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40">
+            <button
+              onClick={clearLayer}
+              disabled={!geotiffLayerRef.current}
+              className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40"
+            >
               <Trash2 size={12} /> Clear TIFF
             </button>
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
-            <button onClick={isDrawing ? undefined : startDrawing} disabled={isDrawing}
+            <button
+              onClick={isDrawing ? undefined : startDrawing}
+              disabled={isDrawing}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium
-                ${isDrawing ? "bg-green-600 text-white cursor-wait" : "bg-green-600 hover:bg-green-700 text-white"}`}>
+                ${isDrawing ? "bg-green-600 text-white cursor-wait" : "bg-green-600 hover:bg-green-700 text-white"}`}
+            >
               <Pen size={12} /> {isDrawing ? "Drawing..." : "Draw Polygon"}
             </button>
-            <button onClick={clearPolygon} disabled={!polygonCoordinates.length && !isDrawing}
-              className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40">
+            <button
+              onClick={clearPolygon}
+              disabled={!polygonCoordinates.length && !isDrawing}
+              className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40"
+            >
               <Trash2 size={12} /> Clear
             </button>
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
             {isPlacingMarker ? (
-              <button onClick={cancelPlacingMarker}
-                className="flex items-center gap-1.5 bg-purple-600 text-white px-3 py-1.5 rounded text-xs font-medium animate-pulse">
+              <button
+                onClick={cancelPlacingMarker}
+                className="flex items-center gap-1.5 bg-purple-600 text-white px-3 py-1.5 rounded text-xs font-medium animate-pulse"
+              >
                 <X size={12} /> Cancel Marker
               </button>
             ) : (
-              <button onClick={startPlacingMarker}
-                className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded transition text-xs font-medium">
+              <button
+                onClick={startPlacingMarker}
+                className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded transition text-xs font-medium"
+              >
                 <Pin size={12} /> Add Marker
               </button>
             )}
             {areaId && (
               <>
                 <div className="w-px h-5 bg-gray-200 mx-0.5" />
-                <button onClick={restricted.toggleAll}
+                <button
+                  onClick={restricted.toggleAll}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium
-                    ${restricted.showAll ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}>
-                  <Flag size={12} /> {restricted.showAll ? "Hide" : "Show"} Restricted
+                    ${restricted.showAll ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+                >
+                  <Flag size={12} /> {restricted.showAll ? "Hide" : "Show"}{" "}
+                  Restricted
                 </button>
                 <button
                   onClick={() => setShowPotentialSites((v) => !v)}
                   disabled={potentialSitesHook.loading}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40
-                    ${showPotentialSites ? "bg-teal-600 hover:bg-teal-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}>
+                    ${showPotentialSites ? "bg-teal-600 hover:bg-teal-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+                >
                   <Target size={12} />
                   {potentialSitesHook.loading
                     ? "Loading..."
                     : showPotentialSites
-                    ? `Hide Potential (${potentialSitesHook.potentialSites.length})`
-                    : `Potential Sites (${potentialSitesHook.potentialSites.length})`}
+                      ? `Hide Potential (${potentialSitesHook.potentialSites.length})`
+                      : `Potential Sites (${potentialSitesHook.potentialSites.length})`}
                 </button>
+               
               </>
             )}
+             {/* ✅ PASTE IT OUTSIDE HERE SO IT'S ALWAYS VISIBLE */}
+            <div className="w-px h-5 bg-gray-200 mx-0.5" />
+            <button
+              onClick={() => hazardLayers.setIsPanelOpen(!hazardLayers.isPanelOpen)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium
+                ${hazardLayers.isPanelOpen ? "bg-red-600 hover:bg-red-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+            >
+              <Shield size={12} /> Hazards
+            </button>
           </div>
           <div className="flex items-center gap-2">
             {layerInfo && (
               <div className="flex items-center gap-1 border-r border-gray-200 pr-3 mr-1">
                 <Palette size={12} className="text-gray-400" />
-                <select value={renderMode} onChange={(e) => setRenderMode(e.target.value as RenderMode)}
-                  className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-green-500">
+                <select
+                  value={renderMode}
+                  onChange={(e) => setRenderMode(e.target.value as RenderMode)}
+                  className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                >
                   <option value="auto">🤖 Auto</option>
                   <option value="ndvi">🌿 NDVI</option>
                   <option value="rgb">🎨 RGB</option>
@@ -881,10 +1112,19 @@ export default function MulticriteriaAnalysis() {
               </div>
             )}
             <span className="text-xs text-gray-500">Opacity:</span>
-            <input type="range" min="0" max="1" step="0.1" value={opacity}
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value={opacity}
               onChange={(e) => setOpacity(parseFloat(e.target.value))}
-              className="w-20 accent-green-600 disabled:opacity-40" disabled={!geotiffLayerRef.current} />
-            <span className="text-xs font-mono w-8 text-right">{Math.round(opacity * 100)}%</span>
+              className="w-20 accent-green-600 disabled:opacity-40"
+              disabled={!geotiffLayerRef.current}
+            />
+            <span className="text-xs font-mono w-8 text-right">
+              {Math.round(opacity * 100)}%
+            </span>
           </div>
         </div>
 
@@ -897,8 +1137,10 @@ export default function MulticriteriaAnalysis() {
               className="w-full rounded-lg shadow-inner border-2 border-gray-300 relative overflow-hidden h-[65vh] min-h-[450px]"
             >
               {(isPickingLocation || isPlacingMarker || isDrawing) && (
-                <div className={`absolute inset-0 pointer-events-none z-[400] transition-opacity duration-200
-                  ${isPickingLocation ? 'opacity-100' : 'opacity-0'}`}>
+                <div
+                  className={`absolute inset-0 pointer-events-none z-[400] transition-opacity duration-200
+                  ${isPickingLocation ? "opacity-100" : "opacity-0"}`}
+                >
                   {isPickingLocation && (
                     <div className="absolute inset-4 border-2 border-dashed border-orange-400/50 rounded-lg animate-pulse" />
                   )}
@@ -920,126 +1162,226 @@ export default function MulticriteriaAnalysis() {
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-orange-600/90 text-white px-4 py-2 rounded-full shadow-lg z-[1000] flex items-center gap-2 text-xs font-medium">
                   <MapPin size={12} className="animate-bounce" />
                   Click on the map to set this assessment's location •{" "}
-                  <button onClick={() => fieldAssessments.setLocationTargetId(null)} className="underline ml-1">Cancel</button>
+                  <button
+                    onClick={() => fieldAssessments.setLocationTargetId(null)}
+                    className="underline ml-1"
+                  >
+                    Cancel
+                  </button>
                 </div>
               )}
               {isPlacingMarker && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-purple-700/90 text-white px-4 py-2 rounded-full shadow-lg z-[1000] flex items-center gap-2 text-xs font-medium">
                   <Pin size={12} className="animate-bounce" />
                   Click on map to place marker •{" "}
-                  <button onClick={cancelPlacingMarker} className="underline">Cancel</button>
+                  <button onClick={cancelPlacingMarker} className="underline">
+                    Cancel
+                  </button>
                 </div>
               )}
               {restricted.loading && (
                 <div className="absolute top-3 right-3 bg-white/95 px-3 py-1.5 rounded-lg shadow-md border border-indigo-200 z-[1000]">
-                  <p className="text-xs font-medium text-indigo-700">🔄 Loading restricted areas...</p>
+                  <p className="text-xs font-medium text-indigo-700">
+                    🔄 Loading restricted areas...
+                  </p>
                 </div>
               )}
               {isDrawing && (
                 <div className="absolute top-3 left-3 bg-white/95 px-3 py-1.5 rounded-lg shadow-md border border-green-200 z-[1000]">
-                  <p className="text-xs font-semibold text-green-800">🎯 Drawing Mode</p>
-                  <p className="text-[10px] text-gray-600">Click to add • Double-click or press 'Finish' to complete</p>
+                  <p className="text-xs font-semibold text-green-800">
+                    🎯 Drawing Mode
+                  </p>
+                  <p className="text-[10px] text-gray-600">
+                    Click to add • Double-click or press 'Finish' to complete
+                  </p>
                 </div>
               )}
               {polygonArea !== null && (
                 <div className="absolute bottom-3 left-3 bg-white/95 px-2.5 py-1.5 rounded-lg shadow-md border border-green-200 z-[1000]">
                   <div className="flex items-center gap-1.5">
                     <Ruler size={12} className="text-green-600" />
-                    <span className="text-xs font-semibold text-gray-800">{polygonArea.toFixed(2)} ha</span>
+                    <span className="text-xs font-semibold text-gray-800">
+                      {polygonArea.toFixed(2)} ha
+                    </span>
                   </div>
                 </div>
               )}
-              {showPotentialSites && potentialSitesHook.potentialSites.length > 0 && (
-                <div className="absolute top-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-teal-200 z-[1000]">
-                  <p className="text-[10px] font-bold text-gray-700 mb-1.5 flex items-center gap-1">
-                    <Target size={10} className="text-teal-600" /> Potential Sites
-                  </p>
-                  <div className="flex flex-col gap-1 text-[9px] text-gray-600">
-                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-[#16a34a]" /><span>≥70% suitability</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-[#ca8a04]" /><span>40–70%</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-[#dc2626]" /><span>&lt;40%</span></div>
+              {showPotentialSites &&
+                potentialSitesHook.potentialSites.length > 0 && (
+                  <div className="absolute top-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-teal-200 z-[1000]">
+                    <p className="text-[10px] font-bold text-gray-700 mb-1.5 flex items-center gap-1">
+                      <Target size={10} className="text-teal-600" /> Potential
+                      Sites
+                    </p>
+                    <div className="flex flex-col gap-1 text-[9px] text-gray-600">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-sm bg-[#16a34a]" />
+                        <span>≥70% suitability</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-sm bg-[#ca8a04]" />
+                        <span>40–70%</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-sm bg-[#dc2626]" />
+                        <span>&lt;40%</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
-              {layerInfo?.dataType === "NDVI / Index" && renderMode !== "grayscale" && (
-                <div className="absolute bottom-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-green-200 z-[1000]">
-                  <p className="text-[10px] font-bold text-gray-700 mb-1.5 flex items-center gap-1">
-                    <Leaf size={10} className="text-green-600" /> NDVI
-                  </p>
-                  <div className="flex items-center gap-1.5 text-[9px]">
-                    <div className="w-20 h-2.5 bg-gradient-to-r from-red-500 via-yellow-300 to-green-600 rounded" />
-                    <span className="text-gray-500">-1 → +1</span>
+                )}
+              {layerInfo?.dataType === "NDVI / Index" &&
+                renderMode !== "grayscale" && (
+                  <div className="absolute bottom-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-green-200 z-[1000]">
+                    <p className="text-[10px] font-bold text-gray-700 mb-1.5 flex items-center gap-1">
+                      <Leaf size={10} className="text-green-600" /> NDVI
+                    </p>
+                    <div className="flex items-center gap-1.5 text-[9px]">
+                      <div className="w-20 h-2.5 bg-gradient-to-r from-red-500 via-yellow-300 to-green-600 rounded" />
+                      <span className="text-gray-500">-1 → +1</span>
+                    </div>
+                    <div className="flex justify-between text-[8px] text-gray-400 mt-0.5">
+                      <span>Bare</span>
+                      <span>Dense</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-[8px] text-gray-400 mt-0.5">
-                    <span>Bare</span><span>Dense</span>
-                  </div>
-                </div>
-              )}
+                )}
             </div>
-
+            {/* 👇 ADD THIS RIGHT HERE BEFORE THE CLOSING </div> OF mapContainerRef 👇 */}
+            <HazardAssessmentPanel
+              isOpen={hazardLayers.isPanelOpen}
+              onClose={() => hazardLayers.setIsPanelOpen(false)}
+              showMgbFlood={hazardLayers.showMgbFlood}
+              setShowMgbFlood={hazardLayers.setShowMgbFlood}
+              showMgbLandslide={hazardLayers.showMgbLandslide}
+              setShowMgbLandslide={hazardLayers.setShowMgbLandslide}
+              showEil={hazardLayers.showEil}
+              setShowEil={hazardLayers.setShowEil}
+              showFirms={hazardLayers.showFirms}
+              firmsTimeRange={hazardLayers.firmsTimeRange}
+              fireCount={hazardLayers.fireCount}
+              onToggleFirms={hazardLayers.toggleFirms}
+              onUpdateFirmsTimeRange={hazardLayers.updateFirmsTimeRange}
+            />
             {/* Status bar */}
             <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3 text-xs text-gray-500">
                 <span className="flex items-center gap-1">
-                  <Layers size={12} />{geotiffLayerRef.current ? `${layerInfo?.bands ?? "?"} band(s)` : "No TIFF"}
+                  <Layers size={12} />
+                  {geotiffLayerRef.current
+                    ? `${layerInfo?.bands ?? "?"} band(s)`
+                    : "No TIFF"}
                 </span>
                 <span className="flex items-center gap-1">
-                  <Pen size={12} />{polygonCoordinates.length > 0 ? `${polygonCoordinates.length} pts` : "No polygon"}
+                  <Pen size={12} />
+                  {polygonCoordinates.length > 0
+                    ? `${polygonCoordinates.length} pts`
+                    : "No polygon"}
                 </span>
                 {placedMarkers.length > 0 && (
                   <span className="flex items-center gap-1 text-purple-600">
-                    <Pin size={12} /> {placedMarkers.length} marker{placedMarkers.length !== 1 ? "s" : ""}
+                    <Pin size={12} /> {placedMarkers.length} marker
+                    {placedMarkers.length !== 1 ? "s" : ""}
                   </span>
                 )}
                 {areaId && restricted.restrictedData && (
                   <span className="flex items-center gap-1 text-indigo-600">
-                    <Flag size={12} /> {restricted.restrictedData.classified_area?.length ?? 0} zones
+                    <Flag size={12} />{" "}
+                    {restricted.restrictedData.classified_area?.length ?? 0}{" "}
+                    zones
                   </span>
                 )}
-                {showPotentialSites && potentialSitesHook.potentialSites.length > 0 && (
-                  <span className="flex items-center gap-1 text-teal-600">
-                    <Target size={12} /> {potentialSitesHook.potentialSites.length} potential site{potentialSitesHook.potentialSites.length !== 1 ? "s" : ""}
-                  </span>
-                )}
+                {showPotentialSites &&
+                  potentialSitesHook.potentialSites.length > 0 && (
+                    <span className="flex items-center gap-1 text-teal-600">
+                      <Target size={12} />{" "}
+                      {potentialSitesHook.potentialSites.length} potential site
+                      {potentialSitesHook.potentialSites.length !== 1
+                        ? "s"
+                        : ""}
+                    </span>
+                  )}
                 {isPickingLocation && (
                   <span className="flex items-center gap-1 text-orange-600 font-medium animate-pulse">
                     <MapPin size={12} /> Picking location...
+                  </span>
+                )}
+                {/* 👇 ADD THESE HAZARD INDICATORS HERE 👇 */}
+                {hazardLayers.showMgbFlood && (
+                  <span className="flex items-center gap-1 text-blue-600 font-medium">
+                    🌊 Flood
+                  </span>
+                )}
+                {hazardLayers.showMgbLandslide && (
+                  <span className="flex items-center gap-1 text-orange-600 font-medium">
+                    ⛰️ Landslide
+                  </span>
+                )}
+                {hazardLayers.showEil && (
+                  <span className="flex items-center gap-1 text-purple-600 font-medium">
+                    🌋 EIL
+                  </span>
+                )}
+                {hazardLayers.showFirms && (
+                  <span className="flex items-center gap-1 text-red-600 font-medium">
+                    🔥 {hazardLayers.fireCount} fires
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 {isDrawing && (
                   <>
-                    <button onClick={() => finishDrawing(polygonCoordinates)} disabled={polygonCoordinates.length < 3}
-                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded transition flex items-center gap-1">
+                    <button
+                      onClick={() => finishDrawing(polygonCoordinates)}
+                      disabled={polygonCoordinates.length < 3}
+                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded transition flex items-center gap-1"
+                    >
                       <CheckCircle size={12} /> Finish
                     </button>
-                    <button onClick={undoLastPoint} disabled={polygonCoordinates.length === 0}
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-xs font-semibold rounded transition flex items-center gap-1">
+                    <button
+                      onClick={undoLastPoint}
+                      disabled={polygonCoordinates.length === 0}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-xs font-semibold rounded transition flex items-center gap-1"
+                    >
                       <Undo2 size={12} /> Undo
                     </button>
                   </>
                 )}
                 {showNameInput && (
                   <div className="flex items-center gap-2">
-                    <input type="text" value={siteName} onChange={(e) => setSiteName(e.target.value)}
+                    <input
+                      type="text"
+                      value={siteName}
+                      onChange={(e) => setSiteName(e.target.value)}
                       placeholder="Enter site name..."
                       className="px-3 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500 w-40"
-                      onKeyDown={(e) => e.key === "Enter" && handleSaveSite()} autoFocus />
-                    <button onClick={handleSaveSite} disabled={!polygonArea}
+                      onKeyDown={(e) => e.key === "Enter" && handleSaveSite()}
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleSaveSite}
+                      disabled={!polygonArea}
                       className={`px-4 py-1.5 rounded text-xs font-semibold transition flex items-center gap-1
-                        ${polygonArea ? "bg-green-600 hover:bg-green-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+                        ${polygonArea ? "bg-green-600 hover:bg-green-700 text-white" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+                    >
                       <Save size={12} /> Save
                     </button>
-                    <button onClick={() => { setShowNameInput(false); setSiteName(""); clearPolygon(); }}
-                      className="px-3 py-1.5 bg-gray-500 hover:bg-gray-600 text-white text-xs font-semibold rounded transition">
+                    <button
+                      onClick={() => {
+                        setShowNameInput(false);
+                        setSiteName("");
+                        clearPolygon();
+                      }}
+                      className="px-3 py-1.5 bg-gray-500 hover:bg-gray-600 text-white text-xs font-semibold rounded transition"
+                    >
                       Cancel
                     </button>
                   </div>
                 )}
                 {!showNameInput && !isDrawing && (
-                  <button onClick={startDrawing}
-                    className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded transition flex items-center gap-1">
+                  <button
+                    onClick={startDrawing}
+                    className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded transition flex items-center gap-1"
+                  >
                     <Pen size={12} /> Draw Polygon
                   </button>
                 )}
@@ -1055,16 +1397,29 @@ export default function MulticriteriaAnalysis() {
                 <h3 className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
                   <Info size={13} className="text-blue-500" /> GeoTIFF
                 </h3>
-                <span className={`text-[10px] font-medium ${uploadStatus.includes("✅") ? "text-green-600" : uploadStatus.includes("❌") ? "text-red-500" : "text-blue-500"}`}>
+                <span
+                  className={`text-[10px] font-medium ${uploadStatus.includes("✅") ? "text-green-600" : uploadStatus.includes("❌") ? "text-red-500" : "text-blue-500"}`}
+                >
                   {uploadStatus}
                 </span>
               </div>
               {layerInfo && (
                 <div className="flex gap-2 text-[10px] text-gray-600 flex-wrap">
-                  <span className="bg-gray-100 px-1.5 py-0.5 rounded">{layerInfo.dataType}</span>
-                  <span className="bg-gray-100 px-1.5 py-0.5 rounded">{layerInfo.bands}B</span>
-                  <span className="bg-gray-100 px-1.5 py-0.5 rounded">{layerInfo.size}</span>
-                  <span className="bg-gray-100 px-1.5 py-0.5 rounded font-mono truncate max-w-[100px]" title={layerInfo.name}>{layerInfo.name}</span>
+                  <span className="bg-gray-100 px-1.5 py-0.5 rounded">
+                    {layerInfo.dataType}
+                  </span>
+                  <span className="bg-gray-100 px-1.5 py-0.5 rounded">
+                    {layerInfo.bands}B
+                  </span>
+                  <span className="bg-gray-100 px-1.5 py-0.5 rounded">
+                    {layerInfo.size}
+                  </span>
+                  <span
+                    className="bg-gray-100 px-1.5 py-0.5 rounded font-mono truncate max-w-[100px]"
+                    title={layerInfo.name}
+                  >
+                    {layerInfo.name}
+                  </span>
                 </div>
               )}
             </div>
@@ -1077,35 +1432,70 @@ export default function MulticriteriaAnalysis() {
                 </h3>
                 {areaId && (
                   <button
-                    onClick={() => fieldAssessments.fetchLayer(areaId, fieldAssessments.activeLayer)}
-                    disabled={fieldAssessments.loading[fieldAssessments.activeLayer]}
-                    className="text-[10px] text-blue-500 hover:underline disabled:opacity-40 flex items-center gap-0.5">
-                    <Layers size={9} className={fieldAssessments.loading[fieldAssessments.activeLayer] ? "animate-spin" : ""} /> Refresh
+                    onClick={() =>
+                      fieldAssessments.fetchLayer(
+                        areaId,
+                        fieldAssessments.activeLayer,
+                      )
+                    }
+                    disabled={
+                      fieldAssessments.loading[fieldAssessments.activeLayer]
+                    }
+                    className="text-[10px] text-blue-500 hover:underline disabled:opacity-40 flex items-center gap-0.5"
+                  >
+                    <Layers
+                      size={9}
+                      className={
+                        fieldAssessments.loading[fieldAssessments.activeLayer]
+                          ? "animate-spin"
+                          : ""
+                      }
+                    />{" "}
+                    Refresh
                   </button>
                 )}
               </div>
 
               {/* Layer tabs */}
               <div className="flex border-b border-gray-100 flex-shrink-0">
-                {([
-                  { id: "safety" as MCDALayer, short: "L1", color: "text-red-600" },
-                  { id: "boundary_verification" as MCDALayer, short: "L2", color: "text-amber-600" },
-                  { id: "survivability" as MCDALayer, short: "L3", color: "text-emerald-600" },
-                ]).map((l) => {
+                {[
+                  {
+                    id: "safety" as MCDALayer,
+                    short: "L1",
+                    color: "text-red-600",
+                  },
+                  {
+                    id: "boundary_verification" as MCDALayer,
+                    short: "L2",
+                    color: "text-amber-600",
+                  },
+                  {
+                    id: "survivability" as MCDALayer,
+                    short: "L3",
+                    color: "text-emerald-600",
+                  },
+                ].map((l) => {
                   const count = fieldAssessments.assessments[l.id]?.length ?? 0;
                   const active = l.id === fieldAssessments.activeLayer;
                   return (
-                    <button key={l.id}
+                    <button
+                      key={l.id}
                       onClick={() => {
                         fieldAssessments.setActiveLayer(l.id);
-                        if (!fieldAssessments.assessments[l.id].length && areaId)
+                        if (
+                          !fieldAssessments.assessments[l.id].length &&
+                          areaId
+                        )
                           fieldAssessments.fetchLayer(areaId, l.id);
                       }}
                       className={`flex-1 py-2 text-xs font-semibold transition relative border-b-2
-                        ${active ? `${l.color} border-current` : "text-gray-400 border-transparent hover:text-gray-600"}`}>
+                        ${active ? `${l.color} border-current` : "text-gray-400 border-transparent hover:text-gray-600"}`}
+                    >
                       {l.short}
                       {count > 0 && (
-                        <span className="ml-1 text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{count}</span>
+                        <span className="ml-1 text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                          {count}
+                        </span>
                       )}
                     </button>
                   );
@@ -1115,63 +1505,118 @@ export default function MulticriteriaAnalysis() {
               {/* Assessment entries - ✅ FIXED: Match new API structure */}
               <div className="flex-1 overflow-y-auto min-h-0">
                 {!areaId ? (
-                  <div className="p-4 text-center text-gray-400"><p className="text-xs">No area selected</p></div>
-                ) : fieldAssessments.loading[fieldAssessments.activeLayer] ? (
-                  <div className="p-4 text-center text-gray-400"><p className="text-xs">Loading...</p></div>
-                ) : (fieldAssessments.assessments[fieldAssessments.activeLayer] ?? []).length === 0 ? (
                   <div className="p-4 text-center text-gray-400">
-                    <p className="text-xs">No assessments</p>
-                    <button onClick={() => areaId && fieldAssessments.fetchLayer(areaId, fieldAssessments.activeLayer)}
-                      className="mt-2 text-xs text-blue-500 hover:underline">Try again</button>
+                    <p className="text-xs">No area selected</p>
+                  </div>
+                ) : fieldAssessments.loading[fieldAssessments.activeLayer] ? (
+                  <div className="p-4 text-center text-gray-400">
+                    <p className="text-xs">Loading...</p>
                   </div>
                 ) : (
-                  (fieldAssessments.assessments[fieldAssessments.activeLayer] ?? []).map((entry: FieldAssessmentEntry, idx) => {
+                    fieldAssessments.assessments[
+                      fieldAssessments.activeLayer
+                    ] ?? []
+                  ).length === 0 ? (
+                  <div className="p-4 text-center text-gray-400">
+                    <p className="text-xs">No assessments</p>
+                    <button
+                      onClick={() =>
+                        areaId &&
+                        fieldAssessments.fetchLayer(
+                          areaId,
+                          fieldAssessments.activeLayer,
+                        )
+                      }
+                      className="mt-2 text-xs text-blue-500 hover:underline"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : (
+                  (
+                    fieldAssessments.assessments[
+                      fieldAssessments.activeLayer
+                    ] ?? []
+                  ).map((entry: FieldAssessmentEntry, idx) => {
                     const isSelected = idx === fieldAssessments.selectedIndex;
                     const faId = entry.field_assessment_id; // ✅ Direct access (not nested)
                     const hasLocation = !!entry.location?.latitude;
-                    const isThisPickingLocation = fieldAssessments.locationTargetId === faId;
+                    const isThisPickingLocation =
+                      fieldAssessments.locationTargetId === faId;
 
                     return (
-                      <button key={idx}
+                      <button
+                        key={idx}
                         onClick={() => {
                           fieldAssessments.setSelectedIndex(idx);
-                          fieldAssessments.flyToMarker(fieldAssessments.activeLayer, idx);
+                          fieldAssessments.flyToMarker(
+                            fieldAssessments.activeLayer,
+                            idx,
+                          );
                         }}
                         className={`w-full text-left px-3 py-2.5 border-b border-gray-50 transition
-                          ${isSelected ? "bg-blue-50 border-l-2 border-l-blue-500" : "hover:bg-gray-50"}`}>
+                          ${isSelected ? "bg-blue-50 border-l-2 border-l-blue-500" : "hover:bg-gray-50"}`}
+                      >
                         <div className="flex items-center gap-2">
                           {entry.inspector.profile_image && (
-                            <img src={`http://127.0.0.1:8000${entry.inspector.profile_image}`} alt=""
+                            <img
+                              src={`http://127.0.0.1:8000${entry.inspector.profile_image}`}
+                              alt=""
                               className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-gray-200"
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display =
+                                  "none";
+                              }}
+                            />
                           )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-1">
-                              <span className="text-xs font-semibold text-gray-800 truncate">{entry.inspector.full_name}</span>
-                              <span className="text-[10px] font-bold text-gray-400 flex-shrink-0">F{idx + 1}</span>
+                              <span className="text-xs font-semibold text-gray-800 truncate">
+                                {entry.inspector.full_name}
+                              </span>
+                              <span className="text-[10px] font-bold text-gray-400 flex-shrink-0">
+                                F{idx + 1}
+                              </span>
                             </div>
                             <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-[10px] text-gray-500">{entry.assessment_date}</span>
+                              <span className="text-[10px] text-gray-500">
+                                {entry.assessment_date}
+                              </span>
                               {entry.images?.length > 0 && (
                                 <span className="text-[10px] text-blue-500 flex items-center gap-0.5">
                                   📷 {entry.images.length}
                                 </span>
                               )}
                             </div>
-                            <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                            <div
+                              className="mt-1.5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               {isThisPickingLocation ? (
-                                <button onClick={() => fieldAssessments.setLocationTargetId(null)}
-                                  className="flex items-center gap-1 text-[10px] bg-orange-100 text-orange-700 border border-orange-300 px-2 py-0.5 rounded-full font-medium animate-pulse">
+                                <button
+                                  onClick={() =>
+                                    fieldAssessments.setLocationTargetId(null)
+                                  }
+                                  className="flex items-center gap-1 text-[10px] bg-orange-100 text-orange-700 border border-orange-300 px-2 py-0.5 rounded-full font-medium animate-pulse"
+                                >
                                   <X size={9} /> Cancel
                                 </button>
                               ) : (
-                                <button onClick={() => fieldAssessments.setLocationTargetId(faId)}
+                                <button
+                                  onClick={() =>
+                                    fieldAssessments.setLocationTargetId(faId)
+                                  }
                                   className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border transition
-                                    ${hasLocation
-                                      ? "bg-green-50 text-green-700 border-green-300 hover:bg-green-100"
-                                      : "bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100"}`}>
+                                    ${
+                                      hasLocation
+                                        ? "bg-green-50 text-green-700 border-green-300 hover:bg-green-100"
+                                        : "bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100"
+                                    }`}
+                                >
                                   <MapPin size={9} />
-                                  {hasLocation ? "Update Location" : "Add Location"}
+                                  {hasLocation
+                                    ? "Update Location"
+                                    : "Add Location"}
                                 </button>
                               )}
                             </div>
@@ -1192,11 +1637,17 @@ export default function MulticriteriaAnalysis() {
           <div className="w-[50%] bg-white rounded-lg border border-gray-200 flex flex-col min-h-[120px]">
             <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
-                <Layers size={15} className="text-green-600" /> Site List ({sites.sites.length})
+                <Layers size={15} className="text-green-600" /> Site List (
+                {sites.sites.length})
               </h3>
               {areaId && (
-                <button onClick={() => sites.fetchSites(areaId)} disabled={sites.loading}
-                  className="text-[10px] text-blue-600 hover:underline disabled:opacity-50">Refresh</button>
+                <button
+                  onClick={() => sites.fetchSites(areaId)}
+                  disabled={sites.loading}
+                  className="text-[10px] text-blue-600 hover:underline disabled:opacity-50"
+                >
+                  Refresh
+                </button>
               )}
             </div>
             <div className="flex-1 min-h-[200px]">
@@ -1214,11 +1665,14 @@ export default function MulticriteriaAnalysis() {
 
           {/* Assessment Detail Panel - ✅ UPDATED with photo toggle */}
           <div className="w-[45%]">
-            {(fieldAssessments.assessments[fieldAssessments.activeLayer] ?? []).length === 0 ? (
+            {(fieldAssessments.assessments[fieldAssessments.activeLayer] ?? [])
+              .length === 0 ? (
               <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 min-h-[120px] flex items-center justify-center">
                 <div>
                   <CheckCircle size={32} className="mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">Select an assessment to view details</p>
+                  <p className="text-sm">
+                    Select an assessment to view details
+                  </p>
                 </div>
               </div>
             ) : (
@@ -1236,12 +1690,17 @@ export default function MulticriteriaAnalysis() {
                 }}
                 onSelectEntry={(idx) => {
                   fieldAssessments.setSelectedIndex(idx);
-                  fieldAssessments.flyToMarker(fieldAssessments.activeLayer, idx);
+                  fieldAssessments.flyToMarker(
+                    fieldAssessments.activeLayer,
+                    idx,
+                  );
                 }}
                 onFetchLayer={(layer) => {
                   if (areaId) fieldAssessments.fetchLayer(areaId, layer);
                 }}
-                onAddLocation={(faId) => fieldAssessments.setLocationTargetId(faId)}
+                onAddLocation={(faId) =>
+                  fieldAssessments.setLocationTargetId(faId)
+                }
                 onPhotoClick={handlePhotoClick}
                 showPhotoMarkers={fieldAssessments.showPhotoMarkers}
                 onTogglePhotoMarkers={fieldAssessments.setShowPhotoMarkers}
@@ -1255,7 +1714,10 @@ export default function MulticriteriaAnalysis() {
       <SiteValidationPanel
         site={validatingSite}
         isOpen={showValidationPanel}
-        onClose={() => { setShowValidationPanel(false); setValidatingSite(null); }}
+        onClose={() => {
+          setShowValidationPanel(false);
+          setValidatingSite(null);
+        }}
         onSaveDraft={handleSaveDraft}
         onFinalize={handleFinalizeSite}
         loading={sites.loading}

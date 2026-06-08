@@ -105,7 +105,9 @@ export default function Map() {
   let ORMOCCITY: [number, number] = [11.02, 124.61];
   const mapRef = useRef<L.Map | null>(null);
   const drawnLayerRef = useRef<any>(null);
-  const [classified_areas, setClassified_areas] = useState<ClassifiedArea[]>([]);
+  const [classified_areas, setClassified_areas] = useState<ClassifiedArea[]>(
+    [],
+  );
   const [barangays, setBarangays] = useState<Barangays[]>([]);
 
   const [showCanopyGuide, setShowCanopyGuide] = useState(false);
@@ -119,8 +121,12 @@ export default function Map() {
     description: "",
     area_img: null as File | null,
   });
-  const [reforestation_areas, setReforestation_areas] = useState<ReforestationArea[]>([]);
-  const [markerPosition, setMarkerPosition] = useState<[number, number] | null>(null);
+  const [reforestation_areas, setReforestation_areas] = useState<
+    ReforestationArea[]
+  >([]);
+  const [markerPosition, setMarkerPosition] = useState<[number, number] | null>(
+    null,
+  );
 
   const [showSiteTrends, setShowSiteTrends] = useState(false);
   const [selectedSiteGeometry, setSelectedSiteGeometry] = useState<any>(null);
@@ -133,7 +139,9 @@ export default function Map() {
   const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(false);
   const [searchLat, setSearchLat] = useState("");
   const [searchLng, setSearchLng] = useState("");
-  const [searchMarkerPosition, setSearchMarkerPosition] = useState<[number, number] | null>(null);
+  const [searchMarkerPosition, setSearchMarkerPosition] = useState<
+    [number, number] | null
+  >(null);
   const [areaSearchQuery, setAreaSearchQuery] = useState("");
   const [showAreaDropdown, setShowAreaDropdown] = useState(false);
 
@@ -162,14 +170,19 @@ export default function Map() {
   const [showMgbLandslide, setShowMgbLandslide] = useState(false);
   const [showEil, setShowEil] = useState(false);
 
-  const MGB_FLOOD_TILE_URL = "https://controlmap.mgb.gov.ph/arcgis/rest/services/GeospatialDataInventory/GDI_Detailed_Flood_Susceptibility/MapServer/tile/{z}/{y}/{x}";
-  const MGB_LANDSLIDE_TILE_URL = "https://controlmap.mgb.gov.ph/arcgis/rest/services/GeospatialDataInventory/GDI_Detailed_Rain_induced_Landslide_Susceptibility/MapServer/tile/{z}/{y}/{x}";
-  const PHIVOLCS_EIL_WMS_URL = "https://gisweb.phivolcs.dost.gov.ph/arcgis/services/PHIVOLCSPublic/EarthquakeInducedLandslide/MapServer/WMSServer";
+  const MGB_FLOOD_TILE_URL =
+    "https://controlmap.mgb.gov.ph/arcgis/rest/services/GeospatialDataInventory/GDI_Detailed_Flood_Susceptibility/MapServer/tile/{z}/{y}/{x}";
+  const MGB_LANDSLIDE_TILE_URL =
+    "https://controlmap.mgb.gov.ph/arcgis/rest/services/GeospatialDataInventory/GDI_Detailed_Rain_induced_Landslide_Susceptibility/MapServer/tile/{z}/{y}/{x}";
+  const PHIVOLCS_EIL_WMS_URL =
+    "https://gisweb.phivolcs.dost.gov.ph/arcgis/services/PHIVOLCSPublic/EarthquakeInducedLandslide/MapServer/WMSServer";
 
   // ✅ NASA FIRMS - FIRE MONITORING
   const [showFirms, setShowFirms] = useState(false);
   const [fireCount, setFireCount] = useState(0);
-  const [firmsTimeRange, setFirmsTimeRange] = useState<"24hrs" | "48hrs" | "7days">("24hrs");
+  const [firmsTimeRange, setFirmsTimeRange] = useState<
+    "today" | "24hrs" | "7days"
+  >("today");
   const [firmsGeoJsonLayer, setFirmsGeoJsonLayer] = useState<any>(null);
 
   const [start, setStart] = useState("2023-01-01");
@@ -180,31 +193,40 @@ export default function Map() {
     title: string;
     message: string;
   } | null>(null);
-  const [selectedBarangayId, setSelectedBarangayId] = useState<number | null>(null);
+  const [selectedBarangayId, setSelectedBarangayId] = useState<number | null>(
+    null,
+  );
 
   const [showBarangayAnalysis, setShowBarangayAnalysis] = useState(false);
-  const [selectedBarangayForAnalysis, setSelectedBarangayForAnalysis] = useState<{
-    id: number;
-    name: string;
-  } | null>(null);
- 
+  const [selectedBarangayForAnalysis, setSelectedBarangayForAnalysis] =
+    useState<{
+      id: number;
+      name: string;
+    } | null>(null);
+
   // Mouse coordinate tracking
-const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [mouseCoords, setMouseCoords] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
   const greenIcon = new L.Icon({
-    iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+    iconUrl:
+      "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
     iconSize: [25, 41],
     iconAnchor: [12, 41],
   });
   const yellowIcon = new L.Icon({
-    iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-yellow.png",
+    iconUrl:
+      "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-yellow.png",
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
     iconSize: [25, 41],
     iconAnchor: [12, 41],
   });
   const redIcon = new L.Icon({
-    iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+    iconUrl:
+      "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
     iconSize: [25, 41],
     iconAnchor: [12, 41],
@@ -286,7 +308,8 @@ const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | nu
         }
       }
       return {
-        site_id: site.properties?.site_id || site.site_id || `SITE-${Date.now()}`,
+        site_id:
+          site.properties?.site_id || site.site_id || `SITE-${Date.now()}`,
         geometry: { type: "Polygon", coordinates: coords || [] },
         area_hectares: site.properties?.area_hectares || 0,
         avg_ndvi: site.properties?.avg_ndvi || 0,
@@ -295,21 +318,26 @@ const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | nu
     });
   };
 
-  const saveAnalyzedSitesToArea = async (reforestationAreaId: number): Promise<boolean> => {
+  const saveAnalyzedSitesToArea = async (
+    reforestationAreaId: number,
+  ): Promise<boolean> => {
     if (analyzedSitesForSave.length === 0) return false;
     try {
       const formattedSites = formatSitesForBackend(analyzedSitesForSave);
-      const response = await fetch("http://127.0.0.1:8000/api/potential-sites/bulk-create/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/potential-sites/bulk-create/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: JSON.stringify({
+            reforestation_area_id: reforestationAreaId,
+            sites: formattedSites,
+          }),
         },
-        body: JSON.stringify({
-          reforestation_area_id: reforestationAreaId,
-          sites: formattedSites,
-        }),
-      });
+      );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to save sites");
       setPSAlert({
@@ -568,7 +596,8 @@ const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | nu
         message: "Area created!",
       });
 
-      const newAreaId = data.data?.reforestation_area_id || data.reforestation_area_id;
+      const newAreaId =
+        data.data?.reforestation_area_id || data.reforestation_area_id;
       if (isUsingPotentialSites && analyzedSitesForSave.length > 0 && newAreaId)
         await saveAnalyzedSitesToArea(newAreaId);
 
@@ -608,17 +637,26 @@ const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | nu
     [],
   );
 
-  // ✅ NASA FIRMS - Fetch actual fire data and render on map
-  const fetchFirmsData = async () => {
-    if (!mapRef.current) return;
+  // ✅ NEW: Accept timeRange as parameter
+const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
+  if (!mapRef.current) {
+    console.error("❌ Map reference not available");
+    return;
+  }
 
-    try {
-      const bounds = mapRef.current.getBounds();
-      const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+  // ✅ Use passed parameter or fall back to state
+  const effectiveTimeRange = timeRange || firmsTimeRange;
 
-      console.log("🔥 Fetching FIRMS data for bbox:", bbox);
+  try {
+    const bounds = mapRef.current.getBounds();
+    const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
 
-      const response = await fetch("http://127.0.0.1:8000/api/firms-fire-data/", {
+    console.log("🔥 Fetching FIRMS data for bbox:", bbox);
+    console.log("🔥 Time range:", effectiveTimeRange);
+
+    const response = await fetch(
+      "http://127.0.0.1:8000/api/firms-fire-data/",
+      {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -626,168 +664,204 @@ const [mouseCoords, setMouseCoords] = useState<{ lat: number; lng: number } | nu
         },
         body: JSON.stringify({
           bbox: bbox,
-          time_range: firmsTimeRange,
+          time_range: effectiveTimeRange,  // ✅ Use effectiveTimeRange
         }),
-      });
+      },
+    );
 
-      const data = await response.json();
-      console.log("🔥 FIRMS Response:", data);
+    const data = await response.json();
+    console.log("🔥 FIRMS Response:", data);
 
-      if (data.success) {
-        setFireCount(data.fire_count);
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
 
-        if (firmsGeoJsonLayer && mapRef.current) {
-          mapRef.current.removeLayer(firmsGeoJsonLayer);
-        }
+    if (data.success) {
+      console.log(`✅ Found ${data.fire_count} fires`);
+      setFireCount(data.fire_count);
 
-        if (data.fires && data.fires.length > 0 && mapRef.current) {
-          const geoJsonData = {
-            type: "FeatureCollection",
-            features: data.fires.map((fire: any) => ({
-              type: "Feature",
-              geometry: {
-                type: "Point",
-                coordinates: [fire.longitude, fire.latitude],
-              },
-              properties: fire,
-            })),
-          };
+      if (firmsGeoJsonLayer && mapRef.current) {
+        console.log("🗑️ Removing old FIRMS layer");
+        mapRef.current.removeLayer(firmsGeoJsonLayer);
+        setFirmsGeoJsonLayer(null);
+      }
 
-          const geoJsonLayer = L.geoJSON(geoJsonData, {
-            pointToLayer: (feature, latlng) => {
-              const confidence = feature.properties.confidence;
-              let color = "#ff6600";
-              let radius = 5;
+      if (data.fires && Array.isArray(data.fires) && data.fires.length > 0) {
+        console.log(`📍 Rendering ${data.fires.length} fire markers`);
 
-              if (confidence === "h" || confidence === "high") {
-                color = "#dc2626";
-                radius = 7;
-              } else if (confidence === "l" || confidence === "low") {
-                color = "#fbbf24";
-                radius = 4;
-              }
-
-              return L.circleMarker(latlng, {
-                radius: radius,
-                fillColor: color,
-                color: "#fff",
-                weight: 2,
-                opacity: 1,
-                fillOpacity: 0.8,
-              });
+        const geoJsonData = {
+          type: "FeatureCollection",
+          features: data.fires.map((fire) => ({
+            type: "Feature",
+            geometry: {
+              type: "Point",
+              coordinates: [fire.longitude, fire.latitude],
             },
-            onEachFeature: (feature, layer) => {
-              const p = feature.properties;
-              const confidenceLabel =
-                p.confidence === "h" || p.confidence === "high"
-                  ? "🔴 High"
-                  : p.confidence === "l" || p.confidence === "low"
-                    ? "🟡 Low"
-                    : "🟠 Nominal";
+            properties: fire,
+          })),
+        };
 
-              layer.bindPopup(`
-                <div style="font-size: 12px; min-width: 200px;">
-                  <strong style="color: #dc2626; font-size: 14px;">🔥 Fire Hotspot Detected</strong>
-                  <hr style="margin: 6px 0; border-color: #ddd;"/>
-                  <div style="margin: 4px 0;"><strong>📍 Location:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>
-                  <div style="margin: 4px 0;"><strong>🌡️ Brightness:</strong> ${p.brightness ? p.brightness.toFixed(1) : "N/A"} K</div>
-                  <div style="margin: 4px 0;"><strong>🔥 FRP:</strong> ${p.frp || "N/A"} GW</div>
-                  <div style="margin: 4px 0;"><strong>📊 Confidence:</strong> ${confidenceLabel}</div>
-                  <div style="margin: 4px 0;"><strong>📅 Date:</strong> ${p.acq_date || "N/A"}</div>
-                  <div style="margin: 4px 0;"><strong>⏰ Time:</strong> ${p.acq_time || "N/A"}</div>
-                  <div style="margin: 4px 0;"><strong>🛰️ Satellite:</strong> ${p.satellite} (${p.instrument})</div>
-                  <hr style="margin: 6px 0; border-color: #ddd;"/>
-                  <em style="color: #666; font-size: 10px;">Source: NASA FIRMS VIIRS</em>
-                </div>
-              `);
-            },
-          }).addTo(mapRef.current);
+        const geoJsonLayer = L.geoJSON(geoJsonData, {
+          pointToLayer: (feature, latlng) => {
+            const confidence = feature.properties.confidence?.toLowerCase();
+            let color = "#ff6600";
+            let radius = 5;
 
-          setFirmsGeoJsonLayer(geoJsonLayer);
+            if (confidence === "h" || confidence === "high") {
+              color = "#dc2626";
+              radius = 7;
+            } else if (confidence === "l" || confidence === "low") {
+              color = "#fbbf24";
+              radius = 4;
+            }
 
-          setPSAlert({
-            type: "success",
-            title: "Fires Detected",
-            message: `Found ${data.fires.length} active fire hotspot${data.fires.length > 1 ? "s" : ""}`,
-          });
-        } else {
-          setPSAlert({
-            type: "success",
-            title: "All Clear",
-            message: "No active fires detected in current view",
-          });
-        }
-      } else {
+            return L.circleMarker(latlng, {
+              radius: radius,
+              fillColor: color,
+              color: "#fff",
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.8,
+            });
+          },
+          onEachFeature: (feature, layer) => {
+            const p = feature.properties;
+            const confidenceLabel =
+              p.confidence === "h" || p.confidence === "high"
+                ? "🔴 High"
+                : p.confidence === "l" || p.confidence === "low"
+                  ? "🟡 Low"
+                  : "🟠 Nominal";
+
+            layer.bindPopup(`
+              <div style="font-size: 12px; min-width: 200px;">
+                <strong style="color: #dc2626; font-size: 14px;">🔥 Fire Hotspot</strong>
+                <hr style="margin: 6px 0; border-color: #ddd;"/>
+                <div><strong>📍 Location:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>
+                <div><strong>🌡️ Brightness:</strong> ${p.brightness ? p.brightness.toFixed(1) : "N/A"} K</div>
+                <div><strong>🔥 FRP:</strong> ${p.frp || "N/A"} GW</div>
+                <div><strong>📊 Confidence:</strong> ${confidenceLabel}</div>
+                <div><strong>📅 Date:</strong> ${p.acq_date || "N/A"}</div>
+                <div><strong>⏰ Time:</strong> ${p.acq_time || "N/A"}</div>
+                <div><strong>🛰️ Satellite:</strong> ${p.satellite} (${p.instrument})</div>
+              </div>
+            `);
+          },
+        }).addTo(mapRef.current);
+
+        console.log("✅ FIRMS layer added to map");
+        setFirmsGeoJsonLayer(geoJsonLayer);
+
         setPSAlert({
-          type: "error",
-          title: "FIRMS Error",
-          message: data.error || "Failed to fetch fire data",
+          type: "success",
+          title: "Fires Detected",
+          message: `Found ${data.fires.length} active fire hotspot${data.fires.length > 1 ? "s" : ""}`,
+        });
+      } else {
+        console.log("⚠️ No fires in response");
+        setPSAlert({
+          type: "success",
+          title: "All Clear",
+          message: "No active fires detected in current view",
         });
       }
-    } catch (error) {
-      console.error("FIRMS fetch error:", error);
-      setFireCount(0);
+    } else {
+      console.error("❌ API returned success: false", data);
       setPSAlert({
         type: "error",
         title: "FIRMS Error",
-        message: "Failed to connect to fire data service",
+        message: data.error || "Failed to fetch fire data",
       });
     }
-  };
+  } catch (error) {
+    console.error("❌ FIRMS fetch error:", error);
+    setFireCount(0);
+    setPSAlert({
+      type: "error",
+      title: "FIRMS Error",
+      message: error.message || "Failed to connect to fire data service",
+    });
+  }
+};
 
-  const toggleFirms = () => {
-    const newState = !showFirms;
-    setShowFirms(newState);
+ const toggleFirms = () => {
+  const newState = !showFirms;
+  setShowFirms(newState);
 
-    if (!newState) {
-      if (firmsGeoJsonLayer && mapRef.current) {
-        mapRef.current.removeLayer(firmsGeoJsonLayer);
-        setFirmsGeoJsonLayer(null);
-      }
-      setFireCount(0);
-    } else {
-      setTimeout(() => fetchFirmsData(), 500);
+  if (!newState) {
+    if (firmsGeoJsonLayer && mapRef.current) {
+      mapRef.current.removeLayer(firmsGeoJsonLayer);
+      setFirmsGeoJsonLayer(null);
     }
-  };
+    setFireCount(0);
+  } else {
+    setTimeout(() => fetchFirmsData(), 500);
+  }
+};
 
-  const updateFirmsTimeRange = (range: "24hrs" | "48hrs" | "7days") => {
-    setFirmsTimeRange(range);
-    if (showFirms) {
-      if (firmsGeoJsonLayer && mapRef.current) {
-        mapRef.current.removeLayer(firmsGeoJsonLayer);
-        setFirmsGeoJsonLayer(null);
-      }
-      setTimeout(() => fetchFirmsData(), 300);
+  // ✅ NEW:
+  const updateFirmsTimeRange = (range: "today" | "24hrs" | "7days") => {
+  console.log("🔄 Changing time range to:", range);
+  setFirmsTimeRange(range);
+  if (showFirms) {
+    if (firmsGeoJsonLayer && mapRef.current) {
+      mapRef.current.removeLayer(firmsGeoJsonLayer);
+      setFirmsGeoJsonLayer(null);
     }
-  };
+    // ✅ Pass the NEW range directly
+    setTimeout(() => fetchFirmsData(range), 300);
+  }
+};
 
   // Track mouse position on map
-function MouseTracker({ onCoordsChange }: { onCoordsChange: (coords: { lat: number; lng: number } | null) => void }) {
-  const map = useMap();
-  
-  useEffect(() => {
-    const handleMouseMove = (e: L.LeafletMouseEvent) => {
-      onCoordsChange({
-        lat: e.latlng.lat,
-        lng: e.latlng.lng
-      });
-    };
-    
-    const handleMouseOut = () => {
-      onCoordsChange(null);
-    };
-    
-    map.on('mousemove', handleMouseMove);
-    map.on('mouseout', handleMouseOut);
-    
-    return () => {
-      map.off('mousemove', handleMouseMove);
-      map.off('mouseout', handleMouseOut);
-    };
-  }, [map, onCoordsChange]);
-  
-  return null;
-}
+  function MouseTracker({
+    onCoordsChange,
+  }: {
+    onCoordsChange: (coords: { lat: number; lng: number } | null) => void;
+  }) {
+    const map = useMap();
+
+    useEffect(() => {
+      const handleMouseMove = (e: L.LeafletMouseEvent) => {
+        onCoordsChange({
+          lat: e.latlng.lat,
+          lng: e.latlng.lng,
+        });
+      };
+
+      const handleMouseOut = () => {
+        onCoordsChange(null);
+      };
+
+      map.on("mousemove", handleMouseMove);
+      map.on("mouseout", handleMouseOut);
+
+      return () => {
+        map.off("mousemove", handleMouseMove);
+        map.off("mouseout", handleMouseOut);
+      };
+    }, [map, onCoordsChange]);
+
+    return null;
+  }
+
+ useEffect(() => {
+  if (mapRef.current && showFirms) {
+    const bounds = mapRef.current.getBounds();
+    const rectangle = L.rectangle(bounds, {
+      color: "#ff0000",
+      weight: 2,
+      fill: false,
+      dashArray: "5, 5",
+    }).addTo(mapRef.current);
+
+    setTimeout(() => {
+      if (mapRef.current) {
+        mapRef.current.removeLayer(rectangle);
+      }
+    }, 5000);
+  }
+}, [showFirms, firmsTimeRange]); // ✅ Added firmsTimeRange
 
   return (
     <div className="relative h-screen w-full">
@@ -800,18 +874,18 @@ function MouseTracker({ onCoordsChange }: { onCoordsChange: (coords: { lat: numb
         />
       )}
 
-{/* Mouse Coordinate Display */}
-<div className="absolute top-4 right-4 z-[1001] bg-white px-3 py-2 rounded-lg shadow-lg border border-gray-300 text-xs font-mono">
-  <div className="flex items-center gap-2">
-    <MapPin size={14} className="text-[#0f4a2f]" />
-    <span className="text-gray-600">
-      <strong>Lat:</strong> {mouseCoords?.lat.toFixed(6) || '0.000000'}
-    </span>
-    <span className="text-gray-600 ml-2">
-      <strong>Lng:</strong> {mouseCoords?.lng.toFixed(6) || '0.000000'}
-    </span>
-  </div>
-</div>
+      {/* Mouse Coordinate Display */}
+      <div className="absolute top-4 right-4 z-[1001] bg-white px-3 py-2 rounded-lg shadow-lg border border-gray-300 text-xs font-mono">
+        <div className="flex items-center gap-2">
+          <MapPin size={14} className="text-[#0f4a2f]" />
+          <span className="text-gray-600">
+            <strong>Lat:</strong> {mouseCoords?.lat.toFixed(6) || "0.000000"}
+          </span>
+          <span className="text-gray-600 ml-2">
+            <strong>Lng:</strong> {mouseCoords?.lng.toFixed(6) || "0.000000"}
+          </span>
+        </div>
+      </div>
 
       {/* Search Reforestation Areas */}
       <div className="absolute top-4 left-4 z-[1001] w-[280px]">
@@ -849,14 +923,22 @@ function MouseTracker({ onCoordsChange }: { onCoordsChange: (coords: { lat: numb
             <div className="border-t border-gray-100 max-h-[300px] overflow-y-auto rounded-b-xl">
               {reforestation_areas.filter(
                 (area) =>
-                  area.name.toLowerCase().includes(areaSearchQuery.toLowerCase()) ||
-                  area.barangay.name.toLowerCase().includes(areaSearchQuery.toLowerCase()),
+                  area.name
+                    .toLowerCase()
+                    .includes(areaSearchQuery.toLowerCase()) ||
+                  area.barangay.name
+                    .toLowerCase()
+                    .includes(areaSearchQuery.toLowerCase()),
               ).length > 0 ? (
                 reforestation_areas
                   .filter(
                     (area) =>
-                      area.name.toLowerCase().includes(areaSearchQuery.toLowerCase()) ||
-                      area.barangay.name.toLowerCase().includes(areaSearchQuery.toLowerCase()),
+                      area.name
+                        .toLowerCase()
+                        .includes(areaSearchQuery.toLowerCase()) ||
+                      area.barangay.name
+                        .toLowerCase()
+                        .includes(areaSearchQuery.toLowerCase()),
                   )
                   .map((area, idx) => {
                     const safetyColor: Record<string, string> = {
@@ -975,7 +1057,9 @@ function MouseTracker({ onCoordsChange }: { onCoordsChange: (coords: { lat: numb
                   <h1 className="text-white">NDVI</h1>
                 </div>
                 <div>
-                  <label className="text-[.7rem] text-gray-600">Start Date</label>
+                  <label className="text-[.7rem] text-gray-600">
+                    Start Date
+                  </label>
                   <input
                     type="date"
                     value={start}
@@ -1062,7 +1146,9 @@ function MouseTracker({ onCoordsChange }: { onCoordsChange: (coords: { lat: numb
                 />
               </div>
               <div>
-                <label className="text-[.7rem] text-gray-600">Description</label>
+                <label className="text-[.7rem] text-gray-600">
+                  Description
+                </label>
                 <input
                   type="text"
                   placeholder="Ex: Area"
@@ -1130,7 +1216,9 @@ function MouseTracker({ onCoordsChange }: { onCoordsChange: (coords: { lat: numb
                 </div>
               </div>
               <div>
-                <label className="text-[.7rem] text-gray-600">Safety Level</label>
+                <label className="text-[.7rem] text-gray-600">
+                  Safety Level
+                </label>
                 <select
                   value={form.safety}
                   onChange={(e) =>
@@ -1380,8 +1468,8 @@ function MouseTracker({ onCoordsChange }: { onCoordsChange: (coords: { lat: numb
       >
         <MapInitializer setMapRef={(map) => (mapRef.current = map)} />
 
-          {/* ✅ ADD THIS - Mouse coordinate tracker */}
-      <MouseTracker onCoordsChange={setMouseCoords} />
+        {/* ✅ ADD THIS - Mouse coordinate tracker */}
+        <MouseTracker onCoordsChange={setMouseCoords} />
 
         <TileLayer
           url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"

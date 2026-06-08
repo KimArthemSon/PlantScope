@@ -104,6 +104,14 @@ export default function TabLayout() {
           tabBarLabel: "Profile",
         }}
       />
+
+      {/* ✅ EXPLICITLY HIDE REAPPLY FROM TAB BAR */}
+      <Tabs.Screen
+        name="Reapply"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

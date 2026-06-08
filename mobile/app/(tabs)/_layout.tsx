@@ -79,19 +79,19 @@ export default function TabLayout() {
 
       {/* Grow — floating center */}
 
-      <Tabs.Screen
-        name="Area"
-        options={{
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "eye" : "eye-outline"}
-              size={24}
-              color={color}
-            />
-          ),
-          tabBarLabel: "Assessment",
-        }}
+<Tabs.Screen
+  name="Area"
+  options={{
+    tabBarIcon: ({ color, focused }) => (
+      <Ionicons
+        name={focused ? "layers" : "layers-outline"}
+        size={24}
+        color={color}
       />
+    ),
+    tabBarLabel: "Assessment",
+  }}
+/>
       <Tabs.Screen
         name="map"
         options={{

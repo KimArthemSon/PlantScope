@@ -239,11 +239,6 @@ def get_ongoing_applications(request):
 
 @csrf_exempt
 def get_tree_grower_application(request):
-    """
-    TreeGrower: Fetch their own application using auth token.
-    No application_id in URL - fetched from authenticated user.
-    GET /api/get_tree_grower_application/
-    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -251,10 +246,39 @@ def get_tree_grower_application(request):
     if not user or user.user_role != 'treeGrowers':
         return JsonResponse({'error': 'Unauthorized: TreeGrowers only'}, status=403)
 
-    # Get the TreeGrower's application (assuming one app per user)
-    app = get_object_or_404(Application, user=user)
+    # ✅ FIX: Get the LATEST application instead of assuming 1-to-1
+    app = Application.objects.filter(user=user).order_by('-created_at').first()
     
-    # Get related data
+    # Base user/org data (always return this so the frontend knows who is logged in)
+    org_data = {
+        "organization_name": user.organization.organization_name,
+        "org_email": user.organization.email,
+        "org_contact": user.organization.contact,
+        "org_address": user.organization.address,
+        "org_profile": user.organization.profile_img.url if user.organization.profile_img else None,
+    } if hasattr(user, 'organization') else None
+    
+    profile_data = {
+        "first_name": user.profile.first_name,
+        "last_name": user.profile.last_name,
+        "contact": user.profile.contact,
+        "gender": user.profile.gender,
+        "profile_img": user.profile.profile_img.url if user.profile.profile_img else None,
+    } if hasattr(user, 'profile') else None
+
+    # ✅ If no application exists, return null application but keep user data
+    if not app:
+        return JsonResponse({
+            "application": None,
+            "organization": org_data,
+            "profile": profile_data,
+            "assigned_site": None,
+            "seedling_requests": [],
+            "progress_reports": [],
+            "latest_reason": None
+        }, status=200)
+
+    # --- If application exists, proceed with normal serialization ---
     latest_reason = Reason.objects.filter(application=app).order_by('-created').first()
     seedling_requests = SeedlingRequest.objects.filter(application=app).order_by('-created_at')
     progress_reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
@@ -275,20 +299,8 @@ def get_tree_grower_application(request):
             "created_at": app.created_at.isoformat(),
             "updated_at": app.updated_at.isoformat(),
         },
-        "organization": {
-            "organization_name": user.organization.organization_name,
-            "org_email": user.organization.email,
-            "org_contact": user.organization.contact,
-            "org_address": user.organization.address,
-            "org_profile": user.organization.profile_img.url if user.organization.profile_img else None,
-        } if hasattr(user, 'organization') else None,
-        "profile": {
-            "first_name": user.profile.first_name,
-            "last_name": user.profile.last_name,
-            "contact": user.profile.contact,
-            "gender": user.profile.gender,
-            "profile_img": user.profile.profile_img.url if user.profile.profile_img else None,
-        } if hasattr(user, 'profile') else None,
+        "organization": org_data,
+        "profile": profile_data,
         "assigned_site": {
             "site_id": app.site.site_id,
             "name": app.site.name,
@@ -878,3 +890,144 @@ def get_progress_reports(request):
 
 #     return JsonResponse(data, safe=False, status=200)
 
+@csrf_exempt
+def create_reapplication(request):
+    """
+    TreeGrower: Apply for a NEW tree planting program.
+    Reuses existing User and Organization. Only creates new Application & SeedlingRequest.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role != 'treeGrowers':
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    # ✅ Prevent duplicate active applications
+    active_statuses = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
+    if Application.objects.filter(user=user, status__in=active_statuses).exists():
+        return JsonResponse({'error': 'You already have an active application. Please wait for it to be completed or rejected.'}, status=400)
+
+    # Extract Application Data
+    title = request.POST.get('title')
+    description = request.POST.get('description')
+    total_members = request.POST.get('total_members')
+    project_duration = request.POST.get('project_duration')
+    maintenance_plan = request.FILES.get('maintenance_plan')
+    
+    # Extract Seedling Data
+    no_request_seedling = request.POST.get('no_request_seedling')
+    seedling_type_str = request.POST.get('seedling_type')
+    seedling_description = request.POST.get('seedling_description', '')
+    seedling_request_file = request.FILES.get('seedling_request_file')
+
+    if not all([title, description, total_members, project_duration, maintenance_plan, no_request_seedling, seedling_type_str]):
+        return JsonResponse({'error': 'Missing required fields.'}, status=400)
+
+    try:
+        seedling_type = json.loads(seedling_type_str)
+        if not isinstance(seedling_type, dict): raise ValueError
+    except:
+        return JsonResponse({'error': 'seedling_type must be valid JSON'}, status=400)
+
+    try:
+        with transaction.atomic():
+            # 1. Create New Application (classification='old' since they are a returning user)
+            app = Application.objects.create(
+                user=user,
+                title=title,
+                description=description,
+                total_members=int(total_members),
+                project_duration=int(project_duration),
+                maintenance_plan=maintenance_plan,
+                classification='old', 
+                status='for_evaluation'
+            )
+            
+            # 2. Create New Seedling Request
+            SeedlingRequest.objects.create(
+                application=app,
+                no_request_seedling=int(no_request_seedling),
+                seedling_type=seedling_type,
+                description=seedling_description,
+                request_file=seedling_request_file,
+                status='pending'
+            )
+            
+        return JsonResponse({
+            'message': 'Re-application submitted successfully!', 
+            'application_id': app.application_id
+        }, status=201)
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def get_tree_grower_application_history(request):
+    """
+    TreeGrower: Fetch ALL their applications with progress reports
+    Returns complete history grouped by application
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role != 'treeGrowers':
+        return JsonResponse({'error': 'Unauthorized: TreeGrowers only'}, status=403)
+
+    # Get ALL applications for this user, ordered by creation date (newest first)
+    applications = Application.objects.filter(user=user).order_by('-created_at')
+    
+    history_data = []
+    
+    for app in applications:
+        # Get all progress reports for this application (NOT MaintenanceReport!)
+        reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
+        
+        # Calculate totals for this application
+        total_planted = sum(r.no_dead_plants + r.no_survived_plants for r in reports if r.status == 'accepted')
+        total_survived = sum(r.no_survived_plants for r in reports if r.status == 'accepted')
+        
+        # Get seedling request totals
+        seedling_requests = SeedlingRequest.objects.filter(application=app)
+        total_requested = sum(sr.no_request_seedling for sr in seedling_requests)
+        total_provided = sum(
+            sum(data.get('quantity', 0) for data in sr.seedling_type.values() if isinstance(data, dict))
+            for sr in seedling_requests if sr.status == 'accepted' and sr.seedling_type
+        )
+        
+        app_data = {
+            "application_id": app.application_id,
+            "title": app.title,
+            "description": app.description,
+            "status": app.status,
+            "classification": app.classification,
+            "created_at": app.created_at.isoformat(),
+            "updated_at": app.updated_at.isoformat(),
+            "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
+            "confirmed_at": app.confirmed_at.isoformat() if app.confirmed_at else None,
+            "total_request_seedling": total_requested,
+            "total_seedling_provided": total_provided,
+            "total_seedling_planted": total_planted,
+            "total_seedling_survived": total_survived,
+            "total_area_planted": "0.00",  # ProgressReport doesn't track area, set to 0
+            "reports": [{
+                "maintenance_report_id": r.progress_report_id,  # Map to frontend expectation
+                "title": f"Progress Report #{r.progress_report_id}",  # Generate title
+                "description": r.description or "No description provided",
+                "status": r.status,
+                "total_seedling_planted": r.no_dead_plants + r.no_survived_plants,  # Calculate total
+                "total_seedling_survived": r.no_survived_plants,
+                "total_area_planted": "0.00",  # Not tracked in ProgressReport
+                "total_owned_seedling_planted": 0,  # Not tracked in ProgressReport
+                "total_member_present": None,  # Not tracked in ProgressReport
+                "created_at": r.created_at.isoformat(),
+                "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+            } for r in reports]
+        }
+        history_data.append(app_data)
+    
+    return JsonResponse({
+        "applications": history_data,
+        "total_applications": len(history_data)
+    }, status=200)

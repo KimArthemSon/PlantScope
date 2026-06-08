@@ -23,4 +23,8 @@ urlpatterns = [
    
     path('create_progress_report/', views.create_progress_report, name='create_progress_report'),
     path('update_progress_report/<int:report_id>/', views.update_progress_report, name='update_progress_report'),
+    path('create_reapplication/', views.create_reapplication, name='create_reapplication'),
+    path('get_tree_grower_application_history/', views.get_tree_grower_application_history, name='get_tree_grower_application_history'),
+    
+    
 ]

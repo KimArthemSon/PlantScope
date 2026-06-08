@@ -1,31 +1,25 @@
 import { useState } from "react";
-import { Shield, Eye, EyeOff, Info, Map } from "lucide-react";
+import { Shield, Eye, EyeOff, Info, Map, X } from "lucide-react";
+import type { FirmsTimeRange } from "../hooks/useHazardLayers";
 
 interface HazardAssessmentPanelProps {
   isOpen: boolean;
-  start: string;
-  end: string;
-  setStart: (val: string) => void;
-  setEnd: (val: string) => void;
+  onClose: () => void;
 
-  // MGB Official Maps Props
+  // Official Gov Maps
   showMgbFlood: boolean;
-  setShowMgbFlood: (val: boolean) => void;
+  setShowMgbFlood: (v: boolean) => void;
   showMgbLandslide: boolean;
-  setShowMgbLandslide: (val: boolean) => void;
-
+  setShowMgbLandslide: (v: boolean) => void;
   showEil: boolean;
-  setShowEil: (val: boolean) => void;
+  setShowEil: (v: boolean) => void;
 
-  // FIRMS Props
+  // FIRMS
   showFirms: boolean;
-  setShowFirms: (val: boolean) => void;
-  firmsTimeRange: "today" | "24hrs" | "7days";
-  setFirmsTimeRange: (val: "today" | "24hrs" | "7days") => void;
+  firmsTimeRange: FirmsTimeRange;
   fireCount: number;
-  onFetchFirmsData: () => void;
   onToggleFirms: () => void;
-  onUpdateFirmsTimeRange: (range: "today" | "24hrs" | "7days") => void;
+  onUpdateFirmsTimeRange: (range: FirmsTimeRange) => void;
 }
 
 // 🏛️ Official MGB & PHIVOLCS Guide Data
@@ -107,10 +101,7 @@ const officialGuides = {
 
 export default function HazardAssessmentPanel({
   isOpen,
-  start,
-  end,
-  setStart,
-  setEnd,
+  onClose,
   showMgbFlood,
   setShowMgbFlood,
   showMgbLandslide,
@@ -118,11 +109,8 @@ export default function HazardAssessmentPanel({
   showEil,
   setShowEil,
   showFirms,
-  setShowFirms,
   firmsTimeRange,
-  setFirmsTimeRange,
   fireCount,
-  onFetchFirmsData,
   onToggleFirms,
   onUpdateFirmsTimeRange,
 }: HazardAssessmentPanelProps) {
@@ -173,12 +161,18 @@ export default function HazardAssessmentPanel({
   };
 
   return (
-    <div className="absolute bottom-14 right-0 w-[18rem] max-h-[80vh] overflow-y-auto flex flex-col gap-3 p-3 bg-white border border-[#0f4a2fe0] rounded-lg shadow-2xl z-[1001]">
+    <div className="absolute top-3 right-3 w-[18rem] max-h-[85vh] overflow-y-auto flex flex-col gap-3 p-3 bg-white border border-[#0f4a2fe0] rounded-lg shadow-2xl z-[1000]">
       {/* Header */}
-      <div className="text-center font-bold w-full p-1.5 bg-[#0f4a2fe0] rounded-md">
-        <h1 className="text-white text-sm flex items-center justify-center gap-2">
+      <div className="flex items-center justify-between">
+        <h1 className="text-sm font-bold text-[#0f4a2f] flex items-center gap-2">
           <Shield size={16} /> Hazard Assessment
         </h1>
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-gray-600 transition"
+        >
+          <X size={16} />
+        </button>
       </div>
 
       {/* Official Gov Maps Section */}
@@ -322,7 +316,7 @@ export default function HazardAssessmentPanel({
       </div>
 
       {/* ================= NASA FIRMS SECTION ================= */}
-      <div className="border-b border-gray-200 pb-3">
+      <div className="pb-1">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
             <Map size={12} className="text-red-600" />
@@ -336,7 +330,7 @@ export default function HazardAssessmentPanel({
         </div>
 
         <button
-          onClick={() => onToggleFirms()}
+          onClick={onToggleFirms}
           className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
             showFirms
               ? "bg-red-600 text-white shadow-md"
