@@ -31,6 +31,7 @@ import {
   Shield,
   Target,
   AlertTriangle,
+  CheckCircle,
 } from "lucide-react";
 
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
@@ -76,18 +77,29 @@ interface ClassifiedArea {
   description: string;
   created_at: string;
 }
-export type SafetyType = "safe" | "slightly" | "moderate" | "danger";
-export type Legality = "pending" | "legal" | "illegal";
+
 export interface ReforestationArea {
+  reforestation_area_id: number;
   name: string;
-  legality: Legality;
-  safety: SafetyType;
-  polygon_coordinate: { coordinates: [number, number][] } | null;
-  coordinate: [number, number] | null;
-  barangay: { barangay_id: number; name: string };
   description: string;
-  area_img: File | string | null;
+  coordinate: [number, number] | null;
+  barangay?: { barangay_id: number; name: string } | null;
+  created_at: string;
 }
+
+// ✅ NEW: Site Interface
+export interface Site {
+  site_id: number;
+  name: string;
+  reforestation_area_id: number;
+  center_coordinate: [number, number] | null;
+  polygon_coordinates?: any;
+  status: string;
+  total_area_hectares?: number; // ✅ ADDED
+  ndvi_value?: number; // ✅ ADDED
+  created_at: string;
+}
+
 interface Barangays {
   barangay_id: number;
   name: string;
@@ -102,39 +114,55 @@ interface SiteStatistics {
 
 export default function Map() {
   const token = localStorage.getItem("token");
-  let ORMOCCITY: [number, number] = [11.02, 124.61];
+  const ORMOCCITY: [number, number] = [11.02, 124.61];
   const mapRef = useRef<L.Map | null>(null);
   const drawnLayerRef = useRef<any>(null);
+
   const [classified_areas, setClassified_areas] = useState<ClassifiedArea[]>(
     [],
   );
   const [barangays, setBarangays] = useState<Barangays[]>([]);
 
   const [showCanopyGuide, setShowCanopyGuide] = useState(false);
-  const [form, setForm] = useState({
+
+  const [areaForm, setAreaForm] = useState({
     name: "",
-    legality: "pending",
-    safety: "moderate",
-    polygon_coordinate: { coordinates: [] as number[][] },
-    coordinate: null as number[] | null,
-    barangay: { barangay_id: 0, name: "" },
     description: "",
-    area_img: null as File | null,
+    barangay_id: 0,
+    coordinate: null as [number, number] | null,
   });
+
+  // ✅ UPDATED: Official Site Form State (uses marker instead of polygon)
+  const [siteForm, setSiteForm] = useState({
+    reforestation_area_id: 0,
+    name: "",
+    center_coordinate: null as [number, number] | null,
+  });
+
+  const [selectedPotentialSiteIds, setSelectedPotentialSiteIds] = useState<
+    number[]
+  >([]);
+
   const [reforestation_areas, setReforestation_areas] = useState<
     ReforestationArea[]
   >([]);
+
+  // ✅ NEW: Sites state
+  const [sites, setSites] = useState<Site[]>([]);
+
   const [markerPosition, setMarkerPosition] = useState<[number, number] | null>(
     null,
   );
+
+  // ✅ NEW: Site marker position
+  const [siteMarkerPosition, setSiteMarkerPosition] = useState<
+    [number, number] | null
+  >(null);
 
   const [showSiteTrends, setShowSiteTrends] = useState(false);
   const [selectedSiteGeometry, setSelectedSiteGeometry] = useState<any>(null);
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   const [selectedSiteName, setSelectedSiteName] = useState<string>("");
-
-  const [isUsingPotentialSites, setIsUsingPotentialSites] = useState(false);
-  const [analyzedSitesForSave, setAnalyzedSitesForSave] = useState<any[]>([]);
 
   const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(false);
   const [searchLat, setSearchLat] = useState("");
@@ -147,7 +175,8 @@ export default function Map() {
 
   const [isPickingMarker, setIsPickingMarker] = useState(false);
   const [isNdviPenelOpen, setIsNdviPenelOpen] = useState(false);
-  const [isFormPenelOpen, setIsFormPenelOpen] = useState(false);
+  const [isAreaFormPenelOpen, setIsAreaFormPenelOpen] = useState(false);
+  const [isSiteFormPenelOpen, setIsSiteFormPenelOpen] = useState(false);
   const [isDrawPenelOpen, setIsDrawPenelOpen] = useState(false);
   const [isFilterPenelOpen, setIsFilterPenelOpen] = useState(false);
   const [isHazardPanelOpen, setIsHazardPanelOpen] = useState(false);
@@ -165,7 +194,9 @@ export default function Map() {
     avgNDVI: 0,
   });
 
-  // ✅ OFFICIAL GOVERNMENT MAPS
+  // ✅ NEW: Site marker placement
+  const [isPickingSiteMarker, setIsPickingSiteMarker] = useState(false);
+
   const [showMgbFlood, setShowMgbFlood] = useState(false);
   const [showMgbLandslide, setShowMgbLandslide] = useState(false);
   const [showEil, setShowEil] = useState(false);
@@ -177,7 +208,6 @@ export default function Map() {
   const PHIVOLCS_EIL_WMS_URL =
     "https://gisweb.phivolcs.dost.gov.ph/arcgis/services/PHIVOLCSPublic/EarthquakeInducedLandslide/MapServer/WMSServer";
 
-  // ✅ NASA FIRMS - FIRE MONITORING
   const [showFirms, setShowFirms] = useState(false);
   const [fireCount, setFireCount] = useState(0);
   const [firmsTimeRange, setFirmsTimeRange] = useState<
@@ -204,7 +234,6 @@ export default function Map() {
       name: string;
     } | null>(null);
 
-  // Mouse coordinate tracking
   const [mouseCoords, setMouseCoords] = useState<{
     lat: number;
     lng: number;
@@ -233,6 +262,15 @@ export default function Map() {
     popupAnchor: [1, -34],
   });
 
+  // ✅ NEW: Blue icon for sites
+  const blueIcon = new L.Icon({
+    iconUrl:
+      "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+  });
+
   const { userRole } = useUserRole();
 
   useEffect(() => {
@@ -248,110 +286,168 @@ export default function Map() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showNDVI, isNdviPenelOpen]);
 
+  // ✅ FIXED: Map Drawing Events - More robust implementation
   useEffect(() => {
     if (!mapRef.current) return;
     const map = mapRef.current;
-    (window as any).L = L;
+
+    // ✅ Ensure Geoman is ready
+    if (!map.pm) {
+      console.error("❌ Leaflet-Geoman not initialized");
+      return;
+    }
+
+    // Remove any existing listeners first
     map.off("pm:create");
-    map.on("pm:create", (e: any) => {
-      if (drawnLayerRef.current) {
-        map.removeLayer(drawnLayerRef.current);
-        drawnLayerRef.current = null;
-      }
+
+    const handleCreate = (e: any) => {
+      console.log("📐 pm:create event fired!");
+      console.log("Event object:", e);
+
       const layer = e.layer;
-      drawnLayerRef.current = layer;
-      layer.setStyle({ color: "#3b82f6", weight: 2, fill: false });
-      layer.addTo(map);
-      setDrawnGeometry(layer.toGeoJSON().geometry);
-    });
-    return () => {
-      map.off("pm:create");
+
+      if (!layer) {
+        console.error("❌ No layer in event");
+        return;
+      }
+
+      console.log("✏️ Capturing analysis rectangle");
+      console.log("Layer type:", layer.constructor.name);
+
+      // Remove old layer if exists
       if (drawnLayerRef.current) {
-        map.removeLayer(drawnLayerRef.current);
-        drawnLayerRef.current = null;
+        try {
+          map.removeLayer(drawnLayerRef.current);
+        } catch (err) {
+          console.warn("Could not remove old layer:", err);
+        }
+      }
+
+      drawnLayerRef.current = layer;
+
+      // Style the rectangle
+      layer.setStyle({
+        color: "#3b82f6",
+        weight: 2,
+        fill: false,
+      });
+
+      // ✅ Add to map if not already added
+      if (!map.hasLayer(layer)) {
+        layer.addTo(map);
+      }
+
+      // ✅ Extract geometry with better error handling
+      try {
+        // Wait a tick to ensure layer is fully initialized
+        setTimeout(() => {
+          try {
+            const geoJson = layer.toGeoJSON();
+            console.log("✅ GeoJSON extracted:", geoJson);
+
+            if (geoJson && geoJson.geometry) {
+              console.log("✅ Setting drawnGeometry:", geoJson.geometry);
+              setDrawnGeometry(geoJson.geometry);
+
+              // ✅ Verify it was set
+              setTimeout(() => {
+                console.log("🔍 Verifying drawnGeometry state...");
+              }, 100);
+            } else {
+              console.error("❌ GeoJSON has no geometry:", geoJson);
+            }
+          } catch (innerErr) {
+            console.error(
+              "❌ Error in setTimeout GeoJSON extraction:",
+              innerErr,
+            );
+          }
+        }, 50);
+      } catch (err) {
+        console.error("❌ Error getting analysis GeoJSON:", err);
+        console.error("Layer object:", layer);
       }
     };
-  }, [mapRef.current]);
 
+    // ✅ Attach the listener
+    map.on("pm:create", handleCreate);
+    console.log("✅ pm:create listener attached to map");
+
+    // ✅ Also listen to pm:edit and pm:cut in case user modifies the shape
+    map.on("pm:edit", (e: any) => {
+      console.log("✏️ pm:edit event - updating geometry");
+      const layer = e.layer;
+      if (layer === drawnLayerRef.current) {
+        try {
+          const geoJson = layer.toGeoJSON();
+          if (geoJson && geoJson.geometry) {
+            setDrawnGeometry(geoJson.geometry);
+          }
+        } catch (err) {
+          console.error("❌ Error updating geometry on edit:", err);
+        }
+      }
+    });
+
+    return () => {
+      console.log("🧹 Cleaning up drawing listeners");
+      map.off("pm:create", handleCreate);
+      map.off("pm:edit");
+    };
+  }, []); // Empty dependency array - attach once on mount
+
+  // ✅ UPDATED: Map click handler for area marker, site marker
   useEffect(() => {
     if (!mapRef.current) return;
     const map = mapRef.current;
     const handleClick = (e: L.LeafletMouseEvent) => {
-      if (!isPickingMarker) return;
       const { lat, lng } = e.latlng;
-      setMarkerPosition([lat, lng]);
-      setForm({ ...form, coordinate: [lat, lng] });
-      setIsPickingMarker(false);
+
+      if (isPickingMarker) {
+        setMarkerPosition([lat, lng]);
+        setAreaForm({ ...areaForm, coordinate: [lat, lng] });
+        setIsPickingMarker(false);
+        setPSAlert({
+          type: "success",
+          title: "Marker Placed",
+          message: "Area center location set.",
+        });
+      }
+
+      if (isPickingSiteMarker) {
+        setSiteMarkerPosition([lat, lng]);
+        setSiteForm({ ...siteForm, center_coordinate: [lat, lng] });
+        setIsPickingSiteMarker(false);
+        setPSAlert({
+          type: "success",
+          title: "Marker Placed",
+          message: "Site center location set.",
+        });
+      }
     };
     map.on("click", handleClick);
     return () => {
       map.off("click", handleClick);
     };
-  }, [isPickingMarker, form]);
+  }, [isPickingMarker, isPickingSiteMarker, areaForm, siteForm]);
 
   function startMarkerPlacement() {
     setIsPickingMarker(true);
+    setPSAlert({
+      type: "success",
+      title: "Pick Location",
+      message: "Click on the map to place the area center marker.",
+    });
   }
 
-  const formatSitesForBackend = (sites: any[]) => {
-    return sites.map((site) => {
-      const geometry = site.geometry || site.polygon_coordinates;
-      let coords = geometry?.coordinates;
-      if (coords && coords[0] && typeof coords[0][0] === "number") {
-        if (
-          coords[0][0] >= -90 &&
-          coords[0][0] <= 90 &&
-          coords[0][1] >= -180 &&
-          coords[0][1] <= 180
-        ) {
-          coords = coords.map((c: [number, number]) => [c[1], c[0]]);
-        }
-      }
-      return {
-        site_id:
-          site.properties?.site_id || site.site_id || `SITE-${Date.now()}`,
-        geometry: { type: "Polygon", coordinates: coords || [] },
-        area_hectares: site.properties?.area_hectares || 0,
-        avg_ndvi: site.properties?.avg_ndvi || 0,
-        suitability_score: site.properties?.suitability_score || 0,
-      };
+  function startSiteMarkerPlacement() {
+    setIsPickingSiteMarker(true);
+    setPSAlert({
+      type: "success",
+      title: "Pick Location",
+      message: "Click on the map to place the site center marker.",
     });
-  };
-
-  const saveAnalyzedSitesToArea = async (
-    reforestationAreaId: number,
-  ): Promise<boolean> => {
-    if (analyzedSitesForSave.length === 0) return false;
-    try {
-      const formattedSites = formatSitesForBackend(analyzedSitesForSave);
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/potential-sites/bulk-create/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-          body: JSON.stringify({
-            reforestation_area_id: reforestationAreaId,
-            sites: formattedSites,
-          }),
-        },
-      );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to save sites");
-      setPSAlert({
-        type: "success",
-        title: "Sites Saved",
-        message: `Saved ${data.created_count || formattedSites.length} potential site(s)`,
-      });
-      setAnalyzedSitesForSave([]);
-      return true;
-    } catch (err: any) {
-      setPSAlert({ type: "error", title: "Save Failed", message: err.message });
-      return false;
-    }
-  };
+  }
 
   const renderNDVI = async () => {
     setIsNdviLoading(true);
@@ -369,6 +465,7 @@ export default function Map() {
         setSuitablePolygons(null);
         setDrawnGeometry(null);
         setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
+        setSelectedPotentialSiteIds([]);
         if (drawnLayerRef.current && mapRef.current) {
           mapRef.current.removeLayer(drawnLayerRef.current);
           drawnLayerRef.current = null;
@@ -392,30 +489,90 @@ export default function Map() {
   };
 
   const analyzeArea = async () => {
-    if (!drawnGeometry) {
+    console.log("🔍 Analyzing area...");
+    console.log("drawnGeometry:", drawnGeometry);
+    console.log("drawnLayerRef.current:", drawnLayerRef.current);
+
+    // ✅ Get geometry from state or ref
+    let geometryToUse = drawnGeometry;
+
+    // Fallback 1: Get from layer ref
+    if (!geometryToUse && drawnLayerRef.current) {
+      console.log("⚠️ drawnGeometry is null, trying to get from layer ref...");
+      try {
+        const geoJson = drawnLayerRef.current.toGeoJSON();
+        if (geoJson && geoJson.geometry) {
+          geometryToUse = geoJson.geometry;
+          console.log("✅ Got geometry from layer ref");
+          // Update state for next time
+          setDrawnGeometry(geometryToUse);
+        }
+      } catch (err) {
+        console.error("❌ Failed to get geometry from layer ref:", err);
+      }
+    }
+
+    // Fallback 2: Search map for rectangle layers
+    if (!geometryToUse && mapRef.current) {
+      console.log("⚠️ Still no geometry, searching map for rectangles...");
+      mapRef.current.eachLayer((layer: any) => {
+        if (!geometryToUse) {
+          // Check if it's a rectangle or polygon (but not other layers)
+          if (
+            layer instanceof L.Rectangle ||
+            (layer instanceof L.Polygon && layer !== drawnLayerRef.current)
+          ) {
+            try {
+              const geoJson = layer.toGeoJSON();
+              if (geoJson && geoJson.geometry) {
+                geometryToUse = geoJson.geometry;
+                console.log("✅ Found geometry from map layer");
+                drawnLayerRef.current = layer;
+                setDrawnGeometry(geometryToUse);
+              }
+            } catch (err) {
+              console.error("❌ Failed to get geometry from found layer:", err);
+            }
+          }
+        }
+      });
+    }
+
+    if (!geometryToUse) {
+      console.error("❌ No geometry found from any source");
       setPSAlert({
         type: "failed",
         title: "No Area Drawn",
-        message: "Please draw a rectangle first.",
+        message:
+          "Please click 'Draw Analysis Area' button first, then click and drag on the map to draw a rectangle.",
       });
       return;
     }
+
+    console.log("✅ Using geometry for analysis:", geometryToUse);
     setIsProcessing(true);
+
     try {
+      console.log("📡 Sending analysis request to backend...");
+
       const res = await fetch(`http://127.0.0.1:8000/api/suitable-sites/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer " + token,
         },
-        body: JSON.stringify({ start, end, geometry: drawnGeometry }),
+        body: JSON.stringify({ start, end, geometry: geometryToUse }),
       });
+
       const data = await res.json();
+      console.log("📊 Analysis response:", data);
+
       if (!res.ok) throw new Error(data.error || "Failed to analyze");
+
       if (data.success && data.features && data.features.length > 0) {
         setSuitablePolygons(data);
         setNdviTileUrl(null);
-        setAnalyzedSitesForSave(data.features);
+
         const totalArea = data.features.reduce(
           (sum: number, f: any) => sum + (f.properties.area_hectares || 0),
           0,
@@ -425,11 +582,13 @@ export default function Map() {
             (sum: number, f: any) => sum + (f.properties.avg_ndvi || 0),
             0,
           ) / data.features.length;
+
         setSiteStats({ total: data.features.length, totalArea, avgNDVI });
+
         setPSAlert({
           type: "success",
           title: "Analysis Complete",
-          message: `Found ${data.features.length} sites.`,
+          message: `Found ${data.features.length} potential site(s).`,
         });
       } else {
         setSuitablePolygons(null);
@@ -437,14 +596,16 @@ export default function Map() {
         setPSAlert({
           type: "failed",
           title: "No Sites Found",
-          message: "Try adjusting the date range.",
+          message:
+            "No suitable sites found. Try adjusting the date range or drawing a different area.",
         });
       }
     } catch (err: any) {
+      console.error("❌ Analysis error:", err);
       setPSAlert({
         type: "error",
         title: "Analysis Failed",
-        message: err.message,
+        message: err.message || "Failed to analyze area",
       });
     } finally {
       setIsProcessing(false);
@@ -468,31 +629,108 @@ export default function Map() {
     setSuitablePolygons(null);
     setDrawnGeometry(null);
     setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
+    setSelectedPotentialSiteIds([]);
     if (mapRef.current && drawnLayerRef.current) {
       mapRef.current.removeLayer(drawnLayerRef.current);
       drawnLayerRef.current = null;
     }
   };
 
-  const startDrawing = () => {
-    if (mapRef.current) {
-      if (drawnLayerRef.current) {
-        mapRef.current.removeLayer(drawnLayerRef.current);
-        drawnLayerRef.current = null;
-        setDrawnGeometry(null);
-      }
-      mapRef.current.pm.enableDraw("Rectangle", {
-        snappable: false,
-        cursorMarker: false,
-        allowSelfIntersection: false,
+  const startDrawingAnalysis = () => {
+    if (!mapRef.current) {
+      console.error("❌ Map not initialized");
+      setPSAlert({
+        type: "error",
+        title: "Map Error",
+        message: "Map not ready. Please refresh the page.",
       });
+      return;
     }
+
+    console.log("📐 Starting analysis drawing mode");
+
+    // Clean up any existing drawings
+    if (drawnLayerRef.current) {
+      console.log("🗑️ Removing existing drawing");
+      mapRef.current.removeLayer(drawnLayerRef.current);
+      drawnLayerRef.current = null;
+    }
+    setDrawnGeometry(null);
+
+    // ✅ Ensure Geoman is available
+    if (!mapRef.current.pm) {
+      console.error("❌ Leaflet-Geoman not available");
+      setPSAlert({
+        type: "error",
+        title: "Drawing Error",
+        message: "Drawing tools not available. Please refresh the page.",
+      });
+      return;
+    }
+
+    // ✅ Disable any active drawing first
+    mapRef.current.pm.disableDraw();
+
+    // ✅ Small delay to ensure disable completes
+    setTimeout(() => {
+      if (mapRef.current && mapRef.current.pm) {
+        try {
+          console.log("🎨 Enabling Rectangle drawing...");
+          mapRef.current.pm.enableDraw("Rectangle", {
+            snappable: false,
+            cursorMarker: true,
+            allowSelfIntersection: false,
+            templineStyle: {
+              color: "#3b82f6",
+              dashArray: "5,5",
+              weight: 2,
+            },
+            hintlineStyle: {
+              color: "#3b82f6",
+              dashArray: "5,5",
+              weight: 2,
+            },
+            pathOptions: {
+              color: "#3b82f6",
+              fillColor: "#3b82f6",
+              fillOpacity: 0.1,
+              weight: 2,
+            },
+          });
+
+          console.log("✅ Rectangle drawing enabled successfully");
+
+          setPSAlert({
+            type: "success",
+            title: "Draw Mode Active",
+            message:
+              "Click and drag on the map to draw a rectangle, then click Analyze.",
+          });
+        } catch (err) {
+          console.error("❌ Error enabling draw:", err);
+          setPSAlert({
+            type: "error",
+            title: "Drawing Error",
+            message: "Failed to enable drawing mode. Please try again.",
+          });
+        }
+      }
+    }, 150);
+  };
+
+  const togglePotentialSiteSelection = (featureId: number) => {
+    setSelectedPotentialSiteIds((prev) =>
+      prev.includes(featureId)
+        ? prev.filter((id) => id !== featureId)
+        : [...prev, featureId],
+    );
   };
 
   useEffect(() => {
     get_classified_area();
     getBarangays();
     get_all_reforestation_areas();
+    get_all_sites(); // ✅ Fetch sites on load
   }, []);
 
   async function get_classified_area() {
@@ -527,9 +765,25 @@ export default function Map() {
     } catch (err) {}
   }
 
+  // ✅ NEW: Fetch all sites
+  async function get_all_sites() {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/get_all_sites/", {
+        headers: { Authorization: token ? `Bearer ${token}` : "" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSites(data.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sites:", err);
+    }
+  }
+
   function closeAll() {
     setIsNdviPenelOpen(false);
-    setIsFormPenelOpen(false);
+    setIsAreaFormPenelOpen(false);
+    setIsSiteFormPenelOpen(false);
     setIsDrawPenelOpen(false);
     setIsFilterPenelOpen(false);
     setIsSearchPanelOpen(false);
@@ -551,34 +805,31 @@ export default function Map() {
     mapRef.current?.flyTo([lat, lng], 16);
   };
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmitArea(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!form.name.trim() || form.barangay.barangay_id === 0) {
+    if (!areaForm.name.trim()) {
       setPSAlert({
         type: "failed",
         title: "Validation Error",
-        message: "Name and Barangay required",
+        message: "Name is required",
+      });
+      return;
+    }
+    if (!areaForm.barangay_id) {
+      setPSAlert({
+        type: "failed",
+        title: "Validation Error",
+        message: "Please select a barangay",
       });
       return;
     }
     try {
       const formData = new FormData();
-      formData.append("name", form.name.trim());
-      formData.append("description", form.description.trim());
-      formData.append("barangay_id", String(form.barangay.barangay_id));
-      formData.append("legality", form.legality);
-      formData.append("safety", form.safety);
-      if (form.coordinate)
-        formData.append("coordinate", JSON.stringify(form.coordinate));
-      if (form.polygon_coordinate?.coordinates?.length > 0)
-        formData.append(
-          "polygon_coordinate",
-          JSON.stringify({
-            type: "Polygon",
-            coordinates: [form.polygon_coordinate.coordinates],
-          }),
-        );
-      if (form.area_img) formData.append("area_img", form.area_img);
+      formData.append("name", areaForm.name.trim());
+      formData.append("description", areaForm.description.trim());
+      formData.append("barangay_id", String(areaForm.barangay_id));
+      if (areaForm.coordinate)
+        formData.append("coordinate", JSON.stringify(areaForm.coordinate));
 
       const res = await fetch(
         "http://127.0.0.1:8000/api/create_reforestation_areas/",
@@ -590,30 +841,82 @@ export default function Map() {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Create failed");
+
       setPSAlert({
         type: "success",
         title: "Success",
-        message: "Area created!",
+        message: "Reforestation Area created!",
       });
 
-      const newAreaId =
-        data.data?.reforestation_area_id || data.reforestation_area_id;
-      if (isUsingPotentialSites && analyzedSitesForSave.length > 0 && newAreaId)
-        await saveAnalyzedSitesToArea(newAreaId);
-
-      setForm({
+      setAreaForm({
         name: "",
-        legality: "pending",
-        safety: "moderate",
-        polygon_coordinate: { coordinates: [] },
-        coordinate: null,
-        barangay: { barangay_id: 0, name: "" },
         description: "",
-        area_img: null,
+        barangay_id: 0,
+        coordinate: null,
       });
-      setAnalyzedSitesForSave([]);
-      setIsFormPenelOpen(false);
+      setMarkerPosition(null);
+      setIsAreaFormPenelOpen(false);
       get_all_reforestation_areas();
+    } catch (error: any) {
+      setPSAlert({ type: "error", title: "Error", message: error.message });
+    }
+  }
+
+  // ✅ UPDATED: Submit Site - uses center_coordinate
+  async function onSubmitSite(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!siteForm.name.trim() || !siteForm.reforestation_area_id) {
+      setPSAlert({
+        type: "failed",
+        title: "Validation Error",
+        message: "Name and Parent Area are required",
+      });
+      return;
+    }
+    if (!siteForm.center_coordinate) {
+      setPSAlert({
+        type: "failed",
+        title: "Validation Error",
+        message: "Please place a marker for the site center.",
+      });
+      return;
+    }
+
+    try {
+      const payload = {
+        name: siteForm.name.trim(),
+        reforestation_area_id: siteForm.reforestation_area_id,
+        center_coordinate: siteForm.center_coordinate,
+        potential_site_ids: selectedPotentialSiteIds,
+      };
+
+      const res = await fetch("http://127.0.0.1:8000/api/sites/create_site/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Site creation failed");
+
+      setPSAlert({
+        type: "success",
+        title: "Site Created",
+        message: `Site "${siteForm.name}" created successfully!${selectedPotentialSiteIds.length > 0 ? ` ${selectedPotentialSiteIds.length} potential sites assigned.` : ""}`,
+      });
+
+      setSiteForm({
+        reforestation_area_id: 0,
+        name: "",
+        center_coordinate: null,
+      });
+      setSiteMarkerPosition(null);
+      setSelectedPotentialSiteIds([]);
+      setIsSiteFormPenelOpen(false);
+      get_all_sites(); // ✅ Refresh sites list
     } catch (error: any) {
       setPSAlert({ type: "error", title: "Error", message: error.message });
     }
@@ -637,183 +940,166 @@ export default function Map() {
     [],
   );
 
-  // ✅ NEW: Accept timeRange as parameter
-const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
-  if (!mapRef.current) {
-    console.error("❌ Map reference not available");
-    return;
-  }
-
-  // ✅ Use passed parameter or fall back to state
-  const effectiveTimeRange = timeRange || firmsTimeRange;
-
-  try {
-    const bounds = mapRef.current.getBounds();
-    const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
-
-    console.log("🔥 Fetching FIRMS data for bbox:", bbox);
-    console.log("🔥 Time range:", effectiveTimeRange);
-
-    const response = await fetch(
-      "http://127.0.0.1:8000/api/firms-fire-data/",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          bbox: bbox,
-          time_range: effectiveTimeRange,  // ✅ Use effectiveTimeRange
-        }),
-      },
-    );
-
-    const data = await response.json();
-    console.log("🔥 FIRMS Response:", data);
-
-    if (!response.ok) {
-      throw new Error(data.error || `HTTP ${response.status}`);
+  const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
+    if (!mapRef.current) {
+      console.error("❌ Map reference not available");
+      return;
     }
 
-    if (data.success) {
-      console.log(`✅ Found ${data.fire_count} fires`);
-      setFireCount(data.fire_count);
+    const effectiveTimeRange = timeRange || firmsTimeRange;
 
-      if (firmsGeoJsonLayer && mapRef.current) {
-        console.log("🗑️ Removing old FIRMS layer");
-        mapRef.current.removeLayer(firmsGeoJsonLayer);
-        setFirmsGeoJsonLayer(null);
+    try {
+      const bounds = mapRef.current.getBounds();
+      const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/firms-fire-data/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            bbox: bbox,
+            time_range: effectiveTimeRange,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
       }
 
-      if (data.fires && Array.isArray(data.fires) && data.fires.length > 0) {
-        console.log(`📍 Rendering ${data.fires.length} fire markers`);
+      if (data.success) {
+        setFireCount(data.fire_count);
 
-        const geoJsonData = {
-          type: "FeatureCollection",
-          features: data.fires.map((fire) => ({
-            type: "Feature",
-            geometry: {
-              type: "Point",
-              coordinates: [fire.longitude, fire.latitude],
+        if (firmsGeoJsonLayer && mapRef.current) {
+          mapRef.current.removeLayer(firmsGeoJsonLayer);
+          setFirmsGeoJsonLayer(null);
+        }
+
+        if (data.fires && Array.isArray(data.fires) && data.fires.length > 0) {
+          const geoJsonData = {
+            type: "FeatureCollection",
+            features: data.fires.map((fire) => ({
+              type: "Feature",
+              geometry: {
+                type: "Point",
+                coordinates: [fire.longitude, fire.latitude],
+              },
+              properties: fire,
+            })),
+          };
+
+          const geoJsonLayer = L.geoJSON(geoJsonData, {
+            pointToLayer: (feature, latlng) => {
+              const confidence = feature.properties.confidence?.toLowerCase();
+              let color = "#ff6600";
+              let radius = 5;
+
+              if (confidence === "h" || confidence === "high") {
+                color = "#dc2626";
+                radius = 7;
+              } else if (confidence === "l" || confidence === "low") {
+                color = "#fbbf24";
+                radius = 4;
+              }
+
+              return L.circleMarker(latlng, {
+                radius: radius,
+                fillColor: color,
+                color: "#fff",
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.8,
+              });
             },
-            properties: fire,
-          })),
-        };
+            onEachFeature: (feature, layer) => {
+              const p = feature.properties;
+              const confidenceLabel =
+                p.confidence === "h" || p.confidence === "high"
+                  ? "🔴 High"
+                  : p.confidence === "l" || p.confidence === "low"
+                    ? "🟡 Low"
+                    : "🟠 Nominal";
 
-        const geoJsonLayer = L.geoJSON(geoJsonData, {
-          pointToLayer: (feature, latlng) => {
-            const confidence = feature.properties.confidence?.toLowerCase();
-            let color = "#ff6600";
-            let radius = 5;
+              layer.bindPopup(`
+                <div style="font-size: 12px; min-width: 200px;">
+                  <strong style="color: #dc2626; font-size: 14px;">🔥 Fire Hotspot</strong>
+                  <hr style="margin: 6px 0; border-color: #ddd;"/>
+                  <div><strong>📍 Location:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>
+                  <div><strong>🌡️ Brightness:</strong> ${p.brightness ? p.brightness.toFixed(1) : "N/A"} K</div>
+                  <div><strong>🔥 FRP:</strong> ${p.frp || "N/A"} GW</div>
+                  <div><strong>📊 Confidence:</strong> ${confidenceLabel}</div>
+                  <div><strong>📅 Date:</strong> ${p.acq_date || "N/A"}</div>
+                  <div><strong>⏰ Time:</strong> ${p.acq_time || "N/A"}</div>
+                  <div><strong>🛰️ Satellite:</strong> ${p.satellite} (${p.instrument})</div>
+                </div>
+              `);
+            },
+          }).addTo(mapRef.current);
 
-            if (confidence === "h" || confidence === "high") {
-              color = "#dc2626";
-              radius = 7;
-            } else if (confidence === "l" || confidence === "low") {
-              color = "#fbbf24";
-              radius = 4;
-            }
+          setFirmsGeoJsonLayer(geoJsonLayer);
 
-            return L.circleMarker(latlng, {
-              radius: radius,
-              fillColor: color,
-              color: "#fff",
-              weight: 2,
-              opacity: 1,
-              fillOpacity: 0.8,
-            });
-          },
-          onEachFeature: (feature, layer) => {
-            const p = feature.properties;
-            const confidenceLabel =
-              p.confidence === "h" || p.confidence === "high"
-                ? "🔴 High"
-                : p.confidence === "l" || p.confidence === "low"
-                  ? "🟡 Low"
-                  : "🟠 Nominal";
-
-            layer.bindPopup(`
-              <div style="font-size: 12px; min-width: 200px;">
-                <strong style="color: #dc2626; font-size: 14px;">🔥 Fire Hotspot</strong>
-                <hr style="margin: 6px 0; border-color: #ddd;"/>
-                <div><strong>📍 Location:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>
-                <div><strong>🌡️ Brightness:</strong> ${p.brightness ? p.brightness.toFixed(1) : "N/A"} K</div>
-                <div><strong>🔥 FRP:</strong> ${p.frp || "N/A"} GW</div>
-                <div><strong>📊 Confidence:</strong> ${confidenceLabel}</div>
-                <div><strong>📅 Date:</strong> ${p.acq_date || "N/A"}</div>
-                <div><strong>⏰ Time:</strong> ${p.acq_time || "N/A"}</div>
-                <div><strong>🛰️ Satellite:</strong> ${p.satellite} (${p.instrument})</div>
-              </div>
-            `);
-          },
-        }).addTo(mapRef.current);
-
-        console.log("✅ FIRMS layer added to map");
-        setFirmsGeoJsonLayer(geoJsonLayer);
-
-        setPSAlert({
-          type: "success",
-          title: "Fires Detected",
-          message: `Found ${data.fires.length} active fire hotspot${data.fires.length > 1 ? "s" : ""}`,
-        });
+          setPSAlert({
+            type: "success",
+            title: "Fires Detected",
+            message: `Found ${data.fires.length} active fire hotspot${data.fires.length > 1 ? "s" : ""}`,
+          });
+        } else {
+          setPSAlert({
+            type: "success",
+            title: "All Clear",
+            message: "No active fires detected in current view",
+          });
+        }
       } else {
-        console.log("⚠️ No fires in response");
         setPSAlert({
-          type: "success",
-          title: "All Clear",
-          message: "No active fires detected in current view",
+          type: "error",
+          title: "FIRMS Error",
+          message: data.error || "Failed to fetch fire data",
         });
       }
-    } else {
-      console.error("❌ API returned success: false", data);
+    } catch (error) {
+      setFireCount(0);
       setPSAlert({
         type: "error",
         title: "FIRMS Error",
-        message: data.error || "Failed to fetch fire data",
+        message:
+          (error as Error).message || "Failed to connect to fire data service",
       });
     }
-  } catch (error) {
-    console.error("❌ FIRMS fetch error:", error);
-    setFireCount(0);
-    setPSAlert({
-      type: "error",
-      title: "FIRMS Error",
-      message: error.message || "Failed to connect to fire data service",
-    });
-  }
-};
+  };
 
- const toggleFirms = () => {
-  const newState = !showFirms;
-  setShowFirms(newState);
+  const toggleFirms = () => {
+    const newState = !showFirms;
+    setShowFirms(newState);
 
-  if (!newState) {
-    if (firmsGeoJsonLayer && mapRef.current) {
-      mapRef.current.removeLayer(firmsGeoJsonLayer);
-      setFirmsGeoJsonLayer(null);
+    if (!newState) {
+      if (firmsGeoJsonLayer && mapRef.current) {
+        mapRef.current.removeLayer(firmsGeoJsonLayer);
+        setFirmsGeoJsonLayer(null);
+      }
+      setFireCount(0);
+    } else {
+      setTimeout(() => fetchFirmsData(), 500);
     }
-    setFireCount(0);
-  } else {
-    setTimeout(() => fetchFirmsData(), 500);
-  }
-};
+  };
 
-  // ✅ NEW:
   const updateFirmsTimeRange = (range: "today" | "24hrs" | "7days") => {
-  console.log("🔄 Changing time range to:", range);
-  setFirmsTimeRange(range);
-  if (showFirms) {
-    if (firmsGeoJsonLayer && mapRef.current) {
-      mapRef.current.removeLayer(firmsGeoJsonLayer);
-      setFirmsGeoJsonLayer(null);
+    setFirmsTimeRange(range);
+    if (showFirms) {
+      if (firmsGeoJsonLayer && mapRef.current) {
+        mapRef.current.removeLayer(firmsGeoJsonLayer);
+        setFirmsGeoJsonLayer(null);
+      }
+      setTimeout(() => fetchFirmsData(range), 300);
     }
-    // ✅ Pass the NEW range directly
-    setTimeout(() => fetchFirmsData(range), 300);
-  }
-};
+  };
 
-  // Track mouse position on map
   function MouseTracker({
     onCoordsChange,
   }: {
@@ -845,23 +1131,23 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
     return null;
   }
 
- useEffect(() => {
-  if (mapRef.current && showFirms) {
-    const bounds = mapRef.current.getBounds();
-    const rectangle = L.rectangle(bounds, {
-      color: "#ff0000",
-      weight: 2,
-      fill: false,
-      dashArray: "5, 5",
-    }).addTo(mapRef.current);
+  useEffect(() => {
+    if (mapRef.current && showFirms) {
+      const bounds = mapRef.current.getBounds();
+      const rectangle = L.rectangle(bounds, {
+        color: "#ff0000",
+        weight: 2,
+        fill: false,
+        dashArray: "5, 5",
+      }).addTo(mapRef.current);
 
-    setTimeout(() => {
-      if (mapRef.current) {
-        mapRef.current.removeLayer(rectangle);
-      }
-    }, 5000);
-  }
-}, [showFirms, firmsTimeRange]); // ✅ Added firmsTimeRange
+      setTimeout(() => {
+        if (mapRef.current) {
+          mapRef.current.removeLayer(rectangle);
+        }
+      }, 5000);
+    }
+  }, [showFirms, firmsTimeRange]);
 
   return (
     <div className="relative h-screen w-full">
@@ -921,38 +1207,16 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
           </div>
           {showAreaDropdown && (
             <div className="border-t border-gray-100 max-h-[300px] overflow-y-auto rounded-b-xl">
-              {reforestation_areas.filter(
-                (area) =>
-                  area.name
-                    .toLowerCase()
-                    .includes(areaSearchQuery.toLowerCase()) ||
-                  area.barangay.name
-                    .toLowerCase()
-                    .includes(areaSearchQuery.toLowerCase()),
+              {reforestation_areas.filter((area) =>
+                area.name.toLowerCase().includes(areaSearchQuery.toLowerCase()),
               ).length > 0 ? (
                 reforestation_areas
-                  .filter(
-                    (area) =>
-                      area.name
-                        .toLowerCase()
-                        .includes(areaSearchQuery.toLowerCase()) ||
-                      area.barangay.name
-                        .toLowerCase()
-                        .includes(areaSearchQuery.toLowerCase()),
+                  .filter((area) =>
+                    area.name
+                      .toLowerCase()
+                      .includes(areaSearchQuery.toLowerCase()),
                   )
                   .map((area, idx) => {
-                    const safetyColor: Record<string, string> = {
-                      safe: "bg-green-100 text-green-700",
-                      slightly: "bg-yellow-100 text-yellow-700",
-                      moderate: "bg-orange-100 text-orange-700",
-                      danger: "bg-red-100 text-red-700",
-                    };
-                    const safetyLabel: Record<string, string> = {
-                      safe: "Low Risk",
-                      slightly: "Slight Risk",
-                      moderate: "Moderate",
-                      danger: "High Risk",
-                    };
                     return (
                       <button
                         key={idx}
@@ -969,19 +1233,19 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
                         }}
                         className="w-full text-left px-3 py-2 hover:bg-gray-50 flex flex-col gap-0.5 border-b border-gray-50 last:border-b-0 transition-colors"
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[.75rem] font-semibold text-[#0f4a2f] truncate">
-                            {area.name}
-                          </span>
-                          <span
-                            className={`text-[.6rem] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${safetyColor[area.safety] || "bg-gray-100 text-gray-600"}`}
-                          >
-                            {safetyLabel[area.safety] || area.safety}
-                          </span>
-                        </div>
-                        <span className="text-[.68rem] text-gray-500 flex items-center gap-1">
-                          <MapPin size={10} /> {area.barangay.name}
+                        <span className="text-[.75rem] font-semibold text-[#0f4a2f] truncate">
+                          {area.name}
                         </span>
+                        {area.description && (
+                          <span className="text-[.65rem] text-gray-500 truncate">
+                            {area.description}
+                          </span>
+                        )}
+                        {area.barangay && (
+                          <span className="text-[.6rem] text-gray-400 flex items-center gap-1">
+                            <MapPin size={8} /> {area.barangay.name}
+                          </span>
+                        )}
                       </button>
                     );
                   })
@@ -1003,7 +1267,7 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
           </h3>
           <div className="text-xs space-y-2">
             <div className="flex justify-between">
-              <span>📍 Total Sites:</span>
+              <span>📍 Total Potential Sites:</span>
               <strong className="text-[#0f4a2f]">{siteStats.total}</strong>
             </div>
             <div className="flex justify-between">
@@ -1018,13 +1282,30 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
                 {siteStats.avgNDVI.toFixed(3)}
               </strong>
             </div>
+            <div className="flex justify-between pt-2 border-t mt-2">
+              <span>✅ Selected for Site:</span>
+              <strong className="text-green-600">
+                {selectedPotentialSiteIds.length}
+              </strong>
+            </div>
           </div>
-          <button
-            onClick={clearAnalysis}
-            className="mt-3 w-full text-xs bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded border border-red-200 transition-colors"
-          >
-            Clear Results
-          </button>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={clearAnalysis}
+              className="flex-1 text-xs bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded border border-red-200 transition-colors"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => {
+                closeAll();
+                setIsSiteFormPenelOpen(true);
+              }}
+              className="flex-1 text-xs bg-green-600 hover:bg-green-700 text-white py-2 px-3 rounded transition-colors flex items-center justify-center gap-1"
+            >
+              <CheckCircle size={12} /> Create Site
+            </button>
+          </div>
         </div>
       )}
 
@@ -1040,7 +1321,7 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
       )}
 
       {/* Bottom Control Panel */}
-      <div className="absolute z-[1000] flex gap-1 bottom-2 border border-2 border-green-700 rounded rounded-2xl left-1/2 -translate-x-1/2 bg-white p-2 w-[40rem]">
+      <div className="absolute z-[1000] flex gap-1 bottom-2 border border-2 border-green-700 rounded rounded-2xl left-1/2 -translate-x-1/2 bg-white p-2 w-[55rem]">
         <button
           onClick={handleHome}
           className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
@@ -1122,12 +1403,12 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
           </div>
         )}
 
-        {/* Create PANEL */}
+        {/* CREATE AREA PANEL */}
         {userRole != "DataManager" && userRole != "CityENROHead" && (
           <div className="relative">
             <form
-              onSubmit={onSubmit}
-              className={`absolute ${isUsingPotentialSites && analyzedSitesForSave.length > 0 ? "top-[-650px]" : "top-[-530px]"} w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isFormPenelOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+              onSubmit={onSubmitArea}
+              className={`absolute top-[-360px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isAreaFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
             >
               <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
                 <h2 className="text-white text-[.8rem]">
@@ -1138,9 +1419,11 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
                 <label className="text-[.7rem] text-gray-600">Name</label>
                 <input
                   type="text"
-                  placeholder="Ex: RS_1"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Ex: Cabingtan Area"
+                  value={areaForm.name}
+                  onChange={(e) =>
+                    setAreaForm({ ...areaForm, name: e.target.value })
+                  }
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                   required
                 />
@@ -1151,35 +1434,28 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
                 </label>
                 <input
                   type="text"
-                  placeholder="Ex: Area"
-                  value={form.description}
+                  placeholder="Ex: North sector"
+                  value={areaForm.description}
                   onChange={(e) =>
-                    setForm({ ...form, description: e.target.value })
+                    setAreaForm({ ...areaForm, description: e.target.value })
                   }
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                 />
               </div>
               <div>
-                <label className="text-[.7rem] text-gray-600">Barangay:</label>
+                <label className="text-[.7rem] text-gray-600">Barangay</label>
                 <select
-                  value={form.barangay.barangay_id || ""}
-                  onChange={(e) => {
-                    const selectedId = parseInt(e.target.value, 10);
-                    const selectedBarangay = barangays.find(
-                      (b) => b.barangay_id === selectedId,
-                    );
-                    setForm({
-                      ...form,
-                      barangay: {
-                        barangay_id: selectedId,
-                        name: selectedBarangay?.name || "",
-                      },
-                    });
-                  }}
+                  value={areaForm.barangay_id || ""}
+                  onChange={(e) =>
+                    setAreaForm({
+                      ...areaForm,
+                      barangay_id: parseInt(e.target.value),
+                    })
+                  }
                   className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
                   required
                 >
-                  <option value="">-- Select Barangay --</option>
+                  <option value={0}>-- Select Barangay --</option>
                   {barangays.map((b) => (
                     <option key={b.barangay_id} value={b.barangay_id}>
                       {b.name}
@@ -1189,117 +1465,208 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
               </div>
               <div>
                 <label className="text-[.7rem] text-gray-600">
-                  Coordinate (Lat, Lng)
+                  Center Coordinate
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={
-                      form.coordinate
-                        ? `${form.coordinate[0]}, ${form.coordinate[1]}`
+                      areaForm.coordinate
+                        ? `${areaForm.coordinate[0].toFixed(6)}, ${areaForm.coordinate[1].toFixed(6)}`
                         : ""
                     }
-                    onChange={(e) => {
-                      const [lat, lng] = e.target.value.split(",").map(Number);
-                      setForm({ ...form, coordinate: [lat, lng] });
-                    }}
-                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                    required
+                    readOnly
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50"
                   />
                   <button
                     type="button"
                     onClick={startMarkerPlacement}
                     className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-full text-[.7rem] cursor-pointer"
                   >
-                    <Pointer size={16} /> Marker
+                    <Pointer size={16} />
                   </button>
                 </div>
               </div>
-              <div>
-                <label className="text-[.7rem] text-gray-600">
-                  Safety Level
-                </label>
-                <select
-                  value={form.safety}
-                  onChange={(e) =>
-                    setForm({ ...form, safety: e.target.value as SafetyType })
-                  }
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                >
-                  <option value="safe">Low Risk</option>
-                  <option value="slightly">Slightly Unsafe</option>
-                  <option value="moderate">Moderate Risk</option>
-                  <option value="danger">High Risk</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[.7rem] text-gray-600">Area Image</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) =>
-                    setForm({ ...form, area_img: e.target.files?.[0] || null })
-                  }
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-
-              <div className="border-t border-gray-200 pt-3 mt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isUsingPotentialSites}
-                    onChange={(e) => {
-                      setIsUsingPotentialSites(e.target.checked);
-                      if (!e.target.checked) setAnalyzedSitesForSave([]);
-                    }}
-                    className="rounded border-gray-300 text-[#0f4a2f] focus:ring-[#0f4a2f]"
-                  />
-                  <span className="text-[.7rem] text-gray-700">
-                    🔍 Use Potential Sites ({analyzedSitesForSave.length})
-                  </span>
-                </label>
-              </div>
-
               <div className="flex flex-row gap-1 mt-2">
                 <button
                   type="submit"
                   className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
                 >
-                  <File size={16} /> Submit
+                  <File size={16} /> Submit Area
                 </button>
               </div>
             </form>
             <button
               onClick={() => {
-                if (isFormPenelOpen) {
+                if (isAreaFormPenelOpen) {
                   closeAll();
                 } else {
                   closeAll();
-                  setIsFormPenelOpen(!isFormPenelOpen);
+                  setIsAreaFormPenelOpen(!isAreaFormPenelOpen);
                 }
               }}
               className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
             >
-              <Cross size={16} /> Create
+              <Cross size={16} /> Create Area
             </button>
           </div>
         )}
 
-        {/* Draw PANEL */}
+        {/* ✅ CREATE SITE PANEL - Uses marker like Area form */}
+        {userRole != "DataManager" && userRole != "CityENROHead" && (
+          <div className="relative">
+            <form
+              onSubmit={onSubmitSite}
+              className={`absolute ${
+                suitablePolygons?.features?.length
+                  ? "top-[-400px]"
+                  : "top-[-295px]"
+              } w-[14rem] flex flex-col gap-2 p-2 bg-white border border-green-600 rounded-md shadow-xl transition-all duration-200 ${
+                isSiteFormPenelOpen
+                  ? "opacity-100 pointer-events-auto"
+                  : "opacity-0 pointer-events-none"
+              }`}
+            >
+              <div className="text-center font-bold w-full p-1 bg-green-700 rounded-md">
+                <h2 className="text-white text-[.8rem]">
+                  Create Official Site
+                </h2>
+              </div>
+
+              <div>
+                <label className="text-[.7rem] text-gray-600">
+                  Parent Reforestation Area
+                </label>
+                <select
+                  value={siteForm.reforestation_area_id}
+                  onChange={(e) =>
+                    setSiteForm({
+                      ...siteForm,
+                      reforestation_area_id: parseInt(e.target.value),
+                    })
+                  }
+                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                  required
+                >
+                  <option value={0}>-- Select Area --</option>
+                  {reforestation_areas.map((area) => (
+                    <option
+                      key={area.reforestation_area_id}
+                      value={area.reforestation_area_id}
+                    >
+                      {area.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[.7rem] text-gray-600">Site Name</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Site A - North"
+                  value={siteForm.name}
+                  onChange={(e) =>
+                    setSiteForm({ ...siteForm, name: e.target.value })
+                  }
+                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[.7rem] text-gray-600">
+                  Center Coordinate
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={
+                      siteForm.center_coordinate
+                        ? `${siteForm.center_coordinate[0].toFixed(6)}, ${siteForm.center_coordinate[1].toFixed(6)}`
+                        : ""
+                    }
+                    readOnly
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={startSiteMarkerPlacement}
+                    className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-full text-[.7rem] cursor-pointer"
+                  >
+                    <Pointer size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* ✅ OPTIONAL: Potential Sites Selection */}
+              {suitablePolygons && suitablePolygons.features && (
+                <div className="border-t border-gray-200 pt-2 mt-1">
+                  <label className="text-[.7rem] text-gray-600 block mb-1">
+                    Assigned Potential Sites (Optional)
+                  </label>
+                  <div className="bg-gray-50 p-2 rounded border text-[.7rem] text-center">
+                    <strong className="text-green-700 text-lg">
+                      {selectedPotentialSiteIds.length}
+                    </strong>
+                    <span className="text-gray-500 block">
+                      Click red polygons on map to select
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-row gap-1 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSiteFormPenelOpen(false);
+                    setSiteForm({
+                      reforestation_area_id: 0,
+                      name: "",
+                      center_coordinate: null,
+                    });
+                    setSiteMarkerPosition(null);
+                    setSelectedPotentialSiteIds([]);
+                  }}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 h-8 px-2 py-1 rounded-lg text-[.7rem]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center justify-center gap-1 ml-auto bg-green-600 hover:bg-green-700 text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
+                >
+                  <CheckCircle size={16} /> Create Site
+                </button>
+              </div>
+            </form>
+            <button
+              onClick={() => {
+                closeAll();
+                setIsSiteFormPenelOpen(!isSiteFormPenelOpen);
+              }}
+              className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+            >
+              <Target size={16} /> Create Site
+            </button>
+          </div>
+        )}
+
+        {/* Draw PANEL (For Analysis) */}
         {userRole != "DataManager" && userRole != "CityENROHead" && (
           <div className="relative">
             <div
               className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isDrawPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
             >
               <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-                <h2 className="text-white text-[.8rem]">Draw Tools</h2>
+                <h2 className="text-white text-[.8rem]">Analysis Tools</h2>
               </div>
               <button
-                onClick={startDrawing}
+                onClick={startDrawingAnalysis}
                 className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
               >
-                <Pen size={16} /> Draw
+                <Pen size={16} /> Draw Analysis Area
               </button>
               <button
                 onClick={analyzeArea}
@@ -1337,7 +1704,7 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
               }}
               className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
             >
-              <Pen size={16} /> Draw
+              <Pen size={16} /> Analyze
             </button>
           </div>
         )}
@@ -1468,7 +1835,6 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
       >
         <MapInitializer setMapRef={(map) => (mapRef.current = map)} />
 
-        {/* ✅ ADD THIS - Mouse coordinate tracker */}
         <MouseTracker onCoordsChange={setMouseCoords} />
 
         <TileLayer
@@ -1484,29 +1850,58 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
           />
         )}
 
-        {/* Suitable Polygons */}
+        {/* Suitable Polygons (Clickable for Selection) */}
         {suitablePolygons && suitablePolygons.features && (
           <GeoJSON
             data={{
               type: suitablePolygons.type,
               features: suitablePolygons.features,
             }}
-            style={{
-              color: "#dc2626",
-              weight: 2,
-              fillColor: "#fecaca",
-              fillOpacity: 0.6,
+            style={(feature) => {
+              const isSelected = selectedPotentialSiteIds.includes(
+                feature?.properties?.potential_sites_id,
+              );
+              return {
+                color: isSelected ? "#16a34a" : "#dc2626",
+                weight: 2,
+                fillColor: isSelected ? "#bbf7d0" : "#fecaca",
+                fillOpacity: 0.6,
+              };
             }}
             onEachFeature={(feature, layer) => {
               const props = feature.properties;
-              const popupContent = `<div style="font-size: 12px; min-width: 180px;"><strong style="color: #0f4a2f;">${props.site_id}</strong><div>📏 Area: ${props.area_hectares} ha</div><div>🌱 NDVI: ${props.avg_ndvi}</div><button id="view-trends-btn-${props.site_id}" style="margin-top:8px; width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer;">📈 View Trends</button></div>`;
+              const isSelected = selectedPotentialSiteIds.includes(
+                props.potential_sites_id,
+              );
+
+              const popupContent = `
+                <div style="font-size: 12px; min-width: 180px;">
+                  <strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Site"}</strong>
+                  <div>📏 Area: ${props.area_hectares?.toFixed(2)} ha</div>
+                  <div>🌱 NDVI: ${props.avg_ndvi?.toFixed(3)}</div>
+                  <hr style="margin: 6px 0;"/>
+                  <button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">
+                    ${isSelected ? "❌ Deselect" : "✅ Select for Site"}
+                  </button>
+                  <button id="view-trends-btn-${props.site_id}" style="margin-top:4px; width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer;">📈 View Trends</button>
+                </div>
+              `;
               layer.bindPopup(popupContent);
               layer.on("popupopen", () => {
-                const btn = document.getElementById(
+                const selectBtn = document.getElementById(
+                  `select-site-btn-${props.potential_sites_id}`,
+                );
+                if (selectBtn)
+                  selectBtn.onclick = () => {
+                    togglePotentialSiteSelection(props.potential_sites_id);
+                    layer.closePopup();
+                  };
+
+                const trendBtn = document.getElementById(
                   `view-trends-btn-${props.site_id}`,
                 );
-                if (btn)
-                  btn.onclick = () => {
+                if (trendBtn)
+                  trendBtn.onclick = () => {
                     layer.closePopup();
                     setSelectedSiteGeometry(feature.geometry);
                     setSelectedSiteId(props.site_id);
@@ -1526,14 +1921,203 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
             if (isNaN(lat) || isNaN(lng)) return null;
             return (
               <Marker
-                key={area.name}
+                key={area.reforestation_area_id}
                 position={[lat, lng]}
                 icon={new L.Icon.Default()}
               >
                 <Popup>
                   <div className="text-sm flex flex-col gap-1">
                     <strong>{area.name}</strong>
-                    <span>{area.barangay.name}</span>
+                    {area.description && (
+                      <span className="text-xs text-gray-600">
+                        {area.description}
+                      </span>
+                    )}
+                    {area.barangay && (
+                      <span className="text-xs text-gray-500 flex items-center gap-1">
+                        <MapPin size={10} /> {area.barangay.name}
+                      </span>
+                    )}
+                    {/* ✅ UPDATED: Button to view and zoom to sites for this area */}
+
+                    <button
+                      onClick={() => {
+                        const areaSites = sites.filter(
+                          (s) =>
+                            s.reforestation_area_id ===
+                            area.reforestation_area_id,
+                        );
+
+                        if (areaSites.length > 0) {
+                          // ✅ Create bounds to fit ALL sites in the view
+                          const validCoords = areaSites
+                            .filter(
+                              (s) =>
+                                s.center_coordinate &&
+                                s.center_coordinate.length === 2,
+                            )
+                            .map((s) =>
+                              L.latLng(
+                                s.center_coordinate![0],
+                                s.center_coordinate![1],
+                              ),
+                            );
+
+                          if (validCoords.length > 0) {
+                            const bounds = L.latLngBounds(validCoords);
+                            // Fly to the bounds with some padding so all markers are visible
+                            mapRef.current?.flyToBounds(bounds, {
+                              padding: [50, 50],
+                              maxZoom: 17,
+                            });
+                          }
+
+                          setPSAlert({
+                            type: "success",
+                            title: "Sites Loaded",
+                            message: `Showing ${areaSites.length} site(s) for ${area.name}. Click the blue markers to view status.`,
+                          });
+                        } else {
+                          setPSAlert({
+                            type: "failed",
+                            title: "No Sites",
+                            message: `No sites found in ${area.name}`,
+                          });
+                        }
+                      }}
+                      className="mt-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded flex items-center gap-1 w-fit"
+                    >
+                      <Target size={12} /> View Sites
+                    </button>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+
+        {/* ✅ UPDATED: Sites Markers with detailed status popup */}
+        {sites.length > 0 &&
+          sites.map((site) => {
+            if (!site.center_coordinate || site.center_coordinate.length !== 2)
+              return null;
+            const lat = Number(site.center_coordinate[0]);
+            const lng = Number(site.center_coordinate[1]);
+            if (isNaN(lat) || isNaN(lng)) return null;
+
+            // Determine status colors dynamically
+            const statusColor =
+              site.status === "accepted"
+                ? "#15803d"
+                : site.status === "rejected"
+                  ? "#991b1b"
+                  : "#92400e";
+            const statusBg =
+              site.status === "accepted"
+                ? "#dcfce7"
+                : site.status === "rejected"
+                  ? "#fee2e2"
+                  : "#fef3c7";
+            const statusIcon =
+              site.status === "accepted"
+                ? "✅"
+                : site.status === "rejected"
+                  ? "❌"
+                  : "⏳";
+
+            return (
+              <Marker key={site.site_id} position={[lat, lng]} icon={greenIcon}>
+                <Popup>
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      fontFamily: "sans-serif",
+                      minWidth: "200px",
+                    }}
+                  >
+                    {/* Header */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        borderBottom: "1px solid #e5e7eb",
+                        paddingBottom: "8px",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "10px",
+                          height: "10px",
+                          borderRadius: "50%",
+                          backgroundColor: "#3b82f6",
+                        }}
+                      ></div>
+                      <strong style={{ color: "#1d4ed8", fontSize: "15px" }}>
+                        {site.name}
+                      </strong>
+                    </div>
+
+                    {/* Status Badge */}
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        padding: "4px 10px",
+                        borderRadius: "999px",
+                        fontSize: "11px",
+                        fontWeight: "bold",
+                        backgroundColor: statusBg,
+                        color: statusColor,
+                      }}
+                    >
+                      {statusIcon} {site.status.toUpperCase()}
+                    </div>
+
+                    {/* Metrics */}
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#4b5563",
+                        borderTop: "1px solid #e5e7eb",
+                        paddingTop: "8px",
+                        marginTop: "8px",
+                        lineHeight: "1.8",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <span>📏 Area:</span>
+                        <strong>
+                          {site.total_area_hectares?.toFixed(2) || "0.00"} ha
+                        </strong>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <span>🌱 NDVI:</span>
+                        <strong>{site.ndvi_value?.toFixed(3) || "N/A"}</strong>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <span>📅 Created:</span>
+                        <span>
+                          {new Date(site.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </Popup>
               </Marker>
@@ -1583,7 +2167,12 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
         {goHome && <MapController center={ORMOCCITY} />}
         {markerPosition && (
           <Marker position={markerPosition} icon={greenIcon}>
-            <Popup>Selected</Popup>
+            <Popup>Area Center</Popup>
+          </Marker>
+        )}
+        {siteMarkerPosition && (
+          <Marker position={siteMarkerPosition} icon={blueIcon}>
+            <Popup>Site Center</Popup>
           </Marker>
         )}
         {searchMarkerPosition && (
@@ -1599,7 +2188,6 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
           onStatusChange={handleClassifiedAreasStatus}
         />
 
-        {/* ✅ MGB OFFICIAL FLOOD MAP LAYER */}
         {showMgbFlood && (
           <TileLayer
             url={MGB_FLOOD_TILE_URL}
@@ -1611,7 +2199,6 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
           />
         )}
 
-        {/* ✅ MGB OFFICIAL LANDSLIDE MAP LAYER */}
         {showMgbLandslide && (
           <TileLayer
             url={MGB_LANDSLIDE_TILE_URL}
@@ -1623,7 +2210,6 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
           />
         )}
 
-        {/* ✅ PHIVOLCS EARTHQUAKE-INDUCED LANDSLIDE MAP */}
         {showEil && (
           <WMSTileLayer
             url={PHIVOLCS_EIL_WMS_URL}
@@ -1640,7 +2226,6 @@ const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
         )}
       </MapContainer>
 
-      {/* Barangay Hazard Analysis Modal */}
       {selectedBarangayForAnalysis && (
         <BarangayHazardAnalysis
           isOpen={showBarangayAnalysis}

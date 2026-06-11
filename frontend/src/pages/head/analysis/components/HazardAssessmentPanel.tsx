@@ -161,7 +161,7 @@ export default function HazardAssessmentPanel({
   };
 
   return (
-    <div className="absolute top-3 right-3 w-[18rem] max-h-[85vh] overflow-y-auto flex flex-col gap-3 p-3 bg-white border border-[#0f4a2fe0] rounded-lg shadow-2xl z-[1000]">
+    <div className="absolute top-36 right-10 w-[18rem] max-h-[85vh] overflow-y-auto flex flex-col gap-3 p-3 bg-white border border-[#0f4a2fe0] rounded-lg shadow-2xl z-[1000]">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-sm font-bold text-[#0f4a2f] flex items-center gap-2">

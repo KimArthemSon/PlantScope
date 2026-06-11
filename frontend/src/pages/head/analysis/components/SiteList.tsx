@@ -1,7 +1,16 @@
 import { useState } from "react";
-import { 
-  MapPin, Trash2, CheckCircle, XCircle, Pin, 
-  AlertTriangle, Layers, Ruler, FileText 
+import {
+  MapPin,
+  Trash2,
+  CheckCircle,
+  XCircle,
+  Pin,
+  AlertTriangle,
+  Layers,
+  Ruler,
+  FileText,
+  Eye,
+  Target,
 } from "lucide-react";
 import type { Site } from "../types/siteTypes";
 
@@ -13,34 +22,66 @@ interface SiteListProps {
   onDeleteSite: (siteId: number, name: string) => void;
   onTogglePin: (siteId: number) => void;
   areaId: string | null;
+  selectedSiteId?: string | null; // ✅ NEW
+  onSiteSelectForFilter?: (site: Site | null) => void; // ✅ NEW
 }
 
-const STATUS_CONFIG: Record<string, { icon: any; color: string; label: string }> = {
+const STATUS_CONFIG: Record<
+  string,
+  { icon: any; color: string; label: string }
+> = {
   pending: { icon: AlertTriangle, color: "text-amber-600", label: "Pending" },
   under_review: { icon: Layers, color: "text-blue-600", label: "Under Review" },
   accepted: { icon: CheckCircle, color: "text-green-600", label: "Accepted" },
   rejected: { icon: XCircle, color: "text-red-600", label: "Rejected" },
-  completed: { icon: CheckCircle, color: "text-emerald-600", label: "Completed" },
+  completed: {
+    icon: CheckCircle,
+    color: "text-emerald-600",
+    label: "Completed",
+  },
 };
 
-// ✅ NEW: Get validation badge for simplified workflow
 const getValidationBadge = (validation: any) => {
   if (validation.final_decision === "ACCEPT") {
-    return { icon: CheckCircle, color: "bg-green-100 text-green-700", label: "Accepted" };
+    return {
+      icon: CheckCircle,
+      color: "bg-green-100 text-green-700",
+      label: "Accepted",
+    };
   }
   if (validation.final_decision === "REJECT") {
-    return { icon: XCircle, color: "bg-red-100 text-red-700", label: "Rejected" };
+    return {
+      icon: XCircle,
+      color: "bg-red-100 text-red-700",
+      label: "Rejected",
+    };
   }
   if (validation.is_ready_to_finalize) {
-    return { icon: FileText, color: "bg-blue-100 text-blue-700", label: "Ready to Finalize" };
+    return {
+      icon: FileText,
+      color: "bg-blue-100 text-blue-700",
+      label: "Ready to Finalize",
+    };
   }
   if (validation.has_safety_note && validation.has_survivability_note) {
-    return { icon: FileText, color: "bg-purple-100 text-purple-700", label: "Notes Added" };
+    return {
+      icon: FileText,
+      color: "bg-purple-100 text-purple-700",
+      label: "Notes Added",
+    };
   }
   if (validation.has_safety_note || validation.has_survivability_note) {
-    return { icon: AlertTriangle, color: "bg-yellow-100 text-yellow-700", label: "In Progress" };
+    return {
+      icon: AlertTriangle,
+      color: "bg-yellow-100 text-yellow-700",
+      label: "In Progress",
+    };
   }
-  return { icon: AlertTriangle, color: "bg-gray-100 text-gray-700", label: "Not Started" };
+  return {
+    icon: AlertTriangle,
+    color: "bg-gray-100 text-gray-700",
+    label: "Not Started",
+  };
 };
 
 export default function SiteList({
@@ -51,11 +92,13 @@ export default function SiteList({
   onDeleteSite,
   onTogglePin,
   areaId,
+  selectedSiteId,
+  onSiteSelectForFilter,
 }: SiteListProps) {
   const [searchTerm, setSearchTerm] = useState("");
 
-  const filteredSites = sites.filter(site =>
-    site.name.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredSites = sites.filter((site) =>
+    site.name.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   if (!areaId) {
@@ -63,7 +106,9 @@ export default function SiteList({
       <div className="flex flex-col items-center justify-center h-full text-gray-400 p-4">
         <MapPin size={32} className="mb-2 opacity-30" />
         <p className="text-sm font-medium">No area selected</p>
-        <p className="text-xs mt-1">Select a reforestation area to view sites</p>
+        <p className="text-xs mt-1">
+          Select a reforestation area to view sites
+        </p>
       </div>
     );
   }
@@ -108,26 +153,35 @@ export default function SiteList({
       <div className="flex-1 overflow-y-auto">
         {filteredSites.map((site) => {
           const StatusIcon = STATUS_CONFIG[site.status]?.icon || AlertTriangle;
-          const statusColor = STATUS_CONFIG[site.status]?.color || "text-gray-600";
+          const statusColor =
+            STATUS_CONFIG[site.status]?.color || "text-gray-600";
           const validationBadge = getValidationBadge(site.validation);
           const ValidationIcon = validationBadge.icon;
-          
+          const isSelected = selectedSiteId === String(site.site_id);
+
           return (
             <div
               key={site.site_id}
-              className={`border-b border-gray-100 p-3 hover:bg-gray-50 transition ${site.is_pinned ? "bg-yellow-50/50" : ""}`}
+              className={`border-b border-gray-100 p-3 hover:bg-gray-50 transition ${
+                site.is_pinned ? "bg-yellow-50/50" : ""
+              } ${isSelected ? "bg-green-50 border-l-4 border-l-green-500" : ""}`}
             >
               {/* Header */}
               <div className="flex items-start gap-2 mb-2">
                 {site.is_pinned && (
-                  <Pin size={12} className="text-yellow-600 mt-0.5 flex-shrink-0" />
+                  <Pin
+                    size={12}
+                    className="text-yellow-600 mt-0.5 flex-shrink-0"
+                  />
                 )}
                 <div className="flex-1 min-w-0">
                   <h4 className="text-sm font-semibold text-gray-800 truncate">
                     {site.name}
                   </h4>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className={`flex items-center gap-1 text-[10px] font-medium ${statusColor}`}>
+                    <span
+                      className={`flex items-center gap-1 text-[10px] font-medium ${statusColor}`}
+                    >
                       <StatusIcon size={10} />
                       {STATUS_CONFIG[site.status]?.label || site.status}
                     </span>
@@ -151,7 +205,7 @@ export default function SiteList({
                 )}
               </div>
 
-              {/* ✅ UPDATED: Simplified Validation Status */}
+              {/* Validation Status */}
               <div className="mb-2">
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${validationBadge.color}`}
@@ -159,32 +213,60 @@ export default function SiteList({
                   <ValidationIcon size={10} />
                   {validationBadge.label}
                 </span>
-                
-                {/* Show note indicators */}
+
                 <div className="flex gap-1 mt-1">
                   {site.validation.has_safety_note && (
-                    <span className="text-[9px] text-blue-600" title="Safety note added">Safety ✓</span>
+                    <span
+                      className="text-[9px] text-blue-600"
+                      title="Safety note added"
+                    >
+                      Safety ✓
+                    </span>
                   )}
                   {site.validation.has_survivability_note && (
-                    <span className="text-[9px] text-purple-600" title="Survivability note added">Survivability ✓</span>
+                    <span
+                      className="text-[9px] text-purple-600"
+                      title="Survivability note added"
+                    >
+                      Survivability ✓
+                    </span>
                   )}
                 </div>
               </div>
 
-              {/* Actions */}
+              {/* ✅ UPDATED: Actions with Filter button */}
+             
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => onSelectSite(site)}
-                  className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-medium px-2 py-1 rounded transition"
+                  className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-medium px-2 py-1 rounded transition flex items-center justify-center gap-1"
                 >
+                  <Eye size={10} />
                   View
                 </button>
                 <button
                   onClick={() => onValidateSite(site)}
-                  disabled={!site.validation.has_safety_note && !site.validation.has_survivability_note && site.status !== "pending"}
-                  className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 text-[10px] font-medium px-2 py-1 rounded transition disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={
+                    !site.validation.has_safety_note &&
+                    !site.validation.has_survivability_note &&
+                    site.status !== "pending"
+                  }
+                  className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 text-[10px] font-medium px-2 py-1 rounded transition flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
+                  <CheckCircle size={10} />
                   Validate
+                </button>
+                <button
+                  onClick={() => onSiteSelectForFilter?.(site)}
+                  className={`flex-1 text-[10px] font-medium px-2 py-1 rounded transition flex items-center justify-center gap-1 ${
+                    isSelected
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                      : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
+                  }`}
+                  title="Filter assessments for this site"
+                >
+                  <Target size={10} />
+                  {isSelected ? "Selected" : "Filter"}
                 </button>
                 <button
                   onClick={() => onTogglePin(site.site_id)}

@@ -135,7 +135,7 @@ function SimpleGeocam({
         Alert.alert("Error", "Failed to capture photo.");
         return;
       }
-      console.log("📸 Photo captured:", { uri: photo.uri, gps: locData });
+    -
       onCapture(photo.uri, locData);
     } catch (error) {
       console.error("📸 Take picture error:", error);
@@ -612,7 +612,7 @@ export default function BoundaryVerificationForm() {
   const areaId = params.areaId as string;
   const assessmentId = params.assessmentId as string | undefined;
   const layerId = "boundary_verification";
-
+   const siteId = params.siteId as string | undefined;
   const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
     useFieldAssessment(areaId, layerId, assessmentId);
 
@@ -701,11 +701,11 @@ export default function BoundaryVerificationForm() {
     uri: string,
     location: LocationData,
   ) => {
-    console.log("🎯 [Geocam] Photo captured, opening custom note modal");
+ 
     setShowGPSCamera(false);
     
     const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
-    console.log("🔍 [Geocam] assessmentId:", assessmentId, "-> numeric:", numericAssessmentId);
+   
     
     if (!numericAssessmentId || isNaN(numericAssessmentId)) {
       Alert.alert(
@@ -725,7 +725,7 @@ export default function BoundaryVerificationForm() {
   const handleNoteSubmit = async (note: string) => {
     if (!pendingPhoto) return;
     
-    console.log("📝 [Geocam] User entered note:", note);
+   -
     
     // ✅ Upload directly with the captured photo data
     setUploading(true);
@@ -745,10 +745,10 @@ export default function BoundaryVerificationForm() {
       );
       
       if (ok) {
-        console.log("🔄 [Geocam] Refreshing data...");
+       
         const data = await fetchAssessmentData();
         if (data) {
-          console.log("📸 [Geocam] Refreshed images count:", data.images?.length);
+        
           setImages(data.images || []);
         }
         Alert.alert("Success", "Photo uploaded with GPS data!");
@@ -773,20 +773,33 @@ export default function BoundaryVerificationForm() {
 
   const [uploading, setUploading] = useState(false);
 
-  const buildPayload = () => {
-    return {
+    const buildPayload = () => {
+    const location =
+      locationLat && locationLng
+        ? {
+            latitude: parseFloat(locationLat),
+            longitude: parseFloat(locationLng),
+            gps_accuracy_meters: locationAccuracy
+              ? parseFloat(locationAccuracy)
+              : undefined,
+          }
+        : null;
+
+    // ✅ 1. Build the layer-specific data
+    const layerData = {
       overall_note: overallNote || null,
       location_context: locationContext || null,
-      location:
-        locationLat && locationLng
-          ? {
-              latitude: parseFloat(locationLat),
-              longitude: parseFloat(locationLng),
-              gps_accuracy_meters: locationAccuracy
-                ? parseFloat(locationAccuracy)
-                : undefined,
-            }
-          : null,
+    };
+
+    // ✅ 2. Return the FULL payload structure expected by the backend
+    return {
+      reforestation_area_id: areaId ? parseInt(areaId) : null,
+      site_id: siteId ? parseInt(siteId) : null, // ✅ Passes site ID for specific assessments
+      assessment_date: new Date().toISOString().split("T")[0],
+      location,
+      field_assessment_data: {
+        boundary_verification: layerData, // ✅ Wraps under the correct layer ID
+      },
     };
   };
 

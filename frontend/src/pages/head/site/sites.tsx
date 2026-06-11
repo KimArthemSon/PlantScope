@@ -17,6 +17,10 @@ import {
   XCircle,
   AlertCircle,
   FileText,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
+  Shield,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -41,13 +45,27 @@ interface SiteMetrics {
   seedlings: number;
 }
 
+// ✅ NEW: Verification Information Interface
+interface VerificationInfo {
+  status: "pending" | "draft" | "verified" | "rejected";
+  land_classification: {
+    id: number;
+    name: string;
+  } | null;
+  security_concerns_count: number;
+  has_accessibility: boolean;
+  accessibility_type: string | null;
+}
+
 interface Site {
   site_id: number;
   name: string;
   status: string;
   is_pinned: boolean;
   created_at: string;
-  validation: ValidationStatus; // ✅ Changed from validation_progress
+  validation: ValidationStatus;
+  verification: VerificationInfo; // ✅ NEW
+  permit_count: number; // ✅ NEW
   metrics: SiteMetrics;
 }
 
@@ -58,6 +76,7 @@ interface Filter {
   total_page: number;
   status: string;
   pinned_only: boolean;
+  verification_status: string; // ✅ NEW
 }
 
 export default function SitesForArea() {
@@ -71,8 +90,9 @@ export default function SitesForArea() {
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "all", // ✅ Changed default to "all"
+    status: "all",
     pinned_only: false,
+    verification_status: "all", // ✅ NEW
   });
   const [loading, setLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
@@ -110,6 +130,7 @@ export default function SitesForArea() {
         entries: filter.entries.toString(),
         status: filter.status,
         pinned_only: filter.pinned_only ? "true" : "false",
+        verification_status: filter.verification_status, // ✅ NEW
       });
       const response = await fetch(
         `http://127.0.0.1:8000/api/get_sites/${id}/?${params}`,
@@ -119,6 +140,7 @@ export default function SitesForArea() {
       if (!response.ok) throw new Error("Failed to fetch sites");
 
       const data = await response.json();
+      console.log("Sites data:", data);
       setSites(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch {
@@ -134,7 +156,7 @@ export default function SitesForArea() {
 
   useEffect(() => {
     fetchSites();
-  }, [id, filter.page, filter.entries, filter.status, filter.pinned_only]);
+  }, [id, filter.page, filter.entries, filter.status, filter.pinned_only, filter.verification_status]);
 
   // =========================
   // TOGGLE PIN
@@ -213,7 +235,6 @@ export default function SitesForArea() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-green-100 text-green-800";
       case "accepted":
         return "bg-green-100 text-green-800";
       case "rejected":
@@ -222,6 +243,36 @@ export default function SitesForArea() {
         return "bg-blue-100 text-blue-800";
       default:
         return "bg-yellow-100 text-yellow-800";
+    }
+  };
+
+  // ✅ NEW: Get verification status badge
+  const getVerificationBadge = (status: string) => {
+    switch (status) {
+      case "verified":
+        return {
+          icon: ShieldCheck,
+          color: "bg-green-100 text-green-700 border border-green-300",
+          label: "Verified",
+        };
+      case "rejected":
+        return {
+          icon: ShieldX,
+          color: "bg-red-100 text-red-700 border border-red-300",
+          label: "Rejected",
+        };
+      case "draft":
+        return {
+          icon: FileText,
+          color: "bg-blue-100 text-blue-700 border border-blue-300",
+          label: "Draft",
+        };
+      default:
+        return {
+          icon: ShieldAlert,
+          color: "bg-gray-100 text-gray-700 border border-gray-300",
+          label: "Pending",
+        };
     }
   };
 
@@ -288,7 +339,7 @@ export default function SitesForArea() {
         onDelete={handleDelete}
       />
 
-      <main className="flex-1 p-8 w-full max-w-609">
+      <main className="flex-1 p-8 w-full max-w-7xl">
         {/* FILTERS */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm">Show:</label>
@@ -308,6 +359,26 @@ export default function SitesForArea() {
                 {e} entries
               </option>
             ))}
+          </select>
+
+          {/* ✅ NEW: Verification Status Filter */}
+          <label className="text-sm">Verification:</label>
+          <select
+            value={filter.verification_status}
+            onChange={(e) =>
+              setFilter((prev) => ({
+                ...prev,
+                verification_status: e.target.value,
+                page: 1,
+              }))
+            }
+            className="border border-black p-2 rounded-md text-[.8rem]"
+          >
+            <option value="all">All</option>
+            <option value="verified">Verified</option>
+            <option value="pending">Pending</option>
+            <option value="draft">Draft</option>
+            <option value="rejected">Rejected</option>
           </select>
 
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
@@ -366,31 +437,37 @@ export default function SitesForArea() {
           <table className="min-w-full bg-white">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
+                <th className="py-3 px-4 text-left text-xs font-semibold">
                   No
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
-                  <Pin size={14} className="inline mr-1 -mt-0.5" />
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  <Pin size={12} className="inline mr-1 -mt-0.5" />
                   Name
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
+                <th className="py-3 px-4 text-left text-xs font-semibold">
                   Status
                 </th>
 
+                {/* ✅ NEW: Verification Status Column */}
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  <Shield size={12} className="inline mr-1 -mt-0.5" />
+                  Verification
+                </th>
+
                 {/* ✅ UPDATED: Validation Column - Simplified */}
-                <th className="py-3 px-5 text-left text-sm font-semibold">
-                  <Target size={14} className="inline mr-1 -mt-0.5" />
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  <Target size={12} className="inline mr-1 -mt-0.5" />
                   Validation
                 </th>
 
-                <th className="py-3 px-5 text-left text-sm font-semibold">
-                  <Ruler size={14} className="inline mr-1 -mt-0.5" />
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  <Ruler size={12} className="inline mr-1 -mt-0.5" />
                   Area (ha)
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
+                <th className="py-3 px-4 text-left text-xs font-semibold">
                   Created
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
+                <th className="py-3 px-4 text-left text-xs font-semibold">
                   Actions
                 </th>
               </tr>
@@ -400,6 +477,8 @@ export default function SitesForArea() {
                 sites.map((site, index) => {
                   const validationBadge = getValidationBadge(site.validation);
                   const ValidationIcon = validationBadge.icon;
+                  const verificationBadge = getVerificationBadge(site.verification.status);
+                  const VerificationIcon = verificationBadge.icon;
 
                   return (
                     <tr
@@ -412,10 +491,10 @@ export default function SitesForArea() {
                           : ""
                       }`}
                     >
-                      <td className="py-3 px-5 text-sm">
+                      <td className="py-3 px-4 text-xs">
                         {index + 1 + (filter.page - 1) * filter.entries}
                       </td>
-                      <td className="py-3 px-5 font-medium text-sm">
+                      <td className="py-3 px-4 font-medium text-xs">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() =>
@@ -429,17 +508,17 @@ export default function SitesForArea() {
                             title={site.is_pinned ? "Unpin site" : "Pin to top"}
                           >
                             {site.is_pinned ? (
-                              <Pin size={16} className="fill-current" />
+                              <Pin size={14} className="fill-current" />
                             ) : (
-                              <PinOff size={16} />
+                              <PinOff size={14} />
                             )}
                           </button>
                           {site.name}
                         </div>
                       </td>
-                      <td className="py-3 px-5 capitalize">
+                      <td className="py-3 px-4 capitalize">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                          className={`px-2 py-1 rounded-full text-[10px] font-medium ${getStatusColor(
                             site.status,
                           )}`}
                         >
@@ -447,13 +526,23 @@ export default function SitesForArea() {
                         </span>
                       </td>
 
+                      {/* ✅ NEW: Verification Status */}
+                      <td className="py-3 px-4">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${verificationBadge.color}`}
+                        >
+                          <VerificationIcon size={10} />
+                          {verificationBadge.label}
+                        </span>
+                      </td>
+
                       {/* ✅ UPDATED: Simplified Validation Status */}
-                      <td className="py-3 px-5">
+                      <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${validationBadge.color}`}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${validationBadge.color}`}
                           >
-                            <ValidationIcon size={12} />
+                            <ValidationIcon size={10} />
                             {validationBadge.label}
                           </span>
 
@@ -461,7 +550,7 @@ export default function SitesForArea() {
                           <div className="flex gap-1">
                             {site.validation.has_safety_note && (
                               <span
-                                className="text-[10px] text-blue-600"
+                                className="text-[9px] text-blue-600 bg-blue-50 px-1 rounded"
                                 title="Safety note added"
                               >
                                 S
@@ -469,7 +558,7 @@ export default function SitesForArea() {
                             )}
                             {site.validation.has_survivability_note && (
                               <span
-                                className="text-[10px] text-purple-600"
+                                className="text-[9px] text-purple-600 bg-purple-50 px-1 rounded"
                                 title="Survivability note added"
                               >
                                 V
@@ -480,17 +569,18 @@ export default function SitesForArea() {
                       </td>
 
                       {/* Area */}
-                      <td className="py-3 px-5">
-                        <span className="text-sm font-medium text-gray-700">
+                      <td className="py-3 px-4">
+                        <span className="text-xs font-medium text-gray-700">
                           {site.metrics.area_hectares.toFixed(2)} ha
                         </span>
                       </td>
 
-                      <td className="py-3 px-5 text-sm text-gray-600">
+                      <td className="py-3 px-4 text-xs text-gray-600">
                         {new Date(site.created_at).toLocaleDateString()}
                       </td>
 
-                      <td className="py-3 px-5 flex gap-2">
+                      {/* ✅ UPDATED: Actions Column with Verify Button */}
+                      <td className="py-3 px-4 flex gap-1">
                         <button
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
                           onClick={() =>
@@ -500,15 +590,31 @@ export default function SitesForArea() {
                           }
                           title="View Details"
                         >
-                          <Eye size={16} />
+                          <Eye size={14} />
                         </button>
+
+                        {/* ✅ NEW: Verify Meta Data Button - Only for non-GISSpecialist roles */}
+                        {userRole !== "GISSpecialist" && (
+                          <button
+                            onClick={() =>
+                              navigate(
+                                `${userPath}/verification/meta-data/${site.site_id}`,
+                              )
+                            }
+                            className="cursor-pointer text-blue-700 hover:text-blue-900 border border-blue-700 rounded-full p-1 hover:bg-blue-50 transition-colors"
+                            title="Verify Meta Data"
+                          >
+                            <ShieldCheck size={14} />
+                          </button>
+                        )}
+
                         {userRole !== "DataManager" && (
                           <button
                             className="text-red-600 cursor-pointer border border-red-600 rounded-full p-1 hover:bg-red-50 transition-colors"
                             onClick={() => setDelete(site.site_id)}
                             title="Delete Site"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={14} />
                           </button>
                         )}
                       </td>

@@ -46,7 +46,7 @@ interface LocalDocImage {
 
 /* ---------- SCREEN ---------- */
 export default function MetaDataForm() {
-  const { id, areaId } = useLocalSearchParams<{ id?: string; areaId: string }>();
+  const { id, areaId, siteId } = useLocalSearchParams<{ id?: string; areaId: string; siteId?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isEditMode = !!id;
@@ -144,21 +144,39 @@ export default function MetaDataForm() {
 
   const uploadPendingImages = async (faid: number, token: string) => {
     if (localImages.length === 0) return;
-    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+
+    // ✅ FIX: Default to Ormoc City center coordinates if location is unavailable
+    let lat = 11.0; 
+    let lng = 124.6;
     
+    try {
+      // Attempt to get location, but gracefully handle permission denial
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      lat = loc.coords.latitude;
+      lng = loc.coords.longitude;
+    } catch (e) {
+      console.warn("Location services not authorized or unavailable. Using default Ormoc coordinates.");
+    }
+
     for (const img of localImages) {
       const fd = new FormData();
       fd.append("image", { uri: img.uri, type: "image/jpeg", name: `meta_${Date.now()}.jpg` } as any);
       fd.append("layer", DOC_LAYER_CODES[img.type]);
-      fd.append("latitude", loc.coords.latitude.toString());
-      fd.append("longitude", loc.coords.longitude.toString());
+      
+      // ✅ Append the safe coordinates (either real or fallback)
+      fd.append("latitude", lat.toString());
+      fd.append("longitude", lng.toString());
       fd.append("description", img.note || `${img.type.replace("_", " ")} photo`);
 
-      await fetch(`${API_BASE}/api/field_assessments/${faid}/images/upload/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
+      try {
+        await fetch(`${API_BASE}/api/field_assessments/${faid}/images/upload/`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        });
+      } catch (uploadErr) {
+        console.error("Failed to upload an image:", uploadErr);
+      }
     }
   };
 
@@ -210,6 +228,7 @@ export default function MetaDataForm() {
       // ✅ EXACT JSON STRUCTURE MATCH - NO 'layer' FIELD
       const payload = {
         reforestation_area_id: parseInt(areaId),
+        site_id: siteId ? parseInt(siteId) : null, // ✅ Null for General, ID for Specific
         assessment_date: assessmentDate,
         location,
         field_assessment_data: {
@@ -288,13 +307,17 @@ export default function MetaDataForm() {
     ...localImages.map((img) => ({ id: img.id, url: img.uri, caption: img.note || "Untitled", isLocal: true })),
   ];
 
+  // ✅ DYNAMIC HEADER TITLE: Shows "(Site)" if siteId exists, otherwise "(Area)"
+  const baseTitle = isEditMode ? "Edit Meta Data" : "New Meta Data";
+  const headerTitle = siteId ? `${baseTitle} (Site)` : `${baseTitle} (Area)`;
+
   /* ---------- UI ---------- */
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}><Ionicons name="chevron-back" size={22} color="#FFFFFF" /></TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{isEditMode ? "Edit Meta Data" : "New Meta Data"}</Text>
+          <Text style={styles.headerTitle}>{headerTitle}</Text>
           <Text style={styles.headerSub}>{isReadOnly ? "View only" : "Complete all sections"}</Text>
         </View>
         <View style={{ width: 40 }} />

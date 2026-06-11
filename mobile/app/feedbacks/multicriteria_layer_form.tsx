@@ -43,19 +43,22 @@ interface LayerFormProps {
   assessmentId?: string;
   isViewMode: boolean;
   areaId: string;
+  siteId?: string; // ✅ ADDED: Passed down to sub-forms if needed
   layerId: LayerId;
   onRefresh: () => void;
 }
 
 export default function MulticriteriaLayerForm() {
-  const { areaId, layerId, layerName, assessmentId, isEdit } =
+  const { areaId, siteId, layerId, layerName, assessmentId, isEdit } =
     useLocalSearchParams<{
       areaId: string;
+      siteId?: string; // ✅ ADDED: Extract siteId from route params
       layerId: LayerId;
       layerName?: string;
       assessmentId?: string;
       isEdit?: string;
     }>();
+
   const router = useRouter();
   const [loading, setLoading] = useState(!!assessmentId);
   const [formData, setFormData] = useState<any>({});
@@ -63,6 +66,7 @@ export default function MulticriteriaLayerForm() {
   const [isViewMode, setIsViewMode] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  // ✅ UPDATED: Pass siteId to the hook
   const {
     saving,
     uploading,
@@ -70,7 +74,7 @@ export default function MulticriteriaLayerForm() {
     uploadImage,
     deleteImage,
     fetchAssessmentData,
-  } = useFieldAssessment(areaId!, layerId, assessmentId, () => {
+  } = useFieldAssessment(areaId!, layerId, assessmentId, siteId, () => {
     fetchAssessmentData().then((data) => {
       if (data) {
         // ✅ Extract layer-specific data from nested JSON structure
@@ -110,24 +114,27 @@ export default function MulticriteriaLayerForm() {
   }, [loadAssessment]);
 
   const handleFormSave = async (data: any, submit: boolean = false) => {
-    // ✅ CORRECT: Wrap ONLY layer-specific data under [layerId]
-    // data = flat layer fields: { overall_note: "...", location_context: "..." }
+    // ✅ Simple payload exactly like meta_data_form
+    console.log("baksd ", areaId);
     const payload = {
       reforestation_area_id: parseInt(areaId),
-      assessment_date: formData.assessment_date || new Date().toISOString().split("T")[0],
+      site_id: siteId ? parseInt(siteId) : null,
+      assessment_date: new Date().toISOString().split("T")[0],
       location: formData.location || null,
       field_assessment_data: {
-        [layerId]: data, // ← Creates { boundary_verification: { overall_note: "..." } }
+        [layerId]: data,
       },
     };
-    
+
+    console.log("🔨 [Form] Built Payload:", JSON.stringify(payload));
     const savedId = await handleSave(payload, submit);
+
     if (savedId && !assessmentId) {
-      // Redirect to edit mode if newly created
       router.replace({
         pathname: "/feedbacks/multicriteria_layer_form",
         params: {
           areaId,
+          siteId,
           layerId,
           layerName,
           assessmentId: savedId.toString(),
@@ -137,7 +144,6 @@ export default function MulticriteriaLayerForm() {
     }
     return !!savedId;
   };
-
   const renderLayerForm = () => {
     const props: LayerFormProps = {
       existingData: formData,
@@ -150,9 +156,11 @@ export default function MulticriteriaLayerForm() {
       assessmentId,
       isViewMode,
       areaId: areaId!,
+      siteId, // ✅ ADDED: Pass siteId down to sub-forms
       layerId,
       onRefresh: loadAssessment,
     };
+
     switch (layerId) {
       case "safety":
         return <SafetyForm {...props} />;
@@ -175,12 +183,16 @@ export default function MulticriteriaLayerForm() {
         <ActivityIndicator size="large" color="#0F4A2F" />
       </View>
     );
+
   if (fetchError && assessmentId)
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorText}>{fetchError}</Text>
       </View>
     );
+
+  // ✅ DYNAMIC HEADER TITLE: Shows "(Site)" if siteId exists, otherwise "(Area)"
+  const headerTitle = siteId ? `${layerName} (Site)` : `${layerName} (Area)`;
 
   return (
     <View style={styles.container}>
@@ -192,7 +204,7 @@ export default function MulticriteriaLayerForm() {
           <ArrowLeft size={20} color="#0F4A2F" />
         </TouchableOpacity>
         <View style={styles.headerText}>
-          <Text style={styles.areaName}>{layerName} Assessment</Text>
+          <Text style={styles.areaName}>{headerTitle}</Text>
         </View>
         {isViewMode && (
           <View style={styles.submittedBadge}>

@@ -2,21 +2,25 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Trash2,
-  Edit,
-  Plus,
+  Eye,
   ChevronRight,
   ChevronLeft,
   Leaf,
-  Eye,
-  Droplets,
-  Ruler,
-  Target,
   Pin,
   PinOff,
   CheckCircle,
   XCircle,
   AlertCircle,
   FileText,
+  Shield,
+  Car,
+  MapPin,
+  FileCheck,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
+  Target,
+  Ruler,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -24,10 +28,9 @@ import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
 
 // =========================
-// INTERFACES (UPDATED: Simplified Validation)
+// INTERFACES
 // =========================
 
-// ✅ SIMPLIFIED: No more complex layer tracking
 interface ValidationStatus {
   has_safety_note: boolean;
   has_survivability_note: boolean;
@@ -41,13 +44,26 @@ interface SiteMetrics {
   seedlings: number;
 }
 
+interface VerificationInfo {
+  status: "pending" | "draft" | "verified" | "rejected";
+  land_classification: {
+    id: number;
+    name: string;
+  } | null;
+  security_concerns_count: number;
+  has_accessibility: boolean;
+  accessibility_type: string | null;
+}
+
 interface Site {
   site_id: number;
   name: string;
   status: string;
   is_pinned: boolean;
   created_at: string;
-  validation: ValidationStatus; // ✅ Changed from validation_progress
+  validation: ValidationStatus;
+  verification: VerificationInfo;
+  permit_count: number;
   metrics: SiteMetrics;
 }
 
@@ -56,11 +72,10 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
-  status: string;
   pinned_only: boolean;
 }
 
-export default function SitesForArea() {
+export default function OfficialSites() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
@@ -71,7 +86,6 @@ export default function SitesForArea() {
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "accepted", // ✅ Changed default to "all"
     pinned_only: false,
   });
   const [loading, setLoading] = useState(false);
@@ -98,7 +112,7 @@ export default function SitesForArea() {
   }, [userRole]);
 
   // =========================
-  // FETCH SITES
+  // FETCH SITES - Only Accepted & Verified
   // =========================
   const fetchSites = async () => {
     if (!id) return;
@@ -108,7 +122,8 @@ export default function SitesForArea() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
-        status: filter.status,
+        status: "accepted", // ✅ ONLY accepted sites
+        verification_status: "verified", // ✅ ONLY verified sites
         pinned_only: filter.pinned_only ? "true" : "false",
       });
       const response = await fetch(
@@ -119,14 +134,14 @@ export default function SitesForArea() {
       if (!response.ok) throw new Error("Failed to fetch sites");
 
       const data = await response.json();
-      console.log(data);
+      console.log("Official Sites data:", data);
       setSites(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch {
       setPSAlert({
         type: "error",
         title: "Error",
-        message: "Failed to load sites",
+        message: "Failed to load official sites",
       });
     } finally {
       setLoading(false);
@@ -135,7 +150,7 @@ export default function SitesForArea() {
 
   useEffect(() => {
     fetchSites();
-  }, [id, filter.page, filter.entries, filter.status, filter.pinned_only]);
+  }, [id, filter.page, filter.entries, filter.pinned_only]);
 
   // =========================
   // TOGGLE PIN
@@ -160,7 +175,7 @@ export default function SitesForArea() {
         );
       }
     } catch {
-      // Silent fail - refreshes on next fetch
+      // Silent fail
     }
   };
 
@@ -211,21 +226,35 @@ export default function SitesForArea() {
   // =========================
   // HELPERS
   // =========================
-  const getStatusColor = (status: string) => {
+  const getVerificationBadge = (status: string) => {
     switch (status) {
-      case "completed":
-      case "accepted":
-        return "bg-green-100 text-green-800";
+      case "verified":
+        return {
+          icon: ShieldCheck,
+          color: "bg-green-100 text-green-700 border border-green-300",
+          label: "Verified",
+        };
       case "rejected":
-        return "bg-red-100 text-red-800";
-      case "under_review":
-        return "bg-blue-100 text-blue-800";
+        return {
+          icon: ShieldX,
+          color: "bg-red-100 text-red-700 border border-red-300",
+          label: "Rejected",
+        };
+      case "draft":
+        return {
+          icon: FileText,
+          color: "bg-blue-100 text-blue-700 border border-blue-300",
+          label: "Draft",
+        };
       default:
-        return "bg-yellow-100 text-yellow-800";
+        return {
+          icon: ShieldAlert,
+          color: "bg-gray-100 text-gray-700 border border-gray-300",
+          label: "Pending",
+        };
     }
   };
 
-  // ✅ NEW: Get validation badge for simplified status
   const getValidationBadge = (validation: ValidationStatus) => {
     if (validation.final_decision === "ACCEPT") {
       return {
@@ -288,7 +317,21 @@ export default function SitesForArea() {
         onDelete={handleDelete}
       />
 
-      <main className="flex-1 p-8 w-full max-w-609">
+      <main className="flex-1 p-8 w-full max-w-7xl">
+        {/* HEADER */}
+        <div className="mb-7">
+          <div className="flex items-center gap-2 mb-2">
+            <ShieldCheck className="text-green-600" size={28} />
+            <h1 className="text-2xl font-bold text-[#0f4a2f]">
+              Official Reforestation Sites
+            </h1>
+          </div>
+          <p className="text-sm text-gray-600">
+            Showing only sites that are <strong>Accepted</strong> and{" "}
+            <strong>Verified</strong> - ready for implementation
+          </p>
+        </div>
+
         {/* FILTERS */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm">Show:</label>
@@ -334,7 +377,7 @@ export default function SitesForArea() {
 
           <input
             type="text"
-            placeholder="Search sites..."
+            placeholder="Search official sites..."
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -346,18 +389,6 @@ export default function SitesForArea() {
             onKeyDown={(e) => e.key === "Enter" && fetchSites()}
             className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
-          {userRole !== "DataManager" && (
-            <button
-              onClick={() =>
-                navigate(
-                  `${userPath}/analysis/multicriteria-analysis/new?areaId=${id}`,
-                )
-              }
-              className="flex items-center justify-center gap-2 bg-[#0f4a2f] hover:bg-[#0a3321] hover:text-white text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer transition-colors"
-            >
-              <Plus size={20} /> Add new site
-            </button>
-          )}
         </div>
 
         {/* TABLE */}
@@ -366,31 +397,36 @@ export default function SitesForArea() {
           <table className="min-w-full bg-white">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
+                <th className="py-3 px-4 text-left text-xs font-semibold">
                   No
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
-                  <Pin size={14} className="inline mr-1 -mt-0.5" />
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  <Pin size={12} className="inline mr-1 -mt-0.5" />
                   Name
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  <ShieldCheck size={12} className="inline mr-1 -mt-0.5" />
                   Status
                 </th>
-
-                {/* ✅ UPDATED: Validation Column - Simplified */}
-                <th className="py-3 px-5 text-left text-sm font-semibold">
-                  <Target size={14} className="inline mr-1 -mt-0.5" />
-                  Validation
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  <MapPin size={12} className="inline mr-1 -mt-0.5" />
+                  Land Classification
                 </th>
-
-                <th className="py-3 px-5 text-left text-sm font-semibold">
-                  <Ruler size={14} className="inline mr-1 -mt-0.5" />
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  Safety & Access
+                </th>
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  <FileCheck size={12} className="inline mr-1 -mt-0.5" />
+                  Permits
+                </th>
+                <th className="py-3 px-4 text-left text-xs font-semibold">
+                  <Ruler size={12} className="inline mr-1 -mt-0.5" />
                   Area (ha)
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
+                <th className="py-3 px-4 text-left text-xs font-semibold">
                   Created
                 </th>
-                <th className="py-3 px-5 text-left text-sm font-semibold">
+                <th className="py-3 px-4 text-left text-xs font-semibold">
                   Actions
                 </th>
               </tr>
@@ -398,8 +434,10 @@ export default function SitesForArea() {
             <tbody>
               {sites.length > 0 ? (
                 sites.map((site, index) => {
-                  const validationBadge = getValidationBadge(site.validation);
-                  const ValidationIcon = validationBadge.icon;
+                  const verificationBadge = getVerificationBadge(
+                    site.verification.status,
+                  );
+                  const VerificationIcon = verificationBadge.icon;
 
                   return (
                     <tr
@@ -412,10 +450,10 @@ export default function SitesForArea() {
                           : ""
                       }`}
                     >
-                      <td className="py-3 px-5 text-sm">
+                      <td className="py-3 px-4 text-xs">
                         {index + 1 + (filter.page - 1) * filter.entries}
                       </td>
-                      <td className="py-3 px-5 font-medium text-sm">
+                      <td className="py-3 px-4 font-medium text-xs">
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() =>
@@ -429,69 +467,116 @@ export default function SitesForArea() {
                             title={site.is_pinned ? "Unpin site" : "Pin to top"}
                           >
                             {site.is_pinned ? (
-                              <Pin size={16} className="fill-current" />
+                              <Pin size={14} className="fill-current" />
                             ) : (
-                              <PinOff size={16} />
+                              <PinOff size={14} />
                             )}
                           </button>
                           {site.name}
                         </div>
                       </td>
-                      <td className="py-3 px-5 capitalize">
+                      <td className="py-3 px-4">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            site.status,
-                          )}`}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${verificationBadge.color}`}
                         >
-                          {site.status.replace("_", " ")}
+                          <VerificationIcon size={10} />
+                          {verificationBadge.label}
                         </span>
                       </td>
 
-                      {/* ✅ UPDATED: Simplified Validation Status */}
-                      <td className="py-3 px-5">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${validationBadge.color}`}
-                          >
-                            <ValidationIcon size={12} />
-                            {validationBadge.label}
+                      {/* Land Classification */}
+                      <td className="py-3 px-4">
+                        {site.verification.land_classification ? (
+                          <span className="text-xs font-medium text-gray-700 bg-blue-50 px-2 py-1 rounded">
+                            {site.verification.land_classification.name}
                           </span>
+                        ) : (
+                          <span className="text-xs text-gray-400 italic">
+                            Not set
+                          </span>
+                        )}
+                      </td>
 
-                          {/* Show note indicators */}
-                          <div className="flex gap-1">
-                            {site.validation.has_safety_note && (
-                              <span
-                                className="text-[10px] text-blue-600"
-                                title="Safety note added"
-                              >
-                                S
-                              </span>
+                      {/* Safety & Accessibility */}
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1">
+                            {site.verification.security_concerns_count > 0 ? (
+                              <>
+                                <ShieldAlert
+                                  size={12}
+                                  className="text-red-500"
+                                />
+                                <span className="text-[10px] text-red-600 font-medium">
+                                  {site.verification.security_concerns_count}{" "}
+                                  concern
+                                  {site.verification.security_concerns_count > 1
+                                    ? "s"
+                                    : ""}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <ShieldCheck
+                                  size={12}
+                                  className="text-green-500"
+                                />
+                                <span className="text-[10px] text-green-600">
+                                  Safe
+                                </span>
+                              </>
                             )}
-                            {site.validation.has_survivability_note && (
-                              <span
-                                className="text-[10px] text-purple-600"
-                                title="Survivability note added"
-                              >
-                                V
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {site.verification.has_accessibility ? (
+                              <>
+                                <Car size={12} className="text-blue-500" />
+                                <span className="text-[10px] text-blue-600">
+                                  {site.verification.accessibility_type ||
+                                    "Accessible"}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-gray-400">
+                                No data
                               </span>
                             )}
                           </div>
                         </div>
                       </td>
 
+                      {/* Permits Count */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-1">
+                          <FileCheck
+                            size={12}
+                            className={
+                              site.permit_count > 0
+                                ? "text-green-600"
+                                : "text-gray-400"
+                            }
+                          />
+                          <span
+                            className={`text-xs font-medium ${site.permit_count > 0 ? "text-green-700" : "text-gray-400"}`}
+                          >
+                            {site.permit_count}
+                          </span>
+                        </div>
+                      </td>
+
                       {/* Area */}
-                      <td className="py-3 px-5">
-                        <span className="text-sm font-medium text-gray-700">
+                      <td className="py-3 px-4">
+                        <span className="text-xs font-medium text-gray-700">
                           {site.metrics.area_hectares.toFixed(2)} ha
                         </span>
                       </td>
 
-                      <td className="py-3 px-5 text-sm text-gray-600">
+                      <td className="py-3 px-4 text-xs text-gray-600">
                         {new Date(site.created_at).toLocaleDateString()}
                       </td>
 
-                      {/* ✅ EXACT ACTION COLUMN - PRESERVED AS REQUESTED */}
-                      <td className="py-3 px-5 flex gap-2">
+                      {/* Actions */}
+                      <td className="py-3 px-4 flex gap-1">
                         <button
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
                           onClick={() =>
@@ -501,7 +586,7 @@ export default function SitesForArea() {
                           }
                           title="View Details"
                         >
-                          <Eye size={16} />
+                          <Eye size={14} />
                         </button>
                         {userRole !== "DataManager" && (
                           <button
@@ -509,7 +594,7 @@ export default function SitesForArea() {
                             onClick={() => setDelete(site.site_id)}
                             title="Delete Site"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={14} />
                           </button>
                         )}
                       </td>
@@ -519,12 +604,15 @@ export default function SitesForArea() {
               ) : (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={9}
                     className="text-center py-10 text-gray-500 italic"
                   >
                     <div className="flex flex-col items-center gap-2">
-                      <Leaf size={40} className="text-gray-300" />
-                      <p>No sites found</p>
+                      <ShieldCheck size={40} className="text-gray-300" />
+                      <p>No official sites found</p>
+                      <p className="text-xs text-gray-400">
+                        Sites must be accepted and verified to appear here
+                      </p>
                     </div>
                   </td>
                 </tr>

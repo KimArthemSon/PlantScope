@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   MapContainer,
@@ -13,7 +13,6 @@ import {
   Pointer,
   File,
   X,
-  Image,
   Info,
   Clipboard,
   MapPin,
@@ -48,7 +47,6 @@ interface ReforestationAreaData {
   description: string;
   coordinate: [number, number] | null;
   polygon_coordinate: { coordinates: [number, number][] } | null;
-  area_img: string | null;
   barangay: { barangay_id: number; name: string } | null;
   land_classification: { land_classification_id: number; name: string } | null;
   created_at: string;
@@ -63,7 +61,6 @@ interface FormState {
   description: string;
   coordinate: [number, number] | null;
   polygon_coordinate: { coordinates: [number, number][] } | null;
-  area_img: File | null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -116,8 +113,6 @@ export default function UpdateReforestationArea() {
 
   // ── State ──────────────────────────────────────────────────
   const [placingMarker, setPlacingMarker] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
   const [land_classification, setLand_classification] = useState<
     Land_classification[]
@@ -141,7 +136,6 @@ export default function UpdateReforestationArea() {
     description: "",
     coordinate: null,
     polygon_coordinate: null,
-    area_img: null,
   });
 
   const token = localStorage.getItem("token");
@@ -214,15 +208,7 @@ export default function UpdateReforestationArea() {
           description: area.description || "",
           coordinate: area.coordinate,
           polygon_coordinate: area.polygon_coordinate,
-          area_img: null,
         });
-
-        if (area.area_img) {
-          const imgUrl = area.area_img.startsWith("http")
-            ? area.area_img
-            : `http://127.0.0.1:8000${area.area_img}`;
-          setImagePreview(imgUrl);
-        }
       } catch (err) {
         setLoadError(
           err instanceof Error ? err.message : "Failed to load area",
@@ -234,49 +220,6 @@ export default function UpdateReforestationArea() {
 
     fetchArea();
   }, [id, token]);
-
-  // ── Cleanup blob URLs on unmount ───────────────────────────
-  useEffect(() => {
-    return () => {
-      if (imagePreview?.startsWith("blob:")) {
-        URL.revokeObjectURL(imagePreview);
-      }
-    };
-  }, [imagePreview]);
-
-  // ── Image Handler ──────────────────────────────────────────
-  const handleImageChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      if (!file.type.startsWith("image/")) {
-        setPSAlert({
-          type: "error",
-          title: "Invalid File",
-          message: "Please select a valid image file.",
-        });
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        setPSAlert({
-          type: "error",
-          title: "File Too Large",
-          message: "Image must be less than 5MB.",
-        });
-        return;
-      }
-
-      if (imagePreview?.startsWith("blob:")) {
-        URL.revokeObjectURL(imagePreview);
-      }
-
-      setForm((prev) => ({ ...prev, area_img: file }));
-      setImagePreview(URL.createObjectURL(file));
-    },
-    [imagePreview],
-  );
 
   // ── Form Submission ────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -325,9 +268,6 @@ export default function UpdateReforestationArea() {
           JSON.stringify(form.polygon_coordinate),
         );
       }
-      if (form.area_img) {
-        formData.append("area_img", form.area_img);
-      }
 
       const res = await fetch(`${API}/update_reforestation_areas/${id}/`, {
         method: "POST",
@@ -365,9 +305,6 @@ export default function UpdateReforestationArea() {
 
   // ── Cancel Handler ─────────────────────────────────────────
   const handleCancel = () => {
-    if (imagePreview?.startsWith("blob:")) {
-      URL.revokeObjectURL(imagePreview);
-    }
     navigate(-1);
   };
 
@@ -416,7 +353,6 @@ export default function UpdateReforestationArea() {
   // ── Main Render ────────────────────────────────────────────
   return (
     <div className="flex w-full h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4 md:p-6">
-
       {/* ── PLANTSCOPEALERT ───────────────────────────────── */}
       {PSalert && (
         <PlantScopeAlert
@@ -425,32 +361,6 @@ export default function UpdateReforestationArea() {
           message={PSalert.message}
           onClose={() => setPSAlert(null)}
         />
-      )}
-
-      {/* ── IMAGE MODAL ───────────────────────────────────── */}
-      {showModal && imagePreview && (
-        <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            className="relative max-w-[95%] max-h-[90%] bg-white rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute top-4 right-4 bg-white/90 hover:bg-white rounded-full p-2 shadow-lg transition-all hover:scale-110 z-10"
-              aria-label="Close modal"
-            >
-              <X size={20} className="text-black" />
-            </button>
-            <img
-              src={imagePreview}
-              alt="Area preview"
-              className="max-h-[85vh] max-w-[90vw] object-contain"
-            />
-          </div>
-        </div>
       )}
 
       {/* ── LEFT PANEL: FORM ──────────────────────────────── */}
@@ -518,40 +428,6 @@ export default function UpdateReforestationArea() {
           )}
         </div>
 
-        {/* Land Classification Dropdown */}
-        {/* <div className="space-y-1.5">
-          <label className="text-sm font-semibold text-black flex items-center gap-2">
-            <File size={16} className="text-green-600" />
-            Land Classification
-          </label>
-          <select
-            value={form.land_classification_id}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                land_classification_id: parseInt(e.target.value) || "",
-              })
-            }
-            className="w-full border border-black p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent transition-all bg-black50 appearance-none cursor-pointer"
-            disabled={submitting || land_classification.length === 0}
-          >
-            <option value="">-- Select Land Classification --</option>
-            {land_classification.map((lc) => (
-              <option
-                key={lc.land_classification_id}
-                value={lc.land_classification_id}
-              >
-                {lc.name}
-              </option>
-            ))}
-          </select>
-          {selectedLandClassificationName && (
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <CheckCircle size={12} /> Selected: {selectedLandClassificationName}
-            </p>
-          )}
-        </div> */}
-
         {/* Description */}
         <div className="space-y-1.5">
           <label className="text-sm font-semibold text-black flex items-center gap-2">
@@ -567,8 +443,6 @@ export default function UpdateReforestationArea() {
             disabled={submitting}
           />
         </div>
-
-        {/* Legality & Safety Row */}
 
         {/* Coordinate Input */}
         <div className="space-y-1.5">
@@ -627,34 +501,6 @@ export default function UpdateReforestationArea() {
           )}
         </div>
 
-        {/* Image Upload */}
-        <div className="space-y-1.5">
-          <label className="text-sm font-semibold text-black flex items-center gap-2">
-            <Image size={16} className="text-green-600" />
-            Area Image
-          </label>
-          <div className="border-2 border-dashed border-black rounded-xl p-4 text-center hover:border-green-300 transition-colors bg-black30">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageChange}
-              className="hidden"
-              id="image-upload"
-              disabled={submitting}
-            />
-            <label
-              htmlFor="image-upload"
-              className="cursor-pointer flex flex-col items-center gap-2"
-            >
-              <Image size={24} className="text-black" />
-              <span className="text-sm text-black">
-                {form.area_img ? form.area_img.name : "Click to upload image"}
-              </span>
-              <span className="text-xs text-black">PNG, JPG up to 5MB</span>
-            </label>
-          </div>
-        </div>
-
         {/* Action Buttons */}
         <div className="flex gap-3 pt-2 border-t border-green-100">
           <button
@@ -685,7 +531,7 @@ export default function UpdateReforestationArea() {
         </div>
       </form>
 
-      {/* ── RIGHT PANEL: MAP & PREVIEW ───────────────────── */}
+      {/* ── RIGHT PANEL: MAP & INFO ─────────────────────── */}
       <div className="flex-1 flex flex-col gap-4 ml-0 md:ml-6 mt-4 md:mt-0">
         {/* Map Container */}
         <div className="flex-1 rounded-3xl overflow-hidden shadow-xl border border-green-100 bg-white/50 backdrop-blur">
@@ -720,38 +566,6 @@ export default function UpdateReforestationArea() {
           </MapContainer>
         </div>
 
-        {/* Image Preview Card */}
-        {imagePreview && (
-          <div className="bg-white/95 backdrop-blur rounded-2xl shadow-lg border border-green-100 p-4">
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-sm font-semibold text-black flex items-center gap-2">
-                <Image size={16} className="text-green-600" />
-                Preview
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowModal(true)}
-                className="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors font-medium"
-              >
-                <Image size={14} />
-                Expand
-              </button>
-            </div>
-            <div className="relative group">
-              <img
-                src={imagePreview}
-                alt="Area preview"
-                className="w-full h-40 object-cover rounded-xl border border-black"
-              />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 rounded-xl transition-colors flex items-center justify-center">
-                <span className="opacity-0 group-hover:opacity-100 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full transition-opacity">
-                  Click to enlarge
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Info Card */}
         <div className="bg-white/80 backdrop-blur rounded-2xl shadow-lg border border-green-100 p-4">
           <h4 className="text-sm font-semibold text-black mb-2 flex items-center gap-2">
@@ -769,7 +583,7 @@ export default function UpdateReforestationArea() {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-green-500">•</span>
-              Upload a clear photo showing the current state of the area
+              Update the description to reflect the current state of the area
             </li>
           </ul>
         </div>

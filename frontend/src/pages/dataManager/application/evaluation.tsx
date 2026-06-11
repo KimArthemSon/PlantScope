@@ -23,6 +23,8 @@ import {
   Plus,
   Trash2,
   Package,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 
@@ -87,22 +89,23 @@ interface ApplicationDetail {
   latest_reason: { reason: string; status: string; created: string } | null;
 }
 
+// ✅ UPDATED: ReforestationArea interface - removed verification_status
 interface ReforestationArea {
   reforestation_area_id: number;
   name: string;
   legality: string;
-  verification_status: string;
-  safety: string;
   barangay: { barangay_id: number; name: string } | null;
   land_classification: { land_classification_id: number; name: string } | null;
 }
 
+// ✅ UPDATED: Site interface - added verification_status
 interface Site {
   site_id: number;
   name: string;
   status: string;
   area_hectares: number;
   ndvi: number | null;
+  verification_status: "pending" | "draft" | "verified" | "rejected"; // ✅ NEW
   validation_progress: {
     completed: number;
     total: number;
@@ -253,6 +256,25 @@ function SpeciesQuantityRow({
   );
 }
 
+// ✅ NEW: Verification status badge component
+function VerificationBadge({ status }: { status: string }) {
+  const config: Record<string, { icon: any; color: string; label: string }> = {
+    verified: { icon: ShieldCheck, color: "bg-green-100 text-green-700 border-green-200", label: "Verified" },
+    pending: { icon: ShieldAlert, color: "bg-yellow-100 text-yellow-700 border-yellow-200", label: "Pending" },
+    draft: { icon: ShieldAlert, color: "bg-blue-100 text-blue-700 border-blue-200", label: "Draft" },
+    rejected: { icon: XCircle, color: "bg-red-100 text-red-700 border-red-200", label: "Rejected" },
+  };
+  
+  const { icon: Icon, color, label } = config[status] || config.pending;
+  
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${color}`}>
+      <Icon size={10} />
+      {label}
+    </span>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function Evaluation_application() {
@@ -267,9 +289,7 @@ export default function Evaluation_application() {
   // Site selection state
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [areaSearch, setAreaSearch] = useState("");
-  const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(
-    null,
-  );
+  const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
   const [siteSearch, setSiteSearch] = useState("");
   const [loadingSites, setLoadingSites] = useState(false);
@@ -286,14 +306,10 @@ export default function Evaluation_application() {
   const [treeSpeciesList, setTreeSpeciesList] = useState<string[]>([]);
   const [loadingSpecies, setLoadingSpecies] = useState(false);
   const [newSpecies, setNewSpecies] = useState("");
-  const [provisionEntries, setProvisionEntries] = useState<ProvisionEntry[]>(
-    [],
-  );
+  const [provisionEntries, setProvisionEntries] = useState<ProvisionEntry[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<
-    "forward" | "reject" | null
-  >(null);
+  const [confirmAction, setConfirmAction] = useState<"forward" | "reject" | null>(null);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
@@ -322,6 +338,7 @@ export default function Evaluation_application() {
             status: "active",
             area_hectares: 0,
             ndvi: null,
+            verification_status: "verified", // ✅ Assume verified if already assigned
             validation_progress: { completed: 0, total: 0, layer_status: {} },
             created_at: "",
           });
@@ -392,7 +409,7 @@ export default function Evaluation_application() {
         );
         if (!res.ok) throw new Error();
         const data = await res.json();
-        console.log("Hi ", data);
+        console.log("Areas: ", data);
         setAreas(data.data ?? []);
       } catch {
         setPSAlert({
@@ -413,8 +430,9 @@ export default function Evaluation_application() {
       setSites([]);
       setSelectedSite(null);
       try {
+        // ✅ UPDATED: Fetch only accepted sites with verified metadata
         const res = await fetch(
-          `http://127.0.0.1:8000/api/list_sites/${selectedArea.reforestation_area_id}/?status=accepted`,
+          `http://127.0.0.1:8000/api/list_sites/${selectedArea.reforestation_area_id}/?status=accepted&verification_status=verified`,
           {
             headers: { Authorization: `Bearer ${token}` },
           },
@@ -578,11 +596,9 @@ export default function Evaluation_application() {
     }
   };
 
-  // ─── Filtered lists ─────────────────────────────────────────────────────
-  const filteredAreas = areas.filter(
-    (a) =>
-      a.verification_status === "verified" &&
-      a.name.toLowerCase().includes(areaSearch.toLowerCase()),
+  // ✅ UPDATED: Filtered lists - areas show ALL, sites already filtered by backend
+  const filteredAreas = areas.filter((a) =>
+    a.name.toLowerCase().includes(areaSearch.toLowerCase()),
   );
   const filteredSites = sites.filter((s) =>
     s.name.toLowerCase().includes(siteSearch.toLowerCase()),
@@ -1154,7 +1170,7 @@ export default function Evaluation_application() {
                 <SectionHeader
                   icon={<MapPin size={18} />}
                   title="Assign Planting Site"
-                  subtitle="Select reforestation area then pick a site"
+                  subtitle="Select reforestation area then pick a verified site"
                 />
                 {selectedSite && (
                   <div className="mb-4 flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
@@ -1207,7 +1223,7 @@ export default function Evaluation_application() {
                     <div className="flex-1 overflow-y-auto max-h-72 flex flex-col gap-2">
                       {filteredAreas.length === 0 ? (
                         <div className="text-center py-8 text-gray-300 text-sm">
-                          No verified legal areas found
+                          No reforestation areas found
                         </div>
                       ) : (
                         filteredAreas.map((area) => (
@@ -1261,7 +1277,7 @@ export default function Evaluation_application() {
                       <span className="w-5 h-5 rounded-full bg-[#0F4A2F] text-white flex items-center justify-center text-[10px]">
                         2
                       </span>{" "}
-                      Pick a Site
+                      Pick a Verified Site
                     </p>
                     <div className="relative mb-3">
                       <Search
@@ -1284,7 +1300,11 @@ export default function Evaluation_application() {
                       <div className="flex-1 overflow-y-auto max-h-64 flex flex-col gap-2">
                         {filteredSites.length === 0 ? (
                           <div className="text-center py-8 text-gray-300 text-sm">
-                            No sites found
+                            <ShieldAlert size={24} className="mx-auto mb-2 opacity-50" />
+                            <p>No verified sites available</p>
+                            <p className="text-xs mt-1 text-gray-400">
+                              Sites must be accepted and have verified metadata
+                            </p>
                           </div>
                         ) : (
                           filteredSites.map((site) => (
@@ -1298,15 +1318,14 @@ export default function Evaluation_application() {
                                 <p className="font-semibold text-sm text-gray-800 group-hover:text-[#0F4A2F]">
                                   {site.name}
                                 </p>
-                                <span
-                                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${site.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
-                                >
-                                  {site.status}
-                                </span>
+                                <VerificationBadge status={site.verification_status} />
                               </div>
                               <div className="flex gap-3 mt-1.5 text-xs text-gray-400">
                                 {site.area_hectares && (
-                                  <span>{site.area_hectares} ha</span>
+                                  <span>{site.area_hectares.toFixed(2)} ha</span>
+                                )}
+                                {site.ndvi !== null && (
+                                  <span>NDVI: {site.ndvi.toFixed(2)}</span>
                                 )}
                               </div>
                             </button>

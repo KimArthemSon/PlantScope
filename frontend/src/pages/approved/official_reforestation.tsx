@@ -1,15 +1,10 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronRight,
   ChevronLeft,
-  SlidersHorizontal,
-  X,
-  RotateCcw,
   List,
   CheckCircle,
-  AlertCircle,
   Clock,
-  Edit,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import LoaderPending from "@/components/layout/loaderSmall";
@@ -17,37 +12,29 @@ import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
 
 // ─────────────────────────────────────────────────────────────
-// Types & Interfaces (UPDATED: Removed legality/safety/pre_assessment)
+// Types & Interfaces
 // ─────────────────────────────────────────────────────────────
-interface Barangay {
-  barangay_id: number;
-  name: string;
-}
-
-interface LandClassification {
-  land_classification_id: number;
-  name: string;
-}
-
 interface ReforestationArea {
   reforestation_area_id: number;
   name: string;
-  polygon_coordinate: any;
+  description: string | null;
   coordinate: any;
   barangay: {
     barangay_id: number;
     name: string;
   } | null;
-  land_classification: {
-    land_classification_id: number;
-    name: string;
-  } | null;
-  description: string;
-  area_img: string | null;
-  permit_count: number;
-  verification_status: "pending" | "draft" | "verified" | "rejected";
-  verification_decision_note: string | null;
   created_at: string;
+  site_stats?: {
+    total: number;
+    accepted_verified: number;
+    accepted: number;
+    pending: number;
+  };
+}
+
+interface Barangay {
+  barangay_id: number;
+  name: string;
 }
 
 interface Filter {
@@ -55,41 +42,19 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
-  verification_status: string; // ✅ Replaced old statuses
   barangay_id: string;
-  land_classification_id: string;
 }
 
-// ✅ Default to "verified" since this is for Official Reforestation Areas
 const DEFAULT_FILTER: Omit<Filter, "total_page"> = {
   search: "",
   entries: 10,
   page: 1,
-  verification_status: "verified",
-  barangay_id: "All",
-  land_classification_id: "All",
+  barangay_id: "",
 };
-
-// ─────────────────────────────────────────────────────────────
-// Helper: count active filters
-// ─────────────────────────────────────────────────────────────
-function countActiveFilters(filter: Filter): number {
-  let count = 0;
-  if (filter.verification_status !== "All") count++;
-  if (filter.barangay_id !== "All") count++;
-  if (filter.land_classification_id !== "All") count++;
-  return count;
-}
 
 export default function Reforestation_areas() {
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [landClassifications, setLandClassifications] = useState<
-    LandClassification[]
-  >([]);
-  const [showFilters, setShowFilters] = useState(false);
-  const filterPanelRef = useRef<HTMLDivElement>(null);
-
   const [filter, setFilter] = useState<Filter>({
     ...DEFAULT_FILTER,
     total_page: 1,
@@ -122,53 +87,25 @@ export default function Reforestation_areas() {
     }
   }, [userRole]);
 
-  // ── Close panel on outside click ──────────────────────────
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        filterPanelRef.current &&
-        !filterPanelRef.current.contains(e.target as Node)
-      ) {
-        setShowFilters(false);
+  // ── Fetch Barangays ────────────────────────────────────────
+  const fetchBarangays = async () => {
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/get_barangay_list/`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setBarangays(data.data || []);
       }
-    };
-    if (showFilters) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showFilters]);
+    } catch (err) {
+      console.error("Failed to fetch barangays:", err);
+    }
+  };
 
-  // ── Fetch Barangays & Land Classifications ─────────────────
   useEffect(() => {
-    const fetchBarangays = async () => {
-      try {
-        const res = await fetch(
-          "http://127.0.0.1:8000/api/get_barangay_list/",
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setBarangays(data.data || []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch barangays:", err);
-      }
-    };
-    const fetchLandClassifications = async () => {
-      try {
-        const res = await fetch(
-          "http://127.0.0.1:8000/api/get_land_classifications_list/?for_reforestation=true",
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setLandClassifications(data.data || []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch land classifications:", err);
-      }
-    };
     fetchBarangays();
-    fetchLandClassifications();
-  }, [token]);
+  }, []);
 
   // ── Fetch Areas ────────────────────────────────────────────
   const fetchAreas = async () => {
@@ -178,23 +115,20 @@ export default function Reforestation_areas() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
-        // ✅ Use verification_status (legality, safety, pre_assessment_status removed)
-        ...(filter.verification_status !== "All" && {
-          verification_status: filter.verification_status,
-        }),
-        ...(filter.barangay_id !== "All" && {
-          barangay_id: filter.barangay_id,
-        }),
-        ...(filter.land_classification_id !== "All" && {
-          land_classification_id: filter.land_classification_id,
-        }),
       });
+
+      if (filter.barangay_id) {
+        params.append("barangay_id", filter.barangay_id);
+      }
+
       const response = await fetch(
         `http://127.0.0.1:8000/api/get_reforestation_areas/?${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
+
       if (!response.ok) throw new Error("Failed");
       const data = await response.json();
+
       setAreas(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch {
@@ -210,24 +144,7 @@ export default function Reforestation_areas() {
 
   useEffect(() => {
     fetchAreas();
-  }, [
-    filter.page,
-    filter.entries,
-    filter.verification_status,
-    filter.barangay_id,
-    filter.land_classification_id,
-  ]);
-
-  // ── Reset all filters ──────────────────────────────────────
-  const resetFilters = () => {
-    setFilter((prev) => ({
-      ...prev,
-      ...DEFAULT_FILTER,
-      total_page: prev.total_page,
-    }));
-  };
-
-  const activeFilterCount = countActiveFilters(filter);
+  }, [filter.page, filter.entries, filter.barangay_id]);
 
   // ── Render ─────────────────────────────────────────────────
   return (
@@ -242,7 +159,7 @@ export default function Reforestation_areas() {
       )}
 
       <main className="flex-1 p-8 w-full max-w-609">
-        {/* ── TOOLBAR ───────────────────────────────────────── */}
+        {/* ── TOOLBAR ── */}
         <div className="flex items-center flex-wrap mb-4 gap-3">
           {/* Entries */}
           <label className="text-sm text-gray-600">Show:</label>
@@ -263,191 +180,26 @@ export default function Reforestation_areas() {
             <option value={100}>100</option>
           </select>
 
-          {/* ── Filter button + dropdown ───────────────────── */}
-          <div className="relative" ref={filterPanelRef}>
-            <button
-              onClick={() => setShowFilters((prev) => !prev)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-md border text-[.8rem] font-medium transition-colors ${
-                showFilters || activeFilterCount > 0
-                  ? "bg-green-700 text-white border-green-700"
-                  : "bg-white text-gray-700 border-black hover:bg-gray-50"
-              }`}
-            >
-              <SlidersHorizontal size={15} />
-              Filters
-              {activeFilterCount > 0 && (
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white text-green-700 text-[.7rem] font-bold leading-none">
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
-
-            {/* Dropdown panel */}
-            {showFilters && (
-              <div className="absolute top-full left-0 mt-2 z-50 bg-white border border-gray-200 rounded-xl shadow-2xl p-5 w-[520px]">
-                {/* Panel header */}
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-                  <span className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-                    <SlidersHorizontal size={15} className="text-green-700" />
-                    Filter Areas
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {activeFilterCount > 0 && (
-                      <button
-                        onClick={resetFilters}
-                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-500 transition-colors"
-                      >
-                        <RotateCcw size={12} />
-                        Reset all
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setShowFilters(false)}
-                      className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-                    >
-                      <X size={15} className="text-gray-500" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Filter grid */}
-                <div className="grid grid-cols-2 gap-4">
-                  {/* ✅ Verification Status Filter */}
-                  <div className="flex flex-col gap-1 col-span-2">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Verification Status
-                    </label>
-                    <select
-                      value={filter.verification_status}
-                      onChange={(e) =>
-                        setFilter((prev) => ({
-                          ...prev,
-                          verification_status: e.target.value,
-                          page: 1,
-                        }))
-                      }
-                      className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
-                    >
-                      <option value="All">All</option>
-                      <option value="pending">Pending Review</option>
-                      <option value="draft">Draft</option>
-                      <option value="verified">Verified ✓</option>
-                      <option value="rejected">Rejected ✗</option>
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Barangay
-                    </label>
-                    <select
-                      value={filter.barangay_id}
-                      onChange={(e) =>
-                        setFilter((prev) => ({
-                          ...prev,
-                          barangay_id: e.target.value,
-                          page: 1,
-                        }))
-                      }
-                      className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
-                    >
-                      <option value="All">All</option>
-                      {barangays.map((b) => (
-                        <option key={b.barangay_id} value={b.barangay_id}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Land Classification
-                    </label>
-                    <select
-                      value={filter.land_classification_id}
-                      onChange={(e) =>
-                        setFilter((prev) => ({
-                          ...prev,
-                          land_classification_id: e.target.value,
-                          page: 1,
-                        }))
-                      }
-                      className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
-                    >
-                      <option value="All">All</option>
-                      {landClassifications.map((lc) => (
-                        <option
-                          key={lc.land_classification_id}
-                          value={lc.land_classification_id}
-                        >
-                          {lc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Active filter badges */}
-          {activeFilterCount > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              {filter.verification_status !== "All" && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Verification: {filter.verification_status}
-                  <button
-                    onClick={() =>
-                      setFilter((p) => ({
-                        ...p,
-                        verification_status: "All",
-                        page: 1,
-                      }))
-                    }
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              )}
-              {filter.barangay_id !== "All" && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Barangay:{" "}
-                  {barangays.find(
-                    (b) => String(b.barangay_id) === String(filter.barangay_id),
-                  )?.name ?? filter.barangay_id}
-                  <button
-                    onClick={() =>
-                      setFilter((p) => ({ ...p, barangay_id: "All", page: 1 }))
-                    }
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              )}
-              {filter.land_classification_id !== "All" && (
-                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-[.7rem] font-medium">
-                  Land:{" "}
-                  {landClassifications.find(
-                    (lc) =>
-                      String(lc.land_classification_id) ===
-                      String(filter.land_classification_id),
-                  )?.name ?? filter.land_classification_id}
-                  <button
-                    onClick={() =>
-                      setFilter((p) => ({
-                        ...p,
-                        land_classification_id: "All",
-                        page: 1,
-                      }))
-                    }
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              )}
-            </div>
-          )}
+          {/* Barangay Filter */}
+          <label className="text-sm text-gray-600">Barangay:</label>
+          <select
+            value={filter.barangay_id}
+            onChange={(e) =>
+              setFilter((prev) => ({
+                ...prev,
+                barangay_id: e.target.value,
+                page: 1,
+              }))
+            }
+            className="border border-black p-2 rounded-md text-[.8rem]"
+          >
+            <option value="">All</option>
+            {barangays.map((b) => (
+              <option key={b.barangay_id} value={b.barangay_id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
 
           {/* Search */}
           <input
@@ -468,7 +220,7 @@ export default function Reforestation_areas() {
           />
         </div>
 
-        {/* ── TABLE ─────────────────────────────────────────── */}
+        {/* ── TABLE ── */}
         <div className="overflow-x-auto shadow-lg border border-gray-200">
           {loading && <LoaderPending />}
           <table className="min-w-full bg-white">
@@ -476,10 +228,9 @@ export default function Reforestation_areas() {
               <tr>
                 <th className="py-3 px-5 text-left">No</th>
                 <th className="py-3 px-5 text-left">Name</th>
-                <th className="py-3 px-5 text-left">Status</th>
                 <th className="py-3 px-5 text-left">Barangay</th>
-                <th className="py-3 px-5 text-left">Land Classification</th>
-                <th className="py-3 px-5 text-left">Permits</th>
+                <th className="py-3 px-5 text-left">Description</th>
+                <th className="py-3 px-5 text-left">Sites</th>
                 <th className="py-3 px-5 text-left">Created</th>
                 <th className="py-3 px-5 text-left">Actions</th>
               </tr>
@@ -496,67 +247,46 @@ export default function Reforestation_areas() {
                     </td>
                     <td className="py-3 px-5 font-medium">{area.name}</td>
 
-                    {/* Verification Status Badge */}
-                    <td className="py-3 px-5">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 ${
-                          area.verification_status === "pending"
-                            ? "bg-amber-100 text-amber-700"
-                            : area.verification_status === "draft"
-                              ? "bg-blue-100 text-blue-700"
-                              : area.verification_status === "verified"
-                                ? "bg-green-100 text-green-700"
-                                : area.verification_status === "rejected"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {area.verification_status === "verified" && (
-                          <CheckCircle size={12} />
-                        )}
-                        {area.verification_status === "rejected" && (
-                          <AlertCircle size={12} />
-                        )}
-                        {area.verification_status === "pending" && (
-                          <Clock size={12} />
-                        )}
-                        {area.verification_status === "draft" && (
-                          <Edit size={12} />
-                        )}
-                        {area.verification_status.charAt(0).toUpperCase() +
-                          area.verification_status.slice(1)}
-                      </span>
-                      {area.verification_decision_note && (
-                        <p
-                          className="text-[.65rem] text-gray-500 mt-1 max-w-[180px] truncate"
-                          title={area.verification_decision_note}
-                        >
-                          {area.verification_decision_note}
-                        </p>
-                      )}
-                    </td>
-
                     <td className="py-3 px-5">
                       {area.barangay?.name ?? (
                         <span className="text-gray-400 italic">N/A</span>
                       )}
                     </td>
-                    <td className="py-3 px-5">
-                      {area.land_classification?.name ?? (
-                        <span className="text-gray-400 italic">N/A</span>
+
+                    <td className="py-3 px-5 text-sm text-gray-600 max-w-xs truncate">
+                      {area.description || (
+                        <span className="text-gray-400 italic">No description</span>
                       )}
                     </td>
 
-                    {/* Permit Count */}
+                    {/* Sites Column */}
                     <td className="py-3 px-5">
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-700 text-xs font-bold">
-                        {area.permit_count}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1">
+                          <CheckCircle size={12} className="text-green-600" />
+                          <span className="text-xs font-bold text-green-700">
+                            {area.site_stats?.accepted_verified ?? 0}
+                          </span>
+                          <span className="text-[10px] text-gray-500">verified</span>
+                        </div>
+                        <div className="flex gap-2 text-[10px]">
+                          <span className="flex items-center gap-0.5 text-blue-600">
+                            <CheckCircle size={10} />
+                            {area.site_stats?.accepted ?? 0}
+                          </span>
+                          <span className="flex items-center gap-0.5 text-amber-600">
+                            <Clock size={10} />
+                            {area.site_stats?.pending ?? 0}
+                          </span>
+                          <span className="text-gray-400">
+                            / {area.site_stats?.total ?? 0}
+                          </span>
+                        </div>
+                      </div>
                     </td>
 
                     <td className="py-3 px-5 text-sm">{area.created_at}</td>
 
-                    {/* ✅ EXACT ACTION COLUMN SNIPPET REQUESTED */}
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
                         <button
@@ -565,7 +295,8 @@ export default function Reforestation_areas() {
                               `${useruserRole}/official-reforestation/site/${area.reforestation_area_id}`,
                             )
                           }
-                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1"
+                          className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
+                          title="View Sites"
                         >
                           <List size={18} />
                         </button>
@@ -576,7 +307,7 @@ export default function Reforestation_areas() {
               ) : (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     className="text-center py-5 text-gray-500 italic"
                   >
                     No areas found
@@ -587,7 +318,7 @@ export default function Reforestation_areas() {
           </table>
         </div>
 
-        {/* ── PAGINATION ────────────────────────────────────── */}
+        {/* ── PAGINATION ── */}
         <div className="flex items-center gap-1 mt-5">
           <button
             disabled={filter.page <= 1}

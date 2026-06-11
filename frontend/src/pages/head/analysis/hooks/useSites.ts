@@ -242,6 +242,38 @@ export function useSites() {
     },
     [fetchWithAuth],
   );
+ const updateSiteCoordinates = useCallback(
+  async (
+    siteId: number,
+    polygonCoordinates?: [number, number][],
+    centerCoordinate?: [number, number]
+  ) => {
+    try {
+      const body: any = {};
+      if (polygonCoordinates) body.polygon_coordinates = polygonCoordinates;
+      if (centerCoordinate) body.center_coordinate = centerCoordinate;
+      
+      const data = await fetchWithAuth(
+        `${BASE_URL}/api/site/${siteId}/update_coordinates/`,
+        {
+          method: "PUT",
+          body: JSON.stringify(body),
+        }
+      );
+      
+      // Refresh the site detail
+      if (selectedSite) {
+        await fetchSiteDetail(siteId);
+      }
+      return data;
+    } catch (err: any) {
+      console.error("updateSiteCoordinates error:", err);
+      setError(err.message || "Failed to update coordinates");
+      return null;
+    }
+  },
+  [fetchWithAuth, fetchSiteDetail, selectedSite]
+);
 
   return {
     sites,
@@ -252,6 +284,7 @@ export function useSites() {
     fetchSiteDetail,
     createSite,
     updatePolygon,
+    updateSiteCoordinates,
     deleteSite,
     saveValidationDraft, // ✅ Renamed from updateLayer
     finalizeSite, // ✅ Updated signature

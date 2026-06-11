@@ -55,12 +55,13 @@ def check_inspector_assignment(user, reforestation_area_id):
     ).exists()
 
 
+# ✅ UPDATE THIS IN: field_assessment/onsite_views.py
+
 @csrf_exempt
 def get_assigned_reforestation_area(request):
     """
     GET: Fetch reforestation areas assigned to the onsite inspector.
-    
-    Returns area info + optional meta verification status from AreaMetaDataVerification.
+    ✅ UPDATED: Stripped down to match the new minimal Reforestation_areas model.
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -70,53 +71,28 @@ def get_assigned_reforestation_area(request):
         if not user or user.user_role != "OnsiteInspector":
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
+        # ✅ FIXED: Removed select_related for barangay/land_classification and prefetch for meta_verification
         records = Assigned_onsite_inspector.objects.filter(
             user=user
-        ).select_related(
-            'reforestation_area', 
-            'reforestation_area__barangay',
-            'reforestation_area__land_classification'
-        ).prefetch_related(
-            'reforestation_area__meta_verification'  # OneToOne relation
-        )
+        ).select_related('reforestation_area')
         
         data = []
         for r in records:
             area = r.reforestation_area
             
-            # ✅ Get verification status from AreaMetaDataVerification (OneToOne)
-            meta_verification = getattr(area, 'meta_verification', None)
-            verification_status = meta_verification.status if meta_verification else 'pending'
-            
-            # ✅ Parse coordinate for map display
+            # ✅ Parse coordinate for map display (Only center point exists now)
             coordinate = area.coordinate
             lat, lng, coord_display = _parse_coordinate(coordinate)
-            
-            # ✅ Parse polygon coordinate if available
-            polygon_coordinate = area.polygon_coordinate
             
             data.append({
                 "assigned_onsite_inspector_id": r.assigned_onsite_inspector_id,
                 "reforestation_area_id": area.reforestation_area_id,
                 "name": area.name,
                 "description": area.description,
-                "barangay": {
-                    "id": area.barangay.barangay_id if area.barangay else None,
-                    "name": area.barangay.name if area.barangay else None,
-                } if area.barangay else None,
-                "land_classification": {
-                    "id": area.land_classification.land_classification_id if area.land_classification else None,
-                    "name": area.land_classification.name if area.land_classification else None,
-                } if area.land_classification else None,
-                "coordinate": coordinate,  # Raw JSON for flexibility
-                "polygon_coordinate": polygon_coordinate,  # Raw JSON for polygon rendering
-                "latitude": lat,  # Parsed for map centering
+                "coordinate": coordinate,
+                "latitude": lat,
                 "longitude": lng,
                 "coord_display": coord_display,
-                "area_img": f"http://127.0.0.1:8000{area.area_img.url}" if area.area_img else None,
-                # ✅ Verification status from meta_verification table
-                "verification_status": verification_status,
-                "verified_at": meta_verification.verified_at.isoformat() if meta_verification and meta_verification.verified_at else None,
                 "assigned_at": r.created_at.isoformat()
             })
             
@@ -169,10 +145,10 @@ def get_field_assessments(request):
     GET: Fetch field assessments for onsite inspector.
     
     Query Parameters:
-    - reforestation_area_id: Filter by area (optional)
+    - reforestation_area_id: Filter by area (required)
+    - site_id: Filter by site. Pass 'null' for General (Area-level) assessments.
     - is_submitted: Filter by submission status (optional)
     - layer: Filter by layer key in field_assessment_data (optional)
-             Valid values: 'meta_data', 'safety', 'boundary_verification', 'survivability'
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -197,10 +173,22 @@ def get_field_assessments(request):
         if request.GET.get('is_submitted') is not None:
             q = q.filter(is_submitted=(request.GET['is_submitted'].lower() == 'true'))
             
-        # ✅ NEW: Filter by layer in field_assessment_data JSON
+        # ✅ FIXED: Filter by site_id (General vs Specific)
+        sid = request.GET.get('site_id')
+        if sid is not None:
+            if sid.lower() == 'null' or sid == '0' or sid == '':
+                # General Assessment: site_id must be NULL
+                q = q.filter(site_id__isnull=True)
+            else:
+                # Specific Assessment: site_id must match the integer
+                try:
+                    q = q.filter(site_id=int(sid))
+                except ValueError:
+                    pass # Ignore invalid site_id strings
+
+        # Filter by layer in field_assessment_data JSON
         layer = request.GET.get('layer')
         if layer:
-            # Valid layer keys
             VALID_LAYERS = ['meta_data', 'safety', 'boundary_verification', 'survivability']
             if layer not in VALID_LAYERS:
                 return JsonResponse({
@@ -208,19 +196,16 @@ def get_field_assessments(request):
                     'success': False
                 }, status=400)
             
-            # Filter 1: Check if JSON field has the layer key
+            # DB-level filter: Check if JSON field has the layer key
             q = q.filter(field_assessment_data__has_key=layer)
-            
-            # Note: We'll do empty dict filtering in Python below for clarity
         
         q = q.order_by('-updated_at')
 
         data = []
         for fa in q:
-            # ✅ NEW: Skip if layer filter is set but layer data is empty
+            # Python-level filter: Skip if layer filter is set but layer data is actually empty
             if layer:
                 layer_data = fa.field_assessment_data.get(layer)
-                # Skip if layer data is None, empty dict, or empty list
                 if not layer_data or (isinstance(layer_data, (dict, list)) and not layer_data):
                     continue
             
@@ -228,21 +213,27 @@ def get_field_assessments(request):
                 "field_assessment_id": fa.field_assessment_id,
                 "reforestation_area_id": fa.assigned_onsite_inspector.reforestation_area_id,
                 "reforestation_area_name": fa.assigned_onsite_inspector.reforestation_area.name,
+                "site_id": fa.site_id, # ✅ ADDED: So frontend knows if it's general or specific
                 "assessment_date": fa.assessment_date.isoformat() if fa.assessment_date else None,
                 "location": fa.location,
                 "is_submitted": fa.is_submitted,
                 "image_count": fa.images.count(),
-                # ✅ Include layer data if requested (for debugging/preview)
-                "layer_data": fa.field_assessment_data.get(layer) if layer else None,
+                
+                # ✅ CRITICAL FIX: Return the FULL JSON so the frontend progress bar can check all layers
+                "field_assessment_data": fa.field_assessment_data, 
+                
+                # Keep layer_data for backwards compatibility/debugging if needed
+                "layer_data": fa.field_assessment_data.get(layer) if layer else None, 
+                
                 "created_at": fa.created_at.isoformat(),
                 "updated_at": fa.updated_at.isoformat(),
             })
             
-        return JsonResponse(data, safe=False, status=200)
+        return JsonResponse(data, safe=False, encoder=DjangoJSONEncoder, status=200)
         
     except Exception as e:
+        logger.error(f"Error in get_field_assessments: {e}", exc_info=True)
         return JsonResponse({'error': str(e), 'success': False}, status=500)
-
 
 # ─────────────────────────────────────────────
 # 3. GET FIELD ASSESSMENT DETAIL
@@ -306,9 +297,10 @@ def create_field_assessment(request):
         body = json.loads(request.body)
         reforestation_area_id = body.get('reforestation_area_id')
         assessment_date = body.get('assessment_date')
+        print(reforestation_area_id)
         raw_location = body.get('location')
         field_data = body.get('field_assessment_data', {})
-
+        site_id = body.get('site_id') 
         if not reforestation_area_id or not assessment_date:
             return JsonResponse({'error': 'reforestation_area_id and assessment_date are required'}, status=400)
         if not check_inspector_assignment(user, reforestation_area_id):
@@ -329,6 +321,7 @@ def create_field_assessment(request):
         fa = Field_assessment.objects.create(
             assigned_onsite_inspector=assignment,
             assessment_date=assessment_date,
+             site_id=site_id,
             location=location,
             field_assessment_data=field_data,
             is_submitted=False

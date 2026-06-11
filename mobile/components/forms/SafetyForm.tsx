@@ -134,7 +134,7 @@ function SimpleGeocam({
         Alert.alert("Error", "Failed to capture photo.");
         return;
       }
-      console.log("📸 Photo captured:", { uri: photo.uri, gps: locData });
+   
       onCapture(photo.uri, locData);
     } catch (error) {
       console.error("📸 Take picture error:", error);
@@ -612,7 +612,7 @@ export default function SafetyForm() {
   const areaId = params.areaId as string;
   const assessmentId = params.assessmentId as string | undefined;
   const layerId = "safety";
-  
+  const siteId = params.siteId as string | undefined;
   const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
     useFieldAssessment(areaId, layerId, assessmentId);
 
@@ -642,7 +642,9 @@ export default function SafetyForm() {
 
   // ✅ Geocam & note modal state - MOVED UP BEFORE FUNCTIONS
   const [showGPSCamera, setShowGPSCamera] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<"flood" | "landslide" | "erosion" | "other" | null>(null);
+  const [activeCategory, setActiveCategory] = useState<
+    "flood" | "landslide" | "erosion" | "other" | null
+  >(null);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState<{
     uri: string;
@@ -662,16 +664,34 @@ export default function SafetyForm() {
           if (data.location) {
             setLocationLat(data.location.latitude?.toString() || "");
             setLocationLng(data.location.longitude?.toString() || "");
-            setLocationAccuracy(data.location.gps_accuracy_meters?.toString() || "");
+            setLocationAccuracy(
+              data.location.gps_accuracy_meters?.toString() || "",
+            );
           }
-          
+
           // Filter images by layer
           const allImages = data.images || [];
-          setFloodImages(allImages.filter((img: SafetyImage) => img.layer === "safety_flood"));
-          setLandslideImages(allImages.filter((img: SafetyImage) => img.layer === "safety_landslide"));
-          setErosionImages(allImages.filter((img: SafetyImage) => img.layer === "safety_erosion"));
-          setOtherImages(allImages.filter((img: SafetyImage) => img.layer === "safety_other"));
-          
+          setFloodImages(
+            allImages.filter(
+              (img: SafetyImage) => img.layer === "safety_flood",
+            ),
+          );
+          setLandslideImages(
+            allImages.filter(
+              (img: SafetyImage) => img.layer === "safety_landslide",
+            ),
+          );
+          setErosionImages(
+            allImages.filter(
+              (img: SafetyImage) => img.layer === "safety_erosion",
+            ),
+          );
+          setOtherImages(
+            allImages.filter(
+              (img: SafetyImage) => img.layer === "safety_other",
+            ),
+          );
+
           setIsViewMode(!!data.is_submitted);
         }
         setLoading(false);
@@ -685,9 +705,9 @@ export default function SafetyForm() {
   const populateForm = (data: any) => {
     // ✅ Handle: data.safety.safety (old) OR data.safety (new) OR data (flat)
     const safety = data?.safety?.safety || data?.safety || data || {};
-    
-    console.log("📋 Parsed safety data:", safety);
-    
+
+ 
+
     setFloodNote(safety.flood?.overall_note || "");
     setLandslideNote(safety.landslide?.overall_note || "");
     setErosionNote(safety.erosion?.overall_note || "");
@@ -723,12 +743,11 @@ export default function SafetyForm() {
     uri: string,
     location: LocationData,
   ) => {
-    console.log("🎯 [Geocam] Photo captured, opening custom note modal");
-    setShowGPSCamera(false);
-    
+     setShowGPSCamera(false);
+
     const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
-    console.log("🔍 [Geocam] assessmentId:", assessmentId, "-> numeric:", numericAssessmentId);
-    
+ 
+
     if (!numericAssessmentId || isNaN(numericAssessmentId)) {
       Alert.alert(
         "Action Required",
@@ -749,15 +768,14 @@ export default function SafetyForm() {
       console.error("❌ [Geocam] Missing pendingPhoto or activeCategory");
       return;
     }
-    
-    console.log("📝 [Geocam] User entered note:", note);
-    console.log("📝 [Geocam] Active category:", activeCategory);
-    
+
+  
+
     setUploading(true);
     try {
       const layerCode = `safety_${activeCategory}`;
-      console.log("🏷️ [Geocam] Layer code:", layerCode);
-      
+     
+
       const ok = await uploadImage(
         pendingPhoto.numericAssessmentId,
         {
@@ -768,24 +786,49 @@ export default function SafetyForm() {
         },
         {
           subLayerCode: activeCategory,
-          description: note || `Safety ${activeCategory} at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
-        }
+          description:
+            note ||
+            `Safety ${activeCategory} at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
+        },
       );
-      
+
       if (ok) {
-        console.log("🔄 [Geocam] Refreshing data...");
+       
         const data = await fetchAssessmentData();
         if (data) {
           const allImages = data.images || [];
-          if (activeCategory === "flood") setFloodImages(allImages.filter((img: SafetyImage) => img.layer === "safety_flood"));
-          else if (activeCategory === "landslide") setLandslideImages(allImages.filter((img: SafetyImage) => img.layer === "safety_landslide"));
-          else if (activeCategory === "erosion") setErosionImages(allImages.filter((img: SafetyImage) => img.layer === "safety_erosion"));
-          else if (activeCategory === "other") setOtherImages(allImages.filter((img: SafetyImage) => img.layer === "safety_other"));
+          if (activeCategory === "flood")
+            setFloodImages(
+              allImages.filter(
+                (img: SafetyImage) => img.layer === "safety_flood",
+              ),
+            );
+          else if (activeCategory === "landslide")
+            setLandslideImages(
+              allImages.filter(
+                (img: SafetyImage) => img.layer === "safety_landslide",
+              ),
+            );
+          else if (activeCategory === "erosion")
+            setErosionImages(
+              allImages.filter(
+                (img: SafetyImage) => img.layer === "safety_erosion",
+              ),
+            );
+          else if (activeCategory === "other")
+            setOtherImages(
+              allImages.filter(
+                (img: SafetyImage) => img.layer === "safety_other",
+              ),
+            );
         }
         Alert.alert("Success", "Photo uploaded with GPS data!");
       } else {
         console.warn("❌ [Geocam] Upload returned false");
-        Alert.alert("Upload Failed", "Could not upload photo. Please try again.");
+        Alert.alert(
+          "Upload Failed",
+          "Could not upload photo. Please try again.",
+        );
       }
     } catch (error) {
       console.error("💥 [Geocam] CRITICAL ERROR:", error);
@@ -815,26 +858,29 @@ export default function SafetyForm() {
           }
         : null;
 
-    // ✅ Return FLAT category data - NO outer 'safety' wrapper
-    return {
-      flood: {
-        overall_note: floodNote || null,
-      },
-      landslide: {
-        overall_note: landslideNote || null,
-      },
-      erosion: {
-        overall_note: erosionNote || null,
-      },
-      other: {
-        overall_note: otherNote || null,
-      },
+    // ✅ 1. Build the layer-specific data
+    const layerData = {
+      flood: { overall_note: floodNote || null },
+      landslide: { overall_note: landslideNote || null },
+      erosion: { overall_note: erosionNote || null },
+      other: { overall_note: otherNote || null },
       overall_notes: overallSafetyNote || null,
+    };
+
+    // ✅ 2. Return the FULL payload structure expected by the backend
+    return {
+      reforestation_area_id: areaId ? parseInt(areaId) : null,
+      site_id: siteId ? parseInt(siteId) : null,
+      assessment_date: new Date().toISOString().split("T")[0],
       location,
+      field_assessment_data: {
+        [layerId]: layerData, // ✅ Wraps the layer data correctly
+      },
     };
   };
 
   const handleDraft = async () => {
+   
     const payload = buildPayload();
     const ok = await handleSave(payload, false);
     if (ok) {
@@ -843,10 +889,26 @@ export default function SafetyForm() {
         if (data) {
           populateForm(data.field_assessment_data || {});
           const allImages = data.images || [];
-          setFloodImages(allImages.filter((img: SafetyImage) => img.layer === "safety_flood"));
-          setLandslideImages(allImages.filter((img: SafetyImage) => img.layer === "safety_landslide"));
-          setErosionImages(allImages.filter((img: SafetyImage) => img.layer === "safety_erosion"));
-          setOtherImages(allImages.filter((img: SafetyImage) => img.layer === "safety_other"));
+          setFloodImages(
+            allImages.filter(
+              (img: SafetyImage) => img.layer === "safety_flood",
+            ),
+          );
+          setLandslideImages(
+            allImages.filter(
+              (img: SafetyImage) => img.layer === "safety_landslide",
+            ),
+          );
+          setErosionImages(
+            allImages.filter(
+              (img: SafetyImage) => img.layer === "safety_erosion",
+            ),
+          );
+          setOtherImages(
+            allImages.filter(
+              (img: SafetyImage) => img.layer === "safety_other",
+            ),
+          );
         }
       }
       Alert.alert("Saved", "Draft saved successfully.");
@@ -873,7 +935,10 @@ export default function SafetyForm() {
     );
   };
 
-  const handleDeleteImage = async (img: SafetyImage, category: "flood" | "landslide" | "erosion" | "other") => {
+  const handleDeleteImage = async (
+    img: SafetyImage,
+    category: "flood" | "landslide" | "erosion" | "other",
+  ) => {
     Alert.alert("Delete Photo", "Remove this photo?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -884,10 +949,30 @@ export default function SafetyForm() {
           const d = await fetchAssessmentData();
           if (d) {
             const allImages = d.images || [];
-            if (category === "flood") setFloodImages(allImages.filter((i: SafetyImage) => i.layer === "safety_flood"));
-            else if (category === "landslide") setLandslideImages(allImages.filter((i: SafetyImage) => i.layer === "safety_landslide"));
-            else if (category === "erosion") setErosionImages(allImages.filter((i: SafetyImage) => i.layer === "safety_erosion"));
-            else if (category === "other") setOtherImages(allImages.filter((i: SafetyImage) => i.layer === "safety_other"));
+            if (category === "flood")
+              setFloodImages(
+                allImages.filter(
+                  (i: SafetyImage) => i.layer === "safety_flood",
+                ),
+              );
+            else if (category === "landslide")
+              setLandslideImages(
+                allImages.filter(
+                  (i: SafetyImage) => i.layer === "safety_landslide",
+                ),
+              );
+            else if (category === "erosion")
+              setErosionImages(
+                allImages.filter(
+                  (i: SafetyImage) => i.layer === "safety_erosion",
+                ),
+              );
+            else if (category === "other")
+              setOtherImages(
+                allImages.filter(
+                  (i: SafetyImage) => i.layer === "safety_other",
+                ),
+              );
           }
         },
       },
@@ -902,8 +987,10 @@ export default function SafetyForm() {
     return `${api}${imgUrl}`;
   };
 
-  const openGeocamForCategory = (category: "flood" | "landslide" | "erosion" | "other") => {
-    console.log("📷 Opening Geocam for category:", category);
+  const openGeocamForCategory = (
+    category: "flood" | "landslide" | "erosion" | "other",
+  ) => {
+ 
     setActiveCategory(category);
     setShowGPSCamera(true);
   };
@@ -952,12 +1039,9 @@ export default function SafetyForm() {
             editable={!isViewMode}
             textAlignVertical="top"
           />
-          
+
           <View style={styles.galleryContent}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {floodImages.map((img) => (
                 <View key={img.image_id} style={styles.thumbWrapper}>
                   <TouchableOpacity
@@ -972,11 +1056,16 @@ export default function SafetyForm() {
                     <View style={styles.thumbOverlay}>
                       <Ionicons name="eye-outline" size={14} color="#fff" />
                     </View>
-                    {(img.latitude != null && img.longitude != null) && (
+                    {img.latitude != null && img.longitude != null && (
                       <View style={styles.thumbCoords}>
                         <Text style={styles.thumbCoordsText}>
-                          {typeof img.latitude === 'number' ? img.latitude.toFixed(4) : img.latitude}, 
-                          {typeof img.longitude === 'number' ? img.longitude.toFixed(4) : img.longitude}
+                          {typeof img.latitude === "number"
+                            ? img.latitude.toFixed(4)
+                            : img.latitude}
+                          ,
+                          {typeof img.longitude === "number"
+                            ? img.longitude.toFixed(4)
+                            : img.longitude}
                         </Text>
                       </View>
                     )}
@@ -986,7 +1075,12 @@ export default function SafetyForm() {
                       {img.description}
                     </Text>
                   ) : (
-                    <Text style={[styles.thumbNote, { color: "#94A3B8", fontStyle: "italic" }]}>
+                    <Text
+                      style={[
+                        styles.thumbNote,
+                        { color: "#94A3B8", fontStyle: "italic" },
+                      ]}
+                    >
                       No note
                     </Text>
                   )}
@@ -1001,7 +1095,7 @@ export default function SafetyForm() {
                   )}
                 </View>
               ))}
-              
+
               {!isViewMode && (
                 <TouchableOpacity
                   style={[styles.addPhotoBtn, styles.addPhotoBtnGPS]}
@@ -1038,12 +1132,9 @@ export default function SafetyForm() {
             editable={!isViewMode}
             textAlignVertical="top"
           />
-          
+
           <View style={styles.galleryContent}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {landslideImages.map((img) => (
                 <View key={img.image_id} style={styles.thumbWrapper}>
                   <TouchableOpacity
@@ -1058,11 +1149,16 @@ export default function SafetyForm() {
                     <View style={styles.thumbOverlay}>
                       <Ionicons name="eye-outline" size={14} color="#fff" />
                     </View>
-                    {(img.latitude != null && img.longitude != null) && (
+                    {img.latitude != null && img.longitude != null && (
                       <View style={styles.thumbCoords}>
                         <Text style={styles.thumbCoordsText}>
-                          {typeof img.latitude === 'number' ? img.latitude.toFixed(4) : img.latitude}, 
-                          {typeof img.longitude === 'number' ? img.longitude.toFixed(4) : img.longitude}
+                          {typeof img.latitude === "number"
+                            ? img.latitude.toFixed(4)
+                            : img.latitude}
+                          ,
+                          {typeof img.longitude === "number"
+                            ? img.longitude.toFixed(4)
+                            : img.longitude}
                         </Text>
                       </View>
                     )}
@@ -1072,7 +1168,12 @@ export default function SafetyForm() {
                       {img.description}
                     </Text>
                   ) : (
-                    <Text style={[styles.thumbNote, { color: "#94A3B8", fontStyle: "italic" }]}>
+                    <Text
+                      style={[
+                        styles.thumbNote,
+                        { color: "#94A3B8", fontStyle: "italic" },
+                      ]}
+                    >
                       No note
                     </Text>
                   )}
@@ -1087,7 +1188,7 @@ export default function SafetyForm() {
                   )}
                 </View>
               ))}
-              
+
               {!isViewMode && (
                 <TouchableOpacity
                   style={[styles.addPhotoBtn, styles.addPhotoBtnGPS]}
@@ -1124,12 +1225,9 @@ export default function SafetyForm() {
             editable={!isViewMode}
             textAlignVertical="top"
           />
-          
+
           <View style={styles.galleryContent}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {erosionImages.map((img) => (
                 <View key={img.image_id} style={styles.thumbWrapper}>
                   <TouchableOpacity
@@ -1144,11 +1242,16 @@ export default function SafetyForm() {
                     <View style={styles.thumbOverlay}>
                       <Ionicons name="eye-outline" size={14} color="#fff" />
                     </View>
-                    {(img.latitude != null && img.longitude != null) && (
+                    {img.latitude != null && img.longitude != null && (
                       <View style={styles.thumbCoords}>
                         <Text style={styles.thumbCoordsText}>
-                          {typeof img.latitude === 'number' ? img.latitude.toFixed(4) : img.latitude}, 
-                          {typeof img.longitude === 'number' ? img.longitude.toFixed(4) : img.longitude}
+                          {typeof img.latitude === "number"
+                            ? img.latitude.toFixed(4)
+                            : img.latitude}
+                          ,
+                          {typeof img.longitude === "number"
+                            ? img.longitude.toFixed(4)
+                            : img.longitude}
                         </Text>
                       </View>
                     )}
@@ -1158,7 +1261,12 @@ export default function SafetyForm() {
                       {img.description}
                     </Text>
                   ) : (
-                    <Text style={[styles.thumbNote, { color: "#94A3B8", fontStyle: "italic" }]}>
+                    <Text
+                      style={[
+                        styles.thumbNote,
+                        { color: "#94A3B8", fontStyle: "italic" },
+                      ]}
+                    >
                       No note
                     </Text>
                   )}
@@ -1173,7 +1281,7 @@ export default function SafetyForm() {
                   )}
                 </View>
               ))}
-              
+
               {!isViewMode && (
                 <TouchableOpacity
                   style={[styles.addPhotoBtn, styles.addPhotoBtnGPS]}
@@ -1210,12 +1318,9 @@ export default function SafetyForm() {
             editable={!isViewMode}
             textAlignVertical="top"
           />
-          
+
           <View style={styles.galleryContent}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {otherImages.map((img) => (
                 <View key={img.image_id} style={styles.thumbWrapper}>
                   <TouchableOpacity
@@ -1230,11 +1335,16 @@ export default function SafetyForm() {
                     <View style={styles.thumbOverlay}>
                       <Ionicons name="eye-outline" size={14} color="#fff" />
                     </View>
-                    {(img.latitude != null && img.longitude != null) && (
+                    {img.latitude != null && img.longitude != null && (
                       <View style={styles.thumbCoords}>
                         <Text style={styles.thumbCoordsText}>
-                          {typeof img.latitude === 'number' ? img.latitude.toFixed(4) : img.latitude}, 
-                          {typeof img.longitude === 'number' ? img.longitude.toFixed(4) : img.longitude}
+                          {typeof img.latitude === "number"
+                            ? img.latitude.toFixed(4)
+                            : img.latitude}
+                          ,
+                          {typeof img.longitude === "number"
+                            ? img.longitude.toFixed(4)
+                            : img.longitude}
                         </Text>
                       </View>
                     )}
@@ -1244,7 +1354,12 @@ export default function SafetyForm() {
                       {img.description}
                     </Text>
                   ) : (
-                    <Text style={[styles.thumbNote, { color: "#94A3B8", fontStyle: "italic" }]}>
+                    <Text
+                      style={[
+                        styles.thumbNote,
+                        { color: "#94A3B8", fontStyle: "italic" },
+                      ]}
+                    >
                       No note
                     </Text>
                   )}
@@ -1259,7 +1374,7 @@ export default function SafetyForm() {
                   )}
                 </View>
               ))}
-              
+
               {!isViewMode && (
                 <TouchableOpacity
                   style={[styles.addPhotoBtn, styles.addPhotoBtnGPS]}
@@ -1471,7 +1586,7 @@ export default function SafetyForm() {
           }}
         />
       </Modal>
-      
+
       {/* Custom Note Modal */}
       <Modal
         visible={showNoteModal}
@@ -1482,8 +1597,10 @@ export default function SafetyForm() {
         <View style={modalStyles.overlay}>
           <View style={modalStyles.modal}>
             <Text style={modalStyles.title}>Add Note for This Photo</Text>
-            <Text style={modalStyles.subtitle}>Describe this observation (optional)</Text>
-            
+            <Text style={modalStyles.subtitle}>
+              Describe this observation (optional)
+            </Text>
+
             <TextInput
               style={modalStyles.input}
               placeholder="e.g., Water line at 80cm on tree trunk"
@@ -1495,7 +1612,7 @@ export default function SafetyForm() {
               numberOfLines={3}
               textAlignVertical="top"
             />
-            
+
             <View style={modalStyles.buttons}>
               <TouchableOpacity
                 style={modalStyles.cancelBtn}

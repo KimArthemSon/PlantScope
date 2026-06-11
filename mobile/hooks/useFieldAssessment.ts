@@ -50,13 +50,14 @@ export const useFieldAssessment = (
   areaId: string,
   layerId: string,
   assessmentId?: string,
+  siteId?: string,
   onRefresh?: () => void,
 ): UseFieldAssessmentReturn => {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const handleSave = async (
-    data: any,
+    payload: any,
     submit: boolean = false,
   ): Promise<number | null> => {
     setSaving(true);
@@ -64,20 +65,7 @@ export const useFieldAssessment = (
       const token = await SecureStore.getItemAsync("token");
       if (!token) throw new Error("Authentication token missing");
 
-      // ✅ EXPECTS: data already has { [layerId]: { ... }, location?, assessment_date? }
-      // Extract top-level fields
-      const { location, assessment_date, ...layerData } = data;
-
-      // ✅ Build payload with nested structure
-      const payload = {
-        reforestation_area_id: parseInt(areaId),
-        assessment_date:
-          assessment_date || new Date().toISOString().split("T")[0],
-        location: location || null,
-        field_assessment_data: {
-          [layerId]: layerData, // ← Creates { boundary_verification: { overall_note: "..." } }
-        },
-      };
+     
 
       const isEdit = !!assessmentId;
       const url = isEdit
@@ -90,12 +78,14 @@ export const useFieldAssessment = (
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload), // ✅ Sends exactly what was built
       });
 
       const resData = await res.json();
-      if (!res.ok)
+      if (!res.ok) {
+        console.error("❌ [Hook] Backend Error:", resData);
         throw new Error(resData.error || "Failed to save assessment.");
+      }
 
       const savedId = resData.field_assessment_id || assessmentId;
 
@@ -142,7 +132,7 @@ export const useFieldAssessment = (
     setUploading(true);
     try {
       const token = await SecureStore.getItemAsync("token");
-      console.log("🔐 [Upload] Token retrieved:", token ? "✓" : "✗");
+    
 
       const formData = new FormData();
 
@@ -157,13 +147,13 @@ export const useFieldAssessment = (
       });
 
       const layerCode = getStrictLayerCode(layerId, options?.subLayerCode);
-      console.log("🏷️ [Upload] Layer code:", layerCode);
+     
       formData.append("layer", layerCode);
 
       // ✅ Use the GPS coordinates from the captured photo
       formData.append("latitude", photoData.latitude.toString());
       formData.append("longitude", photoData.longitude.toString());
-      
+
       if (photoData.accuracy != null) {
         formData.append("gps_accuracy", photoData.accuracy.toString());
       }
@@ -172,10 +162,10 @@ export const useFieldAssessment = (
         options?.description ||
         `Boundary marker at ${photoData.latitude.toFixed(6)}, ${photoData.longitude.toFixed(6)}`;
       formData.append("description", description);
-      console.log("📝 [Upload] Description:", description);
+     
 
       const uploadUrl = `${API_BASE}/field_assessments/${assessmentId}/images/upload/`;
-      console.log("🌐 [Upload] POST to:", uploadUrl);
+    
 
       const res = await fetch(uploadUrl, {
         method: "POST",
@@ -186,18 +176,14 @@ export const useFieldAssessment = (
         body: formData,
       });
 
-      console.log(
-        "📡 [Upload] Response status:",
-        res.status,
-        res.ok ? "(OK)" : "(ERROR)",
-      );
+     
 
       const responseText = await res.text();
-      console.log("📄 [Upload] Response body:", responseText);
+     
 
       if (res.ok) {
         const responseData = JSON.parse(responseText);
-        console.log("✅ [Upload] Success:", responseData);
+       
         Alert.alert("Success", "Geocam image uploaded.");
         onRefresh?.();
         return true;
