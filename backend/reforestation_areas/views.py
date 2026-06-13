@@ -9,35 +9,14 @@ from sites.models import Potential_sites, Sites
 
 logger = logging.getLogger(__name__)
 
-def _serialize_area(area):
-    """
-    Serializes Reforestation Area.
-    ✅ UPDATED: Includes barangay data
-    """
-    return {
-        'reforestation_area_id': area.reforestation_area_id,
-        'name': area.name,
-        'description': area.description,
-        'coordinate': area.coordinate,
-        'barangay': {
-            'barangay_id': area.barangay.barangay_id,
-            'name': area.barangay.name
-        } if area.barangay else None,
-        'created_at': area.created_at.strftime("%d/%m/%y"),
-    }
-
 # ─────────────────────────────────────────────
-# REFORESTATION AREA CRUD (Core Container Only)
+# HELPER FUNCTION
 # ─────────────────────────────────────────────
-@csrf_exempt
-def get_all_reforestation_areas(request):
-    if request.method != 'GET': 
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
-    areas = Reforestation_areas.objects.all().order_by('-created_at')
-    return JsonResponse({'data': [_serialize_area(a) for a in areas]}, status=200)
-
 def _serialize_area(a):
-    """Serialize area with site counts"""
+    """
+    Serializes Reforestation Area with site statistics
+    ✅ UPDATED: Date format changed to M/D/YYYY
+    """
     # Get site counts for this area
     sites_qs = Sites.objects.filter(reforestation_area=a, is_active=True)
     total_sites = sites_qs.count()
@@ -52,6 +31,9 @@ def _serialize_area(a):
     accepted_sites = sites_qs.filter(status='accepted').count()
     pending_sites = sites_qs.filter(status='pending').count()
     
+    # ✅ Format date as M/D/YYYY (e.g., 5/30/2026)
+    created_date = a.created_at.strftime('%m/%d/%Y').lstrip('0')
+    
     return {
         'reforestation_area_id': a.reforestation_area_id,
         'name': a.name,
@@ -61,8 +43,8 @@ def _serialize_area(a):
             'barangay_id': a.barangay.barangay_id,
             'name': a.barangay.name
         } if a.barangay else None,
-        'created_at': a.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-        # ✅ NEW: Site statistics
+        'created_at': created_date,  # ✅ Changed from '%Y-%m-%d %H:%M:%S'
+        # Site statistics
         'site_stats': {
             'total': total_sites,
             'accepted_verified': accepted_verified_sites,
@@ -71,6 +53,15 @@ def _serialize_area(a):
         }
     }
 
+# ─────────────────────────────────────────────
+# REFORESTATION AREA CRUD
+# ─────────────────────────────────────────────
+@csrf_exempt
+def get_all_reforestation_areas(request):
+    if request.method != 'GET': 
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    areas = Reforestation_areas.objects.all().order_by('-created_at')
+    return JsonResponse({'data': [_serialize_area(a) for a in areas]}, status=200)
 
 @csrf_exempt
 def get_reforestation_areas(request):
@@ -78,7 +69,7 @@ def get_reforestation_areas(request):
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
     
     search = request.GET.get('search', '').strip()
-    barangay_id = request.GET.get('barangay_id', '').strip()  # ✅ NEW
+    barangay_id = request.GET.get('barangay_id', '').strip()
     
     try:
         entries = max(1, int(request.GET.get('entries', 10)))
@@ -93,7 +84,6 @@ def get_reforestation_areas(request):
     if search:
         areas = areas.filter(name__icontains=search)
     
-    # ✅ NEW: Filter by barangay
     if barangay_id:
         try:
             areas = areas.filter(barangay_id=int(barangay_id))
@@ -192,7 +182,7 @@ def delete_reforestation_areas(request, reforestation_area_id):
     return JsonResponse({'message': 'Successfully deleted'}, status=200)
 
 # =====================================================
-# POTENTIAL SITES (Querying via Site relationship)
+# POTENTIAL SITES
 # =====================================================
 @csrf_exempt
 def get_potential_sites(request):
@@ -206,7 +196,6 @@ def get_potential_sites(request):
     if site_id:
         qs = qs.filter(site_id=site_id)
     elif area_id:
-        # ✅ Query via the Site relationship since Potential_sites no longer has direct area FK
         qs = qs.filter(site__reforestation_area_id=area_id)
         
     return JsonResponse({'data': [s.to_dict() for s in qs]}, status=200)
@@ -232,7 +221,6 @@ def delete_potential_site(request, potential_sites_id):
 def bulk_create_potential_sites(request):
     """
     ✅ UPDATED: Now expects 'site_id' instead of 'reforestation_area_id'.
-    Used when creating a Site and saving its NDVI markers "along with it".
     """
     if request.method != "POST": 
         return JsonResponse({"error": "POST only."}, status=405)
@@ -251,7 +239,7 @@ def bulk_create_potential_sites(request):
             if not site_data.get('geometry'): 
                 continue
             Potential_sites.objects.create(
-                site=site, # ✅ Linked directly to the official Site
+                site=site,
                 site_id=site_data.get('site_id', ''),
                 polygon_coordinates=site_data['geometry'],
                 area_hectares=site_data.get('area_hectares', 0),

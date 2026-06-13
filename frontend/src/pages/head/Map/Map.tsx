@@ -41,6 +41,8 @@ import BarangayClassifiedAreas from "./barangay_classified_area";
 import PotentialSiteTrends from "./potentialSiteTrends";
 import HazardAssessmentPanel from "./components/HazardAssessmentPanel";
 import BarangayHazardAnalysis from "./components/BarangayHazardAnalysis";
+import SiteInfoPanel from "@/components/map/SiteInfoPanel";
+import { useNavigate } from "react-router-dom";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -193,6 +195,9 @@ export default function Map() {
     totalArea: 0,
     avgNDVI: 0,
   });
+
+  const [isSitePanelOpen, setIsSitePanelOpen] = useState(false);
+  const navigate = useNavigate();
 
   // ✅ NEW: Site marker placement
   const [isPickingSiteMarker, setIsPickingSiteMarker] = useState(false);
@@ -1726,6 +1731,7 @@ export default function Map() {
               }}
               className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
             >
+              <option value={0}>--Select Baranagay--</option>
               {barangays.map((b) => (
                 <option key={b.barangay_id} value={b.barangay_id}>
                   {b.name}
@@ -1995,7 +2001,6 @@ export default function Map() {
             );
           })}
 
-        {/* ✅ UPDATED: Sites Markers with detailed status popup */}
         {sites.length > 0 &&
           sites.map((site) => {
             if (!site.center_coordinate || site.center_coordinate.length !== 2)
@@ -2004,123 +2009,18 @@ export default function Map() {
             const lng = Number(site.center_coordinate[1]);
             if (isNaN(lat) || isNaN(lng)) return null;
 
-            // Determine status colors dynamically
-            const statusColor =
-              site.status === "accepted"
-                ? "#15803d"
-                : site.status === "rejected"
-                  ? "#991b1b"
-                  : "#92400e";
-            const statusBg =
-              site.status === "accepted"
-                ? "#dcfce7"
-                : site.status === "rejected"
-                  ? "#fee2e2"
-                  : "#fef3c7";
-            const statusIcon =
-              site.status === "accepted"
-                ? "✅"
-                : site.status === "rejected"
-                  ? "❌"
-                  : "⏳";
-
             return (
-              <Marker key={site.site_id} position={[lat, lng]} icon={greenIcon}>
-                <Popup>
-                  <div
-                    style={{
-                      fontSize: "13px",
-                      fontFamily: "sans-serif",
-                      minWidth: "200px",
-                    }}
-                  >
-                    {/* Header */}
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        borderBottom: "1px solid #e5e7eb",
-                        paddingBottom: "8px",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "10px",
-                          height: "10px",
-                          borderRadius: "50%",
-                          backgroundColor: "#3b82f6",
-                        }}
-                      ></div>
-                      <strong style={{ color: "#1d4ed8", fontSize: "15px" }}>
-                        {site.name}
-                      </strong>
-                    </div>
-
-                    {/* Status Badge */}
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        padding: "4px 10px",
-                        borderRadius: "999px",
-                        fontSize: "11px",
-                        fontWeight: "bold",
-                        backgroundColor: statusBg,
-                        color: statusColor,
-                      }}
-                    >
-                      {statusIcon} {site.status.toUpperCase()}
-                    </div>
-
-                    {/* Metrics */}
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#4b5563",
-                        borderTop: "1px solid #e5e7eb",
-                        paddingTop: "8px",
-                        marginTop: "8px",
-                        lineHeight: "1.8",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <span>📏 Area:</span>
-                        <strong>
-                          {site.total_area_hectares?.toFixed(2) || "0.00"} ha
-                        </strong>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <span>🌱 NDVI:</span>
-                        <strong>{site.ndvi_value?.toFixed(3) || "N/A"}</strong>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <span>📅 Created:</span>
-                        <span>
-                          {new Date(site.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </Popup>
-              </Marker>
+              <Marker
+                key={site.site_id}
+                position={[lat, lng]}
+                icon={greenIcon}
+                eventHandlers={{
+                  click: () => {
+                    setSelectedSiteId(site.site_id);
+                    setIsSitePanelOpen(true);
+                  },
+                }}
+              />
             );
           })}
 
@@ -2250,6 +2150,18 @@ export default function Map() {
         siteId={selectedSiteId}
         siteName={selectedSiteName}
         token={token}
+      />
+
+      <SiteInfoPanel
+        siteId={selectedSiteId}
+        token={token}
+        isOpen={isSitePanelOpen}
+        onClose={() => setIsSitePanelOpen(false)}
+        onViewDetails={(siteId) => {
+          setIsSitePanelOpen(false);
+          // Navigate to site information page - adjust route as needed
+          navigate(`/areas/${id}/site/${siteId}`);
+        }}
       />
     </div>
   );

@@ -1,0 +1,45 @@
+/* Custom Leaflet Popup Styling */
+.site-marker-popup .leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  padding: 0;
+  overflow: hidden;
+}
+
+.site-marker-popup .leaflet-popup-content {
+  margin: 0;
+  width: 400px !important;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.site-marker-popup .leaflet-popup-tip {
+  background: white;
+}
+
+/* Line clamp utility */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Scrollbar styling */
+.site-marker-popup .leaflet-popup-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.site-marker-popup .leaflet-popup-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.site-marker-popup .leaflet-popup-content::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.site-marker-popup .leaflet-popup-content::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

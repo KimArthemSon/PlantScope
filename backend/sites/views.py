@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from accounts.helper import get_user_from_token
 from .models import (
-    Sites, Site_data, Site_species_recommendation, Site_images, 
+    Sites, Site_data, Site_species_recommendation, Site_images,
     Potential_sites, SiteMetaDataVerification, PermitDocument
 )
 from reforestation_areas.models import Reforestation_areas
@@ -240,7 +240,9 @@ def get_sites(request, reforestation_area_id):
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_site(request, site_id):
-    if request.method != "GET": return JsonResponse({"error": "GET only"}, status=405)
+    if request.method != "GET": 
+        return JsonResponse({"error": "GET only"}, status=405)
+    
     site = get_object_or_404(Sites, site_id=site_id, is_active=True)
     
     # ✅ Fetch Site-Level Verification
@@ -252,24 +254,57 @@ def get_site(request, site_id):
             'verified_security_concerns': verification.verified_security_concerns,
             'verified_accessibility': verification.verified_accessibility,
             'verified_land_classification_id': verification.verified_land_classification_id,
+            'decision_note': verification.decision_note,
+            'verified_by': verification.verified_by.email if verification.verified_by else None,
+            'verified_at': verification.verified_at.isoformat() if verification.verified_at else None,
+        }
+
+    # ✅ Fetch Site Images
+    images_data = []
+    for img in site.site_images.all():
+        images_data.append({
+            'site_image_id': img.site_image_id,
+            'layer_tag': img.layer_tag,
+            'img_url': img.img.url if img.img else None,
+            'caption': img.caption,
+            'created_at': img.created_at.isoformat() if img.created_at else None,
+        })
+
+    # ✅ Fetch Current Site_data (validation data)
+    current_site_data = site.site_data_versions.filter(is_current=True).first()
+    validation_data = {}
+    if current_site_data:
+        validation_data = {
+            'version': current_site_data.version,
+            'site_data': current_site_data.site_data,
+            'field_assessment_snapshot': current_site_data.field_assessment_snapshot,
+            'validated_by': current_site_data.validated_by,
+            'validated_at': current_site_data.validated_at.isoformat() if current_site_data.validated_at else None,
         }
 
     return JsonResponse({
         "site_id": site.site_id,
         "name": site.name,
+        "description": site.description,  # ✅ NEW
         "status": site.status,
         "polygon_coordinates": site.polygon_coordinates,
         "center_coordinate": site.center_coordinate,
         "ndvi_value": site.ndvi_value,
         "area_hectares": site.total_area_hectares,
-        "potential_sites": [p.to_dict() for p in site.potential_sites.all()], # ✅ Show consolidated markers
+        "potential_sites": [p.to_dict() for p in site.potential_sites.all()],
         "meta_verification": verification_data,
         "permits": [{
             "permit_id": p.permit_id,
             "document_type": p.document_type,
-            "file_url": p.file.url if p.file else None
+            "file_url": p.file.url if p.file else None,
+            "permit_number": p.permit_number,
+            "verification_notes": p.verification_notes,
+            "uploaded_at": p.uploaded_at.isoformat() if p.uploaded_at else None,
+            "uploaded_by": p.uploaded_by.email if p.uploaded_by else None,
         } for p in site.permit_documents.all()],
-        "validation_data": site.site_data_versions.filter(is_current=True).first().site_data if site.site_data_versions.filter(is_current=True).exists() else {}
+        "site_images": images_data,  # ✅ NEW
+        "validation_data": validation_data, 
+        "created_at": site.created_at, # ✅ UPDATED: Now includes full structure
     })
 
 

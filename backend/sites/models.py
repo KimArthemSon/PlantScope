@@ -23,11 +23,12 @@ class Sites(models.Model):
         ('accepted', 'Accepted'), ('rejected', 'Rejected'),
         ('completed', 'Completed'), ('under_monitoring', 'Under Monitoring'),
     )
+    description = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     name = models.CharField(max_length=100, default='Unnamed Site')
     is_active = models.BooleanField(default=True, db_index=True)
     is_pinned = models.BooleanField(default=False, db_index=True)
-
+    
     polygon_coordinates = models.JSONField(null=True, blank=True)
     center_coordinate = models.JSONField(null=True, blank=True)
     marker_coordinate = models.JSONField(null=True, blank=True)
