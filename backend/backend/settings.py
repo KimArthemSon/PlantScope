@@ -55,7 +55,8 @@ INSTALLED_APPS = [
     'sites',
     'ormoc_city',
     'tree_planting_programs',
-    'animals'
+    'animals',
+    'hazard_areas'
 ]
 
 MIDDLEWARE = [
@@ -76,8 +77,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8081",
     "http://127.0.0.1:5500",
     'http://localhost:5500',
+    "http://2nkinks-anonymous-8081.exp.direct",
 ]
 ALLOWED_HOSTS = ["*"]
+
 ROOT_URLCONF = 'backend.urls'
 
 TEMPLATES = [

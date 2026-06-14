@@ -20,7 +20,9 @@ export default function Login() {
   const [checking, setChecking] = useState(true);
   const [redirectTo, setRedirectTo] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
+  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(
+    null,
+  );
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
@@ -92,11 +94,12 @@ export default function Login() {
   }
 
   const handleLogin = async () => {
+    console.log(api);
     if (!formData.email || !formData.password) {
       Alert.alert("Error", "Please enter email and password");
       return;
     }
-
+     console.log(api);
     setLoading(true);
 
     try {
@@ -110,16 +113,20 @@ export default function Login() {
       });
 
       const data = await res.json().catch(() => ({}));
-
+      console.log(api);
       if (res.status === 403) {
         const secs = data.remaining_seconds ?? 120;
         setAttemptsLeft(0);
         setLockoutSeconds(secs);
-        Alert.alert("Account Locked", `Too many failed attempts. Try again in ${secs} seconds.`);
+        Alert.alert(
+          "Account Locked",
+          `Too many failed attempts. Try again in ${secs} seconds.`,
+        );
         return;
       }
 
       if (!res.ok) {
+         console.log(api, "lano");
         setAttemptsLeft(data.attempts_left ?? null);
         Alert.alert("Login Failed", data.error || "Invalid credentials");
         return;
@@ -251,18 +258,24 @@ export default function Login() {
               <View style={styles.attemptsBanner}>
                 <Text style={styles.bannerIcon}>⚠️</Text>
                 <Text style={styles.attemptsText}>
-                  <Text style={styles.attemptsBold}>{attemptsLeft}</Text>
-                  {" "}{attemptsLeft === 1 ? "attempt" : "attempts"} remaining before lockout
+                  <Text style={styles.attemptsBold}>{attemptsLeft}</Text>{" "}
+                  {attemptsLeft === 1 ? "attempt" : "attempts"} remaining before
+                  lockout
                 </Text>
               </View>
             ) : null}
 
             <TouchableOpacity
-              style={[styles.submitButton, (loading || lockoutSeconds > 0) && { opacity: 0.5 }]}
+              style={[
+                styles.submitButton,
+                (loading || lockoutSeconds > 0) && { opacity: 0.5 },
+              ]}
               onPress={handleLogin}
               disabled={loading || lockoutSeconds > 0}
             >
-              <Text style={styles.submitButtonText}>{loading ? "Signing in…" : "Sign In"}</Text>
+              <Text style={styles.submitButtonText}>
+                {loading ? "Signing in…" : "Sign In"}
+              </Text>
             </TouchableOpacity>
 
             <View style={styles.registerContainer}>
@@ -280,7 +293,9 @@ export default function Login() {
               <Text style={styles.legalLink}>Privacy Notice</Text>
             </TouchableOpacity>
             <Text style={styles.legalSeparator}>·</Text>
-            <TouchableOpacity onPress={() => router.push("/terms_and_conditions")}>
+            <TouchableOpacity
+              onPress={() => router.push("/terms_and_conditions")}
+            >
               <Text style={styles.legalLink}>Terms & Conditions</Text>
             </TouchableOpacity>
           </View>

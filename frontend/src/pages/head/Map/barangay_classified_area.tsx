@@ -1,6 +1,7 @@
 // src/components/map/BarangayClassifiedAreas.tsx
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Polygon, Popup } from "react-leaflet";
+import { Info, MapPin, X, Layers } from "lucide-react";
 
 export interface LandClassification {
   id: number;
@@ -14,7 +15,7 @@ export interface ClassifiedArea {
   land_classification: LandClassification | null;
   polygon: {
     type: string;
-    coordinates: [number, number][]; // Your format: [[lat, lng], [lat, lng], ...]
+    coordinates: [number, number][];
   };
   created_at: string | null;
 }
@@ -109,14 +110,14 @@ export default function BarangayClassifiedAreas({
 
   const getClassificationColor = useMemo(() => {
     return (classificationName: string | null): string => {
-      if (!classificationName) return "#ff0000";
+      if (!classificationName) return "#dc2626";
       const name = classificationName.toLowerCase();
       if (
         name.includes("forest") ||
         name.includes("protected") ||
         name.includes("conservation")
       )
-        return "#22c55e";
+        return "#16a34a";
       if (name.includes("agricultural") || name.includes("farm"))
         return "#eab308";
       if (
@@ -124,20 +125,19 @@ export default function BarangayClassifiedAreas({
         name.includes("urban") ||
         name.includes("settlement")
       )
-        return "#3b82f6";
+        return "#2563eb";
       if (
         name.includes("restricted") ||
         name.includes("prohibited") ||
         name.includes("no-build")
       )
-        return "#ef4444";
+        return "#dc2626";
       if (name.includes("industrial") || name.includes("commercial"))
-        return "#8b5cf6";
-      return "#ff0000";
+        return "#7c3aed";
+      return "#dc2626";
     };
   }, []);
 
-  // ✅ Validate and filter coordinates
   const isValidCoordinate = (coord: [number, number]): boolean => {
     const [lat, lng] = coord;
     return (
@@ -162,19 +162,15 @@ export default function BarangayClassifiedAreas({
         let polygonCoords: [number, number][] = [];
 
         try {
-          // ✅ Handle your exact structure: coordinates is [[lat, lng], [lat, lng], ...]
           if (Array.isArray(area.polygon.coordinates)) {
-            // Check if it's nested ([[lat, lng], ...]) or double-nested ([[[lat, lng], ...]])
             if (
               area.polygon.coordinates.length > 0 &&
               Array.isArray(area.polygon.coordinates[0])
             ) {
               if (typeof area.polygon.coordinates[0][0] === "number") {
-                // Single nested: [[lat, lng], [lat, lng], ...] ← YOUR FORMAT
                 polygonCoords =
                   area.polygon.coordinates.filter(isValidCoordinate);
               } else if (Array.isArray(area.polygon.coordinates[0][0])) {
-                // Double nested: [[[lat, lng], [lat, lng], ...]] ← GeoJSON Polygon
                 polygonCoords =
                   area.polygon.coordinates[0].filter(isValidCoordinate);
               }
@@ -189,7 +185,7 @@ export default function BarangayClassifiedAreas({
 
         if (polygonCoords.length < 3) {
           console.warn(
-            `⚠️ Area ${area.classified_area_id} "${area.name}" has only ${polygonCoords.length} valid coordinates. Need at least 3.`,
+            `⚠️ Area ${area.classified_area_id} "${area.name}" has only ${polygonCoords.length} valid coordinates.`,
           );
           return null;
         }
@@ -219,48 +215,75 @@ export default function BarangayClassifiedAreas({
               },
             }}
           >
-            <Popup minWidth={220} maxWidth={300}>
-              <div className="text-sm max-w-[280px]">
-                <strong className="text-[#0f4a2f] block mb-2 border-b border-gray-200 pb-1 text-base">
-                  {area.name}
-                </strong>
+            <Popup minWidth={240} maxWidth={320}>
+              <div className="text-sm min-w-[220px]">
+                {/* Header with color indicator */}
+                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-200">
+                  <div
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: color }}
+                  ></div>
+                  <strong className="text-base text-gray-800 flex-1">
+                    {area.name}
+                  </strong>
+                </div>
 
-                {area.land_classification && (
-                  <div className="mb-2">
-                    <span className="text-gray-600 font-medium">
-                      Classification:
-                    </span>{" "}
-                    <span className="font-semibold text-gray-800 ml-1">
-                      {area.land_classification.name}
-                    </span>
-                  </div>
-                )}
+                <div className="space-y-1.5 text-xs">
+                  {/* Classification Badge */}
+                  {area.land_classification && (
+                    <div className="flex items-start gap-2">
+                      <Layers
+                        size={14}
+                        className="text-gray-500 mt-0.5 flex-shrink-0"
+                      />
+                      <div className="flex-1">
+                        <span className="text-gray-500">Classification:</span>
+                        <span
+                          className="ml-1 font-semibold px-2 py-0.5 rounded text-white text-[10px]"
+                          style={{ backgroundColor: color }}
+                        >
+                          {area.land_classification.name}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
-                {area.description && (
-                  <div className="mb-2">
-                    <span className="text-gray-600 font-medium">
-                      Description:
-                    </span>
-                    <p className="text-gray-700 mt-1 text-xs leading-relaxed break-words">
-                      {area.description}
-                    </p>
-                  </div>
-                )}
+                  {/* Description */}
+                  {area.description && (
+                    <div className="flex items-start gap-2">
+                      <Info
+                        size={14}
+                        className="text-gray-500 mt-0.5 flex-shrink-0"
+                      />
+                      <div className="flex-1">
+                        <span className="text-gray-500">Description:</span>
+                        <p className="mt-0.5 text-gray-600 text-[11px] leading-relaxed break-words">
+                          {area.description}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
-                {area.created_at && (
-                  <div className="mb-2 text-xs text-gray-500">
-                    Added: {new Date(area.created_at).toLocaleDateString()}
-                  </div>
-                )}
+                  {/* Created Date */}
+                  {area.created_at && (
+                    <div className="flex items-start gap-2 pt-1 border-t border-gray-100 mt-2">
+                      <span className="text-gray-400 text-[10px]">
+                        Added:{" "}
+                        {new Date(area.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
+                {/* Hide Button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     onClose();
                   }}
-                  className="mt-2 text-xs text-red-600 hover:text-red-800 underline font-medium transition-colors"
+                  className="mt-3 w-full flex items-center justify-center gap-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold py-1.5 px-2 rounded transition-colors"
                 >
-                  Hide this layer
+                  <X size={12} /> Hide Classified Areas
                 </button>
               </div>
             </Popup>

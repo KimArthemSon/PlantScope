@@ -9,6 +9,7 @@ import {
   MousePointer,
   Check,
   Undo2,
+  Navigation,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import LoaderPending from "@/components/layout/loaderSmall";
@@ -26,23 +27,19 @@ import {
 import "leaflet/dist/leaflet.css";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
+import { api } from "@/constant/api";
 
-interface Polygon {
+interface PolygonShape {
   coordinates: [number, number][];
   type: string;
 }
 
-interface Classified_area {
+interface Hazard_area {
   name: string;
   description: string;
-  land_classification_id: number;
-  barangay_id: number;
-  polygon: Polygon;
-}
-
-interface land_classification {
-  land_classification_id: number;
-  name: string;
+  hazard_type: string;
+  barangay_id: number | "";
+  polygon: PolygonShape;
 }
 
 // ✅ UPDATED: Added coordinate field
@@ -52,7 +49,17 @@ interface Barangay {
   coordinate: [number, number];
 }
 
-// --- NATIVE DRAWING COMPONENT ---
+const HAZARD_TYPES = [
+  { value: "LANDSLIDE", label: "Landslide" },
+  { value: "FLOOD", label: "Flood" },
+  { value: "EARTHQUAKE", label: "Earthquake" },
+  { value: "VOLCANIC", label: "Volcanic Hazard" },
+  { value: "STORM_SURGE", label: "Storm Surge" },
+  { value: "LIQUEFACTION", label: "Soil Liquefaction" },
+  { value: "COASTAL_EROSION", label: "Coastal Erosion" },
+  { value: "OTHER", label: "Other" },
+];
+
 function MapClickHandler({
   isDrawing,
   onMapClick,
@@ -63,7 +70,6 @@ function MapClickHandler({
   useMapEvents({
     click(e) {
       if (isDrawing) {
-        // Leaflet gives us lat, lng - store in same order for GeoJSON
         onMapClick(e.latlng.lat, e.latlng.lng);
       }
     },
@@ -71,7 +77,7 @@ function MapClickHandler({
   return null;
 }
 
-export default function Classified_area_form() {
+export default function Hazard_area_form() {
   const { id } = useParams();
   const mapRef = useRef<any>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -83,17 +89,15 @@ export default function Classified_area_form() {
     message: string;
   } | null>(null);
 
-  const [land_classification, setLand_classification] = useState<
-    land_classification[]
-  >([{ land_classification_id: 0, name: "land 1" }]);
   const [barangay_list, setBarangay_list] = useState<Barangay[]>([]);
+
   const [isDrawing, setIsDrawing] = useState(false);
 
-  const [classified_area, setClassified_area] = useState<Classified_area>({
+  const [hazard_area, setHazard_area] = useState<Hazard_area>({
     name: "",
     description: "",
-    land_classification_id: 0,
-    barangay_id: 0,
+    hazard_type: "LANDSLIDE",
+    barangay_id: "",
     polygon: { coordinates: [], type: "POLYGON" },
   });
 
@@ -122,17 +126,16 @@ export default function Classified_area_form() {
   const inputField =
     "flex-1 text-[.8rem] p-2 outline-none bg-transparent text-gray-800";
   const navigate = useNavigate();
+
   const currentPosition: [number, number] = [11.007, 124.602];
 
   useEffect(() => {
-    get_land_classification_list();
     get_barangay_list();
+    if (id) get_hazard_area();
   }, []);
 
-  // --- NATIVE DRAWING HANDLERS ---
   const handleMapClick = (lat: number, lng: number) => {
-    // Store as [lat, lng] - matching GeoJSON standard
-    setClassified_area((prev) => ({
+    setHazard_area((prev) => ({
       ...prev,
       polygon: {
         ...prev.polygon,
@@ -142,7 +145,7 @@ export default function Classified_area_form() {
   };
 
   const startDrawing = () => {
-    setClassified_area((prev) => ({
+    setHazard_area((prev) => ({
       ...prev,
       polygon: { ...prev.polygon, coordinates: [] },
     }));
@@ -154,7 +157,7 @@ export default function Classified_area_form() {
   };
 
   const undoLastPoint = () => {
-    setClassified_area((prev) => ({
+    setHazard_area((prev) => ({
       ...prev,
       polygon: {
         ...prev.polygon,
@@ -163,39 +166,63 @@ export default function Classified_area_form() {
     }));
   };
 
-  // --- API & CSV FUNCTIONS ---
+  // ✅ UPDATED: Fetch barangays with coordinates
   async function get_barangay_list() {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/get_barangay_list/", {
+      const res = await fetch(`${api}api/get_barangay_list/`, {
         headers: { Authorization: "Bearer " + token },
       });
       const data = await res.json();
       if (res.ok && data.data?.length > 0) {
         setBarangay_list(data.data);
-        if (!id && data.data[0]) {
-          setClassified_area((prev) => ({
-            ...prev,
-            barangay_id: data.data[0].barangay_id,
-          }));
-        }
       }
     } catch (e) {
       console.error("Failed to load barangays:", e);
     }
   }
 
+  async function get_hazard_area() {
+    setLoading(true);
+    try {
+      const res = await fetch(`${api}api/get_hazard_area/${id}/`, {
+        headers: { Authorization: "Bearer " + token },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLoading(false);
+        setPSAlert({ type: "error", title: "Error", message: data.error });
+        return;
+      }
+      setHazard_area({
+        name: data.data.name,
+        description: data.data.description,
+        hazard_type: data.data.hazard_type,
+        barangay_id: data.data.barangay_id || "",
+        polygon: data.data.polygon,
+      });
+      setLoading(false);
+    } catch (e: any) {
+      setLoading(false);
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to load hazard area.",
+      });
+    }
+  }
+
   // ✅ NEW: Route to selected barangay
   const handleBarangayChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
-    const barangayId = Number(value);
+    const barangayId = value === "" ? "" : Number(value);
     
-    setClassified_area((prev) => ({
+    setHazard_area((prev) => ({
       ...prev,
       barangay_id: barangayId,
     }));
 
     // ✅ Fly to the selected barangay if it has coordinates
-    if (barangayId && mapRef.current) {
+    if (barangayId !== "" && mapRef.current) {
       const selectedBarangay = barangay_list.find(
         (b) => b.barangay_id === barangayId
       );
@@ -217,70 +244,6 @@ export default function Classified_area_form() {
     }
   };
 
-  async function get_classified_area() {
-    setLoading(true);
-    try {
-      const res = await fetch(
-        "http://127.0.0.1:8000/api/get_classified_area/" + id,
-        {
-          headers: { Authorization: "Bearer " + token },
-        },
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        setLoading(false);
-        setPSAlert({ type: "error", title: "Error", message: data.error });
-        return;
-      }
-      // Backend returns coordinates as [lat, lng] - use as is
-      setClassified_area({
-        name: data.data.name,
-        description: data.data.description,
-        land_classification_id: data.data.land_classification_id,
-        barangay_id: data.data.barangay_id,
-        polygon: data.data.polygon,
-      });
-      setLoading(false);
-    } catch (e: any) {
-      setLoading(false);
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Failed to load area.",
-      });
-    }
-  }
-
-  async function get_land_classification_list() {
-    setLoading(true);
-    try {
-      const res = await fetch(
-        "http://127.0.0.1:8000/api/get_land_classifications_list/?for_reforestation=false",
-        { headers: { Authorization: "Bearer " + token } },
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        setLoading(false);
-        setPSAlert({ type: "error", title: "Error", message: data.error });
-        return;
-      }
-      if (data.data.length === 0) {
-        navigate(`${useruserRole}/maintenance/Classified_areas`);
-        return;
-      }
-      setLand_classification(data.data);
-      setClassified_area((prev) => ({
-        ...prev,
-        land_classification_id: data.data[0].land_classification_id,
-      }));
-      setLoading(false);
-      if (id) get_classified_area();
-    } catch (e: any) {
-      setLoading(false);
-      setPSAlert({ type: "error", title: "Error", message: e.error?.message });
-    }
-  }
-
   function handleCSVImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -300,8 +263,7 @@ export default function Classified_area_form() {
         setPSAlert({
           type: "error",
           title: "Invalid CSV",
-          message:
-            "CSV must have 'lat' and 'lng' (or 'latitude'/'longitude') columns.",
+          message: "CSV must have 'lat' and 'lng' columns.",
         });
         return;
       }
@@ -311,10 +273,7 @@ export default function Classified_area_form() {
         const cols = lines[i].split(",");
         const lat = parseFloat(cols[latIdx]);
         const lng = parseFloat(cols[lngIdx]);
-        if (!isNaN(lat) && !isNaN(lng)) {
-          // Store as [lat, lng] to match GeoJSON
-          coords.push([lat, lng]);
-        }
+        if (!isNaN(lat) && !isNaN(lng)) coords.push([lat, lng]);
       }
 
       if (coords.length === 0) {
@@ -326,40 +285,35 @@ export default function Classified_area_form() {
         return;
       }
 
-      setClassified_area((prev) => ({
+      setHazard_area((prev) => ({
         ...prev,
         polygon: { ...prev.polygon, coordinates: coords },
       }));
-
-      if (mapRef.current && coords.length > 0) {
+      if (mapRef.current && coords.length > 0)
         mapRef.current.flyTo(coords[0], 16);
-      }
     };
     reader.readAsText(file);
     e.target.value = "";
   }
 
   function handleCSVExport() {
-    const coords = classified_area.polygon.coordinates;
+    const coords = hazard_area.polygon.coordinates;
     if (coords.length === 0) return;
-
     const header = "lat,lng";
-    // coords are [lat, lng], export as lat,lng
     const rows = coords.map((c) => `${c[0]},${c[1]}`);
     const csvContent = [header, ...rows].join("\n");
-
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${classified_area.name || "classified_area"}_coordinates.csv`;
+    a.download = `${hazard_area.name || "hazard_area"}_coordinates.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   async function hanle_submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (classified_area.polygon.coordinates.length < 3) {
+    if (hazard_area.polygon.coordinates.length < 3) {
       setPSAlert({
         type: "error",
         title: "Invalid Polygon",
@@ -373,18 +327,19 @@ export default function Classified_area_form() {
 
   async function handleAdd() {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(
-        "http://127.0.0.1:8000/api/create_classified_area/",
-        {
-          method: "POST",
-          headers: {
-            Authorization: "Bearer " + token,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(classified_area),
+      const payload = {
+        ...hazard_area,
+        barangay_id:
+          hazard_area.barangay_id === "" ? null : hazard_area.barangay_id,
+      };
+      const res = await fetch(`${api}api/create_hazard_area/`, {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + token,
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(payload),
+      });
       const data = await res.json();
       if (!res.ok) {
         setPSAlert({ type: "error", title: "Error", message: data.error });
@@ -396,7 +351,7 @@ export default function Classified_area_form() {
         message: "Successfully Created",
       });
       setTimeout(
-        () => navigate(`${useruserRole}/maintenance/Classified_areas`),
+        () => navigate(`${useruserRole}/maintenance/hazard_areas`),
         2000,
       );
     } catch (e: any) {
@@ -406,18 +361,19 @@ export default function Classified_area_form() {
 
   async function handleEdit() {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(
-        "http://127.0.0.1:8000/api/update_classified_area/" + id,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + token,
-          },
-          body: JSON.stringify(classified_area),
+      const payload = {
+        ...hazard_area,
+        barangay_id:
+          hazard_area.barangay_id === "" ? null : hazard_area.barangay_id,
+      };
+      const res = await fetch(`${api}api/update_hazard_area/${id}/`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
         },
-      );
+        body: JSON.stringify(payload),
+      });
       const data = await res.json();
       if (!res.ok) {
         setPSAlert({ type: "error", title: "Error", message: data.error });
@@ -429,7 +385,7 @@ export default function Classified_area_form() {
         message: "Successfully Updated",
       });
       setTimeout(
-        () => navigate(`${useruserRole}/maintenance/Classified_areas`),
+        () => navigate(`${useruserRole}/maintenance/hazard_areas`),
         2000,
       );
     } catch (e: any) {
@@ -449,17 +405,16 @@ export default function Classified_area_form() {
       )}
       {loading && <LoaderPending />}
 
-      {/* Page Header */}
       <div className="w-full bg-white border-b border-gray-200 px-10 py-4 flex items-center gap-3 shadow-sm">
         <div className="bg-green-700 p-2 rounded-lg">
           <Map size={18} className="text-white" />
         </div>
         <div>
           <h1 className="font-bold text-base text-gray-800">
-            {action} Classified Area
+            {action} Hazard Area
           </h1>
           <p className="text-xs text-gray-400">
-            Define the area name, classification, and map polygon
+            Draw on the map or input coordinates manually
           </p>
         </div>
       </div>
@@ -471,10 +426,9 @@ export default function Classified_area_form() {
             className="flex flex-col w-[42%] gap-4 min-w-100"
             onSubmit={hanle_submit}
           >
-            {/* Name */}
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
               <label className="text-[.7rem] font-semibold text-gray-400 uppercase tracking-widest">
-                Area Name
+                Zone Name
               </label>
               <div className={inputWrapper}>
                 <Info size={15} className="ml-3 text-green-700 shrink-0" />
@@ -482,10 +436,10 @@ export default function Classified_area_form() {
                   required
                   type="text"
                   className={inputField}
-                  placeholder="Ex: Zone A"
-                  value={classified_area.name}
+                  placeholder="Ex: Landslide Prone Zone A"
+                  value={hazard_area.name}
                   onChange={(e) =>
-                    setClassified_area((prev) => ({
+                    setHazard_area((prev) => ({
                       ...prev,
                       name: e.target.value,
                     }))
@@ -494,7 +448,6 @@ export default function Classified_area_form() {
               </div>
             </div>
 
-            {/* Description */}
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
               <label className="text-[.7rem] font-semibold text-gray-400 uppercase tracking-widest">
                 Description
@@ -505,10 +458,10 @@ export default function Classified_area_form() {
                   required
                   rows={3}
                   className={inputField + " resize-none"}
-                  placeholder="Describe this classified area..."
-                  value={classified_area.description}
+                  placeholder="Describe this hazard area..."
+                  value={hazard_area.description}
                   onChange={(e) =>
-                    setClassified_area((prev) => ({
+                    setHazard_area((prev) => ({
                       ...prev,
                       description: e.target.value,
                     }))
@@ -517,31 +470,27 @@ export default function Classified_area_form() {
               </div>
             </div>
 
-            {/* Land Classification + Barangay side by side */}
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex gap-3">
               <div className="flex flex-col flex-1 min-w-0">
                 <label className="text-[.7rem] font-semibold text-gray-400 uppercase tracking-widest">
-                  Land Classification
+                  Hazard Type
                 </label>
                 <div className={inputWrapper}>
                   <Map size={14} className="ml-3 text-green-700 shrink-0" />
                   <select
                     required
                     className={inputField}
-                    value={classified_area.land_classification_id}
+                    value={hazard_area.hazard_type}
                     onChange={(e) =>
-                      setClassified_area((prev) => ({
+                      setHazard_area((prev) => ({
                         ...prev,
-                        land_classification_id: Number(e.target.value),
+                        hazard_type: e.target.value,
                       }))
                     }
                   >
-                    {land_classification.map((e) => (
-                      <option
-                        key={e.land_classification_id}
-                        value={e.land_classification_id}
-                      >
-                        {e.name}
+                    {HAZARD_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
                       </option>
                     ))}
                   </select>
@@ -549,19 +498,16 @@ export default function Classified_area_form() {
               </div>
               <div className="flex flex-col flex-1 min-w-0">
                 <label className="text-[.7rem] font-semibold text-gray-400 uppercase tracking-widest">
-                  Barangay
+                  Barangay (Optional)
                 </label>
                 <div className={inputWrapper}>
                   <Map size={14} className="ml-3 text-green-700 shrink-0" />
                   <select
-                    required
                     className={inputField}
-                    value={classified_area.barangay_id}
+                    value={hazard_area.barangay_id}
                     onChange={handleBarangayChange}
                   >
-                    <option value={0} disabled>
-                      Select
-                    </option>
+                    <option value="">None (City-wide)</option>
                     {barangay_list.map((b) => (
                       <option key={b.barangay_id} value={b.barangay_id}>
                         {b.name}
@@ -574,14 +520,13 @@ export default function Classified_area_form() {
 
             {/* Polygon Coordinates */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col flex-1 min-h-0">
-              {/* Section header */}
               <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
                 <Map size={14} className="text-green-700" />
                 <span className="text-[.75rem] font-semibold text-gray-500 uppercase tracking-widest">
                   Polygon Coordinates
                 </span>
                 <span className="bg-green-100 text-green-700 text-[.65rem] font-bold px-2 py-0.5 rounded-full">
-                  {classified_area.polygon.coordinates.length} pts
+                  {hazard_area.polygon.coordinates.length} pts
                 </span>
                 <button
                   type="button"
@@ -590,29 +535,25 @@ export default function Classified_area_form() {
                     e.preventDefault();
                     if (
                       !mapRef.current ||
-                      classified_area.polygon.coordinates.length === 0
+                      hazard_area.polygon.coordinates.length === 0
                     )
                       return;
-                    // Fly to first point [lat, lng]
-                    mapRef.current.flyTo(
-                      classified_area.polygon.coordinates[0],
-                      16,
-                    );
+                    const firstCoord = hazard_area.polygon.coordinates[0];
+                    mapRef.current.flyTo(firstCoord, 16);
                   }}
                 >
                   Go to Polygon
                 </button>
               </div>
 
-              {/* Coordinate list */}
               <div className="flex flex-col gap-2 overflow-y-auto p-3 flex-1 max-h-52">
-                {classified_area.polygon.coordinates.length === 0 ? (
+                {hazard_area.polygon.coordinates.length === 0 ? (
                   <div className="text-center text-gray-400 text-xs italic py-4">
                     Click "Start Drawing" on the map, <br /> import a CSV, or
                     add points manually.
                   </div>
                 ) : (
-                  classified_area.polygon.coordinates.map((element, i) => (
+                  hazard_area.polygon.coordinates.map((element, i) => (
                     <div
                       key={i}
                       className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"
@@ -630,16 +571,16 @@ export default function Classified_area_form() {
                             step="any"
                             className="text-[.75rem] border border-gray-200 rounded-md px-2 py-1 outline-none focus:border-green-500 bg-white w-full"
                             placeholder="11.007"
-                            value={element[0]} // ✅ element[0] = latitude (~11.xxxx)
+                            value={element[0]}
                             onChange={(e) =>
-                              setClassified_area((prev) => ({
+                              setHazard_area((prev) => ({
                                 ...prev,
                                 polygon: {
                                   ...prev.polygon,
                                   coordinates: prev.polygon.coordinates.map(
                                     (coord, ind) =>
                                       ind === i
-                                        ? [Number(e.target.value), coord[1]] // Update lat (index 0)
+                                        ? [Number(e.target.value), coord[1]]
                                         : coord,
                                   ),
                                 },
@@ -656,16 +597,16 @@ export default function Classified_area_form() {
                             step="any"
                             className="text-[.75rem] border border-gray-200 rounded-md px-2 py-1 outline-none focus:border-green-500 bg-white w-full"
                             placeholder="124.602"
-                            value={element[1]} // ✅ element[1] = longitude (~124.xxxx)
+                            value={element[1]}
                             onChange={(e) =>
-                              setClassified_area((prev) => ({
+                              setHazard_area((prev) => ({
                                 ...prev,
                                 polygon: {
                                   ...prev.polygon,
                                   coordinates: prev.polygon.coordinates.map(
                                     (coord, ind) =>
                                       ind === i
-                                        ? [coord[0], Number(e.target.value)] // Update lng (index 1)
+                                        ? [coord[0], Number(e.target.value)]
                                         : coord,
                                   ),
                                 },
@@ -674,32 +615,29 @@ export default function Classified_area_form() {
                           />
                         </div>
                       </div>
-                      {classified_area.polygon.coordinates.length > 1 && (
-                        <button
-                          type="button"
-                          className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 transition-colors shrink-0"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setClassified_area((prev) => ({
-                              ...prev,
-                              polygon: {
-                                ...prev.polygon,
-                                coordinates: prev.polygon.coordinates.filter(
-                                  (_, il) => il !== i,
-                                ),
-                              },
-                            }));
-                          }}
-                        >
-                          <Trash size={13} />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 transition-colors shrink-0"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setHazard_area((prev) => ({
+                            ...prev,
+                            polygon: {
+                              ...prev.polygon,
+                              coordinates: prev.polygon.coordinates.filter(
+                                (_, il) => il !== i,
+                              ),
+                            },
+                          }));
+                        }}
+                      >
+                        <Trash size={13} />
+                      </button>
                     </div>
                   ))
                 )}
               </div>
 
-              {/* Coordinate action buttons */}
               <div className="flex gap-2 px-3 py-3 border-t border-gray-100">
                 <input
                   ref={csvInputRef}
@@ -713,8 +651,7 @@ export default function Classified_area_form() {
                   className="flex-1 flex items-center justify-center gap-1.5 text-[.72rem] font-semibold py-2 bg-green-700 hover:bg-green-800 text-white rounded-lg transition-colors"
                   onClick={(e) => {
                     e.preventDefault();
-                    // Add point as [lat, lng]
-                    setClassified_area((prev) => ({
+                    setHazard_area((prev) => ({
                       ...prev,
                       polygon: {
                         ...prev.polygon,
@@ -751,13 +688,12 @@ export default function Classified_area_form() {
               </div>
             </div>
 
-            {/* Form action buttons */}
             <div className="flex gap-3 pt-1">
               <button
                 type="button"
                 className="flex-1 py-2.5 rounded-xl text-[.8rem] font-semibold border border-gray-300 text-gray-600 bg-white hover:bg-gray-50 transition-colors"
                 onClick={() =>
-                  navigate(`${useruserRole}/maintenance/Classified_areas`)
+                  navigate(`${useruserRole}/maintenance/hazard_areas`)
                 }
               >
                 Cancel
@@ -766,7 +702,7 @@ export default function Classified_area_form() {
                 type="submit"
                 className="flex-1 py-2.5 rounded-xl text-[.8rem] font-semibold bg-green-700 hover:bg-green-800 text-white transition-colors shadow-sm"
               >
-                {action === "Add" ? "Create Area" : "Save Changes"}
+                {action === "Add" ? "Create Zone" : "Save Changes"}
               </button>
             </div>
           </form>
@@ -784,13 +720,12 @@ export default function Classified_area_form() {
             </div>
 
             <div className="border border-gray-200 flex-1 rounded-xl overflow-hidden shadow-sm relative">
-              {/* --- DRAWING CONTROLS OVERLAY --- */}
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] flex gap-2 bg-white p-2 rounded-lg shadow-lg border border-gray-200">
                 {!isDrawing ? (
                   <button
                     type="button"
                     onClick={startDrawing}
-                    className="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-md hover:bg-red-700 flex items-center gap-1.5 shadow-sm"
+                    className="px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded-md hover:bg-green-700 flex items-center gap-1.5 shadow-sm"
                   >
                     <MousePointer size={14} /> Start Drawing
                   </button>
@@ -799,9 +734,7 @@ export default function Classified_area_form() {
                     <button
                       type="button"
                       onClick={undoLastPoint}
-                      disabled={
-                        classified_area.polygon.coordinates.length === 0
-                      }
+                      disabled={hazard_area.polygon.coordinates.length === 0}
                       className="px-3 py-1.5 bg-amber-500 text-white text-xs font-semibold rounded-md hover:bg-amber-600 flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Undo2 size={14} /> Undo
@@ -809,7 +742,7 @@ export default function Classified_area_form() {
                     <button
                       type="button"
                       onClick={finishDrawing}
-                      disabled={classified_area.polygon.coordinates.length < 3}
+                      disabled={hazard_area.polygon.coordinates.length < 3}
                       className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-md hover:bg-blue-700 flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Check size={14} /> Finish
@@ -851,7 +784,7 @@ export default function Classified_area_form() {
                       eventHandlers={{
                         click: () => {
                           // When clicking a barangay marker, select it in the dropdown
-                          setClassified_area((prev) => ({
+                          setHazard_area((prev) => ({
                             ...prev,
                             barangay_id: barangay.barangay_id,
                           }));
@@ -873,48 +806,44 @@ export default function Classified_area_form() {
                   onMapClick={handleMapClick}
                 />
 
-                {/* --- IN-PROGRESS DRAWING VISUALS (RED) --- */}
-                {isDrawing &&
-                  classified_area.polygon.coordinates.length > 0 && (
-                    <>
-                      <Polyline
-                        positions={classified_area.polygon.coordinates} // Already [lat, lng]
+                {isDrawing && hazard_area.polygon.coordinates.length > 0 && (
+                  <>
+                    <Polyline
+                      positions={hazard_area.polygon.coordinates}
+                      pathOptions={{
+                        color: "#ca8a04",
+                        weight: 3,
+                        dashArray: "5, 5",
+                      }}
+                    />
+                    {hazard_area.polygon.coordinates.map((c, i) => (
+                      <CircleMarker
+                        key={i}
+                        center={c}
+                        radius={5}
                         pathOptions={{
-                          color: "#dc2626",
-                          weight: 3,
-                          dashArray: "5, 5",
+                          color: "#ca8a04",
+                          fillColor: "#fff",
+                          fillOpacity: 1,
+                          weight: 2,
                         }}
                       />
-                      {classified_area.polygon.coordinates.map((c, i) => (
-                        <CircleMarker
-                          key={i}
-                          center={c} // Already [lat, lng]
-                          radius={5}
-                          pathOptions={{
-                            color: "#dc2626",
-                            fillColor: "#fff",
-                            fillOpacity: 1,
-                            weight: 2,
-                          }}
-                        />
-                      ))}
-                    </>
-                  )}
+                    ))}
+                  </>
+                )}
 
-                {/* --- FINAL RED POLYGON --- */}
-                {!isDrawing &&
-                  classified_area.polygon.coordinates.length >= 3 && (
-                    <Polygon
-                      positions={classified_area.polygon.coordinates} // Already [lat, lng]
-                      pathOptions={{
-                        color: "#dc2626",
-                        fillColor: "#ef4444",
-                        fillOpacity: 0.2,
-                      }}
-                    >
-                      <Popup>{classified_area.name || "Classified Area"}</Popup>
-                    </Polygon>
-                  )}
+                {!isDrawing && hazard_area.polygon.coordinates.length >= 3 && (
+                  <Polygon
+                    positions={hazard_area.polygon.coordinates}
+                    pathOptions={{
+                      color: "#ca8a04",
+                      fillColor: "#eab308",
+                      fillOpacity: 0.3,
+                    }}
+                  >
+                    <Popup>{hazard_area.name || "Hazard Area"}</Popup>
+                  </Polygon>
+                )}
               </MapContainer>
             </div>
           </div>

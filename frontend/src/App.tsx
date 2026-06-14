@@ -49,6 +49,8 @@ import Terms_and_Conditions from "./pages/HomePage/terms_and_Conditions";
 import Request from "./pages/dataManager/monitoring/request";
 import Animals from "./pages/head/maintain/animals";
 import Reports from "./pages/dataManager/reports/reports";
+import Hazard_areas from "./pages/head/maintain/hazard_areas/hazard_areas";
+import Hazard_area_form from "./pages/head/maintain/hazard_areas/hazard_area._form";
 // Temporary placeholders until each module is developed
 function Placeholder({ title }: { title: string }) {
   return (
@@ -220,6 +222,18 @@ export default function App() {
             element={<Classified_areas />}
           />
           <Route
+            path="/DataManager/maintenance/hazard_area_form/"
+            element={<Hazard_area_form />}
+          />
+          <Route
+            path="/DataManager/maintenance/hazard_area_form/:id"
+            element={<Hazard_area_form />}
+          />
+          <Route
+            path="/DataManager/maintenance/hazard_areas/"
+            element={<Hazard_areas />}
+          />
+          <Route
             path="/DataManager/assign_onsite_inpsector/:id"
             element={<Assign_onsite_inspector />}
           />
@@ -344,7 +358,7 @@ export default function App() {
             path="/GISS/official-reforestation/site/:id"
             element={<OfficialSites />}
           />
-           <Route
+          <Route
             path="/GISS/reforestation/site/:id/information/:site_id"
             element={<Site_information />}
           />

@@ -1,0 +1,289 @@
+from django.shortcuts import get_object_or_404
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import HazardArea
+from barangay.models import Barangay
+from django.conf import settings
+from security.views import log_activity
+import json
+import math
+import jwt
+
+
+# -------------------- Helper Functions --------------------
+
+def _get_request_user(request):
+    try:
+        from accounts.models import User
+        header = request.headers.get('Authorization', '')
+        if not header.startswith('Bearer '):
+            return None, ''
+        payload = jwt.decode(
+            header.split(' ')[1], settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+        user = User.objects.filter(id=payload.get('user_id')).first()
+        return user, (user.email if user else '')
+    except Exception:
+        return None, ''
+
+
+def record_activity(request, action_type, entity_type, entity_id=None,
+                    entity_label='', description='',
+                    old_data=None, new_data=None, changed_fields=None):
+    performer, email = _get_request_user(request)
+    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    log_activity(
+        performed_by=performer,
+        email=email,
+        action_type=action_type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_label=entity_label,
+        description=description,
+        old_data=old_data,
+        new_data=new_data,
+        changed_fields=changed_fields,
+        ip_address=ip,
+    )
+
+
+# -------------------- HazardArea Views --------------------
+
+@csrf_exempt
+def get_hazard_areas_list(request):
+    """Returns a simplified list of hazard areas (useful for dropdowns/map layers)"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    
+    hazard_type = request.GET.get('hazard_type', '').strip()
+    barangay_id = request.GET.get('barangay_id', '').strip()
+    
+    queryset = HazardArea.objects.all().order_by('name')
+    
+    # Filter by hazard type if provided
+    if hazard_type:
+        queryset = queryset.filter(hazard_type=hazard_type)
+        
+    # Filter by barangay if provided
+    if barangay_id:
+        queryset = queryset.filter(barangay_id=barangay_id)
+
+    data = list(queryset.values('hazard_area_id', 'name', 'hazard_type', 'barangay_id'))
+    return JsonResponse({'data': data}, status=200)
+
+
+@csrf_exempt
+def get_hazard_areas(request):
+    """Paginated, searchable, and filterable list of hazard areas"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    search = request.GET.get('search', '').strip()
+    hazard_type = request.GET.get('hazard_type', '').strip()
+    barangay_id = request.GET.get('barangay_id', '').strip()
+    
+    try:
+        entries = int(request.GET.get('entries', 10))
+        page = int(request.GET.get('page', 1))
+    except ValueError:
+        entries, page = 10, 1
+
+    if entries <= 0: entries = 10
+    if page <= 0: page = 1
+
+    offset = (page - 1) * entries
+
+    queryset = HazardArea.objects.all().order_by('-created_at')
+
+    # Apply filters
+    if search:
+        queryset = queryset.filter(name__icontains=search)
+    if hazard_type:
+        queryset = queryset.filter(hazard_type=hazard_type)
+    if barangay_id:
+        queryset = queryset.filter(barangay_id=barangay_id)
+
+    total = queryset.count()
+    total_page = math.ceil(total / entries) if total > 0 else 1
+
+    paginated_data = list(queryset[offset: offset + entries].values())
+
+    return JsonResponse({
+        'data': paginated_data,
+        'total_page': total_page,
+        'page': page,
+        'entries': entries,
+        'total': total
+    }, status=200)
+
+
+def get_hazard_area(request, hazard_area_id):
+    """Get details of a single hazard area by ID"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    area = get_object_or_404(HazardArea, pk=hazard_area_id)
+    data = {
+        'hazard_area_id': area.hazard_area_id,
+        'name': area.name,
+        'hazard_type': area.hazard_type,
+        'barangay_id': area.barangay_id,
+        'polygon': area.polygon,
+        'description': area.description,
+        'created_at': area.created_at,
+        'updated_at': area.updated_at
+    }
+    return JsonResponse({'data': data}, status=200)
+
+
+@csrf_exempt
+def create_hazard_area(request):
+    """Create a new hazard area"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        name = data['name']
+        hazard_type = data['hazard_type']
+        description = data.get('description', '')
+        barangay_id = data.get('barangay_id')
+        polygon = data['polygon']
+    except KeyError as e:
+        return JsonResponse({'error': f'Missing required field: {e}'}, status=400)
+
+    barangay = None
+    if barangay_id:
+        barangay = get_object_or_404(Barangay, pk=barangay_id)
+
+    area = HazardArea.objects.create(
+        name=name,
+        hazard_type=hazard_type,
+        description=description,
+        barangay=barangay,
+        polygon=polygon
+    )
+
+    record_activity(
+        request,
+        action_type='CREATE',
+        entity_type='HazardArea',
+        entity_id=area.hazard_area_id,
+        entity_label=name,
+        description=f'Hazard area "{name}" ({hazard_type}) created.',
+        new_data={
+            'name': name, 
+            'hazard_type': hazard_type, 
+            'description': description, 
+            'barangay_id': barangay_id, 
+            'polygon': polygon
+        },
+    )
+
+    return JsonResponse({'data': area.hazard_area_id}, status=200)
+
+
+@csrf_exempt
+def update_hazard_area(request, hazard_area_id):
+    """Update an existing hazard area"""
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        name = data['name']
+        hazard_type = data['hazard_type']
+        description = data.get('description', '')
+        barangay_id = data.get('barangay_id')
+        polygon = data['polygon']
+    except KeyError as e:
+        return JsonResponse({'error': f'Missing required field: {e}'}, status=400)
+
+    area = get_object_or_404(HazardArea, pk=hazard_area_id)
+
+    _old = {
+        'name': area.name,
+        'hazard_type': area.hazard_type,
+        'description': area.description,
+        'barangay_id': area.barangay_id,
+        'polygon': area.polygon,
+    }
+
+    barangay = None
+    if barangay_id:
+        barangay = get_object_or_404(Barangay, pk=barangay_id)
+
+    area.name = name
+    area.hazard_type = hazard_type
+    area.description = description
+    area.barangay = barangay
+    area.polygon = polygon
+    area.save()
+
+    _new = {
+        'name': area.name,
+        'hazard_type': area.hazard_type,
+        'description': area.description,
+        'barangay_id': area.barangay_id,
+        'polygon': area.polygon,
+    }
+    _changed = [k for k in _old if str(_old[k]) != str(_new[k])]
+
+    record_activity(
+        request,
+        action_type='UPDATE',
+        entity_type='HazardArea',
+        entity_id=hazard_area_id,
+        entity_label=name,
+        description=f'Hazard area "{name}" updated. Fields changed: {", ".join(_changed) or "none"}.',
+        old_data=_old,
+        new_data=_new,
+        changed_fields=_changed,
+    )
+
+    return JsonResponse({'message': 'Successfully updated!'}, status=200)
+
+
+@csrf_exempt
+def delete_hazard_area(request, hazard_area_id):
+    """Delete a hazard area"""
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
+
+    area = get_object_or_404(HazardArea, pk=hazard_area_id)
+    deleted_name = area.name
+    deleted_type = area.get_hazard_type_display()
+
+    record_activity(
+        request,
+        action_type='DELETE',
+        entity_type='HazardArea',
+        entity_id=hazard_area_id,
+        entity_label=deleted_name,
+        description=f'Hazard area "{deleted_name}" ({deleted_type}) deleted.',
+        old_data={
+            'name': deleted_name, 
+            'hazard_type': area.hazard_type, 
+            'barangay_id': area.barangay_id
+        },
+    )
+
+    area.delete()
+    return JsonResponse({'message': 'Successfully deleted!'}, status=200)
+
+
+# -------------------- Dedicated Barangay Filter View --------------------
+
+def get_hazard_areas_by_barangay(request, barangay_id):
+    """Get all hazard areas specifically for a given barangay"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    
+    # Verify barangay exists (optional but safe)
+    get_object_or_404(Barangay, pk=barangay_id)
+    
+    # Filter strictly by this barangay
+    areas = HazardArea.objects.filter(barangay_id=barangay_id).order_by('-created_at').values()
+    
+    return JsonResponse({'data': list(areas)}, status=200)

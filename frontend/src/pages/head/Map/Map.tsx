@@ -5,6 +5,7 @@ import {
   GeoJSON,
   Marker,
   Popup,
+  Polygon,
   WMSTileLayer,
 } from "react-leaflet";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -114,6 +115,19 @@ interface SiteStatistics {
   avgNDVI: number;
 }
 
+interface HazardArea {
+  hazard_area_id: number;
+  name: string;
+  hazard_type: string;
+  barangay_id: number | null;
+  polygon: {
+    type: string;
+    coordinates: [number, number][];
+  };
+  description: string;
+  created_at: string;
+}
+
 export default function Map() {
   const token = localStorage.getItem("token");
   const ORMOCCITY: [number, number] = [11.02, 124.61];
@@ -126,6 +140,38 @@ export default function Map() {
   const [barangays, setBarangays] = useState<Barangays[]>([]);
 
   const [showCanopyGuide, setShowCanopyGuide] = useState(false);
+  const [hazard_areas, setHazard_areas] = useState<HazardArea[]>([]);
+  const [visibleHazardBarangayId, setVisibleHazardBarangayId] = useState<
+    number | null
+  >(null);
+
+  const getHazardColor = (hazardType: string) => {
+    const colors: { [key: string]: { stroke: string; fill: string } } = {
+      LANDSLIDE: { stroke: "#dc2626", fill: "#ef4444" }, // Red
+      FLOOD: { stroke: "#2563eb", fill: "#3b82f6" }, // Blue
+      EARTHQUAKE: { stroke: "#7c3aed", fill: "#8b5cf6" }, // Purple
+      VOLCANIC: { stroke: "#ea580c", fill: "#f97316" }, // Orange
+      STORM_SURGE: { stroke: "#0891b2", fill: "#06b6d4" }, // Cyan
+      LIQUEFACTION: { stroke: "#ca8a04", fill: "#eab308" }, // Yellow
+      COASTAL_EROSION: { stroke: "#0d9488", fill: "#14b8a6" }, // Teal
+      OTHER: { stroke: "#6b7280", fill: "#9ca3af" }, // Gray
+    };
+    return colors[hazardType] || colors.OTHER;
+  };
+
+  const getHazardLabel = (hazardType: string) => {
+    const labels: { [key: string]: string } = {
+      LANDSLIDE: "Landslide",
+      FLOOD: "Flood",
+      EARTHQUAKE: "Earthquake",
+      VOLCANIC: "Volcanic Hazard",
+      STORM_SURGE: "Storm Surge",
+      LIQUEFACTION: "Soil Liquefaction",
+      COASTAL_EROSION: "Coastal Erosion",
+      OTHER: "Other",
+    };
+    return labels[hazardType] || hazardType;
+  };
 
   const [areaForm, setAreaForm] = useState({
     name: "",
@@ -290,6 +336,20 @@ export default function Map() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showNDVI, isNdviPenelOpen]);
+
+  async function get_hazard_areas() {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/get_hazard_areas/", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      const data = await res.json();
+      if (res.ok && data.data) {
+        setHazard_areas(data.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch hazard areas:", error);
+    }
+  }
 
   // ✅ FIXED: Map Drawing Events - More robust implementation
   useEffect(() => {
@@ -735,7 +795,8 @@ export default function Map() {
     get_classified_area();
     getBarangays();
     get_all_reforestation_areas();
-    get_all_sites(); // ✅ Fetch sites on load
+    get_all_sites();
+    get_hazard_areas(); // ✅ NEW: Fetch hazard areas
   }, []);
 
   async function get_classified_area() {
@@ -2038,25 +2099,68 @@ export default function Map() {
                 icon={yellowIcon}
               >
                 <Popup>
-                  <div className="text-sm flex flex-col gap-2 min-w-[200px]">
-                    <strong className="text-[#0f4a2f]">{area.name}</strong>
+                  <div className="text-sm flex flex-col gap-2 min-w-[220px]">
+                    {/* Header */}
+                    <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
+                      <div className="w-3 h-3 rounded-full bg-yellow-500 flex-shrink-0"></div>
+                      <strong className="text-[#0f4a2f] text-base flex-1">
+                        {area.name}
+                      </strong>
+                    </div>
+
+                    {/* View Classified Areas - RED (matches red polygons) */}
                     <button
                       onClick={() => setSelectedBarangayId(area.barangay_id)}
-                      className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-7 px-2 py-1 rounded text-[.7rem] w-fit"
+                      className="flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 text-white h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm"
                     >
-                      <AreaChart size={14} /> View Areas
+                      <AreaChart size={14} /> View Classified Areas
                     </button>
+
+                    {/* View Hazard Areas - YELLOW (matches yellow polygons) */}
                     <button
                       onClick={() => {
-                        setSelectedBarangayForAnalysis({
-                          id: area.barangay_id,
-                          name: area.name,
-                        });
-                        setShowBarangayAnalysis(true);
+                        const barangayHazards = hazard_areas.filter(
+                          (h) => h.barangay_id === area.barangay_id,
+                        );
+
+                        if (barangayHazards.length > 0) {
+                          setVisibleHazardBarangayId(area.barangay_id);
+
+                          const allCoords: [number, number][] = [];
+                          barangayHazards.forEach((h) => {
+                            if (h.polygon && h.polygon.coordinates) {
+                              h.polygon.coordinates.forEach((coord) => {
+                                allCoords.push(coord);
+                              });
+                            }
+                          });
+
+                          if (allCoords.length > 0) {
+                            const bounds = L.latLngBounds(
+                              allCoords.map((c) => L.latLng(c[0], c[1])),
+                            );
+                            mapRef.current?.flyToBounds(bounds, {
+                              padding: [50, 50],
+                              maxZoom: 16,
+                            });
+                          }
+
+                          setPSAlert({
+                            type: "success",
+                            title: "Hazard Areas Loaded",
+                            message: `Showing ${barangayHazards.length} hazard area(s) for ${area.name}. Click "Hide" on any polygon to close.`,
+                          });
+                        } else {
+                          setPSAlert({
+                            type: "failed",
+                            title: "No Hazard Areas",
+                            message: `No hazard areas found for ${area.name}.`,
+                          });
+                        }
                       }}
-                      className="flex items-center justify-center gap-1 bg-red-600 hover:bg-red-700 text-white h-7 px-2 py-1 rounded text-[.7rem] w-fit"
+                      className="flex items-center justify-center gap-1.5 bg-yellow-500 hover:bg-yellow-600 text-white h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm"
                     >
-                      <AlertTriangle size={14} /> Analyze Hazards
+                      <AlertTriangle size={14} /> View Hazard Areas
                     </button>
                   </div>
                 </Popup>
@@ -2124,6 +2228,117 @@ export default function Map() {
             maxNativeZoom={17}
           />
         )}
+
+        {visibleHazardBarangayId !== null &&
+          hazard_areas
+            .filter((h) => h.barangay_id === visibleHazardBarangayId)
+            .map((hazard) => {
+              if (!hazard.polygon || !hazard.polygon.coordinates) return null;
+
+              const colors = getHazardColor(hazard.hazard_type);
+              const barangay = barangays.find(
+                (b) => b.barangay_id === hazard.barangay_id,
+              );
+
+              return (
+                <Polygon
+                  key={hazard.hazard_area_id}
+                  positions={hazard.polygon.coordinates}
+                  pathOptions={{
+                    color: colors.stroke,
+                    fillColor: colors.fill,
+                    fillOpacity: 0.3,
+                    weight: 2,
+                  }}
+                >
+                  <Popup>
+                    <div className="text-sm min-w-[220px]">
+                      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-200">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: colors.fill }}
+                        ></div>
+                        <strong className="text-base text-gray-800 flex-1">
+                          {hazard.name}
+                        </strong>
+                      </div>
+
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle
+                            size={14}
+                            className="text-gray-500 mt-0.5 flex-shrink-0"
+                          />
+                          <div>
+                            <span className="text-gray-500">Type:</span>
+                            <span
+                              className="ml-1 font-semibold px-2 py-0.5 rounded text-white text-[10px]"
+                              style={{ backgroundColor: colors.fill }}
+                            >
+                              {getHazardLabel(hazard.hazard_type)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {barangay && (
+                          <div className="flex items-start gap-2">
+                            <MapPin
+                              size={14}
+                              className="text-gray-500 mt-0.5 flex-shrink-0"
+                            />
+                            <div>
+                              <span className="text-gray-500">Barangay:</span>
+                              <span className="ml-1 font-medium text-gray-700">
+                                {barangay.name}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {hazard.description && (
+                          <div className="flex items-start gap-2">
+                            <Info
+                              size={14}
+                              className="text-gray-500 mt-0.5 flex-shrink-0"
+                            />
+                            <div className="flex-1">
+                              <span className="text-gray-500">
+                                Description:
+                              </span>
+                              <p className="mt-0.5 text-gray-600 text-[11px] leading-relaxed">
+                                {hazard.description}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-start gap-2 pt-1 border-t border-gray-100 mt-2">
+                          <span className="text-gray-400 text-[10px]">
+                            Created:{" "}
+                            {new Date(hazard.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* ✅ HIDE BUTTON - YELLOW to match hazard polygons */}
+                      <button
+                        onClick={() => {
+                          setVisibleHazardBarangayId(null);
+                          setPSAlert({
+                            type: "success",
+                            title: "Hazards Hidden",
+                            message: `Hazard areas for ${barangay?.name || "this barangay"} are now hidden.`,
+                          });
+                        }}
+                        className="mt-3 w-full flex items-center justify-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold py-1.5 px-2 rounded transition-colors"
+                      >
+                        <X size={12} /> Hide Hazard Areas
+                      </button>
+                    </div>
+                  </Popup>
+                </Polygon>
+              );
+            })}
       </MapContainer>
 
       {selectedBarangayForAnalysis && (

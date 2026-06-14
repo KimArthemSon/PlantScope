@@ -7,6 +7,7 @@ import {
   Box,
   Home,
   Footprints,
+  TriangleAlertIcon
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
@@ -154,6 +155,21 @@ export default function MaintenanceDropdown_Dm({
           >
             <Map size={16} />
             <span>Classified Areas</span>
+          </Link>
+          <Link
+            to="/DataManager/maintenance/hazard_areas/"
+            className={`
+              flex items-center gap-3 px-4 py-3 text-[.75rem] rounded-md
+              ${
+                location.pathname ===
+                "/DataManager/maintenance/hazard_areas/"
+                  ? "bg-white/20 text-white"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }
+            `}
+          >
+            <TriangleAlertIcon size={16} />
+            <span>Hazard Areas</span>
           </Link>
         </div>
       )}
