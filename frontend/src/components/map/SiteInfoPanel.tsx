@@ -13,6 +13,8 @@ import {
   MapPin,
   Calendar,
   FileText,
+  Leaf,   // ✅ NEW
+  Users,  // ✅ NEW
 } from "lucide-react";
 
 const API = "http://127.0.0.1:8000/api/";
@@ -37,6 +39,18 @@ interface SiteData {
   ndvi_value: number | null;
   created_at: string;
   site_images: SiteImage[];
+}
+
+// ✅ NEW: Interface for Tree Planting Applications
+interface SiteApplication {
+  application_id: number;
+  title: string;
+  status: string;
+  classification: string;
+  organization_name: string;
+  total_members: number | null;
+  orientation_date: string | null;
+  created_at: string;
 }
 
 interface SiteInfoPanelProps {
@@ -112,10 +126,14 @@ export default function SiteInfoPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  
+  // ✅ NEW: State for applications
+  const [applications, setApplications] = useState<SiteApplication[]>([]);
 
   useEffect(() => {
     if (siteId && isOpen) {
       fetchSiteData(siteId);
+      fetchSiteApplications(siteId); // ✅ Fetch applications alongside site data
     }
   }, [siteId, isOpen]);
 
@@ -141,6 +159,24 @@ export default function SiteInfoPanel({
       setError(err instanceof Error ? err.message : "Failed to load site data");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ NEW: Fetch applications for this site
+  const fetchSiteApplications = async (id: number) => {
+    try {
+      const response = await fetch(`${API}get_site_applications/${id}/`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setApplications(data.applications || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch site applications", err);
     }
   };
 
@@ -370,6 +406,100 @@ export default function SiteInfoPanel({
                   </p>
                 </div>
               )}
+
+              {/* ✅ NEW: Tree Planting Programs Section */}
+              <div>
+                <div className="flex items-center gap-2 text-gray-700 mb-3">
+                  <Leaf size={16} className="text-green-600" />
+                  <span className="text-xs font-semibold uppercase tracking-wider">
+                    Tree Planting Programs
+                  </span>
+                  <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">
+                    {applications.length}
+                  </span>
+                </div>
+
+                {applications.length === 0 ? (
+                  <div className="bg-gray-50 rounded-xl p-4 border border-dashed border-gray-200 text-center">
+                    <p className="text-sm text-gray-500 font-medium">No programs assigned yet</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Tree grower applications will appear here once assigned to this site.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {applications.map((app) => {
+                      // Map status to colors
+                      const statusColors: Record<string, { bg: string; text: string; border: string }> = {
+                        for_evaluation: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
+                        for_head: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
+                        accepted: { bg: "bg-green-50", text: "text-green-700", border: "border-green-200" },
+                        rejected: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
+                        completed: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200" },
+                        cancelled: { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-200" },
+                      };
+                      const colors = statusColors[app.status] || statusColors.for_evaluation;
+
+                      return (
+                        <div 
+                          key={app.application_id} 
+                          className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+                        >
+                          {/* Header: Title & Status */}
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <h4 className="text-sm font-bold text-gray-800 flex-1 leading-tight">
+                              {app.title}
+                            </h4>
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full border capitalize whitespace-nowrap ${colors.bg} ${colors.text} ${colors.border}`}>
+                              {app.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          
+                          {/* Body: Organization & Details */}
+                          <div className="space-y-2 text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                <Users size={12} className="text-gray-500" />
+                              </div>
+                              <div>
+                                <p className="text-gray-400 text-[10px] uppercase font-semibold">Tree Grower</p>
+                                <p className="text-gray-800 font-semibold">{app.organization_name}</p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
+                              <div>
+                                <p className="text-gray-400 text-[10px] uppercase font-semibold">Type</p>
+                                <p className="text-gray-700 font-medium capitalize">{app.classification}</p>
+                              </div>
+                              {app.total_members && (
+                                <div>
+                                  <p className="text-gray-400 text-[10px] uppercase font-semibold">Members</p>
+                                  <p className="text-gray-700 font-medium">{app.total_members}</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {app.orientation_date && (
+                              <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100 text-gray-600">
+                                <Calendar size={12} className="text-gray-400" />
+                                <span className="font-medium">
+                                  Orientation: {new Date(app.orientation_date).toLocaleDateString("en-US", { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </span>
+                              </div>
+                            )}
+                            
+                            <div className="flex items-center gap-1.5 text-gray-400 pt-1">
+                              <Clock size={10} />
+                              <span className="text-[10px]">Applied on {app.created_at}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               {/* Action Button */}
               <button

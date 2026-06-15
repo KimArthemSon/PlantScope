@@ -14,7 +14,6 @@ import {
   Flag,
   Pin,
   X,
-  Camera,
   CheckCircle,
   Save,
   Undo2,
@@ -29,6 +28,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import * as esri from "esri-leaflet";
+import SiteCoordinatesEditor from "./components/SiteCoordinatesEditor";
 
 import { useBarangayAreas } from "./hooks/useBarangayAreas";
 import BarangayAreasPanel from "./BarangayAreasPanel";
@@ -157,7 +157,7 @@ export default function MulticriteriaAnalysis() {
     { id: number; latlng: L.LatLng; label: string }[]
   >([]);
   const placedMarkersRef = useRef<Map<number, L.Marker>>(new Map());
-  const markerIdCounter = useRef(0);
+
   const [selectedSiteIdForFilter, setSelectedSiteIdForFilter] = useState<
     string | null
   >(null);
@@ -215,24 +215,67 @@ export default function MulticriteriaAnalysis() {
         if (detail) {
           setViewingSite(detail);
 
+          // Clear any existing polygon
+          if (polygonRef.current) {
+            mapRef.current?.removeLayer(polygonRef.current);
+            polygonRef.current = null;
+          }
+
           if (
             detail.polygon_coordinates &&
             detail.polygon_coordinates.length > 0
           ) {
-            if (polygonRef.current) {
-              mapRef.current?.removeLayer(polygonRef.current);
-            }
+            // ✅ Show polygon with lighter colors
             polygonRef.current = L.polygon(detail.polygon_coordinates, {
-              color: "#0F4A2F",
-              fillColor: "#0F4A2F",
-              fillOpacity: 0.3,
-              weight: 2,
+              color: "#16A34A", // Lighter green border
+              fillColor: "#86EFAC", // Light green fill
+              fillOpacity: 0.5, // More opaque
+              weight: 3, // Thicker border
             }).addTo(mapRef.current!);
+
             mapRef.current?.fitBounds(polygonRef.current.getBounds(), {
               padding: [50, 50],
             });
           } else if (detail.center_coordinate) {
-            mapRef.current?.setView(detail.center_coordinate, 16);
+            // ✅ Add a marker when only center coordinate exists
+            const centerMarker = L.marker(detail.center_coordinate, {
+              icon: L.divIcon({
+                className: "site-center-marker",
+                html: `<div style="
+                background:#16A34A;
+                width:32px;
+                height:32px;
+                border-radius:50%;
+                border:4px solid white;
+                box-shadow:0 4px 12px rgba(0,0,0,0.4);
+                display:flex;
+                align-items:center;
+                justify-content:center;
+              ">
+                <div style="
+                  width:12px;
+                  height:12px;
+                  background:white;
+                  border-radius:50%;
+                "></div>
+              </div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 32],
+                popupAnchor: [0, -32],
+              }),
+            }).addTo(mapRef.current!);
+
+            centerMarker.bindPopup(`
+            <div style="text-align:center;font-family:sans-serif;">
+              <strong style="color:#16A34A;font-size:14px;">${detail.name}</strong><br/>
+              <span style="font-size:11px;color:#666;">Center Location</span><br/>
+              <span style="font-size:10px;color:#999;font-family:monospace;">
+                ${detail.center_coordinate[0].toFixed(6)}, ${detail.center_coordinate[1].toFixed(6)}
+              </span>
+            </div>
+          `);
+
+            mapRef.current?.setView(detail.center_coordinate, 17); // Zoom in closer
           } else if (areaId) {
             setAlert({
               type: "failed",
@@ -689,9 +732,9 @@ export default function MulticriteriaAnalysis() {
 
     if (hasPolygon) {
       const editablePolygon = L.polygon(viewingSite.polygon_coordinates!, {
-        color: "#FF6B00",
-        fillColor: "#FF6B00",
-        fillOpacity: 0.2,
+        color: "#F97316", // Orange border for edit mode
+        fillColor: "#FDBA74", // Light orange fill
+        fillOpacity: 0.4,
         weight: 3,
         dashArray: "5, 5",
       }).addTo(mapRef.current!);
@@ -714,12 +757,12 @@ export default function MulticriteriaAnalysis() {
         icon: L.divIcon({
           className: "center-marker-edit",
           html: `<div style="
-            background:#FF6B00;width:24px;height:24px;border-radius:50%;
-            border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);
-            display:flex;align-items:center;justify-content:center;
-          "><div style="width:8px;height:8px;background:white;border-radius:50%;"></div></div>`,
-          iconSize: [24, 24],
-          iconAnchor: [12, 12],
+          background:#F97316;width:28px;height:28px;border-radius:50%;
+          border:4px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);
+          display:flex;align-items:center;justify-content:center;
+        "><div style="width:10px;height:10px;background:white;border-radius:50%;"></div></div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 28],
         }),
       }).addTo(mapRef.current!);
 
@@ -850,30 +893,48 @@ export default function MulticriteriaAnalysis() {
     [fieldAssessments.activeLayer, handleFetchLayer],
   );
 
-  // ✅ Handle map clicks for drawing polygons/centers/hazards/editing
+  // ✅ Refs to store latest callbacks (avoids stale closures)
+  const addVertexRef = useRef(barangayAreas.addVertexOnMap);
+  const addHazardPointRef = useRef(barangayAreas.addHazardPoint);
+  const finishHazardRef = useRef(barangayAreas.finishDrawingHazard);
+  const handleNewPolygonRef = useRef(handleMapClickForNewPolygon);
+  const handleNewCenterRef = useRef(handleMapClickForNewCenter);
+
+  // Keep refs in sync (runs on every render, but cheap)
+  useEffect(() => {
+    addVertexRef.current = barangayAreas.addVertexOnMap;
+    addHazardPointRef.current = barangayAreas.addHazardPoint;
+    finishHazardRef.current = barangayAreas.finishDrawingHazard;
+    handleNewPolygonRef.current = handleMapClickForNewPolygon;
+    handleNewCenterRef.current = handleMapClickForNewCenter;
+  });
+
+  // ✅ Handle map clicks - ONLY boolean flags in dependencies!
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
+    console.log("asdasdasd");
     const handleClick = (e: L.LeafletMouseEvent) => {
+      // Use refs to call latest version without re-attaching handler
       if (isDrawingNewPolygon) {
-        handleMapClickForNewPolygon(e);
+        handleNewPolygonRef.current(e);
       } else if (isPlacingNewCenter) {
-        handleMapClickForNewCenter(e);
+        handleNewCenterRef.current(e);
       } else if (barangayAreas.isDrawingHazard) {
-        barangayAreas.addHazardPoint(e.latlng.lat, e.latlng.lng);
+        addHazardPointRef.current(e.latlng.lat, e.latlng.lng);
       } else if (barangayAreas.isMapEditMode && barangayAreas.showHazardForm) {
-        // ✅ NEW: Add vertex during map edit mode
-        barangayAreas.addVertexOnMap(e.latlng.lat, e.latlng.lng);
+        addVertexRef.current(e.latlng.lat, e.latlng.lng);
       }
     };
 
     const handleDblClick = () => {
+      console.log("🖱️🖱️ [handleDblClick] Double-click detected");
       if (
         barangayAreas.isDrawingHazard &&
         barangayAreas.hazardPolygonPoints.length >= 3
       ) {
-        barangayAreas.finishDrawingHazard();
+        finishHazardRef.current();
       }
     };
 
@@ -900,20 +961,14 @@ export default function MulticriteriaAnalysis() {
         map.getContainer().style.cursor = "";
       }
     };
+    // ✅ ONLY boolean flags - NO functions, NO array lengths!
   }, [
     isDrawingNewPolygon,
     isPlacingNewCenter,
     barangayAreas.isDrawingHazard,
-    barangayAreas.hazardPolygonPoints.length,
     barangayAreas.isMapEditMode,
     barangayAreas.showHazardForm,
-    handleMapClickForNewPolygon,
-    handleMapClickForNewCenter,
-    barangayAreas.addHazardPoint,
-    barangayAreas.finishDrawingHazard,
-    barangayAreas.addVertexOnMap,
   ]);
-
   // ── Map init ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (mapContainerRef.current && !mapRef.current) {
@@ -1426,6 +1481,9 @@ export default function MulticriteriaAnalysis() {
       weight: 2,
     }).addTo(mapRef.current!);
 
+    // ✅ NEW: Render the vertex markers for the manual coordinate editor
+    updateCreationMarkers(coords);
+
     const area = calculatePolygonArea(coords);
     setPolygonArea(area);
     setIsDrawing(false);
@@ -1433,7 +1491,7 @@ export default function MulticriteriaAnalysis() {
     setAlert({
       type: "success",
       title: "Polygon Created",
-      message: `${coords.length} points drawn. Enter site name to save.`,
+      message: `${coords.length} points drawn. You can now manually adjust coordinates.`,
     });
   };
 
@@ -1460,8 +1518,17 @@ export default function MulticriteriaAnalysis() {
       mapRef.current.removeLayer(polygonRef.current);
       polygonRef.current = null;
     }
+
+    // Clear drawing points
     drawingPointsRef.current.forEach((m) => mapRef.current?.removeLayer(m));
     drawingPointsRef.current = [];
+
+    // ✅ NEW: Clear the creation vertex markers
+    creationVertexMarkersRef.current.forEach((m) =>
+      mapRef.current?.removeLayer(m),
+    );
+    creationVertexMarkersRef.current = [];
+
     setPolygonCoordinates([]);
     setPolygonArea(null);
     setIsDrawing(false);
@@ -1469,38 +1536,6 @@ export default function MulticriteriaAnalysis() {
     setSiteName("");
     mapRef.current?.off("click");
     mapRef.current?.off("dblclick");
-  };
-
-  const startPlacingMarker = () => {
-    if (!mapRef.current) return;
-    setIsPlacingMarker(true);
-    mapRef.current.getContainer().style.cursor = "crosshair";
-    const handler = (e: L.LeafletMouseEvent) => {
-      if (!mapRef.current) return;
-      const id = ++markerIdCounter.current;
-      const label = `M${id}`;
-      const marker = L.marker(e.latlng, {
-        icon: L.divIcon({
-          className: "placed-marker",
-          html: `<div style="background:#7C3AED;width:28px;height:28px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);color:white;font-size:9px;font-weight:700;">${label}</span></div>`,
-          iconSize: [28, 28],
-          iconAnchor: [14, 28],
-          popupAnchor: [0, -30],
-        }),
-        draggable: true,
-      }).addTo(mapRef.current);
-      marker.bindPopup(`
-        <strong>${label}</strong><br/>
-        <span style="font-size:11px;font-family:monospace">${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}</span><br/>
-        <button onclick="window.__removePlacedMarker(${id})" style="margin-top:4px;background:#ef4444;color:white;border:none;padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer">Remove</button>
-      `);
-      placedMarkersRef.current.set(id, marker);
-      setPlacedMarkers((prev) => [...prev, { id, latlng: e.latlng, label }]);
-      mapRef.current.off("click", handler);
-      mapRef.current.getContainer().style.cursor = "";
-      setIsPlacingMarker(false);
-    };
-    mapRef.current.on("click", handler);
   };
 
   const removePlacedMarker = (id: number) => {
@@ -1563,36 +1598,6 @@ export default function MulticriteriaAnalysis() {
       });
     }
   };
-
-  const handleSelectSite = useCallback(
-    async (site: Site) => {
-      try {
-        const detail = await sites.fetchSiteDetail(site.site_id);
-        if (detail && detail.polygon_coordinates?.length) {
-          if (polygonRef.current)
-            mapRef.current?.removeLayer(polygonRef.current);
-          polygonRef.current = L.polygon(detail.polygon_coordinates, {
-            color: "#0F4A2F",
-            fillColor: "#0F4A2F",
-            fillOpacity: 0.3,
-            weight: 2,
-          }).addTo(mapRef.current!);
-          mapRef.current?.fitBounds(polygonRef.current.getBounds(), {
-            padding: [20, 20],
-          });
-          setPolygonCoordinates(detail.polygon_coordinates);
-          setPolygonArea(detail.area_hectares);
-        }
-      } catch (err: any) {
-        setAlert({
-          type: "error",
-          title: "Load Failed",
-          message: err.message || "Could not load site details.",
-        });
-      }
-    },
-    [mapRef, polygonRef, sites],
-  );
 
   const handleValidateSite = useCallback(
     async (site: Site) => {
@@ -1720,6 +1725,169 @@ export default function MulticriteriaAnalysis() {
       }
     },
     [validatingSite, sites, areaId],
+  );
+
+  // Ref to track markers for the newly created polygon
+  const creationVertexMarkersRef = useRef<L.Marker[]>([]);
+
+  // Helper to render markers for the creation phase
+  const updateCreationMarkers = useCallback((coords: [number, number][]) => {
+    const map = mapRef.current;
+    if (!map) return;
+    creationVertexMarkersRef.current.forEach((m) => map.removeLayer(m));
+    creationVertexMarkersRef.current = [];
+    coords.forEach((coord, i) => {
+      const marker = L.marker(coord, {
+        icon: L.divIcon({
+          className: "creation-vertex-marker",
+          html: `<div style="background:#0F4A2F;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:8px;color:white;font-weight:bold;">${i + 1}</div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
+        }),
+      }).addTo(map);
+      creationVertexMarkersRef.current.push(marker);
+    });
+  }, []);
+
+  // --- CREATION HANDLERS ---
+  const handleCreateVertexChange = useCallback(
+    (index: number, axis: "lat" | "lng", value: string) => {
+      const numValue = parseFloat(value);
+      if (isNaN(numValue)) return;
+      const newCoords = [...polygonCoordinates];
+      if (axis === "lat") newCoords[index] = [numValue, newCoords[index][1]];
+      else newCoords[index] = [newCoords[index][0], numValue];
+
+      setPolygonCoordinates(newCoords);
+      if (polygonRef.current) polygonRef.current.setLatLngs(newCoords);
+      updateCreationMarkers(newCoords);
+      if (newCoords.length >= 3)
+        setPolygonArea(calculatePolygonArea(newCoords));
+    },
+    [polygonCoordinates, updateCreationMarkers],
+  );
+
+  const handleCreateRemoveVertex = useCallback(
+    (index: number) => {
+      if (polygonCoordinates.length <= 3) {
+        setAlert({
+          type: "failed",
+          title: "Cannot Remove",
+          message: "Polygon must have at least 3 vertices.",
+        });
+        return;
+      }
+      const newCoords = polygonCoordinates.filter((_, i) => i !== index);
+      setPolygonCoordinates(newCoords);
+      if (polygonRef.current) polygonRef.current.setLatLngs(newCoords);
+      updateCreationMarkers(newCoords);
+
+      if (newCoords.length >= 3) {
+        setPolygonArea(calculatePolygonArea(newCoords));
+      } else {
+        setPolygonArea(null);
+        if (polygonRef.current) {
+          mapRef.current?.removeLayer(polygonRef.current);
+          polygonRef.current = null;
+        }
+      }
+    },
+    [polygonCoordinates, updateCreationMarkers],
+  );
+
+  const handleCreateAddVertex = useCallback(() => {
+    let newPoint: [number, number];
+    if (polygonCoordinates.length === 0) {
+      newPoint = [11.0086, 124.6086]; // Default center of Ormoc
+    } else {
+      const lastPoint = polygonCoordinates[polygonCoordinates.length - 1];
+      newPoint = [lastPoint[0] + 0.001, lastPoint[1] + 0.001];
+    }
+    const newCoords = [...polygonCoordinates, newPoint];
+    setPolygonCoordinates(newCoords);
+
+    if (polygonRef.current) {
+      polygonRef.current.setLatLngs(newCoords);
+    } else if (newCoords.length >= 3) {
+      polygonRef.current = L.polygon(newCoords, {
+        color: "#0F4A2F",
+        fillColor: "#0F4A2F",
+        fillOpacity: 0.3,
+        weight: 2,
+      }).addTo(mapRef.current!);
+      setPolygonArea(calculatePolygonArea(newCoords));
+    }
+    updateCreationMarkers(newCoords);
+  }, [polygonCoordinates, updateCreationMarkers]);
+
+  // --- EDIT HANDLERS ---
+  const handleEditVertexChange = useCallback(
+    (index: number, axis: "lat" | "lng", value: string) => {
+      const numValue = parseFloat(value);
+      if (isNaN(numValue) || !editedPolygon) return;
+      const newCoords = [...editedPolygon];
+      if (axis === "lat") newCoords[index] = [numValue, newCoords[index][1]];
+      else newCoords[index] = [newCoords[index][0], numValue];
+
+      setEditedPolygon(newCoords);
+      if (editablePolygonRef.current)
+        editablePolygonRef.current.setLatLngs(newCoords);
+      renderAllMarkersRef.current(newCoords);
+    },
+    [editedPolygon],
+  );
+
+  const handleEditRemoveVertex = useCallback(
+    (index: number) => {
+      if (!editedPolygon || editedPolygon.length <= 3) {
+        setAlert({
+          type: "failed",
+          title: "Cannot Remove",
+          message: "Polygon must have at least 3 vertices.",
+        });
+        return;
+      }
+      const newCoords = editedPolygon.filter((_, i) => i !== index);
+      setEditedPolygon(newCoords);
+      if (editablePolygonRef.current)
+        editablePolygonRef.current.setLatLngs(newCoords);
+      renderAllMarkersRef.current(newCoords);
+    },
+    [editedPolygon],
+  );
+
+  const handleEditAddVertex = useCallback(() => {
+    if (!editedPolygon) return;
+    let newPoint: [number, number];
+    if (editedPolygon.length === 0) {
+      newPoint = [11.0086, 124.6086];
+    } else {
+      const lastPoint = editedPolygon[editedPolygon.length - 1];
+      newPoint = [lastPoint[0] + 0.001, lastPoint[1] + 0.001];
+    }
+    const newCoords = [...editedPolygon, newPoint];
+    setEditedPolygon(newCoords);
+    if (editablePolygonRef.current)
+      editablePolygonRef.current.setLatLngs(newCoords);
+    renderAllMarkersRef.current(newCoords);
+  }, [editedPolygon]);
+
+  const handleEditCenterChange = useCallback(
+    (axis: "lat" | "lng", value: string) => {
+      const numValue = parseFloat(value);
+      if (isNaN(numValue)) return;
+      const newCenter: [number, number] = editedCenter
+        ? [...editedCenter]
+        : [0, 0];
+      if (axis === "lat") newCenter[0] = numValue;
+      else newCenter[1] = numValue;
+
+      setEditedCenter(newCenter);
+      if (editableCenterMarkerRef.current) {
+        editableCenterMarkerRef.current.setLatLng(newCenter);
+      }
+    },
+    [editedCenter],
   );
 
   return (
@@ -2155,6 +2323,20 @@ export default function MulticriteriaAnalysis() {
                       : "Not set"}
                   </div>
                 )}
+              </div>
+            )}
+            {editedPolygon && (
+              <div className="mt-4">
+                <SiteCoordinatesEditor
+                  coordinates={editedPolygon}
+                  center={editedCenter}
+                  onVertexChange={handleEditVertexChange}
+                  onRemoveVertex={handleEditRemoveVertex}
+                  onAddVertex={handleEditAddVertex}
+                  onCenterChange={handleEditCenterChange}
+                  title="Polygon Vertices"
+                  isEditing={true}
+                />
               </div>
             )}
           </div>

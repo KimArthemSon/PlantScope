@@ -168,7 +168,10 @@ export default function App() {
             path="/official-reforestation/site/:id/information/:site_id"
             element={<Site_information />}
           />
-
+          <Route
+            path="/maintenance_evaluation/:application_id"
+            element={<Maintenance_report />}
+          />
           <Route path="/map" element={<Map />} />
           <Route path="/my-profile" element={<MyProfile />} />
 

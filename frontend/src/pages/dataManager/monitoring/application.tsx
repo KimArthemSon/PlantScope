@@ -9,6 +9,7 @@ import {
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
+import { useUserRole } from "@/hooks/authorization";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -128,11 +129,29 @@ export default function Monitoring() {
     fetchApplications();
   }, [filter.page, filter.entries, filter.classification, filter.status]);
 
-  // ─── Navigate to Maintenance Report ───────────────────────────────────────
+  const { userRole } = useUserRole();
+   const [useruserRole, setUseruserRole] = useState("");
+ 
+   useEffect(() => {
+     if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+       setUseruserRole("");
+       return;
+     }
+     if (userRole === "GISSpecialist") {
+       setUseruserRole("/GISS");
+       return;
+     }
+     if (userRole === "DataManager") {
+       setUseruserRole("/DataManager");
+       return;
+     }
+   }, [userRole]);
 
+  // ─── Navigate to Maintenance Report ───────────────────────────────────────
+  
   const handleViewReport = (applicationId: number) => {
     // Navigate with application_id as route param
-    navigate(`/DataManager/maintenance_evaluation/${applicationId}`);
+    navigate(`${useruserRole}/maintenance_evaluation/${applicationId}`);
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────

@@ -52,11 +52,7 @@ export interface FieldAssessmentsResponse {
   };
 }
 
-const LAYER_MARKER_COLORS: Record<MCDALayer, string> = {
-  safety: "#EF4444",
-  boundary_verification: "#F59E0B",
-  survivability: "#10B981",
-};
+
 
 const LAYER_EMOJIS: Record<MCDALayer, string> = {
   safety: "⚠️",

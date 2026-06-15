@@ -11,203 +11,370 @@ import {
   Users,
   Calendar,
   CheckCircle2,
+  XCircle,
+  Clock,
+  Lock,
+  MapPin,
+  TrendingUp,
+  Activity,
+  Loader2,
+  ExternalLink,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
-import LoaderPending from "../../../components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-interface CompletedApplication {
+interface ReportStats {
+  total_organizations: number;
+  completed_programs: number;
+  failed_programs: number;
+  ongoing_programs: number;
+  total_seedlings_survived: number;
+  total_seedlings_dead: number;
+}
+
+interface MonthlyTrend {
+  month: string;
+  completed: number;
+  failed: number;
+}
+
+interface HistoryApplication {
   application_id: number;
+  title: string;
+  status: string;
+  classification: string;
+  total_members: number;
+  created_at: string;
   organization_name: string;
   org_email: string;
-  org_profile: string;
-  title: string;
-  total_members: number;
-  total_request_seedling: number;
-  classification: "new" | "old";
-  status: string;
-  created_at: string;
-  completed_at?: string; // Will be added via backend or calculated
+  org_profile: string | null;
+  site_name: string | null;
+  site_status: string | null;
+  barangay: string | null;
+  site_area: number;
 }
 
-interface Filter {
+interface HistoryFilter {
   search: string;
-  entries: number;
-  page: number;
-  total_page: number;
-  classification: string;
+  status: string;
   date_from: string;
   date_to: string;
+  page: number;
+  entries: number;
+  total_page: number;
+  total: number;
 }
 
-// ─── Summary Stats Type ─────────────────────────────────────────────────────
+// ─── Helper Components ──────────────────────────────────────────────────────
 
-interface ReportStats {
-  total_completed: number;
-  total_seedlings: number;
-  total_area: number;
-  avg_members: number;
-}
+const StatusBadge = ({ status }: { status: string }) => {
+  let config = { bg: "bg-gray-100", text: "text-gray-700", label: status };
+  if (status === "completed")
+    config = { bg: "bg-green-100", text: "text-green-700", label: "Completed" };
+  if (status === "failed" || status === "rejected" || status === "cancelled")
+    config = {
+      bg: "bg-red-100",
+      text: "text-red-700",
+      label: status.charAt(0).toUpperCase() + status.slice(1),
+    };
+  if (status === "accepted" || status === "under_monitoring")
+    config = { bg: "bg-blue-100", text: "text-blue-700", label: "Ongoing" };
+  if (
+    status === "pending" ||
+    status === "for_evaluation" ||
+    status === "for_head"
+  )
+    config = { bg: "bg-amber-100", text: "text-amber-700", label: "Pending" };
+
+  return (
+    <span
+      className={`px-2.5 py-1 rounded-full text-xs font-semibold ${config.bg} ${config.text}`}
+    >
+      {config.label}
+    </span>
+  );
+};
+
+const LineChart = ({ data }: { data: MonthlyTrend[] }) => {
+  if (data.length === 0)
+    return (
+      <div className="w-full h-56 flex items-center justify-center text-gray-400 text-sm">
+        No trend data available.
+      </div>
+    );
+  const maxVal = Math.max(
+    ...data.map((d) => Math.max(d.completed, d.failed)),
+    10,
+  );
+  const width = 600,
+    height = 220,
+    paddingX = 40,
+    paddingY = 20;
+  const chartWidth = width - 2 * paddingX,
+    chartHeight = height - 2 * paddingY;
+  const getX = (i: number) => paddingX + (i / (data.length - 1)) * chartWidth;
+  const getY = (val: number) =>
+    height - paddingY - (val / maxVal) * chartHeight;
+  const completedPath = data
+    .map((d, i) => `${i === 0 ? "M" : "L"} ${getX(i)} ${getY(d.completed)}`)
+    .join(" ");
+  const failedPath = data
+    .map((d, i) => `${i === 0 ? "M" : "L"} ${getX(i)} ${getY(d.failed)}`)
+    .join(" ");
+  const completedArea = `${completedPath} L ${getX(data.length - 1)} ${height - paddingY} L ${getX(0)} ${height - paddingY} Z`;
+
+  return (
+    <div className="w-full">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-56">
+        <defs>
+          <linearGradient id="greenGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#16a34a" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#16a34a" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <line
+            key={i}
+            x1={paddingX}
+            y1={paddingY + i * (chartHeight / 4)}
+            x2={width - paddingX}
+            y2={paddingY + i * (chartHeight / 4)}
+            stroke="#f3f4f6"
+            strokeWidth="1"
+          />
+        ))}
+        {[0, 1, 2, 3, 4].map((i) => (
+          <text
+            key={`y-${i}`}
+            x={paddingX - 10}
+            y={paddingY + i * (chartHeight / 4) + 4}
+            textAnchor="end"
+            className="text-[10px] fill-gray-400"
+          >
+            {Math.round(maxVal - i * (maxVal / 4))}
+          </text>
+        ))}
+        <path d={completedArea} fill="url(#greenGradient)" />
+        <path
+          d={completedPath}
+          fill="none"
+          stroke="#16a34a"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+        <path
+          d={failedPath}
+          fill="none"
+          stroke="#dc2626"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray="6 4"
+        />
+        {data.map((d, i) => (
+          <g key={i}>
+            <circle
+              cx={getX(i)}
+              cy={getY(d.completed)}
+              r="5"
+              fill="#fff"
+              stroke="#16a34a"
+              strokeWidth="2"
+            />
+            <circle
+              cx={getX(i)}
+              cy={getY(d.failed)}
+              r="5"
+              fill="#fff"
+              stroke="#dc2626"
+              strokeWidth="2"
+            />
+            <text
+              x={getX(i)}
+              y={height - 5}
+              textAnchor="middle"
+              className="text-[11px] fill-gray-500 font-medium"
+            >
+              {d.month}
+            </text>
+          </g>
+        ))}
+      </svg>
+      <div className="flex items-center justify-center gap-6 mt-2">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-green-600"></div>
+          <span className="text-xs text-gray-600 font-medium">Completed</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-red-600 ring-4 ring-red-100"></div>
+          <span className="text-xs text-gray-600 font-medium">
+            Failed/Rejected
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DonutChart = ({ survived, dead }: { survived: number; dead: number }) => {
+  const total = survived + dead || 1;
+  const pct = (survived / total) * 100;
+  const circumference = 2 * Math.PI * 45;
+  const offset = circumference - (pct / 100) * circumference;
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full">
+      <div className="relative w-44 h-44">
+        <svg
+          width="176"
+          height="176"
+          viewBox="0 0 100 100"
+          className="transform -rotate-90 w-full h-full"
+        >
+          <circle
+            cx="50"
+            cy="50"
+            r="45"
+            fill="transparent"
+            stroke="#fee2e2"
+            strokeWidth="8"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="45"
+            fill="transparent"
+            stroke="#16a34a"
+            strokeWidth="8"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            className="transition-all duration-1000 ease-out"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-3xl font-bold text-gray-800">
+            {survived + dead > 0 ? pct.toFixed(1) : "0.0"}%
+          </span>
+          <span className="text-xs text-gray-500 font-medium">
+            Survival Rate
+          </span>
+        </div>
+      </div>
+      <div className="flex gap-6 mt-6">
+        <div className="flex flex-col items-center">
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="w-2.5 h-2.5 rounded-full bg-green-600"></div>
+            <span className="text-xs text-gray-500 font-medium">Survived</span>
+          </div>
+          <span className="text-lg font-bold text-gray-800">
+            {survived.toLocaleString()}
+          </span>
+        </div>
+        <div className="flex flex-col items-center">
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="w-2.5 h-2.5 rounded-full bg-red-200"></div>
+            <span className="text-xs text-gray-500 font-medium">Dead</span>
+          </div>
+          <span className="text-lg font-bold text-gray-800">
+            {dead.toLocaleString()}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function Reports() {
-  const [applications, setApplications] = useState<CompletedApplication[]>([]);
   const [stats, setStats] = useState<ReportStats | null>(null);
-  const [filter, setFilter] = useState<Filter>({
+  const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrend[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // History Table States
+  const [historyData, setHistoryData] = useState<HistoryApplication[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>({
     search: "",
-    entries: 10,
-    page: 1,
-    total_page: 1,
-    classification: "All",
+    status: "All",
     date_from: "",
     date_to: "",
+    page: 1,
+    entries: 10,
+    total_page: 1,
+    total: 0,
   });
+  const [historyLoading, setHistoryLoading] = useState(false);
 
-  const [loading, setLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
     message: string;
   } | null>(null);
-
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
   const API_BASE = "http://127.0.0.1:8000";
 
-  // ─── Fetch Completed Applications ─────────────────────────────────────────
-
-  const fetchCompletedApplications = async () => {
+  // ─── Fetch Dashboard Data ─────────────────────────────────────────────
+  const fetchReportData = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        search: filter.search,
-        page: filter.page.toString(),
-        entries: filter.entries.toString(),
-        classification: filter.classification,
-        status: "completed", // Only completed applications
+      const response = await fetch(`${API_BASE}/api/get_general_report_data/`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-
-      // Add date filters if provided
-      if (filter.date_from) params.append("date_from", filter.date_from);
-      if (filter.date_to) params.append("date_to", filter.date_to);
-
-      const response = await fetch(
-        `${API_BASE}/api/get_applications/?${params.toString()}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      if (!response.ok)
-        throw new Error("Failed to fetch completed applications.");
-
+      if (!response.ok) throw new Error("Failed to fetch report data.");
       const data = await response.json();
-      setApplications(data.data);
-      setFilter((prev) => ({ ...prev, total_page: data.total_page }));
-
-      // Calculate summary stats (client-side for now; backend could return these)
-      const totalSeedlings = data.data.reduce(
-        (sum: number, app: CompletedApplication) =>
-          sum + (app.total_request_seedling || 0),
-        0,
-      );
-      const totalMembers = data.data.reduce(
-        (sum: number, app: CompletedApplication) =>
-          sum + (app.total_members || 0),
-        0,
-      );
-      setStats({
-        total_completed: data.total,
-        total_seedlings: totalSeedlings,
-        total_area: 0, // Would need backend field
-        avg_members: data.data.length > 0 ? totalMembers / data.data.length : 0,
-      });
+      setStats(data.stats);
+      setMonthlyTrend(data.monthly_trend);
     } catch (err: any) {
-      setPSAlert({
-        type: "error",
-        title: "Failed",
-        message: err.message || "Failed to load completed applications.",
-      });
+      setPSAlert({ type: "error", title: "Failed", message: err.message });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchCompletedApplications();
-  }, [filter.page, filter.entries, filter.classification, filter.search]);
-
-  // ─── Export to CSV ────────────────────────────────────────────────────────
-
-  const handleExportCSV = () => {
-    if (applications.length === 0) {
-      setPSAlert({
-        type: "failed",
-        title: "No Data",
-        message: "No applications to export.",
+  // ─── Fetch History Data ───────────────────────────────────────────────
+  const fetchHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: historyFilter.page.toString(),
+        entries: historyFilter.entries.toString(),
       });
-      return;
+      if (historyFilter.status !== "All")
+        params.append("status", historyFilter.status);
+      if (historyFilter.search) params.append("search", historyFilter.search);
+      if (historyFilter.date_from)
+        params.append("date_from", historyFilter.date_from);
+      if (historyFilter.date_to)
+        params.append("date_to", historyFilter.date_to);
+
+      const res = await fetch(
+        `${API_BASE}/api/get_program_history/?${params.toString()}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error("Failed to fetch history");
+      const data = await res.json();
+      setHistoryData(data.data);
+      setHistoryFilter((prev) => ({
+        ...prev,
+        total_page: data.total_page,
+        total: data.total,
+      }));
+    } catch (err: any) {
+      setPSAlert({ type: "error", title: "Failed", message: err.message });
+    } finally {
+      setHistoryLoading(false);
     }
-
-    const headers = [
-      "Application ID",
-      "Organization",
-      "Email",
-      "Title",
-      "Classification",
-      "Members",
-      "Seedlings Requested",
-      "Created Date",
-      "Status",
-    ];
-
-    const rows = applications.map((app) => [
-      app.application_id,
-      app.organization_name,
-      app.org_email,
-      app.title,
-      app.classification,
-      app.total_members,
-      app.total_request_seedling,
-      app.created_at,
-      app.status,
-    ]);
-
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) =>
-        row
-          .map((cell) => {
-            const str = String(cell).replace(/"/g, '""');
-            return `"${str}"`;
-          })
-          .join(","),
-      ),
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `completed_applications_${new Date().toISOString().split("T")[0]}.csv`,
-    );
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setPSAlert({
-      type: "success",
-      title: "Exported!",
-      message: "Report downloaded as CSV.",
-    });
   };
 
-  // ─── Format Date ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    fetchReportData();
+  }, []);
+  useEffect(() => {
+    fetchHistory();
+  }, [historyFilter.page, historyFilter.entries]);
 
   const formatDate = (iso: string) =>
     iso
@@ -218,8 +385,204 @@ export default function Reports() {
         })
       : "—";
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── EXPORT FUNCTIONS ─────────────────────────────────────────────────
+  const handleExportExcel = () => {
+    if (historyData.length === 0) {
+      setPSAlert({
+        type: "failed",
+        title: "No Data",
+        message: "No history data to export.",
+      });
+      return;
+    }
 
+    const headers = [
+      "Organization",
+      "Program Title",
+      "Status",
+      "Linked Site",
+      "Site Status",
+      "Barangay",
+      "Area (ha)",
+      "Created Date",
+    ];
+    const rows = historyData.map((app) => [
+      app.organization_name,
+      app.title,
+      app.status,
+      app.site_name || "N/A",
+      app.site_status || "N/A",
+      app.barangay || "N/A",
+      app.site_area > 0 ? app.site_area.toFixed(2) : "0",
+      formatDate(app.created_at),
+    ]);
+
+    // Add BOM (\uFEFF) so Excel correctly reads UTF-8 characters
+    const BOM = "\uFEFF";
+    const csvContent =
+      BOM +
+      [
+        headers.join(","),
+        ...rows.map((row) =>
+          row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
+        ),
+      ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `program_history_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setPSAlert({
+      type: "success",
+      title: "Exported!",
+      message: "Report downloaded as Excel (CSV).",
+    });
+  };
+
+  const handleExportPDF = () => {
+    if (historyData.length === 0) {
+      setPSAlert({
+        type: "failed",
+        title: "No Data",
+        message: "No history data to export.",
+      });
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setPSAlert({
+        type: "error",
+        title: "Popup Blocked",
+        message: "Please allow popups to export PDF.",
+      });
+      return;
+    }
+
+    const statusLabel = (status: string) => {
+      if (status === "completed") return "Completed";
+      if (["failed", "rejected", "cancelled"].includes(status))
+        return status.charAt(0).toUpperCase() + status.slice(1);
+      if (["accepted", "under_monitoring"].includes(status)) return "Ongoing";
+      if (["pending", "for_evaluation", "for_head"].includes(status))
+        return "Pending";
+      return status;
+    };
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Program History Report</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #333; }
+          h1 { color: #0F4A2F; margin-bottom: 5px; }
+          .subtitle { color: #666; font-size: 14px; margin-bottom: 30px; }
+          .filters { background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; color: #555; border: 1px solid #e5e7eb; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th { background-color: #0F4A2F; color: white; padding: 10px; text-align: left; }
+          td { padding: 10px; border-bottom: 1px solid #e5e7eb; }
+          tr:nth-child(even) { background-color: #f9fafb; }
+          .badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; display: inline-block; }
+          .badge-green { background: #dcfce7; color: #166534; }
+          .badge-red { background: #fee2e2; color: #991b1b; }
+          .badge-blue { background: #dbeafe; color: #1e40af; }
+          .badge-amber { background: #fef3c7; color: #92400e; }
+          .badge-gray { background: #f3f4f6; color: #374151; }
+          .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #999; border-top: 1px solid #e5e7eb; padding-top: 20px; }
+          @media print { body { padding: 20px; } .no-print { display: none; } }
+        </style>
+      </head>
+      <body>
+        <h1>Program History & Site Status Report</h1>
+        <p class="subtitle">Generated on ${new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })}</p>
+        
+        <div class="filters">
+          <strong>Filters Applied:</strong> 
+          Status: ${historyFilter.status === "All" ? "All Statuses" : statusLabel(historyFilter.status)} | 
+          Date Range: ${historyFilter.date_from || "Start"} to ${historyFilter.date_to || "Present"} |
+          Search: ${historyFilter.search || "None"}
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Organization</th>
+              <th>Program Title</th>
+              <th>Status</th>
+              <th>Linked Site</th>
+              <th>Site Status</th>
+              <th>Barangay</th>
+              <th>Area (ha)</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${historyData
+              .map((app) => {
+                let badgeClass = "badge-gray";
+                if (app.status === "completed") badgeClass = "badge-green";
+                else if (
+                  ["failed", "rejected", "cancelled"].includes(app.status)
+                )
+                  badgeClass = "badge-red";
+                else if (["accepted", "under_monitoring"].includes(app.status))
+                  badgeClass = "badge-blue";
+                else if (
+                  ["pending", "for_evaluation", "for_head"].includes(app.status)
+                )
+                  badgeClass = "badge-amber";
+
+                let siteBadgeClass = "badge-gray";
+                if (app.site_status === "completed")
+                  siteBadgeClass = "badge-green";
+                else if (
+                  ["accepted", "under_monitoring"].includes(
+                    app.site_status || "",
+                  )
+                )
+                  siteBadgeClass = "badge-blue";
+
+                return `
+                <tr>
+                  <td><strong>${app.organization_name}</strong></td>
+                  <td>${app.title}</td>
+                  <td><span class="badge ${badgeClass}">${statusLabel(app.status)}</span></td>
+                  <td>${app.site_name || "N/A"}</td>
+                  <td>${app.site_status ? `<span class="badge ${siteBadgeClass}">${statusLabel(app.site_status)}</span>` : "N/A"}</td>
+                  <td>${app.barangay || "N/A"}</td>
+                  <td>${app.site_area > 0 ? app.site_area.toFixed(2) : "—"}</td>
+                  <td>${formatDate(app.created_at)}</td>
+                </tr>
+              `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+
+        <div class="footer">PlantScope MCDA System - Confidential Report</div>
+
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div
       className="min-h-screen bg-gray-50"
@@ -234,130 +597,199 @@ export default function Reports() {
         />
       )}
 
+      <main className="max-w-7xl mx-auto p-6 space-y-6">
+        {/* ── Header ── */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <Activity size={24} className="text-[#0F4A2F]" /> General Program
+              Report
+            </h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Overview of tree planting programs, site completions, and seedling
+              survival rates.
+            </p>
+          </div>
+          <button
+            onClick={fetchReportData}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0F4A2F] text-white text-sm font-semibold hover:bg-[#1a6b44] transition-colors shadow-sm"
+          >
+            <Loader2 size={16} className={loading ? "animate-spin" : ""} />{" "}
+            Refresh Data
+          </button>
+        </div>
 
-    
-
-      <main className="max-w-7xl mx-auto p-6">
-        {/* ── Summary Stats Cards ── */}
-        {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center">
-                  <CheckCircle2 size={20} className="text-green-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide">
-                    Total Completed
+        {/* ── Dashboard Stats & Charts ── */}
+        {loading && !stats ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 size={40} className="animate-spin text-[#0F4A2F] mb-4" />
+            <p className="text-gray-500 font-medium">
+              Calculating report metrics...
+            </p>
+          </div>
+        ) : stats ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              {[
+                {
+                  title: "Total Tree Growers",
+                  value: stats.total_organizations,
+                  icon: <Users size={22} />,
+                  bg: "bg-indigo-50",
+                  iconColor: "text-indigo-600",
+                },
+                {
+                  title: "Completed Programs",
+                  value: stats.completed_programs,
+                  icon: <CheckCircle2 size={22} />,
+                  bg: "bg-green-50",
+                  iconColor: "text-green-600",
+                },
+                {
+                  title: "Failed/Rejected",
+                  value: stats.failed_programs,
+                  icon: <XCircle size={22} />,
+                  bg: "bg-red-50",
+                  iconColor: "text-red-600",
+                },
+                {
+                  title: "Ongoing Programs",
+                  value: stats.ongoing_programs,
+                  icon: <Clock size={22} />,
+                  bg: "bg-amber-50",
+                  iconColor: "text-amber-600",
+                },
+              ].map((stat, i) => (
+                <div
+                  key={i}
+                  className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow"
+                >
+                  <div
+                    className={`w-11 h-11 rounded-xl ${stat.bg} flex items-center justify-center ${stat.iconColor} mb-3`}
+                  >
+                    {stat.icon}
+                  </div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                    {stat.title}
                   </p>
-                  <p className="text-2xl font-bold text-gray-800">
-                    {stats.total_completed.toLocaleString()}
+                  <p className="text-2xl font-bold text-gray-800 mt-1">
+                    {stat.value.toLocaleString()}
                   </p>
                 </div>
-              </div>
+              ))}
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <Trees size={20} className="text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide">
-                    Seedlings Planted
-                  </p>
-                  <p className="text-2xl font-bold text-gray-800">
-                    {stats.total_seedlings.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                  <Users size={20} className="text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide">
-                    Avg. Members
-                  </p>
-                  <p className="text-2xl font-bold text-gray-800">
-                    {Math.round(stats.avg_members).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">
-                  Export Report
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <h3 className="text-base font-bold text-gray-800 flex items-center gap-2 mb-1">
+                  <TrendingUp size={18} className="text-[#0F4A2F]" /> Program
+                  Status Trend
+                </h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Monthly comparison of completed vs failed programs (Last 6
+                  Months)
                 </p>
-                <p className="text-sm text-gray-600">Download as CSV</p>
+                <LineChart data={monthlyTrend} />
               </div>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col">
+                <h3 className="text-base font-bold text-gray-800 flex items-center gap-2 mb-1">
+                  <Leaf size={18} className="text-[#0F4A2F]" /> Seedling
+                  Survival Rate
+                </h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Based on all accepted progress reports
+                </p>
+                <div className="flex-1 flex items-center justify-center">
+                  <DonutChart
+                    survived={stats.total_seedlings_survived}
+                    dead={stats.total_seedlings_dead}
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {/* ── Program History & Site Status Section ── */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                <FileText size={18} className="text-[#0F4A2F]" /> Program
+                History & Site Status
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Filter and view detailed history of tree growers and their
+                linked sites.
+              </p>
+            </div>
+            {/* ✅ EXPORT BUTTONS */}
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleExportCSV}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0F4A2F] text-white text-sm font-semibold hover:bg-[#1a6b44] transition-colors"
+                onClick={handleExportPDF}
+                disabled={historyData.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Download size={16} /> Export
+                <FileText size={14} /> Export PDF
+              </button>
+              <button
+                onClick={handleExportExcel}
+                disabled={historyData.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-green-200 text-green-700 text-xs font-semibold hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download size={14} /> Export Excel
               </button>
             </div>
           </div>
-        )}
 
-        {/* ── Filters ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-6">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Filter size={16} className="text-gray-400" />
-              <span className="text-sm font-medium text-gray-600">
-                Filters:
-              </span>
-            </div>
-
-            {/* <select
-              value={filter.classification}
+          {/* Filters */}
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex flex-wrap items-center gap-3">
+            <select
+              value={historyFilter.status}
               onChange={(e) =>
-                setFilter((prev) => ({
+                setHistoryFilter((prev) => ({
                   ...prev,
-                  classification: e.target.value,
+                  status: e.target.value,
                   page: 1,
                 }))
               }
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-[#0F4A2F] focus:outline-none"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-[#0F4A2F] focus:outline-none bg-white"
             >
-              <option value="All">All Classifications</option>
-              <option value="new">New</option>
-              <option value="old">Old</option>
-            </select> */}
+              <option value="All">All Statuses</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="rejected">Rejected</option>
+              <option value="accepted">Accepted (Ongoing)</option>
+              <option value="under_monitoring">Under Monitoring</option>
+              <option value="for_evaluation">Pending Evaluation</option>
+            </select>
 
             <div className="flex items-center gap-2">
               <Calendar size={14} className="text-gray-400" />
               <input
                 type="date"
-                value={filter.date_from}
+                value={historyFilter.date_from}
                 onChange={(e) =>
-                  setFilter((prev) => ({
+                  setHistoryFilter((prev) => ({
                     ...prev,
                     date_from: e.target.value,
                     page: 1,
                   }))
                 }
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-[#0F4A2F] focus:outline-none"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-[#0F4A2F] focus:outline-none bg-white"
               />
-              <span className="text-gray-400">to</span>
+              <span className="text-gray-400 text-sm">to</span>
               <input
                 type="date"
-                value={filter.date_to}
+                value={historyFilter.date_to}
                 onChange={(e) =>
-                  setFilter((prev) => ({
+                  setHistoryFilter((prev) => ({
                     ...prev,
                     date_to: e.target.value,
                     page: 1,
                   }))
                 }
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-[#0F4A2F] focus:outline-none"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-[#0F4A2F] focus:outline-none bg-white"
               />
             </div>
 
@@ -368,225 +800,241 @@ export default function Reports() {
               />
               <input
                 type="text"
-                placeholder="Search applications..."
-                value={filter.search}
+                placeholder="Search org, program, or site..."
+                value={historyFilter.search}
                 onChange={(e) =>
-                  setFilter((prev) => ({
+                  setHistoryFilter((prev) => ({
                     ...prev,
                     search: e.target.value,
                     page: 1,
                   }))
                 }
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") fetchCompletedApplications();
+                  if (e.key === "Enter") fetchHistory();
                 }}
-                className="border border-gray-300 rounded-lg pl-8 pr-3 py-2 w-64 text-sm focus:border-[#0F4A2F] focus:outline-none"
+                className="border border-gray-300 rounded-lg pl-8 pr-3 py-2 w-64 text-sm focus:border-[#0F4A2F] focus:outline-none bg-white"
               />
             </div>
 
             <button
-              onClick={fetchCompletedApplications}
-              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
+              onClick={fetchHistory}
+              className="px-4 py-2 rounded-lg bg-[#0F4A2F] text-white text-sm font-medium hover:bg-[#1a6b44] transition-colors"
             >
               Apply Filters
             </button>
           </div>
-        </div>
 
-        {/* ── Table ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {loading && <LoaderPending />}
-
-          <div className="overflow-x-auto">
+          {/* Table */}
+          <div className="overflow-x-auto relative">
+            {historyLoading && (
+              <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10">
+                <Loader2 size={32} className="animate-spin text-[#0F4A2F]" />
+              </div>
+            )}
             <table className="min-w-full">
-              <thead className="bg-[#0f4a2fe0] text-white">
+              <thead className="bg-gray-50 text-gray-600">
                 <tr>
-                  <th className="py-4 px-5 text-left text-sm font-semibold">
-                    No
+                  <th className="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider">
+                    Organization / Program
                   </th>
-                  <th className="py-4 px-5 text-left text-sm font-semibold">
-                    Organization
+                  <th className="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider">
+                    Linked Site
                   </th>
-                  <th className="py-4 px-5 text-left text-sm font-semibold">
-                    Program Title
+                  <th className="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider">
+                    Site Status
                   </th>
-                  <th className="py-4 px-5 text-left text-sm font-semibold">
-                    Classification
+                  <th className="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider">
+                    Barangay
                   </th>
-                  <th className="py-4 px-5 text-left text-sm font-semibold">
-                    Members
+                  <th className="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider">
+                    Area (ha)
                   </th>
-                  <th className="py-4 px-5 text-left text-sm font-semibold">
-                    Seedlings
+                  <th className="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider">
+                    Date
                   </th>
-                  <th className="py-4 px-5 text-left text-sm font-semibold">
-                    Completed
-                  </th>
-                  <th className="py-4 px-5 text-left text-sm font-semibold">
+                  <th className="py-3 px-6 text-left text-xs font-semibold uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody>
-                {applications.length > 0 ? (
-                  applications.map((app, index) => (
+              <tbody className="divide-y divide-gray-100">
+                {historyData.length > 0 ? (
+                  historyData.map((app, i) => (
                     <tr
                       key={app.application_id}
-                      className={`${
-                        index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"
-                      } transition hover:bg-[#0F4A2F05]`}
+                      className="hover:bg-gray-50 transition-colors"
                     >
-                      <td className="py-4 px-5 text-sm">
-                        {index + 1 + (filter.page - 1) * filter.entries}
-                      </td>
-                      <td className="py-4 px-5">
+                      <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
                           {app.org_profile ? (
                             <img
                               src={`${API_BASE}/${app.org_profile}`}
-                              className="w-10 h-10 rounded-full object-cover border border-gray-200"
-                              alt="Organization"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src =
-                                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='%230F4A2F' stroke-width='1'/%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M7 7h10M7 11h10M7 15h6'/%3E%3C/svg%3E";
-                              }}
+                              className="w-9 h-9 rounded-full object-cover border border-gray-200"
+                              alt="Org"
                             />
                           ) : (
-                            <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center border border-gray-200">
-                              <Leaf size={18} className="text-green-300" />
+                            <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center border border-gray-200">
+                              <Leaf size={16} className="text-green-300" />
                             </div>
                           )}
                           <div>
-                            <p className="font-semibold text-sm text-gray-800">
+                            <p className="text-sm font-semibold text-gray-800">
                               {app.organization_name}
                             </p>
-                            <p className="text-xs text-gray-500">
-                              {app.org_email}
+                            <p
+                              className="text-xs text-gray-500 truncate max-w-[200px]"
+                              title={app.title}
+                            >
+                              {app.title}
                             </p>
                           </div>
                         </div>
                       </td>
-                      <td
-                        className="py-4 px-5 text-sm text-gray-700 max-w-xs truncate"
-                        title={app.title}
-                      >
-                        {app.title}
+                      <td className="py-4 px-6 text-sm font-medium text-gray-800">
+                        {app.site_name || (
+                          <span className="text-gray-400 italic">
+                            No site assigned
+                          </span>
+                        )}
                       </td>
-                      <td className="py-4 px-5">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${
-                            app.classification === "new"
-                              ? "bg-blue-100 text-blue-700"
-                              : "bg-gray-100 text-gray-700"
-                          }`}
-                        >
-                          {app.classification}
-                        </span>
+                      <td className="py-4 px-6">
+                        {app.site_status ? (
+                          <StatusBadge status={app.site_status} />
+                        ) : (
+                          <span className="text-gray-400 text-xs">N/A</span>
+                        )}
                       </td>
-                      <td className="py-4 px-5 text-sm font-medium text-gray-800">
-                        {app.total_members.toLocaleString()}
+                      <td className="py-4 px-6 text-sm text-gray-600">
+                        {app.barangay || "—"}
                       </td>
-                      <td className="py-4 px-5">
-                        <div className="flex items-center gap-1.5 text-sm">
-                          <Trees size={14} className="text-green-500" />
-                        
-                        </div>
+                      <td className="py-4 px-6 text-sm font-medium text-gray-800">
+                        {app.site_area > 0 ? app.site_area.toFixed(2) : "—"}
                       </td>
-                      <td className="py-4 px-5 text-sm text-gray-500">
+                      <td className="py-4 px-6 text-sm text-gray-500">
                         {formatDate(app.created_at)}
                       </td>
-                      <td className="py-4 px-5">
+                      <td className="py-4 px-6">
                         <button
                           onClick={() =>
                             navigate(
                               `/DataManager/maintenance_evaluation/${app.application_id}`,
                             )
                           }
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 transition-colors"
-                          title="View details"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-100 transition-colors"
                         >
-                          <FileText size={14} /> View
+                          <ExternalLink size={12} /> View Info
                         </button>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-gray-500">
-                      {filter.search || filter.classification !== "All"
-                        ? "No completed applications match your filters."
-                        : "No completed applications found."}
+                    <td
+                      colSpan={7}
+                      className="py-12 text-center text-gray-400 text-sm"
+                    >
+                      No applications match your filters.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {historyFilter.total_page > 1 && (
+            <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50">
+              <p className="text-sm text-gray-500">
+                Showing {(historyFilter.page - 1) * historyFilter.entries + 1}{" "}
+                to{" "}
+                {Math.min(
+                  historyFilter.page * historyFilter.entries,
+                  historyFilter.total,
+                )}{" "}
+                of {historyFilter.total} results
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  disabled={historyFilter.page <= 1}
+                  onClick={() =>
+                    setHistoryFilter((prev) => ({
+                      ...prev,
+                      page: prev.page - 1,
+                    }))
+                  }
+                  className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 text-sm"
+                >
+                  <ChevronLeft size={14} /> Prev
+                </button>
+                {Array.from(
+                  { length: Math.min(5, historyFilter.total_page) },
+                  (_, i) => {
+                    let pageNum =
+                      historyFilter.total_page <= 5
+                        ? i + 1
+                        : historyFilter.page <= 3
+                          ? i + 1
+                          : historyFilter.page >= historyFilter.total_page - 2
+                            ? historyFilter.total_page - 4 + i
+                            : historyFilter.page - 2 + i;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() =>
+                          setHistoryFilter((prev) => ({
+                            ...prev,
+                            page: pageNum,
+                          }))
+                        }
+                        className={`px-3 py-1.5 border rounded-lg cursor-pointer text-sm ${pageNum === historyFilter.page ? "bg-[#0F4A2F] text-white" : "text-gray-700 hover:bg-white"}`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  },
+                )}
+                <button
+                  disabled={historyFilter.page >= historyFilter.total_page}
+                  onClick={() =>
+                    setHistoryFilter((prev) => ({
+                      ...prev,
+                      page: prev.page + 1,
+                    }))
+                  }
+                  className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 text-sm"
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* ── Pagination ── */}
-        {filter.total_page > 1 && (
-          <div className="flex items-center justify-between mt-6">
-            <p className="text-sm text-gray-500">
-              Showing {(filter.page - 1) * filter.entries + 1} to{" "}
-              {Math.min(filter.page * filter.entries, applications.length)} of{" "}
-              {stats?.total_completed.toLocaleString()} results
-            </p>
-
-            <div className="flex items-center gap-1">
-              <button
-                disabled={filter.page <= 1}
-                onClick={() =>
-                  setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
-                }
-                className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-              >
-                <ChevronLeft size={16} /> Prev
-              </button>
-
-              {Array.from(
-                { length: Math.min(5, filter.total_page) },
-                (_, i) => {
-                  let pageNum;
-                  if (filter.total_page <= 5) {
-                    pageNum = i + 1;
-                  } else if (filter.page <= 3) {
-                    pageNum = i + 1;
-                  } else if (filter.page >= filter.total_page - 2) {
-                    pageNum = filter.total_page - 4 + i;
-                  } else {
-                    pageNum = filter.page - 2 + i;
-                  }
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() =>
-                        setFilter((prev) => ({ ...prev, page: pageNum }))
-                      }
-                      className={`px-3 py-1.5 border rounded-lg cursor-pointer text-sm ${
-                        pageNum === filter.page
-                          ? "bg-[#0F4A2F] text-white"
-                          : "text-gray-700 hover:bg-gray-100"
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                },
-              )}
-
-              <button
-                disabled={filter.page >= filter.total_page}
-                onClick={() =>
-                  setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
-                }
-                className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-              >
-                Next <ChevronRight size={16} />
-              </button>
-            </div>
+        {/* ── Coming Soon Section ── */}
+        {/* <div className="pt-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="h-px flex-1 bg-gray-200"></div>
+            <h2 className="text-lg font-bold text-gray-400 uppercase tracking-widest">Advanced Analytics</h2>
+            <div className="h-px flex-1 bg-gray-200"></div>
           </div>
-        )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            {[
+              { title: "NDVI Canopy Impact", desc: "Track vegetation health changes over the program lifecycle using satellite imagery.", icon: <Leaf size={20} />, bg: "bg-emerald-50", text: "text-emerald-600", blur: "bg-emerald-50" },
+              { title: "Financial & Seedling Audit", desc: "Detailed breakdown of seedling distribution, costs, and nursery performance.", icon: <Trees size={20} />, bg: "bg-blue-50", text: "text-blue-600", blur: "bg-blue-50" },
+              { title: "Barangay Heatmaps", desc: "Geographic distribution of tree planting success rates and hazard overlaps.", icon: <MapPin size={20} />, bg: "bg-amber-50", text: "text-amber-600", blur: "bg-amber-50" },
+              { title: "Inspector Performance", desc: "Field assessment completion rates, accuracy, and response times.", icon: <Users size={20} />, bg: "bg-purple-50", text: "text-purple-600", blur: "bg-purple-50" },
+            ].map((item, i) => (
+              <div key={i} className="relative bg-white rounded-2xl border border-gray-100 shadow-sm p-5 overflow-hidden group hover:shadow-md transition-all">
+                <div className="absolute top-0 right-0 bg-gray-100 text-gray-500 text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">Coming Soon</div>
+                <div className={`w-12 h-12 rounded-xl ${item.bg} flex items-center justify-center ${item.text} mb-4`}>{item.icon}</div>
+                <h3 className="text-base font-bold text-gray-800 mb-2">{item.title}</h3>
+                <p className="text-xs text-gray-500 leading-relaxed mb-4">{item.desc}</p>
+                <div className="flex items-center gap-2 text-xs text-gray-400 font-medium"><Lock size={12} /><span>Locked</span></div>
+                <div className={`absolute -bottom-10 -right-10 w-32 h-32 ${item.blur} rounded-full blur-2xl opacity-50 group-hover:opacity-100 transition-opacity`}></div>
+              </div>
+            ))}
+          </div>
+        </div> */}
       </main>
     </div>
   );

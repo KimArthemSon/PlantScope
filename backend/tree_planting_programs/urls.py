@@ -25,6 +25,11 @@ urlpatterns = [
     path('update_progress_report/<int:report_id>/', views.update_progress_report, name='update_progress_report'),
     path('create_reapplication/', views.create_reapplication, name='create_reapplication'),
     path('get_tree_grower_application_history/', views.get_tree_grower_application_history, name='get_tree_grower_application_history'),
-    
+
+     # ─── CALENDAR / ORIENTATION DATES ───────────────────────────────
+    path('get_orientation_dates/', views.get_orientation_dates, name='get_orientation_dates'),
+     path('get_site_applications/<int:site_id>/', views.get_site_applications, name='get_site_applications'),
+     path('get_general_report_data/', views.get_general_report_data, name='get_general_report_data'),
+    path('get_program_history/', views.get_program_history, name='get_program_history'),
     
 ]

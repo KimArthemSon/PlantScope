@@ -10,7 +10,9 @@ from .models import Application, SeedlingRequest, ProgressReport, Reason
 from sites.models import Sites
 from accounts.helper import get_user_from_token
 from accounts.models import User
-
+from django.db.models import Sum, Count, Q
+from django.db.models.functions import TruncMonth
+from datetime import datetime, timedelta
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPER FUNCTIONS
@@ -522,7 +524,7 @@ def confirm_application(request, application_id):
 
 @csrf_exempt
 def complete_application(request, application_id):
-    """DataManager: Finalize program as completed"""
+    """DataManager: Finalize program as completed or failed"""
     if request.method != 'PUT':
         return JsonResponse({'error': 'Only PUT allowed'}, status=405)
 
@@ -535,24 +537,46 @@ def complete_application(request, application_id):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    reason_text = data.get('reason', 'Program completed successfully.').strip()
+    # ✅ Extract the status sent from the frontend ("completed" or "failed")
+    new_status = data.get('status', 'completed').strip()
+    reason_text = data.get('reason', 'Program finalized.').strip()
+    
+    # Validate the status
+    if new_status not in ['completed', 'failed']:
+        return JsonResponse({'error': 'Status must be completed or failed'}, status=400)
+
     app = get_object_or_404(Application, application_id=application_id)
     
     if app.status not in ['accepted', 'under_monitoring']:
-        return JsonResponse({'error': 'Application must be under monitoring to complete'}, status=400)
+        return JsonResponse({'error': 'Application must be accepted or under monitoring to finalize'}, status=400)
 
     try:
         with transaction.atomic():
-            app.status = 'completed'
+            # 1. Update the application status
+            app.status = new_status
             app.save()
+            
+            # 2. Log the reason for the audit trail
             Reason.objects.create(
                 user=user,
                 application=app,
                 status_layer='new_program',
                 reason=reason_text,
-                status='completed'
+                status=new_status
             )
-        return JsonResponse({'message': 'Application marked as completed'}, status=200)
+            
+            # ✅ 3. NEW: If completed, update the associated Site status to 'completed'
+            if new_status == 'completed' and app.site:
+                app.site.status = 'completed'
+                app.site.save()
+            
+            # ✅ If failed, the site status remains 'accepted' (we do nothing to the site)
+
+        return JsonResponse({
+            'message': f'Application marked as {new_status}',
+            'new_status': new_status
+        }, status=200)
+        
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -1030,4 +1054,240 @@ def get_tree_grower_application_history(request):
     return JsonResponse({
         "applications": history_data,
         "total_applications": len(history_data)
+    }, status=200)
+
+@csrf_exempt
+def get_orientation_dates(request):
+    """
+    Fetch all applications with scheduled orientation dates for the Calendar.
+    - TreeGrowers only see their own orientations.
+    - DataManager and CityENROHead see all orientations.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    # Base queryset: only fetch applications that have an orientation_date assigned
+    qs = Application.objects.filter(
+        orientation_date__isnull=False
+    ).order_by('orientation_date')
+    
+    # Role-based filtering: Tree Growers should only see their own calendar events
+    if user.user_role == 'treeGrowers':
+        qs = qs.filter(user=user)
+    # DataManager and CityENROHead can see all scheduled orientations
+
+    # Serialize the data to match the frontend's OrientationDate interface
+    data = [{
+        "application_id": app.application_id,
+        "title": app.title,
+        "orientation_date": app.orientation_date.isoformat(), # Formats as YYYY-MM-DD
+        "status": app.status,
+    } for app in qs]
+
+    return JsonResponse(data, safe=False, status=200)
+
+@csrf_exempt
+def get_site_applications(request, site_id):
+    """Fetch all tree planting applications assigned to a specific site"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    try:
+        # Fetch applications linked to this site, including organization details
+        apps = Application.objects.filter(site_id=site_id).select_related(
+            'user__organization'
+        ).order_by('-created_at')
+        
+        data = [{
+            "application_id": app.application_id,
+            "title": app.title,
+            "status": app.status,
+            "classification": app.classification,
+            "organization_name": app.user.organization.organization_name if hasattr(app.user, 'organization') else "Unknown",
+            "total_members": app.total_members,
+            "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
+            "created_at": app.created_at.strftime("%b %d, %Y"),
+        } for app in apps]
+        
+        return JsonResponse({"applications": data}, status=200)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+@csrf_exempt
+def get_general_report_data(request):
+    """
+    Aggregates all data needed for the General Program Report Dashboard.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    # ─── 1. Summary Stats ──────────────────────────────────────────────
+    total_orgs = User.objects.filter(
+        user_role='treeGrowers', 
+        applications__isnull=False
+    ).distinct().count()
+    
+    completed_apps = Application.objects.filter(status='completed').count()
+    # Count rejected, failed, or cancelled as "failed" programs
+    failed_apps = Application.objects.filter(status__in=['rejected', 'failed', 'cancelled']).count()
+    ongoing_apps = Application.objects.filter(status__in=['accepted', 'under_monitoring', 'for_head', 'for_evaluation']).count()
+
+    # Seedling Stats (Only count accepted requests)
+    seedling_stats = SeedlingRequest.objects.filter(status='accepted').aggregate(
+        total_requested=Sum('no_request_seedling')
+    )
+    total_requested = seedling_stats['total_requested'] or 0
+
+    # Progress Stats (Only count accepted reports)
+    progress_stats = ProgressReport.objects.filter(status='accepted').aggregate(
+        total_survived=Sum('no_survived_plants'),
+        total_dead=Sum('no_dead_plants')
+    )
+    total_survived = progress_stats['total_survived'] or 0
+    total_dead = progress_stats['total_dead'] or 0
+
+    # Site Stats (Only completed sites)
+    site_stats = Sites.objects.filter(status='completed').aggregate(
+        total_area=Sum('total_area_hectares')
+    )
+    total_area = site_stats['total_area'] or 0.0
+
+    # ─── 2. Monthly Trend (Last 6 Months) ──────────────────────────────
+    six_months_ago = datetime.now() - timedelta(days=180)
+    monthly_apps = Application.objects.filter(
+        created_at__gte=six_months_ago
+    ).annotate(
+        month=TruncMonth('created_at')
+    ).values('month').annotate(
+        completed=Count('application_id', filter=Q(status='completed')),
+        failed=Count('application_id', filter=Q(status__in=['rejected', 'failed', 'cancelled']))
+    ).order_by('month')
+
+    monthly_trend = [
+        {
+            "month": entry['month'].strftime('%b'),
+            "completed": entry['completed'],
+            "failed": entry['failed']
+        } for entry in monthly_apps
+    ]
+
+    # ─── 3. Site & Application Correlation ─────────────────────────────
+    # Get sites that have at least one application, fetch the latest application for each
+    sites_with_apps = Sites.objects.filter(
+        applications__isnull=False
+    ).select_related(
+        'reforestation_area__barangay'
+    ).prefetch_related('applications__user__organization').distinct()[:15] # Limit to 15 for performance
+
+    site_applications = []
+    for site in sites_with_apps:
+        latest_app = site.applications.order_by('-created_at').first()
+        if latest_app:
+            site_applications.append({
+                "site_name": site.name,
+                "barangay": site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else "N/A",
+                "app_title": latest_app.title,
+                "org": latest_app.user.organization.organization_name if hasattr(latest_app.user, 'organization') else "Unknown",
+                "status": latest_app.status
+            })
+
+    # ─── Return Payload ────────────────────────────────────────────────
+    data = {
+        "stats": {
+            "total_organizations": total_orgs,
+            "completed_programs": completed_apps,
+            "failed_programs": failed_apps,
+            "ongoing_programs": ongoing_apps,
+            "total_seedlings_requested": total_requested,
+            "total_seedlings_survived": total_survived,
+            "total_seedlings_dead": total_dead,
+            "total_area_completed": round(total_area, 2)
+        },
+        "monthly_trend": monthly_trend,
+        "site_applications": site_applications
+    }
+
+    return JsonResponse(data, status=200)
+
+# views.py
+from django.db.models import Q
+import math
+
+@csrf_exempt
+def get_program_history(request):
+    """Fetch application history with linked site details, supporting filters"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    status_filter = request.GET.get('status', 'All')
+    search = request.GET.get('search', '').strip()
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    
+    try:
+        entries = max(int(request.GET.get('entries', 10)), 10)
+        page = max(int(request.GET.get('page', 1)), 1)
+    except (ValueError, TypeError):
+        entries, page = 10, 1
+
+    # Fetch applications with related site and organization data
+    qs = Application.objects.select_related(
+        'user__organization', 
+        'site__reforestation_area__barangay'
+    ).order_by('-created_at')
+    
+    # Apply filters
+    if status_filter and status_filter != 'All':
+        qs = qs.filter(status=status_filter)
+    if search:
+        qs = qs.filter(
+            Q(title__icontains=search) | 
+            Q(user__organization__organization_name__icontains=search) |
+            Q(site__name__icontains=search)
+        )
+    if date_from:
+        qs = qs.filter(created_at__date__gte=date_from)
+    if date_to:
+        qs = qs.filter(created_at__date__lte=date_to)
+
+    total = qs.count()
+    total_page = math.ceil(total / entries) if total > 0 else 1
+    offset = (page - 1) * entries
+
+    # Serialize data including linked site information
+    data = [{
+        "application_id": app.application_id,
+        "title": app.title,
+        "status": app.status,
+        "classification": app.classification,
+        "total_members": app.total_members,
+        "created_at": app.created_at.strftime("%Y-%m-%d"),
+        "organization_name": app.user.organization.organization_name if hasattr(app.user, 'organization') else "Unknown",
+        "org_email": app.user.organization.email if hasattr(app.user, 'organization') else "",
+        "org_profile": app.user.organization.profile_img.url if hasattr(app.user, 'organization') and app.user.organization.profile_img else None,
+        # ✅ Linked Site Info
+        "site_name": app.site.name if app.site else None,
+        "site_status": app.site.status if app.site else None,
+        "barangay": app.site.reforestation_area.barangay.name if app.site and app.site.reforestation_area and app.site.reforestation_area.barangay else None,
+        "site_area": round(app.site.total_area_hectares, 2) if app.site else 0,
+    } for app in qs[offset:offset + entries]]
+
+    return JsonResponse({
+        'data': data, 
+        'total_page': total_page, 
+        'page': page, 
+        'entries': entries, 
+        'total': total
     }, status=200)

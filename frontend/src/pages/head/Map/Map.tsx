@@ -266,8 +266,21 @@ export default function Map() {
   >("today");
   const [firmsGeoJsonLayer, setFirmsGeoJsonLayer] = useState<any>(null);
 
-  const [start, setStart] = useState("2023-01-01");
-  const [end, setEnd] = useState("2023-12-31");
+    // ✅ Helper function to format date to YYYY-MM-DD
+  const formatDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  // ✅ Calculate today and exactly 5 months ago
+  const today = new Date();
+  const fiveMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, today.getDate());
+
+  const [start, setStart] = useState(formatDate(fiveMonthsAgo));
+  const [end, setEnd] = useState(formatDate(today));
+
   const [goHome, setGoHome] = useState(false);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -636,7 +649,7 @@ export default function Map() {
 
       if (data.success && data.features && data.features.length > 0) {
         setSuitablePolygons(data);
-        setNdviTileUrl(null);
+        
 
         const totalArea = data.features.reduce(
           (sum: number, f: any) => sum + (f.properties.area_hectares || 0),

@@ -17,7 +17,6 @@ import {
   User,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import profile_sample from "../../../assets/carlos.jpg";
 import { useEffect, useState, type FormEvent } from "react";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
@@ -110,7 +109,7 @@ export function Profile() {
         ...e,
         password: "",
         confirm_pass: "",
-        preview_profile: "http://127.0.0.1:8000/" + data.profile_img,
+        preview_profile: data.profile_img ? "http://127.0.0.1:8000/" + data.profile_img : "",
       }));
       setIsLoading(false);
     } catch (err) {
@@ -160,6 +159,18 @@ export function Profile() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsLoading(true);
+
+    // Manual validation for profile image on Create
+    if (action === "Create" && !profile.preview_profile && !profile_img) {
+      setIsLoading(false);
+      setPSAlert({
+        type: "error",
+        title: "Missing Photo",
+        message: "Please upload a profile photo.",
+      });
+      return;
+    }
+
     if (
       (action == "Update" && profile.password.length != 0) ||
       action == "Create"
@@ -470,11 +481,26 @@ export function Profile() {
               <div className="avatar-ring shrink-0">
                 <div className="avatar-inner">
                   <div className="relative w-24 h-24 rounded-full overflow-hidden">
-                    <img
-                      src={profile.preview_profile || profile_sample}
-                      alt="profile"
-                      className="w-full h-full object-cover"
-                    />
+                    {profile.preview_profile ? (
+                      <img
+                        src={profile.preview_profile}
+                        alt="profile"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div
+                        className={`w-full h-full flex flex-col items-center justify-center ${
+                          action === "Create"
+                            ? "bg-emerald-50 text-emerald-600 border-2 border-dashed border-emerald-500"
+                            : "bg-stone-50 text-stone-400 border-2 border-dashed border-stone-300"
+                        }`}
+                      >
+                        <Camera size={24} strokeWidth={2.5} />
+                        <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-center leading-tight px-1">
+                          {action === "Create" ? "Add Photo *" : "Upload"}
+                        </span>
+                      </div>
+                    )}
                     <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity cursor-pointer rounded-full">
                       <Camera size={20} className="text-white" />
                       <input
@@ -482,7 +508,6 @@ export function Profile() {
                         accept="image/*"
                         onChange={handleImageChange}
                         className="hidden"
-                        required={action === "Create"}
                       />
                     </label>
                   </div>
@@ -538,11 +563,13 @@ export function Profile() {
               <div className="grid grid-cols-2 gap-5">
                 {/* First Name */}
                 <div>
-                  <label className={labelClass}>First Name</label>
+                  <label className={labelClass}>
+                    First Name <span className="text-red-500">*</span>
+                  </label>
                   <div className={inputBase}>
                     <Info className={iconClass} />
                     <input
-                      required={action === "Create"}
+                      required
                       type="text"
                       className={inputField}
                       placeholder="e.g. Maria"
@@ -579,11 +606,13 @@ export function Profile() {
 
                 {/* Last Name */}
                 <div>
-                  <label className={labelClass}>Last Name</label>
+                  <label className={labelClass}>
+                    Last Name <span className="text-red-500">*</span>
+                  </label>
                   <div className={inputBase}>
                     <Info className={iconClass} />
                     <input
-                      required={action === "Create"}
+                      required
                       type="text"
                       className={inputField}
                       placeholder="e.g. Dela Cruz"
@@ -597,11 +626,13 @@ export function Profile() {
 
                 {/* Contact */}
                 <div>
-                  <label className={labelClass}>Contact Number</label>
+                  <label className={labelClass}>
+                    Contact Number <span className="text-red-500">*</span>
+                  </label>
                   <div className={inputBase}>
                     <Phone className={iconClass} />
                     <input
-                      required={action === "Create"}
+                      required
                       type="text"
                       className={inputField}
                       placeholder="e.g. +63 912 345 6789"
@@ -637,11 +668,13 @@ export function Profile() {
 
                 {/* Birthday */}
                 <div>
-                  <label className={labelClass}>Birthday</label>
+                  <label className={labelClass}>
+                    Birthday <span className="text-red-500">*</span>
+                  </label>
                   <div className={inputBase}>
                     <Cake className={iconClass} />
                     <input
-                      required={action === "Create"}
+                      required
                       type="date"
                       className={inputField}
                       value={profile.birthday}
@@ -654,11 +687,13 @@ export function Profile() {
 
                 {/* Address — full width */}
                 <div className="col-span-2">
-                  <label className={labelClass}>Address</label>
+                  <label className={labelClass}>
+                    Address <span className="text-red-500">*</span>
+                  </label>
                   <div className={inputBase}>
                     <Map className={iconClass} />
                     <input
-                      required={action === "Create"}
+                      required
                       type="text"
                       className={inputField}
                       placeholder="e.g. Brgy. San Isidro, Ormoc City, Leyte"
@@ -691,11 +726,13 @@ export function Profile() {
               <div className="grid grid-cols-2 gap-5">
                 {/* Email */}
                 <div>
-                  <label className={labelClass}>Email Address</label>
+                  <label className={labelClass}>
+                    Email Address <span className="text-red-500">*</span>
+                  </label>
                   <div className={inputBase}>
                     <Mail className={iconClass} />
                     <input
-                      required={action === "Create"}
+                      required
                       type="email"
                       className={inputField}
                       placeholder="example@enro.gov.ph"
@@ -754,7 +791,7 @@ export function Profile() {
                 {/* Password */}
                 <div>
                   <label className={labelClass}>
-                    Password
+                    Password {action === "Create" && <span className="text-red-500">*</span>}
                     {action === "Update" && (
                       <span className="ml-2 normal-case font-normal text-stone-400">
                         (leave blank to keep current)
@@ -824,7 +861,9 @@ export function Profile() {
 
                 {/* Confirm Password */}
                 <div>
-                  <label className={labelClass}>Confirm Password</label>
+                  <label className={labelClass}>
+                    Confirm Password {action === "Create" && <span className="text-red-500">*</span>}
+                  </label>
                   <div
                     className={
                       inputBase +

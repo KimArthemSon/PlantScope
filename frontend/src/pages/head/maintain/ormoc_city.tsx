@@ -19,6 +19,7 @@ import {
   Crosshair,
   Layers,
 } from "lucide-react";
+import L from "leaflet"; // ✅ Added for custom divIcon
 import "leaflet/dist/leaflet.css";
 
 export default function Ormoc_City() {
@@ -428,6 +429,7 @@ export default function Ormoc_City() {
           >
             <TileLayer url="http://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" />
             <MapClickHandler />
+            
             {marker && (
               <Marker
                 position={marker}
@@ -446,6 +448,41 @@ export default function Ormoc_City() {
                 <Popup>Selected Location</Popup>
               </Marker>
             )}
+
+            {/* ✅ NEW: Render numbered vertex markers for the polygon */}
+            {polygon.map((coord, i) => (
+              <Marker
+                key={`vertex-${i}`}
+                position={coord}
+                icon={L.divIcon({
+                  className: "vertex-marker-custom",
+                  html: `<div style="
+                    background: #15803d; 
+                    color: white; 
+                    width: 26px; 
+                    height: 26px; 
+                    border-radius: 50%; 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    font-size: 12px; 
+                    font-weight: bold; 
+                    border: 2px solid white;
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+                  ">${i + 1}</div>`,
+                  iconSize: [26, 26],
+                  iconAnchor: [13, 13],
+                })}
+                draggable
+                eventHandlers={{
+                  dragend: (e) => {
+                    const m = e.target.getLatLng();
+                    updatePolygon(i, m.lat, m.lng);
+                  },
+                }}
+              />
+            ))}
+
             {polygon.length > 2 && (
               <Polygon
                 positions={polygon}
@@ -461,6 +498,15 @@ export default function Ormoc_City() {
           </MapContainer>
         </div>
       </div>
+
+      {/* ✅ Custom CSS to remove Leaflet's default white box around divIcons */}
+      <style>{`
+        .vertex-marker-custom {
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+      `}</style>
     </div>
   );
 }
