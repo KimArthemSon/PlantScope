@@ -52,6 +52,9 @@ const MOCK_DATA: OrientationDate[] = [
 // date.toISOString() converts to UTC first — in timezones UTC+1 or later,
 // midnight local time becomes the previous day in UTC, so "2026-04-29" never
 // matches. This helper uses local getFullYear/getMonth/getDate instead.
+
+import { api } from "@/constant/api.ts";
+
 const toLocalDateStr = (date: Date): string => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -73,7 +76,7 @@ export default function Calendar() {
   async function fetchOrientationDates() {
     try {
       const res = await fetch(
-        "http://127.0.0.1:8000/api/get_orientation_dates/",
+        api+"api/get_orientation_dates/",
         {
           headers: { Authorization: `Bearer ${token}` },
         },

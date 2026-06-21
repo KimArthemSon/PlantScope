@@ -33,9 +33,10 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
+import { api } from "@/constant/api.ts";
 
-const API = "http://127.0.0.1:8000/api/";
-const API_IMAGE = "http://127.0.0.1:8000";
+const API = api+"api/";
+const API_IMAGE = api;
 
 // ─────────────────────────────────────────────
 // Type Definitions

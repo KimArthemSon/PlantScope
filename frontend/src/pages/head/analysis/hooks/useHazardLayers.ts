@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import L from "leaflet";
+import { api, api_second } from "@/constant/api";
 
 export type FirmsTimeRange = "today" | "24hrs" | "7days";
 
@@ -155,7 +156,7 @@ export function useHazardLayers(
         const bounds = map.getBounds();
         const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
 
-        const response = await fetch("http://127.0.0.1:8000/api/firms-fire-data/", {
+        const response = await fetch(api+"api/firms-fire-data/", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

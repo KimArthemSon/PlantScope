@@ -22,7 +22,7 @@ import {
   Clock,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
-
+import { api } from "@/constant/api.ts";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface SeedlingProvision {
@@ -285,7 +285,7 @@ export default function Evaluation_confirmation() {
       setLoadingDetail(true);
       try {
         const res = await fetch(
-          `http://127.0.0.1:8000/api/get_application/${application_id}/`,
+          api+`api/get_application/${application_id}/`,
           {
             headers: { Authorization: `Bearer ${token}` },
           },
@@ -337,7 +337,7 @@ export default function Evaluation_confirmation() {
     setSubmitting(true);
     try {
       const res = await fetch(
-        `http://127.0.0.1:8000/api/confirm_application/${application_id}/`,
+        api+`api/confirm_application/${application_id}/`,
         {
           method: "PUT",
           headers: {

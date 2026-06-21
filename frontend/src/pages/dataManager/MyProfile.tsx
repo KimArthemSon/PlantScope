@@ -95,7 +95,7 @@ export default function MyProfile() {
   useEffect(() => {
     async function load() {
       try {
-        const meRes = await fetch("http://127.0.0.1:8000/api/get_me/", {
+        const meRes = await fetch(api+"api/get_me/", {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -107,7 +107,7 @@ export default function MyProfile() {
         setUserId(me.id);
 
         const pRes = await fetch(
-          `http://127.0.0.1:8000/api/get_user/${me.id}`,
+          api+`api/get_user/${me.id}`,
           {
             headers: { Authorization: `Bearer ${token}` },
           },
@@ -196,7 +196,7 @@ export default function MyProfile() {
 
     try {
       const res = await fetch(
-        `http://127.0.0.1:8000/api/update_user/${userId}`,
+        api+`api/update_user/${userId}`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },

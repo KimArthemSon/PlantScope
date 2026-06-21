@@ -11,6 +11,8 @@ import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
+import { api } from "@/constant/api.ts";
+
 interface User {
   id: number;
   email: string;
@@ -64,7 +66,7 @@ export default function Accounts() {
       });
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/list_users/?${params.toString()}`,
+        api+`api/list_users/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -98,7 +100,7 @@ export default function Accounts() {
   const handleDelete = async () => {
     if (!idDelete) return;
     const response = await fetch(
-      `http://127.0.0.1:8000/api/delete_user/${idDelete}`,
+      api+`api/delete_user/${idDelete}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
@@ -233,7 +235,7 @@ export default function Accounts() {
                     </td>
                     <td className="py-3 px-5">
                       <img
-                        src={"http://127.0.0.1:8000/" + user.profile_img}
+                        src={api+ user.profile_img}
                         alt="profile"
                         className="rounded-full w-20 h-[90%] min-h-20 max-h-25"
                       />

@@ -3,7 +3,7 @@ import { useState, useRef, useCallback } from "react";
 import L from "leaflet";
 import type { RestrictedAreaResponse, MapLayerState } from "../types/types";
 import { LAND_CLASSIFICATION_COLORS, geoJSONPolygonToLatLngs } from "../types/types";
-
+import { api, api_second } from "@/constant/api";
 interface AlertState {
   type: "success" | "failed" | "error";
   title: string;
@@ -174,7 +174,7 @@ export function useRestrictedAreas(mapRef: React.RefObject<L.Map | null>) {
       try {
         const token = localStorage.getItem("token");
         const res = await fetch(
-          `http://127.0.0.1:8000/api/area/${areaId}/restricted/`,
+          api+`api/area/${areaId}/restricted/`,
           {
             headers: {
               Authorization: `Bearer ${token}`,

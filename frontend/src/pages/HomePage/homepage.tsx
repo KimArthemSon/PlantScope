@@ -8,6 +8,7 @@ import profile1 from "../../assets/PROFILE1.jpg";
 import profile2 from "../../assets/profile2.jpg";
 import profile3 from "../../assets/profile3.jpg";
 import profile4 from "../../assets/profile4.jpg";
+import { api } from "@/constant/api.ts";
 import { useNavigate } from "react-router-dom";
 export default function App() {
   const checkIfStillLogin = async () => {
@@ -16,7 +17,7 @@ export default function App() {
       return;
     }
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+      const response = await fetch(api+"api/get_me/", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

@@ -46,6 +46,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
+import { api } from "@/constant/api";
 
 const DefaultIcon = L.icon({
   iconUrl: icon,
@@ -56,8 +57,8 @@ const DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-const API = "http://127.0.0.1:8000/api/";
-const API_IMAGE = "http://127.0.0.1:8000";
+const API = api+"api/";
+const API_IMAGE = api;
 
 // ─────────────────────────────────────────────
 // INTERFACES

@@ -52,7 +52,7 @@ export interface FieldAssessmentsResponse {
   };
 }
 
-
+import { api, api_second } from "@/constant/api";
 
 const LAYER_EMOJIS: Record<MCDALayer, string> = {
   safety: "⚠️",
@@ -264,8 +264,8 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         
         const queryString = params.toString();
         const url = queryString 
-          ? `http://127.0.0.1:8000/api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
-          : `http://127.0.0.1:8000/api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
+          ? api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
+          : api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
         
         console.log('🔍 Fetching assessments:', url); // Debug log
         
@@ -320,8 +320,8 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         
         const queryString = params.toString();
         const url = queryString 
-          ? `http://127.0.0.1:8000/api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
-          : `http://127.0.0.1:8000/api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
+          ? api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
+          : api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
         
         const res = await fetch(url, { 
           headers: { Authorization: `Bearer ${token}` } 
@@ -370,7 +370,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
       try {
         const token = localStorage.getItem("token");
         const res = await fetch(
-          "http://127.0.0.1:8000/api/update_field_assessment_coordinate/",
+          api+"api/update_field_assessment_coordinate/",
           {
             method: "POST",
             headers: {

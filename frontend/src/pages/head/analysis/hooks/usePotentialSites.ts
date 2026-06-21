@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
-
-const BASE_URL = "http://127.0.0.1:8000";
+import {api_second } from "@/constant/api";
+const BASE_URL = api_second;
 
 export interface PotentialSite {
   potential_sites_id: number;

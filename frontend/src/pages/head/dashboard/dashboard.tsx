@@ -290,6 +290,7 @@ const STATUS_BADGE = {
   Warning: "bg-amber-50 text-amber-700 border-amber-200",
   "At Risk": "bg-red-50 text-red-700 border-red-200",
 };
+import { api } from "@/constant/api.ts";
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 export default function Dashboard() {
@@ -304,7 +305,7 @@ export default function Dashboard() {
     const token = localStorage.getItem("token");
     if (!token) return;
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+      const response = await fetch(api+"api/get_me/", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

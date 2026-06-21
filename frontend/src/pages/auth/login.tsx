@@ -5,6 +5,8 @@ import "../../global css/login.css";
 import { useNavigate } from "react-router-dom";
 import PlantScopeAlert from "../../components/alert/PlantScopeAlert";
 import PlantScopeLoader from "../../components/alert/PlantScopeLoader";
+import { api } from "@/constant/api.ts";
+
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState("");
@@ -38,7 +40,7 @@ export default function Login() {
       return;
     }
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+      const response = await fetch(api+"api/get_me/", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -90,7 +92,7 @@ export default function Login() {
     }
     console.log("Logging in with:", username, password);
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/login/", {
+      const response = await fetch(api+"api/login/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

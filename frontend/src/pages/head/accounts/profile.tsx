@@ -20,6 +20,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState, type FormEvent } from "react";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
+import { api } from "@/constant/api.ts";
 
 type UserRole =
   | "CityENROHead"
@@ -95,7 +96,7 @@ export function Profile() {
       const token = localStorage.getItem("token");
       setIsLoading(true);
       if (!token) return;
-      const res = await fetch("http://127.0.0.1:8000/api/get_user/" + id, {
+      const res = await fetch(api+"api/get_user/" + id, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -109,7 +110,7 @@ export function Profile() {
         ...e,
         password: "",
         confirm_pass: "",
-        preview_profile: data.profile_img ? "http://127.0.0.1:8000/" + data.profile_img : "",
+        preview_profile: data.profile_img ? api+"" + data.profile_img : "",
       }));
       setIsLoading(false);
     } catch (err) {
@@ -217,7 +218,7 @@ export function Profile() {
   async function handleCreate(formData: FormData) {
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/register/", {
+      const res = await fetch(api+"api/register/", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -249,7 +250,7 @@ export function Profile() {
     try {
       const token = localStorage.getItem("token");
       if (!token) return;
-      const res = await fetch("http://127.0.0.1:8000/api/update_user/" + id, {
+      const res = await fetch(api+"api/update_user/" + id, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,

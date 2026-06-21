@@ -2,7 +2,6 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Login from "./pages/auth/login";
 import Dashboard from "./pages/head/dashboard/dashboard";
 import Sidebar from "./components/layout/Sidebar";
-import Analysis from "./pages/head/analysis/analysis";
 import Reforestation_areas from "./pages/head/reforestation_areas/reforestation_area";
 // import GenralMap from "./pages/general map/GeneralMap";
 import Calendar from "./pages/dataManager/calendar/calendar";
@@ -29,7 +28,6 @@ import Assign_onsite_inspector from "./pages/head/reforestation_areas/assigning"
 import MetaDataVerification from "./pages/head/reforestation_areas/meta_data";
 import Reforestation_area_site from "./pages/head/site/reforestation_area_site";
 import Sites from "./pages/head/site/sites";
-import Reforestation_area_analysis from "./pages/head/analysis/reforestation_areas_analysis";
 import Sites_analysis from "./pages/head/analysis/site_analysis";
 import Multicriteria_analysis from "./pages/head/analysis/multicriteria_analysis";
 import Sidebar_data_manager from "./components/layout/Sidebar_data_manager";
@@ -140,10 +138,7 @@ export default function App() {
           <Route path="/applications" element={<Application_confirmation />} />
           <Route path="/monitoring" element={<Monitoring />} />
           <Route path="/calendar" element={<Calendar />} />
-          <Route
-            path="/reforestation_area_analysis"
-            element={<Reforestation_area_analysis />}
-          />
+         
           <Route path="/maintenance/barangays/" element={<Barangays />} />
           <Route path="/maintenance/tree-species" element={<Tree_species />} />
           <Route path="/maintenance/soils" element={<Soils />} />
@@ -154,7 +149,7 @@ export default function App() {
             element={<Reforestation_areas />}
           />
 
-          <Route path="/analysis" element={<Analysis />} />
+       
           <Route path="/site-verification" element={<SiteVerification />} />
           <Route
             path="/official-reforestation"
@@ -265,10 +260,7 @@ export default function App() {
             path="/DataManager/reforestation_area_site"
             element={<Reforestation_area_site />}
           />
-          <Route
-            path="/DataManager/reforestation_area_analysis"
-            element={<Reforestation_area_analysis />}
-          />
+        
           <Route
             path="/DataManager/maintenance/barangays/"
             element={<Barangays />}
@@ -334,11 +326,8 @@ export default function App() {
             path="/GISS/reforestation_area_site"
             element={<Reforestation_area_site />}
           />
-          <Route
-            path="/GISS/reforestation_area_analysis"
-            element={<Reforestation_area_analysis />}
-          />
-          <Route path="/GISS/analysis" element={<Analysis />} />
+        
+        
           <Route
             path="/GISS/reforestation_analysis/site_analysis/:id"
             element={<Sites_analysis />}

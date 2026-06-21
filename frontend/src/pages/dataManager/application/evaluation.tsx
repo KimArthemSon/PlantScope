@@ -27,6 +27,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
+import { api } from "@/constant/api";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -322,7 +323,7 @@ export default function Evaluation_application() {
       setLoadingDetail(true);
       try {
         const res = await fetch(
-          `http://127.0.0.1:8000/api/get_application/${application_id}/`,
+          api+`api/get_application/${application_id}/`,
           {
             headers: { Authorization: `Bearer ${token}` },
           },
@@ -364,7 +365,7 @@ export default function Evaluation_application() {
       setLoadingSpecies(true);
       try {
         const res = await fetch(
-          "http://127.0.0.1:8000/api/get_tree_species_list/",
+          api+"api/get_tree_species_list/",
           {
             headers: { Authorization: `Bearer ${token}` },
           },
@@ -402,7 +403,7 @@ export default function Evaluation_application() {
       try {
         const params = new URLSearchParams({ entries: "100", page: "1" });
         const res = await fetch(
-          `http://127.0.0.1:8000/api/get_all_reforestation_areas/?${params}`,
+          api+`api/get_all_reforestation_areas/?${params}`,
           {
             headers: { Authorization: `Bearer ${token}` },
           },
@@ -432,7 +433,7 @@ export default function Evaluation_application() {
       try {
         // ✅ UPDATED: Fetch only accepted sites with verified metadata
         const res = await fetch(
-          `http://127.0.0.1:8000/api/list_sites/${selectedArea.reforestation_area_id}/?status=accepted&verification_status=verified`,
+          api+`api/list_sites/${selectedArea.reforestation_area_id}/?status=accepted&verification_status=verified`,
           {
             headers: { Authorization: `Bearer ${token}` },
           },
@@ -555,7 +556,7 @@ export default function Evaluation_application() {
       }
 
       const res = await fetch(
-        `http://127.0.0.1:8000/api/evaluate_application/${application_id}/`,
+        api+`api/evaluate_application/${application_id}/`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },

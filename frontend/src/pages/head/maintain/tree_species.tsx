@@ -10,6 +10,8 @@ import {
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
+import { api } from "@/constant/api";
+
 interface Tree_species {
   tree_specie_id: number;
   name: string;
@@ -77,7 +79,7 @@ export default function Tree_species() {
       });
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_tree_species/?${params.toString()}`,
+        api+`api/get_tree_species/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -110,7 +112,7 @@ export default function Tree_species() {
   const handleDelete = async () => {
     if (!tree_specie_idDelete) return;
     const response = await fetch(
-      `http://127.0.0.1:8000/api/delete_tree_specie/${tree_specie_idDelete}`,
+      api+`api/delete_tree_specie/${tree_specie_idDelete}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
@@ -150,7 +152,7 @@ export default function Tree_species() {
 
       if (form_loading) return;
 
-      const res = await fetch("http://127.0.0.1:8000/api/create_tree_specie/", {
+      const res = await fetch(api+"api/create_tree_specie/", {
         method: "POST",
         headers: { Authorization: "Bearer " + token },
         body: JSON.stringify(tree_specie),
@@ -191,7 +193,7 @@ export default function Tree_species() {
       if (form_loading) return;
 
       const res = await fetch(
-        "http://127.0.0.1:8000/api/update_tree_specie/" + edittree_specie_Id,
+        api+"api/update_tree_specie/" + edittree_specie_Id,
         {
           method: "PUT",
           headers: { Authorization: "Bearer " + token },

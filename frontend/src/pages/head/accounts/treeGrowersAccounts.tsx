@@ -6,6 +6,7 @@ import {
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
+import { api } from "@/constant/api.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -112,7 +113,7 @@ export default function TreeGrowersAccounts() {
         entries: filter.entries.toString(),
       });
       const res = await fetch(
-        `http://127.0.0.1:8000/api/list_tree_growers/?${params}`,
+        api+`api/list_tree_growers/?${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error();
@@ -135,7 +136,7 @@ export default function TreeGrowersAccounts() {
     setViewLoading(true);
     try {
       const res = await fetch(
-        `http://127.0.0.1:8000/api/get_tree_grower_detail/${id}/`,
+        api+`api/get_tree_grower_detail/${id}/`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error();
@@ -153,7 +154,7 @@ export default function TreeGrowersAccounts() {
   const setDelete = (id: number) => { setIdDelete(id); setIsDeleteModalOpen(true); };
 
   const handleToggleStatus = async (id: number, currentStatus: boolean) => {
-    const res = await fetch(`http://127.0.0.1:8000/api/toggle_user_status/${id}/`, {
+    const res = await fetch(api+`api/toggle_user_status/${id}/`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -173,7 +174,7 @@ export default function TreeGrowersAccounts() {
 
   const handleDelete = async () => {
     if (!idDelete) return;
-    const res = await fetch(`http://127.0.0.1:8000/api/delete_user/${idDelete}`, {
+    const res = await fetch(api+`api/delete_user/${idDelete}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -381,7 +382,7 @@ export default function TreeGrowersAccounts() {
                     </td>
                     <td className="py-3 px-5">
                       <img
-                        src={"http://127.0.0.1:8000/" + grower.profile_img}
+                        src={api + grower.profile_img}
                         alt="profile"
                         className="rounded-full w-20 h-[90%] min-h-20 max-h-25"
                       />

@@ -15,6 +15,7 @@ import {
 import { HAZARD_TYPES } from "../hooks/useBarangayAreas";
 import type { useBarangayAreas } from "../hooks/useBarangayAreas";
 
+
 interface HazardAreaFormPanelProps {
   barangayAreas: ReturnType<typeof useBarangayAreas>;
   onClose: () => void;

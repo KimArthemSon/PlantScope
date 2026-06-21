@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { useNavigate } from "react-router-dom";
-
+import { api } from "@/constant/api.ts";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface ReportStats {
@@ -314,13 +314,13 @@ export default function Reports() {
   } | null>(null);
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = api;
 
   // ─── Fetch Dashboard Data ─────────────────────────────────────────────
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/get_general_report_data/`, {
+      const response = await fetch(`${API_BASE}api/get_general_report_data/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Failed to fetch report data.");
@@ -351,7 +351,7 @@ export default function Reports() {
         params.append("date_to", historyFilter.date_to);
 
       const res = await fetch(
-        `${API_BASE}/api/get_program_history/?${params.toString()}`,
+        `${API_BASE}api/get_program_history/?${params.toString()}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error("Failed to fetch history");

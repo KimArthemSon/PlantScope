@@ -21,7 +21,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
-
+import { api } from "@/constant/api.ts";
 // ─────────────────────────────────────────────────────────────
 // Types & Interfaces
 // ─────────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ function MapClickHandler({
 export default function UpdateReforestationArea() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const API = "http://127.0.0.1:8000/api";
+  const API = api+"api";
 
   // ── State ──────────────────────────────────────────────────
   const [placingMarker, setPlacingMarker] = useState(false);

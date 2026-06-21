@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import L from "leaflet"; // ✅ Added for custom divIcon
 import "leaflet/dist/leaflet.css";
+import { api } from "@/constant/api";
 
 export default function Ormoc_City() {
   const mapRef = useRef<any>(null);
@@ -42,7 +43,7 @@ export default function Ormoc_City() {
       setLoading(true);
       const token = localStorage.getItem("token");
       try {
-        const response = await fetch("http://127.0.0.1:8000/api/get_ormoc/", {
+        const response = await fetch(api+"api/get_ormoc/", {
           headers: { Authorization: "Bearer " + token },
         });
         const data = await response.json();
@@ -122,7 +123,7 @@ export default function Ormoc_City() {
     setSaveStatus("saving");
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/api/update_ormoc_city/",
+        api+"api/update_ormoc_city/",
         {
           method: "POST",
           headers: {

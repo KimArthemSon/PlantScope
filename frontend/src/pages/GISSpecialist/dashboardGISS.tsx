@@ -11,6 +11,7 @@ import {
   Globe2, Droplets, Wind, Thermometer, Eye,
   ArrowUpRight, ArrowDownRight, Minus, Layers, ScanLine,
 } from "lucide-react";
+import { api } from "@/constant/api";
 
 // ... [all your data arrays remain unchanged: MONITORING_TREND, SITE_STATUS, etc.] ...
 const MONITORING_TREND = [
@@ -147,7 +148,7 @@ export default function DashboardGISS() {
     const token = localStorage.getItem("token");
     if (!token) return;
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+      const response = await fetch(api+"api/get_me/", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

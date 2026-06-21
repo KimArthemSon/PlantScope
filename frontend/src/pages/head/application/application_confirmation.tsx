@@ -4,7 +4,7 @@ import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
-
+import { api } from "@/constant/api.ts";
 interface Application {
   application_id: number;
   organization_name: string;
@@ -64,7 +64,7 @@ export default function Application_confirmation() {
     });
     
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_applications/?${params.toString()}`,
+        api+`api/get_applications/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -97,7 +97,7 @@ export default function Application_confirmation() {
   const handleDelete = async () => {
     if (!tree_specie_idDelete) return;
     const response = await fetch(
-      `http://127.0.0.1:8000/api/delete_tree_specie/${tree_specie_idDelete}`,
+      api+`api/delete_tree_specie/${tree_specie_idDelete}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
@@ -227,7 +227,7 @@ export default function Application_confirmation() {
                     <td className="py-3 px-5">
                       <div className="flex gap-5">
                         <img
-                          src={"http://127.0.0.1:8000/" + app.org_profile}
+                          src={api + app.org_profile}
                           className="rounded-full h-15 w-15"
                           alt="prfile image"
                         />

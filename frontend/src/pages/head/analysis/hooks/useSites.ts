@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import type { Site, SiteDetail } from "../types/siteTypes";
-
-const BASE_URL = "http://127.0.0.1:8000";
+import { api_second } from "@/constant/api";
+const BASE_URL = api_second;
 
 export const toGeoJSONCoords = (
   coords: [number, number][],

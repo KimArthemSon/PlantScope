@@ -13,6 +13,8 @@ import {
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import LoaderPending from "@/components/layout/loaderSmall";
 import GoToCenterButton from "@/components/helper/gotocenter";
+import { api } from "@/constant/api";
+
 import {
   MapContainer,
   TileLayer,
@@ -166,7 +168,7 @@ export default function Classified_area_form() {
   // --- API & CSV FUNCTIONS ---
   async function get_barangay_list() {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/get_barangay_list/", {
+      const res = await fetch(api+"api/get_barangay_list/", {
         headers: { Authorization: "Bearer " + token },
       });
       const data = await res.json();
@@ -221,7 +223,7 @@ export default function Classified_area_form() {
     setLoading(true);
     try {
       const res = await fetch(
-        "http://127.0.0.1:8000/api/get_classified_area/" + id,
+        api+"api/get_classified_area/" + id,
         {
           headers: { Authorization: "Bearer " + token },
         },
@@ -255,7 +257,7 @@ export default function Classified_area_form() {
     setLoading(true);
     try {
       const res = await fetch(
-        "http://127.0.0.1:8000/api/get_land_classifications_list/?for_reforestation=false",
+        api+"api/get_land_classifications_list/?for_reforestation=false",
         { headers: { Authorization: "Bearer " + token } },
       );
       const data = await res.json();
@@ -375,7 +377,7 @@ export default function Classified_area_form() {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
-        "http://127.0.0.1:8000/api/create_classified_area/",
+        api+"api/create_classified_area/",
         {
           method: "POST",
           headers: {
@@ -408,7 +410,7 @@ export default function Classified_area_form() {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
-        "http://127.0.0.1:8000/api/update_classified_area/" + id,
+        api+"api/update_classified_area/" + id,
         {
           method: "PUT",
           headers: {

@@ -34,6 +34,7 @@ interface Filter {
   status: string;
   classification: string;
 }
+import { api } from "@/constant/api.ts";
 
 // ─── Status Config ──────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ export default function Monitoring() {
 
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = api;
 
   // ─── Fetch Applications ───────────────────────────────────────────────────
 
@@ -94,7 +95,7 @@ export default function Monitoring() {
       }
 
       const response = await fetch(
-        `${API_BASE}/api/get_applications/?${params.toString()}`,
+        `${API_BASE}api/get_applications/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -130,25 +131,25 @@ export default function Monitoring() {
   }, [filter.page, filter.entries, filter.classification, filter.status]);
 
   const { userRole } = useUserRole();
-   const [useruserRole, setUseruserRole] = useState("");
- 
-   useEffect(() => {
-     if (userRole === "treeGrowers" || userRole === "CityENROHead") {
-       setUseruserRole("");
-       return;
-     }
-     if (userRole === "GISSpecialist") {
-       setUseruserRole("/GISS");
-       return;
-     }
-     if (userRole === "DataManager") {
-       setUseruserRole("/DataManager");
-       return;
-     }
-   }, [userRole]);
+  const [useruserRole, setUseruserRole] = useState("");
+
+  useEffect(() => {
+    if (userRole === "treeGrowers" || userRole === "CityENROHead") {
+      setUseruserRole("");
+      return;
+    }
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("/GISS");
+      return;
+    }
+    if (userRole === "DataManager") {
+      setUseruserRole("/DataManager");
+      return;
+    }
+  }, [userRole]);
 
   // ─── Navigate to Maintenance Report ───────────────────────────────────────
-  
+
   const handleViewReport = (applicationId: number) => {
     // Navigate with application_id as route param
     navigate(`${useruserRole}/maintenance_evaluation/${applicationId}`);

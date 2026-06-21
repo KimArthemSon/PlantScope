@@ -36,6 +36,7 @@ interface BarangayHazardAnalysisProps {
   barangayName: string;
   token: string;
 }
+import { api } from "@/constant/api.ts";
 
 export default function BarangayHazardAnalysis({
   isOpen,
@@ -62,7 +63,7 @@ export default function BarangayHazardAnalysis({
     
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/barangay-hazard-analysis/${barangayId}/`,
+        api+`api/barangay-hazard-analysis/${barangayId}/`,
         {
           headers: {
             'Authorization': `Bearer ${token}`

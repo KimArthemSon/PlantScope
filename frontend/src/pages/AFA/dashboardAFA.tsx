@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "@/constant/api.ts";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell,
@@ -654,7 +655,7 @@ export default function DashboardAFA() {
 
     (async () => {
       try {
-        const res  = await fetch("http://127.0.0.1:8000/api/get_me/", {
+        const res  = await fetch(api+"api/get_me/", {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });

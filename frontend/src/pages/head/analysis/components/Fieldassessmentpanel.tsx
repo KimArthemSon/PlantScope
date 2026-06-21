@@ -7,6 +7,7 @@ import {
 import type {
   MCDALayer, FieldAssessmentEntry, LayerData,
 } from "../hooks/useFieldAssessments";
+import { api, api_second } from "@/constant/api";
 
 const LAYERS: {
   id: MCDALayer; label: string; short: string;
@@ -22,7 +23,7 @@ const getImageUrl = (url: string | null): string | null => {
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
-  return `http://127.0.0.1:8000${url}`;
+  return api_second+`${url}`;
 };
 
 const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: number }) => {

@@ -4,6 +4,7 @@ import NotFoundPage from "../../../components/layout/NotFoundPage";
 import PlantScopeLoader from "../../../components/alert/PlantScopeLoader";
 import { useAuthorize } from "../../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
+import { api } from "@/constant/api.ts";
 
 type ActiveTab = "session" | "audit" | "operational";
 type AuditAccountType = "admins" | "treeGrowers";
@@ -100,8 +101,8 @@ function actionBadge(action: string) {
   return `${BASE_BADGE} bg-gray-100 text-gray-700`;
 }
 
-const BASE = "http://127.0.0.1:8000/api/security";
-const BASE_ACCOUNTS = "http://127.0.0.1:8000/api";
+const BASE = api+"api/security";
+const BASE_ACCOUNTS = api+"api";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 

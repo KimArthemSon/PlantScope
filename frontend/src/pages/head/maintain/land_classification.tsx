@@ -11,6 +11,7 @@ import {
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
+import { api } from "@/constant/api";
 
 interface Land_classifications {
   land_classification_id: number;
@@ -93,7 +94,7 @@ export default function Land_classifications() {
       }
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_land_classifications/?${params.toString()}`,
+        api+`api/get_land_classifications/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -128,7 +129,7 @@ export default function Land_classifications() {
   const handleDelete = async () => {
     if (!Land_classification_idDelete) return;
     const response = await fetch(
-      `http://127.0.0.1:8000/api/delete_land_classification/${Land_classification_idDelete}`,
+      api+`api/delete_land_classification/${Land_classification_idDelete}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
@@ -169,7 +170,7 @@ export default function Land_classifications() {
       if (form_loading) return;
 
       const res = await fetch(
-        "http://127.0.0.1:8000/api/create_land_classification/",
+        api+"api/create_land_classification/",
         {
           method: "POST",
           headers: { Authorization: "Bearer " + token },
@@ -212,7 +213,7 @@ export default function Land_classifications() {
       if (form_loading) return;
 
       const res = await fetch(
-        "http://127.0.0.1:8000/api/update_land_classification/" +
+        api+"api/update_land_classification/" +
           editLand_classification_id,
         {
           method: "PUT",

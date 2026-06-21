@@ -44,6 +44,7 @@ import HazardAssessmentPanel from "./components/HazardAssessmentPanel";
 import BarangayHazardAnalysis from "./components/BarangayHazardAnalysis";
 import SiteInfoPanel from "@/components/map/SiteInfoPanel";
 import { useNavigate } from "react-router-dom";
+import { api } from "@/constant/api.ts";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -352,7 +353,7 @@ export default function Map() {
 
   async function get_hazard_areas() {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/get_hazard_areas/", {
+      const res = await fetch(api+"api/get_hazard_areas/", {
         headers: { Authorization: "Bearer " + token },
       });
       const data = await res.json();
@@ -531,7 +532,7 @@ export default function Map() {
     setIsNdviLoading(true);
     try {
       const res = await fetch(
-        `http://127.0.0.1:8000/api/ndvi/?start=${start}&end=${end}`,
+        api+`api/ndvi/?start=${start}&end=${end}`,
         { headers: { Authorization: "Bearer " + token } },
       );
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -633,7 +634,7 @@ export default function Map() {
     try {
       console.log("📡 Sending analysis request to backend...");
 
-      const res = await fetch(`http://127.0.0.1:8000/api/suitable-sites/`, {
+      const res = await fetch(api+`api/suitable-sites/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -815,7 +816,7 @@ export default function Map() {
   async function get_classified_area() {
     try {
       const res = await fetch(
-        "http://127.0.0.1:8000/api/get_classified_areas/",
+        api+"api/get_classified_areas/",
         { headers: { Authorization: "Bearer " + token } },
       );
       const data = await res.json();
@@ -825,7 +826,7 @@ export default function Map() {
 
   async function getBarangays() {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/get_barangay_list/", {
+      const res = await fetch(api+"api/get_barangay_list/", {
         headers: { Authorization: "Bearer " + token },
       });
       const data = await res.json();
@@ -836,7 +837,7 @@ export default function Map() {
   async function get_all_reforestation_areas() {
     try {
       const res = await fetch(
-        "http://127.0.0.1:8000/api/get_all_reforestation_areas/",
+        api+"api/get_all_reforestation_areas/",
         { headers: { Authorization: token ? `Bearer ${token}` : "" } },
       );
       const data = await res.json();
@@ -847,7 +848,7 @@ export default function Map() {
   // ✅ NEW: Fetch all sites
   async function get_all_sites() {
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/get_all_sites/", {
+      const res = await fetch(api+"api/get_all_sites/", {
         headers: { Authorization: token ? `Bearer ${token}` : "" },
       });
       if (res.ok) {
@@ -911,7 +912,7 @@ export default function Map() {
         formData.append("coordinate", JSON.stringify(areaForm.coordinate));
 
       const res = await fetch(
-        "http://127.0.0.1:8000/api/create_reforestation_areas/",
+        api+"api/create_reforestation_areas/",
         {
           method: "POST",
           headers: { Authorization: "Bearer " + token },
@@ -969,7 +970,7 @@ export default function Map() {
         potential_site_ids: selectedPotentialSiteIds,
       };
 
-      const res = await fetch("http://127.0.0.1:8000/api/sites/create_site/", {
+      const res = await fetch(api+"api/sites/create_site/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1032,7 +1033,7 @@ export default function Map() {
       const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
 
       const response = await fetch(
-        "http://127.0.0.1:8000/api/firms-fire-data/",
+        api+"api/firms-fire-data/",
         {
           method: "POST",
           headers: {

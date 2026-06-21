@@ -10,6 +10,7 @@ import {
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
+import { api } from "@/constant/api";
 
 interface Animal {
   animal_id: number;
@@ -79,7 +80,7 @@ export default function Animals() {
       });
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_animals/?${params.toString()}`,
+        api+`api/get_animals/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -112,7 +113,7 @@ export default function Animals() {
   const handleDelete = async () => {
     if (!animalIdToDelete) return;
     const response = await fetch(
-      `http://127.0.0.1:8000/api/delete_animal/${animalIdToDelete}`,
+      api+`api/delete_animal/${animalIdToDelete}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
@@ -151,7 +152,7 @@ export default function Animals() {
       setForm_loading(true);
       if (form_loading) return;
 
-      const res = await fetch("http://127.0.0.1:8000/api/create_animal/", {
+      const res = await fetch(api+"api/create_animal/", {
         method: "POST",
         headers: { Authorization: "Bearer " + token },
         body: JSON.stringify(animal),
@@ -192,7 +193,7 @@ export default function Animals() {
       if (form_loading) return;
 
       const res = await fetch(
-        "http://127.0.0.1:8000/api/update_animal/" + editAnimalId,
+        api+"api/update_animal/" + editAnimalId,
         {
           method: "PUT",
           headers: { Authorization: "Bearer " + token },

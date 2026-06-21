@@ -10,6 +10,7 @@ import {
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
+import { api } from "@/constant/api";
 
 interface Barangay {
   barangay_id: number;
@@ -83,7 +84,7 @@ export default function Barangays() {
       });
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_barangays/?${params.toString()}`,
+        api+`api/get_barangays/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -116,7 +117,7 @@ export default function Barangays() {
   const handleDelete = async () => {
     if (!barangayIdDelete) return;
     const response = await fetch(
-      `http://127.0.0.1:8000/api/delete_barangay/${barangayIdDelete}`,
+      api+`api/delete_barangay/${barangayIdDelete}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
@@ -151,7 +152,7 @@ export default function Barangays() {
       setForm_loading(true);
       if (form_loading) return;
 
-      const res = await fetch("http://127.0.0.1:8000/api/create_barangay/", {
+      const res = await fetch(api+"api/create_barangay/", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -191,7 +192,7 @@ export default function Barangays() {
       if (form_loading) return;
 
       const res = await fetch(
-        `http://127.0.0.1:8000/api/update_barangay/${editBarangayId}`,
+        api+`api/update_barangay/${editBarangayId}`,
         {
           method: "PUT",
           headers: {

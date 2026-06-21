@@ -10,7 +10,7 @@ import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
-
+import { api } from "@/constant/api";
 // ─────────────────────────────────────────────────────────────
 // Types & Interfaces
 // ─────────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ export default function Reforestation_areas() {
   const fetchBarangays = async () => {
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_barangay_list/`,
+        api+`api/get_barangay_list/`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (response.ok) {
@@ -122,7 +122,7 @@ export default function Reforestation_areas() {
       }
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_reforestation_areas/?${params}`,
+        api+`api/get_reforestation_areas/?${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
 

@@ -162,14 +162,14 @@ const parseSeedlingType = (
     return { species, quantity: data as number, provided_by: "Unknown" };
   });
 };
-
+import { api } from "@/constant/api.ts";
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Maintenance_report() {
   const { application_id } = useParams<{ application_id: string }>();
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = api;
 
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -201,7 +201,7 @@ export default function Maintenance_report() {
     setLoading(true);
     try {
       const res = await fetch(
-        `${API_BASE}/api/get_application/${application_id}/`,
+        `${API_BASE}api/get_application/${application_id}/`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -244,7 +244,7 @@ export default function Maintenance_report() {
     setSubmitting(true);
     try {
       const res = await fetch(
-        `${API_BASE}/api/complete_application/${application_id}/`,
+        `${API_BASE}api/complete_application/${application_id}/`,
         {
           method: "PUT",
           headers: {
@@ -291,7 +291,7 @@ export default function Maintenance_report() {
       fd.append("application_id", application_id);
       fd.append("message", alertMessage);
 
-      const res = await fetch(`${API_BASE}/api/alert_tree_grower/`, {
+      const res = await fetch(`${API_BASE}api/alert_tree_grower/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: fd,

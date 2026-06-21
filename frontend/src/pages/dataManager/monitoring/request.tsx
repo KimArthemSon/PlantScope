@@ -14,7 +14,7 @@ import {
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
-
+import { api } from "@/constant/api.ts";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface SeedlingRequest {
@@ -144,7 +144,7 @@ export default function Request() {
 
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = api;
 
   // ─── Fetch Requests ───────────────────────────────────────────────────────
 
@@ -159,7 +159,7 @@ export default function Request() {
       });
 
       const response = await fetch(
-        `${API_BASE}/api/get_seedling_requests/?${params.toString()}`,
+        `${API_BASE}api/get_seedling_requests/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -188,7 +188,7 @@ export default function Request() {
     const fetchSpecies = async () => {
       setLoadingSpecies(true);
       try {
-        const res = await fetch(`${API_BASE}/api/get_tree_species_list/`, {
+        const res = await fetch(`${API_BASE}api/get_tree_species_list/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
@@ -230,7 +230,7 @@ export default function Request() {
   const handleView = async (request: SeedlingRequest) => {
     try {
       const res = await fetch(
-        `${API_BASE}/api/get_application/${request.application_id}/`,
+        `${API_BASE}api/get_application/${request.application_id}/`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -351,7 +351,7 @@ export default function Request() {
       }
 
       const response = await fetch(
-        `${API_BASE}/api/update_seedling_request/${actionModal.request.request_id}/`,
+        `${API_BASE}api/update_seedling_request/${actionModal.request.request_id}/`,
         {
           method: "PUT",
           headers: {

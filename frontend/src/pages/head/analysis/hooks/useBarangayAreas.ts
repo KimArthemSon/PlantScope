@@ -6,6 +6,7 @@ export interface Barangay {
   name: string;
   coordinate: [number, number];
 }
+import { api, api_second } from "@/constant/api";
 
 export interface ClassifiedArea {
   classified_area_id: number;
@@ -82,7 +83,7 @@ export function useBarangayAreas(mapRef: React.RefObject<L.Map | null>) {
   const fetchBarangayList = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://127.0.0.1:8000/api/get_barangay_list/", {
+      const res = await fetch(api+"api/get_barangay_list/", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -96,7 +97,7 @@ export function useBarangayAreas(mapRef: React.RefObject<L.Map | null>) {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
-        `http://127.0.0.1:8000/api/barangay/${barangayId}/classified-areas/`,
+        api+`api/barangay/${barangayId}/classified-areas/`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await res.json();
@@ -111,7 +112,7 @@ export function useBarangayAreas(mapRef: React.RefObject<L.Map | null>) {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
-        `http://127.0.0.1:8000/api/barangay/${barangayId}/hazard-areas/`,
+        api+`api/barangay/${barangayId}/hazard-areas/`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await res.json();
@@ -466,7 +467,7 @@ export function useBarangayAreas(mapRef: React.RefObject<L.Map | null>) {
           },
         };
 
-        const res = await fetch("http://127.0.0.1:8000/api/create_hazard_area/", {
+        const res = await fetch(api+"api/create_hazard_area/", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -519,7 +520,7 @@ export function useBarangayAreas(mapRef: React.RefObject<L.Map | null>) {
           },
         };
 
-        const res = await fetch(`http://127.0.0.1:8000/api/update_hazard_area/${id}/`, {
+        const res = await fetch(api+`api/update_hazard_area/${id}/`, {
           method: "PUT",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -556,7 +557,7 @@ export function useBarangayAreas(mapRef: React.RefObject<L.Map | null>) {
     async (id: number): Promise<{ success: boolean; message: string }> => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch(`http://127.0.0.1:8000/api/delete_hazard_area/${id}/`, {
+        const res = await fetch(api+`api/delete_hazard_area/${id}/`, {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
         });

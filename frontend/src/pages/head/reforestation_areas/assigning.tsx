@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { X, Plus, Trash2, Save, Search, ArrowLeft, Users, UserCheck } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { useUserRole } from "@/hooks/authorization";
+import { api } from "@/constant/api.ts";
 
 interface Inspector {
   user_id: number;
@@ -58,7 +59,7 @@ export default function Assign_onsite_inspector() {
 
   const fetchAssigned = async () => {
     const res = await fetch(
-      `http://127.0.0.1:8000/api/get_assigned_list/${reforestation_area_id}/`,
+      api+`api/get_assigned_list/${reforestation_area_id}/`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     const data = await res.json();
@@ -67,7 +68,7 @@ export default function Assign_onsite_inspector() {
 
   const fetchAvailable = async () => {
     const res = await fetch(
-      `http://127.0.0.1:8000/api/get_unassigned_inspectors/${reforestation_area_id}/`,
+      api+`api/get_unassigned_inspectors/${reforestation_area_id}/`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     const data = await res.json();
@@ -122,7 +123,7 @@ export default function Assign_onsite_inspector() {
     setSaving(true);
     const ids = assigned.map((i) => i.user_id);
 
-    const res = await fetch(`http://127.0.0.1:8000/api/assign_inspector/`, {
+    const res = await fetch(api+`api/assign_inspector/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

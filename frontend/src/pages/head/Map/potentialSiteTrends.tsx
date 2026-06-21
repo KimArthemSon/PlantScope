@@ -22,7 +22,7 @@ import {
   Filler,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
-
+import { api } from "@/constant/api.ts";
 // Register Chart.js components
 ChartJS.register(
   CategoryScale,
@@ -109,7 +109,7 @@ export default function PotentialSiteTrends({
     setError(null);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/ndvi-trend/", {
+      const response = await fetch(api+"api/ndvi-trend/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

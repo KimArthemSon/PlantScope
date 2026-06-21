@@ -26,7 +26,7 @@ import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
-
+import { api } from "@/constant/api";
 // =========================
 // INTERFACES
 // =========================
@@ -127,7 +127,7 @@ export default function OfficialSites() {
         pinned_only: filter.pinned_only ? "true" : "false",
       });
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_sites/${id}/?${params}`,
+        api+`api/get_sites/${id}/?${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
@@ -158,7 +158,7 @@ export default function OfficialSites() {
   const handleTogglePin = async (siteId: number, currentPin: boolean) => {
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/toggle_pin/${siteId}/`,
+        api+`api/toggle_pin/${siteId}/`,
         {
           method: "POST",
           headers: {
@@ -191,7 +191,7 @@ export default function OfficialSites() {
     if (!deleteId) return;
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/delete_site/${deleteId}/`,
+        api+`api/delete_site/${deleteId}/`,
         {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },

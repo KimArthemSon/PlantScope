@@ -25,6 +25,7 @@ import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
+import { api } from "@/constant/api.ts";
 
 import {
   LineChart,
@@ -171,7 +172,7 @@ useEffect(()=>{
         entries: filter.entries.toString(),
       });
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_reforestation_areas/?${params}`,
+        api+`api/get_reforestation_areas/?${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!response.ok) throw new Error("Failed");
@@ -195,7 +196,7 @@ useEffect(()=>{
     setLoadingDetails(true);
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_area_details/${areaId}/`,
+        api+`api/get_area_details/${areaId}/`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (response.ok) {
@@ -254,7 +255,7 @@ useEffect(()=>{
     if (!deleteId) return;
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/api/delete_reforestation_areas/${deleteId}/`,
+        api+`api/delete_reforestation_areas/${deleteId}/`,
         { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
       );
       const data = await response.json();

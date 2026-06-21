@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Polygon, Popup } from "react-leaflet";
 import { Info, MapPin, X, Layers } from "lucide-react";
+import { api } from "@/constant/api.ts";
 
 export interface LandClassification {
   id: number;
@@ -64,7 +65,7 @@ export default function BarangayClassifiedAreas({
 
       try {
         const res = await fetch(
-          `http://127.0.0.1:8000/api/barangay/${barangayId}/classified-areas/`,
+          api+`api/barangay/${barangayId}/classified-areas/`,
           {
             headers: {
               Authorization: token ? `Bearer ${token}` : "",
@@ -268,8 +269,7 @@ export default function BarangayClassifiedAreas({
                   {area.created_at && (
                     <div className="flex items-start gap-2 pt-1 border-t border-gray-100 mt-2">
                       <span className="text-gray-400 text-[10px]">
-                        Added:{" "}
-                        {new Date(area.created_at).toLocaleDateString()}
+                        Added: {new Date(area.created_at).toLocaleDateString()}
                       </span>
                     </div>
                   )}

@@ -29,7 +29,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import * as esri from "esri-leaflet";
 import SiteCoordinatesEditor from "./components/SiteCoordinatesEditor";
-
+import {api_second} from  "@/constant/api";
 import { useBarangayAreas } from "./hooks/useBarangayAreas";
 import BarangayAreasPanel from "./BarangayAreasPanel";
 
@@ -2985,7 +2985,7 @@ export default function MulticriteriaAnalysis() {
                         <div className="flex items-center gap-2">
                           {entry.inspector.profile_image && (
                             <img
-                              src={`http://127.0.0.1:8000${entry.inspector.profile_image}`}
+                              src={api_second+`${entry.inspector.profile_image}`}
                               alt=""
                               className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-gray-200"
                               onError={(e) => {

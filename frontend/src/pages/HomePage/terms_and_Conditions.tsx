@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import Navbar from "../../components/layout/nav.tsx";
 import "../../global css/homePage.css";
 import { useNavigate } from "react-router-dom";
+import { api } from "@/constant/api.ts";
 
 export default function Terms_and_Conditions() {
   const [menuActive, setMenuActive] = useState(false);
@@ -19,7 +20,7 @@ export default function Terms_and_Conditions() {
       return;
     }
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+      const response = await fetch(api+"api/get_me/", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

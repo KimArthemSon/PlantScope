@@ -5,6 +5,7 @@ import Delete_modal from "@/components/layout/delete_modal";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
+import { api } from "@/constant/api";
 
 interface ClassifiedArea {
   classified_area_id: number;
@@ -83,12 +84,12 @@ export default function Classified_areas() {
       try {
         const [lcRes, brRes] = await Promise.all([
           fetch(
-            "http://127.0.0.1:8000/api/get_land_classifications_list/?for_reforestation=false",
+            api+"api/get_land_classifications_list/?for_reforestation=false",
             {
               headers: { Authorization: `Bearer ${token}` },
             },
           ),
-          fetch("http://127.0.0.1:8000/api/get_barangay_list/", {
+          fetch(api+"api/get_barangay_list/", {
             headers: { Authorization: `Bearer ${token}` },
           }),
         ]);
@@ -122,7 +123,7 @@ export default function Classified_areas() {
         params.append("barangay_id", filter.barangay_id.toString());
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/get_classified_areas/?${params.toString()}`,
+        api+`api/get_classified_areas/?${params.toString()}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!response.ok) throw new Error("Failed to fetch classified areas");
@@ -161,7 +162,7 @@ export default function Classified_areas() {
   const handleDelete = async () => {
     if (!classifiedAreaIdDelete) return;
     const response = await fetch(
-      `http://127.0.0.1:8000/api/delete_classified_area/${classifiedAreaIdDelete}`,
+      api+`api/delete_classified_area/${classifiedAreaIdDelete}`,
       { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
     );
     const data = await response.json();
