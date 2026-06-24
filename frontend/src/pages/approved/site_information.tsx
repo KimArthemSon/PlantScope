@@ -33,6 +33,7 @@ import {
   X,
   Upload,
   Camera,
+  PawPrint,
 } from "lucide-react";
 import {
   MapContainer,
@@ -57,20 +58,29 @@ const DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-const API = api+"api/";
+const API = api + "api/";
 const API_IMAGE = api;
 
 // ─────────────────────────────────────────────
 // INTERFACES
 // ─────────────────────────────────────────────
+interface VerifiedAnimal {
+  animal_id: number;
+  name: string;
+  scientific_name: string;
+  admin_notes: string;
+}
+
 interface MetaVerification {
   status: "pending" | "draft" | "verified" | "rejected";
   verified_security_concerns: string[] | null;
   verified_accessibility: any;
   verified_land_classification_id: number | null;
+  verified_land_classification_name?: string | null;
   decision_note?: string | null;
   verified_by?: string | null;
   verified_at?: string | null;
+  verified_animals?: VerifiedAnimal[] | null;
 }
 
 interface PermitItem {
@@ -135,6 +145,11 @@ interface TreeSpeciesOption {
   tree_specie_id: number;
   name: string;
   description: string;
+}
+
+interface LandClassificationOption {
+  land_classification_id: number;
+  name: string;
 }
 
 // ─────────────────────────────────────────────
@@ -465,7 +480,6 @@ const SiteImagesGallery: React.FC<{
     }
   };
 
-  // Group images by layer_tag
   const groupedImages = images.reduce(
     (acc, img) => {
       if (!acc[img.layer_tag]) acc[img.layer_tag] = [];
@@ -499,7 +513,6 @@ const SiteImagesGallery: React.FC<{
 
       {expanded && (
         <div className="p-5 space-y-4">
-          {/* Upload Form */}
           <div className="border border-gray-200 rounded-lg p-4 bg-gray-50/50">
             <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">
               Upload New Image
@@ -599,7 +612,6 @@ const SiteImagesGallery: React.FC<{
             </div>
           </div>
 
-          {/* Images Gallery */}
           {images.length > 0 ? (
             <div className="space-y-4">
               {Object.entries(groupedImages).map(([layerTag, layerImages]) => {
@@ -800,7 +812,7 @@ const ValidationDataCard: React.FC<{
 };
 
 // ─────────────────────────────────────────────
-// MAP
+// MAP (FIXED Z-INDEX)
 // ─────────────────────────────────────────────
 const GoToCenterButton: React.FC<{ center: [number, number] }> = ({
   center,
@@ -809,7 +821,13 @@ const GoToCenterButton: React.FC<{ center: [number, number] }> = ({
   return (
     <button
       onClick={() => map.flyTo(center, 16, { animate: true, duration: 1.5 })}
-      className="absolute bottom-4 right-4 z-[400] bg-[#0F4A2F] text-white px-3 py-2 rounded-lg shadow-lg
+      style={{
+        position: "absolute",
+        bottom: "16px",
+        right: "16px",
+        zIndex: 1000,
+      }}
+      className="bg-[#0F4A2F] text-white px-3 py-2 rounded-lg shadow-lg
                  hover:bg-[#0a3522] transition-colors flex items-center gap-2 text-xs font-medium"
     >
       <Navigation size={14} /> Fly to Site
@@ -822,12 +840,15 @@ const SiteMap: React.FC<{
   polygon?: [number, number][] | null;
   siteName?: string;
 }> = ({ coordinates, polygon, siteName }) => (
-  <div className="relative w-full h-64 md:h-80 rounded-xl overflow-hidden border border-gray-200">
+  <div
+    style={{ position: "relative", width: "100%", height: "100%" }}
+    className="rounded-xl overflow-hidden border border-gray-200"
+  >
     <MapContainer
       center={coordinates}
       zoom={16}
       scrollWheelZoom
-      style={{ width: "100%", height: "100%" }}
+      style={{ width: "100%", height: "100%", zIndex: 0 }}
     >
       <TileLayer
         url="http://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
@@ -856,7 +877,13 @@ const SiteMap: React.FC<{
       <GoToCenterButton center={coordinates} />
     </MapContainer>
     <div
-      className="absolute top-3 left-3 z-[400] bg-white/95 backdrop-blur px-3 py-1.5 rounded-lg
+      style={{
+        position: "absolute",
+        top: "12px",
+        left: "12px",
+        zIndex: 1000,
+      }}
+      className="bg-white/95 backdrop-blur px-3 py-1.5 rounded-lg
                     shadow-sm text-xs font-mono text-gray-700 border border-gray-200 flex items-center gap-1.5"
     >
       <MapIcon className="w-3.5 h-3.5 text-[#0F4A2F]" />
@@ -914,6 +941,54 @@ const MetadataVerificationCard: React.FC<{
         verification.verified_accessibility.description || "";
     }
   }
+
+  const verifiedAnimals = verification.verified_animals || [];
+
+  // ✅ FIXED: Better land classification display logic
+  const displayLandClassification = () => {
+    // Priority 1: Name from prop (fetched from API)
+    if (landClassificationName && landClassificationName.trim() !== "") {
+      return (
+        <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+          <span className="text-sm font-semibold text-purple-800">
+            {landClassificationName}
+          </span>
+        </div>
+      );
+    }
+    // Priority 2: Name from backend response (if included)
+    if (
+      verification.verified_land_classification_name &&
+      verification.verified_land_classification_name.trim() !== ""
+    ) {
+      return (
+        <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+          <span className="text-sm font-semibold text-purple-800">
+            {verification.verified_land_classification_name}
+          </span>
+        </div>
+      );
+    }
+    // Priority 3: Show ID if we have it but no name
+    if (verification.verified_land_classification_id) {
+      return (
+        <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600" />
+            <span className="text-sm text-amber-800">
+              Classification ID: {verification.verified_land_classification_id}
+            </span>
+          </div>
+        </div>
+      );
+    }
+    // Default: Not classified
+    return (
+      <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <span className="text-sm text-gray-500 italic">Not classified</span>
+      </div>
+    );
+  };
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -1027,16 +1102,55 @@ const MetadataVerificationCard: React.FC<{
                 Land Classification
               </p>
             </div>
-            {landClassificationName ? (
-              <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
-                <span className="text-sm font-semibold text-purple-800">
-                  {landClassificationName}
-                </span>
+            {displayLandClassification()}
+          </div>
+
+          {/* ✅ NEW: Verified Animals Section */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <PawPrint className="w-4 h-4 text-emerald-600" />
+              <p className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+                Verified Animals ({verifiedAnimals.length})
+              </p>
+            </div>
+            {verifiedAnimals.length > 0 ? (
+              <div className="space-y-2">
+                {verifiedAnimals.map((animal) => (
+                  <div
+                    key={animal.animal_id}
+                    className="p-3 bg-emerald-50 rounded-lg border border-emerald-200"
+                  >
+                    <div className="flex items-start gap-2 mb-1">
+                      <PawPrint className="w-3.5 h-3.5 text-emerald-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-emerald-800">
+                          {animal.name}
+                        </p>
+                        {animal.scientific_name && (
+                          <p className="text-xs text-emerald-600 italic">
+                            {animal.scientific_name}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {animal.admin_notes && (
+                      <div className="mt-2 pl-5.5 border-l-2 border-emerald-300 ml-5.5">
+                        <p className="text-xs text-gray-600">
+                          <span className="font-semibold text-gray-700">
+                            Notes:
+                          </span>{" "}
+                          {animal.admin_notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             ) : (
-              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <PawPrint className="w-4 h-4 text-gray-400" />
                 <span className="text-sm text-gray-500 italic">
-                  Not classified
+                  No animals verified
                 </span>
               </div>
             )}
@@ -1447,12 +1561,30 @@ export default function SiteInformation(): JSX.Element {
   const [landClassificationName, setLandClassificationName] = useState<
     string | null
   >(null);
+  const [allLandClassifications, setAllLandClassifications] = useState<
+    LandClassificationOption[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updateSuccess, setUpdateSuccess] = useState<string | null>(null);
 
   const canEdit = true;
   const resolvedId = site_id || id || "0";
+
+  // ✅ FIXED: Fetch all land classifications upfront for lookup
+  const fetchLandClassifications = async () => {
+    try {
+      const res = await fetch(`${API}get_land_classifications_list/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data: LandClassificationOption[] = await res.json();
+        setAllLandClassifications(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch land classifications:", err);
+    }
+  };
 
   const fetchSiteData = async () => {
     setLoading(true);
@@ -1473,23 +1605,44 @@ export default function SiteInformation(): JSX.Element {
       const result: SiteResponse = await response.json();
       setSiteData(result);
 
-      if (result.meta_verification?.verified_land_classification_id) {
-        try {
-          const lcRes = await fetch(`${API}get_land_classifications_list/`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (lcRes.ok) {
-            const lcData = await lcRes.json();
-            const found = lcData.find(
-              (lc: any) =>
-                lc.land_classification_id ===
-                result.meta_verification?.verified_land_classification_id,
+      // ✅ FIXED: Resolve land classification name
+      const lcId = result.meta_verification?.verified_land_classification_id;
+      if (lcId) {
+        // First try the name from the response itself
+        if (result.meta_verification?.verified_land_classification_name) {
+          setLandClassificationName(
+            result.meta_verification.verified_land_classification_name,
+          );
+        } else if (allLandClassifications.length > 0) {
+          // Otherwise lookup from cached list
+          const found = allLandClassifications.find(
+            (lc) => lc.land_classification_id === lcId,
+          );
+          setLandClassificationName(found ? found.name : null);
+        } else {
+          // Fetch classifications if not loaded yet
+          try {
+            const lcRes = await fetch(
+              `${API}get_land_classifications_list/?for_reforestation=true`,
+              {
+                headers: { Authorization: `Bearer ${token}` },
+              },
             );
-            if (found) setLandClassificationName(found.name);
+            if (lcRes.ok) {
+              const lcData: LandClassificationOption[] = await lcRes.json();
+              setAllLandClassifications(lcData);
+              const found = lcData.find(
+                (lc) => lc.land_classification_id === lcId,
+              );
+              setLandClassificationName(found ? found.name : null);
+            }
+          } catch (err) {
+            console.error("Failed to fetch land classifications:", err);
+            setLandClassificationName(null);
           }
-        } catch {
-          /* silent */
         }
+      } else {
+        setLandClassificationName(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load site data");
@@ -1499,8 +1652,26 @@ export default function SiteInformation(): JSX.Element {
   };
 
   useEffect(() => {
+    fetchLandClassifications();
     fetchSiteData();
   }, [resolvedId]);
+
+  // ✅ Re-resolve land classification when both data sources are ready
+  useEffect(() => {
+    if (
+      siteData?.meta_verification?.verified_land_classification_id &&
+      !landClassificationName &&
+      allLandClassifications.length > 0
+    ) {
+      const lcId = siteData.meta_verification.verified_land_classification_id;
+      const found = allLandClassifications.find(
+        (lc) => lc.land_classification_id === lcId,
+      );
+      if (found) {
+        setLandClassificationName(found.name);
+      }
+    }
+  }, [siteData, allLandClassifications, landClassificationName]);
 
   const handleUpdateName = async (newName: string) => {
     if (!siteData) return;
@@ -1637,7 +1808,6 @@ export default function SiteInformation(): JSX.Element {
               </span>
             </p>
 
-            {/* Description */}
             {canEdit && (
               <div className="mt-3">
                 <EditableField
@@ -1676,12 +1846,18 @@ export default function SiteInformation(): JSX.Element {
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ── LEFT ── */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white p-1 rounded-xl shadow-sm border border-gray-200">
-            <SiteMap
-              coordinates={coordinates}
-              polygon={siteData.polygon_coordinates}
-              siteName={siteData.name}
-            />
+          {/* ✅ FIXED: Map wrapper with proper height and z-index isolation */}
+          <div
+            className="bg-white p-1 rounded-xl shadow-sm border border-gray-200"
+            style={{ position: "relative", zIndex: 1 }}
+          >
+            <div style={{ height: "320px" }}>
+              <SiteMap
+                coordinates={coordinates}
+                polygon={siteData.polygon_coordinates}
+                siteName={siteData.name}
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -1706,6 +1882,19 @@ export default function SiteInformation(): JSX.Element {
                 {siteData.permits.length}
               </p>
               <p className="text-xs text-gray-400 mt-0.5">uploaded</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-gray-500 text-xs font-medium">
+                  Animals
+                </span>
+                <PawPrint className="w-4 h-4 text-gray-300" />
+              </div>
+              <p className="text-xl font-bold text-gray-800">
+                {siteData.meta_verification?.verified_animals?.length || 0}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">verified</p>
             </div>
           </div>
 

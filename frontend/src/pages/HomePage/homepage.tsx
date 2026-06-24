@@ -7,7 +7,6 @@ import "../../global css/homePage.css";
 import profile1 from "../../assets/PROFILE1.jpg";
 import profile2 from "../../assets/profile2.jpg";
 import profile3 from "../../assets/profile3.jpg";
-import profile4 from "../../assets/profile4.jpg";
 import { api } from "@/constant/api.ts";
 import { useNavigate } from "react-router-dom";
 export default function App() {
@@ -857,59 +856,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-white/5 backdrop-blur rounded-2xl p-10 border border-white/10 shadow-xl mb-16">
-              <h2 className="text-3xl font-bold mb-8 text-center">
-                Faculty & Administration
-              </h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="text-center p-8 bg-white/5 rounded-xl border border-white/10 hover:border-[#7CD56A] transition-all">
-                  <div className="w-24 h-24 p-1 bg-[#4BA74E] rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
-                    <img
-                      src={profile4}
-                      alt=""
-                      className="w-full rounded-full h-full"
-                    />
-                  </div>
-                  <h4 className="text-xl font-bold mb-1">Roel C. Daniot</h4>
-                  <p className="text-[#7CD56A] mb-2 font-semibold">
-                    Faculty Adviser
-                  </p>
-                  <p className="text-white/70 text-sm mb-4">
-                    College of ICT & Engineering
-                  </p>
-                  <div className="bg-white/5 rounded-lg p-4 mt-4">
-                    <p className="text-xs text-white/70 leading-relaxed">
-                      Providing technical guidance, research methodology
-                      supervision, and academic oversight throughout the
-                      development of PlantScope.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="text-center p-8 bg-white/5 rounded-xl border border-white/10 hover:border-[#7CD56A] transition-all">
-                  <div className="w-24 h-24 bg-[#4BA74E] rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
-                    CT
-                  </div>
-                  <h4 className="text-xl font-bold mb-1">Cheryl M. Tarre</h4>
-                  <p className="text-[#7CD56A] mb-2 font-semibold">Dean</p>
-                  <p className="text-white/70 text-sm mb-2">
-                    College of ICT & Engineering
-                  </p>
-                  <p className="text-white/60 text-xs mb-4">
-                    DBA (cand), MST-CS, MSCS
-                  </p>
-                  <div className="bg-white/5 rounded-lg p-4 mt-4">
-                    <p className="text-xs text-white/70 leading-relaxed">
-                      Supporting academic excellence and fostering innovation in
-                      ICT education, enabling students to create impactful
-                      technological solutions.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
+          
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
               <div className="stat-box">
                 <div className="text-4xl font-bold text-[#7CD56A] mb-2">

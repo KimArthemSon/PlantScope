@@ -2,6 +2,8 @@ from django.db import models
 from django.core.exceptions import ValidationError
 from accounts.models import User
 from reforestation_areas.models import Reforestation_areas
+from animals.models import Animal
+from land_classifications.models import LandClassification
 
 IMAGE_LAYER_CHOICES = [
     ('meta_land_title', 'Meta: Land Title'),
@@ -55,7 +57,26 @@ class Field_assessment(models.Model):
         related_name='field_assessments'
     )
     
-    # ✅ YOUR EXACT LOGIC: The switch for General vs. Specific
+    # ✅ FIX 1: Removed quotes around LandClassification
+    land_classification = models.ForeignKey(
+        LandClassification,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='field_assessments',
+        help_text="Official land classification per DENR/CENRO records"
+    )
+    
+    # ✅ FIX 2: Removed quotes around Animal
+    animals_present = models.ManyToManyField(
+        Animal,
+        through='FieldAssessmentAnimal',
+        blank=True,
+        related_name='field_assessments',
+        help_text="Animals observed during field assessment"
+    )
+    
+    # Kept as string 'sites.Sites' because Sites is not imported at the top (prevents circular imports)
     site = models.ForeignKey(
         'sites.Sites',
         null=True,
@@ -63,8 +84,6 @@ class Field_assessment(models.Model):
         on_delete=models.SET_NULL,
         related_name="field_assessment"
     )
-
-    
 
     assessment_date = models.DateField(null=True, blank=True)
     location = models.JSONField(
@@ -84,13 +103,42 @@ class Field_assessment(models.Model):
 
     def clean(self):
         super().clean()
-        # Ensure it's tied to at least an area or a site
-        if not self.site and not self.reforestation_area:
+        if not self.assigned_onsite_inspector:
+            raise ValidationError("Assessment must be linked to an assigned inspector.")
+        
+        if not self.site and not self.assigned_onsite_inspector.reforestation_area:
             raise ValidationError("Assessment must be linked to a Reforestation Area (General) or a Site (Specific).")
 
     def __str__(self):
-        target = f"Site: {self.site.name}" if self.site else f"General Area: {self.reforestation_area.name}"
+        target = f"Site: {self.site.name}" if self.site else f"General Area: {self.assigned_onsite_inspector.reforestation_area.name}"
         return f"Assessment #{self.field_assessment_id} for '{target}'"
+
+
+class FieldAssessmentAnimal(models.Model):
+    """
+    Through table for Field_assessment <-> Animal relationship
+    """
+    field_assessment_animal_id = models.BigAutoField(primary_key=True)
+    field_assessment = models.ForeignKey(
+        Field_assessment,
+        on_delete=models.CASCADE,
+        related_name='animal_relations'
+    )
+    # ✅ FIX 3: Removed quotes around Animal
+    animal = models.ForeignKey(
+        Animal,
+        on_delete=models.CASCADE,
+        related_name='assessment_relations'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'field_assessment_animals'
+        unique_together = [['field_assessment', 'animal']]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.field_assessment} - {self.animal.name}"
 
 
 class Field_assessment_images(models.Model):

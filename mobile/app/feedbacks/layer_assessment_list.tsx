@@ -98,7 +98,7 @@ export default function LayerAssessmentList() {
 
   // ✅ UPDATED: Pass siteId to all navigation handlers
   const handleCreateNew = () => {
-    console.log(areaId)
+ 
     const path = getFormPath(layerId);
     const params: any = { areaId, siteId, isEdit: "false" };
     if (layerId !== "meta_data") { params.layerId = layerId; params.layerName = layerName; }
@@ -106,7 +106,7 @@ export default function LayerAssessmentList() {
   };
 
   const handleEdit = (a: Assessment) => {
-     console.log(areaId)
+    
     const path = getFormPath(layerId);
     const params: any = { areaId, siteId, id: a.field_assessment_id.toString(), isEdit: "true" };
     if (layerId !== "meta_data") { params.layerId = layerId; params.layerName = layerName; params.assessmentId = a.field_assessment_id.toString(); }
@@ -114,7 +114,7 @@ export default function LayerAssessmentList() {
   };
 
   const handleView = (a: Assessment) => {
-     console.log(areaId)
+    
     const path = getFormPath(layerId);
     const params: any = { areaId, siteId, id: a.field_assessment_id.toString(), isEdit: "false" };
     if (layerId !== "meta_data") { params.layerId = layerId; params.layerName = layerName; params.assessmentId = a.field_assessment_id.toString(); }

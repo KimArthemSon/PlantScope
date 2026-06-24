@@ -19,7 +19,7 @@ import * as Location from "expo-location";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
 
-import { useFieldAssessment } from "@/hooks/useFieldAssessment";
+import { useFieldAssessment, LocalImage } from "@/hooks/useFieldAssessment";
 import { api } from "@/constants/url_fixed";
 
 const API_BASE = `${api}/api`;
@@ -104,7 +104,6 @@ function SimpleGeocam({
       setCurrentLocation(data);
       return data;
     } catch (error) {
-      console.error("📍 Location error:", error);
       Alert.alert("Error", "Could not get GPS location.");
       return null;
     }
@@ -134,10 +133,8 @@ function SimpleGeocam({
         Alert.alert("Error", "Failed to capture photo.");
         return;
       }
-   
       onCapture(photo.uri, locData);
     } catch (error) {
-      console.error("📸 Take picture error:", error);
       Alert.alert(
         "Error",
         `Failed to capture photo: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -629,18 +626,21 @@ export default function SafetyForm() {
   const [locationAccuracy, setLocationAccuracy] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
 
-  // Images per category
+  // Images per category (from server)
   const [floodImages, setFloodImages] = useState<SafetyImage[]>([]);
   const [landslideImages, setLandslideImages] = useState<SafetyImage[]>([]);
   const [erosionImages, setErosionImages] = useState<SafetyImage[]>([]);
   const [otherImages, setOtherImages] = useState<SafetyImage[]>([]);
+
+  // ✅ NEW: Local images (captured before save)
+  const [localImages, setLocalImages] = useState<LocalImage[]>([]);
 
   // View mode & loading
   const [isViewMode, setIsViewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!assessmentId);
 
-  // ✅ Geocam & note modal state - MOVED UP BEFORE FUNCTIONS
+  // Geocam & note modal state
   const [showGPSCamera, setShowGPSCamera] = useState(false);
   const [activeCategory, setActiveCategory] = useState<
     "flood" | "landslide" | "erosion" | "other" | null
@@ -649,7 +649,6 @@ export default function SafetyForm() {
   const [pendingPhoto, setPendingPhoto] = useState<{
     uri: string;
     location: LocationData;
-    numericAssessmentId: number;
   } | null>(null);
   const [pendingNote, setPendingNote] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -701,13 +700,8 @@ export default function SafetyForm() {
     }
   }, [assessmentId]);
 
-  // ✅ FIXED: Handle BOTH old (double-nested) and new (single-nested) structures
   const populateForm = (data: any) => {
-    // ✅ Handle: data.safety.safety (old) OR data.safety (new) OR data (flat)
     const safety = data?.safety?.safety || data?.safety || data || {};
-
- 
-
     setFloodNote(safety.flood?.overall_note || "");
     setLandslideNote(safety.landslide?.overall_note || "");
     setErosionNote(safety.erosion?.overall_note || "");
@@ -731,121 +725,102 @@ export default function SafetyForm() {
       setLocationAccuracy(loc.coords.accuracy?.toFixed(1) || "");
       Alert.alert("Location Captured", "GPS coordinates updated.");
     } catch (error) {
-      console.error("📍 Get location error:", error);
       Alert.alert("Error", "Could not get current location.");
     } finally {
       setGettingLocation(false);
     }
   };
 
-  // Handle photo capture from Geocam
+  // ✅ UPDATED: Handle photo capture - NO LONGER requires assessmentId
   const handleGPSPhotoCaptured = async (
     uri: string,
     location: LocationData,
   ) => {
-     setShowGPSCamera(false);
-
-    const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
- 
-
-    if (!numericAssessmentId || isNaN(numericAssessmentId)) {
-      Alert.alert(
-        "Action Required",
-        "Please save the draft first to get an ID for image uploads.",
-      );
-      return;
-    }
-
-    // Store photo data and show custom modal
-    setPendingPhoto({ uri, location, numericAssessmentId });
+    setShowGPSCamera(false);
+    setPendingPhoto({ uri, location });
     setPendingNote("");
     setShowNoteModal(true);
   };
 
-  // Handle note submission from custom modal
+  // ✅ UPDATED: Handle note submission - stores locally OR uploads immediately
   const handleNoteSubmit = async (note: string) => {
     if (!pendingPhoto || !activeCategory) {
-      console.error("❌ [Geocam] Missing pendingPhoto or activeCategory");
       return;
     }
 
-  
+    const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
 
-    setUploading(true);
-    try {
-      const layerCode = `safety_${activeCategory}`;
-     
-
-      const ok = await uploadImage(
-        pendingPhoto.numericAssessmentId,
-        {
-          uri: pendingPhoto.uri,
-          latitude: pendingPhoto.location.latitude,
-          longitude: pendingPhoto.location.longitude,
-          accuracy: pendingPhoto.location.accuracy,
-        },
-        {
-          subLayerCode: activeCategory,
-          description:
-            note ||
-            `Safety ${activeCategory} at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
-        },
-      );
-
-      if (ok) {
-       
-        const data = await fetchAssessmentData();
-        if (data) {
-          const allImages = data.images || [];
-          if (activeCategory === "flood")
-            setFloodImages(
-              allImages.filter(
-                (img: SafetyImage) => img.layer === "safety_flood",
-              ),
-            );
-          else if (activeCategory === "landslide")
-            setLandslideImages(
-              allImages.filter(
-                (img: SafetyImage) => img.layer === "safety_landslide",
-              ),
-            );
-          else if (activeCategory === "erosion")
-            setErosionImages(
-              allImages.filter(
-                (img: SafetyImage) => img.layer === "safety_erosion",
-              ),
-            );
-          else if (activeCategory === "other")
-            setOtherImages(
-              allImages.filter(
-                (img: SafetyImage) => img.layer === "safety_other",
-              ),
-            );
-        }
-        Alert.alert("Success", "Photo uploaded with GPS data!");
-      } else {
-        console.warn("❌ [Geocam] Upload returned false");
-        Alert.alert(
-          "Upload Failed",
-          "Could not upload photo. Please try again.",
+    // If we have an assessmentId, upload immediately
+    if (numericAssessmentId && !isNaN(numericAssessmentId)) {
+      setUploading(true);
+      try {
+        const ok = await uploadImage(
+          numericAssessmentId,
+          {
+            uri: pendingPhoto.uri,
+            latitude: pendingPhoto.location.latitude,
+            longitude: pendingPhoto.location.longitude,
+            accuracy: pendingPhoto.location.accuracy,
+          },
+          {
+            subLayerCode: activeCategory,
+            description:
+              note ||
+              `Safety ${activeCategory} at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
+          },
         );
+
+        if (ok) {
+          const data = await fetchAssessmentData();
+          if (data) {
+            const allImages = data.images || [];
+            if (activeCategory === "flood")
+              setFloodImages(allImages.filter((img: SafetyImage) => img.layer === "safety_flood"));
+            else if (activeCategory === "landslide")
+              setLandslideImages(allImages.filter((img: SafetyImage) => img.layer === "safety_landslide"));
+            else if (activeCategory === "erosion")
+              setErosionImages(allImages.filter((img: SafetyImage) => img.layer === "safety_erosion"));
+            else if (activeCategory === "other")
+              setOtherImages(allImages.filter((img: SafetyImage) => img.layer === "safety_other"));
+          }
+          Alert.alert("Success", "Photo uploaded with GPS data!");
+        } else {
+          Alert.alert("Upload Failed", "Could not upload photo. Please try again.");
+        }
+      } catch (error) {
+        Alert.alert(
+          "Upload Error",
+          `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      } finally {
+        setUploading(false);
       }
-    } catch (error) {
-      console.error("💥 [Geocam] CRITICAL ERROR:", error);
-      Alert.alert(
-        "Upload Error",
-        `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setUploading(false);
-      setShowNoteModal(false);
-      setPendingPhoto(null);
-      setPendingNote("");
-      setActiveCategory(null);
+    } else {
+      // ✅ NEW: Store locally if no assessmentId
+      const localImg: LocalImage = {
+        id: `local-${Date.now()}`,
+        uri: pendingPhoto.uri,
+        latitude: pendingPhoto.location.latitude,
+        longitude: pendingPhoto.location.longitude,
+        accuracy: pendingPhoto.location.accuracy,
+        subLayerCode: activeCategory,
+        description: note || `Safety ${activeCategory} photo`,
+      };
+      setLocalImages([...localImages, localImg]);
+      Alert.alert("Photo Captured", "Photo will be uploaded when you save the draft.");
     }
+
+    setShowNoteModal(false);
+    setPendingPhoto(null);
+    setPendingNote("");
+    setActiveCategory(null);
   };
 
-  // ✅ FIXED: Return FLAT structure - let the hook handle wrapping under 'safety'
+  // ✅ NEW: Remove local image
+  const removeLocalImage = (id: string) => {
+    setLocalImages(localImages.filter((img) => img.id !== id));
+  };
+
   const buildPayload = () => {
     const location =
       locationLat && locationLng
@@ -858,7 +833,6 @@ export default function SafetyForm() {
           }
         : null;
 
-    // ✅ 1. Build the layer-specific data
     const layerData = {
       flood: { overall_note: floodNote || null },
       landslide: { overall_note: landslideNote || null },
@@ -867,54 +841,38 @@ export default function SafetyForm() {
       overall_notes: overallSafetyNote || null,
     };
 
-    // ✅ 2. Return the FULL payload structure expected by the backend
     return {
       reforestation_area_id: areaId ? parseInt(areaId) : null,
       site_id: siteId ? parseInt(siteId) : null,
       assessment_date: new Date().toISOString().split("T")[0],
       location,
       field_assessment_data: {
-        [layerId]: layerData, // ✅ Wraps the layer data correctly
+        [layerId]: layerData,
       },
     };
   };
 
+  // ✅ UPDATED: handleDraft now passes localImages
   const handleDraft = async () => {
-   
     const payload = buildPayload();
-    const ok = await handleSave(payload, false);
-    if (ok) {
-      if (assessmentId) {
-        const data = await fetchAssessmentData();
-        if (data) {
-          populateForm(data.field_assessment_data || {});
-          const allImages = data.images || [];
-          setFloodImages(
-            allImages.filter(
-              (img: SafetyImage) => img.layer === "safety_flood",
-            ),
-          );
-          setLandslideImages(
-            allImages.filter(
-              (img: SafetyImage) => img.layer === "safety_landslide",
-            ),
-          );
-          setErosionImages(
-            allImages.filter(
-              (img: SafetyImage) => img.layer === "safety_erosion",
-            ),
-          );
-          setOtherImages(
-            allImages.filter(
-              (img: SafetyImage) => img.layer === "safety_other",
-            ),
-          );
-        }
+    const savedId = await handleSave(payload, false, localImages);
+    
+    if (savedId) {
+      setLocalImages([]);
+      const data = await fetchAssessmentData();
+      if (data) {
+        populateForm(data.field_assessment_data || {});
+        const allImages = data.images || [];
+        setFloodImages(allImages.filter((img: SafetyImage) => img.layer === "safety_flood"));
+        setLandslideImages(allImages.filter((img: SafetyImage) => img.layer === "safety_landslide"));
+        setErosionImages(allImages.filter((img: SafetyImage) => img.layer === "safety_erosion"));
+        setOtherImages(allImages.filter((img: SafetyImage) => img.layer === "safety_other"));
       }
       Alert.alert("Saved", "Draft saved successfully.");
     }
   };
 
+  // ✅ UPDATED: handleSubmit also passes localImages
   const handleSubmit = async () => {
     Alert.alert(
       "Submit Assessment",
@@ -924,10 +882,11 @@ export default function SafetyForm() {
         {
           text: "Submit",
           onPress: async () => {
-            const ok = await handleSave(buildPayload(), true);
-            if (ok) {
+            const savedId = await handleSave(buildPayload(), true, localImages);
+            if (savedId) {
+              setLocalImages([]);
               setIsViewMode(true);
-              Alert.alert("Success", "Submitted to GIS Specialist!");
+             
             }
           },
         },
@@ -950,29 +909,13 @@ export default function SafetyForm() {
           if (d) {
             const allImages = d.images || [];
             if (category === "flood")
-              setFloodImages(
-                allImages.filter(
-                  (i: SafetyImage) => i.layer === "safety_flood",
-                ),
-              );
+              setFloodImages(allImages.filter((i: SafetyImage) => i.layer === "safety_flood"));
             else if (category === "landslide")
-              setLandslideImages(
-                allImages.filter(
-                  (i: SafetyImage) => i.layer === "safety_landslide",
-                ),
-              );
+              setLandslideImages(allImages.filter((i: SafetyImage) => i.layer === "safety_landslide"));
             else if (category === "erosion")
-              setErosionImages(
-                allImages.filter(
-                  (i: SafetyImage) => i.layer === "safety_erosion",
-                ),
-              );
+              setErosionImages(allImages.filter((i: SafetyImage) => i.layer === "safety_erosion"));
             else if (category === "other")
-              setOtherImages(
-                allImages.filter(
-                  (i: SafetyImage) => i.layer === "safety_other",
-                ),
-              );
+              setOtherImages(allImages.filter((i: SafetyImage) => i.layer === "safety_other"));
           }
         },
       },
@@ -990,9 +933,58 @@ export default function SafetyForm() {
   const openGeocamForCategory = (
     category: "flood" | "landslide" | "erosion" | "other",
   ) => {
- 
     setActiveCategory(category);
     setShowGPSCamera(true);
+  };
+
+  // ✅ NEW: Render local images for a category
+  const renderLocalImages = (category: "flood" | "landslide" | "erosion" | "other") => {
+    const categoryLocalImages = localImages.filter((img) => img.subLayerCode === category);
+    if (categoryLocalImages.length === 0) return null;
+
+    return (
+      <View style={styles.localImagesSection}>
+        <Text style={styles.localImagesLabel}>Pending Upload ({categoryLocalImages.length})</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {categoryLocalImages.map((img) => (
+            <View key={img.id} style={styles.thumbWrapper}>
+              <TouchableOpacity
+                onPress={() => setPreviewImage(img.uri)}
+                activeOpacity={0.85}
+              >
+                <Image source={{ uri: img.uri }} style={styles.thumb} resizeMode="cover" />
+                <View style={[styles.thumbOverlay, { backgroundColor: "rgba(245,158,11,0.6)" }]}>
+                  <Ionicons name="cloud-upload-outline" size={14} color="#fff" />
+                </View>
+                <View style={styles.thumbCoords}>
+                  <Text style={styles.thumbCoordsText}>
+                    {img.latitude.toFixed(4)},{img.longitude.toFixed(4)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              {img.description ? (
+                <Text style={styles.thumbNote} numberOfLines={1}>
+                  {img.description}
+                </Text>
+              ) : (
+                <Text style={[styles.thumbNote, { color: "#F59E0B", fontStyle: "italic" }]}>
+                  Pending
+                </Text>
+              )}
+              {!isViewMode && (
+                <TouchableOpacity
+                  style={styles.deletePhotoBtn}
+                  onPress={() => removeLocalImage(img.id)}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Ionicons name="close" size={11} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    );
   };
 
   if (loading) {
@@ -1022,7 +1014,7 @@ export default function SafetyForm() {
         {/* SECTION 1: Flood */}
         <SectionCard
           title="Flood Evidence"
-          subtitle={`${floodImages.length} GPS photo${floodImages.length !== 1 ? "s" : ""}`}
+          subtitle={`${floodImages.length + localImages.filter(i => i.subLayerCode === "flood").length} GPS photo${(floodImages.length + localImages.filter(i => i.subLayerCode === "flood").length) !== 1 ? "s" : ""}`}
           iconName="water-outline"
           iconLib="ion"
           accentColor="#1D4ED8"
@@ -1110,12 +1102,15 @@ export default function SafetyForm() {
               )}
             </ScrollView>
           </View>
+
+          {/* ✅ NEW: Render local images */}
+          {renderLocalImages("flood")}
         </SectionCard>
 
         {/* SECTION 2: Landslide */}
         <SectionCard
           title="Landslide Indicators"
-          subtitle={`${landslideImages.length} GPS photo${landslideImages.length !== 1 ? "s" : ""}`}
+          subtitle={`${landslideImages.length + localImages.filter(i => i.subLayerCode === "landslide").length} GPS photo${(landslideImages.length + localImages.filter(i => i.subLayerCode === "landslide").length) !== 1 ? "s" : ""}`}
           iconName="mountain"
           iconLib="mci"
           accentColor="#854D0E"
@@ -1203,12 +1198,14 @@ export default function SafetyForm() {
               )}
             </ScrollView>
           </View>
+
+          {renderLocalImages("landslide")}
         </SectionCard>
 
         {/* SECTION 3: Soil Erosion */}
         <SectionCard
           title="Soil Erosion"
-          subtitle={`${erosionImages.length} GPS photo${erosionImages.length !== 1 ? "s" : ""}`}
+          subtitle={`${erosionImages.length + localImages.filter(i => i.subLayerCode === "erosion").length} GPS photo${(erosionImages.length + localImages.filter(i => i.subLayerCode === "erosion").length) !== 1 ? "s" : ""}`}
           iconName="alert-circle-outline"
           iconLib="ion"
           accentColor="#B91C1C"
@@ -1296,12 +1293,14 @@ export default function SafetyForm() {
               )}
             </ScrollView>
           </View>
+
+          {renderLocalImages("erosion")}
         </SectionCard>
 
         {/* SECTION 4: Other Observation */}
         <SectionCard
           title="Other Observation"
-          subtitle={`${otherImages.length} GPS photo${otherImages.length !== 1 ? "s" : ""}`}
+          subtitle={`${otherImages.length + localImages.filter(i => i.subLayerCode === "other").length} GPS photo${(otherImages.length + localImages.filter(i => i.subLayerCode === "other").length) !== 1 ? "s" : ""}`}
           iconName="information-circle-outline"
           iconLib="ion"
           accentColor="#6D28D9"
@@ -1389,6 +1388,8 @@ export default function SafetyForm() {
               )}
             </ScrollView>
           </View>
+
+          {renderLocalImages("other")}
         </SectionCard>
 
         {/* SECTION 5: Assessment Location */}
@@ -1945,6 +1946,22 @@ const styles = StyleSheet.create({
   },
   addPhotoBtnGPS: { borderColor: "#BBF7D0", backgroundColor: "#F0FDF4" },
   addPhotoBtnText: { fontSize: 10, color: "#0369A1", fontWeight: "600" },
+  // ✅ NEW: Local images section styles
+  localImagesSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F59E0B",
+    borderStyle: "dashed",
+  },
+  localImagesLabel: {
+    fontSize: 11,
+    color: "#F59E0B",
+    fontWeight: "700",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   footer: {
     position: "absolute",
     bottom: 0,

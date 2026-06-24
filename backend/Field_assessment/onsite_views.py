@@ -6,14 +6,17 @@ from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from accounts.helper import get_user_from_token
 from security.views import log_activity
-from .models import Assigned_onsite_inspector, Field_assessment, Field_assessment_images
+from .models import (
+    Assigned_onsite_inspector, Field_assessment, Field_assessment_images, 
+    FieldAssessmentAnimal, LandClassification
+)
+from animals.models import Animal
 from django.db.models import Prefetch
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-# ✅ Valid layer codes for image uploads (matches IMAGE_LAYER_CHOICES in models)
 VALID_IMAGE_LAYERS = [
     'meta_land_title', 'meta_tax_decl', 'meta_other_doc',
     'safety_flood', 'safety_landslide', 'safety_erosion', 'safety_other',
@@ -21,10 +24,8 @@ VALID_IMAGE_LAYERS = [
     'bound_verification'
 ]
 
-# ✅ Ormoc City approximate GPS bounds for basic validation (FIXED: consistent ORMOC prefix)
 ORMOC_LAT_MIN, ORMOC_LAT_MAX = 10.90, 11.25
 ORMOC_LNG_MIN, ORMOC_LNG_MAX = 124.40, 124.80
-
 
 def _record_activity(user, request, action_type, entity_type, entity_id=None,
                      entity_label='', description='',
@@ -32,241 +33,155 @@ def _record_activity(user, request, action_type, entity_type, entity_id=None,
     email = user.email if user else ''
     ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
     log_activity(
-        performed_by=user,
-        email=email,
-        action_type=action_type,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        entity_label=entity_label,
-        description=description,
-        old_data=old_data,
-        new_data=new_data,
-        changed_fields=changed_fields,
-        ip_address=ip,
+        performed_by=user, email=email, action_type=action_type, entity_type=entity_type,
+        entity_id=entity_id, entity_label=entity_label, description=description,
+        old_data=old_data, new_data=new_data, changed_fields=changed_fields, ip_address=ip,
     )
 
-
 def check_inspector_assignment(user, reforestation_area_id):
-    if not user or user.user_role != "OnsiteInspector":
-        return False
-    return Assigned_onsite_inspector.objects.filter(
-        user=user,
-        reforestation_area_id=reforestation_area_id
-    ).exists()
+    if not user or user.user_role != "OnsiteInspector": return False
+    return Assigned_onsite_inspector.objects.filter(user=user, reforestation_area_id=reforestation_area_id).exists()
 
-
-# ✅ UPDATE THIS IN: field_assessment/onsite_views.py
-
+# ─────────────────────────────────────────────
+# 1. GET ASSIGNED AREAS (Unchanged)
+# ─────────────────────────────────────────────
 @csrf_exempt
 def get_assigned_reforestation_area(request):
-    """
-    GET: Fetch reforestation areas assigned to the onsite inspector.
-    ✅ UPDATED: Stripped down to match the new minimal Reforestation_areas model.
-    """
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
-    
+    if request.method != 'GET': return JsonResponse({'error': 'Only GET allowed'}, status=405)
     try:
         user = get_user_from_token(request)
-        if not user or user.user_role != "OnsiteInspector":
-            return JsonResponse({'error': 'Unauthorized'}, status=403)
-
-        # ✅ FIXED: Removed select_related for barangay/land_classification and prefetch for meta_verification
-        records = Assigned_onsite_inspector.objects.filter(
-            user=user
-        ).select_related('reforestation_area')
-        
+        if not user or user.user_role != "OnsiteInspector": return JsonResponse({'error': 'Unauthorized'}, status=403)
+        records = Assigned_onsite_inspector.objects.filter(user=user).select_related('reforestation_area')
         data = []
         for r in records:
             area = r.reforestation_area
-            
-            # ✅ Parse coordinate for map display (Only center point exists now)
             coordinate = area.coordinate
             lat, lng, coord_display = _parse_coordinate(coordinate)
-            
             data.append({
                 "assigned_onsite_inspector_id": r.assigned_onsite_inspector_id,
                 "reforestation_area_id": area.reforestation_area_id,
-                "name": area.name,
-                "description": area.description,
-                "coordinate": coordinate,
-                "latitude": lat,
-                "longitude": lng,
-                "coord_display": coord_display,
+                "name": area.name, "description": area.description,
+                "coordinate": coordinate, "latitude": lat, "longitude": lng, "coord_display": coord_display,
                 "assigned_at": r.created_at.isoformat()
             })
-            
         return JsonResponse(data, safe=False, status=200)
-        
-    except Exception as e:
-        return JsonResponse({'error': str(e), 'success': False}, status=500)
-
+    except Exception as e: return JsonResponse({'error': str(e), 'success': False}, status=500)
 
 def _parse_coordinate(coordinate):
-    """Helper: Parse coordinate JSON/string to lat/lng for map display."""
     default_lat, default_lng = 11.0, 124.6
-    default_display = "No Coordinates"
-    
-    if not coordinate:
-        return default_lat, default_lng, default_display
-    
+    if not coordinate: return default_lat, default_lng, "No Coordinates"
     try:
-        # Handle JSON array: [lat, lng]
         if isinstance(coordinate, list) and len(coordinate) >= 2:
             lat, lng = float(coordinate[0]), float(coordinate[1])
             return lat, lng, f"{lat:.4f}° N, {lng:.4f}° E"
-        
-        # Handle JSON object: {"latitude": x, "longitude": y}
         if isinstance(coordinate, dict):
             lat = float(coordinate.get('latitude', default_lat))
             lng = float(coordinate.get('longitude', default_lng))
             return lat, lng, f"{lat:.4f}° N, {lng:.4f}° E"
-        
-        # Handle string: "lat, lng"
         if isinstance(coordinate, str) and ',' in coordinate:
             parts = coordinate.split(',')
             if len(parts) >= 2:
                 lat, lng = float(parts[0].strip()), float(parts[1].strip())
                 return lat, lng, f"{lat:.4f}° N, {lng:.4f}° E"
-                
-    except (ValueError, TypeError, KeyError):
-        pass
-    
-    return default_lat, default_lng, default_display
-
-
+    except (ValueError, TypeError, KeyError): pass
+    return default_lat, default_lng, "No Coordinates"
 
 # ─────────────────────────────────────────────
-# 2. GET FIELD ASSESSMENTS (LIST)
+# 2. GET FIELD ASSESSMENTS (LIST) - Updated to include new fields
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_field_assessments(request):
-    """
-    GET: Fetch field assessments for onsite inspector.
-    
-    Query Parameters:
-    - reforestation_area_id: Filter by area (required)
-    - site_id: Filter by site. Pass 'null' for General (Area-level) assessments.
-    - is_submitted: Filter by submission status (optional)
-    - layer: Filter by layer key in field_assessment_data (optional)
-    """
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
-    
+    if request.method != 'GET': return JsonResponse({'error': 'Only GET allowed'}, status=405)
     try:
         user = get_user_from_token(request)
-        if not user or user.user_role != "OnsiteInspector":
-            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        if not user or user.user_role != "OnsiteInspector": return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-        # Base queryset
-        q = Field_assessment.objects.filter(
-            assigned_onsite_inspector__user=user
-        ).select_related(
-            'assigned_onsite_inspector__reforestation_area'
+        q = Field_assessment.objects.filter(assigned_onsite_inspector__user=user).select_related(
+            'assigned_onsite_inspector__reforestation_area', 'land_classification'
         )
         
-        # Filter by reforestation area
-        if aid := request.GET.get('reforestation_area_id'):
-            q = q.filter(assigned_onsite_inspector__reforestation_area_id=aid)
-        
-        # Filter by submission status
-        if request.GET.get('is_submitted') is not None:
-            q = q.filter(is_submitted=(request.GET['is_submitted'].lower() == 'true'))
+        if aid := request.GET.get('reforestation_area_id'): q = q.filter(assigned_onsite_inspector__reforestation_area_id=aid)
+        if request.GET.get('is_submitted') is not None: q = q.filter(is_submitted=(request.GET['is_submitted'].lower() == 'true'))
             
-        # ✅ FIXED: Filter by site_id (General vs Specific)
         sid = request.GET.get('site_id')
         if sid is not None:
-            if sid.lower() == 'null' or sid == '0' or sid == '':
-                # General Assessment: site_id must be NULL
-                q = q.filter(site_id__isnull=True)
+            if sid.lower() == 'null' or sid == '0' or sid == '': q = q.filter(site_id__isnull=True)
             else:
-                # Specific Assessment: site_id must match the integer
-                try:
-                    q = q.filter(site_id=int(sid))
-                except ValueError:
-                    pass # Ignore invalid site_id strings
+                try: q = q.filter(site_id=int(sid))
+                except ValueError: pass
 
-        # Filter by layer in field_assessment_data JSON
         layer = request.GET.get('layer')
         if layer:
             VALID_LAYERS = ['meta_data', 'safety', 'boundary_verification', 'survivability']
-            if layer not in VALID_LAYERS:
-                return JsonResponse({
-                    'error': f'Invalid layer. Allowed: {VALID_LAYERS}',
-                    'success': False
-                }, status=400)
-            
-            # DB-level filter: Check if JSON field has the layer key
+            if layer not in VALID_LAYERS: return JsonResponse({'error': f'Invalid layer. Allowed: {VALID_LAYERS}'}, status=400)
             q = q.filter(field_assessment_data__has_key=layer)
         
         q = q.order_by('-updated_at')
-
         data = []
         for fa in q:
-            # Python-level filter: Skip if layer filter is set but layer data is actually empty
             if layer:
                 layer_data = fa.field_assessment_data.get(layer)
-                if not layer_data or (isinstance(layer_data, (dict, list)) and not layer_data):
-                    continue
+                if not layer_data or (isinstance(layer_data, (dict, list)) and not layer_data): continue
             
             data.append({
                 "field_assessment_id": fa.field_assessment_id,
                 "reforestation_area_id": fa.assigned_onsite_inspector.reforestation_area_id,
                 "reforestation_area_name": fa.assigned_onsite_inspector.reforestation_area.name,
-                "site_id": fa.site_id, # ✅ ADDED: So frontend knows if it's general or specific
+                "site_id": fa.site_id,
                 "assessment_date": fa.assessment_date.isoformat() if fa.assessment_date else None,
                 "location": fa.location,
                 "is_submitted": fa.is_submitted,
                 "image_count": fa.images.count(),
-                
-                # ✅ CRITICAL FIX: Return the FULL JSON so the frontend progress bar can check all layers
-                "field_assessment_data": fa.field_assessment_data, 
-                
-                # Keep layer_data for backwards compatibility/debugging if needed
-                "layer_data": fa.field_assessment_data.get(layer) if layer else None, 
-                
+                "field_assessment_data": fa.field_assessment_data,
+                "layer_data": fa.field_assessment_data.get(layer) if layer else None,
+                # ✅ NEW: Land Classification Summary
+                "land_classification": {
+                    "id": fa.land_classification.land_classification_id,
+                    "name": fa.land_classification.name
+                } if fa.land_classification else None,
                 "created_at": fa.created_at.isoformat(),
                 "updated_at": fa.updated_at.isoformat(),
             })
-            
         return JsonResponse(data, safe=False, encoder=DjangoJSONEncoder, status=200)
-        
     except Exception as e:
         logger.error(f"Error in get_field_assessments: {e}", exc_info=True)
         return JsonResponse({'error': str(e), 'success': False}, status=500)
 
-# ─────────────────────────────────────────────
-# 3. GET FIELD ASSESSMENT DETAIL
+# ────────────────────────────────────────────
+# 3. GET FIELD ASSESSMENT DETAIL - Updated to include new fields
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_field_assessment_detail(request, field_assessment_id):
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    if request.method != 'GET': return JsonResponse({'error': 'Only GET allowed'}, status=405)
     try:
         user = get_user_from_token(request)
-        if not user or user.user_role != "OnsiteInspector":
-            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        if not user or user.user_role != "OnsiteInspector": return JsonResponse({'error': 'Unauthorized'}, status=403)
 
         fa = get_object_or_404(
             Field_assessment.objects.select_related(
-                'assigned_onsite_inspector__user',
-                'assigned_onsite_inspector__reforestation_area'
-            ).prefetch_related('images'),  # ✅ Added for performance
+                'assigned_onsite_inspector__user', 'assigned_onsite_inspector__reforestation_area', 'land_classification'
+            ).prefetch_related('images', 'animal_relations__animal'),
             field_assessment_id=field_assessment_id
         )
-        if fa.assigned_onsite_inspector.user != user:
-            return JsonResponse({'error': 'Forbidden'}, status=403)
+        if fa.assigned_onsite_inspector.user != user: return JsonResponse({'error': 'Forbidden'}, status=403)
 
-        # ✅ Enriched image payload with Geocam fields
         images = [{
-            "image_id": img.field_assessment_images_id,
-            "layer": img.layer,
-            "url": request.build_absolute_uri(img.img.url) if img.img else None,  # ✅ Absolute URL for mobile
+            "image_id": img.field_assessment_images_id, "layer": img.layer,
+            "url": request.build_absolute_uri(img.img.url) if img.img else None,
             "latitude": float(img.latitude) if img.latitude is not None else None,
             "longitude": float(img.longitude) if img.longitude is not None else None,
-            "description": img.description or "",
-            "created_at": img.created_at.isoformat(),
+            "description": img.description or "", "created_at": img.created_at.isoformat(),
         } for img in fa.images.order_by('created_at')]
+
+        # ✅ NEW: Animals Present
+        animals_data = [
+            {
+                "animal_id": rel.animal.animal_id,
+                "name": rel.animal.name,
+                "scientific_name": rel.animal.scientific_name
+            }
+            for rel in fa.animal_relations.all()
+        ]
 
         return JsonResponse({
             "field_assessment_id": fa.field_assessment_id,
@@ -275,119 +190,216 @@ def get_field_assessment_detail(request, field_assessment_id):
             "field_assessment_data": fa.field_assessment_data,
             "is_submitted": fa.is_submitted,
             "images": images,
+            # ✅ NEW: Land Classification & Animals
+            "land_classification": {
+                "id": fa.land_classification.land_classification_id,
+                "name": fa.land_classification.name
+            } if fa.land_classification else None,
+            "animals_present": animals_data,
             "created_at": fa.created_at.isoformat(),
             "updated_at": fa.updated_at.isoformat(),
-        }, encoder=DjangoJSONEncoder, status=200)  # ✅ Safe Decimal serialization
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
+        }, encoder=DjangoJSONEncoder, status=200)
+    except Exception as e: return JsonResponse({'error': str(e)}, status=500)
 
 # ─────────────────────────────────────────────
-# 4. CREATE FIELD ASSESSMENT (DRAFT)
+# 4. CREATE FIELD ASSESSMENT (Supports JSON & Multipart with Images)
 # ─────────────────────────────────────────────
 @csrf_exempt
 def create_field_assessment(request):
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+    if request.method != 'POST': return JsonResponse({'error': 'Only POST allowed'}, status=405)
     try:
         user = get_user_from_token(request)
-        if not user or user.user_role != "OnsiteInspector":
-            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        if not user or user.user_role != "OnsiteInspector": return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-        body = json.loads(request.body)
-        reforestation_area_id = body.get('reforestation_area_id')
-        assessment_date = body.get('assessment_date')
-        print(reforestation_area_id)
-        raw_location = body.get('location')
-        field_data = body.get('field_assessment_data', {})
-        site_id = body.get('site_id') 
+        is_multipart = request.content_type.startswith('multipart/form-data')
+        
+        # --- Parse Data based on Content-Type ---
+        if is_multipart:
+            reforestation_area_id = request.POST.get('reforestation_area_id')
+            site_id = request.POST.get('site_id')
+            assessment_date = request.POST.get('assessment_date')
+            raw_location = json.loads(request.POST.get('location', 'null')) if request.POST.get('location') else None
+            field_data = json.loads(request.POST.get('field_assessment_data', '{}'))
+            land_classification_id = request.POST.get('land_classification_id')
+            animal_ids_raw = request.POST.get('animal_ids', '[]')
+            animal_ids = json.loads(animal_ids_raw) if isinstance(animal_ids_raw, str) else (animal_ids_raw if isinstance(animal_ids_raw, list) else [])
+            
+            images_files = request.FILES.getlist('images')
+            image_metadata_raw = request.POST.get('image_metadata', '[]')
+            image_metadata = json.loads(image_metadata_raw) if isinstance(image_metadata_raw, str) else []
+        else:
+            body = json.loads(request.body)
+            reforestation_area_id = body.get('reforestation_area_id')
+            site_id = body.get('site_id')
+            assessment_date = body.get('assessment_date')
+            raw_location = body.get('location')
+            field_data = body.get('field_assessment_data', {})
+            land_classification_id = body.get('land_classification_id')
+            animal_ids = body.get('animal_ids', [])
+            images_files = []
+            image_metadata = []
+
         if not reforestation_area_id or not assessment_date:
             return JsonResponse({'error': 'reforestation_area_id and assessment_date are required'}, status=400)
         if not check_inspector_assignment(user, reforestation_area_id):
             return JsonResponse({'error': 'You are not assigned to this area'}, status=403)
 
-        # ✅ Validate location if provided
         location = None
         if raw_location and isinstance(raw_location, dict):
             if 'latitude' not in raw_location or 'longitude' not in raw_location:
-                return JsonResponse({'error': 'Invalid location: must contain latitude and longitude'}, status=400)
+                return JsonResponse({'error': 'Invalid location'}, status=400)
             location = raw_location
 
-        assignment = get_object_or_404(
-            Assigned_onsite_inspector, 
-            user=user, 
-            reforestation_area_id=reforestation_area_id
-        )
+        assignment = get_object_or_404(Assigned_onsite_inspector, user=user, reforestation_area_id=reforestation_area_id)
+
+        # --- Handle Land Classification ---
+        land_class_obj = None
+        if land_classification_id:
+            try:
+                land_class_obj = LandClassification.objects.get(land_classification_id=land_classification_id)
+            except LandClassification.DoesNotExist:
+                return JsonResponse({'error': 'Invalid land_classification_id'}, status=400)
+
+        # --- Create Assessment ---
         fa = Field_assessment.objects.create(
             assigned_onsite_inspector=assignment,
             assessment_date=assessment_date,
-             site_id=site_id,
+            site_id=site_id,
             location=location,
             field_assessment_data=field_data,
+            land_classification=land_class_obj,
             is_submitted=False
         )
 
-        _record_activity(
-            user, request,
-            action_type='CREATE',
-            entity_type='FieldAssessment',
-            entity_id=fa.field_assessment_id,
-            entity_label=f'Assessment {fa.field_assessment_id} - Area {reforestation_area_id}',
-            description=f'Field assessment draft created for reforestation area {reforestation_area_id}.',
-            new_data={'reforestation_area_id': reforestation_area_id, 'assessment_date': assessment_date, 'location': location},
-        )
+        # --- Handle Animals ---
+        if animal_ids:
+            for animal_id in animal_ids:
+                try:
+                    animal = Animal.objects.get(animal_id=animal_id)
+                    FieldAssessmentAnimal.objects.create(field_assessment=fa, animal=animal)
+                except Animal.DoesNotExist:
+                    pass # Ignore invalid IDs
 
-        return JsonResponse({
-            'message': 'Draft created', 
-            'field_assessment_id': fa.field_assessment_id
-        }, status=201)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        # --- Handle Images (Multipart Only) ---
+        if is_multipart and images_files:
+            if len(images_files) != len(image_metadata):
+                fa.delete() # Cleanup
+                return JsonResponse({'error': 'Image count mismatch with metadata'}, status=400)
+            
+            for i, img_file in enumerate(images_files):
+                meta = image_metadata[i]
+                layer = meta.get('layer')
+                if layer not in VALID_IMAGE_LAYERS:
+                    fa.delete() # Cleanup
+                    return JsonResponse({'error': f'Invalid layer: {layer}'}, status=400)
+                
+                lat = meta.get('latitude', 11.0)
+                lng = meta.get('longitude', 124.6)
+                description = meta.get('description', '')
 
+                Field_assessment_images.objects.create(
+                    field_assessment=fa, layer=layer, img=img_file,
+                    latitude=lat, longitude=lng, description=description
+                )
+
+        _record_activity(user, request, 'CREATE', 'FieldAssessment', fa.field_assessment_id,
+                         f'Assessment {fa.field_assessment_id}', f'Created draft.',
+                         new_data={'reforestation_area_id': reforestation_area_id})
+
+        return JsonResponse({'message': 'Draft created', 'field_assessment_id': fa.field_assessment_id}, status=201)
+    except json.JSONDecodeError: return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e: return JsonResponse({'error': str(e)}, status=500)
 
 # ─────────────────────────────────────────────
-# 5. UPDATE FIELD ASSESSMENT (DRAFT ONLY)
+# 5. UPDATE FIELD ASSESSMENT (Supports JSON & Multipart)
 # ─────────────────────────────────────────────
 @csrf_exempt
 def update_field_assessment(request, field_assessment_id):
-    if request.method not in ['POST', 'PUT']:
-        return JsonResponse({'error': 'Only POST/PUT allowed'}, status=405)
+    if request.method not in ['POST', 'PUT']: return JsonResponse({'error': 'Only POST/PUT allowed'}, status=405)
     try:
         user = get_user_from_token(request)
-        if not user or user.user_role != "OnsiteInspector":
-            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        if not user or user.user_role != "OnsiteInspector": return JsonResponse({'error': 'Unauthorized'}, status=403)
 
         fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
-        if fa.assigned_onsite_inspector.user != user:
-            return JsonResponse({'error': 'Forbidden'}, status=403)
-        if fa.is_submitted:
-            return JsonResponse({'error': 'Cannot edit a submitted assessment'}, status=400)
+        if fa.assigned_onsite_inspector.user != user: return JsonResponse({'error': 'Forbidden'}, status=403)
+        if fa.is_submitted: return JsonResponse({'error': 'Cannot edit a submitted assessment'}, status=400)
 
-        body = json.loads(request.body)
-        _changed = [k for k in ('assessment_date', 'location', 'field_assessment_data') if k in body]
+        is_multipart = request.content_type.startswith('multipart/form-data')
         
-        if 'assessment_date' in body: fa.assessment_date = body['assessment_date']
-        if 'location' in body: fa.location = body['location']
-        if 'field_assessment_data' in body: fa.field_assessment_data = body['field_assessment_data']
+        if is_multipart:
+            data = {
+                'assessment_date': request.POST.get('assessment_date'),
+                'location': json.loads(request.POST.get('location', 'null')) if request.POST.get('location') else None,
+                'field_assessment_data': json.loads(request.POST.get('field_assessment_data', '{}')),
+                'land_classification_id': request.POST.get('land_classification_id'),
+                'animal_ids': json.loads(request.POST.get('animal_ids', '[]')) if request.POST.get('animal_ids') else []
+            }
+            images_files = request.FILES.getlist('images')
+            image_metadata_raw = request.POST.get('image_metadata', '[]')
+            image_metadata = json.loads(image_metadata_raw) if isinstance(image_metadata_raw, str) else []
+        else:
+            body = json.loads(request.body)
+            data = body
+            images_files = []
+            image_metadata = []
+
+        _changed = []
+        if 'assessment_date' in data and data['assessment_date'] != fa.assessment_date:
+            fa.assessment_date = data['assessment_date']; _changed.append('assessment_date')
+        if 'location' in data and data['location'] != fa.location:
+            fa.location = data['location']; _changed.append('location')
+        if 'field_assessment_data' in data and data['field_assessment_data'] != fa.field_assessment_data:
+            fa.field_assessment_data = data['field_assessment_data']; _changed.append('field_assessment_data')
+            
+        # --- Update Land Classification ---
+        if 'land_classification_id' in data:
+            lc_id = data['land_classification_id']
+            if lc_id is None:
+                if fa.land_classification is not None:
+                    fa.land_classification = None; _changed.append('land_classification')
+            else:
+                try:
+                    new_lc = LandClassification.objects.get(land_classification_id=lc_id)
+                    if fa.land_classification != new_lc:
+                        fa.land_classification = new_lc; _changed.append('land_classification')
+                except LandClassification.DoesNotExist:
+                    return JsonResponse({'error': 'Invalid land_classification_id'}, status=400)
+
         fa.save()
 
-        _record_activity(
-            user, request,
-            action_type='UPDATE',
-            entity_type='FieldAssessment',
-            entity_id=field_assessment_id,
-            entity_label=f'Assessment {field_assessment_id}',
-            description=f'Field assessment {field_assessment_id} updated. Fields changed: {", ".join(_changed) or "none"}.',
-            changed_fields=_changed,
-        )
+        # --- Update Animals (Replace All) ---
+        if 'animal_ids' in data:
+            fa.animal_relations.all().delete() # Clear existing
+            for animal_id in data['animal_ids']:
+                try:
+                    animal = Animal.objects.get(animal_id=animal_id)
+                    FieldAssessmentAnimal.objects.create(field_assessment=fa, animal=animal)
+                except Animal.DoesNotExist: pass
+            _changed.append('animals_present')
+
+        # --- Handle New Images (Append) ---
+        if is_multipart and images_files:
+            for i, img_file in enumerate(images_files):
+                if i < len(image_metadata):
+                    meta = image_metadata[i]
+                    layer = meta.get('layer')
+                    if layer in VALID_IMAGE_LAYERS:
+                        Field_assessment_images.objects.create(
+                            field_assessment=fa, layer=layer, img=img_file,
+                            latitude=meta.get('latitude', 11.0), longitude=meta.get('longitude', 124.6),
+                            description=meta.get('description', '')
+                        )
+            _changed.append('images')
+
+        _record_activity(user, request, 'UPDATE', 'FieldAssessment', field_assessment_id,
+                         f'Assessment {field_assessment_id}', f'Updated. Fields: {", ".join(_changed)}',
+                         changed_fields=_changed)
 
         return JsonResponse({'message': 'Draft updated', 'updated_at': fa.updated_at.isoformat()}, status=200)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    except json.JSONDecodeError: return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e: return JsonResponse({'error': str(e)}, status=500)
+
+
 
 
 # ─────────────────────────────────────────────

@@ -115,10 +115,18 @@ def get_land_classifications(request):
 
     # Slice and convert to list of dictionaries
     # .values() fetches all fields as dictionaries
-    paginated_data = classifications[offset: offset + entries].values()
+    data = []
+    for lc in classifications[offset: offset + entries]:
+        data.append({
+            "land_classification_id": lc.land_classification_id,
+            "name": lc.name,
+            "description": lc.description,
+            "for_reforestation": lc.for_reforestation,
+            "created_at": lc.created_at.strftime("%Y-%m-%d") if lc.created_at else None,
+        })
 
     return JsonResponse({
-        'data': list(paginated_data),
+        'data': data,
         'total_page': total_page,
         'page': page,
         'entries': entries,

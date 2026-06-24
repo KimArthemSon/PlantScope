@@ -36,7 +36,7 @@ export default function PlantScopeAlert({
 
   // Base classes shared by all variants
   const baseClasses =
-    "fixed top-3 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl border p-5 flex gap-4 shadow-lg transition-all duration-300";
+    "fixed top-3 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 flex gap-4 shadow-lg transition-all duration-300";
 
   // Variant-specific styles
   const variant = {
@@ -82,7 +82,7 @@ export default function PlantScopeAlert({
       </div>
 
       {/* Text */}
-      <div className="flex-1">
+      <div className="flex-1 pr-8">
         <h3 className="font-bold text-lg">{title}</h3>
         <p className="text-sm opacity-90 mt-1">{message}</p>
       </div>
@@ -93,7 +93,7 @@ export default function PlantScopeAlert({
           setIsVisible(false);
           setTimeout(() => onClose?.(), 300);
         }}
-        className="absolute top-4 right-4 opacity-60 hover:opacity-100 transition-opacity"
+        className="absolute top-3 right-3 p-1.5 opacity-60 hover:opacity-100 hover:bg-black/5 rounded-lg transition-all"
         aria-label="Close"
       >
         <X className="w-5 h-5" />

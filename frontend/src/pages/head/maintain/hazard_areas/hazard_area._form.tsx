@@ -42,7 +42,6 @@ interface Hazard_area {
   polygon: PolygonShape;
 }
 
-// ✅ UPDATED: Added coordinate field
 interface Barangay {
   barangay_id: number;
   name: string;
@@ -166,7 +165,6 @@ export default function Hazard_area_form() {
     }));
   };
 
-  // ✅ UPDATED: Fetch barangays with coordinates
   async function get_barangay_list() {
     try {
       const res = await fetch(`${api}api/get_barangay_list/`, {
@@ -211,7 +209,6 @@ export default function Hazard_area_form() {
     }
   }
 
-  // ✅ NEW: Route to selected barangay
   const handleBarangayChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
     const barangayId = value === "" ? "" : Number(value);
@@ -221,7 +218,6 @@ export default function Hazard_area_form() {
       barangay_id: barangayId,
     }));
 
-    // ✅ Fly to the selected barangay if it has coordinates
     if (barangayId !== "" && mapRef.current) {
       const selectedBarangay = barangay_list.find(
         (b) => b.barangay_id === barangayId
@@ -230,7 +226,6 @@ export default function Hazard_area_form() {
       if (selectedBarangay && selectedBarangay.coordinate) {
         const [lat, lng] = selectedBarangay.coordinate;
         
-        // Fly to the barangay location
         mapRef.current.flyTo([lat, lng], 16, {
           duration: 1.5,
         });
@@ -394,7 +389,7 @@ export default function Hazard_area_form() {
   }
 
   return (
-    <div className="flex flex-col flex-1 w-full min-w-150 h-full bg-gray-50 items-center">
+    <div className="flex flex-col flex-1 w-full h-full bg-gray-50 items-center overflow-hidden">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -405,7 +400,7 @@ export default function Hazard_area_form() {
       )}
       {loading && <LoaderPending />}
 
-      <div className="w-full bg-white border-b border-gray-200 px-10 py-4 flex items-center gap-3 shadow-sm">
+      <div className="w-full bg-white border-b border-gray-200 px-10 py-4 flex items-center gap-3 shadow-sm shrink-0">
         <div className="bg-green-700 p-2 rounded-lg">
           <Map size={18} className="text-white" />
         </div>
@@ -419,11 +414,11 @@ export default function Hazard_area_form() {
         </div>
       </div>
 
-      <main className="flex flex-col w-full flex-1 max-w-700 max-h-400 gap-8 min-w-200 p-8 pb-5">
-        <div className="flex gap-6 w-full h-full">
+      <main className="flex flex-col w-full flex-1 max-w-700 gap-6 min-w-200 p-8 pb-5 overflow-hidden">
+        <div className="flex gap-6 w-full h-full min-h-0">
           {/* Left panel — form */}
           <form
-            className="flex flex-col w-[42%] gap-4 min-w-100"
+            className="flex flex-col w-[42%] gap-4 min-w-100 overflow-y-auto pr-2"
             onSubmit={hanle_submit}
           >
             <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
@@ -518,8 +513,8 @@ export default function Hazard_area_form() {
               </div>
             </div>
 
-            {/* Polygon Coordinates */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col flex-1 min-h-0">
+            {/* Polygon Coordinates - EXPANDED SECTION */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col min-h-[350px]">
               <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
                 <Map size={14} className="text-green-700" />
                 <span className="text-[.75rem] font-semibold text-gray-500 uppercase tracking-widest">
@@ -546,9 +541,10 @@ export default function Hazard_area_form() {
                 </button>
               </div>
 
-              <div className="flex flex-col gap-2 overflow-y-auto p-3 flex-1 max-h-52">
+              {/* Coordinate list - SCROLLABLE */}
+              <div className="flex flex-col gap-2 overflow-y-auto p-3 max-h-[300px]">
                 {hazard_area.polygon.coordinates.length === 0 ? (
-                  <div className="text-center text-gray-400 text-xs italic py-4">
+                  <div className="text-center text-gray-400 text-xs italic py-8">
                     Click "Start Drawing" on the map, <br /> import a CSV, or
                     add points manually.
                   </div>
@@ -617,7 +613,7 @@ export default function Hazard_area_form() {
                       </div>
                       <button
                         type="button"
-                        className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 transition-colors shrink-0"
+                        className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 transition-colors"
                         onClick={(e) => {
                           e.preventDefault();
                           setHazard_area((prev) => ({
@@ -688,7 +684,7 @@ export default function Hazard_area_form() {
               </div>
             </div>
 
-            <div className="flex gap-3 pt-1">
+            <div className="flex gap-3 pt-1 pb-2">
               <button
                 type="button"
                 className="flex-1 py-2.5 rounded-xl text-[.8rem] font-semibold border border-gray-300 text-gray-600 bg-white hover:bg-gray-50 transition-colors"
@@ -708,7 +704,7 @@ export default function Hazard_area_form() {
           </form>
 
           {/* Right panel — map */}
-          <div className="flex flex-col flex-1 min-w-0 gap-3">
+          <div className="flex flex-col flex-1 min-w-0 min-h-0">
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm px-4 py-2.5 flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-[.75rem] font-semibold text-gray-500">
@@ -719,7 +715,7 @@ export default function Hazard_area_form() {
               </span>
             </div>
 
-            <div className="border border-gray-200 flex-1 rounded-xl overflow-hidden shadow-sm relative">
+            <div className="border border-gray-200 flex-1 rounded-xl overflow-hidden shadow-sm relative mt-3 min-h-0">
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] flex gap-2 bg-white p-2 rounded-lg shadow-lg border border-gray-200">
                 {!isDrawing ? (
                   <button
@@ -770,7 +766,6 @@ export default function Hazard_area_form() {
                   <Popup>Center Point</Popup>
                 </Marker>
 
-                {/* ✅ NEW: Show barangay markers on the map */}
                 {barangay_list.map((barangay) => {
                   if (!barangay.coordinate || barangay.coordinate.length !== 2)
                     return null;
@@ -783,7 +778,6 @@ export default function Hazard_area_form() {
                       position={[lat, lng]}
                       eventHandlers={{
                         click: () => {
-                          // When clicking a barangay marker, select it in the dropdown
                           setHazard_area((prev) => ({
                             ...prev,
                             barangay_id: barangay.barangay_id,

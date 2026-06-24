@@ -5,7 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Prefetch, Q
 from reforestation_areas.models import Reforestation_areas
 from Field_assessment.models import Field_assessment, Field_assessment_images, Assigned_onsite_inspector
-
+from django.conf import settings
 # Valid layers for field assessments (NOT meta data - those are separate)
 SITE_LAYERS = ['safety', 'survivability', 'boundary_verification']
 
@@ -170,7 +170,7 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
                 "images": [
                     {
                         "id": img.field_assessment_images_id,
-                        "url": f"http://127.0.0.1:8000{img.img.url}" if img.img else None,
+                        "url": f"{settings.API_BASE}{img.img.url}" if img.img else None,
                         "layer": img.layer,
                         "description": img.description,
                         "latitude": float(img.latitude) if img.latitude else None,
@@ -233,7 +233,7 @@ def get_all_site_assessments(request, reforestation_area_id):
                 "images": [
                     {
                         "id": img.field_assessment_images_id,
-                        "url": f"http://127.0.0.1:8000{img.img.url}" if img.img else None,
+                        "url": f"{settings.API_BASE}{img.img.url}" if img.img else None,
                         "layer": img.layer,
                         "description": img.description,
                         "latitude": float(img.latitude) if img.latitude else None,

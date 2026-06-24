@@ -10,7 +10,7 @@ export default function LoaderPending({
   return (
     <div
       className={`
-        ${overlay ? "absolute z-100 inset-0 bg-[#00000013] backdrop-blur-[.5px]" : ""}
+        ${overlay ? "fixed z-100 inset-0 bg-[#00000013] backdrop-blur-[.5px]" : ""}
         flex items-center justify-center
         pointer-events-none
       `}

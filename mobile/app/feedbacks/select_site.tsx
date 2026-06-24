@@ -42,7 +42,7 @@ export default function SelectSite() {
         const data = await res.json();
         setSites(data.data || []);
       } catch (e) {
-        console.error(e);
+      
       } finally {
         setLoading(false);
       }

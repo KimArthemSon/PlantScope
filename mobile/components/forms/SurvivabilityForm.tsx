@@ -19,7 +19,7 @@ import * as Location from "expo-location";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
 
-import { useFieldAssessment } from "@/hooks/useFieldAssessment";
+import { useFieldAssessment, LocalImage } from "@/hooks/useFieldAssessment";
 import { api } from "@/constants/url_fixed";
 
 const API_BASE = `${api}/api`;
@@ -104,7 +104,6 @@ function SimpleGeocam({
       setCurrentLocation(data);
       return data;
     } catch (error) {
-      console.error("📍 Location error:", error);
       Alert.alert("Error", "Could not get GPS location.");
       return null;
     }
@@ -134,10 +133,8 @@ function SimpleGeocam({
         Alert.alert("Error", "Failed to capture photo.");
         return;
       }
-    
       onCapture(photo.uri, locData);
     } catch (error) {
-      console.error("📸 Take picture error:", error);
       Alert.alert(
         "Error",
         `Failed to capture photo: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -620,7 +617,6 @@ export default function SurvivabilityForm() {
   const [soilNote, setSoilNote] = useState("");
   const [waterNote, setWaterNote] = useState("");
   const [slopeNote, setSlopeNote] = useState("");
-  const [animalNote, setAnimalNote] = useState("");
   const [overallNote, setOverallNote] = useState("");
 
   // Assessment location
@@ -633,7 +629,9 @@ export default function SurvivabilityForm() {
   const [soilImages, setSoilImages] = useState<SurvivabilityImage[]>([]);
   const [waterImages, setWaterImages] = useState<SurvivabilityImage[]>([]);
   const [slopeImages, setSlopeImages] = useState<SurvivabilityImage[]>([]);
-  const [animalImages, setAnimalImages] = useState<SurvivabilityImage[]>([]);
+
+  // ✅ NEW: Local images (captured before save)
+  const [localImages, setLocalImages] = useState<LocalImage[]>([]);
 
   // View mode & loading
   const [isViewMode, setIsViewMode] = useState(false);
@@ -643,13 +641,12 @@ export default function SurvivabilityForm() {
   // Geocam & note modal state
   const [showGPSCamera, setShowGPSCamera] = useState(false);
   const [activeCategory, setActiveCategory] = useState<
-    "soil" | "water" | "slope" | "animal" | null
+    "soil" | "water" | "slope" | null
   >(null);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState<{
     uri: string;
     location: LocationData;
-    numericAssessmentId: number;
   } | null>(null);
   const [pendingNote, setPendingNote] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -686,11 +683,6 @@ export default function SurvivabilityForm() {
               (img: SurvivabilityImage) => img.layer === "surv_slope",
             ),
           );
-          setAnimalImages(
-            allImages.filter(
-              (img: SurvivabilityImage) => img.layer === "surv_animal",
-            ),
-          );
 
           setIsViewMode(!!data.is_submitted);
         }
@@ -703,16 +695,12 @@ export default function SurvivabilityForm() {
 
   // Handle BOTH old (double-nested) and new (single-nested) structures
   const populateForm = (data: any) => {
-    // Handle: data.survivability.survivability (old) OR data.survivability (new) OR data (flat)
     const surv =
       data?.survivability?.survivability || data?.survivability || data || {};
-
-   
 
     setSoilNote(surv.soil?.overall_note || "");
     setWaterNote(surv.water?.overall_note || "");
     setSlopeNote(surv.slope?.overall_note || "");
-    setAnimalNote(surv.animal?.overall_note || "");
     setOverallNote(surv.overall_notes || "");
   };
 
@@ -732,123 +720,114 @@ export default function SurvivabilityForm() {
       setLocationAccuracy(loc.coords.accuracy?.toFixed(1) || "");
       Alert.alert("Location Captured", "GPS coordinates updated.");
     } catch (error) {
-      console.error("📍 Get location error:", error);
       Alert.alert("Error", "Could not get current location.");
     } finally {
       setGettingLocation(false);
     }
   };
 
-  // Handle photo capture from Geocam
+  // ✅ UPDATED: Handle photo capture - NO LONGER requires assessmentId
   const handleGPSPhotoCaptured = async (
     uri: string,
     location: LocationData,
   ) => {
- 
     setShowGPSCamera(false);
-
-    const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
-   
-
-    if (!numericAssessmentId || isNaN(numericAssessmentId)) {
-      Alert.alert(
-        "Action Required",
-        "Please save the draft first to get an ID for image uploads.",
-      );
-      return;
-    }
-
-    // Store photo data and show custom modal
-    setPendingPhoto({ uri, location, numericAssessmentId });
+    setPendingPhoto({ uri, location });
     setPendingNote("");
     setShowNoteModal(true);
   };
 
-  // Handle note submission from custom modal
+  // ✅ UPDATED: Handle note submission - stores locally OR uploads immediately
   const handleNoteSubmit = async (note: string) => {
     if (!pendingPhoto || !activeCategory) {
-      console.error("❌ [Geocam] Missing pendingPhoto or activeCategory");
       return;
     }
 
-   
+    const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
 
-    setUploading(true);
-    try {
-      const layerCode = `surv_${activeCategory}`;
-    
-
-      const ok = await uploadImage(
-        pendingPhoto.numericAssessmentId,
-        {
-          uri: pendingPhoto.uri,
-          latitude: pendingPhoto.location.latitude,
-          longitude: pendingPhoto.location.longitude,
-          accuracy: pendingPhoto.location.accuracy,
-        },
-        {
-          subLayerCode: activeCategory,
-          description:
-            note ||
-            `Survivability ${activeCategory} at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
-        },
-      );
-
-      if (ok) {
-      
-        const data = await fetchAssessmentData();
-        if (data) {
-          const allImages = data.images || [];
-          if (activeCategory === "soil")
-            setSoilImages(
-              allImages.filter(
-                (img: SurvivabilityImage) => img.layer === "surv_soil",
-              ),
-            );
-          else if (activeCategory === "water")
-            setWaterImages(
-              allImages.filter(
-                (img: SurvivabilityImage) => img.layer === "surv_water",
-              ),
-            );
-          else if (activeCategory === "slope")
-            setSlopeImages(
-              allImages.filter(
-                (img: SurvivabilityImage) => img.layer === "surv_slope",
-              ),
-            );
-          else if (activeCategory === "animal")
-            setAnimalImages(
-              allImages.filter(
-                (img: SurvivabilityImage) => img.layer === "surv_animal",
-              ),
-            );
-        }
-        Alert.alert("Success", "Photo uploaded with GPS data!");
-      } else {
-        console.warn("❌ [Geocam] Upload returned false");
-        Alert.alert(
-          "Upload Failed",
-          "Could not upload photo. Please try again.",
+    // If we have an assessmentId, upload immediately
+    if (numericAssessmentId && !isNaN(numericAssessmentId)) {
+      setUploading(true);
+      try {
+        const ok = await uploadImage(
+          numericAssessmentId,
+          {
+            uri: pendingPhoto.uri,
+            latitude: pendingPhoto.location.latitude,
+            longitude: pendingPhoto.location.longitude,
+            accuracy: pendingPhoto.location.accuracy,
+          },
+          {
+            subLayerCode: activeCategory,
+            description:
+              note ||
+              `Survivability ${activeCategory} at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
+          },
         );
+
+        if (ok) {
+          const data = await fetchAssessmentData();
+          if (data) {
+            const allImages = data.images || [];
+            if (activeCategory === "soil")
+              setSoilImages(
+                allImages.filter(
+                  (img: SurvivabilityImage) => img.layer === "surv_soil",
+                ),
+              );
+            else if (activeCategory === "water")
+              setWaterImages(
+                allImages.filter(
+                  (img: SurvivabilityImage) => img.layer === "surv_water",
+                ),
+              );
+            else if (activeCategory === "slope")
+              setSlopeImages(
+                allImages.filter(
+                  (img: SurvivabilityImage) => img.layer === "surv_slope",
+                ),
+              );
+          }
+          Alert.alert("Success", "Photo uploaded with GPS data!");
+        } else {
+          Alert.alert("Upload Failed", "Could not upload photo. Please try again.");
+        }
+      } catch (error) {
+        Alert.alert(
+          "Upload Error",
+          `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      } finally {
+        setUploading(false);
       }
-    } catch (error) {
-      console.error("💥 [Geocam] CRITICAL ERROR:", error);
-      Alert.alert(
-        "Upload Error",
-        `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setUploading(false);
-      setShowNoteModal(false);
-      setPendingPhoto(null);
-      setPendingNote("");
-      setActiveCategory(null);
+    } else {
+      // ✅ NEW: Store locally if no assessmentId
+      const localImg: LocalImage = {
+        id: `local-${Date.now()}`,
+        uri: pendingPhoto.uri,
+        latitude: pendingPhoto.location.latitude,
+        longitude: pendingPhoto.location.longitude,
+        accuracy: pendingPhoto.location.accuracy,
+        subLayerCode: activeCategory,
+        description: note || `Survivability ${activeCategory} photo`,
+      };
+      setLocalImages([...localImages, localImg]);
+      Alert.alert("Photo Captured", "Photo will be uploaded when you save the draft.");
     }
+
+    setShowNoteModal(false);
+    setPendingPhoto(null);
+    setPendingNote("");
+    setActiveCategory(null);
+  };
+
+  // ✅ NEW: Remove local image
+  const removeLocalImage = (id: string) => {
+    setLocalImages(localImages.filter((img) => img.id !== id));
   };
 
   // Return FLAT structure - let the hook handle wrapping under 'survivability'
-    const buildPayload = () => {
+  const buildPayload = () => {
     const location =
       locationLat && locationLng
         ? {
@@ -860,62 +839,56 @@ export default function SurvivabilityForm() {
           }
         : null;
 
-    // ✅ 1. Build the layer-specific data
     const layerData = {
       soil: { overall_note: soilNote || null },
       water: { overall_note: waterNote || null },
       slope: { overall_note: slopeNote || null },
-      animal: { overall_note: animalNote || null },
       overall_notes: overallNote || null,
     };
 
-    // ✅ 2. Return the FULL payload structure expected by the backend
     return {
       reforestation_area_id: areaId ? parseInt(areaId) : null,
-      site_id: siteId ? parseInt(siteId) : null, // ✅ Passes site ID for specific assessments
+      site_id: siteId ? parseInt(siteId) : null,
       assessment_date: new Date().toISOString().split("T")[0],
       location,
       field_assessment_data: {
-        survivability: layerData, // ✅ Wraps under the correct layer ID
+        survivability: layerData,
       },
     };
   };
 
+  // ✅ UPDATED: handleDraft now passes localImages
   const handleDraft = async () => {
     const payload = buildPayload();
-    const ok = await handleSave(payload, false);
-    if (ok) {
-      if (assessmentId) {
-        const data = await fetchAssessmentData();
-        if (data) {
-          populateForm(data.field_assessment_data || {});
-          const allImages = data.images || [];
-          setSoilImages(
-            allImages.filter(
-              (img: SurvivabilityImage) => img.layer === "surv_soil",
-            ),
-          );
-          setWaterImages(
-            allImages.filter(
-              (img: SurvivabilityImage) => img.layer === "surv_water",
-            ),
-          );
-          setSlopeImages(
-            allImages.filter(
-              (img: SurvivabilityImage) => img.layer === "surv_slope",
-            ),
-          );
-          setAnimalImages(
-            allImages.filter(
-              (img: SurvivabilityImage) => img.layer === "surv_animal",
-            ),
-          );
-        }
+    const savedId = await handleSave(payload, false, localImages);
+    
+    if (savedId) {
+      setLocalImages([]);
+      const data = await fetchAssessmentData();
+      if (data) {
+        populateForm(data.field_assessment_data || {});
+        const allImages = data.images || [];
+        setSoilImages(
+          allImages.filter(
+            (img: SurvivabilityImage) => img.layer === "surv_soil",
+          ),
+        );
+        setWaterImages(
+          allImages.filter(
+            (img: SurvivabilityImage) => img.layer === "surv_water",
+          ),
+        );
+        setSlopeImages(
+          allImages.filter(
+            (img: SurvivabilityImage) => img.layer === "surv_slope",
+          ),
+        );
       }
       Alert.alert("Saved", "Draft saved successfully.");
     }
   };
 
+  // ✅ UPDATED: handleSubmit also passes localImages
   const handleSubmit = async () => {
     Alert.alert(
       "Submit Assessment",
@@ -925,10 +898,11 @@ export default function SurvivabilityForm() {
         {
           text: "Submit",
           onPress: async () => {
-            const ok = await handleSave(buildPayload(), true);
-            if (ok) {
+            const savedId = await handleSave(buildPayload(), true, localImages);
+            if (savedId) {
+              setLocalImages([]);
               setIsViewMode(true);
-              Alert.alert("Success", "Submitted to GIS Specialist!");
+             
             }
           },
         },
@@ -938,7 +912,7 @@ export default function SurvivabilityForm() {
 
   const handleDeleteImage = async (
     img: SurvivabilityImage,
-    category: "soil" | "water" | "slope" | "animal",
+    category: "soil" | "water" | "slope",
   ) => {
     Alert.alert("Delete Photo", "Remove this photo?", [
       { text: "Cancel", style: "cancel" },
@@ -968,12 +942,6 @@ export default function SurvivabilityForm() {
                   (i: SurvivabilityImage) => i.layer === "surv_slope",
                 ),
               );
-            else if (category === "animal")
-              setAnimalImages(
-                allImages.filter(
-                  (i: SurvivabilityImage) => i.layer === "surv_animal",
-                ),
-              );
           }
         },
       },
@@ -989,11 +957,60 @@ export default function SurvivabilityForm() {
   };
 
   const openGeocamForCategory = (
-    category: "soil" | "water" | "slope" | "animal",
+    category: "soil" | "water" | "slope",
   ) => {
-   
     setActiveCategory(category);
     setShowGPSCamera(true);
+  };
+
+  // ✅ NEW: Render local images for a category
+  const renderLocalImages = (category: "soil" | "water" | "slope") => {
+    const categoryLocalImages = localImages.filter((img) => img.subLayerCode === category);
+    if (categoryLocalImages.length === 0) return null;
+
+    return (
+      <View style={styles.localImagesSection}>
+        <Text style={styles.localImagesLabel}>Pending Upload ({categoryLocalImages.length})</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {categoryLocalImages.map((img) => (
+            <View key={img.id} style={styles.thumbWrapper}>
+              <TouchableOpacity
+                onPress={() => setPreviewImage(img.uri)}
+                activeOpacity={0.85}
+              >
+                <Image source={{ uri: img.uri }} style={styles.thumb} resizeMode="cover" />
+                <View style={[styles.thumbOverlay, { backgroundColor: "rgba(245,158,11,0.6)" }]}>
+                  <Ionicons name="cloud-upload-outline" size={14} color="#fff" />
+                </View>
+                <View style={styles.thumbCoords}>
+                  <Text style={styles.thumbCoordsText}>
+                    {img.latitude.toFixed(4)},{img.longitude.toFixed(4)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              {img.description ? (
+                <Text style={styles.thumbNote} numberOfLines={1}>
+                  {img.description}
+                </Text>
+              ) : (
+                <Text style={[styles.thumbNote, { color: "#F59E0B", fontStyle: "italic" }]}>
+                  Pending
+                </Text>
+              )}
+              {!isViewMode && (
+                <TouchableOpacity
+                  style={styles.deletePhotoBtn}
+                  onPress={() => removeLocalImage(img.id)}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Ionicons name="close" size={11} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    );
   };
 
   if (loading) {
@@ -1025,7 +1042,7 @@ export default function SurvivabilityForm() {
         {/* SECTION 1: Soil */}
         <SectionCard
           title="Soil"
-          subtitle={`${soilImages.length} GPS photo${soilImages.length !== 1 ? "s" : ""}`}
+          subtitle={`${soilImages.length + localImages.filter(i => i.subLayerCode === "soil").length} GPS photo${(soilImages.length + localImages.filter(i => i.subLayerCode === "soil").length) !== 1 ? "s" : ""}`}
           iconName="leaf-outline"
           iconLib="ion"
           accentColor="#92400E"
@@ -1113,12 +1130,15 @@ export default function SurvivabilityForm() {
               )}
             </ScrollView>
           </View>
+
+          {/* ✅ NEW: Render local images */}
+          {renderLocalImages("soil")}
         </SectionCard>
 
         {/* SECTION 2: Water Availability */}
         <SectionCard
           title="Water Availability"
-          subtitle={`${waterImages.length} GPS photo${waterImages.length !== 1 ? "s" : ""}`}
+          subtitle={`${waterImages.length + localImages.filter(i => i.subLayerCode === "water").length} GPS photo${(waterImages.length + localImages.filter(i => i.subLayerCode === "water").length) !== 1 ? "s" : ""}`}
           iconName="water-outline"
           iconLib="ion"
           accentColor="#1D4ED8"
@@ -1206,12 +1226,14 @@ export default function SurvivabilityForm() {
               )}
             </ScrollView>
           </View>
+
+          {renderLocalImages("water")}
         </SectionCard>
 
         {/* SECTION 3: Slope */}
         <SectionCard
           title="Slope"
-          subtitle={`${slopeImages.length} GPS photo${slopeImages.length !== 1 ? "s" : ""}`}
+          subtitle={`${slopeImages.length + localImages.filter(i => i.subLayerCode === "slope").length} GPS photo${(slopeImages.length + localImages.filter(i => i.subLayerCode === "slope").length) !== 1 ? "s" : ""}`}
           iconName="trending-up"
           iconLib="ion"
           accentColor="#B91C1C"
@@ -1299,109 +1321,18 @@ export default function SurvivabilityForm() {
               )}
             </ScrollView>
           </View>
+
+          {renderLocalImages("slope")}
         </SectionCard>
 
-        {/* SECTION 4: Animal Presence */}
-        <SectionCard
-          title="Animal Presence"
-          subtitle={`${animalImages.length} GPS photo${animalImages.length !== 1 ? "s" : ""}`}
-          iconName="paw"
-          iconLib="mci"
-          accentColor="#6D28D9"
-          step={4}
-        >
-          <FieldLabel label="Overall Note" />
-          <TextInput
-            style={[styles.textArea, isViewMode && styles.disabledInput]}
-            multiline
-            value={animalNote}
-            onChangeText={setAnimalNote}
-            placeholder="e.g., Deer tracks observed, no grazing damage..."
-            placeholderTextColor="#94A3B8"
-            editable={!isViewMode}
-            textAlignVertical="top"
-          />
-
-          <View style={styles.galleryContent}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {animalImages.map((img) => (
-                <View key={img.image_id} style={styles.thumbWrapper}>
-                  <TouchableOpacity
-                    onPress={() => setPreviewImage(getImageUrl(img.url))}
-                    activeOpacity={0.85}
-                  >
-                    <Image
-                      source={{ uri: getImageUrl(img.url) }}
-                      style={styles.thumb}
-                      resizeMode="cover"
-                    />
-                    <View style={styles.thumbOverlay}>
-                      <Ionicons name="eye-outline" size={14} color="#fff" />
-                    </View>
-                    {img.latitude != null && img.longitude != null && (
-                      <View style={styles.thumbCoords}>
-                        <Text style={styles.thumbCoordsText}>
-                          {typeof img.latitude === "number"
-                            ? img.latitude.toFixed(4)
-                            : img.latitude}
-                          ,
-                          {typeof img.longitude === "number"
-                            ? img.longitude.toFixed(4)
-                            : img.longitude}
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                  {img.description ? (
-                    <Text style={styles.thumbNote} numberOfLines={1}>
-                      {img.description}
-                    </Text>
-                  ) : (
-                    <Text
-                      style={[
-                        styles.thumbNote,
-                        { color: "#94A3B8", fontStyle: "italic" },
-                      ]}
-                    >
-                      No note
-                    </Text>
-                  )}
-                  {!isViewMode && (
-                    <TouchableOpacity
-                      style={styles.deletePhotoBtn}
-                      onPress={() => handleDeleteImage(img, "animal")}
-                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                    >
-                      <Ionicons name="close" size={11} color="#fff" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
-
-              {!isViewMode && (
-                <TouchableOpacity
-                  style={[styles.addPhotoBtn, styles.addPhotoBtnGPS]}
-                  onPress={() => openGeocamForCategory("animal")}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons name="camera-outline" size={26} color="#6D28D9" />
-                  <Text style={[styles.addPhotoBtnText, { color: "#6D28D9" }]}>
-                    Add Photo
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </ScrollView>
-          </View>
-        </SectionCard>
-
-        {/* SECTION 5: Assessment Location */}
+        {/* SECTION 4: Assessment Location */}
         <SectionCard
           title="Assessment Location"
           subtitle="GPS position during assessment"
           iconName="locate-outline"
           iconLib="ion"
           accentColor="#0F4A2F"
-          step={5}
+          step={4}
         >
           <View style={styles.coordRow}>
             <View style={styles.coordHalf}>
@@ -1491,14 +1422,14 @@ export default function SurvivabilityForm() {
           )}
         </SectionCard>
 
-        {/* SECTION 6: Overall Notes */}
+        {/* SECTION 5: Overall Notes */}
         <SectionCard
           title="Overall Notes"
           subtitle="General summary and remarks"
           iconName="document-text-outline"
           iconLib="ion"
           accentColor="#0F766E"
-          step={6}
+          step={5}
         >
           <FieldLabel label="Overall Notes" />
           <TextInput
@@ -1957,6 +1888,22 @@ const styles = StyleSheet.create({
   },
   addPhotoBtnGPS: { borderColor: "#BBF7D0", backgroundColor: "#F0FDF4" },
   addPhotoBtnText: { fontSize: 10, color: "#0369A1", fontWeight: "600" },
+  // ✅ NEW: Local images section styles
+  localImagesSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F59E0B",
+    borderStyle: "dashed",
+  },
+  localImagesLabel: {
+    fontSize: 11,
+    color: "#F59E0B",
+    fontWeight: "700",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   footer: {
     position: "absolute",
     bottom: 0,

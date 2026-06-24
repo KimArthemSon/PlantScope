@@ -103,7 +103,7 @@ def get_barangays(request):
             'name': b.name,
             'description': b.description,
             'coordinate': b.coordinate,
-            'created_at': b.created_at
+            'created_at': b.created_at.strftime('%Y-%m-%d') if b.created_at else None
         })
 
     return JsonResponse({

@@ -21,12 +21,15 @@ import {
   ShieldX,
   Target,
   Ruler,
+  Layers,
+  Filter as FilterIcon,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api";
+
 // =========================
 // INTERFACES
 // =========================
@@ -53,6 +56,7 @@ interface VerificationInfo {
   security_concerns_count: number;
   has_accessibility: boolean;
   accessibility_type: string | null;
+  verified_animals_count: number;
 }
 
 interface Site {
@@ -73,6 +77,12 @@ interface Filter {
   page: number;
   total_page: number;
   pinned_only: boolean;
+  land_classification_id: string;
+}
+
+interface LandClassificationOption {
+  land_classification_id: number;
+  name: string;
 }
 
 export default function OfficialSites() {
@@ -87,6 +97,7 @@ export default function OfficialSites() {
     page: 1,
     total_page: 1,
     pinned_only: false,
+    land_classification_id: "",
   });
   const [loading, setLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
@@ -101,6 +112,11 @@ export default function OfficialSites() {
   const { userRole } = useUserRole();
   const [userPath, setUserPath] = useState("");
 
+  // ✅ NEW: Land Classifications state
+  const [landClassifications, setLandClassifications] = useState<
+    LandClassificationOption[]
+  >([]);
+
   useEffect(() => {
     if (userRole === "treeGrowers" || userRole === "CityENROHead") {
       setUserPath("");
@@ -110,6 +126,27 @@ export default function OfficialSites() {
       setUserPath("/DataManager");
     }
   }, [userRole]);
+
+  // ✅ NEW: Fetch Land Classifications
+  useEffect(() => {
+    const fetchLandClassifications = async () => {
+      try {
+        const res = await fetch(
+          `${api}api/get_land_classifications_list/?for_reforestation=true`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setLandClassifications(data.data || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch land classifications:", err);
+      }
+    };
+    fetchLandClassifications();
+  }, [token]);
 
   // =========================
   // FETCH SITES - Only Accepted & Verified
@@ -122,12 +159,21 @@ export default function OfficialSites() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
-        status: "accepted", // ✅ ONLY accepted sites
-        verification_status: "verified", // ✅ ONLY verified sites
+        status: "accepted",
+        verification_status: "verified",
         pinned_only: filter.pinned_only ? "true" : "false",
       });
+
+      // ✅ NEW: Add land classification filter
+      if (filter.land_classification_id) {
+        params.append(
+          "land_classification_id",
+          filter.land_classification_id,
+        );
+      }
+
       const response = await fetch(
-        api+`api/get_sites/${id}/?${params}`,
+        `${api}api/get_sites/${id}/?${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
@@ -150,23 +196,26 @@ export default function OfficialSites() {
 
   useEffect(() => {
     fetchSites();
-  }, [id, filter.page, filter.entries, filter.pinned_only]);
+  }, [
+    id,
+    filter.page,
+    filter.entries,
+    filter.pinned_only,
+    filter.land_classification_id, // ✅ NEW: Add to dependencies
+  ]);
 
   // =========================
   // TOGGLE PIN
   // =========================
   const handleTogglePin = async (siteId: number, currentPin: boolean) => {
     try {
-      const response = await fetch(
-        api+`api/toggle_pin/${siteId}/`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
+      const response = await fetch(`${api}api/toggle_pin/${siteId}/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-      );
+      });
       if (response.ok) {
         setSites((prev) =>
           prev.map((s) =>
@@ -190,13 +239,10 @@ export default function OfficialSites() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      const response = await fetch(
-        api+`api/delete_site/${deleteId}/`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const response = await fetch(`${api}api/delete_site/${deleteId}/`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await response.json();
 
       if (response.ok) {
@@ -352,6 +398,32 @@ export default function OfficialSites() {
               </option>
             ))}
           </select>
+
+          {/* ✅ NEW: Land Classification Filter */}
+          <div className="flex items-center gap-2">
+            <Layers size={14} className="text-purple-600" />
+            <select
+              value={filter.land_classification_id}
+              onChange={(e) =>
+                setFilter((prev) => ({
+                  ...prev,
+                  land_classification_id: e.target.value,
+                  page: 1,
+                }))
+              }
+              className="border border-purple-300 bg-purple-50 p-2 rounded-md text-[.8rem] text-purple-800 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+            >
+              <option value="">All Classifications</option>
+              {landClassifications.map((lc) => (
+                <option
+                  key={lc.land_classification_id}
+                  value={lc.land_classification_id}
+                >
+                  {lc.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
             <input

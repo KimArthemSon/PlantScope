@@ -5,7 +5,6 @@ import {
   Plus,
   ChevronRight,
   ChevronLeft,
-  Leaf,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
@@ -19,6 +18,7 @@ interface User {
   user_role: string;
   is_active: boolean;
   profile_img: string;
+  created_at: string;
 }
 
 interface Filter {
@@ -74,6 +74,7 @@ export default function Accounts() {
       if (!response.ok) throw new Error("Failed to fetch users.");
 
       const data = await response.json();
+      console.log(data)
       setUsers(data.accounts);
 
       setFilter((prev) => ({ ...prev, total_page: data.total_pages }));
@@ -220,7 +221,9 @@ export default function Accounts() {
                 <th className="py-3 px-5 text-left text-[.9rem]">Email</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Role</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Created at</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
+
               </tr>
             </thead>
             <tbody>
@@ -253,6 +256,7 @@ export default function Accounts() {
                         {user.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
+                    <td className="py-3 px-5 text-[.9rem]">{user.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
                         <button

@@ -49,6 +49,7 @@ def record_activity(request, action_type, entity_type, entity_id=None,
 # =========================
 # GET TREE SPECIES (LIST)
 # =========================
+
 @csrf_exempt
 def get_tree_species(request):
     if request.method != 'GET':
@@ -73,9 +74,14 @@ def get_tree_species(request):
     total = tree_species.count()
     total_page = math.ceil(total / entries) if total > 0 else 0
 
-    data = list(
-        tree_species[offset: offset + entries].values()
-    )
+    data = []
+    for ts in tree_species[offset: offset + entries]:
+        data.append({
+            'tree_specie_id': ts.tree_specie_id,
+            'name': ts.name,
+            'description': ts.description,
+            'created_at': ts.created_at.strftime('%Y-%m-%d') if ts.created_at else None
+        })
 
     return JsonResponse({
         'data': data,

@@ -115,7 +115,7 @@ export default function MulticriteriaLayerForm() {
 
   const handleFormSave = async (data: any, submit: boolean = false) => {
     // ✅ Simple payload exactly like meta_data_form
-    console.log("baksd ", areaId);
+  
     const payload = {
       reforestation_area_id: parseInt(areaId),
       site_id: siteId ? parseInt(siteId) : null,
@@ -126,7 +126,7 @@ export default function MulticriteriaLayerForm() {
       },
     };
 
-    console.log("🔨 [Form] Built Payload:", JSON.stringify(payload));
+  
     const savedId = await handleSave(payload, submit);
 
     if (savedId && !assessmentId) {

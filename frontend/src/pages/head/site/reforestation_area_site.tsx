@@ -46,6 +46,11 @@ import {
 // ─────────────────────────────────────────────────────────────
 // Types & Interfaces
 // ─────────────────────────────────────────────────────────────
+interface Barangay {
+  barangay_id: number;
+  name: string;
+}
+
 interface ReforestationArea {
   reforestation_area_id: number;
   name: string;
@@ -67,6 +72,7 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
+  barangay_id: string;
 }
 
 interface AreaDetails {
@@ -93,6 +99,7 @@ const DEFAULT_FILTER: Omit<Filter, "total_page"> = {
   search: "",
   entries: 10,
   page: 1,
+  barangay_id: "All",
 };
 
 const STATIC_OVERVIEW_STATS = {
@@ -117,6 +124,8 @@ const COLORS = ["#10B981", "#F59E0B", "#EF4444", "#3B82F6"];
 
 export default function Reforestation_areas() {
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
+  const [barangays, setBarangays] = useState<Barangay[]>([]);
+
   const [filter, setFilter] = useState<Filter>({
     ...DEFAULT_FILTER,
     total_page: 1,
@@ -128,7 +137,9 @@ export default function Reforestation_areas() {
 
   // ✅ NEW: View Details Modal State
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(null);
+  const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(
+    null,
+  );
   const [areaDetails, setAreaDetails] = useState<AreaDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
@@ -160,9 +171,25 @@ export default function Reforestation_areas() {
       return;
     }
   }, [userRole]);
-useEffect(()=>{
-  fetchAreas()
-},[])
+
+  // ── Fetch Barangays ─────────────────────────────────────────
+  useEffect(() => {
+    const fetchBarangays = async () => {
+      try {
+        const res = await fetch(api + "api/get_barangay_list/", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setBarangays(data.data || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch barangays:", err);
+      }
+    };
+    fetchBarangays();
+  }, [token]);
+
   const fetchAreas = async () => {
     setLoading(true);
     try {
@@ -170,14 +197,17 @@ useEffect(()=>{
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
+        ...(filter.barangay_id !== "All" && {
+          barangay_id: filter.barangay_id,
+        }),
       });
       const response = await fetch(
-        api+`api/get_reforestation_areas/?${params}`,
+        api + `api/get_reforestation_areas/?${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!response.ok) throw new Error("Failed");
       const data = await response.json();
-      console.log(data)
+
       setAreas(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch {
@@ -191,14 +221,17 @@ useEffect(()=>{
     }
   };
 
+  useEffect(() => {
+    fetchAreas();
+  }, [filter.page, filter.entries, filter.barangay_id]);
+
   // ✅ NEW: Fetch Area Details
   const fetchAreaDetails = async (areaId: number) => {
     setLoadingDetails(true);
     try {
-      const response = await fetch(
-        api+`api/get_area_details/${areaId}/`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      const response = await fetch(api + `api/get_area_details/${areaId}/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (response.ok) {
         const data = await response.json();
         setAreaDetails(data);
@@ -255,7 +288,7 @@ useEffect(()=>{
     if (!deleteId) return;
     try {
       const response = await fetch(
-        api+`api/delete_reforestation_areas/${deleteId}/`,
+        api + `api/delete_reforestation_areas/${deleteId}/`,
         { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
       );
       const data = await response.json();
@@ -336,14 +369,15 @@ useEffect(()=>{
 
       {/* ✅ NEW: View Details Modal */}
       {isViewModalOpen && selectedArea && (
-        <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
+            
             {/* Modal Header */}
-            <div className="sticky top-0 bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white px-6 py-4 rounded-t-2xl flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <MapPin size={24} className="text-green-300" />
-                <div>
-                  <h2 className="text-xl font-bold">{selectedArea.name}</h2>
+            <div className="flex-shrink-0 bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white px-6 py-4 rounded-t-2xl flex items-center justify-between">
+              <div className="flex items-center gap-3 min-w-0">
+                <MapPin size={24} className="text-green-300 flex-shrink-0" />
+                <div className="min-w-0">
+                  <h2 className="text-xl font-bold truncate">{selectedArea.name}</h2>
                   <p className="text-xs text-green-200">
                     Area #{selectedArea.reforestation_area_id}
                   </p>
@@ -351,14 +385,14 @@ useEffect(()=>{
               </div>
               <button
                 onClick={() => setIsViewModalOpen(false)}
-                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors flex-shrink-0"
               >
                 <X size={20} />
               </button>
             </div>
 
             {/* Modal Content */}
-            <div className="p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {loadingDetails ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0F4A2F]"></div>
@@ -369,41 +403,41 @@ useEffect(()=>{
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-xl border border-green-200">
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-xs font-medium text-green-600 uppercase">Total Sites</p>
-                          <p className="text-3xl font-bold text-green-800 mt-1">{areaDetails.total_sites}</p>
+                          <p className="text-3xl font-bold text-green-800 mt-1 truncate">{areaDetails.total_sites}</p>
                         </div>
-                        <Trees className="w-10 h-10 text-green-600 opacity-50" />
+                        <Trees className="w-10 h-10 text-green-600 opacity-50 flex-shrink-0" />
                       </div>
                     </div>
 
                     <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-xs font-medium text-blue-600 uppercase">Total Area</p>
-                          <p className="text-3xl font-bold text-blue-800 mt-1">{areaDetails.total_area_hectares.toFixed(1)} ha</p>
+                          <p className="text-3xl font-bold text-blue-800 mt-1 truncate">{areaDetails.total_area_hectares.toFixed(1)} ha</p>
                         </div>
-                        <MapPin className="w-10 h-10 text-blue-600 opacity-50" />
+                        <MapPin className="w-10 h-10 text-blue-600 opacity-50 flex-shrink-0" />
                       </div>
                     </div>
 
                     <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-xl border border-purple-200">
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-xs font-medium text-purple-600 uppercase">Seedlings</p>
-                          <p className="text-3xl font-bold text-purple-800 mt-1">{areaDetails.total_seedlings.toLocaleString()}</p>
+                          <p className="text-3xl font-bold text-purple-800 mt-1 truncate">{areaDetails.total_seedlings.toLocaleString()}</p>
                         </div>
-                        <Activity className="w-10 h-10 text-purple-600 opacity-50" />
+                        <Activity className="w-10 h-10 text-purple-600 opacity-50 flex-shrink-0" />
                       </div>
                     </div>
 
                     <div className="bg-gradient-to-br from-amber-50 to-amber-100 p-4 rounded-xl border border-amber-200">
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-xs font-medium text-amber-600 uppercase">Species</p>
-                          <p className="text-3xl font-bold text-amber-800 mt-1">{areaDetails.species_count}</p>
+                          <p className="text-3xl font-bold text-amber-800 mt-1 truncate">{areaDetails.species_count}</p>
                         </div>
-                        <Trees className="w-10 h-10 text-amber-600 opacity-50" />
+                        <Trees className="w-10 h-10 text-amber-600 opacity-50 flex-shrink-0" />
                       </div>
                     </div>
                   </div>
@@ -411,12 +445,12 @@ useEffect(()=>{
                   {/* Charts Row */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Pie Chart - Status Distribution */}
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                       <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                        <PieChart size={16} className="text-[#0F4A2F]" />
-                        Site Status Distribution
+                        <PieChart size={16} className="text-[#0F4A2F] flex-shrink-0" />
+                        <span className="truncate">Site Status Distribution</span>
                       </h3>
-                      <div className="h-64">
+                      <div className="h-64 w-full relative">
                         <ResponsiveContainer width="100%" height="100%">
                           <RePieChart>
                             <Pie
@@ -424,7 +458,7 @@ useEffect(()=>{
                               cx="50%"
                               cy="50%"
                               innerRadius={60}
-                              outerRadius={90}
+                              outerRadius={80}
                               paddingAngle={5}
                               dataKey="value"
                               label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
@@ -437,10 +471,10 @@ useEffect(()=>{
                           </RePieChart>
                         </ResponsiveContainer>
                       </div>
-                      <div className="flex justify-center gap-4 mt-4">
+                      <div className="flex flex-wrap justify-center gap-3 mt-4">
                         {areaDetails.status_distribution.map((item, index) => (
                           <div key={item.name} className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index] }}></div>
+                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[index] }}></div>
                             <span className="text-xs text-gray-600">{item.name}: {item.value}</span>
                           </div>
                         ))}
@@ -448,21 +482,21 @@ useEffect(()=>{
                     </div>
 
                     {/* Line Chart - Monthly Trend */}
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                       <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                        <BarChart3 size={16} className="text-[#0F4A2F]" />
-                        Monthly Activity
+                        <BarChart3 size={16} className="text-[#0F4A2F] flex-shrink-0" />
+                        <span className="truncate">Monthly Activity</span>
                       </h3>
-                      <div className="h-64">
+                      <div className="h-64 w-full relative">
                         <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={areaDetails.monthly_data}>
+                          <LineChart data={areaDetails.monthly_data} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
+                            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                             <Tooltip />
-                            <Legend />
-                            <Line type="monotone" dataKey="sites_created" name="Sites Created" stroke="#10B981" strokeWidth={2} />
-                            <Line type="monotone" dataKey="verified" name="Verified" stroke="#3B82F6" strokeWidth={2} />
+                            <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }} />
+                            <Line type="monotone" dataKey="sites_created" name="Sites Created" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
+                            <Line type="monotone" dataKey="verified" name="Verified" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
                           </LineChart>
                         </ResponsiveContainer>
                       </div>
@@ -472,14 +506,14 @@ useEffect(()=>{
                   {/* Verification Rate */}
                   <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-xl border border-green-200">
                     <div className="flex items-center justify-between mb-4">
-                      <div>
+                      <div className="min-w-0">
                         <h3 className="text-sm font-semibold text-gray-800">Verification Progress</h3>
                         <p className="text-xs text-gray-600 mt-1">Overall verification status of sites</p>
                       </div>
-                      <ShieldCheck className="w-8 h-8 text-green-600" />
+                      <ShieldCheck className="w-8 h-8 text-green-600 flex-shrink-0" />
                     </div>
-                    <div className="flex items-center gap-6">
-                      <div className="relative w-32 h-32">
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                      <div className="relative w-32 h-32 flex-shrink-0">
                         <svg className="w-full h-full" viewBox="0 0 36 36">
                           <path
                             d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
@@ -496,27 +530,37 @@ useEffect(()=>{
                           />
                         </svg>
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-2xl font-bold text-green-700">{areaDetails.verification_rate.toFixed(1)}%</span>
+                          <span className="text-2xl font-bold text-green-700">
+                            {areaDetails.verification_rate.toFixed(1)}%
+                          </span>
                         </div>
                       </div>
-                      <div className="flex-1 space-y-3">
+                      <div className="flex-1 w-full space-y-3">
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-600">Verified Sites</span>
-                          <span className="text-sm font-semibold text-green-700">{areaDetails.verified_sites} / {areaDetails.total_sites}</span>
+                          <span className="text-sm font-semibold text-green-700">
+                            {areaDetails.verified_sites} / {areaDetails.total_sites}
+                          </span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
                           <div
                             className="bg-green-600 h-2 rounded-full transition-all"
-                            style={{ width: `${(areaDetails.verified_sites / areaDetails.total_sites) * 100}%` }}
+                            style={{
+                              width: `${(areaDetails.verified_sites / areaDetails.total_sites) * 100}%`,
+                            }}
                           ></div>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-600">Pending Review</span>
-                          <span className="text-sm font-semibold text-amber-600">{areaDetails.pending_sites}</span>
+                          <span className="text-sm font-semibold text-amber-600">
+                            {areaDetails.pending_sites}
+                          </span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-gray-600">Rejected</span>
-                          <span className="text-sm font-semibold text-red-600">{areaDetails.rejected_sites}</span>
+                          <span className="text-sm font-semibold text-red-600">
+                            {areaDetails.rejected_sites}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -526,14 +570,14 @@ useEffect(()=>{
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                       <div className="flex items-center gap-2 mb-2">
-                        <MapPin size={16} className="text-[#0F4A2F]" />
+                        <MapPin size={16} className="text-[#0F4A2F] flex-shrink-0" />
                         <h4 className="text-sm font-semibold text-gray-800">Location</h4>
                       </div>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-gray-600 break-words">
                         {selectedArea.barangay?.name || "N/A"}
                       </p>
                       {selectedArea.land_classification && (
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-gray-500 mt-1 break-words">
                           {selectedArea.land_classification.name}
                         </p>
                       )}
@@ -541,10 +585,10 @@ useEffect(()=>{
 
                     <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                       <div className="flex items-center gap-2 mb-2">
-                        <Calendar size={16} className="text-[#0F4A2F]" />
+                        <Calendar size={16} className="text-[#0F4A2F] flex-shrink-0" />
                         <h4 className="text-sm font-semibold text-gray-800">Created</h4>
                       </div>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-gray-600 break-words">
                         {new Date(selectedArea.created_at).toLocaleDateString("en-PH", {
                           year: "numeric",
                           month: "long",
@@ -563,7 +607,7 @@ useEffect(()=>{
             </div>
 
             {/* Modal Footer */}
-            <div className="sticky bottom-0 bg-gray-50 px-6 py-4 border-t border-gray-200 rounded-b-2xl flex justify-end gap-3">
+            <div className="flex-shrink-0 bg-gray-50 px-6 py-4 border-t border-gray-200 rounded-b-2xl flex justify-end gap-3">
               <button
                 onClick={() => setIsViewModalOpen(false)}
                 className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
@@ -668,6 +712,27 @@ useEffect(()=>{
             <option value={25}>25</option>
             <option value={50}>50</option>
             <option value={100}>100</option>
+          </select>
+
+          {/* ✅ Barangay Filter */}
+          <label className="text-sm text-gray-600">Barangay:</label>
+          <select
+            value={filter.barangay_id}
+            onChange={(e) =>
+              setFilter((prev) => ({
+                ...prev,
+                barangay_id: e.target.value,
+                page: 1,
+              }))
+            }
+            className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
+          >
+            <option value="All">All</option>
+            {barangays.map((b) => (
+              <option key={b.barangay_id} value={b.barangay_id}>
+                {b.name}
+              </option>
+            ))}
           </select>
 
           <input

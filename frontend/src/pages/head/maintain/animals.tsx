@@ -331,7 +331,7 @@ export default function Animals() {
                       {animal.description || "—"}
                     </td>
                     <td className="py-3 px-5 text-[.9rem]">
-                      {new Date(animal.created_at).toLocaleDateString()}
+                      {animal.created_at}
                     </td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">

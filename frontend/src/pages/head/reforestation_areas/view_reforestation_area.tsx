@@ -424,7 +424,7 @@ export default function ViewReforestationArea() {
             type="button"
             onClick={handleCancel}
             disabled={false}
-            className="flex-1 border border-black p-3 rounded-xl hover:bg-black transition-colors font-medium text-black disabled:opacity-50"
+            className="flex-1 border border-black p-3 rounded-xl hover:bg-white cursor-pointer transition-colors font-medium text-black disabled:opacity-50"
           >
             Back
           </button>

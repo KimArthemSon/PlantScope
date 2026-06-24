@@ -71,8 +71,17 @@ def get_animals(request):
     total = animals.count()
     total_page = math.ceil(total / entries) if total > 0 else 0
 
-    data = list(animals[offset: offset + entries].values())
-
+    data = []
+    for a in animals[offset: offset + entries]:
+        data.append({
+            "animal_id": a.animal_id,
+            "name": a.name,
+            "scientific_name": a.scientific_name,
+            "description":a.description,
+            "created_at": a.created_at.strftime("%Y-%m-%d") if a.created_at else None,
+        })
+    
+ 
     return JsonResponse({
         'data': data,
         'total_page': total_page,

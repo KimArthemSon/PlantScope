@@ -213,7 +213,7 @@ def get_classified_areas(request):
             'barangay_name': area.barangay.name,
             'polygon': area.polygon,
             'description': area.description,
-            'created_at': area.created_at.isoformat()
+            'created_at': area.created_at.strftime("%Y-%m-%d") if area.created_at else None,
         }
         for area in paginated_areas
     ]

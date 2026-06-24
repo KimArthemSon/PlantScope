@@ -306,7 +306,7 @@ export default function Tree_species() {
                 <th className="py-3 px-5 text-left text-[.9rem]">
                   Description
                 </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created_at</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Created at</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>

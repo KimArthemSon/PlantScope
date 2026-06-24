@@ -9,10 +9,11 @@ from django.utils import timezone
 from accounts.helper import get_user_from_token
 from .models import (
     Sites, Site_data, Site_species_recommendation, Site_images,
-    Potential_sites, SiteMetaDataVerification, PermitDocument
+    Potential_sites, SiteMetaDataVerification, PermitDocument, SiteVerifiedAnimal
 )
 from reforestation_areas.models import Reforestation_areas
 from tree_species.models import Tree_species
+from animals.models import Animal
 from Field_assessment.models import Field_assessment
 logger = logging.getLogger(__name__)
 
@@ -40,46 +41,38 @@ def create_site(request):
 
         reforestation_area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
 
-        # ✅ Get polygon and center from request
         polygon_coordinates = body.get('polygon_coordinates')
         center_coordinate = body.get('center_coordinate')
         
-        # ✅ If center_coordinate is None but we have polygon, calculate centroid
         if not center_coordinate and polygon_coordinates and len(polygon_coordinates) >= 3:
-            # Calculate centroid (average of all points)
             sum_lat = sum(coord[0] for coord in polygon_coordinates)
             sum_lng = sum(coord[1] for coord in polygon_coordinates)
             center_coordinate = [sum_lat / len(polygon_coordinates), sum_lng / len(polygon_coordinates)]
             logger.info(f"Auto-calculated center coordinate: {center_coordinate}")
 
         with transaction.atomic():
-            # 1. Create the Site
             site = Sites.objects.create(
                 reforestation_area=reforestation_area,
                 name=name,
                 status='pending',
                 is_active=True,
                 polygon_coordinates=polygon_coordinates,
-                center_coordinate=center_coordinate,  # ✅ Now guaranteed to have a value if polygon exists
+                center_coordinate=center_coordinate,
                 ndvi_value=body.get('ndvi_value'),
                 total_area_hectares=body.get('total_area_hectares', 0.0),
             )
             
-            # Calculate area if polygon exists
             if site.polygon_coordinates:
                 site.total_area_hectares = site.calculate_area_from_polygon()
-                # ✅ Recalculate center using model's method (more accurate)
                 if not site.center_coordinate:
                     site.center_coordinate = site.calculate_centroid()
                 site.save()
 
-            # 2. ✅ CONSOLIDATION: Link pre-marked potential sites to this new official site
             if potential_site_ids:
                 Potential_sites.objects.filter(
                     potential_sites_id__in=potential_site_ids
                 ).update(site=site)
 
-            # 3. Create Site_data for MCDA validation
             Site_data.objects.create(
                 site=site, 
                 version=1, 
@@ -88,7 +81,6 @@ def create_site(request):
                 field_assessment_snapshot={}
             )
 
-            # 4. ✅ NEW: Create SiteMetaDataVerification record (initialized as pending)
             SiteMetaDataVerification.objects.create(
                 site=site,
                 status='pending',
@@ -102,7 +94,7 @@ def create_site(request):
             "message": "Site created successfully", 
             "site_id": site.site_id,
             "status": site.status,
-            "center_coordinate": site.center_coordinate  # ✅ Return calculated center
+            "center_coordinate": site.center_coordinate
         }, status=201)
         
     except IntegrityError:
@@ -113,18 +105,10 @@ def create_site(request):
     
 
 # ─────────────────────────────────────────────
-# [KEEP] GET SITES LIST - Used by dashboard/other modules
+# [KEEP] GET SITES LIST
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_sites(request, reforestation_area_id):
-    """
-    [KEEP] Returns sites with comprehensive information including:
-    - Verification status (from SiteMetaDataVerification)
-    - Land classification
-    - Security concerns
-    - Accessibility info
-    - Permit count
-    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -134,6 +118,9 @@ def get_sites(request, reforestation_area_id):
     status_filter = request.GET.get("status", "all").strip().lower()
     pinned_filter = request.GET.get("pinned_only", "").strip().lower()
     verification_filter = request.GET.get("verification_status", "all").strip().lower()
+    
+    # ✅ NEW: Get land classification filter
+    land_classification_filter = request.GET.get("land_classification_id", "").strip()
 
     offset = (page - 1) * entries
 
@@ -150,6 +137,14 @@ def get_sites(request, reforestation_area_id):
         sites = sites.filter(is_pinned=True)
     if verification_filter != "all":
         sites = sites.filter(meta_verification__status=verification_filter)
+    
+    # ✅ NEW: Filter by land classification
+    if land_classification_filter:
+        try:
+            lc_id = int(land_classification_filter)
+            sites = sites.filter(meta_verification__verified_land_classification_id=lc_id)
+        except (ValueError, TypeError):
+            pass  # Ignore invalid ID
 
     total = sites.count()
     total_page = max(1, math.ceil(total / entries))
@@ -157,7 +152,6 @@ def get_sites(request, reforestation_area_id):
 
     data = []
     for s in sites_list:
-        # Get current validation data
         current_sd = s.site_data_versions.filter(is_current=True).first()
         
         validation = {
@@ -177,7 +171,6 @@ def get_sites(request, reforestation_area_id):
             validation["final_decision"] = current_sd.site_data.get('final_decision')
             validation["is_ready_to_finalize"] = bool(validation["final_decision"])
 
-        # ✅ NEW: Get SiteMetaDataVerification data
         meta_verification = getattr(s, 'meta_verification', None)
         verification_info = {
             "status": "pending",
@@ -185,29 +178,28 @@ def get_sites(request, reforestation_area_id):
             "security_concerns_count": 0,
             "has_accessibility": False,
             "accessibility_type": None,
+            "verified_animals_count": 0,
         }
         
         if meta_verification:
             verification_info["status"] = meta_verification.status
             
-            # Land classification
             if meta_verification.verified_land_classification:
                 verification_info["land_classification"] = {
                     "id": meta_verification.verified_land_classification.land_classification_id,
                     "name": meta_verification.verified_land_classification.name
                 }
             
-            # Security concerns
             if meta_verification.verified_security_concerns:
                 verification_info["security_concerns_count"] = len(meta_verification.verified_security_concerns)
             
-            # Accessibility
             if meta_verification.verified_accessibility:
                 verification_info["has_accessibility"] = True
                 if isinstance(meta_verification.verified_accessibility, dict):
                     verification_info["accessibility_type"] = meta_verification.verified_accessibility.get('type', 'Unknown')
+            
+            verification_info["verified_animals_count"] = meta_verification.animal_relations.count()
 
-        # ✅ NEW: Count permits
         permit_count = s.permit_documents.count()
 
         data.append({
@@ -216,8 +208,8 @@ def get_sites(request, reforestation_area_id):
             "status": s.status,
             "is_pinned": s.is_pinned,
             "validation": validation,
-            "verification": verification_info,  # ✅ NEW
-            "permit_count": permit_count,  # ✅ NEW
+            "verification": verification_info,
+            "permit_count": permit_count,
             "metrics": {
                 "ndvi": s.ndvi_value,
                 "area_hectares": s.total_area_hectares,
@@ -236,8 +228,9 @@ def get_sites(request, reforestation_area_id):
 
 
 # ─────────────────────────────────────────────
-# [KEEP] GET SINGLE SITE - Used by map/detail modules
+# [KEEP] GET SINGLE SITE
 # ─────────────────────────────────────────────
+
 @csrf_exempt
 def get_site(request, site_id):
     if request.method != "GET": 
@@ -245,21 +238,38 @@ def get_site(request, site_id):
     
     site = get_object_or_404(Sites, site_id=site_id, is_active=True)
     
-    # ✅ Fetch Site-Level Verification
     verification = getattr(site, 'meta_verification', None)
     verification_data = None
+    
     if verification:
+        # ✅ Fetch verified animals
+        verified_animals = [
+            {
+                "animal_id": rel.animal.animal_id,
+                "name": rel.animal.name,
+                "scientific_name": rel.animal.scientific_name,
+                "admin_notes": rel.admin_notes,
+            }
+            for rel in verification.animal_relations.select_related('animal').all()
+        ]
+        
+        # ✅ NEW: Get land classification name
+        land_classification_name = None
+        if verification.verified_land_classification:
+            land_classification_name = verification.verified_land_classification.name
+        
         verification_data = {
             'status': verification.status,
             'verified_security_concerns': verification.verified_security_concerns,
             'verified_accessibility': verification.verified_accessibility,
             'verified_land_classification_id': verification.verified_land_classification_id,
+            'verified_land_classification_name': land_classification_name,  # ✅ NEW FIELD
             'decision_note': verification.decision_note,
             'verified_by': verification.verified_by.email if verification.verified_by else None,
             'verified_at': verification.verified_at.isoformat() if verification.verified_at else None,
+            'verified_animals': verified_animals,
         }
 
-    # ✅ Fetch Site Images
     images_data = []
     for img in site.site_images.all():
         images_data.append({
@@ -270,7 +280,6 @@ def get_site(request, site_id):
             'created_at': img.created_at.isoformat() if img.created_at else None,
         })
 
-    # ✅ Fetch Current Site_data (validation data)
     current_site_data = site.site_data_versions.filter(is_current=True).first()
     validation_data = {}
     if current_site_data:
@@ -285,7 +294,7 @@ def get_site(request, site_id):
     return JsonResponse({
         "site_id": site.site_id,
         "name": site.name,
-        "description": site.description,  # ✅ NEW
+        "description": site.description,
         "status": site.status,
         "polygon_coordinates": site.polygon_coordinates,
         "center_coordinate": site.center_coordinate,
@@ -302,19 +311,17 @@ def get_site(request, site_id):
             "uploaded_at": p.uploaded_at.isoformat() if p.uploaded_at else None,
             "uploaded_by": p.uploaded_by.email if p.uploaded_by else None,
         } for p in site.permit_documents.all()],
-        "site_images": images_data,  # ✅ NEW
+        "site_images": images_data,
         "validation_data": validation_data, 
-        "created_at": site.created_at, # ✅ UPDATED: Now includes full structure
+        "created_at": site.created_at,
     })
 
 
-
 # ─────────────────────────────────────────────
-# [KEEP] TOGGLE PIN - Used by dashboard
+# [KEEP] TOGGLE PIN
 # ─────────────────────────────────────────────
 @csrf_exempt
 def toggle_pin(request, site_id):
-    """[KEEP] Toggle the is_pinned boolean for dashboard prioritization."""
     if request.method not in ["POST", "PUT"]:
         return JsonResponse({"error": "Only POST/PUT allowed"}, status=405)
     
@@ -331,11 +338,10 @@ def toggle_pin(request, site_id):
 
 
 # ─────────────────────────────────────────────
-# [KEEP] UPDATE SPECIES - Used by tree grower module
+# [KEEP] UPDATE SPECIES
 # ─────────────────────────────────────────────
 @csrf_exempt
 def update_species_recommendations(request, site_id):
-    """[KEEP] GIS Specialist updates recommended tree species for a site."""
     if request.method != "POST":
         return JsonResponse({"error": "Only POST allowed"}, status=405)
     
@@ -372,11 +378,10 @@ def update_species_recommendations(request, site_id):
 
 
 # ─────────────────────────────────────────────
-# [KEEP] UPDATE POLYGON - Core GIS functionality
+# [KEEP] UPDATE POLYGON
 # ─────────────────────────────────────────────
 @csrf_exempt
 def save_site_polygon(request, site_id):
-    """[KEEP] Update site polygon and auto-calculate metrics."""
     if request.method not in ["PUT", "PATCH"]:
         return JsonResponse({"error": "PUT/PATCH only"}, status=405)
     
@@ -404,22 +409,16 @@ def save_site_polygon(request, site_id):
 
 
 # ─────────────────────────────────────────────
-# [KEEP] GET SITES LIST (Alternative) - Used by other module
+# [KEEP] GET SITES LIST (Alternative)
 # ─────────────────────────────────────────────
-# In your sites/views.py, update the get_sites_list function:
-
 @csrf_exempt
 def get_sites_list(request, reforestation_area_id):
-    """
-    [KEEP - DO NOT REMOVE] Alternative site list endpoint.
-    ✅ UPDATED: Now supports verification_status filter
-    """
     if request.method != "GET":
         return JsonResponse({"error": "GET only"}, status=405)
 
     search = request.GET.get("search", "").strip()
     status_filter = request.GET.get("status", "all").strip().lower()
-    verification_filter = request.GET.get("verification_status", "all").strip().lower()  # ✅ NEW
+    verification_filter = request.GET.get("verification_status", "all").strip().lower()
 
     sites = Sites.objects.filter(
         reforestation_area_id=reforestation_area_id, 
@@ -430,8 +429,6 @@ def get_sites_list(request, reforestation_area_id):
         sites = sites.filter(name__icontains=search)
     if status_filter != "all": 
         sites = sites.filter(status=status_filter)
-    
-    # ✅ NEW: Filter by verification status
     if verification_filter != "all":
         sites = sites.filter(meta_verification__status=verification_filter)
 
@@ -454,7 +451,6 @@ def get_sites_list(request, reforestation_area_id):
             )
             validation["final_decision"] = latest_sd.site_data.get('final_decision')
 
-        # ✅ NEW: Include verification status in response
         meta_verification = getattr(s, 'meta_verification', None)
         verification_status = meta_verification.status if meta_verification else 'pending'
 
@@ -466,7 +462,7 @@ def get_sites_list(request, reforestation_area_id):
             "area_hectares": s.total_area_hectares,
             "ndvi": s.ndvi_value,
             "validation": validation,
-            "verification_status": verification_status,  # ✅ NEW
+            "verification_status": verification_status,
             "created_at": s.created_at.strftime("%Y-%m-%d %H:%M")
         })
 
@@ -474,14 +470,10 @@ def get_sites_list(request, reforestation_area_id):
 
 
 # ─────────────────────────────────────────────
-# [REPLACE] Simplified: Save Validation Draft
+# [REPLACE] Save Validation Draft
 # ─────────────────────────────────────────────
 @csrf_exempt
 def save_validation_draft(request, site_id):
-    """
-    PUT/PATCH: Save decision notes for Safety and Survivability layers.
-    Simplified workflow: Just notes, no per-layer accept/reject.
-    """
     if request.method not in ["PUT", "PATCH", "POST"]:
         return JsonResponse({"error": "PUT/PATCH/POST only"}, status=405)
     
@@ -489,7 +481,6 @@ def save_validation_draft(request, site_id):
         body = json.loads(request.body)
         site = get_object_or_404(Sites, site_id=site_id, is_active=True)
         
-        # Get or create current draft
         sd, created = Site_data.objects.get_or_create(
             site=site,
             is_current=True,
@@ -499,7 +490,6 @@ def save_validation_draft(request, site_id):
         if not sd.site_data:
             sd.site_data = {}
         
-        # ✅ Save decision notes for each layer (no accept/reject fields)
         if 'safety' in body and 'decision_note' in body['safety']:
             if 'safety' not in sd.site_data:
                 sd.site_data['safety'] = {}
@@ -510,7 +500,6 @@ def save_validation_draft(request, site_id):
                 sd.site_data['survivability'] = {}
             sd.site_data['survivability']['decision_note'] = body['survivability']['decision_note']
         
-        # Optional: Save final decision note (overall reasoning)
         if 'final_decision_note' in body:
             sd.site_data['final_decision_note'] = body['final_decision_note']
         
@@ -533,14 +522,10 @@ def save_validation_draft(request, site_id):
 
 
 # ─────────────────────────────────────────────
-# [REPLACE] Simplified: Finalize Site (ONE Decision)
+# [REPLACE] Finalize Site
 # ─────────────────────────────────────────────
 @csrf_exempt
 def finalize_site(request, site_id):
-    """
-    POST: Make ONE final decision to Accept or Reject the entire site.
-    Simplified: No per-layer validation required, just final decision + notes.
-    """
     if request.method != "POST":
         return JsonResponse({"error": "POST only"}, status=405)
 
@@ -564,7 +549,6 @@ def finalize_site(request, site_id):
         user = get_user_from_token(request)
         
         with transaction.atomic():
-            # 1. Update current draft with final decision
             current_sd.site_data['final_decision'] = final_decision
             if final_decision_note:
                 current_sd.site_data['final_decision_note'] = final_decision_note
@@ -572,11 +556,9 @@ def finalize_site(request, site_id):
             current_sd.site_data['validated_by'] = user.email if user else "system"
             current_sd.save()
             
-            # 2. Archive current version (set is_current=False)
             current_sd.is_current = False
             current_sd.save()
             
-            # 3. Create new empty current version for future edits
             Site_data.objects.create(
                 site=site,
                 version=current_sd.version + 1,
@@ -585,7 +567,6 @@ def finalize_site(request, site_id):
                 field_assessment_snapshot={}
             )
             
-            # 4. Update site status
             site.status = "accepted" if final_decision == "ACCEPT" else "rejected"
             site.save()
         
@@ -609,11 +590,10 @@ def finalize_site(request, site_id):
 
 
 # ─────────────────────────────────────────────
-# [KEEP] DELETE SITE - Core functionality
+# [KEEP] DELETE SITE
 # ─────────────────────────────────────────────
 @csrf_exempt
 def delete_site(request, site_id):
-    """[KEEP] Soft-delete a site by setting is_active=False."""
     if request.method != "DELETE":
         return JsonResponse({"error": "DELETE only"}, status=405)
     site = get_object_or_404(Sites, site_id=site_id, is_active=True)
@@ -622,14 +602,18 @@ def delete_site(request, site_id):
     return JsonResponse({"message": "Site deleted"})
 
 
-
-# ✅ FIXED: Helper function to serialize assessment
+# ─────────────────────────────────────────────
+# ✅ UPDATED: Helper function to serialize assessment
+# Now includes land_classification and animals_present
+# ─────────────────────────────────────────────
 def _serialize_assessment(assessment, assessment_type):
-    """Helper to serialize a Field_assessment with full details including images."""
+    """
+    Helper to serialize a Field_assessment with full details.
+    ✅ UPDATED: Now includes land_classification and animals_present.
+    """
     inspector = assessment.assigned_onsite_inspector
     user = inspector.user if inspector else None
     
-    # ✅ FIX 1: Safely get user name (fallback to email if first_name doesn't exist)
     inspector_name = 'Unknown'
     if user:
         first = getattr(user, 'first_name', '') or ''
@@ -638,7 +622,6 @@ def _serialize_assessment(assessment, assessment_type):
         if not inspector_name:
             inspector_name = getattr(user, 'email', 'Unknown') or getattr(user, 'username', 'Unknown')
 
-    # Get inspector profile image safely
     inspector_profile_img = None
     if user and hasattr(user, 'profile_img') and user.profile_img:
         try:
@@ -646,7 +629,6 @@ def _serialize_assessment(assessment, assessment_type):
         except:
             pass
     
-    # Get images
     images_data = []
     for img in assessment.images.all():
         images_data.append({
@@ -658,6 +640,26 @@ def _serialize_assessment(assessment, assessment_type):
             'description': img.description,
             'created_at': img.created_at.isoformat() if img.created_at else None,
         })
+    
+    # ✅ NEW: Serialize land_classification
+    land_classification_data = None
+    if assessment.land_classification:
+        land_classification_data = {
+            'id': assessment.land_classification.land_classification_id,
+            'name': assessment.land_classification.name,
+        }
+    
+    # ✅ NEW: Serialize animals_present
+    animals_present_data = []
+    try:
+        for rel in assessment.animal_relations.select_related('animal').all():
+            animals_present_data.append({
+                'animal_id': rel.animal.animal_id,
+                'name': rel.animal.name,
+                'scientific_name': rel.animal.scientific_name or '',
+            })
+    except Exception as e:
+        logger.warning(f"Could not fetch animals for assessment {assessment.field_assessment_id}: {e}")
     
     return {
         'id': assessment.field_assessment_id,
@@ -674,6 +676,9 @@ def _serialize_assessment(assessment, assessment_type):
         'images': images_data,
         'created_at': assessment.created_at.isoformat() if assessment.created_at else None,
         'submitted_at': assessment.updated_at.isoformat() if assessment.updated_at else None,
+        # ✅ NEW FIELDS
+        'land_classification': land_classification_data,
+        'animals_present': animals_present_data,
     }
 
 
@@ -681,7 +686,7 @@ def _serialize_assessment(assessment, assessment_type):
 def get_site_verification(request, site_id):
     """
     GET: Return the saved verification record for a SPECIFIC SITE.
-    ✅ UPDATED: Filters to show ONLY assessments with 'meta_data' in field_assessment_data.
+    ✅ UPDATED: Now includes verified animals from the through table.
     """
     if request.method != 'GET': 
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -695,32 +700,30 @@ def get_site_verification(request, site_id):
     
     if Field_assessment is not None:
         try:
-            # ✅ SPECIFIC assessments: Linked directly to this site
-            # ✅ FILTER: Only if field_assessment_data has 'meta_data' key
             specific_assessments = Field_assessment.objects.filter(
                 site=site, 
                 is_submitted=True,
-                field_assessment_data__has_key='meta_data'  # ✅ NEW FILTER
+                field_assessment_data__has_key='meta_data'
             ).select_related(
                 'assigned_onsite_inspector', 
-                'assigned_onsite_inspector__user'
-            ).prefetch_related('images').order_by('-assessment_date')
+                'assigned_onsite_inspector__user',
+                'land_classification'
+            ).prefetch_related('images', 'animal_relations__animal').order_by('-assessment_date')
             
             for a in specific_assessments:
                 assessments_data.append(_serialize_assessment(a, 'specific'))
             
-            # ✅ GENERAL assessments: site is NULL, area matches via inspector
-            # ✅ FILTER: Only if field_assessment_data has 'meta_data' key
             general_assessments = Field_assessment.objects.filter(
                 site__isnull=True,  
                 assigned_onsite_inspector__reforestation_area=site.reforestation_area,
                 is_submitted=True,
-                field_assessment_data__has_key='meta_data'  # ✅ NEW FILTER
+                field_assessment_data__has_key='meta_data'
             ).select_related(
                 'assigned_onsite_inspector', 
                 'assigned_onsite_inspector__user',
-                'assigned_onsite_inspector__reforestation_area'
-            ).prefetch_related('images').order_by('-assessment_date')
+                'assigned_onsite_inspector__reforestation_area',
+                'land_classification'
+            ).prefetch_related('images', 'animal_relations__animal').order_by('-assessment_date')
             
             for a in general_assessments:
                 assessments_data.append(_serialize_assessment(a, 'general'))
@@ -728,7 +731,6 @@ def get_site_verification(request, site_id):
         except Exception as e:
             logger.warning(f"Could not fetch field assessments: {e}")
 
-    # ✅ FIX: Ensure sets are converted to lists for JSON serialization
     sec_concerns = verification.verified_security_concerns
     if isinstance(sec_concerns, set):
         sec_concerns = list(sec_concerns)
@@ -740,6 +742,19 @@ def get_site_verification(request, site_id):
         acc = list(acc)
     elif not acc:
         acc = {}
+
+    # ✅ NEW: Fetch verified animals from through table
+    verified_animals = []
+    try:
+        for rel in verification.animal_relations.select_related('animal').all():
+            verified_animals.append({
+                'animal_id': rel.animal.animal_id,
+                'name': rel.animal.name,
+                'scientific_name': rel.animal.scientific_name or '',
+                'admin_notes': rel.admin_notes or '',
+            })
+    except Exception as e:
+        logger.warning(f"Could not fetch verified animals: {e}")
 
     return JsonResponse({
         'verification': {
@@ -753,6 +768,7 @@ def get_site_verification(request, site_id):
             'referenced_assessment_ids': verification.referenced_assessment_ids or [],
             'verified_by': verification.verified_by.email if verification.verified_by else None,
             'verified_at': verification.verified_at.isoformat() if verification.verified_at else None,
+            'verified_animals': verified_animals,  # ✅ NEW
         },
         'site_info': {
             'site_id': site.site_id,
@@ -772,7 +788,24 @@ def get_site_verification(request, site_id):
 
 @csrf_exempt
 def update_site_verification(request, site_id):
-    """PUT/POST: Save Draft, Accept, or Reject for a SPECIFIC SITE."""
+    """
+    PUT/POST: Save Draft, Accept, or Reject for a SPECIFIC SITE.
+    ✅ UPDATED: Now handles verified_animals payload.
+    
+    Expected payload:
+    {
+        "verified_security_concerns": [...],
+        "verified_accessibility": {...},
+        "verified_land_classification_id": 1,
+        "decision_note": "...",
+        "status": "draft" | "verified" | "rejected",
+        "referenced_assessment_ids": [...],
+        "verified_animals": [
+            {"animal_id": 1, "notes": "..."},
+            {"animal_id": 2, "notes": ""}
+        ]
+    }
+    """
     if request.method not in ['PUT', 'POST']: 
         return JsonResponse({'error': 'Only PUT/POST allowed'}, status=405)
 
@@ -795,12 +828,46 @@ def update_site_verification(request, site_id):
             verification.decision_note = data['decision_note']
         if 'status' in data: 
             verification.status = data['status']
+        if 'referenced_assessment_ids' in data:
+            verification.referenced_assessment_ids = data['referenced_assessment_ids']
 
         if verification.status in ['verified', 'rejected']:
             verification.verified_by = user
             verification.verified_at = timezone.now()
 
         verification.save()
+        
+        # ✅ NEW: Handle verified_animals
+        if 'verified_animals' in data:
+            verified_animals = data['verified_animals']
+            
+            if not isinstance(verified_animals, list):
+                return JsonResponse({
+                    'error': 'verified_animals must be an array'
+                }, status=400)
+            
+            with transaction.atomic():
+                # Clear existing verified animals
+                verification.animal_relations.all().delete()
+                
+                # Create new verified animals
+                for animal_data in verified_animals:
+                    animal_id = animal_data.get('animal_id')
+                    notes = animal_data.get('notes', '')
+                    
+                    if not animal_id:
+                        continue
+                    
+                    try:
+                        animal = Animal.objects.get(animal_id=animal_id)
+                        SiteVerifiedAnimal.objects.create(
+                            verification=verification,
+                            animal=animal,
+                            admin_notes=notes or ''
+                        )
+                    except Animal.DoesNotExist:
+                        logger.warning(f"Animal {animal_id} not found, skipping.")
+                        continue
         
         return JsonResponse({
             'message': f'Verification {verification.status}', 
@@ -812,10 +879,8 @@ def update_site_verification(request, site_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-
-
 # ─────────────────────────────────────────────
-# SITE PERMIT DOCUMENTS (MOVED FROM AREA)
+# SITE PERMIT DOCUMENTS
 # ─────────────────────────────────────────────
 @csrf_exempt
 def list_site_permits(request, site_id):
@@ -850,7 +915,6 @@ def upload_site_permit(request, site_id):
     if not document_type or not permit_file:
         return JsonResponse({'error': 'document_type and file are required'}, status=400)
 
-    # ✅ Validate document type
     valid_types = [t[0] for t in PermitDocument.DOCUMENT_TYPES]
     if document_type not in valid_types:
         return JsonResponse({'error': f'Invalid document type. Allowed: {valid_types}'}, status=400)
@@ -872,10 +936,9 @@ def upload_site_permit(request, site_id):
     except Exception as e:
         logger.error(f"Upload site permit error: {e}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
-# ✅ NEW: Delete Site Permit
+
 @csrf_exempt
 def delete_site_permit(request, permit_id):
-    """DELETE: Remove a permit document from a site."""
     if request.method != 'DELETE': 
         return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
     
@@ -883,7 +946,6 @@ def delete_site_permit(request, permit_id):
         user = get_user_from_token(request)
         permit = get_object_or_404(PermitDocument, permit_id=permit_id)
         
-        # Delete the file from storage
         if permit.file:
             try:
                 permit.file.delete(save=False)
@@ -896,20 +958,16 @@ def delete_site_permit(request, permit_id):
         logger.error(f"Delete site permit error: {e}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
+
 # ─────────────────────────────────────────────
 # GET ALL SITES (For Map Initialization)
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_all_sites(request):
-    """
-    GET: Returns ALL active sites across all reforestation areas.
-    Used by the main map to display site markers on startup.
-    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     try:
-        # Fetch all active sites
         sites = Sites.objects.filter(is_active=True).order_by("-created_at")
         
         data = []
@@ -921,8 +979,8 @@ def get_all_sites(request):
                 "reforestation_area_id": s.reforestation_area_id,
                 "center_coordinate": s.center_coordinate,
                 "polygon_coordinates": s.polygon_coordinates,
-                "total_area_hectares": s.total_area_hectares, # ✅ ADDED
-                "ndvi_value": s.ndvi_value,                   # ✅ ADDED
+                "total_area_hectares": s.total_area_hectares,
+                "ndvi_value": s.ndvi_value,
                 "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S")
             })
             
@@ -931,24 +989,12 @@ def get_all_sites(request):
         logger.error(f"get_all_sites error: {e}", exc_info=True)
         return JsonResponse({"error": str(e)}, status=500)
 
+
 # ─────────────────────────────────────────────
-# ✅ NEW: UPDATE SITE COORDINATES (Polygon + Center)
+# UPDATE SITE COORDINATES
 # ─────────────────────────────────────────────
 @csrf_exempt
 def update_site_coordinates(request, site_id):
-    """
-    PUT/PATCH: Update both polygon_coordinates and center_coordinate for a site.
-    
-    Body:
-    {
-        "polygon_coordinates": [[lat, lng], ...] (optional),
-        "center_coordinate": [lat, lng] (optional)
-    }
-    
-    - If polygon is updated, area is recalculated
-    - If center is not provided but polygon is updated, center is auto-calculated from polygon centroid
-    - If only center is provided, only center is updated
-    """
     if request.method not in ["PUT", "PATCH"]:
         return JsonResponse({"error": "PUT/PATCH only"}, status=405)
     
@@ -959,18 +1005,15 @@ def update_site_coordinates(request, site_id):
         polygon_updated = False
         center_updated = False
         
-        # ✅ Update polygon if provided
         if 'polygon_coordinates' in body:
             new_polygon = body['polygon_coordinates']
             
-            # Validate polygon format
             if not isinstance(new_polygon, list):
                 return JsonResponse({"error": "polygon_coordinates must be an array"}, status=400)
             
             if len(new_polygon) < 3:
                 return JsonResponse({"error": "polygon_coordinates must have at least 3 points"}, status=400)
             
-            # Validate each coordinate pair
             for i, coord in enumerate(new_polygon):
                 if not isinstance(coord, (list, tuple)) or len(coord) != 2:
                     return JsonResponse({
@@ -979,7 +1022,6 @@ def update_site_coordinates(request, site_id):
                 
                 try:
                     lat, lng = float(coord[0]), float(coord[1])
-                    # Basic validation for Philippines coordinates
                     if not (4 <= lat <= 21):
                         return JsonResponse({
                             "error": f"Invalid latitude at index {i}: {lat}. Must be between 4 and 21"
@@ -999,11 +1041,9 @@ def update_site_coordinates(request, site_id):
             
             logger.info(f"Site {site_id} polygon updated: {len(new_polygon)} vertices, area: {site.total_area_hectares} ha")
         
-        # ✅ Update center if provided
         if 'center_coordinate' in body:
             new_center = body['center_coordinate']
             
-            # Validate center format
             if not isinstance(new_center, (list, tuple)) or len(new_center) != 2:
                 return JsonResponse({
                     "error": "center_coordinate must be [lat, lng]"
@@ -1011,7 +1051,6 @@ def update_site_coordinates(request, site_id):
             
             try:
                 lat, lng = float(new_center[0]), float(new_center[1])
-                # Basic validation
                 if not (4 <= lat <= 21):
                     return JsonResponse({
                         "error": f"Invalid center latitude: {lat}. Must be between 4 and 21"
@@ -1030,13 +1069,11 @@ def update_site_coordinates(request, site_id):
             
             logger.info(f"Site {site_id} center updated: [{lat}, {lng}]")
         
-        # ✅ If polygon was updated but center was not provided, auto-calculate center
         if polygon_updated and not center_updated:
             site.center_coordinate = site.calculate_centroid()
             center_updated = True
             logger.info(f"Site {site_id} center auto-calculated from polygon: {site.center_coordinate}")
         
-        # ✅ Save if anything was updated
         if polygon_updated or center_updated:
             site.save()
             
@@ -1059,4 +1096,3 @@ def update_site_coordinates(request, site_id):
     except Exception as e:
         logger.error(f"Update site coordinates error: {e}", exc_info=True)
         return JsonResponse({"error": str(e)}, status=500)
-

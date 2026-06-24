@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-
+from . import emailviews
 urlpatterns = [
     path('register/', views.register_user, name='register'),
     path('login/', views.login_user, name='login'),
@@ -13,8 +13,8 @@ urlpatterns = [
     path('list_tree_growers/', views.list_tree_growers, name='list_tree_growers'),
     path('get_tree_grower_detail/<int:user_id>/', views.get_tree_grower_detail, name='get_tree_grower_detail'),
     path('toggle_user_status/<int:user_id>/', views.toggle_user_status, name='toggle_user_status'),
-    path('send_otp/', views.send_otp, name='send_otp'),
-    path('verify_otp/', views.verify_otp, name='verify_otp'),
+    path('send_otp/', emailviews.send_otp, name='send_otp'),
+    path('verify_otp/', emailviews.verify_otp, name='verify_otp'),
 ]
 
 

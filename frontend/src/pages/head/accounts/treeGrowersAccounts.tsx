@@ -402,13 +402,10 @@ export default function TreeGrowersAccounts() {
                     </td>
                     <td className="py-3 px-5">
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => openDetail(grower.id)}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-[#0f4a2fe0] text-white text-xs font-medium rounded hover:bg-green-800 transition-colors"
-                        >
-                          <Eye size={14} />
-                          View
-                        </button>
+                       
+                          <Eye size={16} onClick={() => openDetail(grower.id)} className="cursor-pointer" />
+                          
+                        
                         <button
                           onClick={() => handleToggleStatus(grower.id, grower.is_active)}
                           title={grower.is_active ? "Deactivate" : "Activate"}

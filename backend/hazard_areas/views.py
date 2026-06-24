@@ -73,6 +73,8 @@ def get_hazard_areas_list(request):
     return JsonResponse({'data': data}, status=200)
 
 
+
+
 @csrf_exempt
 def get_hazard_areas(request):
     """Paginated, searchable, and filterable list of hazard areas"""
@@ -89,8 +91,10 @@ def get_hazard_areas(request):
     except ValueError:
         entries, page = 10, 1
 
-    if entries <= 0: entries = 10
-    if page <= 0: page = 1
+    if entries <= 0: 
+        entries = 10
+    if page <= 0: 
+        page = 1
 
     offset = (page - 1) * entries
 
@@ -107,15 +111,28 @@ def get_hazard_areas(request):
     total = queryset.count()
     total_page = math.ceil(total / entries) if total > 0 else 1
 
-    paginated_data = list(queryset[offset: offset + entries].values())
+    # Format dates manually instead of using .values()
+    data = []
+    for h in queryset[offset: offset + entries]:
+        data.append({
+            "hazard_area_id": h.hazard_area_id,
+            "name": h.name,
+            "hazard_type": h.hazard_type,
+            "barangay_id": h.barangay_id,
+            "polygon": h.polygon,
+            "description": h.description,
+            "created_at": h.created_at.strftime("%Y-%m-%d") if h.created_at else None,
+            "updated_at": h.updated_at.strftime("%Y-%m-%d") if h.updated_at else None,
+        })
 
     return JsonResponse({
-        'data': paginated_data,
+        'data': data,
         'total_page': total_page,
         'page': page,
         'entries': entries,
         'total': total
     }, status=200)
+
 
 
 def get_hazard_area(request, hazard_area_id):

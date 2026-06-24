@@ -81,7 +81,7 @@ export function Profile() {
     middle_name: "",
     birthday: "",
     gender: "M",
-    is_active: "true",
+    is_active: "true", // Defaults to Active
     user_role: "CityENROHead",
     address: "",
     preview_profile: "",
@@ -469,13 +469,7 @@ export function Profile() {
         {/* ── HERO HEADER ── */}
         <div className="profile-header-bg px-8 pt-8 pb-20 relative z-10">
           <div className="max-w-4xl mx-auto">
-            <button
-              onClick={() => navigate("/account-management")}
-              className="flex items-center gap-2 text-white/70 hover:text-white text-sm mb-6 transition-colors"
-            >
-              <ArrowLeft size={16} />
-              Account Management
-            </button>
+          
 
             <div className="flex items-end gap-6">
               {/* Avatar */}
@@ -771,19 +765,25 @@ export function Profile() {
                 {/* Status */}
                 <div>
                   <label className={labelClass}>Account Status</label>
-                  <div className={inputBase}>
+                  <div className={`${inputBase} ${action === "Create" ? "opacity-60" : ""}`}>
                     <Unlock className={iconClass} />
                     <select
-                      className={inputField + " cursor-pointer"}
+                      className={`${inputField} ${action === "Create" ? "cursor-not-allowed" : "cursor-pointer"}`}
                       value={profile.is_active}
                       onChange={(e) =>
                         setProfile((p) => ({ ...p, is_active: e.target.value }))
                       }
+                      disabled={action === "Create"}
                     >
                       <option value="true">Active</option>
                       <option value="false">Inactive</option>
                     </select>
                   </div>
+                  {action === "Create" && (
+                    <p className="text-xs text-stone-400 mt-1.5 ml-1">
+                      New accounts are automatically set to Active.
+                    </p>
+                  )}
                 </div>
 
                 {/* Spacer */}
@@ -927,7 +927,7 @@ export function Profile() {
               <button
                 type="button"
                 className="btn-ghost"
-                onClick={() => navigate("/account-management")}
+                onClick={() => navigate(-1)}
               >
                 <ArrowLeft size={15} />
                 Cancel

@@ -32,7 +32,7 @@ def _serialize_area(a):
     pending_sites = sites_qs.filter(status='pending').count()
     
     # ✅ Format date as M/D/YYYY (e.g., 5/30/2026)
-    created_date = a.created_at.strftime('%m/%d/%Y').lstrip('0')
+    created_date = a.created_at.strftime('%Y-%m-%d').lstrip('0')
     
     return {
         'reforestation_area_id': a.reforestation_area_id,

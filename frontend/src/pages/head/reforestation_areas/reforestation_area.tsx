@@ -288,7 +288,7 @@ export default function Reforestation_areas() {
                 <th className="py-3 px-5 text-left">Barangay</th>
                 <th className="py-3 px-5 text-left">Description</th>
                 <th className="py-3 px-5 text-left">Sites</th>
-                <th className="py-3 px-5 text-left">Created</th>
+                <th className="py-3 px-5 text-left">Created At</th>
                 <th className="py-3 px-5 text-left">Actions</th>
               </tr>
             </thead>

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Filter, RefreshCw, Eye, X } from "lucide-react";
 import NotFoundPage from "../../../components/layout/NotFoundPage";
-import PlantScopeLoader from "../../../components/alert/PlantScopeLoader";
+import LoaderPending from "../../../components/layout/loaderSmall";
 import { useAuthorize } from "../../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/constant/api.ts";
@@ -295,9 +295,8 @@ export default function AuditTrail() {
     setModalActivity([]);
   }
 
-  if (isLoading) return <PlantScopeLoader />;
   if (!localStorage.getItem("token")) { navigate("/Login"); return null; }
-  if (!isAuthorized) return <NotFoundPage />;
+  if (!isLoading && !isAuthorized) return <NotFoundPage />;
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -394,15 +393,13 @@ export default function AuditTrail() {
           {error}
         </div>
       )}
-      {loading && (
-        <div className="text-green-700 text-sm animate-pulse mb-4">Loading...</div>
-      )}
 
       {/* ── Session Log Table ───────────────────────────────────────────────── */}
-      {tab === "session" && !loading && !error && (
+      {tab === "session" && !error && (
         <>
           <div className="overflow-x-auto shadow-sm rounded-sm border border-gray-200">
-            <table className="min-w-full bg-white">
+            <table className="relative min-w-full bg-white rounded-sm">
+              {loading && <LoaderPending />}
               <thead className="bg-[#0f4a2fe0] text-white">
                 <tr>
                   <Th>User</Th>
@@ -496,88 +493,84 @@ export default function AuditTrail() {
             </div>
           )}
 
-          {accountListLoading ? (
-            <div className="text-green-700 text-sm animate-pulse mb-4">Loading accounts…</div>
-          ) : (
-            <>
-              <div className="overflow-x-auto shadow-sm rounded-sm border border-gray-200">
-                <table className="min-w-full bg-white">
-                  <thead className="bg-[#0f4a2fe0] text-white">
-                    <tr>
-                      <Th>Account</Th>
-                      <Th>Role</Th>
-                      <Th>Status</Th>
-                      <Th>Action</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {accountList.length > 0 ? accountList.map((account) => (
-                      <tr key={account.id} className="border-b hover:bg-green-50 transition-all">
-                        <td className="py-3 px-5">
-                          {account.full_name && (
-                            <div className="font-medium text-gray-800 text-sm">{account.full_name}</div>
-                          )}
-                          <div className={`text-sm ${account.full_name ? "text-gray-500" : "font-medium text-gray-800"}`}>
-                            {account.email}
-                          </div>
-                        </td>
-                        <td className="py-3 px-5">
-                          <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs font-mono">
-                            {account.user_role ?? "—"}
-                          </span>
-                        </td>
-                        <td className="py-3 px-5">
-                          <span className={`${BASE_BADGE} ${account.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
-                            {account.is_active ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                        <td className="py-3 px-5">
-                          <button
-                            onClick={() => openActivityModal(account)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0f4a2fe0] text-white text-xs font-medium rounded hover:bg-green-800 transition-colors"
-                          >
-                            <Eye size={13} />
-                            View Activity
-                          </button>
-                        </td>
-                      </tr>
-                    )) : (
-                      <EmptyRow colSpan={4} />
-                    )}
-                  </tbody>
-                </table>
-              </div>
+          <div className="overflow-x-auto shadow-sm rounded-sm border border-gray-200">
+            <table className="relative min-w-full bg-white rounded-sm">
+              {accountListLoading && <LoaderPending />}
+              <thead className="bg-[#0f4a2fe0] text-white">
+                <tr>
+                  <Th>Account</Th>
+                  <Th>Role</Th>
+                  <Th>Status</Th>
+                  <Th>Action</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {accountList.length > 0 ? accountList.map((account) => (
+                  <tr key={account.id} className="border-b hover:bg-green-50 transition-all">
+                    <td className="py-3 px-5">
+                      {account.full_name && (
+                        <div className="font-medium text-gray-800 text-sm">{account.full_name}</div>
+                      )}
+                      <div className={`text-sm ${account.full_name ? "text-gray-500" : "font-medium text-gray-800"}`}>
+                        {account.email}
+                      </div>
+                    </td>
+                    <td className="py-3 px-5">
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs font-mono">
+                        {account.user_role ?? "—"}
+                      </span>
+                    </td>
+                    <td className="py-3 px-5">
+                      <span className={`${BASE_BADGE} ${account.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
+                        {account.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="py-3 px-5">
+                      <button
+                        onClick={() => openActivityModal(account)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0f4a2fe0] text-white text-xs font-medium rounded hover:bg-green-800 transition-colors"
+                      >
+                        <Eye size={13} />
+                        View Activity
+                      </button>
+                    </td>
+                  </tr>
+                )) : (
+                  <EmptyRow colSpan={4} />
+                )}
+              </tbody>
+            </table>
+          </div>
 
-              {/* Account list pagination */}
-              <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
-                <span>Page {accountListPage} of {accountListPages}</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setAccountListPage((p) => p - 1)}
-                    disabled={accountListPage <= 1}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronLeft size={15} /> Prev
-                  </button>
-                  <button
-                    onClick={() => setAccountListPage((p) => p + 1)}
-                    disabled={accountListPage >= accountListPages}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Next <ChevronRight size={15} />
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+          {/* Account list pagination */}
+          <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
+            <span>Page {accountListPage} of {accountListPages}</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setAccountListPage((p) => p - 1)}
+                disabled={accountListPage <= 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft size={15} /> Prev
+              </button>
+              <button
+                onClick={() => setAccountListPage((p) => p + 1)}
+                disabled={accountListPage >= accountListPages}
+                className="flex items-center gap-1 px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
         </>
       )}
 
       {/* ── Operational History Table ───────────────────────────────────────── */}
-      {tab === "operational" && !loading && !error && (
+      {tab === "operational" && !error && (
         <>
           <div className="overflow-x-auto shadow-sm rounded-sm border border-gray-200">
-            <table className="min-w-full bg-white">
+            <table className="relative min-w-full bg-white rounded-sm">
+              {loading && <LoaderPending />}
               <thead className="bg-[#0f4a2fe0] text-white">
                 <tr>
                   <Th>Performed By</Th><Th>Action</Th><Th>Entity</Th>
@@ -689,63 +682,58 @@ export default function AuditTrail() {
 
             {/* Modal body */}
             <div className="overflow-y-auto flex-1 px-6 py-4">
-              {modalLoading ? (
-                <div className="text-green-700 text-sm animate-pulse py-6 text-center">Loading activity…</div>
-              ) : (
-                <>
-                  <div className="overflow-x-auto rounded border border-gray-200">
-                    <table className="min-w-full bg-white">
-                      <thead className="bg-[#0f4a2fe0] text-white">
-                        <tr>
-                          <Th>Action</Th>
-                          <Th>Entity</Th>
-                          <Th>Description</Th>
-                          <Th>IP Address</Th>
-                          <Th>Timestamp</Th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {modalActivity.length > 0 ? modalActivity.map((entry) => (
-                          <tr key={entry.id} className="border-b hover:bg-green-50 transition-all">
-                            <td className="py-3 px-5">
-                              <span className={actionBadge(entry.action_type)}>
-                                {entry.action_type.replace("_", " ")}
-                              </span>
-                            </td>
-                            <td className="py-3 px-5">
-                              <div className="text-sm text-gray-800">{entry.entity_type || "—"}</div>
-                              {entry.entity_label && (
-                                <div className="text-xs text-gray-600 font-medium">{entry.entity_label}</div>
-                              )}
-                              {entry.entity_id != null && (
-                                <div className="text-xs text-gray-400">ID: {entry.entity_id}</div>
-                              )}
-                            </td>
-                            <td className="py-3 px-5 text-sm text-gray-700 max-w-xs">
-                              {entry.description || "—"}
-                            </td>
-                            <td className="py-3 px-5 text-sm text-gray-700">{entry.ip_address ?? "—"}</td>
-                            <td className="py-3 px-5 text-sm text-gray-700">
-                              {new Date(entry.timestamp).toLocaleString()}
-                            </td>
-                          </tr>
-                        )) : (
-                          <EmptyRow colSpan={5} />
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+              <div className="overflow-x-auto rounded border border-gray-200">
+                <table className="relative min-w-full bg-white rounded-sm">
+                  {modalLoading && <LoaderPending />}
+                  <thead className="bg-[#0f4a2fe0] text-white">
+                    <tr>
+                      <Th>Action</Th>
+                      <Th>Entity</Th>
+                      <Th>Description</Th>
+                      <Th>IP Address</Th>
+                      <Th>Timestamp</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modalActivity.length > 0 ? modalActivity.map((entry) => (
+                      <tr key={entry.id} className="border-b hover:bg-green-50 transition-all">
+                        <td className="py-3 px-5">
+                          <span className={actionBadge(entry.action_type)}>
+                            {entry.action_type.replace("_", " ")}
+                          </span>
+                        </td>
+                        <td className="py-3 px-5">
+                          <div className="text-sm text-gray-800">{entry.entity_type || "—"}</div>
+                          {entry.entity_label && (
+                            <div className="text-xs text-gray-600 font-medium">{entry.entity_label}</div>
+                          )}
+                          {entry.entity_id != null && (
+                            <div className="text-xs text-gray-400">ID: {entry.entity_id}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-5 text-sm text-gray-700 max-w-xs">
+                          {entry.description || "—"}
+                        </td>
+                        <td className="py-3 px-5 text-sm text-gray-700">{entry.ip_address ?? "—"}</td>
+                        <td className="py-3 px-5 text-sm text-gray-700">
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </td>
+                      </tr>
+                    )) : (
+                      <EmptyRow colSpan={5} />
+                    )}
+                  </tbody>
+                </table>
+              </div>
 
-                  <Pagination
-                    page={modalMeta.page}
-                    total_pages={modalMeta.total_pages}
-                    total={modalMeta.total}
-                    page_size={10}
-                    onPrev={() => setModalPage((p) => p - 1)}
-                    onNext={() => setModalPage((p) => p + 1)}
-                  />
-                </>
-              )}
+              <Pagination
+                page={modalMeta.page}
+                total_pages={modalMeta.total_pages}
+                total={modalMeta.total}
+                page_size={10}
+                onPrev={() => setModalPage((p) => p - 1)}
+                onNext={() => setModalPage((p) => p + 1)}
+              />
             </div>
           </div>
         </div>

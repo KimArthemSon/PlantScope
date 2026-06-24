@@ -82,7 +82,7 @@ export default function SiteFieldAssessment() {
 
   // ✅ UPDATED: Pass siteId and siteName to the next screen
   const handleLayerPress = (layerId: string, layerName: string) => {
-    console.log(areaId)
+    
     router.push({
       pathname: "/feedbacks/layer_assessment_list",
       params: { areaId, areaName, siteId, siteName, layerId, layerName },

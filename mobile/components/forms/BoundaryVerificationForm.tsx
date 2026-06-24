@@ -20,7 +20,7 @@ import MapView, { Marker } from "react-native-maps";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
 
-import { useFieldAssessment } from "@/hooks/useFieldAssessment";
+import { useFieldAssessment, LocalImage } from "@/hooks/useFieldAssessment";
 import { api } from "@/constants/url_fixed";
 
 const API_BASE = `${api}/api`;
@@ -105,7 +105,6 @@ function SimpleGeocam({
       setCurrentLocation(data);
       return data;
     } catch (error) {
-      console.error("📍 Location error:", error);
       Alert.alert("Error", "Could not get GPS location.");
       return null;
     }
@@ -135,10 +134,8 @@ function SimpleGeocam({
         Alert.alert("Error", "Failed to capture photo.");
         return;
       }
-    -
       onCapture(photo.uri, locData);
     } catch (error) {
-      console.error("📸 Take picture error:", error);
       Alert.alert(
         "Error",
         `Failed to capture photo: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -612,7 +609,7 @@ export default function BoundaryVerificationForm() {
   const areaId = params.areaId as string;
   const assessmentId = params.assessmentId as string | undefined;
   const layerId = "boundary_verification";
-   const siteId = params.siteId as string | undefined;
+  const siteId = params.siteId as string | undefined;
   const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
     useFieldAssessment(areaId, layerId, assessmentId);
 
@@ -625,19 +622,23 @@ export default function BoundaryVerificationForm() {
   const [gettingLocation, setGettingLocation] = useState(false);
 
   const [images, setImages] = useState<BoundaryImage[]>([]);
+  
+  // ✅ NEW: Local images (captured before save)
+  const [localImages, setLocalImages] = useState<LocalImage[]>([]);
+  
   const [isViewMode, setIsViewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!assessmentId);
   const [showGPSCamera, setShowGPSCamera] = useState(false);
   
-  // ✅ NEW: Custom modal state for photo note
+  // Custom modal state for photo note
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState<{
     uri: string;
     location: LocationData;
-    numericAssessmentId: number;
   } | null>(null);
   const [pendingNote, setPendingNote] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   // Load existing data
   useEffect(() => {
@@ -689,91 +690,92 @@ export default function BoundaryVerificationForm() {
       setLocationAccuracy(loc.coords.accuracy?.toFixed(1) || "");
       Alert.alert("Location Captured", "GPS coordinates updated.");
     } catch (error) {
-      console.error("📍 Get location error:", error);
       Alert.alert("Error", "Could not get current location.");
     } finally {
       setGettingLocation(false);
     }
   };
 
-  // ✅ FIXED: Use custom modal instead of Alert.prompt
+  // ✅ UPDATED: Handle photo capture - NO LONGER requires assessmentId
   const handleGPSPhotoCaptured = async (
     uri: string,
     location: LocationData,
   ) => {
- 
     setShowGPSCamera(false);
-    
-    const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
-   
-    
-    if (!numericAssessmentId || isNaN(numericAssessmentId)) {
-      Alert.alert(
-        "Action Required",
-        "Please save the draft first to get an ID for image uploads.",
-      );
-      return;
-    }
-
-    // ✅ Store photo data and show custom modal
-    setPendingPhoto({ uri, location, numericAssessmentId });
+    setPendingPhoto({ uri, location });
     setPendingNote("");
     setShowNoteModal(true);
   };
 
-  // ✅ Handle note submission from custom modal - DIRECT UPLOAD
+  // ✅ UPDATED: Handle note submission - stores locally OR uploads immediately
   const handleNoteSubmit = async (note: string) => {
     if (!pendingPhoto) return;
-    
-   -
-    
-    // ✅ Upload directly with the captured photo data
-    setUploading(true);
-    try {
-      const ok = await uploadImage(
-        pendingPhoto.numericAssessmentId,
-        {
-          uri: pendingPhoto.uri,
-          latitude: pendingPhoto.location.latitude,
-          longitude: pendingPhoto.location.longitude,
-          accuracy: pendingPhoto.location.accuracy,
-        },
-        {
-          subLayerCode: "verification",
-          description: note || `Boundary marker at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
+
+    const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
+
+    // If we have an assessmentId, upload immediately
+    if (numericAssessmentId && !isNaN(numericAssessmentId)) {
+      setUploading(true);
+      try {
+        const ok = await uploadImage(
+          numericAssessmentId,
+          {
+            uri: pendingPhoto.uri,
+            latitude: pendingPhoto.location.latitude,
+            longitude: pendingPhoto.location.longitude,
+            accuracy: pendingPhoto.location.accuracy,
+          },
+          {
+            subLayerCode: "verification",
+            description:
+              note ||
+              `Boundary marker at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
+          },
+        );
+
+        if (ok) {
+          const data = await fetchAssessmentData();
+          if (data) {
+            setImages(data.images || []);
+          }
+          Alert.alert("Success", "Photo uploaded with GPS data!");
+        } else {
+          Alert.alert("Upload Failed", "Could not upload photo. Please try again.");
         }
-      );
-      
-      if (ok) {
-       
-        const data = await fetchAssessmentData();
-        if (data) {
-        
-          setImages(data.images || []);
-        }
-        Alert.alert("Success", "Photo uploaded with GPS data!");
-      } else {
-        console.warn("❌ [Geocam] Upload returned false");
-        Alert.alert("Upload Failed", "Could not upload photo. Please try again.");
+      } catch (error) {
+        Alert.alert(
+          "Upload Error",
+          `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      } finally {
+        setUploading(false);
       }
-    } catch (error) {
-      console.error("💥 [Geocam] CRITICAL ERROR:", error);
-      Alert.alert(
-        "Upload Error",
-        `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
-    } finally {
-      setUploading(false);
-      // Reset modal state
-      setShowNoteModal(false);
-      setPendingPhoto(null);
-      setPendingNote("");
+    } else {
+      // ✅ NEW: Store locally if no assessmentId
+      const localImg: LocalImage = {
+        id: `local-${Date.now()}`,
+        uri: pendingPhoto.uri,
+        latitude: pendingPhoto.location.latitude,
+        longitude: pendingPhoto.location.longitude,
+        accuracy: pendingPhoto.location.accuracy,
+        subLayerCode: "verification",
+        description: note || `Boundary marker photo`,
+      };
+      setLocalImages([...localImages, localImg]);
+      Alert.alert("Photo Captured", "Photo will be uploaded when you save the draft.");
     }
+
+    setShowNoteModal(false);
+    setPendingPhoto(null);
+    setPendingNote("");
   };
 
-  const [uploading, setUploading] = useState(false);
+  // ✅ NEW: Remove local image
+  const removeLocalImage = (id: string) => {
+    setLocalImages(localImages.filter((img) => img.id !== id));
+  };
 
-    const buildPayload = () => {
+  const buildPayload = () => {
     const location =
       locationLat && locationLng
         ? {
@@ -785,39 +787,39 @@ export default function BoundaryVerificationForm() {
           }
         : null;
 
-    // ✅ 1. Build the layer-specific data
     const layerData = {
       overall_note: overallNote || null,
       location_context: locationContext || null,
     };
 
-    // ✅ 2. Return the FULL payload structure expected by the backend
     return {
       reforestation_area_id: areaId ? parseInt(areaId) : null,
-      site_id: siteId ? parseInt(siteId) : null, // ✅ Passes site ID for specific assessments
+      site_id: siteId ? parseInt(siteId) : null,
       assessment_date: new Date().toISOString().split("T")[0],
       location,
       field_assessment_data: {
-        boundary_verification: layerData, // ✅ Wraps under the correct layer ID
+        boundary_verification: layerData,
       },
     };
   };
 
+  // ✅ UPDATED: handleDraft now passes localImages
   const handleDraft = async () => {
     const payload = buildPayload();
-    const ok = await handleSave(payload, false);
-    if (ok) {
-      if (assessmentId) {
-        const data = await fetchAssessmentData();
-        if (data) {
-          populateForm(data.field_assessment_data || {});
-          setImages(data.images || []);
-        }
+    const savedId = await handleSave(payload, false, localImages);
+    
+    if (savedId) {
+      setLocalImages([]);
+      const data = await fetchAssessmentData();
+      if (data) {
+        populateForm(data.field_assessment_data || {});
+        setImages(data.images || []);
       }
       Alert.alert("Saved", "Draft saved successfully.");
     }
   };
 
+  // ✅ UPDATED: handleSubmit also passes localImages
   const handleSubmit = async () => {
     Alert.alert(
       "Submit Assessment",
@@ -827,10 +829,11 @@ export default function BoundaryVerificationForm() {
         {
           text: "Submit",
           onPress: async () => {
-            const ok = await handleSave(buildPayload(), true);
-            if (ok) {
+            const savedId = await handleSave(buildPayload(), true, localImages);
+            if (savedId) {
+              setLocalImages([]);
               setIsViewMode(true);
-              Alert.alert("Success", "Submitted to GIS Specialist!");
+            
             }
           },
         },
@@ -859,6 +862,55 @@ export default function BoundaryVerificationForm() {
       return imgUrl;
     }
     return `${api}${imgUrl}`;
+  };
+
+  // ✅ NEW: Render local images
+  const renderLocalImages = () => {
+    if (localImages.length === 0) return null;
+
+    return (
+      <View style={styles.localImagesSection}>
+        <Text style={styles.localImagesLabel}>Pending Upload ({localImages.length})</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {localImages.map((img) => (
+            <View key={img.id} style={styles.thumbWrapper}>
+              <TouchableOpacity
+                onPress={() => setPreviewImage(img.uri)}
+                activeOpacity={0.85}
+              >
+                <Image source={{ uri: img.uri }} style={styles.thumb} resizeMode="cover" />
+                <View style={[styles.thumbOverlay, { backgroundColor: "rgba(245,158,11,0.6)" }]}>
+                  <Ionicons name="cloud-upload-outline" size={14} color="#fff" />
+                </View>
+                <View style={styles.thumbCoords}>
+                  <Text style={styles.thumbCoordsText}>
+                    {img.latitude.toFixed(4)},{img.longitude.toFixed(4)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              {img.description ? (
+                <Text style={styles.thumbNote} numberOfLines={1}>
+                  {img.description}
+                </Text>
+              ) : (
+                <Text style={[styles.thumbNote, { color: "#F59E0B", fontStyle: "italic" }]}>
+                  Pending
+                </Text>
+              )}
+              {!isViewMode && (
+                <TouchableOpacity
+                  style={styles.deletePhotoBtn}
+                  onPress={() => removeLocalImage(img.id)}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Ionicons name="close" size={11} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    );
   };
 
   if (loading) {
@@ -1028,7 +1080,7 @@ export default function BoundaryVerificationForm() {
         {/* SECTION 3: Boundary Markers (Geocam Only) */}
         <SectionCard
           title="Boundary Markers"
-          subtitle={`${images.length} GPS photo${images.length !== 1 ? "s" : ""} · Tap to add`}
+          subtitle={`${images.length + localImages.length} GPS photo${(images.length + localImages.length) !== 1 ? "s" : ""} · Tap to add`}
           iconName="map-marker"
           iconLib="mci"
           accentColor="#0369A1"
@@ -1100,7 +1152,10 @@ export default function BoundaryVerificationForm() {
             )}
           </ScrollView>
 
-          {images.length === 0 && isViewMode && (
+          {/* ✅ NEW: Render local images */}
+          {renderLocalImages()}
+
+          {images.length === 0 && localImages.length === 0 && isViewMode && (
             <Text style={styles.emptyGallery}>
               No boundary marker photos attached.
             </Text>
@@ -1130,7 +1185,7 @@ export default function BoundaryVerificationForm() {
           <TouchableOpacity
             style={[styles.footerBtn, styles.footerBtnDraft]}
             onPress={handleDraft}
-            disabled={saving}
+            disabled={saving || uploading}
             activeOpacity={0.8}
           >
             <MaterialCommunityIcons
@@ -1144,13 +1199,13 @@ export default function BoundaryVerificationForm() {
             style={[
               styles.footerBtn,
               styles.footerBtnSubmit,
-              saving && styles.footerBtnDisabled,
+              (saving || uploading) && styles.footerBtnDisabled,
             ]}
             onPress={handleSubmit}
-            disabled={saving}
+            disabled={saving || uploading}
             activeOpacity={0.8}
           >
-            {saving ? (
+            {saving || uploading ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <>
@@ -1195,7 +1250,7 @@ export default function BoundaryVerificationForm() {
         />
       </Modal>
       
-      {/* ✅ NEW: Custom Note Modal (Expo Go Compatible) */}
+      {/* Custom Note Modal */}
       <Modal
         visible={showNoteModal}
         transparent
@@ -1233,8 +1288,13 @@ export default function BoundaryVerificationForm() {
               <TouchableOpacity
                 style={modalStyles.saveBtn}
                 onPress={() => handleNoteSubmit(pendingNote)}
+                disabled={uploading}
               >
-                <Text style={modalStyles.saveBtnText}>Save</Text>
+                {uploading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={modalStyles.saveBtnText}>Save</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1554,6 +1614,22 @@ const styles = StyleSheet.create({
   },
   addPhotoBtnGPS: { borderColor: "#BBF7D0", backgroundColor: "#F0FDF4" },
   addPhotoBtnText: { fontSize: 10, color: "#0369A1", fontWeight: "600" },
+  // ✅ NEW: Local images section styles
+  localImagesSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F59E0B",
+    borderStyle: "dashed",
+  },
+  localImagesLabel: {
+    fontSize: 11,
+    color: "#F59E0B",
+    fontWeight: "700",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   emptyGallery: {
     fontSize: 13,
     color: "#94A3B8",

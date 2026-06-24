@@ -21,17 +21,18 @@ import {
   ShieldAlert,
   ShieldX,
   Shield,
+  Layers,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api";
+
 // =========================
-// INTERFACES (Aligned with Simplified Backend)
+// INTERFACES
 // =========================
 
-// ✅ SIMPLIFIED: No more complex layer tracking
 interface ValidationStatus {
   has_safety_note: boolean;
   has_survivability_note: boolean;
@@ -45,7 +46,6 @@ interface SiteMetrics {
   seedlings: number;
 }
 
-// ✅ NEW: Verification Information Interface
 interface VerificationInfo {
   status: "pending" | "draft" | "verified" | "rejected";
   land_classification: {
@@ -64,8 +64,8 @@ interface Site {
   is_pinned: boolean;
   created_at: string;
   validation: ValidationStatus;
-  verification: VerificationInfo; // ✅ NEW
-  permit_count: number; // ✅ NEW
+  verification: VerificationInfo;
+  permit_count: number;
   metrics: SiteMetrics;
 }
 
@@ -76,7 +76,13 @@ interface Filter {
   total_page: number;
   status: string;
   pinned_only: boolean;
-  verification_status: string; // ✅ NEW
+  verification_status: string;
+  land_classification_id: string; // ✅ NEW
+}
+
+interface LandClassificationOption {
+  land_classification_id: number;
+  name: string;
 }
 
 export default function SitesForArea() {
@@ -92,7 +98,8 @@ export default function SitesForArea() {
     total_page: 1,
     status: "all",
     pinned_only: false,
-    verification_status: "all", // ✅ NEW
+    verification_status: "all",
+    land_classification_id: "", // ✅ NEW
   });
   const [loading, setLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
@@ -107,6 +114,11 @@ export default function SitesForArea() {
   const { userRole } = useUserRole();
   const [userPath, setUserPath] = useState("");
 
+  // ✅ NEW: Land Classifications state
+  const [landClassifications, setLandClassifications] = useState<
+    LandClassificationOption[]
+  >([]);
+
   useEffect(() => {
     if (userRole === "treeGrowers" || userRole === "CityENROHead") {
       setUserPath("");
@@ -116,6 +128,24 @@ export default function SitesForArea() {
       setUserPath("/DataManager");
     }
   }, [userRole]);
+
+  // ✅ NEW: Fetch Land Classifications on mount
+  useEffect(() => {
+    const fetchLandClassifications = async () => {
+      try {
+        const res = await fetch(`${api}api/get_land_classifications_list/?for_reforestation=true`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setLandClassifications(data.data || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch land classifications:", err);
+      }
+    };
+    fetchLandClassifications();
+  }, [token]);
 
   // =========================
   // FETCH SITES
@@ -130,17 +160,22 @@ export default function SitesForArea() {
         entries: filter.entries.toString(),
         status: filter.status,
         pinned_only: filter.pinned_only ? "true" : "false",
-        verification_status: filter.verification_status, // ✅ NEW
+        verification_status: filter.verification_status,
       });
+
+      // ✅ NEW: Add land classification filter to params
+      if (filter.land_classification_id) {
+        params.append("land_classification_id", filter.land_classification_id);
+      }
+
       const response = await fetch(
-        api+`api/get_sites/${id}/?${params}`,
+        `${api}api/get_sites/${id}/?${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
       if (!response.ok) throw new Error("Failed to fetch sites");
 
       const data = await response.json();
-      console.log("Sites data:", data);
       setSites(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch {
@@ -156,23 +191,28 @@ export default function SitesForArea() {
 
   useEffect(() => {
     fetchSites();
-  }, [id, filter.page, filter.entries, filter.status, filter.pinned_only, filter.verification_status]);
+  }, [
+    id,
+    filter.page,
+    filter.entries,
+    filter.status,
+    filter.pinned_only,
+    filter.verification_status,
+    filter.land_classification_id, // ✅ NEW: Add to dependencies
+  ]);
 
   // =========================
   // TOGGLE PIN
   // =========================
   const handleTogglePin = async (siteId: number, currentPin: boolean) => {
     try {
-      const response = await fetch(
-        api+`api/toggle_pin/${siteId}/`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
+      const response = await fetch(`${api}api/toggle_pin/${siteId}/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-      );
+      });
       if (response.ok) {
         setSites((prev) =>
           prev.map((s) =>
@@ -181,7 +221,7 @@ export default function SitesForArea() {
         );
       }
     } catch {
-      // Silent fail - refreshes on next fetch
+      // Silent fail
     }
   };
 
@@ -196,13 +236,10 @@ export default function SitesForArea() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      const response = await fetch(
-        api+`api/delete_site/${deleteId}/`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const response = await fetch(`${api}api/delete_site/${deleteId}/`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await response.json();
 
       if (response.ok) {
@@ -246,7 +283,6 @@ export default function SitesForArea() {
     }
   };
 
-  // ✅ NEW: Get verification status badge
   const getVerificationBadge = (status: string) => {
     switch (status) {
       case "verified":
@@ -276,7 +312,6 @@ export default function SitesForArea() {
     }
   };
 
-  // ✅ NEW: Get validation badge color
   const getValidationBadge = (validation: ValidationStatus) => {
     if (validation.final_decision === "ACCEPT") {
       return {
@@ -322,7 +357,6 @@ export default function SitesForArea() {
 
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
-      {/* ALERT */}
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -332,7 +366,6 @@ export default function SitesForArea() {
         />
       )}
 
-      {/* DELETE MODAL */}
       <Delete_modal
         setIsDeleteModalOpen={setIsDeleteModalOpen}
         isDeleteModalOpen={isDeleteModalOpen}
@@ -361,7 +394,7 @@ export default function SitesForArea() {
             ))}
           </select>
 
-          {/* ✅ NEW: Verification Status Filter */}
+          {/* Verification Status Filter */}
           <label className="text-sm">Verification:</label>
           <select
             value={filter.verification_status}
@@ -380,6 +413,32 @@ export default function SitesForArea() {
             <option value="draft">Draft</option>
             <option value="rejected">Rejected</option>
           </select>
+
+          {/* ✅ NEW: Land Classification Filter */}
+          <div className="flex items-center gap-2">
+            <Layers size={14} className="text-purple-600" />
+            <select
+              value={filter.land_classification_id}
+              onChange={(e) =>
+                setFilter((prev) => ({
+                  ...prev,
+                  land_classification_id: e.target.value,
+                  page: 1,
+                }))
+              }
+              className="border border-purple-300 bg-purple-50 p-2 rounded-md text-[.8rem] text-purple-800 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+            >
+              <option value="">All Classifications</option>
+              {landClassifications.map((lc) => (
+                <option
+                  key={lc.land_classification_id}
+                  value={lc.land_classification_id}
+                >
+                  {lc.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
             <input
@@ -447,19 +506,14 @@ export default function SitesForArea() {
                 <th className="py-3 px-4 text-left text-xs font-semibold">
                   Status
                 </th>
-
-                {/* ✅ NEW: Verification Status Column */}
                 <th className="py-3 px-4 text-left text-xs font-semibold">
                   <Shield size={12} className="inline mr-1 -mt-0.5" />
                   Verification
                 </th>
-
-                {/* ✅ UPDATED: Validation Column - Simplified */}
                 <th className="py-3 px-4 text-left text-xs font-semibold">
                   <Target size={12} className="inline mr-1 -mt-0.5" />
                   Validation
                 </th>
-
                 <th className="py-3 px-4 text-left text-xs font-semibold">
                   <Ruler size={12} className="inline mr-1 -mt-0.5" />
                   Area (ha)
@@ -477,7 +531,9 @@ export default function SitesForArea() {
                 sites.map((site, index) => {
                   const validationBadge = getValidationBadge(site.validation);
                   const ValidationIcon = validationBadge.icon;
-                  const verificationBadge = getVerificationBadge(site.verification.status);
+                  const verificationBadge = getVerificationBadge(
+                    site.verification.status,
+                  );
                   const VerificationIcon = verificationBadge.icon;
 
                   return (
@@ -526,7 +582,6 @@ export default function SitesForArea() {
                         </span>
                       </td>
 
-                      {/* ✅ NEW: Verification Status */}
                       <td className="py-3 px-4">
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${verificationBadge.color}`}
@@ -536,7 +591,6 @@ export default function SitesForArea() {
                         </span>
                       </td>
 
-                      {/* ✅ UPDATED: Simplified Validation Status */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
                           <span
@@ -546,7 +600,6 @@ export default function SitesForArea() {
                             {validationBadge.label}
                           </span>
 
-                          {/* Show note indicators */}
                           <div className="flex gap-1">
                             {site.validation.has_safety_note && (
                               <span
@@ -568,7 +621,6 @@ export default function SitesForArea() {
                         </div>
                       </td>
 
-                      {/* Area */}
                       <td className="py-3 px-4">
                         <span className="text-xs font-medium text-gray-700">
                           {site.metrics.area_hectares.toFixed(2)} ha
@@ -579,7 +631,6 @@ export default function SitesForArea() {
                         {new Date(site.created_at).toLocaleDateString()}
                       </td>
 
-                      {/* ✅ UPDATED: Actions Column with Verify Button */}
                       <td className="py-3 px-4 flex gap-1">
                         <button
                           className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
@@ -593,7 +644,6 @@ export default function SitesForArea() {
                           <Eye size={14} />
                         </button>
 
-                        {/* ✅ NEW: Verify Meta Data Button - Only for non-GISSpecialist roles */}
                         {userRole !== "GISSpecialist" && (
                           <button
                             onClick={() =>

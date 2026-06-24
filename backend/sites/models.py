@@ -3,6 +3,7 @@ from django.core.validators import FileExtensionValidator
 from reforestation_areas.models import Reforestation_areas
 from tree_species.models import Tree_species
 from accounts.models import User
+from animals.models import Animal
 import math
 
 # ─────────────────────────────────────────────
@@ -79,7 +80,6 @@ class Potential_sites(models.Model):
         help_text="Linked to official Site upon consolidation. Null if still just a raw marker."
     )
     
-    
     polygon_coordinates = models.JSONField(null=True, blank=True)
     area_hectares = models.FloatField(default=0)
     avg_ndvi = models.FloatField(default=0)
@@ -122,6 +122,15 @@ class SiteMetaDataVerification(models.Model):
         'land_classifications.LandClassification', on_delete=models.SET_NULL,
         null=True, blank=True, related_name='verified_sites'
     )
+    
+    # ✅ NEW: Verified Animals (Many-to-Many with through table)
+    verified_animals = models.ManyToManyField(
+        Animal,
+        through='SiteVerifiedAnimal',
+        blank=True,
+        related_name='verified_sites',
+        help_text="Animals verified by admin for this site"
+    )
 
     status = models.CharField(max_length=20, choices=VERIFICATION_STATUS, default='pending')
     decision_note = models.TextField(blank=True, null=True)
@@ -137,6 +146,43 @@ class SiteMetaDataVerification(models.Model):
 
     def __str__(self):
         return f"Verification: {self.site.name} ({self.status})"
+
+
+# ─────────────────────────────────────────────
+# ✅ NEW: SITE VERIFIED ANIMAL (Through Table)
+# ─────────────────────────────────────────────
+class SiteVerifiedAnimal(models.Model):
+    """
+    Through table for SiteMetaDataVerification <-> Animal relationship.
+    Allows admin to add notes for each verified animal.
+    """
+    site_verified_animal_id = models.BigAutoField(primary_key=True)
+    verification = models.ForeignKey(
+        SiteMetaDataVerification,
+        on_delete=models.CASCADE,
+        related_name='animal_relations'
+    )
+    animal = models.ForeignKey(
+        Animal,
+        on_delete=models.CASCADE,
+        related_name='site_verification_relations'
+    )
+    admin_notes = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Admin notes about this animal observation"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'site_verified_animals'
+        unique_together = [['verification', 'animal']]
+        ordering = ['-created_at']
+        verbose_name = "Site Verified Animal"
+        verbose_name_plural = "Site Verified Animals"
+
+    def __str__(self):
+        return f"{self.verification.site.name} - {self.animal.name}"
 
 
 # ─────────────────────────────────────────────

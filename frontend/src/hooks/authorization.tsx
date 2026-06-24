@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-
+import { api } from "@/constant/api";
 interface UserData{
   id: number;
   email: string;
@@ -30,7 +30,7 @@ export const useAuthorize = (requiredRole?: UserRole) => {
       }
 
       try {
-        const response = await fetch("http://127.0.0.1:8000/api/get_me/", {
+        const response = await fetch(api+"api/get_me/", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,

@@ -267,7 +267,7 @@ export default function Map() {
   >("today");
   const [firmsGeoJsonLayer, setFirmsGeoJsonLayer] = useState<any>(null);
 
-    // ✅ Helper function to format date to YYYY-MM-DD
+  // ✅ Helper function to format date to YYYY-MM-DD
   const formatDate = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -277,7 +277,11 @@ export default function Map() {
 
   // ✅ Calculate today and exactly 5 months ago
   const today = new Date();
-  const fiveMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, today.getDate());
+  const fiveMonthsAgo = new Date(
+    today.getFullYear(),
+    today.getMonth() - 5,
+    today.getDate(),
+  );
 
   const [start, setStart] = useState(formatDate(fiveMonthsAgo));
   const [end, setEnd] = useState(formatDate(today));
@@ -353,7 +357,7 @@ export default function Map() {
 
   async function get_hazard_areas() {
     try {
-      const res = await fetch(api+"api/get_hazard_areas/", {
+      const res = await fetch(api + "api/get_hazard_areas/", {
         headers: { Authorization: "Bearer " + token },
       });
       const data = await res.json();
@@ -531,10 +535,9 @@ export default function Map() {
   const renderNDVI = async () => {
     setIsNdviLoading(true);
     try {
-      const res = await fetch(
-        api+`api/ndvi/?start=${start}&end=${end}`,
-        { headers: { Authorization: "Bearer " + token } },
-      );
+      const res = await fetch(api + `api/ndvi/?start=${start}&end=${end}`, {
+        headers: { Authorization: "Bearer " + token },
+      });
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
       if (data.tile_url) {
@@ -634,7 +637,7 @@ export default function Map() {
     try {
       console.log("📡 Sending analysis request to backend...");
 
-      const res = await fetch(api+`api/suitable-sites/`, {
+      const res = await fetch(api + `api/suitable-sites/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -650,7 +653,6 @@ export default function Map() {
 
       if (data.success && data.features && data.features.length > 0) {
         setSuitablePolygons(data);
-        
 
         const totalArea = data.features.reduce(
           (sum: number, f: any) => sum + (f.properties.area_hectares || 0),
@@ -815,10 +817,9 @@ export default function Map() {
 
   async function get_classified_area() {
     try {
-      const res = await fetch(
-        api+"api/get_classified_areas/",
-        { headers: { Authorization: "Bearer " + token } },
-      );
+      const res = await fetch(api + "api/get_classified_areas/", {
+        headers: { Authorization: "Bearer " + token },
+      });
       const data = await res.json();
       setClassified_areas(data.data);
     } catch (e) {}
@@ -826,7 +827,7 @@ export default function Map() {
 
   async function getBarangays() {
     try {
-      const res = await fetch(api+"api/get_barangay_list/", {
+      const res = await fetch(api + "api/get_barangay_list/", {
         headers: { Authorization: "Bearer " + token },
       });
       const data = await res.json();
@@ -836,10 +837,9 @@ export default function Map() {
 
   async function get_all_reforestation_areas() {
     try {
-      const res = await fetch(
-        api+"api/get_all_reforestation_areas/",
-        { headers: { Authorization: token ? `Bearer ${token}` : "" } },
-      );
+      const res = await fetch(api + "api/get_all_reforestation_areas/", {
+        headers: { Authorization: token ? `Bearer ${token}` : "" },
+      });
       const data = await res.json();
       setReforestation_areas(data.data);
     } catch (err) {}
@@ -848,7 +848,7 @@ export default function Map() {
   // ✅ NEW: Fetch all sites
   async function get_all_sites() {
     try {
-      const res = await fetch(api+"api/get_all_sites/", {
+      const res = await fetch(api + "api/get_all_sites/", {
         headers: { Authorization: token ? `Bearer ${token}` : "" },
       });
       if (res.ok) {
@@ -911,14 +911,11 @@ export default function Map() {
       if (areaForm.coordinate)
         formData.append("coordinate", JSON.stringify(areaForm.coordinate));
 
-      const res = await fetch(
-        api+"api/create_reforestation_areas/",
-        {
-          method: "POST",
-          headers: { Authorization: "Bearer " + token },
-          body: formData,
-        },
-      );
+      const res = await fetch(api + "api/create_reforestation_areas/", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token },
+        body: formData,
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Create failed");
 
@@ -970,7 +967,7 @@ export default function Map() {
         potential_site_ids: selectedPotentialSiteIds,
       };
 
-      const res = await fetch(api+"api/sites/create_site/", {
+      const res = await fetch(api + "api/sites/create_site/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1032,20 +1029,17 @@ export default function Map() {
       const bounds = mapRef.current.getBounds();
       const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
 
-      const response = await fetch(
-        api+"api/firms-fire-data/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            bbox: bbox,
-            time_range: effectiveTimeRange,
-          }),
+      const response = await fetch(api + "api/firms-fire-data/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-      );
+        body: JSON.stringify({
+          bbox: bbox,
+          time_range: effectiveTimeRange,
+        }),
+      });
 
       const data = await response.json();
 
@@ -1408,471 +1402,223 @@ export default function Map() {
         >
           <House size={16} /> Home
         </button>
+        <div className="flex gap-1 ml-auto">
 
-        {/* NDVI PANEL */}
-        {userRole != "DataManager" && userRole != "CityENROHead" && (
-          <div className="relative ml-auto">
-            {isNdviPenelOpen && (
-              <div className="absolute top-[-240px] w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md">
-                <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-                  <h1 className="text-white">NDVI</h1>
-                </div>
-                <div>
-                  <label className="text-[.7rem] text-gray-600">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={start}
-                    onChange={(e) => setStart(e.target.value)}
-                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
-                  />
-                </div>
-                <div>
-                  <label className="text-[.7rem] text-gray-600">End Date</label>
-                  <input
-                    type="date"
-                    value={end}
-                    onChange={(e) => setEnd(e.target.value)}
-                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
-                  />
-                </div>
-                <div className="flex flex-row gap-1 mt-2">
-                  {showNDVI && (
-                    <button
-                      onClick={() => setShowCanopyGuide(!showCanopyGuide)}
-                      className="flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white h-8 px-2 py-1 rounded-lg text-[.7rem]"
-                    >
-                      <Info size={14} /> Guide
-                    </button>
-                  )}
-                  <button
-                    onClick={renderNDVI}
-                    disabled={isNdviLoading}
-                    className={`flex items-center justify-center gap-1 ml-auto h-8 px-2 py-1 rounded-lg text-[.7rem] ${isNdviLoading ? "bg-gray-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
-                  >
-                    {isNdviLoading ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>{" "}
-                        Loading...
-                      </>
-                    ) : (
-                      <>
-                        <CloudLightning size={16} /> Run
-                      </>
+          {/* NDVI PANEL */}
+          {userRole != "DataManager" && userRole != "CityENROHead" && (
+            <div className="relative ml-auto">
+              {isNdviPenelOpen && (
+                <div className="absolute top-[-240px] w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md">
+                  <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
+                    <h1 className="text-white">NDVI</h1>
+                  </div>
+                  <div>
+                    <label className="text-[.7rem] text-gray-600">
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={start}
+                      onChange={(e) => setStart(e.target.value)}
+                      className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[.7rem] text-gray-600">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={end}
+                      onChange={(e) => setEnd(e.target.value)}
+                      className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
+                    />
+                  </div>
+                  <div className="flex flex-row gap-1 mt-2">
+                    {showNDVI && (
+                      <button
+                        onClick={() => setShowCanopyGuide(!showCanopyGuide)}
+                        className="flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white h-8 px-2 py-1 rounded-lg text-[.7rem]"
+                      >
+                        <Info size={14} /> Guide
+                      </button>
                     )}
-                  </button>
-                  <button
-                    onClick={() => setShowNDVI(!showNDVI)}
-                    className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem]"
-                  >
-                    <Eye size={16} /> {showNDVI ? "Hide" : "Show"}
-                  </button>
-                </div>
-              </div>
-            )}
-            <button
-              onClick={() => {
-                closeAll();
-                setIsNdviPenelOpen(!isNdviPenelOpen);
-              }}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
-            >
-              <Activity size={16} /> NDVI
-            </button>
-          </div>
-        )}
-
-        {/* CREATE AREA PANEL */}
-        {userRole != "DataManager" && userRole != "CityENROHead" && (
-          <div className="relative">
-            <form
-              onSubmit={onSubmitArea}
-              className={`absolute top-[-360px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isAreaFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
-            >
-              <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
-                <h2 className="text-white text-[.8rem]">
-                  Create Reforestation Area
-                </h2>
-              </div>
-              <div>
-                <label className="text-[.7rem] text-gray-600">Name</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Cabingtan Area"
-                  value={areaForm.name}
-                  onChange={(e) =>
-                    setAreaForm({ ...areaForm, name: e.target.value })
-                  }
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-[.7rem] text-gray-600">
-                  Description
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: North sector"
-                  value={areaForm.description}
-                  onChange={(e) =>
-                    setAreaForm({ ...areaForm, description: e.target.value })
-                  }
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-              <div>
-                <label className="text-[.7rem] text-gray-600">Barangay</label>
-                <select
-                  value={areaForm.barangay_id || ""}
-                  onChange={(e) =>
-                    setAreaForm({
-                      ...areaForm,
-                      barangay_id: parseInt(e.target.value),
-                    })
-                  }
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                  required
-                >
-                  <option value={0}>-- Select Barangay --</option>
-                  {barangays.map((b) => (
-                    <option key={b.barangay_id} value={b.barangay_id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-[.7rem] text-gray-600">
-                  Center Coordinate
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={
-                      areaForm.coordinate
-                        ? `${areaForm.coordinate[0].toFixed(6)}, ${areaForm.coordinate[1].toFixed(6)}`
-                        : ""
-                    }
-                    readOnly
-                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={startMarkerPlacement}
-                    className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-full text-[.7rem] cursor-pointer"
-                  >
-                    <Pointer size={16} />
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-row gap-1 mt-2">
-                <button
-                  type="submit"
-                  className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
-                >
-                  <File size={16} /> Submit Area
-                </button>
-              </div>
-            </form>
-            <button
-              onClick={() => {
-                if (isAreaFormPenelOpen) {
-                  closeAll();
-                } else {
-                  closeAll();
-                  setIsAreaFormPenelOpen(!isAreaFormPenelOpen);
-                }
-              }}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-            >
-              <Cross size={16} /> Create Area
-            </button>
-          </div>
-        )}
-
-        {/* ✅ CREATE SITE PANEL - Uses marker like Area form */}
-        {userRole != "DataManager" && userRole != "CityENROHead" && (
-          <div className="relative">
-            <form
-              onSubmit={onSubmitSite}
-              className={`absolute ${
-                suitablePolygons?.features?.length
-                  ? "top-[-400px]"
-                  : "top-[-295px]"
-              } w-[14rem] flex flex-col gap-2 p-2 bg-white border border-green-600 rounded-md shadow-xl transition-all duration-200 ${
-                isSiteFormPenelOpen
-                  ? "opacity-100 pointer-events-auto"
-                  : "opacity-0 pointer-events-none"
-              }`}
-            >
-              <div className="text-center font-bold w-full p-1 bg-green-700 rounded-md">
-                <h2 className="text-white text-[.8rem]">
-                  Create Official Site
-                </h2>
-              </div>
-
-              <div>
-                <label className="text-[.7rem] text-gray-600">
-                  Parent Reforestation Area
-                </label>
-                <select
-                  value={siteForm.reforestation_area_id}
-                  onChange={(e) =>
-                    setSiteForm({
-                      ...siteForm,
-                      reforestation_area_id: parseInt(e.target.value),
-                    })
-                  }
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                  required
-                >
-                  <option value={0}>-- Select Area --</option>
-                  {reforestation_areas.map((area) => (
-                    <option
-                      key={area.reforestation_area_id}
-                      value={area.reforestation_area_id}
+                    <button
+                      onClick={renderNDVI}
+                      disabled={isNdviLoading}
+                      className={`flex items-center justify-center gap-1 ml-auto h-8 px-2 py-1 rounded-lg text-[.7rem] ${isNdviLoading ? "bg-gray-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
                     >
-                      {area.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[.7rem] text-gray-600">Site Name</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Site A - North"
-                  value={siteForm.name}
-                  onChange={(e) =>
-                    setSiteForm({ ...siteForm, name: e.target.value })
-                  }
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="text-[.7rem] text-gray-600">
-                  Center Coordinate
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={
-                      siteForm.center_coordinate
-                        ? `${siteForm.center_coordinate[0].toFixed(6)}, ${siteForm.center_coordinate[1].toFixed(6)}`
-                        : ""
-                    }
-                    readOnly
-                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={startSiteMarkerPlacement}
-                    className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-full text-[.7rem] cursor-pointer"
-                  >
-                    <Pointer size={16} />
-                  </button>
-                </div>
-              </div>
-
-              {/* ✅ OPTIONAL: Potential Sites Selection */}
-              {suitablePolygons && suitablePolygons.features && (
-                <div className="border-t border-gray-200 pt-2 mt-1">
-                  <label className="text-[.7rem] text-gray-600 block mb-1">
-                    Assigned Potential Sites (Optional)
-                  </label>
-                  <div className="bg-gray-50 p-2 rounded border text-[.7rem] text-center">
-                    <strong className="text-green-700 text-lg">
-                      {selectedPotentialSiteIds.length}
-                    </strong>
-                    <span className="text-gray-500 block">
-                      Click red polygons on map to select
-                    </span>
+                      {isNdviLoading ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>{" "}
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <CloudLightning size={16} /> Run
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setShowNDVI(!showNDVI)}
+                      className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem]"
+                    >
+                      <Eye size={16} /> {showNDVI ? "Hide" : "Show"}
+                    </button>
                   </div>
                 </div>
               )}
+              <button
+                onClick={() => {
+                  closeAll();
+                  setIsNdviPenelOpen(!isNdviPenelOpen);
+                }}
+                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
+              >
+                <Activity size={16} /> NDVI
+              </button>
+            </div>
+          )}
 
-              <div className="flex flex-row gap-1 mt-2">
+          {/* Draw PANEL (For Analysis) */}
+          {userRole != "DataManager" && userRole != "CityENROHead" && (
+            <div className="relative">
+              <div
+                className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isDrawPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+              >
+                <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
+                  <h2 className="text-white text-[.8rem]">Analysis Tools</h2>
+                </div>
                 <button
-                  type="button"
-                  onClick={() => {
-                    setIsSiteFormPenelOpen(false);
-                    setSiteForm({
-                      reforestation_area_id: 0,
-                      name: "",
-                      center_coordinate: null,
-                    });
-                    setSiteMarkerPosition(null);
-                    setSelectedPotentialSiteIds([]);
-                  }}
-                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 h-8 px-2 py-1 rounded-lg text-[.7rem]"
+                  onClick={startDrawingAnalysis}
+                  className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
                 >
-                  Cancel
+                  <Pen size={16} /> Draw Analysis Area
                 </button>
                 <button
-                  type="submit"
-                  className="flex items-center justify-center gap-1 ml-auto bg-green-600 hover:bg-green-700 text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
+                  onClick={analyzeArea}
+                  disabled={isProcessing}
+                  className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] ${isProcessing ? "bg-gray-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
                 >
-                  <CheckCircle size={16} /> Create Site
+                  {isProcessing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>{" "}
+                      Analyzing...
+                    </>
+                  ) : (
+                    <>
+                      <CloudLightning size={16} /> Analyze
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={cancelDrawing}
+                  className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
+                >
+                  <Cross size={16} /> Cancel
+                </button>
+                <button
+                  onClick={clearAnalysis}
+                  className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
+                >
+                  <Trash size={16} /> Clear
                 </button>
               </div>
-            </form>
-            <button
-              onClick={() => {
-                closeAll();
-                setIsSiteFormPenelOpen(!isSiteFormPenelOpen);
-              }}
-              className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
-            >
-              <Target size={16} /> Create Site
-            </button>
-          </div>
-        )}
+              <button
+                onClick={() => {
+                  closeAll();
+                  setIsDrawPenelOpen(!isDrawPenelOpen);
+                }}
+                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
+              >
+                <Pen size={16} /> Analyze
+              </button>
+            </div>
+          )}
 
-        {/* Draw PANEL (For Analysis) */}
-        {userRole != "DataManager" && userRole != "CityENROHead" && (
           <div className="relative">
             <div
-              className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isDrawPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+              className={`absolute top-[-120px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isFilterPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
             >
               <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-                <h2 className="text-white text-[.8rem]">Analysis Tools</h2>
+                <h2 className="text-white text-[.8rem]">Filters</h2>
               </div>
-              <button
-                onClick={startDrawingAnalysis}
-                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
+              <select
+                onChange={(e) => {
+                  const id = parseInt(e.target.value, 10);
+                  const b = barangays.find((x) => x.barangay_id === id);
+                  if (b && mapRef.current)
+                    mapRef.current.flyTo(b.coordinate as [number, number], 16);
+                }}
+                className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
               >
-                <Pen size={16} /> Draw Analysis Area
-              </button>
-              <button
-                onClick={analyzeArea}
-                disabled={isProcessing}
-                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] ${isProcessing ? "bg-gray-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
-              >
-                {isProcessing ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>{" "}
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <CloudLightning size={16} /> Analyze
-                  </>
-                )}
-              </button>
-              <button
-                onClick={cancelDrawing}
-                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
-              >
-                <Cross size={16} /> Cancel
-              </button>
-              <button
-                onClick={clearAnalysis}
-                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
-              >
-                <Trash size={16} /> Clear
-              </button>
+                <option value={0}>--Select Baranagay--</option>
+                {barangays.map((b) => (
+                  <option key={b.barangay_id} value={b.barangay_id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <button
               onClick={() => {
                 closeAll();
-                setIsDrawPenelOpen(!isDrawPenelOpen);
+                setIsFilterPenelOpen(!isFilterPenelOpen);
               }}
               className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
             >
-              <Pen size={16} /> Analyze
+              <Filter size={16} /> Filter
             </button>
           </div>
-        )}
 
-        {/* Filter PANEL */}
-        <div className="relative">
-          <div
-            className={`absolute top-[-120px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isFilterPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
-          >
-            <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-              <h2 className="text-white text-[.8rem]">Filters</h2>
-            </div>
-            <select
-              onChange={(e) => {
-                const id = parseInt(e.target.value, 10);
-                const b = barangays.find((x) => x.barangay_id === id);
-                if (b && mapRef.current)
-                  mapRef.current.flyTo(b.coordinate as [number, number], 16);
-              }}
-              className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
+          {/* Search Coordinate PANEL */}
+          <div className="relative">
+            <div
+              className={`absolute top-[-230px] right-0 w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isSearchPanelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
             >
-              <option value={0}>--Select Baranagay--</option>
-              {barangays.map((b) => (
-                <option key={b.barangay_id} value={b.barangay_id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button
-            onClick={() => {
-              closeAll();
-              setIsFilterPenelOpen(!isFilterPenelOpen);
-            }}
-            className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
-          >
-            <Filter size={16} /> Filter
-          </button>
-        </div>
-
-        {/* Search Coordinate PANEL */}
-        <div className="relative">
-          <div
-            className={`absolute top-[-230px] right-0 w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isSearchPanelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
-          >
-            <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-              <h2 className="text-white text-[.8rem]">Search</h2>
-            </div>
-            <div>
-              <label className="text-[.7rem] text-gray-600">Latitude</label>
-              <input
-                type="number"
-                value={searchLat}
-                onChange={(e) => setSearchLat(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
-                className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
-              />
-            </div>
-            <div>
-              <label className="text-[.7rem] text-gray-600">Longitude</label>
-              <input
-                type="number"
-                value={searchLng}
-                onChange={(e) => setSearchLng(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
-                className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
-              />
+              <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
+                <h2 className="text-white text-[.8rem]">Search</h2>
+              </div>
+              <div>
+                <label className="text-[.7rem] text-gray-600">Latitude</label>
+                <input
+                  type="number"
+                  value={searchLat}
+                  onChange={(e) => setSearchLat(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
+                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
+                />
+              </div>
+              <div>
+                <label className="text-[.7rem] text-gray-600">Longitude</label>
+                <input
+                  type="number"
+                  value={searchLng}
+                  onChange={(e) => setSearchLng(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
+                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
+                />
+              </div>
+              <button
+                onClick={goToCoordinate}
+                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] mt-1"
+              >
+                <MapPin size={14} /> Go
+              </button>
             </div>
             <button
-              onClick={goToCoordinate}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] mt-1"
+              onClick={() => {
+                closeAll();
+                setIsSearchPanelOpen(!isSearchPanelOpen);
+              }}
+              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
             >
-              <MapPin size={14} /> Go
+              <MapPin size={16} /> Search
             </button>
           </div>
-          <button
-            onClick={() => {
-              closeAll();
-              setIsSearchPanelOpen(!isSearchPanelOpen);
-            }}
-            className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
-          >
-            <MapPin size={16} /> Search
-          </button>
-        </div>
 
-        {/* HAZARD PANEL */}
-        {userRole != "DataManager" && userRole != "CityENROHead" && (
+          {/* HAZARD PANEL */}
+
           <div className="relative">
             <HazardAssessmentPanel
               isOpen={isHazardPanelOpen}
@@ -1905,7 +1651,259 @@ export default function Map() {
               <Shield size={16} /> Hazards
             </button>
           </div>
-        )}
+
+          {/* CREATE AREA PANEL */}
+          {userRole != "DataManager" && userRole != "CityENROHead" && (
+            <div className="relative">
+              <form
+                onSubmit={onSubmitArea}
+                className={`absolute top-[-360px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isAreaFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+              >
+                <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
+                  <h2 className="text-white text-[.8rem]">
+                    Create Reforestation Area
+                  </h2>
+                </div>
+                <div>
+                  <label className="text-[.7rem] text-gray-600">Name</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Cabingtan Area"
+                    value={areaForm.name}
+                    onChange={(e) =>
+                      setAreaForm({ ...areaForm, name: e.target.value })
+                    }
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-[.7rem] text-gray-600">
+                    Description
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: North sector"
+                    value={areaForm.description}
+                    onChange={(e) =>
+                      setAreaForm({ ...areaForm, description: e.target.value })
+                    }
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[.7rem] text-gray-600">Barangay</label>
+                  <select
+                    value={areaForm.barangay_id || ""}
+                    onChange={(e) =>
+                      setAreaForm({
+                        ...areaForm,
+                        barangay_id: parseInt(e.target.value),
+                      })
+                    }
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                    required
+                  >
+                    <option value={0}>-- Select Barangay --</option>
+                    {barangays.map((b) => (
+                      <option key={b.barangay_id} value={b.barangay_id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[.7rem] text-gray-600">
+                    Center Coordinate
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={
+                        areaForm.coordinate
+                          ? `${areaForm.coordinate[0].toFixed(6)}, ${areaForm.coordinate[1].toFixed(6)}`
+                          : ""
+                      }
+                      readOnly
+                      className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50"
+                    />
+                    <button
+                      type="button"
+                      onClick={startMarkerPlacement}
+                      className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-full text-[.7rem] cursor-pointer"
+                    >
+                      <Pointer size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-row gap-1 mt-2">
+                  <button
+                    type="submit"
+                    className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
+                  >
+                    <File size={16} /> Submit Area
+                  </button>
+                </div>
+              </form>
+              <button
+                onClick={() => {
+                  if (isAreaFormPenelOpen) {
+                    closeAll();
+                  } else {
+                    closeAll();
+                    setIsAreaFormPenelOpen(!isAreaFormPenelOpen);
+                  }
+                }}
+                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+              >
+                <Cross size={16} /> Create Area
+              </button>
+            </div>
+          )}
+
+          {/* ✅ CREATE SITE PANEL - Uses marker like Area form */}
+          {userRole != "DataManager" && userRole != "CityENROHead" && (
+            <div className="relative">
+              <form
+                onSubmit={onSubmitSite}
+                className={`absolute ${
+                  suitablePolygons?.features?.length
+                    ? "top-[-400px]"
+                    : "top-[-295px]"
+                } w-[14rem] flex flex-col gap-2 p-2 bg-white border border-green-600 rounded-md shadow-xl transition-all duration-200 ${
+                  isSiteFormPenelOpen
+                    ? "opacity-100 pointer-events-auto"
+                    : "opacity-0 pointer-events-none"
+                }`}
+              >
+                <div className="text-center font-bold w-full p-1 bg-green-700 rounded-md">
+                  <h2 className="text-white text-[.8rem]">
+                    Create Official Site
+                  </h2>
+                </div>
+
+                <div>
+                  <label className="text-[.7rem] text-gray-600">
+                    Parent Reforestation Area
+                  </label>
+                  <select
+                    value={siteForm.reforestation_area_id}
+                    onChange={(e) =>
+                      setSiteForm({
+                        ...siteForm,
+                        reforestation_area_id: parseInt(e.target.value),
+                      })
+                    }
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                    required
+                  >
+                    <option value={0}>-- Select Area --</option>
+                    {reforestation_areas.map((area) => (
+                      <option
+                        key={area.reforestation_area_id}
+                        value={area.reforestation_area_id}
+                      >
+                        {area.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[.7rem] text-gray-600">
+                    Site Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Site A - North"
+                    value={siteForm.name}
+                    onChange={(e) =>
+                      setSiteForm({ ...siteForm, name: e.target.value })
+                    }
+                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[.7rem] text-gray-600">
+                    Center Coordinate
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={
+                        siteForm.center_coordinate
+                          ? `${siteForm.center_coordinate[0].toFixed(6)}, ${siteForm.center_coordinate[1].toFixed(6)}`
+                          : ""
+                      }
+                      readOnly
+                      className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50"
+                    />
+                    <button
+                      type="button"
+                      onClick={startSiteMarkerPlacement}
+                      className="flex items-center justify-center gap-1 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-full text-[.7rem] cursor-pointer"
+                    >
+                      <Pointer size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* ✅ OPTIONAL: Potential Sites Selection */}
+                {suitablePolygons && suitablePolygons.features && (
+                  <div className="border-t border-gray-200 pt-2 mt-1">
+                    <label className="text-[.7rem] text-gray-600 block mb-1">
+                      Assigned Potential Sites (Optional)
+                    </label>
+                    <div className="bg-gray-50 p-2 rounded border text-[.7rem] text-center">
+                      <strong className="text-green-700 text-lg">
+                        {selectedPotentialSiteIds.length}
+                      </strong>
+                      <span className="text-gray-500 block">
+                        Click red polygons on map to select
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-row gap-1 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSiteFormPenelOpen(false);
+                      setSiteForm({
+                        reforestation_area_id: 0,
+                        name: "",
+                        center_coordinate: null,
+                      });
+                      setSiteMarkerPosition(null);
+                      setSelectedPotentialSiteIds([]);
+                    }}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 h-8 px-2 py-1 rounded-lg text-[.7rem]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center justify-center gap-1 ml-auto bg-green-600 hover:bg-green-700 text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
+                  >
+                    <CheckCircle size={16} /> Create Site
+                  </button>
+                </div>
+              </form>
+              <button
+                onClick={() => {
+                  closeAll();
+                  setIsSiteFormPenelOpen(!isSiteFormPenelOpen);
+                }}
+                className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+              >
+                <Target size={16} /> Create Site
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <MapContainer

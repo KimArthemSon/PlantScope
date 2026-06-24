@@ -6,11 +6,49 @@ import {
   ChevronRight,
   ChevronLeft,
   Info,
+  MapPin,
+  X,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import { api } from "@/constant/api";
+
+// 🗺️ Leaflet Imports
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// 📍 Fix Leaflet default icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
+
+// 🖱️ Handles map clicks to update coordinates
+function MapClickHandler({ setBarangay }: any) {
+  useMapEvents({
+    click(e) {
+      const { lat, lng } = e.latlng;
+      setBarangay((prev: any) => ({ ...prev, lat, lng }));
+    },
+  });
+  return null;
+}
+
+// 📏 Fixes map rendering glitches inside animated modals
+function MapResizer() {
+  const map = useMap();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [map]);
+  return null;
+}
 
 interface Barangay {
   barangay_id: number;
@@ -67,11 +105,11 @@ export default function Barangays() {
   const token = localStorage.getItem("token");
 
   const inputWrapper =
-    "flex items-center border border-black rounded-md mt-2 " +
-    "focus-within:border-green-700 focus-within:ring-2 " +
-    "focus-within:ring-green-300 transition-all";
+    "flex items-center border border-gray-300 rounded-md " +
+    "focus-within:border-green-600 focus-within:ring-1 " +
+    "focus-within:ring-green-100 transition-all bg-white";
 
-  const inputField = "flex-1 text-[.8rem] p-2 ml-4 outline-none bg-transparent";
+  const inputField = "flex-1 text-sm p-2 pl-3 outline-none bg-transparent";
 
   // ------------------ Fetch Barangays ------------------
   const fetchBarangays = async () => {
@@ -304,7 +342,7 @@ export default function Barangays() {
                   Description
                 </th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Coordinate</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created_at</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Created at</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -321,8 +359,8 @@ export default function Barangays() {
                     </td>
                     <td className="py-3 px-5">{b.name}</td>
                     <td className="py-3 px-5">{b.description}</td>
-                    <td className="py-3 px-5">
-                      [{b.coordinate?.[0]}, {b.coordinate?.[1]}]
+                    <td className="py-3 px-5 text-[.85rem]">
+                      Lat: {b.coordinate?.[0]?.toFixed(5)}, Lng: {b.coordinate?.[1]?.toFixed(5)}
                     </td>
                     <td className="py-3 px-5 text-[.9rem]">{b.created_at}</td>
 
@@ -411,138 +449,213 @@ export default function Barangays() {
       </main>
 
       {/* Modal */}
-      <form
-        className={`fixed inset-0 z-10 flex items-center justify-center bg-black/50 transition-opacity duration-300 ${
+      <div
+        className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 transition-opacity duration-300 ${
           isOpenAddEditModal
             ? "opacity-100 pointer-events-auto"
             : "opacity-0 pointer-events-none"
         }`}
-        onSubmit={handleSubmit}
       >
         {form_loading && <LoaderPending />}
 
         <div
-          className={`flex flex-col items-center gap-2 bg-white
-  w-[90vw] max-w-md
-  h-auto max-h-[90vh]
-  overflow-auto
-  rounded-lg text-center shadow-lg
-  transform transition-all duration-300 origin-center
+          className={`bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden
+  transform transition-all duration-300
   ${isOpenAddEditModal ? "scale-100 opacity-100" : "scale-95 opacity-0"}`}
         >
-          <div className="flex justify-items-start items-center gap-10 w-full bg-green-600 rounded-t-lg p-2">
-            {action === "Add" ? (
-              <Plus size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
-            ) : (
-              <Edit size={66} className="text-white bg-green-500 p-3 rounded-full mb-2" />
-            )}
-            <h2 className="text-lg font-semibold text-white">
-              {action} Barangay
-            </h2>
+          {/* Modal Header */}
+          <div className="flex items-center justify-between bg-green-600 px-5 py-3">
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-2 rounded-lg">
+                {action === "Add" ? (
+                  <Plus size={20} className="text-white" />
+                ) : (
+                  <Edit size={20} className="text-white" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">
+                  {action} Barangay
+                </h2>
+                <p className="text-green-100 text-xs">
+                  {action === "Add" ? "Create new barangay" : "Update barangay"}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsOpenAddEditModal(false)}
+              className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-md transition-all"
+            >
+              <X size={20} />
+            </button>
           </div>
 
-          <div className="flex flex-col p-6 w-full gap-5">
-            {/* Name */}
-            <div className="flex flex-col">
-              <label className="font-bold text-[.8rem] mr-auto">Name:</label>
-              <div className={inputWrapper}>
-                <Info size={20} className="ml-4 text-green-700" />
-                <input
-                  required
-                  type="text"
-                  className={inputField + "text-[.8rem]"}
-                  placeholder="Ex: Barangay San Miguel"
-                  value={barangay.name}
-                  onChange={(e) =>
-                    setBarangay((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                />
+          {/* Modal Body */}
+          <form onSubmit={handleSubmit}>
+            <div className="flex flex-col lg:flex-row max-h-[calc(85vh-110px)]">
+              {/* Left Column - Form Fields */}
+              <div className="flex-1 p-4 overflow-y-auto">
+                <div className="space-y-3">
+                  {/* Barangay Name */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Barangay Name <span className="text-red-500">*</span>
+                    </label>
+                    <div className={inputWrapper}>
+                      <Info size={16} className="ml-2 text-green-600" />
+                      <input
+                        required
+                        type="text"
+                        className={inputField}
+                        placeholder="e.g., Barangay San Miguel"
+                        value={barangay.name}
+                        onChange={(e) =>
+                          setBarangay((prev) => ({ ...prev, name: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Description <span className="text-red-500">*</span>
+                    </label>
+                    <div className={inputWrapper}>
+                      <textarea
+                        required
+                        className="w-full min-h-20 outline-0 p-2 text-sm resize-none bg-transparent"
+                        placeholder="Enter description..."
+                        value={barangay.description}
+                        onChange={(e) =>
+                          setBarangay((prev) => ({
+                            ...prev,
+                            description: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  {/* Coordinates Section */}
+                  <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <MapPin size={14} className="text-green-600" />
+                      <h3 className="font-semibold text-gray-800 text-xs">
+                        Coordinate Information
+                      </h3>
+                    </div>
+                    <p className="text-xs text-gray-600 mb-2">
+                      Click map or enter manually
+                    </p>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Latitude
+                        </label>
+                        <div className={inputWrapper}>
+                          <input
+                            required
+                            type="number"
+                            step="any"
+                            className={inputField}
+                            placeholder="11.007"
+                            value={barangay.lat || ""}
+                            onChange={(e) =>
+                              setBarangay((prev) => ({
+                                ...prev,
+                                lat: Number(e.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Longitude
+                        </label>
+                        <div className={inputWrapper}>
+                          <input
+                            required
+                            type="number"
+                            step="any"
+                            className={inputField}
+                            placeholder="124.602"
+                            value={barangay.lng || ""}
+                            onChange={(e) =>
+                              setBarangay((prev) => ({
+                                ...prev,
+                                lng: Number(e.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column - Map */}
+              <div className="lg:w-92 bg-gray-50 border-l border-gray-200 flex flex-col">
+                <div className="p-3 bg-white border-b border-gray-200">
+                  <h3 className="font-semibold text-gray-800 text-xs flex items-center gap-1.5">
+                    <MapPin size={14} className="text-green-600" />
+                    Location Map
+                  </h3>
+                </div>
+                <div className="flex-1 p-3">
+                  <div className="h-full min-h-64 rounded-md overflow-hidden border border-gray-300">
+                    <MapContainer
+                      center={[barangay.lat || 11.007, barangay.lng || 124.602]}
+                      zoom={barangay.lat && barangay.lng ? 15 : 13}
+                      style={{ height: "100%", width: "100%" }}
+                      key={`map-${isOpenAddEditModal}-${editBarangayId}-${barangay.lat}-${barangay.lng}`}
+                      scrollWheelZoom={true} // ✅ Enabled scroll wheel zoom
+                    >
+                      <TileLayer url="http://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" />
+                      <MapClickHandler setBarangay={setBarangay} />
+                      <MapResizer />
+                      {(barangay.lat !== 0 || barangay.lng !== 0) && (
+                        <Marker position={[barangay.lat, barangay.lng]} />
+                      )}
+                    </MapContainer>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Description */}
-            <div className="flex flex-col">
-              <label className="font-bold text-[.8rem] mr-auto">
-                Description:
-              </label>
-              <div className={inputWrapper}>
-                <textarea
-                  className="w-full min-h-30 outline-0 p-2 text-[.8rem]"
-                  placeholder="Description..."
-                  required
-                  value={barangay.description}
-                  onChange={(e) =>
-                    setBarangay((prev) => ({
-                      ...prev,
-                      description: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-
-            {/* Latitude */}
-            <div className="flex flex-col">
-              <label className="font-bold text-[.8rem] mr-auto">
-                Latitude:
-              </label>
-              <div className={inputWrapper}>
-                <input
-                  type="number"
-                  step="any"
-                  className={inputField + "text-[.8rem]"}
-                  value={barangay.lat}
-                  onChange={(e) =>
-                    setBarangay((prev) => ({
-                      ...prev,
-                      lat: Number(e.target.value),
-                    }))
-                  }
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Longitude */}
-            <div className="flex flex-col">
-              <label className="font-bold text-[.8rem] mr-auto">
-                Longitude:
-              </label>
-              <div className={inputWrapper}>
-                <input
-                  type="number"
-                  step="any"
-                  className={inputField + "text-[.8rem]"}
-                  value={barangay.lng}
-                  onChange={(e) =>
-                    setBarangay((prev) => ({
-                      ...prev,
-                      lng: Number(e.target.value),
-                    }))
-                  }
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-cols items-center w-full gap-2">
-              <button className="bg-green-500 text-white px-3 py-1 w-[50%] rounded-md border border-green-600 hover:bg-white hover:text-green-600 transition cursor-pointer">
-                Save
-              </button>
-
+            {/* Modal Footer */}
+            <div className="flex gap-2 px-4 py-3 bg-gray-50 border-t border-gray-200">
               <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  setIsOpenAddEditModal(false);
-                }}
-                className="bg-white text-black px-3 py-1 rounded-md border w-[50%] border-black hover:border-green-600 hover:text-green-600 transition cursor-pointer"
+                type="submit"
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-1.5"
+              >
+                {action === "Add" ? (
+                  <>
+                    <Plus size={16} />
+                    Create
+                  </>
+                ) : (
+                  <>
+                    <Edit size={16} />
+                    Update
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsOpenAddEditModal(false)}
+                className="flex-1 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-md text-sm font-semibold transition-colors"
               >
                 Cancel
               </button>
             </div>
-          </div>
+          </form>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

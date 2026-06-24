@@ -47,14 +47,12 @@ interface land_classification {
   name: string;
 }
 
-// ✅ UPDATED: Added coordinate field
 interface Barangay {
   barangay_id: number;
   name: string;
   coordinate: [number, number];
 }
 
-// --- NATIVE DRAWING COMPONENT ---
 function MapClickHandler({
   isDrawing,
   onMapClick,
@@ -65,7 +63,6 @@ function MapClickHandler({
   useMapEvents({
     click(e) {
       if (isDrawing) {
-        // Leaflet gives us lat, lng - store in same order for GeoJSON
         onMapClick(e.latlng.lat, e.latlng.lng);
       }
     },
@@ -131,9 +128,7 @@ export default function Classified_area_form() {
     get_barangay_list();
   }, []);
 
-  // --- NATIVE DRAWING HANDLERS ---
   const handleMapClick = (lat: number, lng: number) => {
-    // Store as [lat, lng] - matching GeoJSON standard
     setClassified_area((prev) => ({
       ...prev,
       polygon: {
@@ -165,10 +160,9 @@ export default function Classified_area_form() {
     }));
   };
 
-  // --- API & CSV FUNCTIONS ---
   async function get_barangay_list() {
     try {
-      const res = await fetch(api+"api/get_barangay_list/", {
+      const res = await fetch(api + "api/get_barangay_list/", {
         headers: { Authorization: "Bearer " + token },
       });
       const data = await res.json();
@@ -186,26 +180,23 @@ export default function Classified_area_form() {
     }
   }
 
-  // ✅ NEW: Route to selected barangay
   const handleBarangayChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
     const barangayId = Number(value);
-    
+
     setClassified_area((prev) => ({
       ...prev,
       barangay_id: barangayId,
     }));
 
-    // ✅ Fly to the selected barangay if it has coordinates
     if (barangayId && mapRef.current) {
       const selectedBarangay = barangay_list.find(
-        (b) => b.barangay_id === barangayId
+        (b) => b.barangay_id === barangayId,
       );
-      
+
       if (selectedBarangay && selectedBarangay.coordinate) {
         const [lat, lng] = selectedBarangay.coordinate;
-        
-        // Fly to the barangay location
+
         mapRef.current.flyTo([lat, lng], 16, {
           duration: 1.5,
         });
@@ -222,19 +213,15 @@ export default function Classified_area_form() {
   async function get_classified_area() {
     setLoading(true);
     try {
-      const res = await fetch(
-        api+"api/get_classified_area/" + id,
-        {
-          headers: { Authorization: "Bearer " + token },
-        },
-      );
+      const res = await fetch(api + "api/get_classified_area/" + id, {
+        headers: { Authorization: "Bearer " + token },
+      });
       const data = await res.json();
       if (!res.ok) {
         setLoading(false);
         setPSAlert({ type: "error", title: "Error", message: data.error });
         return;
       }
-      // Backend returns coordinates as [lat, lng] - use as is
       setClassified_area({
         name: data.data.name,
         description: data.data.description,
@@ -257,7 +244,7 @@ export default function Classified_area_form() {
     setLoading(true);
     try {
       const res = await fetch(
-        api+"api/get_land_classifications_list/?for_reforestation=false",
+        api + "api/get_land_classifications_list/?for_reforestation=false",
         { headers: { Authorization: "Bearer " + token } },
       );
       const data = await res.json();
@@ -314,7 +301,6 @@ export default function Classified_area_form() {
         const lat = parseFloat(cols[latIdx]);
         const lng = parseFloat(cols[lngIdx]);
         if (!isNaN(lat) && !isNaN(lng)) {
-          // Store as [lat, lng] to match GeoJSON
           coords.push([lat, lng]);
         }
       }
@@ -346,7 +332,6 @@ export default function Classified_area_form() {
     if (coords.length === 0) return;
 
     const header = "lat,lng";
-    // coords are [lat, lng], export as lat,lng
     const rows = coords.map((c) => `${c[0]},${c[1]}`);
     const csvContent = [header, ...rows].join("\n");
 
@@ -376,17 +361,14 @@ export default function Classified_area_form() {
   async function handleAdd() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(
-        api+"api/create_classified_area/",
-        {
-          method: "POST",
-          headers: {
-            Authorization: "Bearer " + token,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(classified_area),
+      const res = await fetch(api + "api/create_classified_area/", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + token,
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(classified_area),
+      });
       const data = await res.json();
       if (!res.ok) {
         setPSAlert({ type: "error", title: "Error", message: data.error });
@@ -409,17 +391,14 @@ export default function Classified_area_form() {
   async function handleEdit() {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(
-        api+"api/update_classified_area/" + id,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + token,
-          },
-          body: JSON.stringify(classified_area),
+      const res = await fetch(api + "api/update_classified_area/" + id, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token,
         },
-      );
+        body: JSON.stringify(classified_area),
+      });
       const data = await res.json();
       if (!res.ok) {
         setPSAlert({ type: "error", title: "Error", message: data.error });
@@ -440,7 +419,7 @@ export default function Classified_area_form() {
   }
 
   return (
-    <div className="flex flex-col flex-1 w-full min-w-150 h-full bg-gray-50 items-center">
+    <div className="flex flex-col flex-1 w-full h-full bg-gray-50 items-center overflow-hidden">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -452,7 +431,7 @@ export default function Classified_area_form() {
       {loading && <LoaderPending />}
 
       {/* Page Header */}
-      <div className="w-full bg-white border-b border-gray-200 px-10 py-4 flex items-center gap-3 shadow-sm">
+      <div className="w-full bg-white border-b border-gray-200 px-10 py-4 flex items-center gap-3 shadow-sm shrink-0">
         <div className="bg-green-700 p-2 rounded-lg">
           <Map size={18} className="text-white" />
         </div>
@@ -466,11 +445,11 @@ export default function Classified_area_form() {
         </div>
       </div>
 
-      <main className="flex flex-col w-full flex-1 max-w-700 max-h-400 gap-8 min-w-200 p-8 pb-5">
-        <div className="flex gap-6 w-full h-full">
+      <main className="flex flex-col w-full flex-1 max-w-700 gap-6 min-w-200 p-8 pb-5 overflow-hidden">
+        <div className="flex gap-6 w-full h-full min-h-0">
           {/* Left panel — form */}
           <form
-            className="flex flex-col w-[42%] gap-4 min-w-100"
+            className="flex flex-col w-[42%] gap-4 min-w-100 overflow-y-auto pr-2"
             onSubmit={hanle_submit}
           >
             {/* Name */}
@@ -574,8 +553,8 @@ export default function Classified_area_form() {
               </div>
             </div>
 
-            {/* Polygon Coordinates */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col flex-1 min-h-0">
+            {/* Polygon Coordinates - EXPANDED SECTION */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col min-h-[350px]">
               {/* Section header */}
               <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
                 <Map size={14} className="text-green-700" />
@@ -595,7 +574,6 @@ export default function Classified_area_form() {
                       classified_area.polygon.coordinates.length === 0
                     )
                       return;
-                    // Fly to first point [lat, lng]
                     mapRef.current.flyTo(
                       classified_area.polygon.coordinates[0],
                       16,
@@ -606,10 +584,10 @@ export default function Classified_area_form() {
                 </button>
               </div>
 
-              {/* Coordinate list */}
-              <div className="flex flex-col gap-2 overflow-y-auto p-3 flex-1 max-h-52">
+              {/* Coordinate list - SCROLLABLE */}
+              <div className="flex flex-col gap-2 overflow-y-auto p-3 max-h-[300px]">
                 {classified_area.polygon.coordinates.length === 0 ? (
-                  <div className="text-center text-gray-400 text-xs italic py-4">
+                  <div className="text-center text-gray-400 text-xs italic py-8">
                     Click "Start Drawing" on the map, <br /> import a CSV, or
                     add points manually.
                   </div>
@@ -632,7 +610,7 @@ export default function Classified_area_form() {
                             step="any"
                             className="text-[.75rem] border border-gray-200 rounded-md px-2 py-1 outline-none focus:border-green-500 bg-white w-full"
                             placeholder="11.007"
-                            value={element[0]} // ✅ element[0] = latitude (~11.xxxx)
+                            value={element[0]}
                             onChange={(e) =>
                               setClassified_area((prev) => ({
                                 ...prev,
@@ -641,7 +619,7 @@ export default function Classified_area_form() {
                                   coordinates: prev.polygon.coordinates.map(
                                     (coord, ind) =>
                                       ind === i
-                                        ? [Number(e.target.value), coord[1]] // Update lat (index 0)
+                                        ? [Number(e.target.value), coord[1]]
                                         : coord,
                                   ),
                                 },
@@ -658,7 +636,7 @@ export default function Classified_area_form() {
                             step="any"
                             className="text-[.75rem] border border-gray-200 rounded-md px-2 py-1 outline-none focus:border-green-500 bg-white w-full"
                             placeholder="124.602"
-                            value={element[1]} // ✅ element[1] = longitude (~124.xxxx)
+                            value={element[1]}
                             onChange={(e) =>
                               setClassified_area((prev) => ({
                                 ...prev,
@@ -667,7 +645,7 @@ export default function Classified_area_form() {
                                   coordinates: prev.polygon.coordinates.map(
                                     (coord, ind) =>
                                       ind === i
-                                        ? [coord[0], Number(e.target.value)] // Update lng (index 1)
+                                        ? [coord[0], Number(e.target.value)]
                                         : coord,
                                   ),
                                 },
@@ -679,7 +657,7 @@ export default function Classified_area_form() {
                       {classified_area.polygon.coordinates.length > 1 && (
                         <button
                           type="button"
-                          className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 transition-colors shrink-0"
+                          className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 transition-colors"
                           onClick={(e) => {
                             e.preventDefault();
                             setClassified_area((prev) => ({
@@ -715,7 +693,6 @@ export default function Classified_area_form() {
                   className="flex-1 flex items-center justify-center gap-1.5 text-[.72rem] font-semibold py-2 bg-green-700 hover:bg-green-800 text-white rounded-lg transition-colors"
                   onClick={(e) => {
                     e.preventDefault();
-                    // Add point as [lat, lng]
                     setClassified_area((prev) => ({
                       ...prev,
                       polygon: {
@@ -754,7 +731,7 @@ export default function Classified_area_form() {
             </div>
 
             {/* Form action buttons */}
-            <div className="flex gap-3 pt-1">
+            <div className="flex gap-3 pt-1 pb-2">
               <button
                 type="button"
                 className="flex-1 py-2.5 rounded-xl text-[.8rem] font-semibold border border-gray-300 text-gray-600 bg-white hover:bg-gray-50 transition-colors"
@@ -774,7 +751,7 @@ export default function Classified_area_form() {
           </form>
 
           {/* Right panel — map */}
-          <div className="flex flex-col flex-1 min-w-0 gap-3">
+          <div className="flex flex-col flex-1 min-w-0">
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm px-4 py-2.5 flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-[.75rem] font-semibold text-gray-500">
@@ -785,8 +762,8 @@ export default function Classified_area_form() {
               </span>
             </div>
 
-            <div className="border border-gray-200 flex-1 rounded-xl overflow-hidden shadow-sm relative">
-              {/* --- DRAWING CONTROLS OVERLAY --- */}
+            <div className="border border-gray-200 flex-1 rounded-xl overflow-hidden shadow-sm relative mt-3">
+              {/* Drawing Controls Overlay */}
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] flex gap-2 bg-white p-2 rounded-lg shadow-lg border border-gray-200">
                 {!isDrawing ? (
                   <button
@@ -839,7 +816,6 @@ export default function Classified_area_form() {
                   <Popup>Center Point</Popup>
                 </Marker>
 
-                {/* ✅ NEW: Show barangay markers on the map */}
                 {barangay_list.map((barangay) => {
                   if (!barangay.coordinate || barangay.coordinate.length !== 2)
                     return null;
@@ -852,7 +828,6 @@ export default function Classified_area_form() {
                       position={[lat, lng]}
                       eventHandlers={{
                         click: () => {
-                          // When clicking a barangay marker, select it in the dropdown
                           setClassified_area((prev) => ({
                             ...prev,
                             barangay_id: barangay.barangay_id,
@@ -875,12 +850,11 @@ export default function Classified_area_form() {
                   onMapClick={handleMapClick}
                 />
 
-                {/* --- IN-PROGRESS DRAWING VISUALS (RED) --- */}
                 {isDrawing &&
                   classified_area.polygon.coordinates.length > 0 && (
                     <>
                       <Polyline
-                        positions={classified_area.polygon.coordinates} // Already [lat, lng]
+                        positions={classified_area.polygon.coordinates}
                         pathOptions={{
                           color: "#dc2626",
                           weight: 3,
@@ -890,7 +864,7 @@ export default function Classified_area_form() {
                       {classified_area.polygon.coordinates.map((c, i) => (
                         <CircleMarker
                           key={i}
-                          center={c} // Already [lat, lng]
+                          center={c}
                           radius={5}
                           pathOptions={{
                             color: "#dc2626",
@@ -903,11 +877,10 @@ export default function Classified_area_form() {
                     </>
                   )}
 
-                {/* --- FINAL RED POLYGON --- */}
                 {!isDrawing &&
                   classified_area.polygon.coordinates.length >= 3 && (
                     <Polygon
-                      positions={classified_area.polygon.coordinates} // Already [lat, lng]
+                      positions={classified_area.polygon.coordinates}
                       pathOptions={{
                         color: "#dc2626",
                         fillColor: "#ef4444",
