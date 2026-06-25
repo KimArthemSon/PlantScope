@@ -16,42 +16,33 @@ import {
   Trees,
   Shield,
   AlertTriangle,
-  Sprout,
-  Package,
-  Users,
   Clock,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { api } from "@/constant/api.ts";
-// ─── Types ──────────────────────────────────────────────────────────────────
 
-interface SeedlingProvision {
-  quantity: number;
-  provided_by: string;
-}
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface ApplicationDetail {
   application: {
     application_id: number;
     title: string;
-    description: string;
     classification: "new" | "old";
     status: string;
-    total_members: number;
-    project_duration: number | null;
+    total_treegrowers_will_participate: number;
     orientation_date: string | null;
+    proposed_orientation_date: string | null;
     confirmed_at: string | null;
     maintenance_plan: string | null;
-    agreement_image: string | null;
     created_at: string;
     updated_at: string;
   };
-  organization: {
-    organization_name: string;
-    org_email: string;
-    org_contact: string;
-    org_address: string;
-    org_profile: string | null;
+  group: {
+    group_name: string;
+    group_type: string;
+    group_contact: string;
+    group_address: string;
+    group_profile: string | null;
   };
   profile: {
     first_name: string;
@@ -64,12 +55,23 @@ interface ApplicationDetail {
     site_id: number;
     name: string;
     barangay: string | null;
-    polygon_coordinates: string | null;
+    polygon_coordinates: any;
   } | null;
+  proposed_site: {
+    site_id: number;
+    name: string;
+    barangay: string | null;
+  } | null;
+  // Seedling requests will likely be empty at this stage since they happen AFTER acceptance
   seedling_requests: Array<{
     request_id: number;
     no_request_seedling: number;
-    seedling_type: Record<string, number | SeedlingProvision>;
+    species: Array<{
+      species_id: number;
+      species_name: string;
+      quantity: number;
+      provided_by: string;
+    }>;
     status: "pending" | "accepted" | "rejected";
     reason_accepted: string | null;
     submitted_at: string | null;
@@ -130,65 +132,15 @@ function InfoRow({
   );
 }
 
-// Display nested seedling provision with per-species provider
-function SeedlingProvisionList({
-  seedlingType,
-}: {
-  seedlingType: Record<string, number | SeedlingProvision>;
-}) {
-  const entries = Object.entries(seedlingType);
-  if (entries.length === 0)
-    return <p className="text-sm text-gray-400">No seedlings specified</p>;
-
-  return (
-    <div className="space-y-2">
-      {entries.map(([species, data]) => {
-        const isNested =
-          typeof data === "object" && data !== null && "quantity" in data;
-        const quantity = isNested
-          ? (data as SeedlingProvision).quantity
-          : (data as number);
-        const provider = isNested
-          ? (data as SeedlingProvision).provided_by
-          : undefined;
-
-        return (
-          <div
-            key={species}
-            className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg border border-gray-100"
-          >
-            <div className="flex items-center gap-2">
-              <Sprout size={14} className="text-[#0F4A2F]" />
-              <span className="font-medium text-gray-800">{species}</span>
-            </div>
-            <div className="flex items-center gap-3 text-right">
-              <span className="text-sm font-semibold text-[#0F4A2F]">
-                {quantity.toLocaleString()}
-              </span>
-              {provider && (
-                <span className="text-xs text-gray-500 flex items-center gap-1">
-                  <Package size={12} /> {provider}
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // Summary card for confirmation preview
 function ConfirmationPreview({
   action,
   application,
   assignedSite,
-  seedlingRequest,
 }: {
   action: "confirm" | "reject";
   application: ApplicationDetail["application"];
   assignedSite: ApplicationDetail["assigned_site"];
-  seedlingRequest: ApplicationDetail["seedling_requests"][0] | undefined;
 }) {
   if (action === "confirm") {
     return (
@@ -202,21 +154,14 @@ function ConfirmationPreview({
             Tree grower account will be <strong>activated</strong>
           </li>
           <li>
-            Application status changes to <strong>Under Monitoring</strong>
+            Application status changes to <strong>Accepted</strong>
           </li>
+          <li>Tree grower can now request seedlings based on the assigned site</li>
           <li>Onsite inspectors can begin submitting progress reports</li>
           {assignedSite && (
             <li>
               Planting site: <strong>{assignedSite.name}</strong>{" "}
               {assignedSite.barangay && `(${assignedSite.barangay})`}
-            </li>
-          )}
-          {seedlingRequest && (
-            <li>
-              Seedlings to be provided:{" "}
-              <strong>
-                {seedlingRequest.no_request_seedling.toLocaleString()}
-              </strong>
             </li>
           )}
           {application.orientation_date && (
@@ -285,7 +230,7 @@ export default function Evaluation_confirmation() {
       setLoadingDetail(true);
       try {
         const res = await fetch(
-          api+`api/get_application/${application_id}/`,
+          `${api}api/get_application/${application_id}/`,
           {
             headers: { Authorization: `Bearer ${token}` },
           },
@@ -300,15 +245,15 @@ export default function Evaluation_confirmation() {
         const data = await res.json();
         setDetail(data);
 
-        // Redirect if not in 'for_head' status (already processed or not ready)
+        // Redirect if not in 'for_head' status
         const appStatus = data.application?.status;
         if (appStatus !== "for_head") {
           setPSAlert({
             type: "error",
             title: "Not Available",
             message:
-              appStatus === "under_monitoring"
-                ? "This application has already been confirmed and is under monitoring."
+              appStatus === "accepted"
+                ? "This application has already been confirmed and is accepted."
                 : appStatus === "rejected"
                   ? "This application has been rejected."
                   : "This application is not yet ready for head confirmation.",
@@ -337,7 +282,7 @@ export default function Evaluation_confirmation() {
     setSubmitting(true);
     try {
       const res = await fetch(
-        api+`api/confirm_application/${application_id}/`,
+        `${api}api/confirm_application/${application_id}/`,
         {
           method: "PUT",
           headers: {
@@ -345,7 +290,7 @@ export default function Evaluation_confirmation() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            status, // "accepted" or "rejected"
+            status,
             reason: decisionForm.reason.trim(),
           }),
         },
@@ -362,7 +307,6 @@ export default function Evaluation_confirmation() {
         return;
       }
 
-      // Success feedback
       setPSAlert({
         type: "success",
         title:
@@ -372,11 +316,10 @@ export default function Evaluation_confirmation() {
         message:
           data.message ||
           (status === "accepted"
-            ? "Account activated. Application moved to monitoring phase."
+            ? "Account activated. Application accepted. Tree grower can now request seedlings."
             : "Application rejected. Applicant has been notified."),
       });
 
-      // Navigate back after brief delay to show message
       setTimeout(() => navigate(-1), 2000);
     } catch (err: any) {
       console.error("Submit error:", err);
@@ -392,31 +335,12 @@ export default function Evaluation_confirmation() {
     }
   };
 
-  // Parse accepted seedling request for display (DM's provision)
-  const acceptedSeedlingRequest = detail?.seedling_requests?.find(
-    (r) => r.status === "accepted",
-  );
-  const seedlingTypeData = acceptedSeedlingRequest?.seedling_type || {};
-
-  // Calculate total from nested format for display
-  const getTotalSeedlings = () => {
-    if (!acceptedSeedlingRequest) return 0;
-    return Object.values(seedlingTypeData).reduce((sum, val) => {
-      const qty =
-        typeof val === "object" && val !== null && "quantity" in val
-          ? (val as SeedlingProvision).quantity
-          : (val as number);
-      return sum + (typeof qty === "number" ? qty : 0);
-    }, 0);
-  };
-
   const TABS = [
     { label: "Account & Personal", icon: <User size={14} /> },
-    { label: "Organization & Plan", icon: <Building2 size={14} /> },
+    { label: "Group & Project", icon: <Building2 size={14} /> },
     { label: "DM Evaluation", icon: <FileText size={14} /> },
   ];
 
-  // Loading state
   if (loadingDetail) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -430,7 +354,6 @@ export default function Evaluation_confirmation() {
     );
   }
 
-  // Error state or not found
   if (!detail) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -450,7 +373,7 @@ export default function Evaluation_confirmation() {
 
   const {
     application,
-    organization: org,
+    group,
     profile,
     assigned_site,
     latest_reason,
@@ -461,7 +384,6 @@ export default function Evaluation_confirmation() {
       className="min-h-screen bg-gray-50"
       style={{ fontFamily: "'DM Sans', sans-serif" }}
     >
-      {/* Alert Toast */}
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -471,11 +393,9 @@ export default function Evaluation_confirmation() {
         />
       )}
 
-      {/* Confirm Action Modal */}
       {confirmAction && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-100">
-            {/* Icon Header */}
             <div
               className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
                 confirmAction === "confirm" ? "bg-green-100" : "bg-red-100"
@@ -488,7 +408,6 @@ export default function Evaluation_confirmation() {
               )}
             </div>
 
-            {/* Title & Description */}
             <h3 className="text-lg font-bold text-center text-gray-800 mb-2">
               {confirmAction === "confirm"
                 ? "Confirm Application?"
@@ -496,19 +415,16 @@ export default function Evaluation_confirmation() {
             </h3>
             <p className="text-sm text-center text-gray-500 mb-5">
               {confirmAction === "confirm"
-                ? "This will activate the tree grower's account and move the application to the monitoring phase."
+                ? "This will activate the tree grower's account and move the application to the accepted phase."
                 : "This will reject the application. The applicant will be notified and can resubmit after corrections."}
             </p>
 
-            {/* Preview of consequences */}
             <ConfirmationPreview
               action={confirmAction}
               application={application}
               assignedSite={assigned_site}
-              seedlingRequest={acceptedSeedlingRequest}
             />
 
-            {/* Action Buttons */}
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setConfirmAction(null)}
@@ -550,7 +466,6 @@ export default function Evaluation_confirmation() {
         </div>
       )}
 
-      {/* Header */}
       <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white px-6 py-5 shadow-lg sticky top-0 z-40">
         <div className="max-w-6xl mx-auto flex items-center gap-4">
           <button
@@ -572,7 +487,6 @@ export default function Evaluation_confirmation() {
             </div>
           </div>
 
-          {/* Desktop tab navigation */}
           <div className="ml-auto hidden md:flex items-center gap-2">
             {TABS.map((t, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -596,7 +510,6 @@ export default function Evaluation_confirmation() {
         </div>
       </header>
 
-      {/* Mobile tab bar */}
       <div className="md:hidden flex border-b border-gray-200 bg-white sticky top-[73px] z-30">
         {TABS.map((t, i) => (
           <button
@@ -618,7 +531,6 @@ export default function Evaluation_confirmation() {
         {/* ── TAB 0: Account + Personal ──────────────────────────────────── */}
         {tab === 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Account Card */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <SectionHeader
                 icon={<Mail size={18} />}
@@ -640,8 +552,8 @@ export default function Evaluation_confirmation() {
                 label="Classification"
                 value={
                   application.classification === "new"
-                    ? "New Application"
-                    : "Existing"
+                    ? "First-Time Applicant"
+                    : "Returning Applicant"
                 }
               />
               <InfoRow
@@ -660,7 +572,6 @@ export default function Evaluation_confirmation() {
               />
             </div>
 
-            {/* Personal Card */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <SectionHeader
                 icon={<User size={18} />}
@@ -672,13 +583,9 @@ export default function Evaluation_confirmation() {
                   <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
                     {profile.profile_img ? (
                       <img
-                        src={`http://127.0.0.1:8000${profile.profile_img}`}
+                        src={`${api}${profile.profile_img}`}
                         alt="Profile"
                         className="w-16 h-16 rounded-xl object-cover border-2 border-green-100"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src =
-                            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 24 24' fill='none' stroke='%230F4A2F' stroke-width='1'/%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 20c0-4 4-7 8-7s8 3 8 7'/%3E%3C/svg%3E";
-                        }}
                       />
                     ) : (
                       <div className="w-16 h-16 rounded-xl bg-green-50 flex items-center justify-center">
@@ -713,31 +620,26 @@ export default function Evaluation_confirmation() {
                 onClick={() => setTab(1)}
                 className="flex items-center gap-2 bg-[#0F4A2F] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-[#1a6b44] transition-colors"
               >
-                Next: Organization & Plan <ChevronRight size={16} />
+                Next: Group & Project <ChevronRight size={16} />
               </button>
             </div>
           </div>
         )}
 
-        {/* ── TAB 1: Organization + Plan ─────────────────────────────────── */}
+        {/* ── TAB 1: Group + Project ─────────────────────────────────── */}
         {tab === 1 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Org Card */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <SectionHeader
                 icon={<Building2 size={18} />}
-                title="Organization Information"
+                title="Group Information"
               />
               <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
-                {org.org_profile ? (
+                {group.group_profile ? (
                   <img
-                    src={`http://127.0.0.1:8000${org.org_profile}`}
-                    alt="Org"
+                    src={`${api}${group.group_profile}`}
+                    alt="Group"
                     className="w-16 h-16 rounded-xl object-cover border-2 border-green-100"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src =
-                        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 24 24' fill='none' stroke='%230F4A2F' stroke-width='1'/%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M7 7h10M7 11h10M7 15h6'/%3E%3C/svg%3E";
-                    }}
                   />
                 ) : (
                   <div className="w-16 h-16 rounded-xl bg-green-50 flex items-center justify-center">
@@ -745,59 +647,42 @@ export default function Evaluation_confirmation() {
                   </div>
                 )}
                 <div>
-                  <p className="font-bold text-gray-800">
-                    {org.organization_name}
-                  </p>
-                  <p className="text-xs text-gray-400">Organization</p>
+                  <p className="font-bold text-gray-800">{group.group_name}</p>
+                  <p className="text-xs text-gray-400">{group.group_type}</p>
                 </div>
               </div>
-              <InfoRow label="Email" value={org.org_email} />
-              <InfoRow label="Address" value={org.org_address} />
-              <InfoRow label="Contact" value={org.org_contact} />
+              <InfoRow label="Address" value={group.group_address} />
+              <InfoRow label="Contact" value={group.group_contact} />
             </div>
 
-            {/* Application + Seedling Card */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <SectionHeader
                 icon={<Trees size={18} />}
                 title="Project Application"
               />
               <InfoRow label="Title" value={application.title} />
-              <InfoRow label="Description" value={application.description} />
-              <InfoRow
-                label="Duration"
-                value={
-                  application.project_duration
-                    ? `${application.project_duration} days`
-                    : "—"
-                }
-              />
-              <InfoRow
-                label="Members"
-                value={application.total_members?.toLocaleString() ?? "—"}
-              />
-
-              {/* Seedling Request Summary */}
-              {acceptedSeedlingRequest && (
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                    Seedlings Approved by DM
-                  </p>
-                  <SeedlingProvisionList seedlingType={seedlingTypeData} />
-                  <p className="mt-3 text-sm font-bold text-[#0F4A2F]">
-                    Total: {getTotalSeedlings().toLocaleString()} seedlings
-                  </p>
-                </div>
+              <InfoRow label="Tree Growers" value={application.total_treegrowers_will_participate} />
+              
+              {application.proposed_orientation_date && (
+                <InfoRow 
+                  label="Proposed Orientation Date" 
+                  value={new Date(application.proposed_orientation_date).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })} 
+                />
+              )}
+              {detail.proposed_site && (
+                <InfoRow 
+                  label="Proposed Site" 
+                  value={`${detail.proposed_site.name} ${detail.proposed_site.barangay ? `(${detail.proposed_site.barangay})` : ''}`} 
+                />
               )}
 
-              {/* Maintenance Plan */}
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
                   Maintenance Plan
                 </p>
                 {application.maintenance_plan ? (
                   <a
-                    href={`http://127.0.0.1:8000${application.maintenance_plan}`}
+                    href={`${api}${application.maintenance_plan}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     download
@@ -810,14 +695,9 @@ export default function Evaluation_confirmation() {
                       <p className="text-sm font-semibold text-[#0F4A2F] truncate">
                         {application.maintenance_plan.split("/").pop()}
                       </p>
-                      <p className="text-xs text-green-600">
-                        Click to download
-                      </p>
+                      <p className="text-xs text-green-600">Click to download</p>
                     </div>
-                    <Download
-                      size={16}
-                      className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
-                    />
+                    <Download size={16} className="text-green-500 group-hover:text-[#0F4A2F] transition-colors" />
                   </a>
                 ) : (
                   <div className="flex items-center gap-2 text-gray-300 text-sm py-3">
@@ -849,9 +729,7 @@ export default function Evaluation_confirmation() {
         {tab === 2 && (
           <div className="flex flex-col gap-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left — Data Manager's Evaluation (Read-Only) */}
               <div className="flex flex-col gap-5">
-                {/* DM Decision Summary */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                   <SectionHeader
                     icon={<Shield size={18} />}
@@ -868,45 +746,13 @@ export default function Evaluation_confirmation() {
                     }
                   />
 
-                  {/* Seedling Provision with Per-Species Providers */}
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                      Seedlings Approved by DM
-                    </p>
-                    {acceptedSeedlingRequest ? (
-                      <>
-                        <SeedlingProvisionList
-                          seedlingType={seedlingTypeData}
-                        />
-                        <p className="mt-3 text-sm font-bold text-[#0F4A2F] flex items-center gap-1.5">
-                          <Sprout size={14} />
-                          Total: {getTotalSeedlings().toLocaleString()}{" "}
-                          seedlings
-                        </p>
-                      </>
-                    ) : (
-                      <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 text-center">
-                        <Trees
-                          size={24}
-                          className="mx-auto text-gray-300 mb-2"
-                        />
-                        <p className="text-sm text-gray-400">
-                          No seedling provision recorded
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Orientation Date */}
                   <InfoRow
                     label="Orientation Date"
                     children={
                       application.orientation_date ? (
                         <span className="flex items-center gap-2 text-sm">
                           <Calendar size={14} className="text-gray-400" />
-                          {new Date(
-                            application.orientation_date,
-                          ).toLocaleDateString("en-PH", {
+                          {new Date(application.orientation_date).toLocaleDateString("en-PH", {
                             weekday: "short",
                             year: "numeric",
                             month: "short",
@@ -919,7 +765,6 @@ export default function Evaluation_confirmation() {
                     }
                   />
 
-                  {/* DM Remarks */}
                   {latest_reason?.reason && (
                     <div className="mt-4">
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
@@ -929,16 +774,12 @@ export default function Evaluation_confirmation() {
                         {latest_reason.reason}
                       </div>
                       <p className="text-xs text-gray-400 mt-2">
-                        Added{" "}
-                        {new Date(latest_reason.created).toLocaleDateString(
-                          "en-PH",
-                        )}
+                        Added {new Date(latest_reason.created).toLocaleDateString("en-PH")}
                       </p>
                     </div>
                   )}
                 </div>
 
-                {/* Assigned Site (Read-Only) */}
                 {assigned_site && (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                     <SectionHeader
@@ -951,14 +792,12 @@ export default function Evaluation_confirmation() {
                       label="Barangay"
                       value={assigned_site.barangay ?? "—"}
                     />
-                    {/* ✅ FIX: Handle polygon_coordinates safely (could be array/object) */}
                     {assigned_site.polygon_coordinates && (
                       <InfoRow
                         label="Coordinates"
                         children={
                           <span className="text-xs font-mono text-gray-600 break-all">
-                            {typeof assigned_site.polygon_coordinates ===
-                            "string"
+                            {typeof assigned_site.polygon_coordinates === "string"
                               ? `${assigned_site.polygon_coordinates.substring(0, 50)}...`
                               : Array.isArray(assigned_site.polygon_coordinates)
                                 ? `${assigned_site.polygon_coordinates.length} coordinate points`
@@ -971,7 +810,6 @@ export default function Evaluation_confirmation() {
                 )}
               </div>
 
-              {/* Right — Head's Decision Form */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col">
                 <SectionHeader
                   icon={<FileText size={18} />}
@@ -981,9 +819,7 @@ export default function Evaluation_confirmation() {
 
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                   Confirmation Notes{" "}
-                  <span className="text-gray-300">
-                    (optional but recommended)
-                  </span>
+                  <span className="text-gray-300">(optional but recommended)</span>
                 </label>
                 <textarea
                   rows={5}
@@ -991,42 +827,34 @@ export default function Evaluation_confirmation() {
                   onChange={(e) =>
                     setDecisionForm((p) => ({ ...p, reason: e.target.value }))
                   }
-                  placeholder="Add notes for your decision…&#10;&#10;Examples:&#10;• 'Approved – all requirements met, site validated'&#10;• 'Rejected – maintenance plan needs revision'"
+                  placeholder="Add notes for your decision…"
                   className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] transition-colors placeholder:text-gray-300"
                 />
 
-                {/* Helpful hint */}
                 <div className="mt-3 flex items-start gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs">
                   <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                   <span>
-                    <strong>Tip:</strong> Adding clear notes helps the tree
-                    grower understand next steps if rejected, or conditions if
-                    approved.
+                    <strong>Tip:</strong> Adding clear notes helps the tree grower understand next steps if rejected.
                   </span>
                 </div>
 
-                {/* Warning note */}
                 <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
                   <p className="text-xs text-blue-800 flex items-start gap-2">
                     <Shield size={14} className="flex-shrink-0 mt-0.5" />
                     <span>
-                      <strong>Remember:</strong> Confirming will activate the
-                      applicant's account and allow onsite inspectors to begin
-                      submitting progress reports for this project.
+                      <strong>Remember:</strong> Confirming will activate the applicant's account. They can then request seedlings based on the assigned site.
                     </span>
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Action Buttons */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sticky bottom-4 z-20">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-2 text-gray-500 text-sm">
                   <Shield size={14} />
                   <span>
-                    Head Confirmation • Application #
-                    {application.application_id}
+                    Head Confirmation • Application #{application.application_id}
                   </span>
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto">

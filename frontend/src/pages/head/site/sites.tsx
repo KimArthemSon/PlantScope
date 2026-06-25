@@ -474,8 +474,9 @@ export default function SitesForArea() {
               }))
             }
             onKeyDown={(e) => e.key === "Enter" && fetchSites()}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-60 text-[.8rem] ml-auto"
           />
+          
           {userRole !== "DataManager" && (
             <button
               onClick={() =>

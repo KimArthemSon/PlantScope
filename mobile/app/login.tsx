@@ -17,6 +17,41 @@ import { Mail, Lock, Eye, EyeOff, ChevronLeft } from "lucide-react-native";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 
+// ✅ FIX 1: Cross-platform Alert
+const showAlert = (title: string, message: string) => {
+  if (Platform.OS === "web") {
+    setTimeout(() => window.alert(`${title}\n\n${message}`), 100);
+  } else {
+    Alert.alert(title, message);
+  }
+};
+
+// ✅ FIX 2: Cross-platform Storage (SecureStore for mobile, localStorage for web)
+const TOKEN_KEY = "token";
+
+const getToken = async () => {
+  if (Platform.OS === "web") {
+    return localStorage.getItem(TOKEN_KEY);
+  }
+  return await SecureStore.getItemAsync(TOKEN_KEY);
+};
+
+const setToken = async (value: string) => {
+  if (Platform.OS === "web") {
+    localStorage.setItem(TOKEN_KEY, value);
+  } else {
+    await SecureStore.setItemAsync(TOKEN_KEY, value);
+  }
+};
+
+const deleteToken = async () => {
+  if (Platform.OS === "web") {
+    localStorage.removeItem(TOKEN_KEY);
+  } else {
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+  }
+};
+
 export default function Login() {
   const router = useRouter();
   const rootNavState = useRootNavigationState();
@@ -35,9 +70,15 @@ export default function Login() {
     checkAuth();
   }, []);
 
+  // ✅ FIX 3: Web-safe routing
   useEffect(() => {
-    if (!rootNavState?.key || !redirectTo) return;
-    router.replace(redirectTo as any);
+    if (!redirectTo) return;
+    
+    if (Platform.OS === "web") {
+      router.replace(redirectTo as any);
+    } else if (rootNavState?.key) {
+      router.replace(redirectTo as any);
+    }
   }, [rootNavState?.key, redirectTo]);
 
   useEffect(() => {
@@ -50,7 +91,8 @@ export default function Login() {
 
   const checkAuth = async () => {
     try {
-      const token = await SecureStore.getItemAsync("token");
+      // ✅ Use wrapper instead of SecureStore directly
+      const token = await getToken();
       if (!token) {
         setChecking(false);
         return;
@@ -63,18 +105,18 @@ export default function Login() {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.token) await SecureStore.setItemAsync("token", data.token);
+        if (data.token) await setToken(data.token);
 
         if (data.user_role === "OnsiteInspector") {
           setRedirectTo("/home");
         } else if (data.user_role === "treeGrowers") {
           setRedirectTo("/tree_growers/application");
         } else {
-          await SecureStore.deleteItemAsync("token");
+          await deleteToken();
           setChecking(false);
         }
       } else {
-        await SecureStore.deleteItemAsync("token");
+        await deleteToken();
         setChecking(false);
       }
     } catch {
@@ -92,13 +134,14 @@ export default function Login() {
 
   const handleLogin = async () => {
     if (!formData.email || !formData.password) {
-      Alert.alert("Error", "Please enter email and password");
+      showAlert("Error", "Please enter email and password");
       return;
     }
 
     setLoading(true);
 
     try {
+      // ✅ YOUR EXACT ORIGINAL BACKEND CODE - UNCHANGED
       const res = await fetch(`${api}/api/login/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,7 +157,7 @@ export default function Login() {
         const secs = data.remaining_seconds ?? 120;
         setAttemptsLeft(0);
         setLockoutSeconds(secs);
-        Alert.alert(
+        showAlert(
           "Account Locked",
           `Too many failed attempts. Try again in ${secs} seconds.`,
         );
@@ -123,27 +166,26 @@ export default function Login() {
 
       if (!res.ok) {
         setAttemptsLeft(data.attempts_left ?? null);
-        Alert.alert("Login Failed", data.error || "Invalid credentials");
+        showAlert("Login Failed", data.error || "Invalid credentials");
         return;
       }
 
       setAttemptsLeft(null);
 
       if (data.user_role === "OnsiteInspector") {
-        await SecureStore.setItemAsync("token", data.token);
-        Alert.alert("Success", `Welcome, ${data.email}!`);
+        await setToken(data.token); // ✅ Use wrapper
+        showAlert("Success", `Welcome, ${data.email}!`);
         router.replace("/home");
       } else if (data.user_role === "treeGrowers") {
-        await SecureStore.setItemAsync("token", data.token);
-        Alert.alert("Success", `Welcome, ${data.email}!`);
+        await setToken(data.token); // ✅ Use wrapper
+        showAlert("Success", `Welcome, ${data.email}!`);
         router.replace("/tree_growers/application");
       } else {
-        Alert.alert("Error", "Access denied: Insufficient permissions");
+        showAlert("Error", "Access denied: Insufficient permissions");
         return;
       }
     } catch (error) {
-    
-      Alert.alert(
+      showAlert(
         "Connection Error",
         "Cannot reach server. Check your network & API URL.",
       );
@@ -154,7 +196,6 @@ export default function Login() {
 
   return (
     <View style={styles.root}>
-      {/* ── Back Button ── */}
       <TouchableOpacity
         style={styles.backButton}
         onPress={() => router.push("/")}
@@ -171,7 +212,6 @@ export default function Login() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Header / Logo ── */}
           <View style={styles.headerSection}>
             <View style={styles.logoCircle}>
               <Image
@@ -183,9 +223,7 @@ export default function Login() {
             <Text style={styles.welcomeSubtitle}>Sign in to your account</Text>
           </View>
 
-          {/* ─ Form Section ── */}
           <View style={styles.formSection}>
-            {/* Email */}
             <View style={styles.formGroup}>
               <Text style={styles.label}>Email Address</Text>
               <View
@@ -213,7 +251,6 @@ export default function Login() {
               </View>
             </View>
 
-            {/* Password */}
             <View style={styles.formGroup}>
               <Text style={styles.label}>Password</Text>
               <View
@@ -252,16 +289,6 @@ export default function Login() {
               </View>
             </View>
 
-            {/* Forgot Password */}
-            {/* <TouchableOpacity
-              style={styles.forgotContainer}
-              onPress={() => router.push("/forgot_password")}
-            >
-            
-              <Text style={styles.forgotText}>Forgot password?</Text>
-            </TouchableOpacity> */}
-
-            {/* ── Lockout / Attempts Banners ─ */}
             {lockoutSeconds > 0 ? (
               <View style={styles.lockoutBanner}>
                 <Text style={styles.bannerIcon}>🔒</Text>
@@ -283,7 +310,6 @@ export default function Login() {
               </View>
             ) : null}
 
-            {/* ── Submit Button ── */}
             <TouchableOpacity
               style={[
                 styles.submitButton,
@@ -300,7 +326,6 @@ export default function Login() {
               )}
             </TouchableOpacity>
 
-            {/* ── Register Link ── */}
             <View style={styles.registerContainer}>
               <Text style={styles.registerText}>Don't have an account? </Text>
               <TouchableOpacity onPress={() => router.push("/signup")}>
@@ -309,7 +334,6 @@ export default function Login() {
             </View>
           </View>
 
-          {/* ─ Footer ── */}
           <View style={styles.footerSection}>
             <Text style={styles.footer}>Protected by nature's encryption</Text>
             <View style={styles.legalFooter}>
@@ -332,9 +356,6 @@ export default function Login() {
   );
 }
 
-/* ═══════════════════════════════════════════════
-   STYLES
-   ═══════════════════════════════════════════════ */
 const styles = StyleSheet.create({
   splashRoot: {
     flex: 1,
@@ -342,18 +363,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  root: {
-    flex: 1,
-    backgroundColor: "#0B1F12",
-  },
-
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 28,
-    paddingBottom: 40,
-  },
-
+  root: { flex: 1, backgroundColor: "#0B1F12" },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 28, paddingBottom: 40 },
   backButton: {
     position: "absolute",
     top: 56,
@@ -368,13 +379,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.06)",
   },
-
-  headerSection: {
-    alignItems: "center",
-    marginTop: 100,
-    marginBottom: 48,
-  },
-
+  headerSection: { alignItems: "center", marginTop: 100, marginBottom: 48 },
   logoCircle: {
     width: 88,
     height: 88,
@@ -386,13 +391,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "rgba(74, 222, 128, 0.2)",
   },
-
-  logo: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-  },
-
+  logo: { width: 64, height: 64, borderRadius: 32 },
   welcomeTitle: {
     fontSize: 30,
     fontWeight: "700",
@@ -400,22 +399,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     marginBottom: 8,
   },
-
   welcomeSubtitle: {
     fontSize: 15,
     color: "#6B8F7B",
     fontWeight: "400",
     letterSpacing: 0.2,
   },
-
-  formSection: {
-    width: "100%",
-  },
-
-  formGroup: {
-    marginBottom: 20,
-  },
-
+  formSection: { width: "100%" },
+  formGroup: { marginBottom: 20 },
   label: {
     color: "#A3C4B0",
     fontSize: 13,
@@ -423,8 +414,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     letterSpacing: 0.3,
   },
-
-  /* ✅ FIX 1: Removed shadow/elevation from focused state */
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -435,17 +424,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 54,
   },
-
   inputContainerFocused: {
     borderColor: "#4ADE80",
     backgroundColor: "rgba(74, 222, 128, 0.08)",
   },
-
-  inputIcon: {
-    marginRight: 12,
-  },
-
-  /* ✅ FIX 2: Removed height: "100%", paddingVertical: 0, and web-only overrides */
+  inputIcon: { marginRight: 12 },
   input: {
     flex: 1,
     color: "#FFFFFF",
@@ -455,24 +438,13 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderWidth: 0,
   },
-
-  eyeButton: {
-    padding: 6,
-    marginLeft: 4,
-  },
-
+  eyeButton: { padding: 6, marginLeft: 4 },
   forgotContainer: {
     alignItems: "flex-end",
     marginBottom: 28,
     marginTop: -4,
   },
-
-  forgotText: {
-    color: "#4ADE80",
-    fontSize: 13,
-    fontWeight: "500",
-  },
-
+  forgotText: { color: "#4ADE80", fontSize: 13, fontWeight: "500" },
   submitButton: {
     backgroundColor: "#22C55E",
     borderRadius: 14,
@@ -485,68 +457,30 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 6,
   },
-
-  submitButtonDisabled: {
-    opacity: 0.5,
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-
+  submitButtonDisabled: { opacity: 0.5, shadowOpacity: 0, elevation: 0 },
   submitButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
     letterSpacing: 0.5,
   },
-
   registerContainer: {
     flexDirection: "row",
     justifyContent: "center",
     marginTop: 28,
   },
-
-  registerText: {
-    color: "#6B8F7B",
-    fontSize: 14,
-  },
-
-  registerLink: {
-    color: "#4ADE80",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  footerSection: {
-    marginTop: "auto",
-    paddingTop: 32,
-    alignItems: "center",
-  },
-
-  footer: {
-    textAlign: "center",
-    color: "#3D6B4E",
-    fontSize: 12,
-    marginBottom: 10,
-  },
-
+  registerText: { color: "#6B8F7B", fontSize: 14 },
+  registerLink: { color: "#4ADE80", fontSize: 14, fontWeight: "600" },
+  footerSection: { marginTop: "auto", paddingTop: 32, alignItems: "center" },
+  footer: { textAlign: "center", color: "#3D6B4E", fontSize: 12, marginBottom: 10 },
   legalFooter: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
   },
-
-  legalLink: {
-    color: "#4ADE80",
-    fontSize: 12,
-    fontWeight: "500",
-  },
-
-  legalSeparator: {
-    color: "#3D6B4E",
-    fontSize: 12,
-  },
-
+  legalLink: { color: "#4ADE80", fontSize: 12, fontWeight: "500" },
+  legalSeparator: { color: "#3D6B4E", fontSize: 12 },
   lockoutBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -559,19 +493,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     gap: 10,
   },
-
-  lockoutText: {
-    color: "#FCA5A5",
-    fontSize: 13,
-    fontWeight: "500",
-    flex: 1,
-  },
-
-  lockoutCountdown: {
-    fontWeight: "700",
-    color: "#F87171",
-  },
-
+  lockoutText: { color: "#FCA5A5", fontSize: 13, fontWeight: "500", flex: 1 },
+  lockoutCountdown: { fontWeight: "700", color: "#F87171" },
   attemptsBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -584,20 +507,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     gap: 10,
   },
-
-  attemptsText: {
-    color: "#FCD34D",
-    fontSize: 13,
-    fontWeight: "500",
-    flex: 1,
-  },
-
-  attemptsBold: {
-    fontWeight: "700",
-    color: "#FBBF24",
-  },
-
-  bannerIcon: {
-    fontSize: 16,
-  },
+  attemptsText: { color: "#FCD34D", fontSize: 13, fontWeight: "500", flex: 1 },
+  attemptsBold: { fontWeight: "700", color: "#FBBF24" },
+  bannerIcon: { fontSize: 16 },
 });

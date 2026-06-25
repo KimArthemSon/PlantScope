@@ -22,6 +22,10 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { api } from "@/constant/api.ts";
+
+// 📍 Mapbox Token
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+
 // ─────────────────────────────────────────────────────────────
 // Types & Interfaces
 // ─────────────────────────────────────────────────────────────
@@ -441,9 +445,12 @@ export default function ViewReforestationArea() {
             style={{ height: "100%", width: "100%" }}
             scrollWheelZoom={true}
           >
+            {/* ✅ NEW: Mapbox Satellite Hybrid */}
             <TileLayer
-              url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-              attribution='&copy; <a href="https://www.google.com/maps">Google</a>'
+              url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
+              tileSize={512}
+              zoomOffset={-1}
+              attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             />
             <MapClickHandler
               placingMarker={placingMarker}

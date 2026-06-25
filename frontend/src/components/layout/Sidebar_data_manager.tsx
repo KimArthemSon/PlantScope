@@ -290,7 +290,7 @@ interface ProfileDropdownProps {
 function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
   return (
     <div
-      className="absolute right-0 top-full mt-3 w-[280px] z-50
+      className="absolute right-0 top-full mt-3 w-[280px] z-9999
       bg-[#0a3320]/95 backdrop-blur-xl border border-white/10
       rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
       animate-slideDown"
@@ -522,7 +522,7 @@ export default function Sidebar_data_manager() {
                 icon: <ListCheck size={20} />,
                 label: "Applications",
               },
-               {
+              {
                 to: "/DataManager/calendar",
                 icon: <Calendar size={20} />,
                 label: "Calendar",
@@ -532,7 +532,7 @@ export default function Sidebar_data_manager() {
                 icon: <ListChevronsUpDown size={20} />,
                 label: "Requests",
               },
-             
+
               {
                 to: "/DataManager/monitoring",
                 icon: <MonitorDot size={20} />,
@@ -589,7 +589,7 @@ export default function Sidebar_data_manager() {
         <header
           className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
           border-b border-white/[0.07] px-6 h-[68px] flex items-center gap-4
-          shadow-[0_4px_40px_rgba(0,0,0,0.35)] sticky top-0 z-30"
+          shadow-[0_4px_40px_rgba(0,0,0,0.35)]  z-9999"
         >
           {/* Left — page title */}
           <div className="flex items-center gap-3 flex-1 min-w-0">

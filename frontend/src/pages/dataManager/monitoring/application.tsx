@@ -3,24 +3,25 @@ import {
   ChevronRight,
   ChevronLeft,
   Leaf,
-  VerifiedIcon,
+  FileCheck2,
   Search,
+  Users,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
+import { api } from "@/constant/api.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface Application {
   application_id: number;
-  organization_name: string;
-  org_email: string;
-  org_profile: string;
+  group_name: string;
+  group_type: string;
+  group_profile: string | null;
   title: string;
-  total_members: number;
-  total_request_seedling: number;
+  total_treegrowers_will_participate: number;
   classification: "new" | "old";
   status: string;
   created_at: string;
@@ -34,21 +35,24 @@ interface Filter {
   status: string;
   classification: string;
 }
-import { api } from "@/constant/api.ts";
 
 // ─── Status Config ──────────────────────────────────────────────────────────
+// ✅ Removed 'under_monitoring' entirely
 
 const STATUS_CONFIG: Record<
   string,
   { label: string; bg: string; text: string }
 > = {
-  accepted: { label: "Active", bg: "bg-green-100", text: "text-green-700" },
-  under_monitoring: {
-    label: "Monitoring",
-    bg: "bg-blue-100",
-    text: "text-blue-700",
-  },
+  accepted: { label: "Accepted", bg: "bg-green-100", text: "text-green-700" },
   completed: { label: "Completed", bg: "bg-gray-100", text: "text-gray-700" },
+  failed: { label: "Failed", bg: "bg-red-100", text: "text-red-700" },
+  // Fallbacks for other statuses just in case "All" is selected
+  for_evaluation: {
+    label: "For Evaluation",
+    bg: "bg-yellow-100",
+    text: "text-yellow-700",
+  },
+  for_head: { label: "For Head", bg: "bg-blue-100", text: "text-blue-700" },
   rejected: { label: "Rejected", bg: "bg-red-100", text: "text-red-700" },
 };
 
@@ -61,7 +65,7 @@ export default function Monitoring() {
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "All", // Show both accepted and under_monitoring by default
+    status: "accepted", // ✅ Default to "All"
     classification: "All",
   });
 
@@ -81,7 +85,6 @@ export default function Monitoring() {
   const fetchApplications = async () => {
     setLoading(true);
     try {
-      // Build params - status filter handles both accepted and under_monitoring
       const params = new URLSearchParams({
         search: filter.search,
         page: filter.page.toString(),
@@ -89,7 +92,7 @@ export default function Monitoring() {
         classification: filter.classification,
       });
 
-      // Only add status filter if not "All"
+      // ✅ Only append status if it's not "All" (Backend handles "All" natively)
       if (filter.status !== "All") {
         params.append("status", filter.status);
       }
@@ -104,16 +107,7 @@ export default function Monitoring() {
 
       const data = await response.json();
 
-      // Client-side filter for monitoring statuses if "All" is selected
-      let apps = data.data;
-      if (filter.status === "All") {
-        apps = apps.filter(
-          (app: Application) =>
-            app.status === "accepted" || app.status === "under_monitoring",
-        );
-      }
-
-      setApplications(apps);
+      setApplications(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch (err: any) {
       setPSAlert({
@@ -128,7 +122,7 @@ export default function Monitoring() {
 
   useEffect(() => {
     fetchApplications();
-  }, [filter.page, filter.entries, filter.classification, filter.status]);
+  }, [filter.page, filter.entries, filter.classification]);
 
   const { userRole } = useUserRole();
   const [useruserRole, setUseruserRole] = useState("");
@@ -151,7 +145,6 @@ export default function Monitoring() {
   // ─── Navigate to Maintenance Report ───────────────────────────────────────
 
   const handleViewReport = (applicationId: number) => {
-    // Navigate with application_id as route param
     navigate(`${useruserRole}/maintenance_evaluation/${applicationId}`);
   };
 
@@ -168,12 +161,14 @@ export default function Monitoring() {
         />
       )}
 
-      <main className="flex-1 p-8">
+      <main className="flex-1 p-8 max-w-7xl mx-auto w-full">
         {/* Header */}
         <div className="mb-7">
-          <h1 className="text-2xl font-bold text-[#0F4A2F]">Active Programs</h1>
+          <h1 className="text-2xl font-bold text-[#0F4A2F]">
+            Program Monitoring
+          </h1>
           <p className="text-sm text-gray-500">
-            Monitor and evaluate ongoing tree planting applications
+            Monitor and evaluate tree planting applications
           </p>
         </div>
 
@@ -214,27 +209,8 @@ export default function Monitoring() {
             className="border border-gray-300 p-2 rounded-md text-sm focus:border-[#0F4A2F] focus:outline-none"
           >
             <option value="All">All</option>
-            <option value="new">New</option>
-            <option value="old">Old</option>
-          </select>
-
-          <label className="text-sm font-medium text-gray-600">Status:</label>
-          <select
-            value={filter.status}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                status: e.target.value,
-                page: 1,
-              }))
-            }
-            className="border border-gray-300 p-2 rounded-md text-sm focus:border-[#0F4A2F] focus:outline-none"
-          >
-            <option value="All">All Active</option>
-            <option value="accepted">Active</option>
-            <option value="under_monitoring">Monitoring</option>
-            <option value="completed">Completed</option>
-            <option value="rejected">Rejected</option>
+            <option value="new">First-Time</option>
+            <option value="old">Returning</option>
           </select>
 
           <div className="relative ml-auto">
@@ -244,7 +220,7 @@ export default function Monitoring() {
             />
             <input
               type="text"
-              placeholder="Search applications..."
+              placeholder="Search group name..."
               value={filter.search}
               onChange={(e) =>
                 setFilter((prev) => ({
@@ -262,23 +238,35 @@ export default function Monitoring() {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200">
+        <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200 bg-white">
           {loading && <LoaderPending />}
-          <table className="min-w-full bg-white rounded-sm">
+          <table className="min-w-full">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
-                <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Organization
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  No
                 </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Title</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Group
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Title
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Status
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
                   Classification
                 </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Members</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Growers
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Created
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -289,67 +277,82 @@ export default function Monitoring() {
                   return (
                     <tr
                       key={app.application_id}
-                      className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition hover:bg-[#0F4A2F05]`}
+                      className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} transition hover:bg-green-50/30`}
                     >
-                      <td className="py-3 px-5 text-[.9rem]">
+                      <td className="py-3 px-5 text-[.85rem] text-gray-600">
                         {index + 1 + (filter.page - 1) * filter.entries}
                       </td>
                       <td className="py-3 px-5">
                         <div className="flex items-center gap-3">
-                          {app.org_profile ? (
+                          {app.group_profile ? (
                             <img
-                              src={`${API_BASE}/${app.org_profile}`}
-                              className="rounded-full h-12 w-12 object-cover border border-gray-200"
-                              alt="Organization"
+                              src={
+                                app.group_profile.startsWith("http")
+                                  ? app.group_profile
+                                  : `${API_BASE}${app.group_profile}`
+                              }
+                              className="rounded-full h-10 w-10 object-cover border border-gray-200"
+                              alt="Group"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).src =
-                                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24' fill='none' stroke='%230F4A2F' stroke-width='1'/%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M7 7h10M7 11h10M7 15h6'/%3E%3C/svg%3E";
+                                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='%230F4A2F' stroke-width='1'/%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M7 7h10M7 11h10M7 15h6'/%3E%3C/svg%3E";
                               }}
                             />
                           ) : (
-                            <div className="h-12 w-12 rounded-full bg-green-50 flex items-center justify-center border border-gray-200">
-                              <Leaf size={20} className="text-green-300" />
+                            <div className="h-10 w-10 rounded-full bg-green-50 flex items-center justify-center border border-gray-200">
+                              <Leaf size={18} className="text-green-300" />
                             </div>
                           )}
                           <div>
                             <h4 className="font-bold text-[.85rem] text-gray-800">
-                              {app.organization_name}
+                              {app.group_name}
                             </h4>
                             <span className="text-[.7rem] text-gray-500">
-                              {app.org_email}
+                              {app.group_type}
                             </span>
                           </div>
                         </div>
                       </td>
                       <td
-                        className="py-3 px-5 text-[.9rem] max-w-xs truncate"
+                        className="py-3 px-5 text-[.85rem] max-w-xs truncate font-medium text-gray-700"
                         title={app.title}
                       >
                         {app.title}
                       </td>
                       <td className="py-3 px-5">
                         <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${statusConf.bg} ${statusConf.text}`}
+                          className={`px-2.5 py-1 rounded-full text-[.7rem] font-semibold ${statusConf.bg} ${statusConf.text}`}
                         >
                           {statusConf.label}
                         </span>
                       </td>
-                      <td className="py-3 px-5 text-[.9rem] capitalize">
-                        {app.classification}
+                      <td className="py-3 px-5 text-[.85rem]">
+                        {app.classification === "new" ? (
+                          <span className="px-2 py-0.5 text-[.7rem] font-semibold rounded-full bg-blue-100 text-blue-800">
+                            First-Time
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-[.7rem] font-semibold rounded-full bg-purple-100 text-purple-800">
+                            Returning
+                          </span>
+                        )}
                       </td>
-                      <td className="py-3 px-5 text-[.9rem]">
-                        {app.total_members}
+                      <td className="py-3 px-5 text-[.85rem] text-gray-700">
+                        <div className="flex items-center gap-1.5">
+                          <Users size={14} className="text-gray-400" />
+                          {app.total_treegrowers_will_participate}
+                        </div>
                       </td>
-                      <td className="py-3 px-5 text-[.9rem] text-gray-500">
+                      <td className="py-3 px-5 text-[.85rem] text-gray-500">
                         {app.created_at}
                       </td>
                       <td className="py-3 px-5">
                         <button
                           onClick={() => handleViewReport(app.application_id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0F4A2F] text-white text-xs font-semibold hover:bg-[#1a6b44] transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0F4A2F] text-white text-xs font-semibold hover:bg-[#1a6b44] transition-colors shadow-sm"
                           title="View maintenance reports"
                         >
-                          <VerifiedIcon size={14} />
+                          <FileCheck2 size={14} />
                           View Reports
                         </button>
                       </td>
@@ -358,7 +361,10 @@ export default function Monitoring() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-gray-500">
+                  <td
+                    colSpan={8}
+                    className="text-center py-10 text-gray-500 italic bg-gray-50"
+                  >
                     {filter.search
                       ? `No results for "${filter.search}"`
                       : "No applications found."}
@@ -371,13 +377,13 @@ export default function Monitoring() {
 
         {/* Pagination */}
         {filter.total_page > 1 && (
-          <div className="flex items-center gap-1 mt-5 w-full">
+          <div className="flex items-center gap-1 mt-5 w-full justify-end">
             <button
               disabled={filter.page <= 1}
               onClick={() =>
                 setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
               }
-              className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
               <ChevronLeft size={16} /> Prev
             </button>
@@ -401,8 +407,8 @@ export default function Monitoring() {
                   }
                   className={`px-3 py-1.5 border rounded-lg cursor-pointer text-sm ${
                     pageNum === filter.page
-                      ? "bg-[#0F4A2F] text-white"
-                      : "text-gray-700 hover:bg-gray-100"
+                      ? "bg-[#0F4A2F] text-white border-[#0F4A2F]"
+                      : "text-gray-700 hover:bg-gray-100 border-gray-300"
                   }`}
                 >
                   {pageNum}

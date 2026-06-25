@@ -31,5 +31,6 @@ urlpatterns = [
      path('get_site_applications/<int:site_id>/', views.get_site_applications, name='get_site_applications'),
      path('get_general_report_data/', views.get_general_report_data, name='get_general_report_data'),
     path('get_program_history/', views.get_program_history, name='get_program_history'),
-    
+    path('delete_application/<int:application_id>/', views.delete_application, name='delete_application'),
+     path('get_available_sites_for_tree_grower/', views.get_available_sites_for_tree_grower, name='get_available_sites_for_tree_grower'),
 ]

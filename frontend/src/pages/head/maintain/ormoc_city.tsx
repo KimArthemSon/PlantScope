@@ -21,11 +21,14 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
-import L from "leaflet"; 
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { api } from "@/constant/api";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
+
+// 📍 Mapbox Token
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
 export default function Ormoc_City() {
   const mapRef = useRef<any>(null);
@@ -41,7 +44,7 @@ export default function Ormoc_City() {
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
-  
+
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
@@ -54,29 +57,33 @@ export default function Ormoc_City() {
       setLoading(true);
       const token = localStorage.getItem("token");
       try {
-        const response = await fetch(api+"api/get_ormoc/", {
+        const response = await fetch(api + "api/get_ormoc/", {
           headers: { Authorization: "Bearer " + token },
         });
         const data = await response.json();
         if (response.ok) {
           // Prioritize marker for map center
-          if (data.marker && Array.isArray(data.marker) && data.marker.length === 2) {
+          if (
+            data.marker &&
+            Array.isArray(data.marker) &&
+            data.marker.length === 2
+          ) {
             setMarker([data.marker[0], data.marker[1]]);
             setMarkerInput({
               lat: data.marker[0].toString(),
               lng: data.marker[1].toString(),
             });
             mapRef.current?.flyTo([data.marker[0], data.marker[1]], 16);
-          } 
+          }
           // Fallback to first polygon vertex if no marker
           else if (data.polygon?.length) {
             setPolygon(data.polygon);
             mapRef.current?.flyTo(data.polygon[0], 15);
           }
-          
+
           // If both exist, ensure polygon is also loaded
           if (data.polygon?.length && data.marker) {
-             setPolygon(data.polygon);
+            setPolygon(data.polygon);
           }
         }
       } catch (error) {
@@ -123,18 +130,26 @@ export default function Ormoc_City() {
   /* ---------------- Save Coordinates ---------------- */
   async function saveCoordinates() {
     if (!marker) {
-      setPSAlert({ type: "error", title: "Missing Marker", message: "Please set a marker location." });
+      setPSAlert({
+        type: "error",
+        title: "Missing Marker",
+        message: "Please set a marker location.",
+      });
       return;
     }
     if (polygon.length < 3) {
-      setPSAlert({ type: "error", title: "Incomplete Polygon", message: "Polygon must have at least 3 coordinates." });
+      setPSAlert({
+        type: "error",
+        title: "Incomplete Polygon",
+        message: "Polygon must have at least 3 coordinates.",
+      });
       return;
     }
 
     const token = localStorage.getItem("token");
     setSaveStatus("saving");
     try {
-      const response = await fetch(api+"api/update_ormoc_city/", {
+      const response = await fetch(api + "api/update_ormoc_city/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -145,16 +160,28 @@ export default function Ormoc_City() {
       const data = await response.json();
       if (response.ok) {
         setSaveStatus("saved");
-        setPSAlert({ type: "success", title: "Success", message: data.message || "Coordinates saved successfully." });
+        setPSAlert({
+          type: "success",
+          title: "Success",
+          message: data.message || "Coordinates saved successfully.",
+        });
         setTimeout(() => setSaveStatus("idle"), 2500);
       } else {
         setSaveStatus("error");
-        setPSAlert({ type: "error", title: "Error", message: data.error || "Update failed." });
+        setPSAlert({
+          type: "error",
+          title: "Error",
+          message: data.error || "Update failed.",
+        });
         setTimeout(() => setSaveStatus("idle"), 2500);
       }
     } catch (error) {
       setSaveStatus("error");
-      setPSAlert({ type: "error", title: "Error", message: "Server error occurred." });
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Server error occurred.",
+      });
       setTimeout(() => setSaveStatus("idle"), 2500);
     }
   }
@@ -180,17 +207,17 @@ export default function Ormoc_City() {
     saveStatus === "saving"
       ? "Saving…"
       : saveStatus === "saved"
-        ? "Saved!"
-        : saveStatus === "error"
-          ? "Error"
-          : "Save Coordinates";
+      ? "Saved!"
+      : saveStatus === "error"
+      ? "Error"
+      : "Save Coordinates";
 
   const saveBg =
     saveStatus === "saved"
       ? "bg-green-600 hover:bg-green-700"
       : saveStatus === "error"
-        ? "bg-red-600 hover:bg-red-700"
-        : "bg-blue-600 hover:bg-blue-700";
+      ? "bg-red-600 hover:bg-red-700"
+      : "bg-blue-600 hover:bg-blue-700";
 
   /* ---------------- RENDER ---------------- */
   return (
@@ -221,12 +248,16 @@ export default function Ormoc_City() {
         </div>
         <div className="ml-auto flex items-center gap-1 text-xs text-gray-400">
           <span
-            className={`inline-block w-2 h-2 rounded-full ${marker ? "bg-green-500" : "bg-gray-300"}`}
+            className={`inline-block w-2 h-2 rounded-full ${
+              marker ? "bg-green-500" : "bg-gray-300"
+            }`}
           />
           {marker ? "Marker set" : "No marker"}
           <span className="mx-2 text-gray-200">|</span>
           <span
-            className={`inline-block w-2 h-2 rounded-full ${polygon.length >= 3 ? "bg-green-500" : "bg-gray-300"}`}
+            className={`inline-block w-2 h-2 rounded-full ${
+              polygon.length >= 3 ? "bg-green-500" : "bg-gray-300"
+            }`}
           />
           {polygon.length >= 3
             ? `${polygon.length} polygon pts`
@@ -343,12 +374,18 @@ export default function Ormoc_City() {
               <span className="ml-auto text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
                 {polygon.length} pts
               </span>
-              
+
               {/* Toggle Polygon Visibility */}
               <button
                 onClick={() => setShowPolygon(!showPolygon)}
-                className={`p-1 rounded transition-colors ${showPolygon ? "text-green-700 hover:bg-green-50" : "text-gray-400 hover:bg-gray-100"}`}
-                title={showPolygon ? "Hide polygon on map" : "Show polygon on map"}
+                className={`p-1 rounded transition-colors ${
+                  showPolygon
+                    ? "text-green-700 hover:bg-green-50"
+                    : "text-gray-400 hover:bg-gray-100"
+                }`}
+                title={
+                  showPolygon ? "Hide polygon on map" : "Show polygon on map"
+                }
               >
                 {showPolygon ? <Eye size={14} /> : <EyeOff size={14} />}
               </button>
@@ -444,9 +481,15 @@ export default function Ormoc_City() {
             style={{ height: "100%", width: "100%" }}
             ref={mapRef}
           >
-            <TileLayer url="http://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" />
+            {/* ✅ NEW: Mapbox Satellite Hybrid */}
+            <TileLayer
+              url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
+              tileSize={512}
+              zoomOffset={-1}
+              attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            />
             <MapClickHandler />
-            
+
             {marker && (
               <Marker
                 position={marker}
@@ -467,13 +510,14 @@ export default function Ormoc_City() {
             )}
 
             {/* Conditionally render polygon vertices and shape based on showPolygon state */}
-            {showPolygon && polygon.map((coord, i) => (
-              <Marker
-                key={`vertex-${i}`}
-                position={coord}
-                icon={L.divIcon({
-                  className: "vertex-marker-custom",
-                  html: `<div style="
+            {showPolygon &&
+              polygon.map((coord, i) => (
+                <Marker
+                  key={`vertex-${i}`}
+                  position={coord}
+                  icon={L.divIcon({
+                    className: "vertex-marker-custom",
+                    html: `<div style="
                     background: #15803d; 
                     color: white; 
                     width: 26px; 
@@ -487,18 +531,18 @@ export default function Ormoc_City() {
                     border: 2px solid white;
                     box-shadow: 0 2px 6px rgba(0,0,0,0.4);
                   ">${i + 1}</div>`,
-                  iconSize: [26, 26],
-                  iconAnchor: [13, 13],
-                })}
-                draggable
-                eventHandlers={{
-                  dragend: (e) => {
-                    const m = e.target.getLatLng();
-                    updatePolygon(i, m.lat, m.lng);
-                  },
-                }}
-              />
-            ))}
+                    iconSize: [26, 26],
+                    iconAnchor: [13, 13],
+                  })}
+                  draggable
+                  eventHandlers={{
+                    dragend: (e) => {
+                      const m = e.target.getLatLng();
+                      updatePolygon(i, m.lat, m.lng);
+                    },
+                  }}
+                />
+              ))}
 
             {showPolygon && polygon.length > 2 && (
               <Polygon

@@ -42,6 +42,9 @@ import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaf
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
+// 📍 Mapbox Token
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+
 const API = api + "api/";
 const API_IMAGE = api;
 
@@ -1790,9 +1793,12 @@ export default function MetaDataVerification() {
                   className="h-full w-full"
                   style={{ minHeight: "100%" }}
                 >
+                  {/* ✅ NEW: Mapbox Satellite Hybrid */}
                   <TileLayer
-                    url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-                    attribution="Map data &copy; Google"
+                    url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
+                    tileSize={512}
+                    zoomOffset={-1}
+                    attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   />
 
                   <MapClickHandler

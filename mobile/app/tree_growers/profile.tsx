@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+
 /* ---------- DATA ---------- */
 
 const STATS = [
@@ -29,6 +30,12 @@ const MENU: {
         icon: "account-edit-outline",
         label: "Edit Profile",
         path: "/editProfile",
+      },
+      {
+        // ✅ NEW: Added Reports to the Account section
+        icon: "file-chart-outline", 
+        label: "My Reports",
+        path: "/reports", // Change to "/tree_growers/reports" if needed based on your file structure
       },
       { icon: "bell-outline", label: "Notifications", path: "/" },
     ],

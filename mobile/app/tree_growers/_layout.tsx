@@ -9,6 +9,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 const CustomHeader: React.FC = () => {
   const insets = useSafeAreaInsets();
 
+  // TODO: Replace these with actual data from your Auth Context or AsyncStorage
+  const userName = "Tree Grower"; 
+  const userEmail = "grower@plantscopev2.ph";
+
   return (
     <View style={[hdr.wrap, { paddingTop: insets.top + 10 }]}>
       {/* Left: avatar + name + role */}
@@ -18,8 +22,8 @@ const CustomHeader: React.FC = () => {
           style={hdr.avatar}
         />
         <View>
-          <Text style={hdr.name}>Tree Grower</Text>
-          <Text style={hdr.email}>grower@plantscopev2.ph</Text>
+          <Text style={hdr.name}>{userName}</Text>
+          <Text style={hdr.email}>{userEmail}</Text>
         </View>
       </View>
 
@@ -63,12 +67,44 @@ export default function TabLayout() {
         },
       }}
     >
+      {/* 1️⃣ DASHBOARD (Home) */}
+      <Tabs.Screen
+        name="index" // ⚠️ Note: If your file is named 'dashboard.tsx' instead of 'index.tsx', change this to name="dashboard"
+        options={{
+          title: "Dashboard", // Optional: overrides header title if you want it different from tab label
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "home" : "home-outline"}
+              size={24}
+              color={color}
+            />
+          ),
+          tabBarLabel: "Dashboard",
+        }}
+      />
+
+      {/* 2️⃣ SITES (Available unoccupied sites) */}
+      <Tabs.Screen
+        name="sites"
+        options={{
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "map" : "map-outline"}
+              size={24}
+              color={color}
+            />
+          ),
+          tabBarLabel: "Sites",
+        }}
+      />
+
+      {/* 3️⃣ APPLICATION (Own application status) */}
       <Tabs.Screen
         name="application"
         options={{
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? "folder" : "folder-outline"}
+              name={focused ? "document-text" : "document-text-outline"}
               size={24}
               color={color}
             />
@@ -77,20 +113,7 @@ export default function TabLayout() {
         }}
       />
 
-      <Tabs.Screen
-        name="reports"
-        options={{
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "analytics" : "analytics-outline"}
-              size={24}
-              color={color}
-            />
-          ),
-          tabBarLabel: "Reports",
-        }}
-      />
-
+      {/* 4️⃣ PROFILE (Includes link to Reports) */}
       <Tabs.Screen
         name="profile"
         options={{
@@ -105,9 +128,23 @@ export default function TabLayout() {
         }}
       />
 
-      {/* ✅ EXPLICITLY HIDE REAPPLY FROM TAB BAR */}
+      {/* ✅ HIDE REAPPLY FROM TAB BAR (Still accessible via router.push) */}
       <Tabs.Screen
         name="Reapply"
+        options={{
+          href: null,
+        }}
+      />
+       <Tabs.Screen
+        name="siteDetails"
+        options={{
+          href: null,
+        }}
+      />
+      
+      {/* ✅ HIDE REPORTS FROM TAB BAR (Now accessed via a button inside the Profile screen) */}
+      <Tabs.Screen
+        name="reports"
         options={{
           href: null,
         }}

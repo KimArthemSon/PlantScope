@@ -22,6 +22,10 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { api } from "@/constant/api.ts";
+
+// 📍 Mapbox Token
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+
 // ─────────────────────────────────────────────────────────────
 // Types & Interfaces
 // ─────────────────────────────────────────────────────────────
@@ -114,9 +118,7 @@ export default function UpdateReforestationArea() {
   // ── State ──────────────────────────────────────────────────
   const [placingMarker, setPlacingMarker] = useState(false);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [land_classification, setLand_classification] = useState<
-    Land_classification[]
-  >([]);
+ 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -313,9 +315,7 @@ export default function UpdateReforestationArea() {
     (b) => b.barangay_id === form.barangay_id,
   )?.name;
 
-  const selectedLandClassificationName = land_classification.find(
-    (lc) => lc.land_classification_id === form.land_classification_id,
-  )?.name;
+ 
 
   // ── Loading State ──────────────────────────────────────────
   if (loading) {
@@ -541,9 +541,12 @@ export default function UpdateReforestationArea() {
             style={{ height: "100%", width: "100%" }}
             scrollWheelZoom={true}
           >
+            {/* ✅ NEW: Mapbox Satellite Hybrid */}
             <TileLayer
-              url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-              attribution='&copy; <a href="https://www.google.com/maps">Google</a>'
+              url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
+              tileSize={512}
+              zoomOffset={-1}
+              attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             />
             <MapClickHandler
               placingMarker={placingMarker}

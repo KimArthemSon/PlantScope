@@ -71,6 +71,12 @@ MIDDLEWARE = [
      "backend.middleware.JWTAuthorizationMiddleware",
 ]
 
+ALLOWED_HOSTS = ['*'] # Or specifically ['bargraph-factsheet-halved.ngrok-free.dev']
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://bargraph-factsheet-halved.ngrok-free.dev',
+    'http://bargraph-factsheet-halved.ngrok-free.dev',
+]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",

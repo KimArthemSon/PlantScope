@@ -27,7 +27,7 @@ import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 import { useState, useEffect, useRef, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import * as esri from "esri-leaflet";
+
 import SiteCoordinatesEditor from "./components/SiteCoordinatesEditor";
 import {api_second} from  "@/constant/api";
 import { useBarangayAreas } from "./hooks/useBarangayAreas";
@@ -53,6 +53,9 @@ import type { Site, SiteDetail } from "./types/siteTypes";
 import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 import HazardAreaFormPanel from "./components/HazardAreaFormPanel";
+
+// 📍 Mapbox Token
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
 L.Marker.prototype.options.icon = L.icon({
   iconUrl: icon,
@@ -178,8 +181,8 @@ export default function MulticriteriaAnalysis() {
   const fieldAssessments = useFieldAssessments(mapRef);
   const sites = useSites();
   const potentialSitesHook = usePotentialSites();
-  const hazardLayers = useHazardLayers(mapRef); // ← ADD HERE
-  const barangayAreas = useBarangayAreas(mapRef); // ← ADD HERE
+  const hazardLayers = useHazardLayers(mapRef);
+  const barangayAreas = useBarangayAreas(mapRef);
 
   const handleFetchLayer = useCallback(
     (
@@ -227,10 +230,10 @@ export default function MulticriteriaAnalysis() {
           ) {
             // ✅ Show polygon with lighter colors
             polygonRef.current = L.polygon(detail.polygon_coordinates, {
-              color: "#16A34A", // Lighter green border
-              fillColor: "#86EFAC", // Light green fill
-              fillOpacity: 0.5, // More opaque
-              weight: 3, // Thicker border
+              color: "#16A34A",
+              fillColor: "#86EFAC",
+              fillOpacity: 0.5,
+              weight: 3,
             }).addTo(mapRef.current!);
 
             mapRef.current?.fitBounds(polygonRef.current.getBounds(), {
@@ -275,7 +278,7 @@ export default function MulticriteriaAnalysis() {
             </div>
           `);
 
-            mapRef.current?.setView(detail.center_coordinate, 17); // Zoom in closer
+            mapRef.current?.setView(detail.center_coordinate, 17);
           } else if (areaId) {
             setAlert({
               type: "failed",
@@ -732,8 +735,8 @@ export default function MulticriteriaAnalysis() {
 
     if (hasPolygon) {
       const editablePolygon = L.polygon(viewingSite.polygon_coordinates!, {
-        color: "#F97316", // Orange border for edit mode
-        fillColor: "#FDBA74", // Light orange fill
+        color: "#F97316",
+        fillColor: "#FDBA74",
         fillOpacity: 0.4,
         weight: 3,
         dashArray: "5, 5",
@@ -977,8 +980,18 @@ export default function MulticriteriaAnalysis() {
         attributionControl: true,
       }).setView([11.00860051288406, 124.60859604113544], 15);
 
-      esri.basemapLayer("Imagery").addTo(mapRef.current);
-      esri.basemapLayer("ImageryLabels").addTo(mapRef.current);
+      // ✅ NEW: Mapbox Satellite Hybrid
+      L.tileLayer(
+        `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,
+        {
+          attribution:
+            '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          tileSize: 512,
+          zoomOffset: -1,
+          maxZoom: 19,
+        },
+      ).addTo(mapRef.current);
+
       L.control
         .scale({ imperial: false, position: "bottomleft" })
         .addTo(mapRef.current);

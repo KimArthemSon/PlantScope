@@ -29,6 +29,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api";
 
+// 📍 Mapbox Token
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+
 interface PolygonShape {
   coordinates: [number, number][];
   type: string;
@@ -757,9 +760,12 @@ export default function Hazard_area_form() {
                   if (map != null) mapRef.current = map;
                 }}
               >
+                {/* ✅ NEW: Mapbox Satellite Hybrid */}
                 <TileLayer
-                  url="http://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-                  attribution='&copy; <a href="https://www.google.com/intl/en/help/terms_maps.html">Google Maps</a>'
+                  url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
+                  tileSize={512}
+                  zoomOffset={-1}
+                  attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 />
                 <GoToCenterButton center={currentPosition} />
                 <Marker position={currentPosition}>

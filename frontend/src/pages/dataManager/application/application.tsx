@@ -1,20 +1,19 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, ChevronLeft, Leaf, VerifiedIcon } from "lucide-react";
+import { ChevronRight, ChevronLeft, VerifiedIcon } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
-import Delete_modal from "../../../components/layout/delete_modal";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import { api } from "@/constant/api";
 
+// ✅ Updated Interface to match new backend response
 interface Application {
   application_id: number;
-  organization_name: string;
-  org_email: string;
-  org_profile: string;
+  group_name: string;
+  group_type: string;
+  group_profile: string | null;
   title: string;
-  total_members: number;
-  total_request_seedling: number;
-  classification: string;
+  total_treegrowers_will_participate: number;
+  classification: string; // 'new' (First-Time) or 'old' (Returning)
   status: string;
   created_at: string;
 }
@@ -40,16 +39,12 @@ export default function Application() {
   });
 
   const [loading, setLoading] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
     message: string;
   } | null>(null);
 
-  const [tree_specie_idDelete, settree_specie_IdDelete] = useState<
-    number | null
-  >(null);
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
@@ -66,10 +61,10 @@ export default function Application() {
       });
 
       const response = await fetch(
-        api+`api/get_applications/?${params.toString()}`,
+        `${api}api/get_applications/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        },
+        }
       );
       if (!response.ok) throw new Error("Failed to fetch Application.");
 
@@ -89,39 +84,32 @@ export default function Application() {
 
   useEffect(() => {
     fetchApplication();
-  }, [filter.page, filter.entries, filter.classification, filter.status]); // refetch when filters change
+  }, [filter.page, filter.entries, filter.classification, filter.status]);
 
-  const setDelete = (tree_specie_id: number) => {
-    settree_specie_IdDelete(tree_specie_id);
-    setIsDeleteModalOpen(true);
+  // ✅ Helper to format status text (e.g., "for_evaluation" -> "For Evaluation")
+  const formatStatus = (status: string) => {
+    return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  const handleDelete = async () => {
-    if (!tree_specie_idDelete) return;
-    const response = await fetch(
-      api+`api/delete_tree_specie/${tree_specie_idDelete}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    const data = await response.json();
-    if (response.ok) {
-      setPSAlert({
-        type: "success",
-        title: "Deleted",
-        message: data.message,
-      });
-      setIsDeleteModalOpen(false);
-      fetchApplication(); // refresh list after delete
-    } else {
-      setPSAlert({
-        type: "failed",
-        title: "Failed",
-        message: "Failed to delete tree specie.",
-      });
-      setIsDeleteModalOpen(false);
+  // ✅ Helper to get status badge color
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'for_evaluation': return 'bg-yellow-100 text-yellow-800';
+      case 'for_head': return 'bg-blue-100 text-blue-800';
+      case 'accepted': return 'bg-green-100 text-green-800';
+      case 'rejected': return 'bg-red-100 text-red-800';
+      case 'under_monitoring': return 'bg-purple-100 text-purple-800';
+      case 'completed': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  // ✅ Helper to show First-Time vs Returning badge
+  const getClassificationBadge = (classification: string) => {
+    if (classification === 'new') {
+      return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">First-Time</span>;
+    }
+    return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">Returning</span>;
   };
 
   return (
@@ -134,18 +122,11 @@ export default function Application() {
           onClose={() => setPSAlert(null)}
         />
       )}
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
 
-      <main className="flex-1 p-8 w-full max-w-609">
-        {/* Header */}
-
+      <main className="flex-1 p-8 w-full max-w-6xl mx-auto">
         {/* Filters */}
-        <div className="flex items-center mb-7 gap-4">
-          <label>Show entries: </label>
+        <div className="flex items-center mb-7 gap-4 flex-wrap">
+          <label className="text-sm font-medium text-gray-700">Show entries: </label>
           <select
             value={filter.entries}
             onChange={(e) =>
@@ -155,7 +136,7 @@ export default function Application() {
                 page: 1,
               }))
             }
-            className="border border-black p-2 rounded-md text-[.8rem]"
+            className="border border-gray-300 p-2 rounded-md text-[.8rem] focus:ring-2 focus:ring-green-500 outline-none"
           >
             <option value={10}>10</option>
             <option value={25}>25</option>
@@ -163,8 +144,7 @@ export default function Application() {
             <option value={100}>100</option>
           </select>
 
-          <label>classification:</label>
-
+          <label className="text-sm font-medium text-gray-700">Classification:</label>
           <select
             value={filter.classification}
             onChange={(e) =>
@@ -174,14 +154,14 @@ export default function Application() {
                 page: 1,
               }))
             }
-            className="border border-black p-2 rounded-md text-[.8rem]"
+            className="border border-gray-300 p-2 rounded-md text-[.8rem] focus:ring-2 focus:ring-green-500 outline-none"
           >
             <option value="All">All</option>
-            <option value="new">New</option>
-            <option value="old">Old</option>
+            <option value="new">First-Time (New)</option>
+            <option value="old">Returning (Old)</option>
           </select>
-          <label>status:</label>
 
+          <label className="text-sm font-medium text-gray-700">Status:</label>
           <select
             value={filter.status}
             onChange={(e) =>
@@ -191,48 +171,50 @@ export default function Application() {
                 page: 1,
               }))
             }
-            className="border border-black p-2 rounded-md text-[.8rem]"
+            className="border border-gray-300 p-2 rounded-md text-[.8rem] focus:ring-2 focus:ring-green-500 outline-none"
           >
-            <option value="for_evaluation">Evaluation</option>
-            <option value="for_head">Head Confirmation</option>
+            <option value="for_evaluation">For Evaluation</option>
+            <option value="for_head">For Head Confirmation</option>
+            <option value="accepted">Accepted</option>
             <option value="rejected">Rejected</option>
+            <option value="under_monitoring">Under Monitoring</option>
+            <option value="completed">Completed</option>
+            <option value="All">All Statuses</option>
           </select>
+
           <input
             type="text"
-            placeholder="Search Application..."
+            placeholder="Search Group Name..."
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
                 ...prev,
                 search: e.target.value,
-                page: 1, // reset page when typing
+                page: 1,
               }))
             }
             onKeyDown={(e) => {
               if (e.key === "Enter") {
-                fetchApplication(); // call your fetch function on Enter
+                fetchApplication();
               }
             }}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-gray-300 rounded-md p-2 w-64 text-[.8rem] ml-auto focus:ring-2 focus:ring-green-500 outline-none"
           />
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200">
+        <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200 bg-white">
           {loading && <LoaderPending />}
-          <table className="relative min-w-full bg-white rounded-sm">
+          <table className="relative min-w-full">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Profile</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Group</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Title</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Classification
-                </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Members</th>
-
-                <th className="py-3 px-5 text-left text-[.9rem]">Created_at</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Classification</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Tree Growers</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Created At</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -241,63 +223,62 @@ export default function Application() {
                 application.map((app, index) => (
                   <tr
                     key={app.application_id}
-                    className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition`}
+                    className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition hover:bg-gray-50`}
                   >
-                    <td className="py-3 px-5 text-[.9rem]">
+                    <td className="py-3 px-5 text-[.9rem] text-gray-700">
                       {index + 1 + (filter.page - 1) * filter.entries}
                     </td>
                     <td className="py-3 px-5">
-                      <div className="flex gap-5">
+                      <div className="flex gap-3 items-center">
                         <img
-                          src={api + app.org_profile}
-                          className="rounded-full h-15 w-15"
-                          alt="prfile image"
+                          src={app.group_profile ? (app.group_profile.startsWith('http') ? app.group_profile : api + app.group_profile) : 'https://via.placeholder.com/60'}
+                          className="rounded-full h-12 w-12 object-cover border border-gray-200"
+                          alt="group profile"
                         />
                         <div>
-                          <h4 className="font-bold text-[.8rem]">
-                            {app.organization_name}
+                          <h4 className="font-bold text-[.8rem] text-gray-800">
+                            {app.group_name}
                           </h4>
-                          <span className="text-[#00000091] text-[.7rem]">
-                            {app.org_email}
+                          <span className="text-gray-500 text-[.7rem]">
+                            {app.group_type}
                           </span>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
+                    <td className="py-3 px-5 text-[.9rem] break-words max-w-[150px] text-gray-700">
                       {app.title}
                     </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {app.status}
+                    <td className="py-3 px-5 text-[.9rem]">
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(app.status)}`}>
+                        {formatStatus(app.status)}
+                      </span>
                     </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {app.classification}
+                    {/* ✅ Shows First-Time or Returning */}
+                    <td className="py-3 px-5 text-[.9rem]">
+                      {getClassificationBadge(app.classification)}
                     </td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {app.total_members}
+                    <td className="py-3 px-5 text-[.9rem] font-medium text-gray-700">
+                      {app.total_treegrowers_will_participate}
                     </td>
-
-                    <td className="py-3 px-5 text-[.9rem]">{app.created_at}</td>
+                    <td className="py-3 px-5 text-[.9rem] text-gray-600">{app.created_at}</td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
-                        {app.status !== "for_head" && (
+                        {app.status === "for_evaluation" && (
                           <button
                             onClick={() => {
-                              navigate(
-                                "/DataManager/evaluation/" + app.application_id,
-                              );
+                              navigate(`/DataManager/evaluation/${app.application_id}`);
                             }}
-                            className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
+                            className="text-white bg-[#0f4a2f] hover:bg-[#0a3622] px-3 py-1.5 rounded-md flex items-center gap-1 cursor-pointer text-xs font-medium transition"
                           >
-                            <VerifiedIcon size={18} />
+                            <VerifiedIcon size={16} />
+                            Evaluate
                           </button>
                         )}
-
-                        {/* <button
-                          onClick={() => setDelete(app.application_id)}
-                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
-                        >
-                          <Trash2 size={18} />
-                        </button> */}
+                        {app.status === "for_head" && (
+                          <span className="text-blue-600 text-xs font-medium italic px-2 py-1">
+                            Pending Head Approval
+                          </span>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -305,10 +286,10 @@ export default function Application() {
               ) : (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={8}
                     className="text-center py-5 text-gray-500 italic"
                   >
-                    No Application found.
+                    No applications found.
                   </td>
                 </tr>
               )}
@@ -323,7 +304,7 @@ export default function Application() {
             onClick={() =>
               setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
             }
-            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer"
+            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ChevronLeft size={19} />
           </button>
@@ -341,7 +322,7 @@ export default function Application() {
               >
                 {p}
               </button>
-            ),
+            )
           )}
 
           <button
@@ -349,7 +330,7 @@ export default function Application() {
             onClick={() =>
               setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
             }
-            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 cursor-pointer"
+            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ChevronRight size={19} />
           </button>

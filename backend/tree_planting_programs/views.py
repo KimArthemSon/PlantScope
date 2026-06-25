@@ -6,67 +6,49 @@ from django.db import transaction
 import json
 import math
 
-from .models import Application, SeedlingRequest, ProgressReport, Reason
+from .models import (
+    Application, SeedlingRequest, SeedlingRequestSpecies,
+    ProgressReport, ProgressReportSpecies, Reason
+)
 from sites.models import Sites
 from accounts.helper import get_user_from_token
 from accounts.models import User
+from tree_species.models import Tree_species
 from django.db.models import Sum, Count, Q
 from django.db.models.functions import TruncMonth
 from datetime import datetime, timedelta
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPER FUNCTIONS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def normalize_seedling_type(data, default_provider="ENRO Nursery"):
+def serialize_seedling_request_species(seedling_request):
     """
-    Convert flat seedling format to nested format for consistency.
-    Input: {"Narra": 30} or {"Narra": {"quantity": 30, "provided_by": "ENRO"}}
-    Output: {"Narra": {"quantity": 30, "provided_by": "ENRO Nursery"}}
+    Serialize all species for a seedling request.
+    Returns a list of species with their details.
     """
-    if not data or not isinstance(data, dict):
-        return {}
-    
-    normalized = {}
-    for species, val in data.items():
-        if isinstance(val, (int, float)):
-            # Flat format: {"Narra": 30}
-            normalized[species] = {"quantity": int(val), "provided_by": default_provider}
-        elif isinstance(val, dict) and "quantity" in val:
-            # Already nested: {"Narra": {"quantity": 30, "provided_by": "ENRO"}}
-            normalized[species] = {
-                "quantity": int(val["quantity"]),
-                "provided_by": val.get("provided_by", default_provider)
-            }
-        else:
-            # Invalid format - skip or use fallback
-            continue
-    return normalized
+    return [{
+        "species_id": s.tree_species.tree_specie_id,
+        "species_name": s.tree_species.name,
+        "quantity": s.quantity,
+        "provided_by": s.provided_by,
+    } for s in seedling_request.seedling_species.select_related('tree_species').all()]
 
 
-def serialize_seedling_type(seedling_type):
+def serialize_progress_report_species(progress_report):
     """
-    Ensure seedling_type is always in nested format for frontend consumption.
-    Handles both old flat format and new nested format.
+    Serialize all species for a progress report.
+    Returns a list of species with survival data.
     """
-    if not seedling_type:
-        return {}
-    
-    result = {}
-    for species, val in seedling_type.items():
-        if isinstance(val, (int, float)):
-            # Convert flat to nested
-            result[species] = {"quantity": int(val), "provided_by": "Unknown"}
-        elif isinstance(val, dict) and "quantity" in val:
-            # Already nested - ensure types are correct
-            result[species] = {
-                "quantity": int(val["quantity"]),
-                "provided_by": str(val.get("provided_by", "Unknown"))
-            }
-        else:
-            # Fallback for malformed data
-            result[species] = {"quantity": 0, "provided_by": "Unknown"}
-    return result
+    return [{
+        "species_id": s.tree_species.tree_specie_id,
+        "species_name": s.tree_species.name,
+        "no_survived": s.no_survived,
+        "no_dead": s.no_dead,
+        "total": s.no_survived + s.no_dead,
+        "survival_rate": s.survival_rate,
+    } for s in progress_report.report_species.select_related('tree_species').all()]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -88,14 +70,14 @@ def get_applications(request):
     except (ValueError, TypeError):
         entries, page = 10, 1
 
-    qs = Application.objects.select_related('user__organization').order_by('-created_at')
+    qs = Application.objects.select_related('user__tree_grower_group').order_by('-created_at')
     
     if status_filter != 'All':
         qs = qs.filter(status=status_filter)
     if classification_filter != 'All':
         qs = qs.filter(classification=classification_filter)
     if search:
-        qs = qs.filter(user__organization__organization_name__icontains=search)
+        qs = qs.filter(user__tree_grower_group__group_name__icontains=search)
 
     total = qs.count()
     total_page = math.ceil(total / entries) if total > 0 else 1
@@ -103,13 +85,14 @@ def get_applications(request):
 
     data = [{
         "application_id": app.application_id,
-        "organization_name": app.user.organization.organization_name,
-        "org_email": app.user.organization.email,
-        "org_profile": app.user.organization.profile_img.url if app.user.organization.profile_img else None,
+        "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "N/A",
+        "group_type": app.user.tree_grower_group.get_group_type_display() if hasattr(app.user, 'tree_grower_group') else "N/A",
+        "group_profile": app.user.tree_grower_group.profile_img.url if hasattr(app.user, 'tree_grower_group') and app.user.tree_grower_group.profile_img else None,
         "title": app.title,
+        "orientation_date": app.orientation_date,
         "classification": app.classification,
         "status": app.status,
-        "total_members": app.total_members,
+        "total_treegrowers_will_participate": app.total_treegrowers_will_participate,
         "created_at": app.created_at.strftime("%d/%m/%Y")
     } for app in qs[offset:offset + entries]]
 
@@ -121,68 +104,113 @@ def get_application(request, application_id):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
-    app = get_object_or_404(Application, application_id=application_id)
+    # ✅ Optimize query to fetch all rich site data in one go
+    app = get_object_or_404(
+        Application.objects.select_related(
+            'user__tree_grower_group', 'user__profile',
+            'site__reforestation_area__barangay',
+            'site__meta_verification__verified_land_classification',
+            'proposed_site__reforestation_area__barangay'
+        ).prefetch_related(
+            'site__site_images',
+            'site__species_recommendations__tree_species'
+        ),
+        application_id=application_id
+    )
     
-    # Get latest reason for this application
     latest_reason = Reason.objects.filter(application=app).order_by('-created').first()
-    
-    # Get seedling requests & progress reports
     seedling_requests = SeedlingRequest.objects.filter(application=app).order_by('-created_at')
     progress_reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
+
+    # ─── RICH SITE SERIALIZATION ────────────────────────────────────────────
+    assigned_site_data = None
+    if app.site:
+        site = app.site
+        meta = getattr(site, 'meta_verification', None)
+        
+        # Fetch General Images
+        general_images = [
+            {"image_url": img.img.url if img.img else None, "caption": img.caption} 
+            for img in site.site_images.filter(layer_tag='general').order_by('-created_at')
+        ]
+        
+        # Fetch Recommended Species
+        recommended_species = [
+            {
+                "species_id": rec.tree_species.tree_specie_id if rec.tree_species else None,
+                "species_name": rec.tree_species.name if rec.tree_species else "Unknown",
+                "rank": rec.priority_rank,
+                "notes": rec.notes
+            } 
+            for rec in site.species_recommendations.select_related('tree_species').all().order_by('priority_rank')
+        ]
+
+        assigned_site_data = {
+            "site_id": site.site_id,
+            "name": site.name,
+            "total_area_hectares": site.total_area_hectares,
+            "ndvi_value": site.ndvi_value,
+            "polygon_coordinates": site.polygon_coordinates,
+            "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
+            "barangay_name": (site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else None),
+            "accessibility": meta.verified_accessibility if meta else None,
+            "land_classification_name": (meta.verified_land_classification.name if meta and meta.verified_land_classification else None),
+            "general_images": general_images,
+            "recommended_species": recommended_species,
+        }
+
+    proposed_site_data = None
+    if app.proposed_site:
+        prop = app.proposed_site
+        proposed_site_data = {
+            "site_id": prop.site_id,
+            "name": prop.name,
+            "barangay": (prop.reforestation_area.barangay.name if prop.reforestation_area and prop.reforestation_area.barangay else None),
+        }
 
     data = {
         "application": {
             "application_id": app.application_id,
             "title": app.title,
-            "description": app.description,
             "classification": app.classification,
             "status": app.status,
-            "total_members": app.total_members,
-            "project_duration": app.project_duration,
+            "total_treegrowers_will_participate": app.total_treegrowers_will_participate,
             "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
+            "proposed_orientation_date": app.proposed_orientation_date.isoformat() if app.proposed_orientation_date else None,
             "confirmed_at": app.confirmed_at.isoformat() if app.confirmed_at else None,
             "maintenance_plan": app.maintenance_plan.url if app.maintenance_plan else None,
             "agreement_image": app.agreement_image.url if app.agreement_image else None,
             "created_at": app.created_at.isoformat(),
             "updated_at": app.updated_at.isoformat(),
         },
-        "organization": {
-            "organization_name": app.user.organization.organization_name,
-            "org_email": app.user.organization.email,
-            "org_contact": app.user.organization.contact,
-            "org_address": app.user.organization.address,
-            "org_profile": app.user.organization.profile_img.url if app.user.organization.profile_img else None,
+        "group": {
+            "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "N/A",
+            "group_type": app.user.tree_grower_group.get_group_type_display() if hasattr(app.user, 'tree_grower_group') else "N/A",
+            "group_contact": app.user.tree_grower_group.contact if hasattr(app.user, 'tree_grower_group') else "",
+            "group_address": app.user.tree_grower_group.address if hasattr(app.user, 'tree_grower_group') else "",
+            "group_profile": app.user.tree_grower_group.profile_img.url if hasattr(app.user, 'tree_grower_group') and app.user.tree_grower_group.profile_img else None,
         },
         "profile": {
             "first_name": app.user.profile.first_name,
             "last_name": app.user.profile.last_name,
             "contact": app.user.profile.contact,
             "gender": app.user.profile.gender,
-        } if app.user.profile else None,
-        # ✅ FIX #1: Null-safe assigned_site serialization
-        "assigned_site": {
-            "site_id": app.site.site_id,
-            "name": app.site.name,
-            "barangay": (
-                app.site.reforestation_area.barangay.name 
-                if app.site.reforestation_area and app.site.reforestation_area.barangay 
-                else None
-            ),
-            "polygon_coordinates": app.site.polygon_coordinates,
-        } if app.site else None,
-        # ✅ FIX #4: Backward-compatible seedling_type serialization
+        } if hasattr(app.user, 'profile') and app.user.profile else None,
+        "assigned_site": assigned_site_data,
+        "proposed_site": proposed_site_data,
         "seedling_requests": [{
-            "request_id": sr.maintenance_report_id,
+            "request_id": sr.seedling_request_id,
             "no_request_seedling": sr.no_request_seedling,
-            "seedling_type": serialize_seedling_type(sr.seedling_type),
+            "species": serialize_seedling_request_species(sr),
             "status": sr.status,
             "reason_accepted": sr.reason_accepted,
             "submitted_at": sr.submitted_at.isoformat() if sr.submitted_at else None
         } for sr in seedling_requests],
         "progress_reports": [{
             "report_id": pr.progress_report_id,
-            "no_survived_plants": pr.no_survived_plants,
-            "no_dead_plants": pr.no_dead_plants,
+            "total_survived": pr.total_survived,
+            "total_dead": pr.total_dead,
+            "species": serialize_progress_report_species(pr),
             "description": pr.description,
             "status": pr.status,
             "proof_image": pr.proof_image_monitor_required.url if pr.proof_image_monitor_required else None,
@@ -212,7 +240,7 @@ def get_ongoing_applications(request):
     
     qs = Application.objects.filter(status__in=status_list).select_related(
         'site__reforestation_area__barangay', 
-        'user__organization'
+        'user__tree_grower_group'
     )
     
     if barangay:
@@ -223,7 +251,7 @@ def get_ongoing_applications(request):
     data = [{
         "application_id": app.application_id,
         "title": app.title,
-        "organization_name": app.user.organization.organization_name,
+        "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "N/A",
         "status": app.status,
         "site_name": app.site.name if app.site else None,
         "barangay": (
@@ -238,7 +266,6 @@ def get_ongoing_applications(request):
     return JsonResponse(data, safe=False, status=200)
 
 
-
 @csrf_exempt
 def get_tree_grower_application(request):
     if request.method != 'GET':
@@ -248,17 +275,28 @@ def get_tree_grower_application(request):
     if not user or user.user_role != 'treeGrowers':
         return JsonResponse({'error': 'Unauthorized: TreeGrowers only'}, status=403)
 
-    # ✅ FIX: Get the LATEST application instead of assuming 1-to-1
-    app = Application.objects.filter(user=user).order_by('-created_at').first()
+    # Optimize query to fetch all related site data in one go
+    # We use select_related for FK/O2O and prefetch_related for Reverse Relations
+    app = Application.objects.select_related(
+        'user__tree_grower_group',
+        'user__profile',
+        'site__reforestation_area__barangay',
+        'site__meta_verification',
+        'site__meta_verification__verified_land_classification'
+    ).prefetch_related(
+        'site__site_images',
+        'site__species_recommendations',
+        'site__species_recommendations__tree_species'
+    ).filter(user=user).order_by('-created_at').first()
     
-    # Base user/org data (always return this so the frontend knows who is logged in)
-    org_data = {
-        "organization_name": user.organization.organization_name,
-        "org_email": user.organization.email,
-        "org_contact": user.organization.contact,
-        "org_address": user.organization.address,
-        "org_profile": user.organization.profile_img.url if user.organization.profile_img else None,
-    } if hasattr(user, 'organization') else None
+    # Base user/group data
+    group_data = {
+        "group_name": user.tree_grower_group.group_name,
+        "group_type": user.tree_grower_group.get_group_type_display(),
+        "group_contact": user.tree_grower_group.contact,
+        "group_address": user.tree_grower_group.address,
+        "group_profile": user.tree_grower_group.profile_img.url if user.tree_grower_group.profile_img else None,
+    } if hasattr(user, 'tree_grower_group') else None
     
     profile_data = {
         "first_name": user.profile.first_name,
@@ -266,65 +304,126 @@ def get_tree_grower_application(request):
         "contact": user.profile.contact,
         "gender": user.profile.gender,
         "profile_img": user.profile.profile_img.url if user.profile.profile_img else None,
-    } if hasattr(user, 'profile') else None
+    } if hasattr(user, 'profile') and user.profile else None
 
-    # ✅ If no application exists, return null application but keep user data
+    # If no application exists
     if not app:
         return JsonResponse({
             "application": None,
-            "organization": org_data,
+            "group": group_data,
             "profile": profile_data,
             "assigned_site": None,
+            "proposed_site": None,
             "seedling_requests": [],
             "progress_reports": [],
             "latest_reason": None
         }, status=200)
 
-    # --- If application exists, proceed with normal serialization ---
-    latest_reason = Reason.objects.filter(application=app).order_by('-created').first()
+    # Get seedling requests & progress reports
     seedling_requests = SeedlingRequest.objects.filter(application=app).order_by('-created_at')
     progress_reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
+    latest_reason = Reason.objects.filter(application=app).order_by('-created').first()
+
+    # ─── Helper to serialize assigned site with all new details ─────────────
+    assigned_site_data = None
+    if app.site:
+        site = app.site
+        meta = getattr(site, 'meta_verification', None)
+        
+        # Fetch General Images (Filtered for 'general' tag only)
+        general_images = [
+            {
+                "image_url": img.img.url if img.img else None,
+                "caption": img.caption
+            } 
+            for img in site.site_images.filter(layer_tag='general').order_by('-created_at')
+        ]
+        
+        # Fetch Recommended Species
+        recommended_species = [
+            {
+                "species_id": rec.tree_species.tree_specie_id if rec.tree_species else None,
+                "species_name": rec.tree_species.name if rec.tree_species else "Unknown",
+                "rank": rec.priority_rank
+            } 
+            for rec in site.species_recommendations.select_related('tree_species').all().order_by('priority_rank')
+        ]
+
+        assigned_site_data = {
+            "site_id": site.site_id,
+            "name": site.name,
+            "total_area_hectares": site.total_area_hectares,
+            "ndvi_value": site.ndvi_value,
+            "polygon_coordinates": site.polygon_coordinates,
+            
+            # 📍 Location Context
+            "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
+            "barangay_name": (
+                site.reforestation_area.barangay.name 
+                if site.reforestation_area and site.reforestation_area.barangay 
+                else None
+            ),
+            
+            # 🛡️ Metadata (Accessibility & Land Classification)
+            "accessibility": meta.verified_accessibility if meta else None,
+            "land_classification_name": (
+                meta.verified_land_classification.name 
+                if meta and meta.verified_land_classification else None
+            ),
+            
+            # 🖼️ General Images Carousel
+            "general_images": general_images,
+            
+            # 🌳 Recommended Species
+            "recommended_species": recommended_species,
+        }
+
+    # ─── Helper to serialize proposed site ──────────────────────────────────
+    proposed_site_data = None
+    if app.proposed_site:
+        prop = app.proposed_site
+        proposed_site_data = {
+            "site_id": prop.site_id,
+            "name": prop.name,
+            "barangay": (
+                prop.reforestation_area.barangay.name 
+                if prop.reforestation_area and prop.reforestation_area.barangay 
+                else None
+            ),
+        }
 
     data = {
         "application": {
             "application_id": app.application_id,
             "title": app.title,
-            "description": app.description,
             "classification": app.classification,
             "status": app.status,
-            "total_members": app.total_members,
-            "project_duration": app.project_duration,
+            "total_treegrowers_will_participate": app.total_treegrowers_will_participate,
             "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
+            "proposed_orientation_date": app.proposed_orientation_date.isoformat() if app.proposed_orientation_date else None,
             "confirmed_at": app.confirmed_at.isoformat() if app.confirmed_at else None,
             "maintenance_plan": app.maintenance_plan.url if app.maintenance_plan else None,
             "agreement_image": app.agreement_image.url if app.agreement_image else None,
             "created_at": app.created_at.isoformat(),
             "updated_at": app.updated_at.isoformat(),
         },
-        "organization": org_data,
+        "group": group_data,
         "profile": profile_data,
-        "assigned_site": {
-            "site_id": app.site.site_id,
-            "name": app.site.name,
-            "barangay": (
-                app.site.reforestation_area.barangay.name 
-                if app.site.reforestation_area and app.site.reforestation_area.barangay 
-                else None
-            ),
-            "polygon_coordinates": app.site.polygon_coordinates,
-        } if app.site else None,
+        "assigned_site": assigned_site_data,
+        "proposed_site": proposed_site_data,
         "seedling_requests": [{
-            "request_id": sr.maintenance_report_id,
+            "request_id": sr.seedling_request_id,
             "no_request_seedling": sr.no_request_seedling,
-            "seedling_type": serialize_seedling_type(sr.seedling_type),
+            "species": serialize_seedling_request_species(sr),
             "status": sr.status,
             "reason_accepted": sr.reason_accepted,
             "submitted_at": sr.submitted_at.isoformat() if sr.submitted_at else None
         } for sr in seedling_requests],
         "progress_reports": [{
             "report_id": pr.progress_report_id,
-            "no_survived_plants": pr.no_survived_plants,
-            "no_dead_plants": pr.no_dead_plants,
+            "total_survived": pr.total_survived,
+            "total_dead": pr.total_dead,
+            "species": serialize_progress_report_species(pr),
             "description": pr.description,
             "status": pr.status,
             "proof_image": pr.proof_image_monitor_required.url if pr.proof_image_monitor_required else None,
@@ -345,8 +444,8 @@ def get_tree_grower_application(request):
 @csrf_exempt
 def evaluate_application(request, application_id):
     """
-    DataManager: Assign site, orientation, agreement, provide seedlings 
-    (multiple species with individual providers), add reason → forward to Head
+    DataManager: Assign site and orientation date, add reason → forward to Head
+    NOTE: Seedling provisioning happens AFTER application acceptance via create_seedling_request
     """
     if request.method not in ('PUT', 'POST'):
         return JsonResponse({'error': 'Only PUT/POST allowed'}, status=405)
@@ -359,53 +458,22 @@ def evaluate_application(request, application_id):
     if app.status not in ['for_evaluation']:
         return JsonResponse({'error': 'Application not in evaluation stage'}, status=400)
 
-    # ─── Extract form data ─────────────────────────────────────────────
+    # Extract form data
     site_id = request.POST.get('site_id')
     orientation_date = request.POST.get('orientation_date')
     reason_text = request.POST.get('reason', '').strip()
-    
-    # ─── Parse seedling provision JSON (NEW NESTED FORMAT) ─────────────
-    seedling_provision_json = request.POST.get('seedling_provision', '{}')
-    
-    try:
-        seedling_provision = json.loads(seedling_provision_json)
-        
-        if not isinstance(seedling_provision, dict):
-            raise ValueError("seedling_provision must be a JSON object")
-        
-        # Validate and normalize nested structure for each species
-        for species, data in seedling_provision.items():
-            if not isinstance(data, dict):
-                raise ValueError(f"Data for '{species}' must be an object")
-            if 'quantity' not in data or 'provided_by' not in data:
-                raise ValueError(f"Missing 'quantity' or 'provided_by' for '{species}'")
-            if not isinstance(data['quantity'], (int, float)) or data['quantity'] < 1:
-                raise ValueError(f"Invalid quantity for '{species}'")
-            if not data['provided_by'] or not isinstance(data['provided_by'], str):
-                raise ValueError(f"Invalid provided_by for '{species}'")
-                
-    except json.JSONDecodeError as e:
-        return JsonResponse({'error': f'Invalid JSON format: {str(e)}'}, status=400)
-    except ValueError as e:
-        return JsonResponse({'error': str(e)}, status=400)
 
-    # ─── Validate required fields ──────────────────────────────────────
+    # Validate required fields
     if not site_id:
         return JsonResponse({'error': 'site_id is required'}, status=400)
     if not orientation_date:
         return JsonResponse({'error': 'orientation_date is required'}, status=400)
 
     site = get_object_or_404(Sites, site_id=site_id)
-    
-    # Calculate total seedlings from nested structure
-    total_seedlings = sum(
-        data['quantity'] for data in seedling_provision.values() 
-        if isinstance(data, dict) and 'quantity' in data
-    )
 
     try:
         with transaction.atomic():
-            # ─── Update Application ───────────────────────────────────
+            # Update Application
             app.site = site
             app.orientation_date = orientation_date
             app.status = 'for_head'
@@ -414,31 +482,7 @@ def evaluate_application(request, application_id):
                 app.agreement_image = request.FILES['agreement_image']
             app.save()
 
-            # ─── Update or Create SeedlingRequest ─────────────────────
-            initial_request = SeedlingRequest.objects.filter(
-                application=app, 
-                status='pending'
-            ).first()
-            
-            if initial_request:
-                # Update existing request with nested provision data
-                initial_request.status = 'accepted'
-                initial_request.seedling_type = seedling_provision  # Store nested JSON
-                initial_request.no_request_seedling = total_seedlings
-                initial_request.reason_accepted = f"DM Evaluation: {reason_text}"
-                initial_request.save()
-            else:
-                # Create new provision record
-                SeedlingRequest.objects.create(
-                    application=app,
-                    no_request_seedling=total_seedlings,
-                    seedling_type=seedling_provision,  # Store nested JSON
-                    description="Provision details set during DM evaluation",
-                    status='accepted',
-                    reason_accepted=f"DM Evaluation: {reason_text}"
-                )
-
-            # ─── Log Reason for audit trail ───────────────────────────
+            # Log Reason for audit trail
             Reason.objects.create(
                 user=user,
                 application=app,
@@ -447,19 +491,17 @@ def evaluate_application(request, application_id):
                 status='for_head'
             )
 
-        # ─── Success Response ─────────────────────────────────────────
+        # Success Response
         return JsonResponse({
             'message': 'Application evaluated and forwarded to Head', 
-            'application_id': app.application_id,
-            'seedling_provision': seedling_provision,  # Echo nested structure
-            'total_seedlings': total_seedlings
+            'application_id': app.application_id
         }, status=200)
         
     except Sites.DoesNotExist:
         return JsonResponse({'error': 'Selected site not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
-
+    
 
 @csrf_exempt
 def confirm_application(request, application_id):
@@ -488,17 +530,14 @@ def confirm_application(request, application_id):
 
     try:
         with transaction.atomic():
-            app.confirmed_at = timezone.now()
+            app.confirmed_at = timezone.now().date()
             
-            # ✅ FIX #2: Clear workflow state management
             if status == 'accepted':
                 # Activate user account
                 app.user.is_active = True
                 app.user.save()
-                # Move to monitoring phase
                 workflow_status = 'accepted'
             else:
-                # Rejected - stay as rejected
                 workflow_status = 'rejected'
             
             app.status = workflow_status
@@ -510,12 +549,12 @@ def confirm_application(request, application_id):
                 application=app,
                 status_layer='new_program',
                 reason=reason_text,
-                status=status  # Store the decision (accepted/rejected), not workflow state
+                status=status
             )
 
         return JsonResponse({
             'message': f'Application {status}', 
-            'new_status': app.status  # Returns actual stored status (under_monitoring or rejected)
+            'new_status': app.status
         }, status=200)
         
     except Exception as e:
@@ -537,11 +576,9 @@ def complete_application(request, application_id):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    # ✅ Extract the status sent from the frontend ("completed" or "failed")
     new_status = data.get('status', 'completed').strip()
     reason_text = data.get('reason', 'Program finalized.').strip()
     
-    # Validate the status
     if new_status not in ['completed', 'failed']:
         return JsonResponse({'error': 'Status must be completed or failed'}, status=400)
 
@@ -552,11 +589,9 @@ def complete_application(request, application_id):
 
     try:
         with transaction.atomic():
-            # 1. Update the application status
             app.status = new_status
             app.save()
             
-            # 2. Log the reason for the audit trail
             Reason.objects.create(
                 user=user,
                 application=app,
@@ -565,12 +600,9 @@ def complete_application(request, application_id):
                 status=new_status
             )
             
-            # ✅ 3. NEW: If completed, update the associated Site status to 'completed'
             if new_status == 'completed' and app.site:
                 app.site.status = 'completed'
                 app.site.save()
-            
-            # ✅ If failed, the site status remains 'accepted' (we do nothing to the site)
 
         return JsonResponse({
             'message': f'Application marked as {new_status}',
@@ -596,19 +628,18 @@ def create_seedling_request(request):
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
     app_id = request.POST.get('application_id')
-    no_request = request.POST.get('no_request_seedling')
-    seedling_type_str = request.POST.get('seedling_type')
     description = request.POST.get('description', '').strip()
+    seedling_species_json = request.POST.get('seedling_species')
     
-    if not app_id or not no_request or not seedling_type_str:
-        return JsonResponse({'error': 'application_id, no_request_seedling, seedling_type required'}, status=400)
+    if not app_id or not seedling_species_json:
+        return JsonResponse({'error': 'application_id and seedling_species required'}, status=400)
 
     try:
-        seedling_type = json.loads(seedling_type_str)
-        if not isinstance(seedling_type, dict):
-            raise ValueError
-    except:
-        return JsonResponse({'error': 'seedling_type must be valid JSON object'}, status=400)
+        seedling_species = json.loads(seedling_species_json)
+        if not isinstance(seedling_species, list):
+            raise ValueError("seedling_species must be a JSON array")
+    except (ValueError, json.JSONDecodeError) as e:
+        return JsonResponse({'error': f'Invalid seedling_species format: {str(e)}'}, status=400)
 
     app = get_object_or_404(Application, application_id=app_id, user=user)
     if app.status not in ['accepted', 'under_monitoring', 'completed']:
@@ -616,18 +647,43 @@ def create_seedling_request(request):
 
     try:
         with transaction.atomic():
-            # ✅ FIX #3: Normalize to nested format for consistency
-            normalized_seedling_type = normalize_seedling_type(seedling_type)
-            
             req = SeedlingRequest.objects.create(
                 application=app,
-                no_request_seedling=int(no_request),
-                seedling_type=normalized_seedling_type,  # Always store nested format
                 description=description,
                 status='pending',
                 request_file=request.FILES.get('request_file')
             )
-        return JsonResponse({'message': 'Seedling request submitted', 'request_id': req.maintenance_report_id}, status=201)
+
+            # Create species records
+            total_seedlings = 0
+            for item in seedling_species:
+                if not isinstance(item, dict):
+                    raise ValueError("Each seedling species must be an object")
+                
+                tree_species_id = item.get('tree_species_id')
+                quantity = item.get('quantity', 0)
+                provided_by = item.get('provided_by', 'ENRO Nursery')
+
+                if not tree_species_id or quantity < 1:
+                    raise ValueError(f"Invalid species data: {item}")
+
+                tree_species = get_object_or_404(Tree_species, tree_specie_id=tree_species_id)
+
+                SeedlingRequestSpecies.objects.create(
+                    seedling_request=req,
+                    tree_species=tree_species,
+                    quantity=int(quantity),
+                    provided_by=provided_by,
+                )
+                total_seedlings += int(quantity)
+
+            # Update total
+            req.no_request_seedling = total_seedlings
+            req.save()
+
+        return JsonResponse({'message': 'Seedling request submitted', 'request_id': req.seedling_request_id}, status=201)
+    except Tree_species.DoesNotExist as e:
+        return JsonResponse({'error': f'Tree species not found: {str(e)}'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -652,53 +708,67 @@ def update_seedling_request(request, request_id):
 
     status = data.get('status')
     reason_text = data.get('reason', '').strip()
-    
-    # NEW: Optional seedling provision for editing
     seedling_provision = data.get('seedling_provision')
     
     if status not in ['accepted', 'rejected']:
         return JsonResponse({'error': 'Status must be accepted or rejected'}, status=400)
 
-    req = get_object_or_404(SeedlingRequest, maintenance_report_id=request_id)
+    req = get_object_or_404(SeedlingRequest, seedling_request_id=request_id)
     if req.status != 'pending':
         return JsonResponse({'error': 'Request already processed'}, status=400)
 
     try:
         with transaction.atomic():
-            # ✅ If DM provided new seedling details and is accepting, update them
             if status == 'accepted' and seedling_provision:
-                # Validate nested format using helper
-                seedling_provision = normalize_seedling_type(seedling_provision)
-                
-                if not seedling_provision:
-                    return JsonResponse({'error': 'Invalid seedling provision data'}, status=400)
-                
-                # Calculate total seedlings
-                total_seedlings = sum(int(p['quantity']) for p in seedling_provision.values())
-                
-                if total_seedlings < 1:
-                    return JsonResponse({'error': 'Total seedlings must be at least 1'}, status=400)
+                if not isinstance(seedling_provision, list):
+                    return JsonResponse({'error': 'seedling_provision must be a JSON array'}, status=400)
 
-                # Update the request with DM's provision
-                req.seedling_type = seedling_provision
+                # Clear existing species
+                req.seedling_species.all().delete()
+
+                # Create new species records
+                total_seedlings = 0
+                for item in seedling_provision:
+                    if not isinstance(item, dict):
+                        raise ValueError("Each seedling provision must be an object")
+                    
+                    tree_species_id = item.get('tree_species_id')
+                    quantity = item.get('quantity', 0)
+                    provided_by = item.get('provided_by', 'ENRO Nursery')
+
+                    if not tree_species_id or quantity < 1:
+                        raise ValueError(f"Invalid species data: {item}")
+
+                    tree_species = get_object_or_404(Tree_species, tree_specie_id=tree_species_id)
+
+                    SeedlingRequestSpecies.objects.create(
+                        seedling_request=req,
+                        tree_species=tree_species,
+                        quantity=int(quantity),
+                        provided_by=provided_by,
+                    )
+                    total_seedlings += int(quantity)
+
                 req.no_request_seedling = total_seedlings
             
-            # Update status and reason
             req.status = status
             req.reason_accepted = reason_text
             req.save()
             
-            # Log reason for audit
             Reason.objects.create(
                 user=user,
                 application=req.application,
-                status_layer='new_program',
+                status_layer='seedling_request',
                 reason=reason_text,
                 status=status
             )
+
         return JsonResponse({'message': f'Request {status}'}, status=200)
+    except Tree_species.DoesNotExist as e:
+        return JsonResponse({'error': f'Tree species not found: {str(e)}'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
 
 @csrf_exempt
 def delete_seedling_request(request, request_id):
@@ -709,9 +779,8 @@ def delete_seedling_request(request, request_id):
     if not user:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-    req = get_object_or_404(SeedlingRequest, maintenance_report_id=request_id)
+    req = get_object_or_404(SeedlingRequest, seedling_request_id=request_id)
     
-    # Only allow delete if pending and owned by user or DM
     if req.status != 'pending':
         return JsonResponse({'error': 'Cannot delete processed request'}, status=400)
     if user.user_role != 'DataManager' and req.application.user != user:
@@ -734,7 +803,11 @@ def get_seedling_requests(request):
     status_filter = request.GET.get('status')
     app_id = request.GET.get('application_id')
     
-    qs = SeedlingRequest.objects.select_related('application__user__organization').order_by('-created_at')
+    # ✅ Added 'application__site' to select_related to prevent N+1 queries
+    qs = SeedlingRequest.objects.select_related(
+        'application__user__tree_grower_group', 
+        'application__site'
+    ).order_by('-created_at')
     
     if user.user_role == 'treeGrowers':
         qs = qs.filter(application__user=user)
@@ -744,13 +817,13 @@ def get_seedling_requests(request):
         qs = qs.filter(application_id=app_id)
 
     data = [{
-        "request_id": r.maintenance_report_id,
+        "request_id": r.seedling_request_id,
         "application_id": r.application.application_id,
         "application_title": r.application.title,
-        "organization_name": r.application.user.organization.organization_name,
+        "group_name": r.application.user.tree_grower_group.group_name if hasattr(r.application.user, 'tree_grower_group') else "N/A",
+        "site_name": r.application.site.name if r.application.site else None, # ✅ NEW: Site Name
         "no_request_seedling": r.no_request_seedling,
-        # ✅ FIX #4: Serialize to nested format for frontend
-        "seedling_type": serialize_seedling_type(r.seedling_type),
+        "species": serialize_seedling_request_species(r), # ✅ Uses new normalized array
         "status": r.status,
         "reason_accepted": r.reason_accepted,
         "description": r.description,
@@ -775,12 +848,18 @@ def create_progress_report(request):
         return JsonResponse({'error': 'Unauthorized: OnsiteInspector only'}, status=403)
 
     app_id = request.POST.get('application_id')
-    survived = request.POST.get('no_survived_plants', 0)
-    dead = request.POST.get('no_dead_plants', 0)
     description = request.POST.get('description', '').strip()
+    report_species_json = request.POST.get('report_species')
     
-    if not app_id:
-        return JsonResponse({'error': 'application_id required'}, status=400)
+    if not app_id or not report_species_json:
+        return JsonResponse({'error': 'application_id and report_species required'}, status=400)
+
+    try:
+        report_species = json.loads(report_species_json)
+        if not isinstance(report_species, list):
+            raise ValueError("report_species must be a JSON array")
+    except (ValueError, json.JSONDecodeError) as e:
+        return JsonResponse({'error': f'Invalid report_species format: {str(e)}'}, status=400)
 
     app = get_object_or_404(Application, application_id=app_id)
     if app.status not in ['accepted', 'under_monitoring']:
@@ -790,13 +869,35 @@ def create_progress_report(request):
         with transaction.atomic():
             report = ProgressReport.objects.create(
                 application=app,
-                no_survived_plants=int(survived),
-                no_dead_plants=int(dead),
                 description=description,
                 proof_image_monitor_required=request.FILES.get('proof_image'),
-                status='accepted'
+                status='pending'
             )
+
+            # Create species records
+            for item in report_species:
+                if not isinstance(item, dict):
+                    raise ValueError("Each report species must be an object")
+                
+                tree_species_id = item.get('tree_species_id')
+                no_survived = item.get('no_survived', 0)
+                no_dead = item.get('no_dead', 0)
+
+                if not tree_species_id:
+                    raise ValueError(f"Missing tree_species_id: {item}")
+
+                tree_species = get_object_or_404(Tree_species, tree_specie_id=tree_species_id)
+
+                ProgressReportSpecies.objects.create(
+                    progress_report=report,
+                    tree_species=tree_species,
+                    no_survived=int(no_survived),
+                    no_dead=int(no_dead),
+                )
+
         return JsonResponse({'message': 'Progress report submitted', 'report_id': report.progress_report_id}, status=201)
+    except Tree_species.DoesNotExist as e:
+        return JsonResponse({'error': f'Tree species not found: {str(e)}'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -838,10 +939,10 @@ def update_progress_report(request, report_id):
                 reason=reason_text,
                 status=status
             )
+
         return JsonResponse({'message': f'Report {status}'}, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
 
 
 @csrf_exempt
@@ -857,7 +958,7 @@ def get_progress_reports(request):
     app_id = request.GET.get('application_id')
     
     qs = ProgressReport.objects.select_related(
-        'application__user__organization'
+        'application__user__tree_grower_group'
     ).order_by('-created_at')
     
     if status_filter:
@@ -866,12 +967,13 @@ def get_progress_reports(request):
         qs = qs.filter(application_id=app_id)
 
     data = [{
-        "report_id": r.progress_report_id,  # Fixed: Removed space
-        "application_id": r.application.application_id, # Fixed: Removed space
+        "report_id": r.progress_report_id,
+        "application_id": r.application.application_id,
         "application_title": r.application.title,
-        "application_status": r.application.status,  # ✅ NEW: Added for filtering
-        "no_survived_plants": r.no_survived_plants,
-        "no_dead_plants": r.no_dead_plants,
+        "application_status": r.application.status,
+        "total_survived": r.total_survived,
+        "total_dead": r.total_dead,
+        "species": serialize_progress_report_species(r),
         "description": r.description,
         "status": r.status,
         "proof_image": r.proof_image_monitor_required.url if r.proof_image_monitor_required else None,
@@ -881,44 +983,12 @@ def get_progress_reports(request):
     return JsonResponse(data, safe=False, status=200)
 
 
-#     @csrf_exempt
-# def get_progress_reports(request):
-#     if request.method != 'GET':
-#         return JsonResponse({'error': 'Only GET allowed'}, status=405)
-
-#     user = get_user_from_token(request)
-#     if not user:
-#         return JsonResponse({'error': 'Unauthorized'}, status=403)
-
-#     status_filter = request.GET.get('status')
-#     app_id = request.GET.get('application_id')
-    
-#     qs = ProgressReport.objects.select_related('application__user__organization').order_by('-created_at')
-    
-#     if status_filter:
-#         qs = qs.filter(status=status_filter)
-#     if app_id:
-#         qs = qs.filter(application_id=app_id)
-
-#     data = [{
-#         "report_id": r.progress_report_id,
-#         "application_id": r.application.application_id,
-#         "application_title": r.application.title,
-#         "no_survived_plants": r.no_survived_plants,
-#         "no_dead_plants": r.no_dead_plants,
-#         "description": r.description,
-#         "status": r.status,
-#         "proof_image": r.proof_image_monitor_required.url if r.proof_image_monitor_required else None,
-#         "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None
-#     } for r in qs]
-
-#     return JsonResponse(data, safe=False, status=200)
-
 @csrf_exempt
 def create_reapplication(request):
     """
     TreeGrower: Apply for a NEW tree planting program.
-    Reuses existing User and Organization. Only creates new Application & SeedlingRequest.
+    Reuses existing User and Group. Only creates new Application.
+    NOTE: Seedling requests happen AFTER application acceptance via create_seedling_request
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
@@ -927,55 +997,48 @@ def create_reapplication(request):
     if not user or user.user_role != 'treeGrowers':
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-    # ✅ Prevent duplicate active applications
+    # Prevent duplicate active applications
     active_statuses = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
     if Application.objects.filter(user=user, status__in=active_statuses).exists():
         return JsonResponse({'error': 'You already have an active application. Please wait for it to be completed or rejected.'}, status=400)
 
     # Extract Application Data
     title = request.POST.get('title')
-    description = request.POST.get('description')
-    total_members = request.POST.get('total_members')
-    project_duration = request.POST.get('project_duration')
+    total_treegrowers = request.POST.get('total_treegrowers_will_participate')
     maintenance_plan = request.FILES.get('maintenance_plan')
-    
-    # Extract Seedling Data
-    no_request_seedling = request.POST.get('no_request_seedling')
-    seedling_type_str = request.POST.get('seedling_type')
-    seedling_description = request.POST.get('seedling_description', '')
-    seedling_request_file = request.FILES.get('seedling_request_file')
 
-    if not all([title, description, total_members, project_duration, maintenance_plan, no_request_seedling, seedling_type_str]):
-        return JsonResponse({'error': 'Missing required fields.'}, status=400)
+    if not all([title, total_treegrowers, maintenance_plan]):
+        return JsonResponse({'error': 'Missing required fields: title, total_treegrowers_will_participate, maintenance_plan'}, status=400)
 
     try:
-        seedling_type = json.loads(seedling_type_str)
-        if not isinstance(seedling_type, dict): raise ValueError
-    except:
-        return JsonResponse({'error': 'seedling_type must be valid JSON'}, status=400)
+        total_treegrowers = int(total_treegrowers)
+        if total_treegrowers < 2:
+            return JsonResponse({'error': 'Minimum 2 tree growers required'}, status=400)
+    except ValueError:
+        return JsonResponse({'error': 'total_treegrowers_will_participate must be a valid integer'}, status=400)
+
+    # Optional proposed_site and proposed_orientation_date
+    proposed_site_id = request.POST.get('proposed_site_id') or None
+    proposed_orientation_date = request.POST.get('proposed_orientation_date')
+    
+    if proposed_orientation_date:
+        try:
+            proposed_orientation_date = datetime.strptime(proposed_orientation_date, '%Y-%m-%d').date()
+        except ValueError:
+            return JsonResponse({'error': 'Invalid proposed_orientation_date format. Use YYYY-MM-DD.'}, status=400)
 
     try:
         with transaction.atomic():
-            # 1. Create New Application (classification='old' since they are a returning user)
+            # Create New Application (classification='old' since they are a returning user)
             app = Application.objects.create(
                 user=user,
                 title=title,
-                description=description,
-                total_members=int(total_members),
-                project_duration=int(project_duration),
+                total_treegrowers_will_participate=total_treegrowers,
                 maintenance_plan=maintenance_plan,
                 classification='old', 
-                status='for_evaluation'
-            )
-            
-            # 2. Create New Seedling Request
-            SeedlingRequest.objects.create(
-                application=app,
-                no_request_seedling=int(no_request_seedling),
-                seedling_type=seedling_type,
-                description=seedling_description,
-                request_file=seedling_request_file,
-                status='pending'
+                status='for_evaluation',
+                proposed_site_id=proposed_site_id,
+                proposed_orientation_date=proposed_orientation_date,
             )
             
         return JsonResponse({
@@ -985,6 +1048,7 @@ def create_reapplication(request):
         
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
 
 @csrf_exempt
 def get_tree_grower_application_history(request):
@@ -999,31 +1063,34 @@ def get_tree_grower_application_history(request):
     if not user or user.user_role != 'treeGrowers':
         return JsonResponse({'error': 'Unauthorized: TreeGrowers only'}, status=403)
 
-    # Get ALL applications for this user, ordered by creation date (newest first)
     applications = Application.objects.filter(user=user).order_by('-created_at')
     
     history_data = []
     
     for app in applications:
-        # Get all progress reports for this application (NOT MaintenanceReport!)
         reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
         
-        # Calculate totals for this application
-        total_planted = sum(r.no_dead_plants + r.no_survived_plants for r in reports if r.status == 'accepted')
-        total_survived = sum(r.no_survived_plants for r in reports if r.status == 'accepted')
+        # Calculate totals from species records
+        total_planted = 0
+        total_survived = 0
+        for r in reports:
+            if r.status == 'accepted':
+                total_planted += r.total_plants
+                total_survived += r.total_survived
         
         # Get seedling request totals
         seedling_requests = SeedlingRequest.objects.filter(application=app)
         total_requested = sum(sr.no_request_seedling for sr in seedling_requests)
-        total_provided = sum(
-            sum(data.get('quantity', 0) for data in sr.seedling_type.values() if isinstance(data, dict))
-            for sr in seedling_requests if sr.status == 'accepted' and sr.seedling_type
-        )
+        
+        # Calculate total provided from species records
+        total_provided = 0
+        for sr in seedling_requests:
+            if sr.status == 'accepted':
+                total_provided += sum(s.quantity for s in sr.seedling_species.all())
         
         app_data = {
             "application_id": app.application_id,
             "title": app.title,
-            "description": app.description,
             "status": app.status,
             "classification": app.classification,
             "created_at": app.created_at.isoformat(),
@@ -1034,17 +1101,13 @@ def get_tree_grower_application_history(request):
             "total_seedling_provided": total_provided,
             "total_seedling_planted": total_planted,
             "total_seedling_survived": total_survived,
-            "total_area_planted": "0.00",  # ProgressReport doesn't track area, set to 0
             "reports": [{
-                "maintenance_report_id": r.progress_report_id,  # Map to frontend expectation
-                "title": f"Progress Report #{r.progress_report_id}",  # Generate title
+                "report_id": r.progress_report_id,
                 "description": r.description or "No description provided",
                 "status": r.status,
-                "total_seedling_planted": r.no_dead_plants + r.no_survived_plants,  # Calculate total
-                "total_seedling_survived": r.no_survived_plants,
-                "total_area_planted": "0.00",  # Not tracked in ProgressReport
-                "total_owned_seedling_planted": 0,  # Not tracked in ProgressReport
-                "total_member_present": None,  # Not tracked in ProgressReport
+                "total_seedling_planted": r.total_plants,
+                "total_seedling_survived": r.total_survived,
+                "species": serialize_progress_report_species(r),
                 "created_at": r.created_at.isoformat(),
                 "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
             } for r in reports]
@@ -1056,12 +1119,11 @@ def get_tree_grower_application_history(request):
         "total_applications": len(history_data)
     }, status=200)
 
+
 @csrf_exempt
 def get_orientation_dates(request):
     """
     Fetch all applications with scheduled orientation dates for the Calendar.
-    - TreeGrowers only see their own orientations.
-    - DataManager and CityENROHead see all orientations.
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -1070,25 +1132,22 @@ def get_orientation_dates(request):
     if not user:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-    # Base queryset: only fetch applications that have an orientation_date assigned
     qs = Application.objects.filter(
         orientation_date__isnull=False
     ).order_by('orientation_date')
     
-    # Role-based filtering: Tree Growers should only see their own calendar events
     if user.user_role == 'treeGrowers':
         qs = qs.filter(user=user)
-    # DataManager and CityENROHead can see all scheduled orientations
 
-    # Serialize the data to match the frontend's OrientationDate interface
     data = [{
         "application_id": app.application_id,
         "title": app.title,
-        "orientation_date": app.orientation_date.isoformat(), # Formats as YYYY-MM-DD
+        "orientation_date": app.orientation_date.isoformat(),
         "status": app.status,
     } for app in qs]
 
     return JsonResponse(data, safe=False, status=200)
+
 
 @csrf_exempt
 def get_site_applications(request, site_id):
@@ -1097,9 +1156,8 @@ def get_site_applications(request, site_id):
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     try:
-        # Fetch applications linked to this site, including organization details
         apps = Application.objects.filter(site_id=site_id).select_related(
-            'user__organization'
+            'user__tree_grower_group'
         ).order_by('-created_at')
         
         data = [{
@@ -1107,8 +1165,8 @@ def get_site_applications(request, site_id):
             "title": app.title,
             "status": app.status,
             "classification": app.classification,
-            "organization_name": app.user.organization.organization_name if hasattr(app.user, 'organization') else "Unknown",
-            "total_members": app.total_members,
+            "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "Unknown",
+            "total_treegrowers_will_participate": app.total_treegrowers_will_participate,
             "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
             "created_at": app.created_at.strftime("%b %d, %Y"),
         } for app in apps]
@@ -1116,6 +1174,7 @@ def get_site_applications(request, site_id):
         return JsonResponse({"applications": data}, status=200)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
 
 @csrf_exempt
 def get_general_report_data(request):
@@ -1129,38 +1188,38 @@ def get_general_report_data(request):
     if not user:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-    # ─── 1. Summary Stats ──────────────────────────────────────────────
-    total_orgs = User.objects.filter(
+    # Summary Stats
+    total_groups = User.objects.filter(
         user_role='treeGrowers', 
         applications__isnull=False
     ).distinct().count()
     
     completed_apps = Application.objects.filter(status='completed').count()
-    # Count rejected, failed, or cancelled as "failed" programs
     failed_apps = Application.objects.filter(status__in=['rejected', 'failed', 'cancelled']).count()
     ongoing_apps = Application.objects.filter(status__in=['accepted', 'under_monitoring', 'for_head', 'for_evaluation']).count()
 
-    # Seedling Stats (Only count accepted requests)
-    seedling_stats = SeedlingRequest.objects.filter(status='accepted').aggregate(
-        total_requested=Sum('no_request_seedling')
-    )
-    total_requested = seedling_stats['total_requested'] or 0
+    # Seedling Stats (from normalized species table)
+    total_requested = SeedlingRequestSpecies.objects.filter(
+        seedling_request__status='accepted'
+    ).aggregate(total=Sum('quantity'))['total'] or 0
 
-    # Progress Stats (Only count accepted reports)
-    progress_stats = ProgressReport.objects.filter(status='accepted').aggregate(
-        total_survived=Sum('no_survived_plants'),
-        total_dead=Sum('no_dead_plants')
+    # Progress Stats (from normalized species table)
+    progress_stats = ProgressReportSpecies.objects.filter(
+        progress_report__status='accepted'
+    ).aggregate(
+        total_survived=Sum('no_survived'),
+        total_dead=Sum('no_dead')
     )
     total_survived = progress_stats['total_survived'] or 0
     total_dead = progress_stats['total_dead'] or 0
 
-    # Site Stats (Only completed sites)
+    # Site Stats
     site_stats = Sites.objects.filter(status='completed').aggregate(
         total_area=Sum('total_area_hectares')
     )
     total_area = site_stats['total_area'] or 0.0
 
-    # ─── 2. Monthly Trend (Last 6 Months) ──────────────────────────────
+    # Monthly Trend
     six_months_ago = datetime.now() - timedelta(days=180)
     monthly_apps = Application.objects.filter(
         created_at__gte=six_months_ago
@@ -1179,13 +1238,12 @@ def get_general_report_data(request):
         } for entry in monthly_apps
     ]
 
-    # ─── 3. Site & Application Correlation ─────────────────────────────
-    # Get sites that have at least one application, fetch the latest application for each
+    # Site & Application Correlation
     sites_with_apps = Sites.objects.filter(
         applications__isnull=False
     ).select_related(
         'reforestation_area__barangay'
-    ).prefetch_related('applications__user__organization').distinct()[:15] # Limit to 15 for performance
+    ).prefetch_related('applications__user__tree_grower_group').distinct()[:15]
 
     site_applications = []
     for site in sites_with_apps:
@@ -1195,14 +1253,13 @@ def get_general_report_data(request):
                 "site_name": site.name,
                 "barangay": site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else "N/A",
                 "app_title": latest_app.title,
-                "org": latest_app.user.organization.organization_name if hasattr(latest_app.user, 'organization') else "Unknown",
+                "group": latest_app.user.tree_grower_group.group_name if hasattr(latest_app.user, 'tree_grower_group') else "Unknown",
                 "status": latest_app.status
             })
 
-    # ─── Return Payload ────────────────────────────────────────────────
     data = {
         "stats": {
-            "total_organizations": total_orgs,
+            "total_groups": total_groups,
             "completed_programs": completed_apps,
             "failed_programs": failed_apps,
             "ongoing_programs": ongoing_apps,
@@ -1217,12 +1274,10 @@ def get_general_report_data(request):
 
     return JsonResponse(data, status=200)
 
-# views.py
-from django.db.models import Q
-import math
 
 @csrf_exempt
 def get_program_history(request):
+
     """Fetch application history with linked site details, supporting filters"""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -1242,19 +1297,17 @@ def get_program_history(request):
     except (ValueError, TypeError):
         entries, page = 10, 1
 
-    # Fetch applications with related site and organization data
     qs = Application.objects.select_related(
-        'user__organization', 
+        'user__tree_grower_group', 
         'site__reforestation_area__barangay'
     ).order_by('-created_at')
     
-    # Apply filters
     if status_filter and status_filter != 'All':
         qs = qs.filter(status=status_filter)
     if search:
         qs = qs.filter(
             Q(title__icontains=search) | 
-            Q(user__organization__organization_name__icontains=search) |
+            Q(user__tree_grower_group__group_name__icontains=search) |
             Q(site__name__icontains=search)
         )
     if date_from:
@@ -1266,18 +1319,15 @@ def get_program_history(request):
     total_page = math.ceil(total / entries) if total > 0 else 1
     offset = (page - 1) * entries
 
-    # Serialize data including linked site information
     data = [{
         "application_id": app.application_id,
         "title": app.title,
         "status": app.status,
         "classification": app.classification,
-        "total_members": app.total_members,
+        "total_treegrowers_will_participate": app.total_treegrowers_will_participate,
         "created_at": app.created_at.strftime("%Y-%m-%d"),
-        "organization_name": app.user.organization.organization_name if hasattr(app.user, 'organization') else "Unknown",
-        "org_email": app.user.organization.email if hasattr(app.user, 'organization') else "",
-        "org_profile": app.user.organization.profile_img.url if hasattr(app.user, 'organization') and app.user.organization.profile_img else None,
-        # ✅ Linked Site Info
+        "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "Unknown",
+        "group_profile": app.user.tree_grower_group.profile_img.url if hasattr(app.user, 'tree_grower_group') and app.user.tree_grower_group.profile_img else None,
         "site_name": app.site.name if app.site else None,
         "site_status": app.site.status if app.site else None,
         "barangay": app.site.reforestation_area.barangay.name if app.site and app.site.reforestation_area and app.site.reforestation_area.barangay else None,
@@ -1290,4 +1340,147 @@ def get_program_history(request):
         'page': page, 
         'entries': entries, 
         'total': total
+    }, status=200)
+
+
+@csrf_exempt
+def delete_application(request, application_id):
+    """
+    Delete an application and all related data (Seedling Requests, Progress Reports, Reasons).
+    Allowed for DataManager or the TreeGrower owner.
+    """
+    if request.method != 'DELETE':
+        return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    app = get_object_or_404(Application, application_id=application_id)
+    
+    # Security: Only DataManager or the owner (TreeGrower) can delete
+    if user.user_role != 'DataManager' and app.user != user:
+        return JsonResponse({'error': 'Unauthorized to delete this application'}, status=403)
+
+    # Safety: Prevent deletion of completed programs to preserve historical data
+    if app.status == 'completed':
+        return JsonResponse({
+            'error': 'Cannot delete a completed application. It is preserved for historical records.'
+        }, status=400)
+
+    try:
+        app_title = app.title
+        
+        # ✅ MAGIC HAPPENS HERE: 
+        # Because of on_delete=models.CASCADE in your models.py, this single line 
+        # automatically deletes all related SeedlingRequests, ProgressReports, and Reasons!
+        app.delete() 
+        
+        return JsonResponse({
+            'message': f'Application "{app_title}" and all related records deleted successfully.'
+        }, status=200)
+        
+    except Exception as e:
+        return JsonResponse({'error': f'Failed to delete application: {str(e)}'}, status=500)
+
+
+@csrf_exempt
+def get_available_sites_for_tree_grower(request):
+    """
+    GET: Fetch sites available for tree grower application with pagination.
+    Returns sites that are:
+    - status = 'accepted'
+    - meta_verification.status = 'verified'
+    
+    ✅ Supports pagination, search, and barangay filter
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role != 'treeGrowers':
+        return JsonResponse({'error': 'Unauthorized: TreeGrowers only'}, status=403)
+
+    # ✅ Check if user has ongoing application
+    ongoing_statuses = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
+    has_ongoing = Application.objects.filter(
+        user=user, 
+        status__in=ongoing_statuses
+    ).exists()
+
+    # ✅ Pagination parameters
+    try:
+        page = max(int(request.GET.get('page', 1)), 1)
+        entries = max(int(request.GET.get('entries', 10)), 10)
+        entries = min(entries, 50)  # Max 50 per page
+    except (ValueError, TypeError):
+        page, entries = 1, 10
+
+    # ✅ Filters
+    search = request.GET.get('search', '').strip()
+    barangay_filter = request.GET.get('barangay', '').strip()
+
+    # ✅ Base query
+    sites = Sites.objects.filter(
+        status='accepted',
+        meta_verification__status='verified',
+        is_active=True
+    ).select_related(
+        'reforestation_area__barangay',
+        'meta_verification'
+    ).prefetch_related(
+        'site_images'
+    ).order_by('-is_pinned', '-created_at')
+
+    # ✅ Apply filters
+    if search:
+        sites = sites.filter(
+            Q(name__icontains=search) |
+            Q(reforestation_area__name__icontains=search)
+        )
+    
+    if barangay_filter:
+        sites = sites.filter(
+            reforestation_area__barangay__name__icontains=barangay_filter
+        )
+
+    # ✅ Pagination
+    total = sites.count()
+    total_page = math.ceil(total / entries) if total > 0 else 1
+    offset = (page - 1) * entries
+    has_next = page < total_page
+
+    # ✅ Serialize sites for current page
+    data = []
+    for site in sites[offset:offset + entries]:
+        general_images = site.site_images.filter(layer_tag='general').order_by('-created_at')
+        images_data = []
+        for img in general_images:
+            if img.img:
+                images_data.append({
+                    'image_id': img.site_image_id,
+                    'url': img.img.url,
+                    'caption': img.caption
+                })
+
+        data.append({
+            'site_id': site.site_id,
+            'name': site.name,
+            'reforestation_area': site.reforestation_area.name,
+            'barangay': site.reforestation_area.barangay.name if site.reforestation_area.barangay else 'N/A',
+            'total_area_hectares': site.total_area_hectares,
+            'ndvi_value': site.ndvi_value,
+            'images': images_data,
+            'is_pinned': site.is_pinned,
+            'created_at': site.created_at.strftime('%Y-%m-%d')
+        })
+
+    return JsonResponse({
+        'data': data,
+        'total': total,
+        'total_page': total_page,
+        'page': page,
+        'entries': entries,
+        'has_next': has_next,
+        'has_ongoing_application': has_ongoing
     }, status=200)

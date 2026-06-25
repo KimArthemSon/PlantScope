@@ -19,6 +19,9 @@ import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-lea
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+// 📍 Mapbox Token
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+
 // 📍 Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -29,10 +32,12 @@ L.Icon.Default.mergeOptions({
 
 // 🖱️ Handles map clicks to update coordinates
 function MapClickHandler({ setBarangay }: any) {
+  const map = useMap();
   useMapEvents({
     click(e) {
       const { lat, lng } = e.latlng;
       setBarangay((prev: any) => ({ ...prev, lat, lng }));
+      map.flyTo(e.latlng, map.getZoom(), { duration: 0.5 });
     },
   });
   return null;
@@ -608,20 +613,28 @@ export default function Barangays() {
                 </div>
                 <div className="flex-1 p-3">
                   <div className="h-full min-h-64 rounded-md overflow-hidden border border-gray-300">
-                    <MapContainer
-                      center={[barangay.lat || 11.007, barangay.lng || 124.602]}
-                      zoom={barangay.lat && barangay.lng ? 15 : 13}
-                      style={{ height: "100%", width: "100%" }}
-                      key={`map-${isOpenAddEditModal}-${editBarangayId}-${barangay.lat}-${barangay.lng}`}
-                      scrollWheelZoom={true} // ✅ Enabled scroll wheel zoom
-                    >
-                      <TileLayer url="http://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" />
-                      <MapClickHandler setBarangay={setBarangay} />
-                      <MapResizer />
-                      {(barangay.lat !== 0 || barangay.lng !== 0) && (
-                        <Marker position={[barangay.lat, barangay.lng]} />
-                      )}
-                    </MapContainer>
+                    {/* ✅ Only render map when modal is open */}
+                    {isOpenAddEditModal && (
+                      <MapContainer
+                        center={[barangay.lat || 11.007, barangay.lng || 124.602]}
+                        zoom={barangay.lat && barangay.lng ? 15 : 13}
+                        style={{ height: "100%", width: "100%" }}
+                        key={`map-${isOpenAddEditModal}-${editBarangayId}`}
+                        scrollWheelZoom={true}
+                      >
+                        <TileLayer
+                          url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
+                          tileSize={512}
+                          zoomOffset={-1}
+                          attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        />
+                        <MapClickHandler setBarangay={setBarangay} />
+                        <MapResizer />
+                        {(barangay.lat !== 0 || barangay.lng !== 0) && (
+                          <Marker position={[barangay.lat, barangay.lng]} />
+                        )}
+                      </MapContainer>
+                    )}
                   </div>
                 </div>
               </div>

@@ -3,6 +3,7 @@ from . import views
 from . import extended_views
 from . import views_matrix
 from . import update_views
+from . import treeGrowers_sties_views
 urlpatterns = [
     # ─────────────────────────────────────────
     # SITE MANAGEMENT (Core)
@@ -47,5 +48,7 @@ urlpatterns = [
     path('list_site_images/<int:site_id>/', update_views.list_site_images, name='list_site_images'),
     path('upload_site_image/<int:site_id>/', update_views.upload_site_image, name='upload_site_image'),
     path('delete_site_image/<int:site_image_id>/', update_views.delete_site_image, name='delete_site_image'),
+     path('get_site_details_for_tree_grower/<int:site_id>/', treeGrowers_sties_views.get_site_details_for_tree_grower, name='get_site_details_for_tree_grower'),
+    
 
 ]

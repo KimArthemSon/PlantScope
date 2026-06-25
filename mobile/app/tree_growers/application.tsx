@@ -19,39 +19,75 @@ import {
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import * as DocumentPicker from "expo-document-picker";
-import MapView, { Marker, Polygon } from "react-native-maps";
+import * as MapViewLib from "react-native-maps";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
+
+// Fallback component for web since react-native-maps is native-only
+const FallbackMap = (props: any) => (
+  <View
+    style={[
+      props.style,
+      {
+        backgroundColor: "#E8F5E9",
+        justifyContent: "center",
+        alignItems: "center",
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "#C8E6C9",
+      },
+    ]}
+  >
+    <Ionicons name="map-outline" size={24} color="#2E7D32" />
+    <Text
+      style={{
+        color: "#2E7D32",
+        fontSize: 12,
+        fontWeight: "600",
+        marginTop: 4,
+      }}
+    >
+      Map view is not available on web
+    </Text>
+  </View>
+);
+
+const MapView = (
+  Platform.OS === "web" ? FallbackMap : MapViewLib.default || MapViewLib
+) as any;
+const Marker = (
+  Platform.OS === "web" ? () => null : MapViewLib.Marker || (() => null)
+) as any;
+const Polygon = (
+  Platform.OS === "web" ? () => null : MapViewLib.Polygon || (() => null)
+) as any;
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 // ─── Types ───────────────────────────────────────────────────────────────
-interface SeedlingProvision {
-  quantity: number;
-  provided_by: string;
-}
 interface ApplicationData {
   application_id: number;
   title: string;
-  description: string;
   classification: "new" | "old";
   status: string;
-  total_members: number;
-  project_duration: number | null;
+  total_treegrowers_will_participate: number;
   orientation_date: string | null;
+  proposed_orientation_date: string | null;
   confirmed_at: string | null;
   maintenance_plan: string | null;
   agreement_image: string | null;
   created_at: string;
   updated_at: string;
 }
-interface OrganizationData {
-  organization_name: string;
-  org_email: string;
-  org_contact: string;
-  org_address: string;
-  org_profile: string | null;
+
+interface GroupData {
+  group_name: string;
+  group_type: string;
+  group_contact: string;
+  group_address: string;
+  group_profile: string | null;
 }
+
 interface ProfileData {
   first_name: string;
   last_name: string;
@@ -59,37 +95,83 @@ interface ProfileData {
   gender: string;
   profile_img: string;
 }
+
+interface GeneralImage {
+  image_url: string | null;
+  caption: string | null;
+}
+
+interface RecommendedSpecies {
+  species_id: number;
+  species_name: string;
+  rank: number;
+}
+
 interface AssignedSite {
   site_id: number;
   name: string;
-  barangay: string | null;
+  total_area_hectares: number;
+  ndvi_value: number | null;
   polygon_coordinates: [number, number][] | string | null;
+  reforestation_area_name: string | null;
+  barangay_name: string | null;
+  accessibility: any;
+  land_classification_name: string | null;
+  general_images: GeneralImage[];
+  recommended_species: RecommendedSpecies[];
 }
+
+interface SeedlingSpeciesItem {
+  species_id: number;
+  species_name: string;
+  quantity: number;
+  provided_by: string;
+}
+
 interface SeedlingRequest {
   request_id: number;
   no_request_seedling: number;
-  seedling_type: Record<string, number | SeedlingProvision>;
+  species: SeedlingSpeciesItem[];
   status: "pending" | "accepted" | "rejected";
   reason_accepted: string | null;
   submitted_at: string | null;
 }
+
+interface ProgressReportSpeciesItem {
+  species_id: number;
+  species_name: string;
+  no_survived: number;
+  no_dead: number;
+  total: number;
+  survival_rate: number;
+}
+
 interface ProgressReport {
   report_id: number;
-  no_survived_plants: number;
-  no_dead_plants: number;
+  total_survived: number;
+  total_dead: number;
+  species: ProgressReportSpeciesItem[];
   description: string | null;
   status: "pending" | "accepted" | "rejected";
   proof_image: string | null;
   submitted_at: string | null;
 }
+
 interface ApplicationDetail {
   application: ApplicationData | null;
-  organization: OrganizationData | null;
+  group: GroupData | null;
   profile: ProfileData | null;
   assigned_site: AssignedSite | null;
+  proposed_site: any | null;
   seedling_requests: SeedlingRequest[];
   progress_reports: ProgressReport[];
   latest_reason: { reason: string; status: string; created: string } | null;
+}
+
+interface TreeSpeciesOption {
+  tree_specie_id: number;
+  name: string;
+  description: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -139,13 +221,8 @@ const statusConfig: Record<
     text: "#C62828",
     dot: "#D32F2F",
   },
-  pending: {
-    label: "Pending Review",
-    bg: "#FFF8E1",
-    text: "#F57F17",
-    dot: "#F9A825",
-  },
 };
+
 const getStatusConf = (status: string) =>
   statusConfig[status] ?? {
     label: status,
@@ -153,6 +230,7 @@ const getStatusConf = (status: string) =>
     text: "#555",
     dot: "#999",
   };
+
 const formatDate = (iso: string) =>
   !iso
     ? "—"
@@ -162,32 +240,8 @@ const formatDate = (iso: string) =>
         day: "numeric",
       });
 
-const parseSeedlingType = (
-  seedlingType: Record<string, number | SeedlingProvision>,
-) => {
-  return Object.entries(seedlingType).map(([species, data]) => {
-    if (typeof data === "object" && data !== null && "quantity" in data) {
-      return {
-        species,
-        quantity: (data as SeedlingProvision).quantity,
-        provided_by: (data as SeedlingProvision).provided_by,
-      };
-    }
-    return { species, quantity: data as number, provided_by: "Unknown" };
-  });
-};
-
-const getTotalSeedlings = (
-  seedlingType: Record<string, number | SeedlingProvision>,
-) => {
-  return Object.values(seedlingType).reduce((sum, val) => {
-    const qty =
-      typeof val === "object" && val !== null && "quantity" in val
-        ? (val as SeedlingProvision).quantity
-        : (val as number);
-    return sum + (typeof qty === "number" ? qty : 0);
-  }, 0);
-};
+const getTotalSeedlings = (species: SeedlingSpeciesItem[]) =>
+  species.reduce((sum, item) => sum + (item.quantity || 0), 0);
 
 const parsePolygonCoordinates = (
   coords: [number, number][] | string | null | undefined,
@@ -204,6 +258,19 @@ const parsePolygonCoordinates = (
   return [];
 };
 
+const getAccessibilityText = (accessibility: any) => {
+  if (!accessibility) return "Not specified";
+  if (typeof accessibility === "string") return accessibility;
+  if (typeof accessibility === "object") {
+    if (accessibility.type)
+      return accessibility.type
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (l) => l.toUpperCase());
+    if (accessibility.description) return accessibility.description;
+  }
+  return "Specified";
+};
+
 // ─── Sub-components ───────────────────────────────────────────────────────
 const StatusBadge = ({ status }: { status: string }) => {
   const conf = getStatusConf(status);
@@ -214,54 +281,6 @@ const StatusBadge = ({ status }: { status: string }) => {
     </View>
   );
 };
-
-const MetricCard = ({
-  label,
-  value,
-  unit,
-  iconName,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  unit?: string;
-  iconName: string;
-  accent: string;
-}) => (
-  <View style={[metric.card, { borderTopColor: accent }]}>
-    <View style={[metric.iconWrap, { backgroundColor: accent + "18" }]}>
-      <Ionicons name={iconName as any} size={18} color={accent} />
-    </View>
-    <Text style={[metric.value, { color: accent }]}>
-      {typeof value === "number" ? value.toLocaleString() : value}
-      {unit ? <Text style={metric.unit}> {unit}</Text> : null}
-    </Text>
-    <Text style={metric.label}>{label}</Text>
-  </View>
-);
-
-const SeedlingItem = ({
-  species,
-  quantity,
-  provider,
-}: {
-  species: string;
-  quantity: number;
-  provider: string;
-}) => (
-  <View style={seedlingItem.wrap}>
-    <View style={seedlingItem.left}>
-      <Ionicons name="leaf-outline" size={16} color="#0F4A2F" />
-      <Text style={seedlingItem.species}>{species}</Text>
-    </View>
-    <View style={seedlingItem.right}>
-      <Text style={seedlingItem.quantity}>{quantity.toLocaleString()}</Text>
-      <Text style={seedlingItem.provider} numberOfLines={1}>
-        {provider}
-      </Text>
-    </View>
-  </View>
-);
 
 // ─── Main Component ───────────────────────────────────────────────────────
 const ApplicationPage: React.FC = () => {
@@ -279,15 +298,15 @@ const ApplicationPage: React.FC = () => {
   const [reportDetailModal, setReportDetailModal] =
     useState<ProgressReport | null>(null);
 
-  const [seedlingForm, setSeedlingForm] = useState<{
-    quantity: string;
-    description: string;
-    request_file: { uri: string; name: string; type: string } | null;
-  }>({
-    quantity: "",
-    description: "",
-    request_file: null,
-  });
+  // Seedling Request Builder State
+  const [allTreeSpecies, setAllTreeSpecies] = useState<TreeSpeciesOption[]>([]);
+  const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>("");
+  const [selectedQuantity, setSelectedQuantity] = useState<string>("");
+  const [activeSeedlingList, setActiveSeedlingList] = useState<
+    SeedlingSpeciesItem[]
+  >([]);
+  const [requestDescription, setRequestDescription] = useState("");
+  const [requestFile, setRequestFile] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const fetchData = async (isRefresh = false) => {
@@ -321,12 +340,65 @@ const ApplicationPage: React.FC = () => {
     fetchData(true);
   };
 
+  const fetchTreeSpecies = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      const res = await fetch(`${api}/api/get_tree_species_list/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAllTreeSpecies(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch species:", err);
+    }
+  };
+
+  const handleAddSpeciesToList = () => {
+    if (!selectedSpeciesId || !selectedQuantity) {
+      Alert.alert(
+        "Missing Info",
+        "Please select a species and enter a quantity.",
+      );
+      return;
+    }
+    const found = allTreeSpecies.find(
+      (s) => s.tree_specie_id === Number(selectedSpeciesId),
+    );
+    if (!found) return;
+
+    if (activeSeedlingList.find((s) => s.species_id === found.tree_specie_id)) {
+      Alert.alert(
+        "Already Added",
+        "This species is already in your request list.",
+      );
+      return;
+    }
+
+    const newItem: SeedlingSpeciesItem = {
+      species_id: found.tree_specie_id,
+      species_name: found.name,
+      quantity: parseInt(selectedQuantity),
+      provided_by: "TBD",
+    };
+    setActiveSeedlingList([...activeSeedlingList, newItem]);
+    setSelectedSpeciesId("");
+    setSelectedQuantity("");
+  };
+
+  const handleRemoveSpeciesFromList = (speciesId: number) => {
+    setActiveSeedlingList(
+      activeSeedlingList.filter((s) => s.species_id !== speciesId),
+    );
+  };
+
   const handleRequestSeedling = async () => {
     if (!detail?.application) return;
-    if (!seedlingForm.quantity.trim()) {
+    if (activeSeedlingList.length === 0) {
       Alert.alert(
-        "Missing Field",
-        "Please enter the number of seedlings requested.",
+        "Missing Species",
+        "Please add at least one tree species to your request.",
       );
       return;
     }
@@ -335,22 +407,19 @@ const ApplicationPage: React.FC = () => {
     try {
       const token = await SecureStore.getItemAsync("token");
       const fd = new FormData();
-
       fd.append("application_id", String(detail.application.application_id));
-      fd.append("no_request_seedling", seedlingForm.quantity);
-
-      const seedlingType = {
-        TBD: {
-          quantity: parseInt(seedlingForm.quantity),
-          provided_by: "TBD",
-        },
-      };
-      fd.append("seedling_type", JSON.stringify(seedlingType));
-      fd.append("description", seedlingForm.description.trim());
-
-      if (seedlingForm.request_file) {
-        fd.append("request_file", seedlingForm.request_file as any);
-      }
+      fd.append(
+        "seedling_species",
+        JSON.stringify(
+          activeSeedlingList.map((s) => ({
+            tree_species_id: s.species_id,
+            quantity: s.quantity,
+            provided_by: s.provided_by,
+          })),
+        ),
+      );
+      fd.append("description", requestDescription);
+      if (requestFile) fd.append("request_file", requestFile);
 
       const res = await fetch(`${api}/api/create_seedling_request/`, {
         method: "POST",
@@ -358,21 +427,28 @@ const ApplicationPage: React.FC = () => {
         body: fd,
       });
       const responseData = await res.json();
-
       if (!res.ok) throw new Error(responseData.error ?? "Request failed.");
 
       Alert.alert(
         "✓ Request Submitted",
-        "Your seedling request is pending review. The Data Manager will assign species and provider during evaluation.",
+        "Your seedling request is pending review by the Data Manager.",
       );
       setRequestSeedlingModal(false);
-      setSeedlingForm({ quantity: "", description: "", request_file: null });
+      resetSeedlingForm();
       fetchData(true);
     } catch (err: any) {
       Alert.alert("Error", err.message);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const resetSeedlingForm = () => {
+    setActiveSeedlingList([]);
+    setSelectedSpeciesId("");
+    setSelectedQuantity("");
+    setRequestDescription("");
+    setRequestFile(null);
   };
 
   const pickSeedlingFile = async () => {
@@ -386,14 +462,11 @@ const ApplicationPage: React.FC = () => {
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
-      setSeedlingForm((p) => ({
-        ...p,
-        request_file: {
-          uri: asset.uri,
-          name: asset.name,
-          type: asset.mimeType ?? "application/octet-stream",
-        },
-      }));
+      setRequestFile({
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType ?? "application/octet-stream",
+      });
     }
   };
 
@@ -438,10 +511,8 @@ const ApplicationPage: React.FC = () => {
         }
       : null;
 
-  // ✅ FIXED: Changed from .find() to .filter() to get ALL accepted requests
-  const acceptedSeedlingRequests = detail?.seedling_requests?.filter(
-    (r) => r.status === "accepted",
-  ) || [];
+  const acceptedSeedlingRequests =
+    detail?.seedling_requests?.filter((r) => r.status === "accepted") || [];
   const pendingSeedlingRequests =
     detail?.seedling_requests?.filter((r) => r.status === "pending") || [];
   const allProgressReports = detail?.progress_reports || [];
@@ -471,7 +542,6 @@ const ApplicationPage: React.FC = () => {
     );
   }
 
-  // ✅ NEW: Check if user needs to re-apply (No application OR terminal state)
   const isTerminalState =
     !detail?.application ||
     ["completed", "rejected", "cancelled"].includes(detail.application.status);
@@ -492,24 +562,20 @@ const ApplicationPage: React.FC = () => {
             </View>
           </View>
         </View>
-
         <View style={styles.reapplyContainer}>
           <View style={styles.reapplyIconWrap}>
             <Ionicons name="sparkles-outline" size={48} color="#0F4A2F" />
           </View>
-
           <Text style={styles.reapplyTitle}>
             {detail?.application
               ? "Program Completed!"
               : "No Active Application"}
           </Text>
-
           <Text style={styles.reapplyMessage}>
             {detail?.application
               ? "Thank you for your previous contribution! You are now eligible to start a new tree planting project."
               : "It looks like you haven't applied for a tree planting program yet. Start your journey today!"}
           </Text>
-
           <TouchableOpacity
             style={styles.reapplyButton}
             onPress={() => router.push("/tree_growers/Reapply")}
@@ -518,29 +584,12 @@ const ApplicationPage: React.FC = () => {
             <Ionicons name="add-circle-outline" size={20} color="#fff" />
             <Text style={styles.reapplyButtonText}>Apply for New Program</Text>
           </TouchableOpacity>
-
-          {detail?.application && (
-            <TouchableOpacity
-              style={styles.viewPastButton}
-              onPress={() =>
-                Alert.alert(
-                  "History",
-                  "Past application details would go here.",
-                )
-              }
-            >
-              <Text style={styles.viewPastText}>
-                View Past Application History
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
     );
   }
 
-  // ✅ EXISTING: Render Normal Dashboard (If application is active)
-  const { application, organization, profile, assigned_site } =
+  const { application, group, profile, assigned_site } =
     detail as ApplicationDetail & { application: ApplicationData };
   const appStatusConf = getStatusConf(application.status);
 
@@ -557,7 +606,9 @@ const ApplicationPage: React.FC = () => {
               <Text style={styles.bannerTitle} numberOfLines={2}>
                 {application.title}
               </Text>
-              <Text style={styles.bannerSub}>Tree Planting Program</Text>
+              <Text style={styles.bannerSub}>
+                {group?.group_name || "Tree Planting Program"}
+              </Text>
             </View>
           </View>
           <StatusBadge status={application.status} />
@@ -616,10 +667,12 @@ const ApplicationPage: React.FC = () => {
               <View>
                 <Text style={styles.areaLabel}>Approved Seedlings</Text>
                 <Text style={styles.areaValue}>
-                  {/* ✅ FIXED: Sum all accepted requests */}
                   {acceptedSeedlingRequests.length > 0
                     ? acceptedSeedlingRequests
-                        .reduce((sum, req) => sum + getTotalSeedlings(req.seedling_type), 0)
+                        .reduce(
+                          (sum, req) => sum + getTotalSeedlings(req.species),
+                          0,
+                        )
                         .toLocaleString()
                     : "0"}
                   <Text style={styles.areaUnit}> seedlings</Text>
@@ -629,23 +682,11 @@ const ApplicationPage: React.FC = () => {
                 <Ionicons name="leaf-outline" size={24} color="#fff" />
               </View>
             </View>
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Ionicons
-                  name="document-text-outline"
-                  size={16}
-                  color="#0F4A2F"
-                />
-                <Text style={styles.cardTitle}>About This Program</Text>
-              </View>
-              <Text style={styles.cardBody}>
-                {application.description || "No description provided."}
-              </Text>
-            </View>
+
             <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <Ionicons name="calendar-outline" size={16} color="#0F4A2F" />
-                <Text style={styles.cardTitle}>Key Dates</Text>
+                <Text style={styles.cardTitle}>Key Dates & Details</Text>
               </View>
               <View style={styles.datesRow}>
                 <View style={styles.dateItem}>
@@ -665,30 +706,398 @@ const ApplicationPage: React.FC = () => {
                 </View>
                 <View style={styles.dateDivider} />
                 <View style={styles.dateItem}>
-                  <Text style={styles.dateLabel}>Status</Text>
-                  <Text
-                    style={[styles.dateValue, { color: appStatusConf.text }]}
-                  >
-                    {appStatusConf.label}
+                  <Text style={styles.dateLabel}>Growers</Text>
+                  <Text style={[styles.dateValue, { color: "#0F4A2F" }]}>
+                    {application.total_treegrowers_will_participate}
                   </Text>
                 </View>
               </View>
             </View>
+
             {assigned_site && (
               <View style={styles.card}>
                 <View style={styles.cardHeader}>
                   <Ionicons name="location-outline" size={16} color="#0F4A2F" />
                   <Text style={styles.cardTitle}>Assigned Planting Site</Text>
                 </View>
-                {[
-                  { label: "Site Name", value: assigned_site.name },
-                  { label: "Barangay", value: assigned_site.barangay ?? "—" },
-                ].map((row, i) => (
-                  <View key={i} style={styles.siteRow}>
-                    <Text style={styles.siteLabel}>{row.label}</Text>
-                    <Text style={styles.siteValue}>{row.value}</Text>
+
+                {/* Location Context */}
+                <View
+                  style={{
+                    backgroundColor: "#F9FAFB",
+                    padding: 12,
+                    borderRadius: 12,
+                    marginBottom: 12,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: "800",
+                      color: "#111827",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {assigned_site.name}
+                  </Text>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {assigned_site.reforestation_area_name && (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <Ionicons
+                          name="trail-sign-outline"
+                          size={12}
+                          color="#0F4A2F"
+                        />
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            color: "#0F4A2F",
+                            fontWeight: "600",
+                          }}
+                        >
+                          {assigned_site.reforestation_area_name}
+                        </Text>
+                      </View>
+                    )}
+                    {assigned_site.barangay_name && (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <Ionicons
+                          name="map-outline"
+                          size={12}
+                          color="#6B7280"
+                        />
+                        <Text style={{ fontSize: 12, color: "#6B7280" }}>
+                          {assigned_site.barangay_name}
+                        </Text>
+                      </View>
+                    )}
                   </View>
-                ))}
+                </View>
+
+                {/* Site Stats */}
+                <View
+                  style={{ flexDirection: "row", gap: 12, marginBottom: 12 }}
+                >
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#E8F5E9",
+                      padding: 10,
+                      borderRadius: 10,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        color: "#2E7D32",
+                        fontWeight: "700",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Area
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontWeight: "800",
+                        color: "#111827",
+                      }}
+                    >
+                      {assigned_site.total_area_hectares.toFixed(2)} ha
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#E3F2FD",
+                      padding: 10,
+                      borderRadius: 10,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        color: "#1565C0",
+                        fontWeight: "700",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      NDVI Score
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontWeight: "800",
+                        color: "#111827",
+                      }}
+                    >
+                      {assigned_site.ndvi_value !== null
+                        ? assigned_site.ndvi_value.toFixed(2)
+                        : "N/A"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* General Images Carousel */}
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "700",
+                    color: "#6B7280",
+                    textTransform: "uppercase",
+                    marginBottom: 8,
+                  }}
+                >
+                  Site Images
+                </Text>
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  style={{
+                    height: 160,
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    marginBottom: 12,
+                  }}
+                >
+                  {assigned_site.general_images &&
+                  assigned_site.general_images.length > 0 ? (
+                    assigned_site.general_images.map((img, index) => (
+                      <View
+                        key={index}
+                        style={{
+                          width: screenWidth - 64,
+                          height: 160,
+                          marginRight:
+                            index === assigned_site.general_images.length - 1
+                              ? 0
+                              : 12,
+                        }}
+                      >
+                        <Image
+                          source={{
+                            uri: img.image_url?.startsWith("http")
+                              ? img.image_url
+                              : `${api}${img.image_url}`,
+                          }}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            borderRadius: 12,
+                          }}
+                          resizeMode="cover"
+                        />
+                        {img.caption && (
+                          <View
+                            style={{
+                              position: "absolute",
+                              bottom: 0,
+                              left: 0,
+                              right: 0,
+                              backgroundColor: "rgba(0,0,0,0.6)",
+                              padding: 8,
+                              borderBottomLeftRadius: 12,
+                              borderBottomRightRadius: 12,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: "#fff",
+                                fontSize: 12,
+                                fontWeight: "600",
+                              }}
+                              numberOfLines={1}
+                            >
+                              {img.caption}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    ))
+                  ) : (
+                    <View
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        backgroundColor: "#E8F5E9",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        borderRadius: 12,
+                      }}
+                    >
+                      <Ionicons
+                        name="image-outline"
+                        size={32}
+                        color="#2E7D32"
+                      />
+                      <Text
+                        style={{ color: "#2E7D32", fontSize: 12, marginTop: 4 }}
+                      >
+                        No site images available
+                      </Text>
+                    </View>
+                  )}
+                </ScrollView>
+
+                {/* Metadata Grid */}
+                <View
+                  style={{ flexDirection: "row", gap: 12, marginBottom: 12 }}
+                >
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#F3F4F6",
+                      padding: 12,
+                      borderRadius: 12,
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                        marginBottom: 4,
+                      }}
+                    >
+                      <Ionicons name="car-sport" size={14} color="#0F4A2F" />
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontWeight: "700",
+                          color: "#6B7280",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Accessibility
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "600",
+                        color: "#111827",
+                      }}
+                      numberOfLines={2}
+                    >
+                      {getAccessibilityText(assigned_site.accessibility)}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#F3F4F6",
+                      padding: 12,
+                      borderRadius: 12,
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                        marginBottom: 4,
+                      }}
+                    >
+                      <Ionicons name="layers" size={14} color="#0F4A2F" />
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontWeight: "700",
+                          color: "#6B7280",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Land Class
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "600",
+                        color: "#111827",
+                      }}
+                      numberOfLines={2}
+                    >
+                      {assigned_site.land_classification_name ||
+                        "Not classified"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Recommended Species */}
+                {assigned_site.recommended_species &&
+                  assigned_site.recommended_species.length > 0 && (
+                    <View style={{ marginBottom: 12 }}>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "700",
+                          color: "#6B7280",
+                          textTransform: "uppercase",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Recommended Species
+                      </Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          flexWrap: "wrap",
+                          gap: 8,
+                        }}
+                      >
+                        {assigned_site.recommended_species.map((sp) => (
+                          <View
+                            key={sp.species_id}
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              backgroundColor: "#E8F5E9",
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 20,
+                              gap: 4,
+                            }}
+                          >
+                            <Ionicons name="leaf" size={12} color="#2E7D32" />
+                            <Text
+                              style={{
+                                fontSize: 12,
+                                fontWeight: "600",
+                                color: "#2E7D32",
+                              }}
+                            >
+                              {sp.species_name}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                {/* Map Preview */}
                 <TouchableOpacity
                   style={styles.mapPreviewWrap}
                   onPress={() => setShowMap(true)}
@@ -717,30 +1126,33 @@ const ApplicationPage: React.FC = () => {
                   </MapView>
                   <View style={styles.mapTapOverlay}>
                     <Ionicons name="expand-outline" size={16} color="#fff" />
-                    <Text style={styles.mapTapText}>Tap to expand</Text>
+                    <Text style={styles.mapTapText}>Tap to expand map</Text>
                   </View>
                 </TouchableOpacity>
               </View>
             )}
+
             {["accepted", "under_monitoring", "completed"].includes(
               application.status,
             ) && (
               <View style={styles.actionsGrid}>
                 <TouchableOpacity
                   style={styles.actionBtn}
-                  onPress={() => setRequestSeedlingModal(true)}
+                  onPress={() => {
+                    fetchTreeSpecies();
+                    setRequestSeedlingModal(true);
+                  }}
                 >
                   <View
                     style={[styles.actionIcon, { backgroundColor: "#E3F2FD" }]}
                   >
                     <Ionicons name="leaf-outline" size={24} color="#1565C0" />
                   </View>
-                  <Text style={styles.actionLabel}>
-                    Request Additional Seedlings
-                  </Text>
+                  <Text style={styles.actionLabel}>Request Seedlings</Text>
                 </TouchableOpacity>
               </View>
             )}
+
             <View style={styles.guidanceCard}>
               <Ionicons
                 name="information-circle-outline"
@@ -753,11 +1165,11 @@ const ApplicationPage: React.FC = () => {
                 {application.status === "for_head" &&
                   "Your application is pending final approval from the City ENRO Head."}
                 {application.status === "accepted" &&
-                  "✓ Application approved! You may now request additional seedlings if needed."}
+                  "✓ Application approved! You may now request seedlings for your assigned site."}
                 {application.status === "under_monitoring" &&
-                  "✓ Program active. Onsite inspectors will monitor progress. You can request more seedlings."}
+                  "✓ Program active. Onsite inspectors will monitor progress."}
                 {application.status === "completed" &&
-                  "✓ Program completed. You can still request seedlings for maintenance."}
+                  "✓ Program completed. Thank you for your contribution!"}
                 {application.status === "rejected" &&
                   "✗ Application rejected. Please contact the Data Manager for feedback."}
               </Text>
@@ -768,7 +1180,6 @@ const ApplicationPage: React.FC = () => {
         {/* Seedlings Tab */}
         {activeTab === "seedlings" && (
           <>
-            {/* ✅ FIXED: Map over ALL accepted requests */}
             {acceptedSeedlingRequests.map((req) => (
               <View key={req.request_id} style={styles.card}>
                 <View style={styles.cardHeader}>
@@ -781,61 +1192,69 @@ const ApplicationPage: React.FC = () => {
                   <StatusBadge status="accepted" />
                 </View>
                 <Text style={styles.cardSub}>
-                  Total:{" "}
-                  {getTotalSeedlings(req.seedling_type).toLocaleString()}{" "}
+                  Total: {getTotalSeedlings(req.species).toLocaleString()}{" "}
                   seedlings • {formatDate(req.submitted_at || "")}
                 </Text>
                 <View style={styles.seedlingList}>
-                  {parseSeedlingType(req.seedling_type).map(
-                    (item, i) => (
-                      <SeedlingItem
-                        key={i}
-                        species={item.species}
-                        quantity={item.quantity}
-                        provider={item.provided_by}
-                      />
-                    ),
-                  )}
+                  {req.species.map((item, i) => (
+                    <View key={i} style={seedlingItem.wrap}>
+                      <View style={seedlingItem.left}>
+                        <Ionicons
+                          name="leaf-outline"
+                          size={16}
+                          color="#0F4A2F"
+                        />
+                        <Text style={seedlingItem.species}>
+                          {item.species_name}
+                        </Text>
+                      </View>
+                      <View style={seedlingItem.right}>
+                        <Text style={seedlingItem.quantity}>
+                          {item.quantity.toLocaleString()}
+                        </Text>
+                        <Text style={seedlingItem.provider} numberOfLines={1}>
+                          {item.provided_by}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
                 </View>
                 {req.reason_accepted && (
                   <View style={styles.reasonBox}>
-                    <Ionicons name="chatbubble-outline" size={12} color="#2E7D32" />
+                    <Ionicons
+                      name="chatbubble-outline"
+                      size={12}
+                      color="#2E7D32"
+                    />
                     <Text style={styles.reasonText}>{req.reason_accepted}</Text>
                   </View>
                 )}
               </View>
             ))}
+
             {pendingSeedlingRequests.length > 0 && (
               <View style={styles.card}>
                 <View style={styles.cardHeader}>
                   <Ionicons name="time-outline" size={16} color="#F57F17" />
                   <Text style={styles.cardTitle}>Your Pending Requests</Text>
                 </View>
-                {pendingSeedlingRequests.map((req) => {
-                  const parsed = parseSeedlingType(req.seedling_type);
-                  return (
-                    <View key={req.request_id} style={styles.pendingItem}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.pendingSpecies}>
-                          {parsed.map((p) => p.species).join(", ")}
-                        </Text>
-                        <Text style={styles.pendingMeta}>
-                          {getTotalSeedlings(req.seedling_type)} seedlings •{" "}
-                          {formatDate(req.submitted_at || "")}
-                        </Text>
-                        {req.description ? (
-                          <Text style={styles.pendingDesc} numberOfLines={1}>
-                            {req.description}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <StatusBadge status={req.status} />
+                {pendingSeedlingRequests.map((req) => (
+                  <View key={req.request_id} style={styles.pendingItem}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.pendingSpecies}>
+                        {req.species.map((s) => s.species_name).join(", ")}
+                      </Text>
+                      <Text style={styles.pendingMeta}>
+                        {getTotalSeedlings(req.species)} seedlings •{" "}
+                        {formatDate(req.submitted_at || "")}
+                      </Text>
                     </View>
-                  );
-                })}
+                    <StatusBadge status={req.status} />
+                  </View>
+                ))}
               </View>
             )}
-            {/* ✅ FIXED: Check array length instead of single object */}
+
             {acceptedSeedlingRequests.length === 0 &&
               pendingSeedlingRequests.length === 0 && (
                 <View style={styles.emptyState}>
@@ -844,20 +1263,24 @@ const ApplicationPage: React.FC = () => {
                   </View>
                   <Text style={styles.emptyTitle}>No Seedlings Yet</Text>
                   <Text style={styles.emptyMsg}>
-                    {application.status === "accepted" ||
-                    application.status === "under_monitoring" ||
-                    application.status === "completed"
+                    {["accepted", "under_monitoring", "completed"].includes(
+                      application.status,
+                    )
                       ? "Request seedlings to get started with your tree planting program."
                       : "Seedling provisions will appear here once your application is approved."}
                   </Text>
                 </View>
               )}
+
             {["accepted", "under_monitoring", "completed"].includes(
               application.status,
             ) && (
               <TouchableOpacity
                 style={styles.fab}
-                onPress={() => setRequestSeedlingModal(true)}
+                onPress={() => {
+                  fetchTreeSpecies();
+                  setRequestSeedlingModal(true);
+                }}
               >
                 <Ionicons name="add" size={22} color="#fff" />
                 <Text style={styles.fabText}>Request Seedlings</Text>
@@ -866,7 +1289,7 @@ const ApplicationPage: React.FC = () => {
           </>
         )}
 
-        {/* Reports Tab (View Only) */}
+        {/* Reports Tab */}
         {activeTab === "reports" && (
           <>
             {allProgressReports.length === 0 ? (
@@ -881,83 +1304,61 @@ const ApplicationPage: React.FC = () => {
                 <Text style={styles.emptyTitle}>No Reports Yet</Text>
                 <Text style={styles.emptyMsg}>
                   Progress reports are submitted by onsite inspectors during
-                  monitoring. They will appear here once available.
+                  monitoring.
                 </Text>
               </View>
             ) : (
-              <FlatList
-                data={allProgressReports}
-                keyExtractor={(item) => item.report_id.toString()}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.reportCard}
-                    onPress={() => setReportDetailModal(item)}
-                    activeOpacity={0.75}
-                  >
-                    <View style={styles.reportCardTop}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.reportCardTitle} numberOfLines={1}>
-                          Report #{item.report_id}
-                        </Text>
-                        <Text style={styles.reportCardDate}>
-                          {formatDate(item.submitted_at || item.created_at)}
-                        </Text>
-                      </View>
-                      <StatusBadge status={item.status} />
-                    </View>
-                    {item.description && (
-                      <Text style={styles.reportCardDesc} numberOfLines={2}>
-                        {item.description}
+              // ✅ FIX: Replaced FlatList with .map() to avoid nesting VirtualizedLists inside ScrollView
+              allProgressReports.map((item) => (
+                <TouchableOpacity
+                  key={item.report_id}
+                  style={styles.reportCard}
+                  onPress={() => setReportDetailModal(item)}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.reportCardTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.reportCardTitle} numberOfLines={1}>
+                        Report #{item.report_id}
                       </Text>
-                    )}
-                    <View style={styles.reportMini}>
-                      {[
-                        {
-                          label: "Survived",
-                          value: item.no_survived_plants,
-                          color: "#2E7D32",
-                        },
-                        {
-                          label: "Dead",
-                          value: item.no_dead_plants,
-                          color: "#C62828",
-                        },
-                      ].map((m, i) => (
-                        <View key={i} style={styles.reportMiniItem}>
-                          <Text
-                            style={[styles.reportMiniVal, { color: m.color }]}
-                          >
-                            {m.value.toLocaleString()}
-                          </Text>
-                          <Text style={styles.reportMiniLabel}>{m.label}</Text>
-                        </View>
-                      ))}
+                      <Text style={styles.reportCardDate}>
+                        {formatDate(item.submitted_at || item.created_at)}
+                      </Text>
                     </View>
-                    <View style={styles.reportCardFooter}>
-                      <Text style={styles.reportCardCta}>View Details</Text>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={14}
-                        color="#0F4A2F"
-                      />
+                    <StatusBadge status={item.status} />
+                  </View>
+                  <View style={styles.reportMini}>
+                    <View style={styles.reportMiniItem}>
+                      <Text
+                        style={[styles.reportMiniVal, { color: "#2E7D32" }]}
+                      >
+                        {item.total_survived.toLocaleString()}
+                      </Text>
+                      <Text style={styles.reportMiniLabel}>Survived</Text>
                     </View>
-                  </TouchableOpacity>
-                )}
-              />
+                    <View style={styles.reportMiniItem}>
+                      <Text
+                        style={[styles.reportMiniVal, { color: "#C62828" }]}
+                      >
+                        {item.total_dead.toLocaleString()}
+                      </Text>
+                      <Text style={styles.reportMiniLabel}>Dead</Text>
+                    </View>
+                  </View>
+                  <View style={styles.reportCardFooter}>
+                    <Text style={styles.reportCardCta}>View Details</Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={14}
+                      color="#0F4A2F"
+                    />
+                  </View>
+                </TouchableOpacity>
+              ))
             )}
-            <View style={styles.reportsNote}>
-              <Ionicons
-                name="information-circle-outline"
-                size={14}
-                color="#6B7280"
-              />
-              <Text style={styles.reportsNoteText}>
-                Progress reports are submitted by onsite inspectors. You can
-                view them here but cannot create or edit reports.
-              </Text>
-            </View>
           </>
         )}
+
         <View style={{ height: 100 }} />
       </ScrollView>
 
@@ -1031,32 +1432,105 @@ const ApplicationPage: React.FC = () => {
                       reportDetailModal.created_at,
                   )}
                 </Text>
-                {reportDetailModal.description && (
-                  <Text style={sheet.desc}>
-                    {reportDetailModal.description}
-                  </Text>
-                )}
+
                 <View style={sheet.metricsBox}>
-                  {[
-                    {
-                      label: "Survived Plants",
-                      value:
-                        reportDetailModal.no_survived_plants.toLocaleString(),
-                    },
-                    {
-                      label: "Dead Plants",
-                      value: reportDetailModal.no_dead_plants.toLocaleString(),
-                    },
-                  ].map((m, i) => (
-                    <View key={i} style={sheet.metricRow}>
-                      <Text style={sheet.metricLabel}>{m.label}</Text>
-                      <Text style={sheet.metricVal}>{m.value}</Text>
-                    </View>
-                  ))}
+                  <View style={sheet.metricRow}>
+                    <Text style={sheet.metricLabel}>Total Survived</Text>
+                    <Text style={[sheet.metricVal, { color: "#2E7D32" }]}>
+                      {reportDetailModal.total_survived.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={sheet.metricRow}>
+                    <Text style={sheet.metricLabel}>Total Dead</Text>
+                    <Text style={[sheet.metricVal, { color: "#C62828" }]}>
+                      {reportDetailModal.total_dead.toLocaleString()}
+                    </Text>
+                  </View>
                 </View>
+
+                {reportDetailModal.species &&
+                  reportDetailModal.species.length > 0 && (
+                    <View style={{ marginTop: 16 }}>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "700",
+                          color: "#6B7280",
+                          textTransform: "uppercase",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Per-Species Breakdown
+                      </Text>
+                      {reportDetailModal.species.map((sp, idx) => (
+                        <View
+                          key={idx}
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            paddingVertical: 8,
+                            borderBottomWidth: 1,
+                            borderBottomColor: "#F3F4F6",
+                          }}
+                        >
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <Ionicons
+                              name="leaf-outline"
+                              size={16}
+                              color="#0F4A2F"
+                            />
+                            <Text
+                              style={{
+                                fontSize: 14,
+                                fontWeight: "600",
+                                color: "#111827",
+                              }}
+                            >
+                              {sp.species_name}
+                            </Text>
+                          </View>
+                          <View style={{ alignItems: "flex-end" }}>
+                            <Text
+                              style={{
+                                fontSize: 13,
+                                fontWeight: "700",
+                                color: "#0F4A2F",
+                              }}
+                            >
+                              {sp.no_survived}{" "}
+                              <Text
+                                style={{
+                                  fontSize: 11,
+                                  color: "#6B7280",
+                                  fontWeight: "400",
+                                }}
+                              >
+                                / {sp.total} ({sp.survival_rate}%)
+                              </Text>
+                            </Text>
+                            <Text style={{ fontSize: 11, color: "#C62828" }}>
+                              {sp.no_dead} dead
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
                 {reportDetailModal.proof_image && (
                   <Image
-                    source={{ uri: `${api}${reportDetailModal.proof_image}` }}
+                    source={{
+                      uri: reportDetailModal.proof_image.startsWith("http")
+                        ? reportDetailModal.proof_image
+                        : `${api}${reportDetailModal.proof_image}`,
+                    }}
                     style={sheet.proofImage}
                     resizeMode="cover"
                   />
@@ -1073,46 +1547,248 @@ const ApplicationPage: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Seedling Request Modal */}
+      {/* Seedling Request Modal (Dynamic Builder) */}
       <Modal
         visible={requestSeedlingModal}
         animationType="slide"
         transparent
-        onRequestClose={() => setRequestSeedlingModal(false)}
+        onRequestClose={() => {
+          setRequestSeedlingModal(false);
+          resetSeedlingForm();
+        }}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={sheet.overlay}
         >
-          <View style={[sheet.panel, { maxHeight: screenHeight * 0.85 }]}>
+          <View style={[sheet.panel, { maxHeight: screenHeight * 0.9 }]}>
             <View style={sheet.handle} />
             <View style={sheet.headerRow}>
-              <Text style={sheet.title}>Request Additional Seedlings</Text>
+              <Text style={sheet.title}>Request Seedlings</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setRequestSeedlingModal(false);
+                  resetSeedlingForm();
+                }}
+              >
+                <Ionicons name="close-circle" size={24} color="#9CA3AF" />
+              </TouchableOpacity>
             </View>
+
+            {assigned_site && (
+              <View
+                style={{
+                  backgroundColor: "#E8F5E9",
+                  padding: 10,
+                  borderRadius: 10,
+                  marginBottom: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <Ionicons name="location" size={14} color="#2E7D32" />
+                <Text
+                  style={{ fontSize: 12, color: "#2E7D32", fontWeight: "600" }}
+                >
+                  For: {assigned_site.name}
+                </Text>
+              </View>
+            )}
+
             <ScrollView
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-              <Text style={form_.label}>Number of Seedlings *</Text>
-              <TextInput
-                style={form_.input}
-                placeholder="e.g. 50"
-                keyboardType="numeric"
-                value={seedlingForm.quantity}
-                onChangeText={(t) =>
-                  setSeedlingForm((p) => ({ ...p, quantity: t }))
-                }
-                placeholderTextColor="#B0BAC4"
-              />
+              {/* Add Species Section */}
+              <View
+                style={{
+                  backgroundColor: "#F9FAFB",
+                  padding: 12,
+                  borderRadius: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "700",
+                    color: "#6B7280",
+                    textTransform: "uppercase",
+                    marginBottom: 8,
+                  }}
+                >
+                  Add Tree Species
+                </Text>
 
-              <Text style={form_.label}>Description</Text>
+                <Text style={form_.label}>Select Species</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginBottom: 12 }}
+                >
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {allTreeSpecies.map((sp) => (
+                      <TouchableOpacity
+                        key={sp.tree_specie_id}
+                        onPress={() =>
+                          setSelectedSpeciesId(String(sp.tree_specie_id))
+                        }
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 8,
+                          borderRadius: 20,
+                          backgroundColor:
+                            selectedSpeciesId === String(sp.tree_specie_id)
+                              ? "#0F4A2F"
+                              : "#fff",
+                          borderWidth: 1,
+                          borderColor:
+                            selectedSpeciesId === String(sp.tree_specie_id)
+                              ? "#0F4A2F"
+                              : "#E5E7EB",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color:
+                              selectedSpeciesId === String(sp.tree_specie_id)
+                                ? "#fff"
+                                : "#374151",
+                            fontWeight: "600",
+                            fontSize: 13,
+                          }}
+                        >
+                          {sp.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+
+                <Text style={form_.label}>Quantity</Text>
+                <View
+                  style={{ flexDirection: "row", gap: 12, marginBottom: 12 }}
+                >
+                  <TextInput
+                    style={[form_.input, { flex: 1, marginBottom: 0 }]}
+                    placeholder="e.g. 50"
+                    keyboardType="numeric"
+                    value={selectedQuantity}
+                    onChangeText={setSelectedQuantity}
+                    placeholderTextColor="#B0BAC4"
+                  />
+                  <TouchableOpacity
+                    style={[
+                      form_.submitBtn,
+                      {
+                        flex: 0,
+                        paddingHorizontal: 20,
+                        marginBottom: 0,
+                        opacity:
+                          !selectedSpeciesId || !selectedQuantity ? 0.5 : 1,
+                      },
+                    ]}
+                    onPress={handleAddSpeciesToList}
+                    disabled={!selectedSpeciesId || !selectedQuantity}
+                  >
+                    <Ionicons name="add" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Active List */}
+              {activeSeedlingList.length > 0 && (
+                <View style={{ marginBottom: 16 }}>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "700",
+                      color: "#6B7280",
+                      textTransform: "uppercase",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Request List ({activeSeedlingList.length})
+                  </Text>
+                  {activeSeedlingList.map((item) => (
+                    <View
+                      key={item.species_id}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        backgroundColor: "#fff",
+                        padding: 12,
+                        borderRadius: 12,
+                        marginBottom: 8,
+                        borderWidth: 1,
+                        borderColor: "#E5E7EB",
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: "#E8F5E9",
+                            justifyContent: "center",
+                            alignItems: "center",
+                          }}
+                        >
+                          <Ionicons name="leaf" size={16} color="#2E7D32" />
+                        </View>
+                        <View>
+                          <Text
+                            style={{
+                              fontSize: 14,
+                              fontWeight: "700",
+                              color: "#111827",
+                            }}
+                          >
+                            {item.species_name}
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: "#0F4A2F",
+                              fontWeight: "600",
+                            }}
+                          >
+                            {item.quantity} seedlings
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() =>
+                          handleRemoveSpeciesFromList(item.species_id)
+                        }
+                        style={{ padding: 4 }}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={18}
+                          color="#EF4444"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <Text style={form_.label}>Description (Optional)</Text>
               <TextInput
                 style={[form_.input, form_.textarea]}
-                placeholder="Reason for request (optional)…"
-                value={seedlingForm.description}
-                onChangeText={(t) =>
-                  setSeedlingForm((p) => ({ ...p, description: t }))
-                }
+                placeholder="Reason for request…"
+                value={requestDescription}
+                onChangeText={setRequestDescription}
                 multiline
                 numberOfLines={3}
                 placeholderTextColor="#B0BAC4"
@@ -1135,46 +1811,30 @@ const ApplicationPage: React.FC = () => {
                 <View style={{ flex: 1 }}>
                   <Text style={form_.uploadTitle}>Supporting Document</Text>
                   <Text style={form_.uploadSub} numberOfLines={1}>
-                    {seedlingForm.request_file
-                      ? seedlingForm.request_file.name
-                      : "Optional: PDF or Word"}
+                    {requestFile ? requestFile.name : "Optional: PDF or Word"}
                   </Text>
                 </View>
                 <Ionicons
-                  name={
-                    seedlingForm.request_file
-                      ? "checkmark-circle"
-                      : "chevron-forward"
-                  }
+                  name={requestFile ? "checkmark-circle" : "chevron-forward"}
                   size={20}
-                  color={seedlingForm.request_file ? "#2E7D32" : "#9CA3AF"}
+                  color={requestFile ? "#2E7D32" : "#9CA3AF"}
                 />
               </TouchableOpacity>
-
-              <View style={form_.infoBox}>
-                <Ionicons
-                  name="information-circle-outline"
-                  size={14}
-                  color="#0F4A2F"
-                />
-                <Text style={form_.infoText}>
-                  The Data Manager will assign the tree species and provider
-                  during evaluation. You only need to specify the quantity
-                  needed.
-                </Text>
-              </View>
 
               <View style={form_.actions}>
                 <TouchableOpacity
                   style={form_.cancelBtn}
-                  onPress={() => setRequestSeedlingModal(false)}
+                  onPress={() => {
+                    setRequestSeedlingModal(false);
+                    resetSeedlingForm();
+                  }}
                 >
                   <Text style={form_.cancelTxt}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[form_.submitBtn, submitting && form_.submitDisabled]}
                   onPress={handleRequestSeedling}
-                  disabled={submitting}
+                  disabled={submitting || activeSeedlingList.length === 0}
                 >
                   {submitting ? (
                     <ActivityIndicator size="small" color="#fff" />
@@ -1310,7 +1970,6 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: 14, fontWeight: "700", color: "#111827" },
   cardSub: { fontSize: 12, color: "#6B7280", marginBottom: 12 },
-  cardBody: { fontSize: 14, color: "#4B5563", lineHeight: 21 },
   areaBanner: {
     backgroundColor: "#0F4A2F",
     borderRadius: 16,
@@ -1347,28 +2006,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   dateDivider: { width: 1, height: 40, backgroundColor: "#F3F4F6" },
-  siteRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
-  },
-  siteLabel: { fontSize: 12, color: "#9CA3AF" },
-  siteValue: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#111827",
-    flexShrink: 1,
-    textAlign: "right",
-    marginLeft: 12,
-  },
   mapPreviewWrap: {
-    height: 190,
+    height: 160,
     borderRadius: 12,
     overflow: "hidden",
-    marginTop: 14,
+    marginTop: 12,
     position: "relative",
   },
   mapTapOverlay: {
@@ -1432,12 +2074,6 @@ const styles = StyleSheet.create({
   },
   pendingSpecies: { fontSize: 14, fontWeight: "600", color: "#111827" },
   pendingMeta: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
-  pendingDesc: {
-    fontSize: 11,
-    color: "#6B7280",
-    marginTop: 4,
-    fontStyle: "italic",
-  },
   emptyState: { alignItems: "center", paddingVertical: 56 },
   emptyIconWrap: {
     width: 72,
@@ -1480,23 +2116,17 @@ const styles = StyleSheet.create({
   },
   reportCardTitle: { fontSize: 15, fontWeight: "700", color: "#111827" },
   reportCardDate: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
-  reportCardDesc: {
-    fontSize: 13,
-    color: "#6B7280",
-    lineHeight: 18,
-    marginBottom: 12,
-  },
   reportMini: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "space-around",
     backgroundColor: "#F4F7F5",
     borderRadius: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 8,
     marginBottom: 10,
   },
-  reportMiniItem: { alignItems: "center", flex: 1 },
-  reportMiniVal: { fontSize: 14, fontWeight: "800" },
+  reportMiniItem: { alignItems: "center" },
+  reportMiniVal: { fontSize: 16, fontWeight: "800" },
   reportMiniLabel: { fontSize: 10, color: "#9CA3AF", marginTop: 2 },
   reportCardFooter: {
     flexDirection: "row",
@@ -1508,16 +2138,6 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   reportCardCta: { fontSize: 12, fontWeight: "700", color: "#0F4A2F" },
-  reportsNote: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "flex-start",
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
-  reportsNoteText: { fontSize: 12, color: "#6B7280", flex: 1, lineHeight: 17 },
   fab: {
     position: "absolute",
     bottom: 28,
@@ -1566,8 +2186,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   mapTitleTxt: { color: "#fff", fontWeight: "700", fontSize: 13, flex: 1 },
-
-  // ✅ RE-APPLY STYLES
   reapplyContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1620,22 +2238,7 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 320,
   },
-  reapplyButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  viewPastButton: {
-    marginTop: 20,
-    paddingVertical: 10,
-  },
-  viewPastText: {
-    color: "#0F4A2F",
-    fontSize: 14,
-    fontWeight: "600",
-    textDecorationLine: "underline",
-  },
-  // ✅ NEW: Reason box styles
+  reapplyButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   reasonBox: {
     flexDirection: "row",
     gap: 6,
@@ -1671,32 +2274,7 @@ const badge = StyleSheet.create({
     letterSpacing: 0.5,
   },
 });
-const metric = StyleSheet.create({
-  card: {
-    flex: 1,
-    minWidth: (screenWidth - 52) / 2,
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 14,
-    alignItems: "center",
-    borderTopWidth: 3,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  value: { fontSize: 22, fontWeight: "800" },
-  unit: { fontSize: 12, fontWeight: "500", color: "#6B7280" },
-  label: { fontSize: 11, color: "#9CA3AF", marginTop: 3, textAlign: "center" },
-});
+
 const seedlingItem = StyleSheet.create({
   wrap: {
     flexDirection: "row",
@@ -1712,6 +2290,7 @@ const seedlingItem = StyleSheet.create({
   quantity: { fontSize: 14, fontWeight: "700", color: "#0F4A2F" },
   provider: { fontSize: 11, color: "#6B7280", maxWidth: 120 },
 });
+
 const sheet = StyleSheet.create({
   overlay: {
     flex: 1,
@@ -1744,7 +2323,6 @@ const sheet = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: "800", color: "#111827", flex: 1 },
   date: { fontSize: 12, color: "#9CA3AF", marginBottom: 14 },
-  desc: { fontSize: 14, color: "#4B5563", lineHeight: 21, marginBottom: 16 },
   metricsBox: {
     backgroundColor: "#F4F7F5",
     borderRadius: 14,
@@ -1773,18 +2351,8 @@ const sheet = StyleSheet.create({
     alignItems: "center",
   },
   closeTxt: { color: "#0F4A2F", fontWeight: "700", fontSize: 14 },
-  infoBox: {
-    flexDirection: "row",
-    gap: 8,
-    backgroundColor: "#E8F5E9",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: "#388E3C",
-  },
-  infoText: { fontSize: 12, color: "#2E7D32", flex: 1, lineHeight: 17 },
 });
+
 const form_ = StyleSheet.create({
   label: { fontSize: 12, fontWeight: "600", color: "#374151", marginBottom: 6 },
   input: {
@@ -1835,6 +2403,9 @@ const form_ = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
     shadowColor: "#0F4A2F",
     shadowOpacity: 0.35,
     shadowRadius: 8,

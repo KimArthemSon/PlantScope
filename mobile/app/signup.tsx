@@ -18,7 +18,7 @@ import {
 import {
   Mail, Lock, Eye, EyeOff, User, Phone, MapPin,
   Building2, FileText, ChevronRight, ChevronLeft,
-  CheckCircle, Calendar, Clock, Leaf, Shield, Check, Users,
+  CheckCircle, Calendar, Leaf, Shield, Check, Users,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -39,11 +39,17 @@ const MONTHS = [
 ];
 
 const STEPS = [
-  { label: 'Account', icon: '🔐' },
-  { label: 'Verify', icon: '📧' },
-  { label: 'Personal', icon: '👤' },
-  { label: 'Organization', icon: '🌿' },
-  { label: 'Review', icon: '✅' },
+  { label: 'Account', icon: '🔐', Icon: Lock },
+  { label: 'Verify', icon: '📧', Icon: Mail },
+  { label: 'Personal', icon: '👤', Icon: User },
+  { label: 'Group', icon: '🌿', Icon: Building2 },
+  { label: 'Review', icon: '✅', Icon: CheckCircle },
+];
+
+const GROUP_TYPES = [
+  { value: 'formal_org', label: 'Formal Organization' },
+  { value: 'community_group', label: 'Community Group' },
+  { value: 'informal_group', label: 'Informal Group' },
 ];
 
 // ─── Date Picker Modal ─────────────────────────────────────────────────────
@@ -103,7 +109,7 @@ function DatePickerModal({ visible, value, onConfirm, onClose }: DatePickerModal
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={dpStyles.overlay}>
         <View style={dpStyles.container}>
-          <Text style={dpStyles.title}>Select Birthday</Text>
+          <Text style={dpStyles.title}>Select Date</Text>
           <View style={dpStyles.navRow}>
             <TouchableOpacity onPress={() => { setYear(y => y - 1); setSelectedDay(0); }} style={dpStyles.navBtn}>
               <ChevronLeft size={15} color="#4caf72" />
@@ -183,7 +189,7 @@ function PrivacyPolicyModal({ visible, onClose }: PrivacyPolicyModalProps) {
             <Text style={ppStyles.sectionTitle}>SECTION 2: PERSONAL DATA COLLECTED</Text>
             <Text style={ppStyles.body}>PLANTSCOPE collects the following categories of personal data from its registered users, depending on their assigned system role:</Text>
             <Text style={ppStyles.subHeading}>2.5 Community User / Tree Growers</Text>
-            <Text style={ppStyles.body}>{'• Full name and affiliated organization/group\n'}{'• Gender, birthday, address, contact details\n'}{'• Username and encrypted password\n'}{'• Registration details and program preferences\n'}{'• Tree planting progress updates and assigned site records'}</Text>
+            <Text style={ppStyles.body}>{'• Full name and affiliated group\n'}{'• Gender, address, contact details\n'}{'• Username and encrypted password\n'}{'• Registration details and program preferences\n'}{'• Tree planting progress updates and assigned site records'}</Text>
             <Text style={ppStyles.sectionTitle}>SECTION 3: SENSITIVE PERSONAL INFORMATION</Text>
             <Text style={ppStyles.body}>The following data may qualify as sensitive or privileged under Section 3(l) of RA 10173:</Text>
             <Text style={ppStyles.body}><Text style={ppStyles.bold}>Precise GPS Coordinates: </Text>Location data tied to a person's presence at a field site may reveal movement patterns or physical location.{'\n\n'}<Text style={ppStyles.bold}>Geotagged Photographs: </Text>Photographs with embedded EXIF data contain both visual and locational sensitive information.{'\n\n'}<Text style={ppStyles.bold}>Community Group Affiliation: </Text>Affiliation with schools or civic organizations may intersect with sensitive community information.</Text>
@@ -241,7 +247,7 @@ function TermsModal({ visible, onClose }: TermsModalProps) {
             <Text style={ppStyles.subHeading}>2.1 General Responsibilities of All Users</Text>
             <Text style={ppStyles.body}><Text style={ppStyles.bold}>Account Security: </Text>Users are solely responsible for maintaining the confidentiality of their login credentials. Unauthorized use must be reported immediately to the Data Manager.{'\n\n'}<Text style={ppStyles.bold}>Accuracy of Information: </Text>All data, records, and submissions must be accurate, truthful, and complete. Submission of false or misleading information is strictly prohibited.{'\n\n'}<Text style={ppStyles.bold}>Role Compliance: </Text>Users must access and use only the features and data authorized for their assigned role.{'\n\n'}<Text style={ppStyles.bold}>System Integrity: </Text>Users must not perform any action that compromises the integrity, availability, or security of the PLANTSCOPE system.{'\n\n'}<Text style={ppStyles.bold}>Compliance with Laws: </Text>Users must comply with all applicable Philippine laws, including RA 10173, RA 7160, environmental protection laws, and civil service regulations.</Text>
             <Text style={ppStyles.subHeading}>2.2 Community User / Tree Grower Responsibilities</Text>
-            <Text style={ppStyles.body}>{'• Provides accurate registration information including full name, contact details, and organizational affiliation\n'}{'• Submits genuine and timely progress updates for assigned tree planting sites\n'}{'• Complies with the assigned schedule and site allocation provided by the Data Manager\n'}{'• Notifies the Data Manager of any change in contact information or organizational status\n'}{'• Responsible for ensuring that participants they represent are aware of these Terms'}</Text>
+            <Text style={ppStyles.body}>{'• Provides accurate registration information including full name, contact details, and group affiliation\n'}{'• Submits genuine and timely progress updates for assigned tree planting sites\n'}{'• Complies with the assigned schedule and site allocation provided by the Data Manager\n'}{'• Notifies the Data Manager of any change in contact information or group status\n'}{'• Responsible for ensuring that participants they represent are aware of these Terms'}</Text>
             <Text style={ppStyles.sectionTitle}>SECTION 3: PROHIBITED ACTIVITIES</Text>
             <Text style={ppStyles.body}>The following activities are strictly prohibited on PLANTSCOPE. Violation may result in immediate account suspension and legal action under applicable Philippine laws:</Text>
             <Text style={ppStyles.body}>{'• Unauthorized access to accounts, data records, or system features not authorized for your role\n'}{'• Sharing or transferring login credentials; logging in as another user\n'}{'• Submitting data that is knowingly false, fabricated, or deliberately misleading\n'}{'• Copying, exporting, or transmitting personal data or spatial records to unauthorized individuals\n'}{'• Introducing malicious code, performing denial-of-service attacks, SQL injection, or technical interference\n'}{'• Modifying or deleting any system record without proper authority\n'}{'• Using personal data accessed through PLANTSCOPE for unauthorized purposes\n'}{'• Using PLANTSCOPE for activities beyond its stated environmental management functions'}</Text>
@@ -270,11 +276,11 @@ function TermsModal({ visible, onClose }: TermsModalProps) {
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────
-type FieldProps = { label: string; icon?: React.ReactNode; value: string; onChangeText: (v: string) => void; placeholder?: string; keyboardType?: any; autoCapitalize?: any; secureTextEntry?: boolean; multiline?: boolean; };
-function Field({ label, icon, value, onChangeText, placeholder, keyboardType = 'default', autoCapitalize = 'words', secureTextEntry = false, multiline = false }: FieldProps) {
+type FieldProps = { label: string; icon?: React.ReactNode; value: string; onChangeText: (v: string) => void; placeholder?: string; keyboardType?: any; autoCapitalize?: any; secureTextEntry?: boolean; multiline?: boolean; required?: boolean; };
+function Field({ label, icon, value, onChangeText, placeholder, keyboardType = 'default', autoCapitalize = 'words', secureTextEntry = false, multiline = false, required = false }: FieldProps) {
   return (
     <View style={styles.formGroup}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>{label} {required && <Text style={{ color: '#ef4444' }}>*</Text>}</Text>
       <View style={[styles.inputContainer, multiline && { alignItems: 'flex-start', minHeight: 90 }]}>
         {icon && <View style={[styles.inputIcon, multiline && { marginTop: 4 }]}>{icon}</View>}
         <TextInput style={[styles.input, inputStyleOverride, multiline && { textAlignVertical: 'top', paddingTop: 4 }]} placeholder={placeholder ?? `Enter ${label.toLowerCase()}`} placeholderTextColor="#5a8a6a" value={value} onChangeText={onChangeText} keyboardType={keyboardType} autoCapitalize={autoCapitalize} secureTextEntry={secureTextEntry} multiline={multiline} numberOfLines={multiline ? 3 : 1} />
@@ -320,6 +326,29 @@ function GenderPicker({ value, onChange }: GenderPickerProps) {
   );
 }
 
+type GroupTypePickerProps = { value: string; onChange: (v: string) => void; };
+function GroupTypePicker({ value, onChange }: GroupTypePickerProps) {
+  return (
+    <View style={styles.formGroup}>
+      <Text style={styles.label}>Group Type <Text style={{ color: '#ef4444' }}>*</Text></Text>
+      <View style={styles.groupTypeRow}>
+        {GROUP_TYPES.map((type) => (
+          <TouchableOpacity 
+            key={type.value} 
+            style={[styles.groupTypeChip, value === type.value && styles.groupTypeChipActive]} 
+            onPress={() => onChange(type.value)} 
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.groupTypeChipText, value === type.value && styles.groupTypeChipTextActive]}>
+              {type.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (<View style={styles.reviewSection}><Text style={styles.reviewSectionTitle}>{title}</Text>{children}</View>);
 }
@@ -334,7 +363,11 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  
+  // ✅ Date picker states
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showProposedDatePicker, setShowProposedDatePicker] = useState(false);
+  
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -350,7 +383,6 @@ export default function Signup() {
     return () => clearTimeout(t);
   }, [resendCooldown]);
 
-  // 🌱 FIXED STATE: Matches Django Backend exactly
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -363,21 +395,16 @@ export default function Signup() {
     address: '',
     gender: '',
     profile_img: null as any,
-    organization_name: '',
-    org_email: '',
-    org_address: '',
-    org_contact: '',
-    org_profile: null as any,
+    group_name: '',
+    group_type: '',
+    group_address: '',
+    group_contact: '',
+    group_profile: null as any,
     title: '',
-    total_members: '',
-    description: '',
-    project_duration: '',
+    total_treegrowers_will_participate: '',
     maintenance_plan: null as any,
-    // Renamed from total_request_seedling
-    no_request_seedling: '',
-    seedling_type: '{"Mahogany": 0, "Narra": 0}',
-    seedling_description: '',
-    seedling_request_file: null as any,
+    // ✅ NEW: Proposed orientation date for all applicants
+    proposed_orientation_date: '', 
   });
 
   const update = (key: string, value: any) => setFormData((prev) => ({ ...prev, [key]: value }));
@@ -389,6 +416,7 @@ export default function Signup() {
       update(field, { uri: asset.uri, name: asset.fileName ?? `${field}.jpg`, type: asset.mimeType ?? 'image/jpeg' });
     }
   };
+  
   const pickDocument = async (field: string) => {
     const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
     if (!result.canceled && result.assets.length > 0) {
@@ -400,10 +428,8 @@ export default function Signup() {
   const validateStep = (): string | null => {
     if (step === 0) {
       if (!formData.email) return 'Email is required.';
-      // Fixed Regex
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) return 'Enter a valid email.';
       if (!formData.password) return 'Password is required.';
-      // Fixed Regex
       if (!/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(formData.password))
         return 'Password needs uppercase, lowercase, number, special char and 8+ characters.';
       if (formData.password !== formData.confirmPassword) return 'Passwords do not match.';
@@ -411,31 +437,24 @@ export default function Signup() {
     if (step === 2) {
       if (!formData.first_name) return 'First name is required.';
       if (!formData.last_name) return 'Last name is required.';
-      if (!formData.birthday) return 'Birthday is required.';
       if (!formData.contact) return 'Contact number is required.';
       if (!formData.address) return 'Address is required.';
       if (!formData.gender) return 'Gender is required.';
-      if (!formData.profile_img) return 'Profile image is required.';
     }
     if (step === 3) {
-      if (!formData.organization_name) return 'Organization name is required.';
-      if (!formData.org_email) return 'Organization email is required.';
-      if (!formData.org_address) return 'Organization address is required.';
-      if (!formData.org_contact) return 'Organization contact is required.';
-      if (!formData.org_profile) return 'Organization logo is required.';
+      if (!formData.group_name) return 'Group name is required.';
+      if (!formData.group_type) return 'Group type is required.';
+      if (!formData.group_address) return 'Group address is required.';
+      if (!formData.group_contact) return 'Group contact is required.';
       if (!formData.title) return 'Project title is required.';
-      if (!formData.total_members) return 'Total members is required.';
-      if (!formData.description) return 'Description is required.';
-      if (!formData.project_duration) return 'Project duration is required.';
-      if (!formData.maintenance_plan) return 'Maintenance plan document is required.';
+      if (!formData.total_treegrowers_will_participate) return 'Total tree growers is required.';
       
-      // 🌱 Seedling Validation
-      if (!formData.no_request_seedling) return 'Number of seedlings requested is required.';
-      try {
-        JSON.parse(formData.seedling_type);
-      } catch (e) {
-        return 'Seedling types must be a valid JSON object (e.g., {"Mahogany": 30}).';
+      const totalGrowers = parseInt(formData.total_treegrowers_will_participate);
+      if (isNaN(totalGrowers) || totalGrowers < 2) {
+        return 'Minimum of 2 tree growers required per group.';
       }
+      
+      if (!formData.maintenance_plan) return 'Maintenance plan document is required.';
     }
     return null;
   };
@@ -443,9 +462,16 @@ export default function Signup() {
   const sendOtp = async () => {
     setSendingOtp(true);
     try {
-      const res = await fetch(api + '/api/send_otp/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: formData.email }) });
+      const res = await fetch(api + '/api/send_otp/', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ email: formData.email }) 
+      });
       const json = await res.json();
-      if (!res.ok) { Alert.alert('Error', json.error ?? 'Failed to send verification code.'); return; }
+      if (!res.ok) { 
+        Alert.alert('Error', json.error ?? 'Failed to send verification code.'); 
+        return; 
+      }
       setOtp('');
       setResendCooldown(60);
       setStep(1);
@@ -457,12 +483,22 @@ export default function Signup() {
   };
 
   const verifyOtp = async () => {
-    if (otp.length !== 6) { Alert.alert('Invalid Code', 'Please enter the 6-digit code sent to your email.'); return; }
+    if (otp.length !== 6) { 
+      Alert.alert('Invalid Code', 'Please enter the 6-digit code sent to your email.'); 
+      return; 
+    }
     setLoading(true);
     try {
-      const res = await fetch(api + '/api/verify_otp/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: formData.email, otp }) });
+      const res = await fetch(api + '/api/verify_otp/', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ email: formData.email, otp }) 
+      });
       const json = await res.json();
-      if (!res.ok) { Alert.alert('Verification Failed', json.error ?? 'Incorrect code.'); return; }
+      if (!res.ok) { 
+        Alert.alert('Verification Failed', json.error ?? 'Incorrect code.'); 
+        return; 
+      }
       setStep(2);
     } catch (e: any) {
       Alert.alert('Error', e.message ?? 'Network error.');
@@ -472,33 +508,48 @@ export default function Signup() {
   };
 
   const goNext = () => {
-    if (step === 0) { const err = validateStep(); if (err) { Alert.alert('Missing Info', err); return; } sendOtp(); return; }
-    if (step === 1) { verifyOtp(); return; }
+    if (step === 0) { 
+      const err = validateStep(); 
+      if (err) { Alert.alert('Missing Info', err); return; } 
+      sendOtp(); 
+      return; 
+    }
+    if (step === 1) { 
+      verifyOtp(); 
+      return; 
+    }
     const err = validateStep();
     if (err) { Alert.alert('Missing Info', err); return; }
     setStep((s) => s + 1);
   };
 
-  const goBack = () => { if (step === 1) { setOtp(''); } setStep((s) => s - 1); };
+  const goBack = () => { 
+    if (step === 1) { setOtp(''); } 
+    setStep((s) => s - 1); 
+  };
 
   const handleSubmit = async () => {
-    if (!agreedToPrivacy) { Alert.alert('Privacy Policy', 'Please read and agree to the Privacy Policy before submitting.'); return; }
+    if (!agreedToPrivacy) { 
+      Alert.alert('Privacy Policy', 'Please read and agree to the Privacy Policy before submitting.'); 
+      return; 
+    }
     setLoading(true);
     try {
       const fd = new FormData();
       
-      // Core User Fields
       fd.append('email', formData.email);
       fd.append('password', formData.password);
       fd.append('user_role', 'treeGrowers');
       fd.append('first_name', formData.first_name);
       fd.append('last_name', formData.last_name);
       fd.append('middle_name', formData.middle_name);
-      fd.append('birthday', formData.birthday);
       fd.append('contact', formData.contact);
       fd.append('address', formData.address);
       
-      // Gender Mapping
+      if (formData.birthday) {
+        fd.append('birthday', formData.birthday);
+      }
+      
       let g = 'O';
       if (formData.gender === 'male') g = 'M';
       else if (formData.gender === 'female') g = 'F';
@@ -506,36 +557,43 @@ export default function Signup() {
       fd.append('is_active', 'false');
 
       if (formData.profile_img) {
-        fd.append('profile_img', { uri: formData.profile_img.uri, name: formData.profile_img.name, type: formData.profile_img.type } as any);
+        fd.append('profile_img', { 
+          uri: formData.profile_img.uri, 
+          name: formData.profile_img.name, 
+          type: formData.profile_img.type 
+        } as any);
       }
 
-      // Organization Fields
-      fd.append('organization_name', formData.organization_name);
-      fd.append('org_email', formData.org_email);
-      fd.append('org_address', formData.org_address);
-      fd.append('org_contact', formData.org_contact);
-      if (formData.org_profile) {
-        fd.append('org_profile', { uri: formData.org_profile.uri, name: formData.org_profile.name, type: formData.org_profile.type } as any);
+      fd.append('group_name', formData.group_name);
+      fd.append('group_type', formData.group_type);
+      fd.append('group_address', formData.group_address);
+      fd.append('group_contact', formData.group_contact);
+      
+      if (formData.group_profile) {
+        fd.append('group_profile', { 
+          uri: formData.group_profile.uri, 
+          name: formData.group_profile.name, 
+          type: formData.group_profile.type 
+        } as any);
       }
 
-      // Application Fields
       fd.append('title', formData.title);
-      fd.append('total_members', formData.total_members);
-      fd.append('description', formData.description);
-      fd.append('project_duration', formData.project_duration);
+      fd.append('total_treegrowers_will_participate', formData.total_treegrowers_will_participate);
+      
+      // ✅ NEW: Append proposed orientation date if provided
+      if (formData.proposed_orientation_date) {
+        fd.append('proposed_orientation_date', formData.proposed_orientation_date);
+      }
+      
       if (formData.maintenance_plan) {
-        fd.append('maintenance_plan', { uri: formData.maintenance_plan.uri, name: formData.maintenance_plan.name, type: formData.maintenance_plan.type } as any);
+        fd.append('maintenance_plan', { 
+          uri: formData.maintenance_plan.uri, 
+          name: formData.maintenance_plan.name, 
+          type: formData.maintenance_plan.type 
+        } as any);
       }
 
-      // 🌱 Seedling Request Fields (Aligned with Backend)
-      fd.append('no_request_seedling', formData.no_request_seedling);
-      fd.append('seedling_type', formData.seedling_type); // Already JSON string
-      fd.append('seedling_description', formData.seedling_description);
-      if (formData.seedling_request_file) {
-        fd.append('seedling_request_file', { uri: formData.seedling_request_file.uri, name: formData.seedling_request_file.name, type: formData.seedling_request_file.type } as any);
-      }
-
-      const res = await fetch(api + '/api/register/', { method: 'POST', body: fd });
+      const res = await fetch(api + '/api/register_tree_grower/', { method: 'POST', body: fd });
       const json = await res.json();
 
       if (!res.ok) {
@@ -543,7 +601,7 @@ export default function Signup() {
         return;
       }
 
-      Alert.alert('Success 🌱', 'Account created! Your application is under evaluation.', [
+      Alert.alert('Success 🌱', 'Account created! Your application is under evaluation. You can request seedlings once your application is accepted.', [
         { text: 'Sign In', onPress: () => router.push('/login') },
       ]);
     } catch (e: any) {
@@ -560,9 +618,9 @@ export default function Signup() {
           <>
             <Text style={styles.stepTitle}>Account Information</Text>
             <Text style={styles.stepSubtitle}>Set up your login credentials</Text>
-            <Field label="Email Address" icon={<Mail size={18} color="#5a8a6a" />} value={formData.email} onChangeText={(v) => update('email', v)} keyboardType="email-address" autoCapitalize="none" />
+            <Field label="Email Address" icon={<Mail size={18} color="#5a8a6a" />} value={formData.email} onChangeText={(v) => update('email', v)} keyboardType="email-address" autoCapitalize="none" required />
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Password</Text>
+              <Text style={styles.label}>Password <Text style={{ color: '#ef4444' }}>*</Text></Text>
               <View style={styles.inputContainer}>
                 <View style={styles.inputIcon}><Lock size={18} color="#5a8a6a" /></View>
                 <TextInput style={[styles.input, inputStyleOverride]} placeholder="Enter password" placeholderTextColor="#5a8a6a" value={formData.password} onChangeText={(v) => update('password', v)} secureTextEntry={!showPassword} autoCapitalize="none" />
@@ -571,7 +629,7 @@ export default function Signup() {
               <Text style={styles.hint}>8+ chars · uppercase · lowercase · number · special char</Text>
             </View>
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Confirm Password</Text>
+              <Text style={styles.label}>Confirm Password <Text style={{ color: '#ef4444' }}>*</Text></Text>
               <View style={styles.inputContainer}>
                 <View style={styles.inputIcon}><Lock size={18} color="#5a8a6a" /></View>
                 <TextInput style={[styles.input, inputStyleOverride]} placeholder="Confirm password" placeholderTextColor="#5a8a6a" value={formData.confirmPassword} onChangeText={(v) => update('confirmPassword', v)} secureTextEntry={!showConfirmPassword} autoCapitalize="none" />
@@ -598,7 +656,9 @@ export default function Signup() {
             </View>
             <Text style={styles.otpNote}>Didn't receive the code? Check your spam folder or{' '}</Text>
             <TouchableOpacity onPress={sendOtp} disabled={resendCooldown > 0 || sendingOtp} activeOpacity={0.7}>
-              <Text style={[styles.otpResend, (resendCooldown > 0 || sendingOtp) && styles.otpResendDisabled]}>{sendingOtp ? 'Sending…' : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}</Text>
+              <Text style={[styles.otpResend, (resendCooldown > 0 || sendingOtp) && styles.otpResendDisabled]}>
+                {sendingOtp ? 'Sending…' : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
+              </Text>
             </TouchableOpacity>
           </>
         );
@@ -607,48 +667,70 @@ export default function Signup() {
           <>
             <Text style={styles.stepTitle}>Personal Information</Text>
             <Text style={styles.stepSubtitle}>Tell us a little about yourself</Text>
-            <Field label="First Name" icon={<User size={18} color="#5a8a6a" />} value={formData.first_name} onChangeText={(v) => update('first_name', v)} />
-            <Field label="Middle Name (optional)" icon={<User size={18} color="#5a8a6a" />} value={formData.middle_name} onChangeText={(v) => update('middle_name', v)} />
-            <Field label="Last Name" icon={<User size={18} color="#5a8a6a" />} value={formData.last_name} onChangeText={(v) => update('last_name', v)} />
+            <Field label="First Name" icon={<User size={18} color="#5a8a6a" />} value={formData.first_name} onChangeText={(v) => update('first_name', v)} required />
+            <Field label="Middle Name" icon={<User size={18} color="#5a8a6a" />} value={formData.middle_name} onChangeText={(v) => update('middle_name', v)} />
+            <Field label="Last Name" icon={<User size={18} color="#5a8a6a" />} value={formData.last_name} onChangeText={(v) => update('last_name', v)} required />
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Birthday</Text>
+              <Text style={styles.label}>Birthday <Text style={{ color: '#5a8a6a', fontSize: 10 }}>(optional)</Text></Text>
               <TouchableOpacity style={styles.inputContainer} onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
                 <View style={styles.inputIcon}><Calendar size={18} color="#5a8a6a" /></View>
-                <Text style={[styles.dateDisplay, !formData.birthday && styles.dateDisplayPlaceholder]}>{formData.birthday || 'Select your birthday'}</Text>
+                <Text style={[styles.dateDisplay, !formData.birthday && styles.dateDisplayPlaceholder]}>
+                  {formData.birthday || 'Select your birthday'}
+                </Text>
                 <Calendar size={16} color="#2d5f3c" />
               </TouchableOpacity>
             </View>
-            <Field label="Contact Number" icon={<Phone size={18} color="#5a8a6a" />} value={formData.contact} onChangeText={(v) => update('contact', v)} keyboardType="phone-pad" autoCapitalize="none" />
-            <Field label="Address" icon={<MapPin size={18} color="#5a8a6a" />} value={formData.address} onChangeText={(v) => update('address', v)} />
+            <Field label="Contact Number" icon={<Phone size={18} color="#5a8a6a" />} value={formData.contact} onChangeText={(v) => update('contact', v)} keyboardType="phone-pad" autoCapitalize="none" required />
+            <Field label="Address" icon={<MapPin size={18} color="#5a8a6a" />} value={formData.address} onChangeText={(v) => update('address', v)} required />
             <GenderPicker value={formData.gender} onChange={(v) => update('gender', v)} />
-            <FileButton label="Profile Image" value={formData.profile_img} onPress={() => pickImage('profile_img')} isImage required />
+            <FileButton label="Profile Image" value={formData.profile_img} onPress={() => pickImage('profile_img')} isImage />
           </>
         );
       case 3:
         return (
           <>
-            <Text style={styles.stepTitle}>Organization & Project</Text>
-            <Text style={styles.stepSubtitle}>Details about your organization and maintenance plan</Text>
+            <Text style={styles.stepTitle}>Group & Project</Text>
+            <Text style={styles.stepSubtitle}>Details about your group and maintenance plan</Text>
 
-            <Text style={styles.sectionHeading}>Organization Details</Text>
-            <Field label="Organization Name" icon={<Building2 size={18} color="#5a8a6a" />} value={formData.organization_name} onChangeText={(v) => update('organization_name', v)} />
-            <Field label="Organization Email" icon={<Mail size={18} color="#5a8a6a" />} value={formData.org_email} onChangeText={(v) => update('org_email', v)} keyboardType="email-address" autoCapitalize="none" />
-            <Field label="Organization Address" icon={<MapPin size={18} color="#5a8a6a" />} value={formData.org_address} onChangeText={(v) => update('org_address', v)} />
-            <Field label="Organization Contact" icon={<Phone size={18} color="#5a8a6a" />} value={formData.org_contact} onChangeText={(v) => update('org_contact', v)} keyboardType="phone-pad" autoCapitalize="none" />
-            <FileButton label="Organization Logo" value={formData.org_profile} onPress={() => pickImage('org_profile')} isImage required />
+            <Text style={styles.sectionHeading}>Group Details</Text>
+            <Field label="Group Name" icon={<Building2 size={18} color="#5a8a6a" />} value={formData.group_name} onChangeText={(v) => update('group_name', v)} required />
+            <GroupTypePicker value={formData.group_type} onChange={(v) => update('group_type', v)} />
+            <Field label="Group Address" icon={<MapPin size={18} color="#5a8a6a" />} value={formData.group_address} onChangeText={(v) => update('group_address', v)} required />
+            <Field label="Group Contact" icon={<Phone size={18} color="#5a8a6a" />} value={formData.group_contact} onChangeText={(v) => update('group_contact', v)} keyboardType="phone-pad" autoCapitalize="none" required />
+            <FileButton label="Group Logo" value={formData.group_profile} onPress={() => pickImage('group_profile')} isImage />
 
             <Text style={[styles.sectionHeading, { marginTop: 18 }]}>Project / Application</Text>
-            <Field label="Project Title" icon={<FileText size={18} color="#5a8a6a" />} value={formData.title} onChangeText={(v) => update('title', v)} />
-            <Field label="Total Members" icon={<Users size={18} color="#5a8a6a" />} value={formData.total_members} onChangeText={(v) => update('total_members', v)} keyboardType="numeric" autoCapitalize="none" />
-            <Field label="Description" icon={<FileText size={18} color="#5a8a6a" />} value={formData.description} onChangeText={(v) => update('description', v)} multiline />
-            <Field label="Project Duration (months)" icon={<Clock size={18} color="#5a8a6a" />} value={formData.project_duration} onChangeText={(v) => update('project_duration', v)} keyboardType="numeric" autoCapitalize="none" />
+            <Field label="Project Title" icon={<FileText size={18} color="#5a8a6a" />} value={formData.title} onChangeText={(v) => update('title', v)} required />
+            <Field 
+              label="Total Tree Growers" 
+              icon={<Users size={18} color="#5a8a6a" />} 
+              value={formData.total_treegrowers_will_participate} 
+              onChangeText={(v) => update('total_treegrowers_will_participate', v)} 
+              keyboardType="numeric" 
+              autoCapitalize="none" 
+              required 
+            />
+            <Text style={styles.hint}>Minimum 2 tree growers required per group</Text>
+
+            {/* ✅ NEW: Proposed Orientation Date Picker */}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Proposed Orientation Date <Text style={{ color: '#5a8a6a', fontSize: 10 }}>(optional)</Text></Text>
+              <TouchableOpacity style={styles.inputContainer} onPress={() => setShowProposedDatePicker(true)} activeOpacity={0.7}>
+                <View style={styles.inputIcon}><Calendar size={18} color="#5a8a6a" /></View>
+                <Text style={[styles.dateDisplay, !formData.proposed_orientation_date && styles.dateDisplayPlaceholder]}>
+                  {formData.proposed_orientation_date || 'Select preferred date (optional)'}
+                </Text>
+                <Calendar size={16} color="#2d5f3c" />
+              </TouchableOpacity>
+            </View>
+
             <FileButton label="Maintenance Plan" value={formData.maintenance_plan} onPress={() => pickDocument('maintenance_plan')} required />
 
-            <Text style={[styles.sectionHeading, { marginTop: 18 }]}>🌱 Seedling Request</Text>
-            <Field label="Number of Requested Seedlings" icon={<Leaf size={18} color="#5a8a6a" />} value={formData.no_request_seedling} onChangeText={(v) => update('no_request_seedling', v)} keyboardType="numeric" autoCapitalize="none" />
-           
-           
-          
+            <View style={styles.noteBox}>
+              <Text style={styles.noteText}>
+                🌱 <Text style={styles.noteBold}>Seedling Request:</Text> You can request seedlings after your application is accepted and you know your assigned site.
+              </Text>
+            </View>
           </>
         );
       case 4:
@@ -664,32 +746,32 @@ export default function Signup() {
 
             <ReviewSection title="👤 Personal">
               <ReviewRow label="Name" value={`${formData.first_name} ${formData.middle_name} ${formData.last_name}`.trim()} />
-              <ReviewRow label="Birthday" value={formData.birthday} />
+              <ReviewRow label="Birthday" value={formData.birthday || 'Not provided'} />
               <ReviewRow label="Contact" value={formData.contact} />
               <ReviewRow label="Address" value={formData.address} />
               <ReviewRow label="Gender" value={formData.gender} />
-              <ReviewRow label="Profile Image" value={formData.profile_img?.name ?? '—'} />
+              <ReviewRow label="Profile Image" value={formData.profile_img?.name ?? 'Not provided'} />
             </ReviewSection>
 
-            <ReviewSection title="🌿 Organization">
-              <ReviewRow label="Organization" value={formData.organization_name} />
-              <ReviewRow label="Org Email" value={formData.org_email} />
-              <ReviewRow label="Org Address" value={formData.org_address} />
-              <ReviewRow label="Org Contact" value={formData.org_contact} />
+            <ReviewSection title="🌿 Group">
+              <ReviewRow label="Group Name" value={formData.group_name} />
+              <ReviewRow label="Group Type" value={GROUP_TYPES.find(t => t.value === formData.group_type)?.label || '—'} />
+              <ReviewRow label="Group Address" value={formData.group_address} />
+              <ReviewRow label="Group Contact" value={formData.group_contact} />
+              <ReviewRow label="Group Logo" value={formData.group_profile?.name ?? 'Not provided'} />
             </ReviewSection>
 
-            <ReviewSection title="📋 Project & Seedlings">
+            <ReviewSection title="📋 Project">
               <ReviewRow label="Title" value={formData.title} />
-              <ReviewRow label="Members" value={formData.total_members} />
-              <ReviewRow label="Duration" value={`${formData.project_duration} month(s)`} />
-              <ReviewRow label="Seedling Count" value={formData.no_request_seedling} />
-              <ReviewRow label="Seedling Types" value={formData.seedling_type} />
+              <ReviewRow label="Tree Growers" value={formData.total_treegrowers_will_participate} />
+              {/* ✅ NEW: Show proposed orientation date in review */}
+              <ReviewRow label="Proposed Orientation" value={formData.proposed_orientation_date || 'Not specified'} />
               <ReviewRow label="Maintenance Plan" value={formData.maintenance_plan?.name ?? '—'} />
             </ReviewSection>
 
             <View style={styles.noteBox}>
               <Text style={styles.noteText}>
-                ⚠️ Your account will be set as <Text style={styles.noteBold}>For Evaluation</Text> until approved by an administrator.
+                ⚠️ Your account will be set as <Text style={styles.noteBold}>For Evaluation</Text> until approved by an administrator. Seedling requests can be made after acceptance.
               </Text>
             </View>
 
@@ -731,10 +813,11 @@ export default function Signup() {
 
             <View style={styles.stepsRow}>
               {STEPS.flatMap((s, i) => {
+                const IconComponent = s.Icon;
                 const items: React.ReactElement[] = [
                   <View key={`step-${i}`} style={styles.stepItem}>
                     <View style={[styles.stepDot, i <= step && styles.stepDotActive, i < step && styles.stepDotDone]}>
-                      {i < step ? <Check size={14} color="#ffffff" strokeWidth={2.5} /> : <Text style={styles.stepDotText}>{s.icon}</Text>}
+                      {i < step ? <Check size={14} color="#ffffff" strokeWidth={2.5} /> : <IconComponent size={16} color={i === step ? '#4caf72' : '#5a8a6a'} />}
                     </View>
                     <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]}>{s.label}</Text>
                   </View>,
@@ -795,7 +878,10 @@ export default function Signup() {
         </View>
       </ScrollView>
 
+      {/* ✅ Modals for Date Pickers */}
       <DatePickerModal visible={showDatePicker} value={formData.birthday} onConfirm={(d) => update('birthday', d)} onClose={() => setShowDatePicker(false)} />
+      <DatePickerModal visible={showProposedDatePicker} value={formData.proposed_orientation_date} onConfirm={(d) => update('proposed_orientation_date', d)} onClose={() => setShowProposedDatePicker(false)} />
+      
       <PrivacyPolicyModal visible={showPrivacyPolicy} onClose={() => setShowPrivacyPolicy(false)} />
       <TermsModal visible={showTerms} onClose={() => setShowTerms(false)} />
     </KeyboardAvoidingView>
@@ -863,7 +949,6 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: '#4caf72', borderColor: '#4caf72' },
   privacyText: { flex: 1, color: '#a8c5b3', fontSize: 12, lineHeight: 18 },
   privacyLink: { color: '#4caf72', fontWeight: '700' },
-  // ── OTP step ──
   otpEmailBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(76,175,114,0.1)', borderWidth: 1, borderColor: 'rgba(76,175,114,0.25)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 22 },
   otpEmailText: { color: '#a8c5b3', fontSize: 13, flex: 1 },
   otpWrapper: { alignItems: 'center', marginBottom: 20, height: 54 },
@@ -887,6 +972,32 @@ const styles = StyleSheet.create({
   registerText: { color: '#a8c5b3', fontSize: 14 },
   registerLink: { color: '#4caf72', fontWeight: '700', fontSize: 14 },
   footer: { color: '#5a8a6a', fontSize: 11, marginTop: 16, textAlign: 'center' },
+  groupTypeRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  groupTypeChip: { 
+    flex: 1, 
+    minWidth: 100,
+    paddingVertical: 11, 
+    paddingHorizontal: 8,
+    borderRadius: 8, 
+    borderWidth: 1, 
+    borderColor: 'rgba(255,255,255,0.1)', 
+    backgroundColor: '#0b2211', 
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  groupTypeChipActive: { 
+    borderColor: '#4caf72', 
+    backgroundColor: '#1a4228' 
+  },
+  groupTypeChipText: { 
+    color: '#5a8a6a', 
+    fontSize: 11, 
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  groupTypeChipTextActive: { 
+    color: '#ffffff' 
+  },
 });
 
 // ─── Date Picker Styles ────────────────────────────────────────────────────

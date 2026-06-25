@@ -7,6 +7,7 @@ import {
   Clock,
   X,
 } from "lucide-react";
+import { api } from "@/constant/api.ts";
 
 interface OrientationDate {
   application_id: number;
@@ -15,46 +16,70 @@ interface OrientationDate {
   status: string;
 }
 
+// ✅ Updated to match actual application workflow statuses
 const STATUS_CONFIG: Record<
   string,
-  { bg: string; text: string; dot: string; border: string }
+  { bg: string; text: string; dot: string; border: string; label: string }
 > = {
+  for_evaluation: {
+    bg: "bg-gray-50",
+    text: "text-gray-700",
+    dot: "bg-gray-500",
+    border: "border-gray-200",
+    label: "For Evaluation",
+  },
+  for_head: {
+    bg: "bg-blue-50",
+    text: "text-blue-700",
+    dot: "bg-blue-500",
+    border: "border-blue-200",
+    label: "For Head",
+  },
   accepted: {
     bg: "bg-emerald-50",
     text: "text-emerald-700",
     dot: "bg-emerald-500",
     border: "border-emerald-200",
+    label: "Accepted",
   },
-  pending: {
-    bg: "bg-amber-50",
-    text: "text-amber-700",
-    dot: "bg-amber-400",
-    border: "border-amber-200",
+  under_monitoring: {
+    bg: "bg-purple-50",
+    text: "text-purple-700",
+    dot: "bg-purple-500",
+    border: "border-purple-200",
+    label: "Monitoring",
   },
   rejected: {
     bg: "bg-rose-50",
     text: "text-rose-700",
     dot: "bg-rose-500",
     border: "border-rose-200",
+    label: "Rejected",
+  },
+  completed: {
+    bg: "bg-slate-100",
+    text: "text-slate-700",
+    dot: "bg-slate-500",
+    border: "border-slate-200",
+    label: "Completed",
+  },
+  failed: {
+    bg: "bg-red-50",
+    text: "text-red-700",
+    dot: "bg-red-500",
+    border: "border-red-200",
+    label: "Failed",
+  },
+  cancelled: {
+    bg: "bg-orange-50",
+    text: "text-orange-700",
+    dot: "bg-orange-500",
+    border: "border-orange-200",
+    label: "Cancelled",
   },
 };
 
-const MOCK_DATA: OrientationDate[] = [
-  {
-    application_id: 7,
-    title: "OrgansProject",
-    orientation_date: "2026-04-29",
-    status: "accepted",
-  },
-];
-
 // ── KEY FIX: build YYYY-MM-DD from LOCAL time, NOT UTC ───────────────────────
-// date.toISOString() converts to UTC first — in timezones UTC+1 or later,
-// midnight local time becomes the previous day in UTC, so "2026-04-29" never
-// matches. This helper uses local getFullYear/getMonth/getDate instead.
-
-import { api } from "@/constant/api.ts";
-
 const toLocalDateStr = (date: Date): string => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -75,19 +100,16 @@ export default function Calendar() {
 
   async function fetchOrientationDates() {
     try {
-      const res = await fetch(
-        api+"api/get_orientation_dates/",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      const data = await res.json();
-      console.log("Raw API response:", data);
-      setData(data);
-      setLoading(false);
+      const res = await fetch(`${api}api/get_orientation_dates/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch");
+      const jsonData = await res.json();
+      setData(jsonData);
     } catch (error) {
-      console.error("Failed to fetch orientation dates, using mock data");
-      setData(MOCK_DATA);
+      console.error("Failed to fetch orientation dates");
+      setData([]); // ✅ Gracefully handle API errors instead of using mock data
+    } finally {
       setLoading(false);
     }
   }
@@ -97,9 +119,6 @@ export default function Calendar() {
     fetchOrientationDates();
   }, []);
 
-  useEffect(() => {
-    console.log("Fetched orientation dates:", data);
-  }, [data]);
   const filteredData = data.filter((item) => {
     const matchStatus = filterStatus === "all" || item.status === filterStatus;
     const matchSearch = item.title
@@ -136,7 +155,6 @@ export default function Calendar() {
     });
   };
 
-  // Uses toLocalDateStr — the fix
   const getItemsForDate = (date: Date) =>
     filteredData.filter(
       (item) => item.orientation_date === toLocalDateStr(date),
@@ -242,12 +260,12 @@ export default function Calendar() {
                 </div>
                 <div className="space-y-1">
                   {items.slice(0, 2).map((item) => {
-                    const cfg =
-                      STATUS_CONFIG[item.status] || STATUS_CONFIG.pending;
+                    const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
                     return (
                       <div
                         key={item.application_id}
                         className={`text-xs px-2 py-0.5 rounded-md font-medium truncate ${cfg.bg} ${cfg.text} ${cfg.border} border`}
+                        title={cfg.label}
                       >
                         {item.title}
                       </div>
@@ -308,8 +326,7 @@ export default function Calendar() {
                 className={`p-3 space-y-2 ${idx < 6 ? "border-r border-gray-100" : ""}`}
               >
                 {items.map((item) => {
-                  const cfg =
-                    STATUS_CONFIG[item.status] || STATUS_CONFIG.pending;
+                  const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
                   return (
                     <div
                       key={item.application_id}
@@ -320,7 +337,7 @@ export default function Calendar() {
                         <span
                           className={`text-xs font-semibold uppercase tracking-wide ${cfg.text}`}
                         >
-                          {item.status}
+                          {cfg.label}
                         </span>
                       </div>
                       <div className="text-sm font-semibold text-gray-800 truncate">
@@ -351,7 +368,7 @@ export default function Calendar() {
           </div>
         ) : (
           items.map((item) => {
-            const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending;
+            const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
             return (
               <div
                 key={item.application_id}
@@ -363,7 +380,7 @@ export default function Calendar() {
                     {item.title}
                   </div>
                   <div className={`text-xs font-medium mt-0.5 ${cfg.text}`}>
-                    {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                    {cfg.label}
                   </div>
                 </div>
                 <div className="text-xs text-gray-400">
@@ -466,13 +483,13 @@ export default function Calendar() {
 
         <hr className="border-gray-100" />
 
-        {/* Status filter */}
+        {/* ✅ Updated Status filter to match actual workflow */}
         <div>
           <p className="text-xs font-semibold text-gray-400 tracking-widest uppercase mb-3">
             Filter by Status
           </p>
           <div className="space-y-1">
-            {["all", "accepted", "pending", "rejected"].map((s) => {
+            {["all", "for_head", "accepted", "under_monitoring", "completed", "rejected"].map((s) => {
               const cfg = s !== "all" ? STATUS_CONFIG[s] : null;
               const isActive = filterStatus === s;
               return (
@@ -489,7 +506,7 @@ export default function Calendar() {
                   <span
                     className={`w-2.5 h-2.5 rounded-full ${cfg ? cfg.dot : "bg-gray-300"}`}
                   />
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                  {cfg ? cfg.label : "All Statuses"}
                   <span className="ml-auto text-xs opacity-60">
                     {s === "all"
                       ? data.length
@@ -524,8 +541,7 @@ export default function Calendar() {
           ) : (
             <div className="space-y-2">
               {agendaItems.map((item) => {
-                const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending;
-                // Parse date parts directly to avoid UTC shift in display
+                const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
                 const [yr, mo, dy] = item.orientation_date
                   .split("-")
                   .map(Number);
@@ -545,7 +561,7 @@ export default function Calendar() {
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
                       <span className={`text-xs font-semibold ${cfg.text}`}>
-                        {item.status}
+                        {cfg.label}
                       </span>
                     </div>
                     <div className="text-sm font-semibold text-gray-800 truncate">
@@ -701,8 +717,7 @@ export default function Calendar() {
             ) : (
               <div className="flex gap-3 flex-wrap">
                 {getItemsForDate(selectedDate).map((item) => {
-                  const cfg =
-                    STATUS_CONFIG[item.status] || STATUS_CONFIG.pending;
+                  const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
                   return (
                     <div
                       key={item.application_id}
@@ -714,7 +729,7 @@ export default function Calendar() {
                           {item.title}
                         </div>
                         <div className={`text-xs font-medium ${cfg.text}`}>
-                          {item.status}
+                          {cfg.label}
                         </div>
                       </div>
                     </div>

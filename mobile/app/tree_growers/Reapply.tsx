@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import * as DocumentPicker from "expo-document-picker";
@@ -19,31 +20,35 @@ import { api } from "@/constants/url_fixed";
 
 export default function Reapply() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const siteId = params.site_id as string | undefined;
+  const siteName = params.site_name as string | undefined;
+
   const [loading, setLoading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
-    total_members: "",
-    description: "",
-    project_duration: "",
+    total_treegrowers_will_participate: "",
     maintenance_plan: null as { uri: string; name: string; type: string } | null,
-    no_request_seedling: "",
-    seedling_description: "",
-    seedling_request_file: null as { uri: string; name: string; type: string } | null,
+    proposed_orientation_date: "",
   });
+
+  // ✅ Custom Date Picker State
+  const [tempDate, setTempDate] = useState(new Date());
 
   const update = (key: string, value: any) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const pickDocument = async (field: "maintenance_plan" | "seedling_request_file") => {
+  const pickDocument = async () => {
     const result = await DocumentPicker.getDocumentAsync({
       type: ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/*"],
       copyToCacheDirectory: true,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
-      update(field, { 
+      update("maintenance_plan", { 
         uri: asset.uri, 
         name: asset.name, 
         type: asset.mimeType ?? "application/octet-stream" 
@@ -51,19 +56,68 @@ export default function Reapply() {
     }
   };
 
+  // ✅ Custom Date Picker Functions
+  const openDatePicker = () => {
+    if (formData.proposed_orientation_date) {
+      setTempDate(new Date(formData.proposed_orientation_date));
+    } else {
+      setTempDate(new Date());
+    }
+    setShowDatePicker(true);
+  };
+
+  const confirmDate = () => {
+    const formattedDate = tempDate.toISOString().split('T')[0];
+    update("proposed_orientation_date", formattedDate);
+    setShowDatePicker(false);
+  };
+
+  const clearDate = () => {
+    update("proposed_orientation_date", "");
+  };
+
+  const adjustMonth = (amount: number) => {
+    const newDate = new Date(tempDate);
+    newDate.setMonth(newDate.getMonth() + amount);
+    setTempDate(newDate);
+  };
+
+  const adjustYear = (amount: number) => {
+    const newDate = new Date(tempDate);
+    newDate.setFullYear(newDate.getFullYear() + amount);
+    setTempDate(newDate);
+  };
+
+  const selectDay = (day: number) => {
+    const newDate = new Date(tempDate);
+    newDate.setDate(day);
+    setTempDate(newDate);
+  };
+
+  const formatDateDisplay = (dateString: string) => {
+    if (!dateString) return "Select date";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-PH", { 
+      year: "numeric", 
+      month: "long", 
+      day: "numeric" 
+    });
+  };
+
+  const getDaysInMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  };
+
   const validate = (): string | null => {
     if (!formData.title.trim()) return "Project title is required.";
-    if (!formData.total_members.trim() || isNaN(Number(formData.total_members)) || Number(formData.total_members) < 1) {
-      return "Valid total members count is required.";
-    }
-    if (!formData.description.trim()) return "Project description is required.";
-    if (!formData.project_duration.trim() || isNaN(Number(formData.project_duration)) || Number(formData.project_duration) < 1) {
-      return "Valid project duration (in months) is required.";
+    if (!formData.total_treegrowers_will_participate.trim() || isNaN(Number(formData.total_treegrowers_will_participate)) || Number(formData.total_treegrowers_will_participate) < 2) {
+      return "Minimum of 2 tree growers required.";
     }
     if (!formData.maintenance_plan) return "Maintenance plan document is required.";
-    if (!formData.no_request_seedling.trim() || isNaN(Number(formData.no_request_seedling)) || Number(formData.no_request_seedling) < 1) {
-      return "Valid number of seedlings requested is required.";
-    }
     
     return null;
   };
@@ -82,25 +136,18 @@ export default function Reapply() {
 
       const fd = new FormData();
       fd.append("title", formData.title.trim());
-      fd.append("total_members", formData.total_members.trim());
-      fd.append("description", formData.description.trim());
-      fd.append("project_duration", formData.project_duration.trim());
+      fd.append("total_treegrowers_will_participate", formData.total_treegrowers_will_participate.trim());
       
       if (formData.maintenance_plan) {
         fd.append("maintenance_plan", formData.maintenance_plan as any);
       }
-      
-      fd.append("no_request_seedling", formData.no_request_seedling.trim());
-      
-      // Send empty seedling_type - backend will handle it
-      fd.append("seedling_type", JSON.stringify({}));
-      
-      if (formData.seedling_description.trim()) {
-        fd.append("seedling_description", formData.seedling_description.trim());
+
+      if (siteId) {
+        fd.append("proposed_site_id", siteId);
       }
-      
-      if (formData.seedling_request_file) {
-        fd.append("seedling_request_file", formData.seedling_request_file as any);
+
+      if (formData.proposed_orientation_date.trim()) {
+        fd.append("proposed_orientation_date", formData.proposed_orientation_date.trim());
       }
 
       const res = await fetch(`${api}/api/create_reapplication/`, {
@@ -135,6 +182,45 @@ export default function Reapply() {
     }
   };
 
+  // ✅ Generate Calendar Days
+  const renderCalendar = () => {
+    const daysInMonth = getDaysInMonth(tempDate);
+    const firstDay = getFirstDayOfMonth(tempDate);
+    const days = [];
+
+    // Empty slots for days before the first day of the month
+    for (let i = 0; i < firstDay; i++) {
+      days.push(<View key={`empty-${i}`} style={calendarStyles.dayEmpty} />);
+    }
+
+    // Days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const isSelected = tempDate.getDate() === day;
+      const isToday = new Date().toDateString() === new Date(tempDate.getFullYear(), tempDate.getMonth(), day).toDateString();
+      
+      days.push(
+        <TouchableOpacity
+          key={day}
+          style={[
+            calendarStyles.day,
+            isSelected && calendarStyles.daySelected,
+            isToday && !isSelected && calendarStyles.dayToday,
+          ]}
+          onPress={() => selectDay(day)}
+        >
+          <Text style={[
+            calendarStyles.dayText,
+            isSelected && calendarStyles.dayTextSelected,
+          ]}>
+            {day}
+          </Text>
+        </TouchableOpacity>
+      );
+    }
+
+    return days;
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.root} 
@@ -146,8 +232,76 @@ export default function Reapply() {
           <Ionicons name="arrow-back" size={22} color="#0F4A2F" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New Application</Text>
-        <View style={{ width: 38 }} /> {/* Spacer for centering */}
+        <View style={{ width: 38 }} />
       </View>
+
+      {/* ✅ Custom Date Picker Modal */}
+      <Modal
+        visible={showDatePicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.container}>
+            <View style={modalStyles.header}>
+              <Text style={modalStyles.title}>Select Date</Text>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Month/Year Navigation */}
+            <View style={modalStyles.navigation}>
+              <TouchableOpacity onPress={() => adjustYear(-1)} style={modalStyles.navButton}>
+                <Ionicons name="play-skip-back" size={16} color="#0F4A2F" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => adjustMonth(-1)} style={modalStyles.navButton}>
+                <Ionicons name="chevron-back" size={20} color="#0F4A2F" />
+              </TouchableOpacity>
+              
+              <Text style={modalStyles.monthYear}>
+                {tempDate.toLocaleDateString("en-PH", { month: "long", year: "numeric" })}
+              </Text>
+              
+              <TouchableOpacity onPress={() => adjustMonth(1)} style={modalStyles.navButton}>
+                <Ionicons name="chevron-forward" size={20} color="#0F4A2F" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => adjustYear(1)} style={modalStyles.navButton}>
+                <Ionicons name="play-skip-forward" size={16} color="#0F4A2F" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Day Labels */}
+            <View style={modalStyles.dayLabels}>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                <Text key={day} style={modalStyles.dayLabel}>{day}</Text>
+              ))}
+            </View>
+
+            {/* Calendar Grid */}
+            <View style={modalStyles.calendarGrid}>
+              {renderCalendar()}
+            </View>
+
+            {/* Action Buttons */}
+            <View style={modalStyles.actions}>
+              <TouchableOpacity 
+                style={modalStyles.cancelButton}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={modalStyles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={modalStyles.confirmButton}
+                onPress={confirmDate}
+              >
+                <Text style={modalStyles.confirmText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <ScrollView 
         style={styles.scroll} 
@@ -155,10 +309,21 @@ export default function Reapply() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* ✅ Selected Site Info Box */}
+        {siteName && (
+          <View style={styles.siteInfoBox}>
+            <Ionicons name="location" size={20} color="#0F4A2F" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.siteInfoLabel}>Applying for Site</Text>
+              <Text style={styles.siteInfoName}>{siteName}</Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.infoBox}>
           <Ionicons name="information-circle-outline" size={20} color="#0F4A2F" />
           <Text style={styles.infoText}>
-            Your existing account and organization details will be reused. Please provide the details for your <Text style={styles.infoBold}>new</Text> tree planting project.
+            Your existing account and group details will be reused. Please provide the details for your <Text style={styles.infoBold}>new</Text> tree planting project.
           </Text>
         </View>
 
@@ -176,50 +341,57 @@ export default function Reapply() {
           />
         </View>
 
-        <View style={styles.row}>
-          <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.label}>Total Members *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., 25"
-              keyboardType="numeric"
-              value={formData.total_members}
-              onChangeText={(v) => update("total_members", v)}
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
-          <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-            <Text style={styles.label}>Duration (Months) *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., 12"
-              keyboardType="numeric"
-              value={formData.project_duration}
-              onChangeText={(v) => update("project_duration", v)}
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
-        </View>
-
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Project Description *</Text>
+          <Text style={styles.label}>Total Tree Growers *</Text>
           <TextInput
-            style={[styles.input, styles.textarea]}
-            placeholder="Describe the goals and scope of this new project..."
-            value={formData.description}
-            onChangeText={(v) => update("description", v)}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
+            style={styles.input}
+            placeholder="e.g., 25 (Minimum 2)"
+            keyboardType="numeric"
+            value={formData.total_treegrowers_will_participate}
+            onChangeText={(v) => update("total_treegrowers_will_participate", v)}
             placeholderTextColor="#9CA3AF"
           />
+        </View>
+
+        {/* ✅ Custom Date Picker Field */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Proposed Orientation Date (Optional)</Text>
+          <TouchableOpacity 
+            style={styles.datePickerBtn} 
+            onPress={openDatePicker}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.uploadIconWrap, { backgroundColor: "#E0E7FF" }]}>
+              <Ionicons name="calendar-outline" size={22} color="#3730A3" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.datePickerTitle}>
+                {formData.proposed_orientation_date 
+                  ? formatDateDisplay(formData.proposed_orientation_date)
+                  : "Select a date"
+                }
+              </Text>
+              <Text style={styles.datePickerSub}>
+                {formData.proposed_orientation_date 
+                  ? "Tap to change date" 
+                  : "Tap to select"
+                }
+              </Text>
+            </View>
+            {formData.proposed_orientation_date && (
+              <TouchableOpacity onPress={clearDate} style={styles.clearDateBtn}>
+                <Ionicons name="close-circle" size={22} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.hintText}>Leave blank if you have no specific date in mind.</Text>
         </View>
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Maintenance Plan Document *</Text>
           <TouchableOpacity 
             style={styles.uploadBtn} 
-            onPress={() => pickDocument("maintenance_plan")}
+            onPress={pickDocument}
             activeOpacity={0.7}
           >
             <View style={[styles.uploadIconWrap, { backgroundColor: "#E8F5E9" }]}>
@@ -232,55 +404,6 @@ export default function Reapply() {
               <Text style={styles.uploadSub}>PDF, Word, or Image</Text>
             </View>
             {formData.maintenance_plan && <Ionicons name="checkmark-circle" size={22} color="#0F4A2F" />}
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── Seedling Request Section ─── */}
-        <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Seedling Request</Text>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Number of Seedlings Requested *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., 500"
-            keyboardType="numeric"
-            value={formData.no_request_seedling}
-            onChangeText={(v) => update("no_request_seedling", v)}
-            placeholderTextColor="#9CA3AF"
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Seedling Request Description (Optional)</Text>
-          <TextInput
-            style={[styles.input, styles.textarea]}
-            placeholder="Any specific requirements or notes for the seedlings..."
-            value={formData.seedling_description}
-            onChangeText={(v) => update("seedling_description", v)}
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-            placeholderTextColor="#9CA3AF"
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Supporting Document (Optional)</Text>
-          <TouchableOpacity 
-            style={styles.uploadBtn} 
-            onPress={() => pickDocument("seedling_request_file")}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.uploadIconWrap, { backgroundColor: "#E3F2FD" }]}>
-              <Ionicons name="attach-outline" size={22} color="#1565C0" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.uploadTitle}>
-                {formData.seedling_request_file ? formData.seedling_request_file.name : "Tap to upload supporting file"}
-              </Text>
-              <Text style={styles.uploadSub}>PDF, Word, or Image</Text>
-            </View>
-            {formData.seedling_request_file && <Ionicons name="checkmark-circle" size={22} color="#1565C0" />}
           </TouchableOpacity>
         </View>
 
@@ -325,6 +448,20 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
   
+  siteInfoBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#E0E7FF",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: "#3730A3",
+  },
+  siteInfoLabel: { fontSize: 11, color: "#4338CA", fontWeight: "600", textTransform: "uppercase" },
+  siteInfoName: { fontSize: 15, color: "#1E1B4B", fontWeight: "800" },
+
   infoBox: {
     flexDirection: "row",
     gap: 12,
@@ -348,8 +485,8 @@ const styles = StyleSheet.create({
   },
 
   formGroup: { marginBottom: 16 },
-  row: { flexDirection: "row" },
   label: { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 6 },
+  hintText: { fontSize: 11, color: "#9CA3AF", marginTop: 4 },
   input: {
     borderWidth: 1.5,
     borderColor: "#E5E7EB",
@@ -360,7 +497,21 @@ const styles = StyleSheet.create({
     color: "#111827",
     backgroundColor: "#fff",
   },
-  textarea: { height: 90, paddingTop: 12 },
+
+  datePickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#fff",
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    padding: 14,
+  },
+  uploadIconWrap: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center" },
+  datePickerTitle: { fontSize: 14, fontWeight: "600", color: "#111827" },
+  datePickerSub: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
+  clearDateBtn: { padding: 4 },
 
   uploadBtn: {
     flexDirection: "row",
@@ -373,7 +524,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
   },
-  uploadIconWrap: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center" },
   uploadTitle: { fontSize: 13, fontWeight: "600", color: "#111827" },
   uploadSub: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
 
@@ -394,4 +544,127 @@ const styles = StyleSheet.create({
   },
   submitDisabled: { opacity: 0.6 },
   submitText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+});
+
+// ✅ Calendar Styles
+const calendarStyles = StyleSheet.create({
+  day: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    margin: 2,
+  },
+  dayEmpty: {
+    width: 40,
+    height: 40,
+    margin: 2,
+  },
+  daySelected: {
+    backgroundColor: '#0F4A2F',
+  },
+  dayToday: {
+    borderWidth: 1,
+    borderColor: '#0F4A2F',
+  },
+  dayText: {
+    fontSize: 14,
+    color: '#111827',
+  },
+  dayTextSelected: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+});
+
+// ✅ Modal Styles
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  navigation: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 10,
+  },
+  navButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  monthYear: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F4A2F',
+  },
+  dayLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 10,
+  },
+  dayLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    width: 40,
+    textAlign: 'center',
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    marginBottom: 20,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  cancelText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#0F4A2F',
+    alignItems: 'center',
+  },
+  confirmText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+  },
 });

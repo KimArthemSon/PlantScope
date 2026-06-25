@@ -49,6 +49,9 @@ import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 import { api } from "@/constant/api";
 
+// 📍 Mapbox Token
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+
 const DefaultIcon = L.icon({
   iconUrl: icon,
   shadowUrl: iconShadow,
@@ -850,9 +853,12 @@ const SiteMap: React.FC<{
       scrollWheelZoom
       style={{ width: "100%", height: "100%", zIndex: 0 }}
     >
+      {/* ✅ NEW: Mapbox Satellite Hybrid */}
       <TileLayer
-        url="http://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-        attribution="&copy; Google Maps"
+        url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
+        tileSize={512}
+        zoomOffset={-1}
+        attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
       />
       <Marker position={coordinates}>
         <Popup>
