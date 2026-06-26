@@ -73,7 +73,7 @@ export default function Login() {
   // ✅ FIX 3: Web-safe routing
   useEffect(() => {
     if (!redirectTo) return;
-    
+
     if (Platform.OS === "web") {
       router.replace(redirectTo as any);
     } else if (rootNavState?.key) {
@@ -142,6 +142,7 @@ export default function Login() {
 
     try {
       // ✅ YOUR EXACT ORIGINAL BACKEND CODE - UNCHANGED
+      console.log(api + "/api/login/");
       const res = await fetch(`${api}/api/login/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -294,9 +295,7 @@ export default function Login() {
                 <Text style={styles.bannerIcon}>🔒</Text>
                 <Text style={styles.lockoutText}>
                   Account locked — try again in{" "}
-                  <Text style={styles.lockoutCountdown}>
-                    {lockoutSeconds}s
-                  </Text>
+                  <Text style={styles.lockoutCountdown}>{lockoutSeconds}s</Text>
                 </Text>
               </View>
             ) : attemptsLeft !== null && attemptsLeft > 0 ? (
@@ -337,9 +336,7 @@ export default function Login() {
           <View style={styles.footerSection}>
             <Text style={styles.footer}>Protected by nature's encryption</Text>
             <View style={styles.legalFooter}>
-              <TouchableOpacity
-                onPress={() => router.push("/privacy_policy")}
-              >
+              <TouchableOpacity onPress={() => router.push("/privacy_policy")}>
                 <Text style={styles.legalLink}>Privacy Notice</Text>
               </TouchableOpacity>
               <Text style={styles.legalSeparator}>·</Text>
@@ -472,7 +469,12 @@ const styles = StyleSheet.create({
   registerText: { color: "#6B8F7B", fontSize: 14 },
   registerLink: { color: "#4ADE80", fontSize: 14, fontWeight: "600" },
   footerSection: { marginTop: "auto", paddingTop: 32, alignItems: "center" },
-  footer: { textAlign: "center", color: "#3D6B4E", fontSize: 12, marginBottom: 10 },
+  footer: {
+    textAlign: "center",
+    color: "#3D6B4E",
+    fontSize: 12,
+    marginBottom: 10,
+  },
   legalFooter: {
     flexDirection: "row",
     justifyContent: "center",
