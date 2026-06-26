@@ -1,8 +1,10 @@
-
 import logging
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
+
+# ✅ ADD THIS IMPORT
+from accounts.helper import get_cloudinary_url
 
 logger = logging.getLogger(__name__)
 from .models import Sites
@@ -28,7 +30,8 @@ def get_site_details_for_tree_grower(request, site_id):
     for img in site.site_images.filter(layer_tag='general').order_by('created_at'):
         general_images.append({
             'image_id': img.site_image_id,
-            'url': img.img.url if img.img else None,
+            # ✅ FIX: Use get_cloudinary_url helper instead of .url
+            'url': get_cloudinary_url(str(img.img)) if img.img else None,
             'caption': img.caption,
         })
 

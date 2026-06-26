@@ -8,7 +8,7 @@ from django.conf import settings
 from sites.models import Sites
 from reforestation_areas.models import Reforestation_areas
 from security.views import log_activity
-
+from accounts.helper import get_cloudinary_url
 from accounts.models import User
 from .models import (
     Assigned_onsite_inspector,
@@ -80,7 +80,7 @@ def get_unassigned_inspectors(request, reforestation_area_id):
             " ".join(filter(None, [profile.first_name, profile.middle_name, profile.last_name]))
             if profile else user.email  # fallback to email if no profile
         )
-        profile_img = f"/media/{profile.profile_img}" if profile and profile.profile_img else None
+        profile_img = get_cloudinary_url(str(profile.profile_img)) if profile and profile.profile_img else None
 
         data.append({
         "user_id": user.id,
@@ -119,7 +119,7 @@ def get_assigned_list(request, reforestation_area_id):
             full_name = " ".join(
                 filter(None, [profile.first_name, profile.middle_name, profile.last_name])
             )
-            profile_img = f"/media/{profile.profile_img}" if profile.profile_img else None
+            profile_img = get_cloudinary_url(str(profile.profile_img)) if profile.profile_img else None
         else:
             full_name = a.user.get_full_name() or a.user.username
             profile_img = None

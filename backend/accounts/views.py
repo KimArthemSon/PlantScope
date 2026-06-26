@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 import re
 from django.conf import settings
 from django.db import DatabaseError, connection, transaction
-
+from accounts.helper import get_cloudinary_url, delete_cloudinary_resource
 
 def _get_request_user(request):
     """Return (User, email) of the JWT-authenticated caller, or (None, '') on failure."""
@@ -297,11 +297,11 @@ def list_users(request):
         columns = [col[0] for col in cursor.description]
         rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-        # Add /media/ prefix for profile images and format created_at to YYYY-MM-DD
+        # ✅ UPDATED: Use get_cloudinary_url helper
         users_list = [
             {
                 **user, 
-                'profile_img': '/media/' + user['profile_img'] if user['profile_img'] else None,
+                'profile_img': get_cloudinary_url(user['profile_img']),  # ← CHANGED
                 'created_at': str(user['created_at'])[:10] if user['created_at'] else None
             }
             for user in rows
@@ -335,7 +335,8 @@ def get_user(request, user_id):
                 user = rows[0]
                 account = {
                     **user,
-                    'profile_img': '/media/' + user['profile_img'] if user['profile_img'] else None
+                    # ✅ UPDATED: Use get_cloudinary_url helper
+                    'profile_img': get_cloudinary_url(user['profile_img']),  # ← CHANGED
                 }
                 return JsonResponse(account)
             else:
@@ -343,7 +344,6 @@ def get_user(request, user_id):
 
     except DatabaseError as e:
         return JsonResponse({'error': 'Database error', 'details': str(e)}, status=500)
-
 
 @csrf_exempt
 def update_user(request, user_id):
@@ -463,6 +463,19 @@ def delete_user(request, user_id):
     user = get_object_or_404(User, id=user_id)
     deleted_email = user.email
     deleted_role = user.user_role
+    
+    # 1️⃣ Delete Profile Image from Cloudinary
+    if hasattr(user, 'profile') and user.profile.profile_img:
+        print(f"🖼️ Deleting profile image for {deleted_email}...")
+        delete_cloudinary_resource(user.profile.profile_img, resource_type='image')
+        
+    # 2️⃣ Delete Group Profile Image if Tree Grower
+    if hasattr(user, 'tree_grower_group') and user.tree_grower_group.profile_img:
+        print(f"️ Deleting group image for {deleted_email}...")
+        delete_cloudinary_resource(user.tree_grower_group.profile_img, resource_type='image')
+
+    # 3️⃣ Delete User from Database 
+    # (CASCADE will automatically delete the profile and tree_grower_group records)
     user.delete()
 
     record_activity(
@@ -493,10 +506,15 @@ def get_me(request):
         user_id = payload.get('user_id')
         user = get_object_or_404(User, id=user_id)
         
+        # ✅ UPDATED: Use get_cloudinary_url helper
+        profile_img_url = None
+        if hasattr(user, 'profile') and user.profile.profile_img:
+            profile_img_url = get_cloudinary_url(str(user.profile.profile_img))  # ← CHANGED
+        
         data = {
             'id': user.id,
             'email': user.email,
-            'profile_img': user.profile.profile_img.url if hasattr(user, 'profile') and user.profile.profile_img else None,
+            'profile_img': profile_img_url,  # ← CHANGED
             'full_name': user.profile.first_name + " " + user.profile.last_name,
             'user_role': getattr(user, "user_role", None),
         }
@@ -522,6 +540,15 @@ def get_tree_grower_detail(request, user_id):
     p = getattr(user, 'profile', None)
     group = getattr(user, 'tree_grower_group', None)
 
+    # ✅ UPDATED: Use get_cloudinary_url helper
+    profile_img_url = None
+    if p and p.profile_img:
+        profile_img_url = get_cloudinary_url(str(p.profile_img))  # ← CHANGED
+    
+    group_img_url = None
+    if group and group.profile_img:
+        group_img_url = get_cloudinary_url(str(group.profile_img))  # ← CHANGED
+
     return JsonResponse({
         'id':         user.id,
         'email':      user.email,
@@ -535,7 +562,7 @@ def get_tree_grower_detail(request, user_id):
             'gender':      p.gender      if p else '',
             'contact':     p.contact     if p else '',
             'address':     p.address     if p else '',
-            'profile_img': '/media/' + p.profile_img.name if p and p.profile_img else None,
+            'profile_img': profile_img_url,  # ← CHANGED
         },
         'group': {
             'group_name':   group.group_name,
@@ -543,7 +570,7 @@ def get_tree_grower_detail(request, user_id):
             'address':      group.address,
             'contact':      group.contact,
             'created_at':   str(group.created_at),
-            'profile_img':  '/media/' + group.profile_img.name if group.profile_img else None,
+            'profile_img':  group_img_url,  # ← CHANGED
         } if group else None,
     })
 
@@ -619,12 +646,13 @@ def list_tree_growers(request):
         columns = [col[0] for col in cursor.description]
         rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
+        # ✅ UPDATED: Use get_cloudinary_url helper
         users_list = [
             {
                 'id':             user['id'],
                 'email':          user['email'],
                 'is_active':      user['is_active'],
-                'profile_img':    '/media/' + user['profile_img'] if user['profile_img'] else None,
+                'profile_img':    get_cloudinary_url(user['profile_img']),  # ← CHANGED
                 'full_name':      f"{user['first_name']} {user['last_name']}".strip(),
                 'contact_number': user.get('contact', ''),
                 'address':        user.get('address', ''),

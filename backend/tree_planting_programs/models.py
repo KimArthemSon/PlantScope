@@ -3,6 +3,7 @@ from django.utils import timezone
 from sites.models import Sites
 from accounts.models import User
 from tree_species.models import Tree_species
+from cloudinary.models import CloudinaryField  # ✅ ADD THIS IMPORT
 
 
 # ─────────────────────────────────────────────
@@ -101,15 +102,18 @@ class Application(models.Model):
         help_text="Date when Head confirmed the application"
     )
 
-    # Files
-    maintenance_plan = models.FileField(
-        upload_to='application_maintenance_plans/',
+    # ✅ Files (Updated to CloudinaryField)
+    maintenance_plan = CloudinaryField(
+        'maintenance_plan',
+        folder='application_maintenance_plans',
+        resource_type='raw',  # Allows PDFs, Docs, etc.
         blank=True,
         null=True,
         help_text="Maintenance plan uploaded by tree grower"
     )
-    agreement_image = models.ImageField(
-        upload_to='agreements/',
+    agreement_image = CloudinaryField(
+        'agreement_image',
+        folder='agreements',
         blank=True,
         null=True,
         help_text="Signed agreement image"
@@ -175,12 +179,8 @@ class SeedlingRequest(models.Model):
         null=True,
         help_text="Additional details about seedling request"
     )
-    request_file = models.FileField(
-        upload_to='seedling_request_files/',
-        blank=True,
-        null=True,
-        help_text="Supporting documents for seedling request"
-    )
+    
+   
 
     # ✅ Summary total (calculated from SeedlingRequestSpecies)
     no_request_seedling = models.IntegerField(
@@ -307,13 +307,15 @@ class ProgressReport(models.Model):
         related_name='progress_reports'
     )
 
-    # Proof and Documentation
-    proof_image_monitor_required = models.ImageField(
-        upload_to='progress_report_proof_images/',
+    # ✅ Updated to CloudinaryField
+    proof_image_monitor_required = CloudinaryField(
+        'proof_image_monitor_required',
+        folder='progress_report_proof_images',
         blank=True,
         null=True,
         help_text="Proof images of monitoring"
     )
+    
     description = models.TextField(
         blank=True,
         null=True,

@@ -156,7 +156,9 @@ function ConfirmationPreview({
           <li>
             Application status changes to <strong>Accepted</strong>
           </li>
-          <li>Tree grower can now request seedlings based on the assigned site</li>
+          <li>
+            Tree grower can now request seedlings based on the assigned site
+          </li>
           <li>Onsite inspectors can begin submitting progress reports</li>
           {assignedSite && (
             <li>
@@ -371,13 +373,7 @@ export default function Evaluation_confirmation() {
     );
   }
 
-  const {
-    application,
-    group,
-    profile,
-    assigned_site,
-    latest_reason,
-  } = detail;
+  const { application, group, profile, assigned_site, latest_reason } = detail;
 
   return (
     <div
@@ -637,7 +633,7 @@ export default function Evaluation_confirmation() {
               <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
                 {group.group_profile ? (
                   <img
-                    src={`${api}${group.group_profile}`}
+                    src={`${group.group_profile}`}
                     alt="Group"
                     className="w-16 h-16 rounded-xl object-cover border-2 border-green-100"
                   />
@@ -661,18 +657,27 @@ export default function Evaluation_confirmation() {
                 title="Project Application"
               />
               <InfoRow label="Title" value={application.title} />
-              <InfoRow label="Tree Growers" value={application.total_treegrowers_will_participate} />
-              
+              <InfoRow
+                label="Tree Growers"
+                value={application.total_treegrowers_will_participate}
+              />
+
               {application.proposed_orientation_date && (
-                <InfoRow 
-                  label="Proposed Orientation Date" 
-                  value={new Date(application.proposed_orientation_date).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })} 
+                <InfoRow
+                  label="Proposed Orientation Date"
+                  value={new Date(
+                    application.proposed_orientation_date,
+                  ).toLocaleDateString("en-PH", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
                 />
               )}
               {detail.proposed_site && (
-                <InfoRow 
-                  label="Proposed Site" 
-                  value={`${detail.proposed_site.name} ${detail.proposed_site.barangay ? `(${detail.proposed_site.barangay})` : ''}`} 
+                <InfoRow
+                  label="Proposed Site"
+                  value={`${detail.proposed_site.name} ${detail.proposed_site.barangay ? `(${detail.proposed_site.barangay})` : ""}`}
                 />
               )}
 
@@ -682,7 +687,7 @@ export default function Evaluation_confirmation() {
                 </p>
                 {application.maintenance_plan ? (
                   <a
-                    href={`${api}${application.maintenance_plan}`}
+                    href={`${api}api/application/${application.application_id}/download-maintenance-plan/`}
                     target="_blank"
                     rel="noopener noreferrer"
                     download
@@ -695,9 +700,14 @@ export default function Evaluation_confirmation() {
                       <p className="text-sm font-semibold text-[#0F4A2F] truncate">
                         {application.maintenance_plan.split("/").pop()}
                       </p>
-                      <p className="text-xs text-green-600">Click to download</p>
+                      <p className="text-xs text-green-600">
+                        Click to download
+                      </p>
                     </div>
-                    <Download size={16} className="text-green-500 group-hover:text-[#0F4A2F] transition-colors" />
+                    <Download
+                      size={16}
+                      className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
+                    />
                   </a>
                 ) : (
                   <div className="flex items-center gap-2 text-gray-300 text-sm py-3">
@@ -752,7 +762,9 @@ export default function Evaluation_confirmation() {
                       application.orientation_date ? (
                         <span className="flex items-center gap-2 text-sm">
                           <Calendar size={14} className="text-gray-400" />
-                          {new Date(application.orientation_date).toLocaleDateString("en-PH", {
+                          {new Date(
+                            application.orientation_date,
+                          ).toLocaleDateString("en-PH", {
                             weekday: "short",
                             year: "numeric",
                             month: "short",
@@ -774,7 +786,10 @@ export default function Evaluation_confirmation() {
                         {latest_reason.reason}
                       </div>
                       <p className="text-xs text-gray-400 mt-2">
-                        Added {new Date(latest_reason.created).toLocaleDateString("en-PH")}
+                        Added{" "}
+                        {new Date(latest_reason.created).toLocaleDateString(
+                          "en-PH",
+                        )}
                       </p>
                     </div>
                   )}
@@ -797,7 +812,8 @@ export default function Evaluation_confirmation() {
                         label="Coordinates"
                         children={
                           <span className="text-xs font-mono text-gray-600 break-all">
-                            {typeof assigned_site.polygon_coordinates === "string"
+                            {typeof assigned_site.polygon_coordinates ===
+                            "string"
                               ? `${assigned_site.polygon_coordinates.substring(0, 50)}...`
                               : Array.isArray(assigned_site.polygon_coordinates)
                                 ? `${assigned_site.polygon_coordinates.length} coordinate points`
@@ -819,7 +835,9 @@ export default function Evaluation_confirmation() {
 
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                   Confirmation Notes{" "}
-                  <span className="text-gray-300">(optional but recommended)</span>
+                  <span className="text-gray-300">
+                    (optional but recommended)
+                  </span>
                 </label>
                 <textarea
                   rows={5}
@@ -834,7 +852,8 @@ export default function Evaluation_confirmation() {
                 <div className="mt-3 flex items-start gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs">
                   <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                   <span>
-                    <strong>Tip:</strong> Adding clear notes helps the tree grower understand next steps if rejected.
+                    <strong>Tip:</strong> Adding clear notes helps the tree
+                    grower understand next steps if rejected.
                   </span>
                 </div>
 
@@ -842,7 +861,9 @@ export default function Evaluation_confirmation() {
                   <p className="text-xs text-blue-800 flex items-start gap-2">
                     <Shield size={14} className="flex-shrink-0 mt-0.5" />
                     <span>
-                      <strong>Remember:</strong> Confirming will activate the applicant's account. They can then request seedlings based on the assigned site.
+                      <strong>Remember:</strong> Confirming will activate the
+                      applicant's account. They can then request seedlings based
+                      on the assigned site.
                     </span>
                   </p>
                 </div>
@@ -854,7 +875,8 @@ export default function Evaluation_confirmation() {
                 <div className="flex items-center gap-2 text-gray-500 text-sm">
                   <Shield size={14} />
                   <span>
-                    Head Confirmation • Application #{application.application_id}
+                    Head Confirmation • Application #
+                    {application.application_id}
                   </span>
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto">

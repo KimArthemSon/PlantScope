@@ -1,6 +1,5 @@
 from django.urls import path
-from . import views
-
+from . import views, file_views
 urlpatterns = [
     # ─── APPLICATIONS ───────────────────────────────────────────────
     path('get_applications/', views.get_applications, name='get_applications'),
@@ -33,4 +32,7 @@ urlpatterns = [
     path('get_program_history/', views.get_program_history, name='get_program_history'),
     path('delete_application/<int:application_id>/', views.delete_application, name='delete_application'),
      path('get_available_sites_for_tree_grower/', views.get_available_sites_for_tree_grower, name='get_available_sites_for_tree_grower'),
+     path('application/<int:application_id>/download-maintenance-plan/', file_views.download_maintenance_plan, name='download_maintenance_plan'),
+     # In urls.py
+    #   path('application/<int:application_id>/download-maintenance-plan-debug/', file_views.download_maintenance_plan_debug, name="download_maintenance_plan_debug"),
 ]

@@ -1,5 +1,5 @@
 from django.db import models
-
+from cloudinary.models import CloudinaryField
 
 # ─────────────────────────────────────────────
 # USER (Authentication & Roles)
@@ -64,7 +64,8 @@ class profile(models.Model):
 
     # ✅ Made optional for Tree Growers
     birthday = models.DateField(null=True, blank=True)
-    profile_img = models.ImageField(upload_to='profile/', null=True, blank=True)
+    profile_img = CloudinaryField('image', folder='profile', null=True, blank=True)
+
 
     created_at = models.DateField(auto_now_add=True)
 
@@ -114,7 +115,7 @@ class TreeGrowerGroup(models.Model):
     contact = models.CharField(max_length=255)
 
     # ✅ Now optional
-    profile_img = models.ImageField(upload_to='group_profiles/', null=True, blank=True)
+    profile_img = CloudinaryField('image', folder='group_profiles', null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

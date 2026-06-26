@@ -289,7 +289,7 @@ export default function Monitoring() {
                               src={
                                 app.group_profile.startsWith("http")
                                   ? app.group_profile
-                                  : `${API_BASE}${app.group_profile}`
+                                  : `${app.group_profile}`
                               }
                               className="rounded-full h-10 w-10 object-cover border border-gray-200"
                               alt="Group"

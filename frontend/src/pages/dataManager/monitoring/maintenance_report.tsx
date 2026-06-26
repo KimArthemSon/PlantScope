@@ -630,7 +630,7 @@ export default function Maintenance_report() {
                       )}
 
                       {report.proof_image && (
-                        <a href={`${API_BASE}${report.proof_image}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-[#0F4A2F] hover:underline">
+                        <a href={`${report.proof_image}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-[#0F4A2F] hover:underline">
                           <Download size={12} /> View proof image
                         </a>
                       )}

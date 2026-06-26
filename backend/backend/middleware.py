@@ -3,7 +3,16 @@ from django.conf import settings
 from django.http import JsonResponse
 
 class JWTAuthorizationMiddleware:
-    EXEMPT_PATHS = ["/api/login/","/media/",'/api/get_ndvi_testing/',"/api/register/","/api/send_otp/","/api/verify_otp/","/api/register_tree_grower/"]
+    EXEMPT_PATHS = [
+        "/api/login/",
+        "/media/",
+        '/api/get_ndvi_testing/',
+        "/api/register/",
+        "/api/send_otp/",
+        "/api/verify_otp/",
+        "/api/register_tree_grower/",
+        "/api/debug-cloudinary/",  # ✅ Added debug endpoint
+    ]
 
     def __init__(self, get_response):
         self.get_response = get_response

@@ -6,7 +6,10 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from accounts.helper import get_user_from_token
+
+# ✅ UPDATED IMPORT: Added get_cloudinary_url
+from accounts.helper import get_user_from_token, get_cloudinary_url, delete_cloudinary_resource
+
 from .models import (
     Sites, Site_data, Site_species_recommendation, Site_images,
     Potential_sites, SiteMetaDataVerification, PermitDocument, SiteVerifiedAnimal
@@ -65,7 +68,7 @@ def create_site(request):
             if site.polygon_coordinates:
                 site.total_area_hectares = site.calculate_area_from_polygon()
                 if not site.center_coordinate:
-                    site.center_coordinate = site.calculate_centroid()
+                    center_coordinate = site.calculate_centroid()
                 site.save()
 
             if potential_site_ids:
@@ -119,7 +122,6 @@ def get_sites(request, reforestation_area_id):
     pinned_filter = request.GET.get("pinned_only", "").strip().lower()
     verification_filter = request.GET.get("verification_status", "all").strip().lower()
     
-    # ✅ NEW: Get land classification filter
     land_classification_filter = request.GET.get("land_classification_id", "").strip()
 
     offset = (page - 1) * entries
@@ -138,13 +140,12 @@ def get_sites(request, reforestation_area_id):
     if verification_filter != "all":
         sites = sites.filter(meta_verification__status=verification_filter)
     
-    # ✅ NEW: Filter by land classification
     if land_classification_filter:
         try:
             lc_id = int(land_classification_filter)
             sites = sites.filter(meta_verification__verified_land_classification_id=lc_id)
         except (ValueError, TypeError):
-            pass  # Ignore invalid ID
+            pass
 
     total = sites.count()
     total_page = max(1, math.ceil(total / entries))
@@ -242,7 +243,6 @@ def get_site(request, site_id):
     verification_data = None
     
     if verification:
-        # ✅ Fetch verified animals
         verified_animals = [
             {
                 "animal_id": rel.animal.animal_id,
@@ -253,7 +253,6 @@ def get_site(request, site_id):
             for rel in verification.animal_relations.select_related('animal').all()
         ]
         
-        # ✅ NEW: Get land classification name
         land_classification_name = None
         if verification.verified_land_classification:
             land_classification_name = verification.verified_land_classification.name
@@ -263,7 +262,7 @@ def get_site(request, site_id):
             'verified_security_concerns': verification.verified_security_concerns,
             'verified_accessibility': verification.verified_accessibility,
             'verified_land_classification_id': verification.verified_land_classification_id,
-            'verified_land_classification_name': land_classification_name,  # ✅ NEW FIELD
+            'verified_land_classification_name': land_classification_name,
             'decision_note': verification.decision_note,
             'verified_by': verification.verified_by.email if verification.verified_by else None,
             'verified_at': verification.verified_at.isoformat() if verification.verified_at else None,
@@ -275,7 +274,8 @@ def get_site(request, site_id):
         images_data.append({
             'site_image_id': img.site_image_id,
             'layer_tag': img.layer_tag,
-            'img_url': img.img.url if img.img else None,
+            # ✅ UPDATED: Use Cloudinary helper
+            'img_url': get_cloudinary_url(str(img.img)) if img.img else None,
             'caption': img.caption,
             'created_at': img.created_at.isoformat() if img.created_at else None,
         })
@@ -305,7 +305,8 @@ def get_site(request, site_id):
         "permits": [{
             "permit_id": p.permit_id,
             "document_type": p.document_type,
-            "file_url": p.file.url if p.file else None,
+            # ✅ UPDATED: Use Cloudinary helper for permit files (PDFs/Docs)
+            "file_url": get_cloudinary_url(str(p.file)) if p.file else None,
             "permit_number": p.permit_number,
             "verification_notes": p.verification_notes,
             "uploaded_at": p.uploaded_at.isoformat() if p.uploaded_at else None,
@@ -596,10 +597,42 @@ def finalize_site(request, site_id):
 def delete_site(request, site_id):
     if request.method != "DELETE":
         return JsonResponse({"error": "DELETE only"}, status=405)
-    site = get_object_or_404(Sites, site_id=site_id, is_active=True)
-    site.is_active = False
-    site.save()
-    return JsonResponse({"message": "Site deleted"})
+    
+    try:
+        site = get_object_or_404(Sites, site_id=site_id, is_active=True)
+        
+        # ✅ NEW: Delete all associated images from Cloudinary
+        deleted_images = 0
+        for img in site.site_images.all():
+            if img.img:
+                print(f"🖼️ Deleting site image {img.site_image_id} from Cloudinary...")
+                if delete_cloudinary_resource(img.img, resource_type='image'):
+                    deleted_images += 1
+        
+        # ✅ NEW: Delete all associated permit documents from Cloudinary
+        deleted_permits = 0
+        for permit in site.permit_documents.all():
+            if permit.file:
+                print(f"📄 Deleting permit {permit.permit_id} from Cloudinary...")
+                # Try 'raw' first (for PDFs), then 'image'
+                if delete_cloudinary_resource(permit.file, resource_type='raw'):
+                    deleted_permits += 1
+                elif delete_cloudinary_resource(permit.file, resource_type='image'):
+                    deleted_permits += 1
+        
+        # Soft delete the site (keeps it in database but marks as inactive)
+        site.is_active = False
+        site.save()
+        
+        return JsonResponse({
+            "message": "Site deleted",
+            "images_deleted": deleted_images,
+            "permits_deleted": deleted_permits
+        })
+        
+    except Exception as e:
+        logger.error(f"Delete site error: {e}", exc_info=True)
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 # ─────────────────────────────────────────────
@@ -609,7 +642,7 @@ def delete_site(request, site_id):
 def _serialize_assessment(assessment, assessment_type):
     """
     Helper to serialize a Field_assessment with full details.
-    ✅ UPDATED: Now includes land_classification and animals_present.
+    ✅ UPDATED: Now includes land_classification, animals_present, and Cloudinary URLs.
     """
     inspector = assessment.assigned_onsite_inspector
     user = inspector.user if inspector else None
@@ -622,18 +655,22 @@ def _serialize_assessment(assessment, assessment_type):
         if not inspector_name:
             inspector_name = getattr(user, 'email', 'Unknown') or getattr(user, 'username', 'Unknown')
 
+    # ✅ FIXED: Get profile_img from the related 'profile' model, not directly from User
     inspector_profile_img = None
-    if user and hasattr(user, 'profile_img') and user.profile_img:
-        try:
-            inspector_profile_img = user.profile_img.url
-        except:
-            pass
+    if user:
+        profile = getattr(user, 'profile', None)
+        if profile and profile.profile_img:
+            try:
+                inspector_profile_img = get_cloudinary_url(str(profile.profile_img))
+            except:
+                pass
     
     images_data = []
     for img in assessment.images.all():
         images_data.append({
             'image_id': img.field_assessment_images_id,
-            'url': img.img.url if img.img else None,
+            # ✅ UPDATED: Use Cloudinary helper
+            'url': get_cloudinary_url(str(img.img)) if img.img else None,
             'layer': img.layer,
             'latitude': float(img.latitude) if img.latitude else None,
             'longitude': float(img.longitude) if img.longitude else None,
@@ -641,7 +678,6 @@ def _serialize_assessment(assessment, assessment_type):
             'created_at': img.created_at.isoformat() if img.created_at else None,
         })
     
-    # ✅ NEW: Serialize land_classification
     land_classification_data = None
     if assessment.land_classification:
         land_classification_data = {
@@ -649,7 +685,6 @@ def _serialize_assessment(assessment, assessment_type):
             'name': assessment.land_classification.name,
         }
     
-    # ✅ NEW: Serialize animals_present
     animals_present_data = []
     try:
         for rel in assessment.animal_relations.select_related('animal').all():
@@ -676,7 +711,6 @@ def _serialize_assessment(assessment, assessment_type):
         'images': images_data,
         'created_at': assessment.created_at.isoformat() if assessment.created_at else None,
         'submitted_at': assessment.updated_at.isoformat() if assessment.updated_at else None,
-        # ✅ NEW FIELDS
         'land_classification': land_classification_data,
         'animals_present': animals_present_data,
     }
@@ -743,7 +777,6 @@ def get_site_verification(request, site_id):
     elif not acc:
         acc = {}
 
-    # ✅ NEW: Fetch verified animals from through table
     verified_animals = []
     try:
         for rel in verification.animal_relations.select_related('animal').all():
@@ -768,7 +801,7 @@ def get_site_verification(request, site_id):
             'referenced_assessment_ids': verification.referenced_assessment_ids or [],
             'verified_by': verification.verified_by.email if verification.verified_by else None,
             'verified_at': verification.verified_at.isoformat() if verification.verified_at else None,
-            'verified_animals': verified_animals,  # ✅ NEW
+            'verified_animals': verified_animals,
         },
         'site_info': {
             'site_id': site.site_id,
@@ -790,21 +823,6 @@ def get_site_verification(request, site_id):
 def update_site_verification(request, site_id):
     """
     PUT/POST: Save Draft, Accept, or Reject for a SPECIFIC SITE.
-    ✅ UPDATED: Now handles verified_animals payload.
-    
-    Expected payload:
-    {
-        "verified_security_concerns": [...],
-        "verified_accessibility": {...},
-        "verified_land_classification_id": 1,
-        "decision_note": "...",
-        "status": "draft" | "verified" | "rejected",
-        "referenced_assessment_ids": [...],
-        "verified_animals": [
-            {"animal_id": 1, "notes": "..."},
-            {"animal_id": 2, "notes": ""}
-        ]
-    }
     """
     if request.method not in ['PUT', 'POST']: 
         return JsonResponse({'error': 'Only PUT/POST allowed'}, status=405)
@@ -837,7 +855,6 @@ def update_site_verification(request, site_id):
 
         verification.save()
         
-        # ✅ NEW: Handle verified_animals
         if 'verified_animals' in data:
             verified_animals = data['verified_animals']
             
@@ -847,10 +864,8 @@ def update_site_verification(request, site_id):
                 }, status=400)
             
             with transaction.atomic():
-                # Clear existing verified animals
                 verification.animal_relations.all().delete()
                 
-                # Create new verified animals
                 for animal_data in verified_animals:
                     animal_id = animal_data.get('animal_id')
                     notes = animal_data.get('notes', '')
@@ -893,7 +908,8 @@ def list_site_permits(request, site_id):
         'permit_id': p.permit_id, 
         'document_type': p.document_type,
         'permit_number': p.permit_number,
-        'file_url': p.file.url if p.file else None, 
+        # ✅ UPDATED: Use Cloudinary helper for permit files
+        'file_url': get_cloudinary_url(str(p.file)) if p.file else None, 
         'verification_notes': p.verification_notes,
         'uploaded_at': p.uploaded_at.isoformat(),
         'uploaded_by': p.uploaded_by.email if p.uploaded_by else None,
@@ -931,7 +947,8 @@ def upload_site_permit(request, site_id):
         return JsonResponse({
             'message': 'Permit uploaded', 
             'permit_id': permit.permit_id,
-            'file_url': permit.file.url
+            # ✅ UPDATED: Use Cloudinary helper
+            'file_url': get_cloudinary_url(str(permit.file))
         }, status=201)
     except Exception as e:
         logger.error(f"Upload site permit error: {e}", exc_info=True)
@@ -946,18 +963,24 @@ def delete_site_permit(request, permit_id):
         user = get_user_from_token(request)
         permit = get_object_or_404(PermitDocument, permit_id=permit_id)
         
+        # ✅ UPDATED: Use the helper function to properly delete from Cloudinary
         if permit.file:
-            try:
-                permit.file.delete(save=False)
-            except Exception as file_err:
-                logger.warning(f"Could not delete file for permit {permit_id}: {file_err}")
+            print(f"📄 Deleting permit document {permit_id} from Cloudinary...")
+            # PermitDocument uses resource_type='auto', so we try 'raw' first (for PDFs)
+            if delete_cloudinary_resource(permit.file, resource_type='raw'):
+                print(f"✅ Successfully deleted from Cloudinary")
+            else:
+                # Try as 'image' in case it was an image file
+                if delete_cloudinary_resource(permit.file, resource_type='image'):
+                    print(f"✅ Successfully deleted from Cloudinary (as image)")
+                else:
+                    print(f"⚠️ File not found in Cloudinary (may have been already deleted)")
         
         permit.delete()
         return JsonResponse({'message': 'Permit deleted'}, status=200)
     except Exception as e:
         logger.error(f"Delete site permit error: {e}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
-
 
 # ─────────────────────────────────────────────
 # GET ALL SITES (For Map Initialization)

@@ -23,7 +23,7 @@ function Avatar({ inspector }: { inspector: Inspector }) {
   if (inspector.profile_img) {
     return (
       <img
-        src={"http://127.0.0.1:8000" + inspector.profile_img}
+        src={inspector.profile_img}
         className="w-10 h-10 rounded-full object-cover ring-2 ring-green-100 shrink-0"
         alt={inspector.full_name}
       />

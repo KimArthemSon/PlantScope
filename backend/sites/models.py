@@ -4,6 +4,7 @@ from reforestation_areas.models import Reforestation_areas
 from tree_species.models import Tree_species
 from accounts.models import User
 from animals.models import Animal
+from cloudinary.models import CloudinaryField  # ✅ ADD THIS IMPORT
 import math
 
 # ─────────────────────────────────────────────
@@ -68,10 +69,6 @@ class Sites(models.Model):
 # POTENTIAL SITES (NDVI Analytical Markers)
 # ─────────────────────────────────────────────
 class Potential_sites(models.Model):
-    """
-    🎯 Analytical NDVI markers. Created BEFORE official site exists.
-    Nullable 'site' FK allows pre-generation. Assigned later during consolidation.
-    """
     potential_sites_id = models.BigAutoField(primary_key=True)
     
     site = models.ForeignKey(
@@ -103,9 +100,6 @@ class Potential_sites(models.Model):
 # SITE META DATA VERIFICATION (Official Truth)
 # ─────────────────────────────────────────────
 class SiteMetaDataVerification(models.Model):
-    """
-    ✅ Site-Level Official Truth: Admin consolidates evidence from Field Assessments.
-    """
     VERIFICATION_STATUS = (
         ('pending', 'Pending Review'), ('draft', 'Draft'),
         ('verified', 'Verified'), ('rejected', 'Rejected'),
@@ -123,7 +117,6 @@ class SiteMetaDataVerification(models.Model):
         null=True, blank=True, related_name='verified_sites'
     )
     
-    # ✅ NEW: Verified Animals (Many-to-Many with through table)
     verified_animals = models.ManyToManyField(
         Animal,
         through='SiteVerifiedAnimal',
@@ -149,13 +142,9 @@ class SiteMetaDataVerification(models.Model):
 
 
 # ─────────────────────────────────────────────
-# ✅ NEW: SITE VERIFIED ANIMAL (Through Table)
+# SITE VERIFIED ANIMAL (Through Table)
 # ─────────────────────────────────────────────
 class SiteVerifiedAnimal(models.Model):
-    """
-    Through table for SiteMetaDataVerification <-> Animal relationship.
-    Allows admin to add notes for each verified animal.
-    """
     site_verified_animal_id = models.BigAutoField(primary_key=True)
     verification = models.ForeignKey(
         SiteMetaDataVerification,
@@ -200,7 +189,15 @@ class PermitDocument(models.Model):
     source_assessment_id = models.BigIntegerField(null=True, blank=True)
     document_type = models.CharField(max_length=30, choices=DOCUMENT_TYPES)
     permit_number = models.CharField(max_length=100, blank=True, null=True)
-    file = models.FileField(upload_to='permits/%Y/%m/', validators=[FileExtensionValidator(['pdf', 'jpg', 'jpeg', 'png'])])
+    
+    # ✅ CHANGED: Use CloudinaryField (resource_type='auto' allows PDFs and Images)
+    file = CloudinaryField(
+        'file', 
+        folder='permits', 
+        resource_type='auto', 
+        validators=[FileExtensionValidator(['pdf', 'docx', 'doc'])]
+    )
+    
     verification_notes = models.TextField(blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -264,7 +261,10 @@ class Site_images(models.Model):
     site = models.ForeignKey(Sites, null=True, blank=True, on_delete=models.CASCADE, related_name='site_images')
     LAYER_CHOICES = (('safety', 'Safety'), ('survivability', 'Survivability'), ('general', 'General'))
     layer_tag = models.CharField(max_length=30, choices=LAYER_CHOICES, default='general')
-    img = models.ImageField(upload_to='sites/%Y/%m/%d/', blank=True, null=True)
+    
+    # ✅ CHANGED: Use CloudinaryField instead of ImageField
+    img = CloudinaryField('image', folder='sites', blank=True, null=True)
+    
     caption = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

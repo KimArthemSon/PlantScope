@@ -46,7 +46,6 @@ import L from "leaflet";
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
 const API = api + "api/";
-const API_IMAGE = api;
 
 // Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -1186,7 +1185,7 @@ export default function MetaDataVerification() {
                           src={
                             item.inspector_profile_img.startsWith("http")
                               ? item.inspector_profile_img
-                              : `${API_IMAGE}${item.inspector_profile_img}`
+                              : `${item.inspector_profile_img}`
                           }
                           alt={item.inspector_name}
                           className="w-full h-full object-cover"
@@ -1263,7 +1262,7 @@ export default function MetaDataVerification() {
                               img.url
                                 ? img.url.startsWith("http")
                                   ? img.url
-                                  : `${API_IMAGE}${img.url}`
+                                  : `{img.url}`
                                 : "#"
                             }
                             target="_blank"
@@ -1274,7 +1273,7 @@ export default function MetaDataVerification() {
                             {img.url ? (
                               <img
                                 src={
-                                  img.url.startsWith("http") ? img.url : `${API_IMAGE}${img.url}`
+                                  img.url.startsWith("http") ? img.url : `${img.url}`
                                 }
                                 alt={img.description || img.layer}
                                 className="w-full h-full object-cover"
@@ -1373,7 +1372,7 @@ export default function MetaDataVerification() {
                       )}
                       {permit.file_url && (
                         <a
-                          href={`${API_IMAGE}${permit.file_url}`}
+                          href={`${permit.file_url}`}
                           target="_blank"
                           rel="noreferrer"
                           className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1"

@@ -560,7 +560,7 @@ export default function Reports() {
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
                           {app.group_profile ? (
-                            <img src={app.group_profile.startsWith('http') ? app.group_profile : `${API_BASE}${app.group_profile}`} className="w-9 h-9 rounded-full object-cover border border-gray-200" alt="Group" />
+                            <img src={app.group_profile.startsWith('http') ? app.group_profile : `${app.group_profile}`} className="w-9 h-9 rounded-full object-cover border border-gray-200" alt="Group" />
                           ) : (
                             <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center border border-gray-200">
                               <Leaf size={16} className="text-green-300" />

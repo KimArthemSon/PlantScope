@@ -119,7 +119,7 @@ export default function MyProfile() {
           ...data,
           password: "",
           confirm_pass: "",
-          preview_profile: data.profile_img ? `${api}${data.profile_img}` : "",
+          preview_profile: data.profile_img ? `${data.profile_img}` : "",
         });
       } catch {
         setPSAlert({

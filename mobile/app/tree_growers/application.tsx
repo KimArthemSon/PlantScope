@@ -18,7 +18,7 @@ import {
   FlatList,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
-import * as DocumentPicker from "expo-document-picker";
+
 import * as MapViewLib from "react-native-maps";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
@@ -306,7 +306,7 @@ const ApplicationPage: React.FC = () => {
     SeedlingSpeciesItem[]
   >([]);
   const [requestDescription, setRequestDescription] = useState("");
-  const [requestFile, setRequestFile] = useState<any>(null);
+
   const [submitting, setSubmitting] = useState(false);
 
   const fetchData = async (isRefresh = false) => {
@@ -419,7 +419,6 @@ const ApplicationPage: React.FC = () => {
         ),
       );
       fd.append("description", requestDescription);
-      if (requestFile) fd.append("request_file", requestFile);
 
       const res = await fetch(`${api}/api/create_seedling_request/`, {
         method: "POST",
@@ -448,26 +447,6 @@ const ApplicationPage: React.FC = () => {
     setSelectedSpeciesId("");
     setSelectedQuantity("");
     setRequestDescription("");
-    setRequestFile(null);
-  };
-
-  const pickSeedlingFile = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: [
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      ],
-      copyToCacheDirectory: true,
-    });
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      setRequestFile({
-        uri: asset.uri,
-        name: asset.name,
-        type: asset.mimeType ?? "application/octet-stream",
-      });
-    }
   };
 
   const getMapRegion = () => {
@@ -900,7 +879,7 @@ const ApplicationPage: React.FC = () => {
                           source={{
                             uri: img.image_url?.startsWith("http")
                               ? img.image_url
-                              : `${api}${img.image_url}`,
+                              : `${img.image_url}`,
                           }}
                           style={{
                             width: "100%",
@@ -1529,7 +1508,7 @@ const ApplicationPage: React.FC = () => {
                     source={{
                       uri: reportDetailModal.proof_image.startsWith("http")
                         ? reportDetailModal.proof_image
-                        : `${api}${reportDetailModal.proof_image}`,
+                        : `${reportDetailModal.proof_image}`,
                     }}
                     style={sheet.proofImage}
                     resizeMode="cover"
@@ -1794,32 +1773,6 @@ const ApplicationPage: React.FC = () => {
                 placeholderTextColor="#B0BAC4"
                 textAlignVertical="top"
               />
-
-              <TouchableOpacity
-                style={form_.uploadBtn}
-                onPress={pickSeedlingFile}
-              >
-                <View
-                  style={[form_.uploadIconWrap, { backgroundColor: "#E3F2FD" }]}
-                >
-                  <Ionicons
-                    name="document-attach-outline"
-                    size={20}
-                    color="#1565C0"
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={form_.uploadTitle}>Supporting Document</Text>
-                  <Text style={form_.uploadSub} numberOfLines={1}>
-                    {requestFile ? requestFile.name : "Optional: PDF or Word"}
-                  </Text>
-                </View>
-                <Ionicons
-                  name={requestFile ? "checkmark-circle" : "chevron-forward"}
-                  size={20}
-                  color={requestFile ? "#2E7D32" : "#9CA3AF"}
-                />
-              </TouchableOpacity>
 
               <View style={form_.actions}>
                 <TouchableOpacity
@@ -2367,26 +2320,7 @@ const form_ = StyleSheet.create({
     marginBottom: 12,
   },
   textarea: { height: 96, paddingTop: 12 },
-  uploadBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: "#FAFAFA",
-    borderWidth: 1.5,
-    borderColor: "#E5E7EB",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-  },
-  uploadIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  uploadTitle: { fontSize: 13, fontWeight: "600", color: "#111827" },
-  uploadSub: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
+
   actions: { flexDirection: "row", gap: 12, marginTop: 10 },
   cancelBtn: {
     flex: 1,

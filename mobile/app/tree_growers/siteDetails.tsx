@@ -194,7 +194,7 @@ export default function SiteDetails() {
                     source={{
                       uri: img.url?.startsWith("http")
                         ? img.url
-                        : `${api}${img.url}`,
+                        : `${img.url}`,
                     }}
                     style={styles.carouselImage}
                     resizeMode="cover"

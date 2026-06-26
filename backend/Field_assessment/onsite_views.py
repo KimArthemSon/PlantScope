@@ -4,7 +4,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
-from accounts.helper import get_user_from_token
+from accounts.helper import get_user_from_token, get_cloudinary_url, delete_cloudinary_resource
 from security.views import log_activity
 from .models import (
     Assigned_onsite_inspector, Field_assessment, Field_assessment_images, 
@@ -12,6 +12,7 @@ from .models import (
 )
 from animals.models import Animal
 from django.db.models import Prefetch
+
 
 import logging
 
@@ -167,7 +168,7 @@ def get_field_assessment_detail(request, field_assessment_id):
 
         images = [{
             "image_id": img.field_assessment_images_id, "layer": img.layer,
-            "url": request.build_absolute_uri(img.img.url) if img.img else None,
+            "url": get_cloudinary_url(str(img.img)) if img.img else None,
             "latitude": float(img.latitude) if img.latitude is not None else None,
             "longitude": float(img.longitude) if img.longitude is not None else None,
             "description": img.description or "", "created_at": img.created_at.isoformat(),
@@ -463,21 +464,28 @@ def delete_field_assessment(request, field_assessment_id):
         if fa.is_submitted:
             return JsonResponse({'error': 'Cannot delete submitted assessment'}, status=400)
 
+        # ✅ NEW: Delete all images from Cloudinary before deleting the assessment
+        deleted_images = 0
+        for img in fa.images.all():
+            if img.img:
+                print(f"🖼️ Deleting image {img.field_assessment_images_id} from Cloudinary...")
+                if delete_cloudinary_resource(img.img, resource_type='image'):
+                    deleted_images += 1
+
         _record_activity(
             user, request,
             action_type='DELETE',
             entity_type='FieldAssessment',
             entity_id=field_assessment_id,
             entity_label=f'Assessment {field_assessment_id}',
-            description=f'Field assessment {field_assessment_id} deleted.',
+            description=f'Field assessment {field_assessment_id} deleted. {deleted_images} images removed from Cloudinary.',
             old_data={'assessment_date': fa.assessment_date.isoformat() if fa.assessment_date else None},
         )
 
         fa.delete()
-        return JsonResponse({'message': 'Deleted successfully'}, status=200)
+        return JsonResponse({'message': 'Deleted successfully', 'images_deleted': deleted_images}, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
 
 # ─────────────────────────────────────────────
 # 8. UPLOAD IMAGE (Geocam + Layer Code)
@@ -538,7 +546,7 @@ def upload_field_assessment_image(request, field_assessment_id):
         return JsonResponse({
             'message': 'Image uploaded', 
             'image_id': img.field_assessment_images_id, 
-            'url': request.build_absolute_uri(img.img.url) if img.img else None  # ✅ Absolute URL
+            'url': get_cloudinary_url(str(img.img)) if img.img else None  # ✅ Absolute URL
         }, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -640,18 +648,26 @@ def head_delete_field_assessment(request, field_assessment_id):
 
         fa = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
 
+        # ✅ NEW: Delete all images from Cloudinary before deleting the assessment
+        deleted_images = 0
+        for img in fa.images.all():
+            if img.img:
+                print(f"🖼️ Deleting image {img.field_assessment_images_id} from Cloudinary...")
+                if delete_cloudinary_resource(img.img, resource_type='image'):
+                    deleted_images += 1
+
         _record_activity(
             user, request,
             action_type='DELETE',
             entity_type='FieldAssessment',
             entity_id=field_assessment_id,
             entity_label=f'Assessment {field_assessment_id}',
-            description=f'Field assessment {field_assessment_id} deleted by head user.',
+            description=f'Field assessment {field_assessment_id} deleted by head user. {deleted_images} images removed from Cloudinary.',
             old_data={'is_submitted': fa.is_submitted},
         )
 
         fa.delete()
-        return JsonResponse({'message': 'Assessment deleted successfully'}, status=200)
+        return JsonResponse({'message': 'Assessment deleted successfully', 'images_deleted': deleted_images}, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -665,9 +681,6 @@ def get_area_meta_data(request, reforestation_area_id):
     GET: For GIS Specialists / ENRO Heads.
     Fetches ONLY submitted assessments containing 'meta_data' for a specific Reforestation Area.
     Returns ONLY meta-related images (land_title, tax_decl, other_doc).
-    
-    FIX: Uses fa.images.all() which correctly accesses the related images 
-    defined by related_name='images' in Field_assessment_images model.
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -684,8 +697,6 @@ def get_area_meta_data(request, reforestation_area_id):
         META_LAYER_CODES = ['meta_land_title', 'meta_tax_decl', 'meta_other_doc']
 
         # 3. Query assessments with prefetched images
-        # We use simple prefetch_related('images') so that fa.images.all() works correctly.
-        # This avoids issues with 'to_attr' hiding the data from the default accessor.
         assessments = Field_assessment.objects.filter(
             assigned_onsite_inspector__reforestation_area_id=reforestation_area_id,
             is_submitted=True,
@@ -708,21 +719,24 @@ def get_area_meta_data(request, reforestation_area_id):
             
             if profile:
                 full_name = f"{profile.first_name} {profile.middle_name + ' ' if profile.middle_name else ''}{profile.last_name}".strip()
-                profile_img_url = profile.profile_img.url if profile.profile_img else None
+                
+                # ✅ FIX 1: Use helper for profile image
+                profile_img_url = get_cloudinary_url(str(profile.profile_img)) if profile.profile_img else None
             else:
                 full_name = inspector_user.email if inspector_user else "Unknown Inspector"
                 profile_img_url = None
 
-            # ── Build images list (ONLY meta-related) ─────────────────────
-            # ✅ CORRECT USAGE: fa.images is the RelatedManager created by related_name='images'
-            # .all() retrieves the list of images for this assessment.
+            # ── Build images list (ONLY meta-related) ────────────────────
             images_data = []
             for img in fa.images.all():
                 # Filter by layer code. Ensure img.layer is not None.
                 if img.layer and img.layer in META_LAYER_CODES:
                     images_data.append({
                         "image_id": img.field_assessment_images_id,
-                        "url": request.build_absolute_uri(img.img.url) if img.img else None,
+                        
+                        # ✅ FIX 2: Use helper for assessment images (Removed build_absolute_uri)
+                        "url": get_cloudinary_url(str(img.img)) if img.img else None,
+                        
                         "layer": img.layer,
                         "latitude": float(img.latitude) if img.latitude is not None else None,
                         "longitude": float(img.longitude) if img.longitude is not None else None,
@@ -739,10 +753,10 @@ def get_area_meta_data(request, reforestation_area_id):
                 "inspector_profile_img": profile_img_url,
                 "assessment_date": fa.assessment_date.isoformat() if fa.assessment_date else None,
                 "location": fa.location,
-                "field_assessment_data": fa.field_assessment_data,  # Full JSON for frontend parsing
+                "field_assessment_data": fa.field_assessment_data,
                 "is_submitted": fa.is_submitted,
-                "image_count": len(images_data),  # Count reflects filtered meta images
-                "images": images_data,  # Only meta-related images
+                "image_count": len(images_data),
+                "images": images_data,
                 "created_at": fa.created_at.isoformat(),
                 "submitted_at": fa.updated_at.isoformat(),
             })

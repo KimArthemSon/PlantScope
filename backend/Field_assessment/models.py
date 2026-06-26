@@ -4,6 +4,7 @@ from accounts.models import User
 from reforestation_areas.models import Reforestation_areas
 from animals.models import Animal
 from land_classifications.models import LandClassification
+from cloudinary.models import CloudinaryField
 
 IMAGE_LAYER_CHOICES = [
     ('meta_land_title', 'Meta: Land Title'),
@@ -141,13 +142,18 @@ class FieldAssessmentAnimal(models.Model):
         return f"{self.field_assessment} - {self.animal.name}"
 
 
+from cloudinary.models import CloudinaryField
+
 class Field_assessment_images(models.Model):
     field_assessment_images_id = models.BigAutoField(primary_key=True)
     field_assessment = models.ForeignKey(
         Field_assessment, on_delete=models.CASCADE, related_name='images', null=True, blank=True
     )
     layer = models.CharField(max_length=30, choices=IMAGE_LAYER_CHOICES, null=True, blank=True)
-    img = models.ImageField(upload_to='field_assessments/%Y/%m/%d/', null=True, blank=True)
+    
+    # ✅ CHANGED: Use CloudinaryField instead of ImageField
+    img = CloudinaryField('image', folder='field_assessments', null=True, blank=True)
+    
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     description = models.TextField(blank=True, default='')

@@ -6,6 +6,10 @@ from django.db.models import Prefetch, Q
 from reforestation_areas.models import Reforestation_areas
 from Field_assessment.models import Field_assessment, Field_assessment_images, Assigned_onsite_inspector
 from django.conf import settings
+
+# ✅ ADD THIS IMPORT
+from accounts.helper import get_cloudinary_url
+
 # Valid layers for field assessments (NOT meta data - those are separate)
 SITE_LAYERS = ['safety', 'survivability', 'boundary_verification']
 
@@ -51,11 +55,6 @@ def get_restricted_zones_for_area(request, reforestation_area_id):
 def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_name):
     """
     GET: Fetch field assessments for a specific MCDA layer within a reforestation area.
-    
-    Filters:
-    - layer_name: Must exist at root level of field_assessment_data
-    - assessment_type: 'specific' (has site), 'general' (no site), 'all'
-    - site_id: Filter by specific site ID
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -67,11 +66,9 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
         }, status=400)
 
     try:
-        # ✅ Get query parameters
         assessment_type = request.GET.get('assessment_type', 'all').lower()
         site_id = request.GET.get('site_id')
 
-        # Map layer names to image layer prefixes
         LAYER_PREFIX_MAP = {
             'safety': 'safety_',
             'survivability': 'surv_',
@@ -79,7 +76,6 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
         }
         layer_prefix = LAYER_PREFIX_MAP.get(layer_name, layer_name)
 
-        # ✅ STEP 1: Base Queryset - all submitted assessments for this area
         base_queryset = Field_assessment.objects.filter(
             assigned_onsite_inspector__reforestation_area_id=reforestation_area_id,
             is_submitted=True
@@ -88,7 +84,6 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
             'site'
         ).prefetch_related('images').order_by('-assessment_date')
 
-        # ✅ STEP 2: Apply Assessment Type Filter
         if assessment_type == 'specific':
             if site_id:
                 base_queryset = base_queryset.filter(site_id=site_id)
@@ -96,18 +91,13 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
                 base_queryset = base_queryset.filter(site__isnull=False)
         elif assessment_type == 'general':
             base_queryset = base_queryset.filter(site__isnull=True)
-        # else 'all': no additional filter
 
-        # ✅ STEP 3: Filter by layer_name (must exist at root level)
         filtered_assessments = []
         for assessment in base_queryset:
             assessment_json = assessment.field_assessment_data or {}
-            # Check if layer_name exists at root level and has data
             if layer_name in assessment_json and assessment_json[layer_name]:
                 filtered_assessments.append(assessment)
 
-        # ✅ STEP 4: Calculate Counts for UI toggle
-        # Get ALL assessments for this area (without type filter) to count
         all_for_counting = Field_assessment.objects.filter(
             assigned_onsite_inspector__reforestation_area_id=reforestation_area_id,
             is_submitted=True
@@ -116,7 +106,6 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
         counts = {"specific": 0, "general": 0, "all": 0}
         for assessment in all_for_counting:
             assessment_json = assessment.field_assessment_data or {}
-            # Check if this assessment has the layer
             if layer_name in assessment_json and assessment_json[layer_name]:
                 counts["all"] += 1
                 if assessment.site_id:
@@ -124,7 +113,6 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
                 else:
                     counts["general"] += 1
 
-        # ✅ STEP 5: Prefetch images for filtered assessments
         assessment_ids = [a.field_assessment_id for a in filtered_assessments]
         images_by_assessment = {}
         
@@ -138,17 +126,16 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
                     images_by_assessment[img.field_assessment_id] = []
                 images_by_assessment[img.field_assessment_id].append(img)
 
-        # ✅ STEP 6: Build response data
         data = []
         for a in filtered_assessments:
             assessment_json = a.field_assessment_data or {}
             layer_data = assessment_json.get(layer_name, {})
             
-            # Get inspector info
             try:
                 inspector_profile = a.assigned_onsite_inspector.user.profile
                 full_name = f"{inspector_profile.first_name} {inspector_profile.middle_name or ''} {inspector_profile.last_name}".strip()
-                profile_img = inspector_profile.profile_img.url if inspector_profile.profile_img else None
+                # ✅ FIX 1: Use helper for profile image
+                profile_img = get_cloudinary_url(str(inspector_profile.profile_img)) if inspector_profile.profile_img else None
             except:
                 full_name = a.assigned_onsite_inspector.user.email
                 profile_img = None
@@ -170,7 +157,8 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
                 "images": [
                     {
                         "id": img.field_assessment_images_id,
-                        "url": f"{settings.API_BASE}{img.img.url}" if img.img else None,
+                        # ✅ FIX 2: Use helper for assessment images (Removed API_BASE prefix)
+                        "url": get_cloudinary_url(str(img.img)) if img.img else None,
                         "layer": img.layer,
                         "description": img.description,
                         "latitude": float(img.latitude) if img.latitude else None,
@@ -194,15 +182,10 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
         return JsonResponse({'error': str(e), 'success': False}, status=500)
 
 
-
-
 @csrf_exempt
 def get_all_site_assessments(request, reforestation_area_id):
     """
     GET: Fetch ALL field assessments for a reforestation area.
-    Returns complete assessment data with all layers.
-    
-    Note: These are area-level assessments, not site-level.
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -225,7 +208,8 @@ def get_all_site_assessments(request, reforestation_area_id):
                 "inspector": {
                     "email": a.assigned_onsite_inspector.user.email,
                     "full_name": full_name,
-                    "profile_image": inspector_profile.profile_img.url if inspector_profile.profile_img else None,
+                    # ✅ FIX 3: Use helper for profile image
+                    "profile_image": get_cloudinary_url(str(inspector_profile.profile_img)) if inspector_profile.profile_img else None,
                 },
                 "assessment_date": a.assessment_date.isoformat() if a.assessment_date else None,
                 "location": a.location,
@@ -233,7 +217,8 @@ def get_all_site_assessments(request, reforestation_area_id):
                 "images": [
                     {
                         "id": img.field_assessment_images_id,
-                        "url": f"{settings.API_BASE}{img.img.url}" if img.img else None,
+                        # ✅ FIX 4: Use helper for assessment images (Removed API_BASE prefix)
+                        "url": get_cloudinary_url(str(img.img)) if img.img else None,
                         "layer": img.layer,
                         "description": img.description,
                         "latitude": float(img.latitude) if img.latitude else None,

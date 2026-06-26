@@ -137,16 +137,34 @@ function InfoRow({
 
 function VerificationBadge({ status }: { status: string }) {
   const config: Record<string, { icon: any; color: string; label: string }> = {
-    verified: { icon: ShieldCheck, color: "bg-green-100 text-green-700 border-green-200", label: "Verified" },
-    pending: { icon: ShieldAlert, color: "bg-yellow-100 text-yellow-700 border-yellow-200", label: "Pending" },
-    draft: { icon: ShieldAlert, color: "bg-blue-100 text-blue-700 border-blue-200", label: "Draft" },
-    rejected: { icon: XCircle, color: "bg-red-100 text-red-700 border-red-200", label: "Rejected" },
+    verified: {
+      icon: ShieldCheck,
+      color: "bg-green-100 text-green-700 border-green-200",
+      label: "Verified",
+    },
+    pending: {
+      icon: ShieldAlert,
+      color: "bg-yellow-100 text-yellow-700 border-yellow-200",
+      label: "Pending",
+    },
+    draft: {
+      icon: ShieldAlert,
+      color: "bg-blue-100 text-blue-700 border-blue-200",
+      label: "Draft",
+    },
+    rejected: {
+      icon: XCircle,
+      color: "bg-red-100 text-red-700 border-red-200",
+      label: "Rejected",
+    },
   };
-  
+
   const { icon: Icon, color, label } = config[status] || config.pending;
-  
+
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${color}`}>
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${color}`}
+    >
       <Icon size={10} />
       {label}
     </span>
@@ -156,13 +174,11 @@ function VerificationBadge({ status }: { status: string }) {
 // ─── Site Selection Component (Shared) ──────────────────────────────────────
 
 function SiteSelectionPanel({
-  areas,
   areaSearch,
   setAreaSearch,
   filteredAreas,
   selectedArea,
   setSelectedArea,
-  sites,
   siteSearch,
   setSiteSearch,
   filteredSites,
@@ -184,9 +200,7 @@ function SiteSelectionPanel({
             <p className="text-xs font-bold text-green-800 truncate">
               {selectedSite.name}
             </p>
-            <p className="text-xs text-green-600">
-              {selectedArea?.name}
-            </p>
+            <p className="text-xs text-green-600">{selectedArea?.name}</p>
           </div>
           <button
             onClick={() => {
@@ -209,7 +223,10 @@ function SiteSelectionPanel({
             Pick a Reforestation Area
           </p>
           <div className="relative mb-3">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
             <input
               type="text"
               placeholder="Search areas…"
@@ -274,7 +291,10 @@ function SiteSelectionPanel({
             Pick a Verified Site
           </p>
           <div className="relative mb-3">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
             <input
               type="text"
               placeholder="Search sites…"
@@ -353,7 +373,10 @@ function FirstTimeEvaluator({
 }: any) {
   // ✅ Pre-fill orientation date if proposed by the grower
   useEffect(() => {
-    if (detail.application.proposed_orientation_date && !decisionForm.orientation_date) {
+    if (
+      detail.application.proposed_orientation_date &&
+      !decisionForm.orientation_date
+    ) {
       setDecisionForm((p: any) => ({
         ...p,
         orientation_date: detail.application.proposed_orientation_date,
@@ -370,13 +393,22 @@ function FirstTimeEvaluator({
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <Calendar size={16} className="text-blue-600" />
-              <p className="text-xs font-semibold text-blue-700 uppercase">Grower's Proposed Date</p>
+              <p className="text-xs font-semibold text-blue-700 uppercase">
+                Grower's Proposed Date
+              </p>
             </div>
             <p className="text-sm font-bold text-blue-900">
-              {new Date(detail.application.proposed_orientation_date).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })}
+              {new Date(
+                detail.application.proposed_orientation_date,
+              ).toLocaleDateString("en-PH", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
             </p>
             <p className="text-xs text-blue-600 mt-1">
-              The tree grower has proposed this date. It has been pre-filled below, but you may change it if needed.
+              The tree grower has proposed this date. It has been pre-filled
+              below, but you may change it if needed.
             </p>
           </div>
         )}
@@ -507,7 +539,11 @@ function ReturningEvaluator({
         }));
       }
     }
-  }, [acceptProposed, detail.proposed_site, detail.application.proposed_orientation_date]);
+  }, [
+    acceptProposed,
+    detail.proposed_site,
+    detail.application.proposed_orientation_date,
+  ]);
 
   // ✅ Only show site selection if overriding OR if no site was proposed
   const showSiteSelectionPanel = !acceptProposed || !detail.proposed_site;
@@ -515,7 +551,8 @@ function ReturningEvaluator({
   return (
     <div className="flex flex-col gap-6">
       {/* ✅ Proposed Site & Date Card (Shows if either exists) */}
-      {(detail.proposed_site || detail.application.proposed_orientation_date) && (
+      {(detail.proposed_site ||
+        detail.application.proposed_orientation_date) && (
         <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-2xl p-6">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -527,7 +564,8 @@ function ReturningEvaluator({
                   Returning Tree Grower Proposal
                 </h3>
                 <p className="text-xs text-purple-600 mt-0.5">
-                  This grower has previously completed a program and is proposing details
+                  This grower has previously completed a program and is
+                  proposing details
                 </p>
               </div>
             </div>
@@ -555,7 +593,9 @@ function ReturningEvaluator({
                   Proposed Orientation Date
                 </p>
                 <p className="text-sm font-bold text-gray-800">
-                  {new Date(detail.application.proposed_orientation_date).toLocaleDateString("en-PH", {
+                  {new Date(
+                    detail.application.proposed_orientation_date,
+                  ).toLocaleDateString("en-PH", {
                     year: "numeric",
                     month: "long",
                     day: "numeric",
@@ -694,7 +734,9 @@ export default function Evaluation_application() {
   // Site selection state
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [areaSearch, setAreaSearch] = useState("");
-  const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(null);
+  const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(
+    null,
+  );
   const [sites, setSites] = useState<Site[]>([]);
   const [siteSearch, setSiteSearch] = useState("");
   const [loadingSites, setLoadingSites] = useState(false);
@@ -707,7 +749,9 @@ export default function Evaluation_application() {
   });
 
   const [submitting, setSubmitting] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<"forward" | "reject" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<
+    "forward" | "reject" | null
+  >(null);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
@@ -882,6 +926,73 @@ export default function Evaluation_application() {
     }
   };
 
+ const handleDownloadMaintenancePlan = async () => {
+    if (!detail?.application?.maintenance_plan) {
+      setPSAlert({
+        type: "failed",
+        title: "Error",
+        message: "No maintenance plan available",
+      });
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+
+      // ✅ Backend now returns the actual file content
+      const response = await fetch(
+        `${api}api/application/${detail.application.application_id}/download-maintenance-plan/`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Download failed");
+      }
+
+      // ✅ Get the PDF blob directly from backend
+      const blob = await response.blob();
+      
+      // Verify it's a valid PDF
+      if (blob.size === 0) {
+        throw new Error("Downloaded file is empty");
+      }
+      
+      if (blob.type !== 'application/pdf') {
+        console.warn("Unexpected content type:", blob.type);
+      }
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `maintenance_plan_${detail.application.application_id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      setPSAlert({
+        type: "success",
+        title: "Download Successful",
+        message: "Your file has been downloaded.",
+      });
+      
+    } catch (error: any) {
+      console.error("💥 Download error:", error);
+      setPSAlert({
+        type: "error",
+        title: "Download Failed",
+        message: error.message,
+      });
+    }
+  };
+
   const filteredAreas = areas.filter((a) =>
     a.name.toLowerCase().includes(areaSearch.toLowerCase()),
   );
@@ -907,12 +1018,7 @@ export default function Evaluation_application() {
   }
 
   if (!detail) return null;
-  const {
-    application,
-    group,
-    profile,
-    latest_reason,
-  } = detail;
+  const { application, group, profile, latest_reason } = detail;
 
   return (
     <div
@@ -1076,7 +1182,7 @@ export default function Evaluation_application() {
                   <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
                     {profile.profile_img ? (
                       <img
-                        src={`${api}${profile.profile_img}`}
+                        src={`${profile.profile_img}`}
                         alt="Profile"
                         className="w-16 h-16 rounded-xl object-cover border-2 border-green-100"
                       />
@@ -1125,7 +1231,7 @@ export default function Evaluation_application() {
               <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
                 {group.group_profile ? (
                   <img
-                    src={`${api}${group.group_profile}`}
+                    src={`${group.group_profile}`}
                     alt="Group"
                     className="w-16 h-16 rounded-xl object-cover border-2 border-green-100"
                   />
@@ -1135,9 +1241,7 @@ export default function Evaluation_application() {
                   </div>
                 )}
                 <div>
-                  <p className="font-bold text-gray-800">
-                    {group.group_name}
-                  </p>
+                  <p className="font-bold text-gray-800">{group.group_name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {group.group_type}
                   </p>
@@ -1152,19 +1256,28 @@ export default function Evaluation_application() {
                 title="Project Application"
               />
               <InfoRow label="Title" value={application.title} />
-              <InfoRow label="Tree Growers" value={application.total_treegrowers_will_participate} />
-              
+              <InfoRow
+                label="Tree Growers"
+                value={application.total_treegrowers_will_participate}
+              />
+
               {/* ✅ NEW: Show proposed details if they exist */}
               {application.proposed_orientation_date && (
-                <InfoRow 
-                  label="Proposed Orientation Date" 
-                  value={new Date(application.proposed_orientation_date).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })} 
+                <InfoRow
+                  label="Proposed Orientation Date"
+                  value={new Date(
+                    application.proposed_orientation_date,
+                  ).toLocaleDateString("en-PH", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
                 />
               )}
               {detail.proposed_site && (
-                <InfoRow 
-                  label="Proposed Site" 
-                  value={`${detail.proposed_site.name} ${detail.proposed_site.barangay ? `(${detail.proposed_site.barangay})` : ''}`} 
+                <InfoRow
+                  label="Proposed Site"
+                  value={`${detail.proposed_site.name} ${detail.proposed_site.barangay ? `(${detail.proposed_site.barangay})` : ""}`}
                 />
               )}
 
@@ -1173,19 +1286,18 @@ export default function Evaluation_application() {
                   Maintenance Plan
                 </p>
                 {application.maintenance_plan ? (
-                  <a
-                    href={`${api}${application.maintenance_plan}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                    className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group"
+                  <button
+                    onClick={handleDownloadMaintenancePlan}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group cursor-pointer"
+                    type="button"
                   >
                     <div className="w-9 h-9 rounded-lg bg-[#0F4A2F] flex items-center justify-center flex-shrink-0">
                       <FileText size={16} className="text-white" />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 text-left">
                       <p className="text-sm font-semibold text-[#0F4A2F] truncate">
-                        {application.maintenance_plan.split("/").pop()}
+                        {application.maintenance_plan.split("/").pop() ||
+                          "Maintenance Plan"}
                       </p>
                       <p className="text-xs text-green-600">
                         Click to download
@@ -1195,7 +1307,7 @@ export default function Evaluation_application() {
                       size={16}
                       className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
                     />
-                  </a>
+                  </button>
                 ) : (
                   <div className="flex items-center gap-2 text-gray-300 text-sm py-3">
                     <FileText size={18} />

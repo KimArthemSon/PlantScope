@@ -62,7 +62,6 @@ const DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 
 const API = api + "api/";
-const API_IMAGE = api;
 
 // ─────────────────────────────────────────────
 // INTERFACES
@@ -640,7 +639,7 @@ const SiteImagesGallery: React.FC<{
                           >
                             {img.img_url ? (
                               <img
-                                src={`${API_IMAGE}${img.img_url}`}
+                                src={`${img.img_url}`}
                                 alt={img.caption || "Site image"}
                                 className="w-full h-full object-cover"
                               />
@@ -1226,7 +1225,7 @@ const PermitsCard: React.FC<{ permits: PermitItem[] }> = ({ permits }) => {
                   </div>
                   {permit.file_url && (
                     <a
-                      href={`${API_IMAGE}${permit.file_url}`}
+                      href={`${permit.file_url}`}
                       target="_blank"
                       rel="noreferrer"
                       className="text-xs text-blue-600 hover:underline flex items-center gap-1"

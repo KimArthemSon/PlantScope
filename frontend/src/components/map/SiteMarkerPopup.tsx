@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 
 const API = "http://127.0.0.1:8000/api/";
-const API_IMAGE = "http://127.0.0.1:8000";
 
 interface SiteImage {
   site_image_id: number;
@@ -214,7 +213,7 @@ export default function SiteMarkerPopup({
         <div className="relative mb-3 group">
           <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
             <img
-              src={`${API_IMAGE}${generalImages[currentImageIndex].img_url}`}
+              src={`${generalImages[currentImageIndex].img_url}`}
               alt={generalImages[currentImageIndex].caption || "Site image"}
               className="w-full h-full object-cover"
             />

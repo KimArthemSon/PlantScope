@@ -110,7 +110,7 @@ export function Profile() {
         ...e,
         password: "",
         confirm_pass: "",
-        preview_profile: data.profile_img ? api+"" + data.profile_img : "",
+        preview_profile: data.profile_img ? "" + data.profile_img : "",
       }));
       setIsLoading(false);
     } catch (err) {

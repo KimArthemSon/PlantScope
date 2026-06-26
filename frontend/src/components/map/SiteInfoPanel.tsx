@@ -16,9 +16,8 @@ import {
   Leaf,   // ✅ NEW
   Users,  // ✅ NEW
 } from "lucide-react";
-
-const API = "http://127.0.0.1:8000/api/";
-const API_IMAGE = "http://127.0.0.1:8000";
+import { api } from "@/constant/api";
+const API = api+"api/";
 
 interface SiteImage {
   site_image_id: number;
@@ -138,6 +137,7 @@ export default function SiteInfoPanel({
   }, [siteId, isOpen]);
 
   const fetchSiteData = async (id: number) => {
+    console.log(`${API}get_site/${id}/`)
     setLoading(true);
     setError(null);
     try {
@@ -283,7 +283,7 @@ export default function SiteInfoPanel({
                 <div className="relative group">
                   <div className="relative aspect-video bg-gray-100 rounded-xl overflow-hidden shadow-lg">
                     <img
-                      src={`${API_IMAGE}${generalImages[currentImageIndex].img_url}`}
+                      src={`${generalImages[currentImageIndex].img_url}`}
                       alt={
                         generalImages[currentImageIndex].caption || "Site image"
                       }

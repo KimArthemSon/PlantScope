@@ -238,7 +238,7 @@ export default function Accounts() {
                     </td>
                     <td className="py-3 px-5">
                       <img
-                        src={api+ user.profile_img}
+                        src={user.profile_img}
                         alt="profile"
                         className="rounded-full w-20 h-[90%] min-h-20 max-h-25"
                       />

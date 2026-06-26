@@ -1,19 +1,20 @@
 import json
 import logging
 import math
-from django.db import IntegrityError, transaction
+
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
-from accounts.helper import get_user_from_token
+
+# ✅ UPDATED IMPORT: Added get_cloudinary_url
+from accounts.helper import get_user_from_token, get_cloudinary_url, delete_cloudinary_resource
+
 from .models import (
-    Sites, Site_data, Site_species_recommendation, Site_images,
-    Potential_sites, SiteMetaDataVerification, PermitDocument
+    Sites, Site_images,
+  
 )
-from reforestation_areas.models import Reforestation_areas
-from tree_species.models import Tree_species
-from Field_assessment.models import Field_assessment
+
+
 logger = logging.getLogger(__name__)
 
 # Add this to sites/views.py:
@@ -22,12 +23,6 @@ logger = logging.getLogger(__name__)
 def update_site_basic_info(request, site_id):
     """
     PUT/PATCH: Update site name and description.
-    
-    Body:
-    {
-        "name": "New Site Name" (optional),
-        "description": "Site description text" (optional)
-    }
     """
     if request.method not in ["PUT", "PATCH", "POST"]:
         return JsonResponse({"error": "PUT/PATCH/POST only"}, status=405)
@@ -97,7 +92,8 @@ def list_site_images(request, site_id):
     data = [{
         'site_image_id': img.site_image_id,
         'layer_tag': img.layer_tag,
-        'img_url': img.img.url if img.img else None,
+        # ✅ UPDATED: Use Cloudinary helper
+        'img_url': get_cloudinary_url(str(img.img)) if img.img else None,
         'caption': img.caption,
         'created_at': img.created_at.isoformat() if img.created_at else None,
     } for img in images]
@@ -138,7 +134,8 @@ def upload_site_image(request, site_id):
         return JsonResponse({
             'message': 'Image uploaded successfully',
             'site_image_id': image.site_image_id,
-            'img_url': image.img.url,
+            # ✅ UPDATED: Use Cloudinary helper
+            'img_url': get_cloudinary_url(str(image.img)),
             'layer_tag': image.layer_tag,
             'caption': image.caption
         }, status=201)
@@ -157,12 +154,13 @@ def delete_site_image(request, site_image_id):
     try:
         image = get_object_or_404(Site_images, site_image_id=site_image_id)
         
-        # Delete the file from storage
+        # ✅ UPDATED: Use the helper function to properly delete from Cloudinary
         if image.img:
-            try:
-                image.img.delete(save=False)
-            except Exception as file_err:
-                logger.warning(f"Could not delete file for image {site_image_id}: {file_err}")
+            print(f"🖼️ Deleting site image {site_image_id} from Cloudinary...")
+            if delete_cloudinary_resource(image.img, resource_type='image'):
+                print(f"✅ Successfully deleted from Cloudinary")
+            else:
+                print(f"⚠️ File not found in Cloudinary (may have been already deleted)")
         
         image.delete()
         

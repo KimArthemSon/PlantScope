@@ -29,7 +29,6 @@ import NotFoundPage from "./NotFoundPage";
 import { useAuthorize } from "../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
 import "../../global css/sidebarScrollbar.css";
-import { api } from "@/constant/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface UserData {
@@ -85,7 +84,7 @@ function UserAvatar({ user, size = "sm" }: { user: UserData | null; size?: "sm" 
   if (user?.profile_img) {
     return (
       <img
-        src={api + user.profile_img}
+        src={user.profile_img}
         alt={user.full_name ?? "avatar"}
         className={`${dim} object-cover bg-gradient-to-br from-emerald-400 to-teal-600 shadow-md shrink-0`}
       />

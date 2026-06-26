@@ -204,7 +204,7 @@ export default function Application_confirmation() {
                     <td className="py-3 px-5">
                       <div className="flex items-center gap-3">
                         <img
-                          src={app.group_profile ? (app.group_profile.startsWith('http') ? app.group_profile : api + app.group_profile) : 'https://via.placeholder.com/40'}
+                          src={app.group_profile ? (app.group_profile.startsWith('http') ? app.group_profile : app.group_profile) : 'https://via.placeholder.com/40'}
                           className="rounded-full h-10 w-10 object-cover border border-gray-200"
                           alt="group profile"
                         />
