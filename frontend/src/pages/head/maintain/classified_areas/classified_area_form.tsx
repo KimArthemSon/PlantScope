@@ -111,6 +111,10 @@ export default function Classified_area_form() {
       setUseruserRole("/DataManager");
       return;
     }
+     if (userRole === "GISSpecialist") {
+      setUseruserRole("/GISS");
+      return;
+    }
   }, [userRole]);
 
   const token = localStorage.getItem("token");

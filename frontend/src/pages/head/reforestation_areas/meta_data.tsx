@@ -38,10 +38,16 @@ import {
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 import { api } from "@/constant/api.ts";
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  useMapEvents,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-
+import { useUserRole } from "@/hooks/authorization";
 // 📍 Mapbox Token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -50,14 +56,16 @@ const API = api + "api/";
 // Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconRetinaUrl:
+    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
 // Custom colored icons
 const greenIcon = new L.Icon({
-  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+  iconUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   iconSize: [25, 41],
   iconAnchor: [12, 41],
@@ -65,7 +73,8 @@ const greenIcon = new L.Icon({
 });
 
 const blueIcon = new L.Icon({
-  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
+  iconUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   iconSize: [25, 41],
   iconAnchor: [12, 41],
@@ -73,7 +82,8 @@ const blueIcon = new L.Icon({
 });
 
 const redIcon = new L.Icon({
-  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+  iconUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   iconSize: [25, 41],
   iconAnchor: [12, 41],
@@ -120,7 +130,6 @@ interface FieldAssessment {
   }>;
   created_at: string;
   submitted_at: string;
-  // ✅ NEW: FK fields from backend
   land_classification: { id: number; name: string } | null;
   animals_present: AnimalInfo[];
 }
@@ -143,7 +152,6 @@ interface VerificationRecord {
   referenced_assessment_ids: number[] | null;
   verified_by: string | null;
   verified_at: string | null;
-  // ✅ NEW
   verified_animals: VerifiedAnimal[];
 }
 
@@ -244,9 +252,17 @@ function VerificationStatusBadge({
       label: "Rejected ✗",
     },
   };
-  const { bg, text, border, icon: Icon, label } = config[status] || config["pending"];
+  const {
+    bg,
+    text,
+    border,
+    icon: Icon,
+    label,
+  } = config[status] || config["pending"];
   return (
-    <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${bg} ${text} ${border}`}>
+    <span
+      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${bg} ${text} ${border}`}
+    >
       <Icon size={12} /> {label}
     </span>
   );
@@ -269,22 +285,51 @@ function AssessmentTypeBadge({ type }: { type: "specific" | "general" }) {
 
 function SecurityBadge({ concern }: { concern: string }) {
   const map: Record<string, { label: string; color: string; icon: any }> = {
-    "Armed Threat / Violence": { label: "Armed Threat", color: "bg-red-100 text-red-700 border-red-200", icon: AlertTriangle },
-    "Hostile Person on Site": { label: "Hostile Person", color: "bg-red-100 text-red-700 border-red-200", icon: AlertTriangle },
-    "Illegal Activity Observed": { label: "Illegal Activity", color: "bg-orange-100 text-orange-700 border-orange-200", icon: AlertTriangle },
-    "Community Resistance": { label: "Community Resistance", color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: Users },
-    "Land Conflict": { label: "Land Conflict", color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: AlertCircle },
-    other: { label: "Other", color: "bg-gray-100 text-gray-700 border-gray-200", icon: AlertCircle },
+    "Armed Threat / Violence": {
+      label: "Armed Threat",
+      color: "bg-red-100 text-red-700 border-red-200",
+      icon: AlertTriangle,
+    },
+    "Hostile Person on Site": {
+      label: "Hostile Person",
+      color: "bg-red-100 text-red-700 border-red-200",
+      icon: AlertTriangle,
+    },
+    "Illegal Activity Observed": {
+      label: "Illegal Activity",
+      color: "bg-orange-100 text-orange-700 border-orange-200",
+      icon: AlertTriangle,
+    },
+    "Community Resistance": {
+      label: "Community Resistance",
+      color: "bg-yellow-100 text-yellow-700 border-yellow-200",
+      icon: Users,
+    },
+    "Land Conflict": {
+      label: "Land Conflict",
+      color: "bg-yellow-100 text-yellow-700 border-yellow-200",
+      icon: AlertCircle,
+    },
+    other: {
+      label: "Other",
+      color: "bg-gray-100 text-gray-700 border-gray-200",
+      icon: AlertCircle,
+    },
   };
-  const config = map[concern] || { label: concern, color: "bg-gray-100 text-gray-700", icon: AlertCircle };
+  const config = map[concern] || {
+    label: concern,
+    color: "bg-gray-100 text-gray-700",
+    icon: AlertCircle,
+  };
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border ${config.color}`}>
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border ${config.color}`}
+    >
       <config.icon size={10} /> {config.label}
     </span>
   );
 }
 
-// ✅ NEW: Animal Badge Component
 function AnimalBadge({ animal }: { animal: AnimalInfo }) {
   return (
     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -293,13 +338,18 @@ function AnimalBadge({ animal }: { animal: AnimalInfo }) {
   );
 }
 
-// ✅ UPDATED: Component to render field assessment data nicely
-function AssessmentDataViewer({ data, landClassification, animalsPresent }: { 
-  data: any; 
+function AssessmentDataViewer({
+  data,
+  landClassification,
+  animalsPresent,
+}: {
+  data: any;
   landClassification?: { id: number; name: string } | null;
   animalsPresent?: AnimalInfo[];
 }) {
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+  const [expandedSections, setExpandedSections] = useState<
+    Record<string, boolean>
+  >({
     accessibility: true,
     legal_documents: true,
     security_concerns: true,
@@ -308,7 +358,9 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
   });
 
   if (!data || !data.meta_data) {
-    return <p className="text-xs text-gray-400 italic">No meta data available</p>;
+    return (
+      <p className="text-xs text-gray-400 italic">No meta data available</p>
+    );
   }
 
   const metaData = data.meta_data;
@@ -319,7 +371,6 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
 
   return (
     <div className="space-y-3">
-      {/* ✅ NEW: Land Classification (FK) Section */}
       {landClassification && (
         <div className="border border-purple-200 rounded-lg overflow-hidden">
           <button
@@ -328,19 +379,30 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
           >
             <div className="flex items-center gap-2">
               <Layers size={14} className="text-purple-600" />
-              <span className="text-xs font-bold text-purple-800">Land Classification</span>
+              <span className="text-xs font-bold text-purple-800">
+                Land Classification
+              </span>
             </div>
-            {expandedSections.land_classification ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {expandedSections.land_classification ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
           </button>
           {expandedSections.land_classification && (
             <div className="p-3 bg-white">
               <div className="flex items-center gap-2">
                 <CheckCircle size={12} className="text-purple-600" />
-                <p className="text-xs font-bold text-purple-800">{landClassification.name}</p>
+                <p className="text-xs font-bold text-purple-800">
+                  {landClassification.name}
+                </p>
               </div>
-              {metaData.legal_documents?.land_classification?.inspector_notes && (
+              {metaData.legal_documents?.land_classification
+                ?.inspector_notes && (
                 <p className="text-xs text-purple-600 mt-2 italic">
-                  "{metaData.legal_documents.land_classification.inspector_notes}"
+                  "
+                  {metaData.legal_documents.land_classification.inspector_notes}
+                  "
                 </p>
               )}
             </div>
@@ -348,7 +410,6 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
         </div>
       )}
 
-      {/* ✅ NEW: Animals Present Section */}
       {animalsPresent && animalsPresent.length > 0 && (
         <div className="border border-emerald-200 rounded-lg overflow-hidden">
           <button
@@ -361,16 +422,27 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
                 Animals Observed ({animalsPresent.length})
               </span>
             </div>
-            {expandedSections.animals ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {expandedSections.animals ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
           </button>
           {expandedSections.animals && (
             <div className="p-3 bg-white">
               <div className="flex flex-wrap gap-1">
                 {animalsPresent.map((animal) => (
-                  <div key={animal.animal_id} className="p-2 bg-emerald-50 rounded border border-emerald-200">
-                    <p className="text-xs font-bold text-emerald-800">{animal.name}</p>
+                  <div
+                    key={animal.animal_id}
+                    className="p-2 bg-emerald-50 rounded border border-emerald-200"
+                  >
+                    <p className="text-xs font-bold text-emerald-800">
+                      {animal.name}
+                    </p>
                     {animal.scientific_name && (
-                      <p className="text-[10px] text-emerald-600 italic">{animal.scientific_name}</p>
+                      <p className="text-[10px] text-emerald-600 italic">
+                        {animal.scientific_name}
+                      </p>
                     )}
                   </div>
                 ))}
@@ -380,7 +452,6 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
         </div>
       )}
 
-      {/* ✅ Accessibility Section */}
       {metaData.accessibility && (
         <div className="border border-blue-200 rounded-lg overflow-hidden">
           <button
@@ -389,39 +460,61 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
           >
             <div className="flex items-center gap-2">
               <Car size={14} className="text-blue-600" />
-              <span className="text-xs font-bold text-blue-800">Accessibility</span>
+              <span className="text-xs font-bold text-blue-800">
+                Accessibility
+              </span>
             </div>
-            {expandedSections.accessibility ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {expandedSections.accessibility ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
           </button>
           {expandedSections.accessibility && (
             <div className="p-3 bg-white space-y-2">
               {metaData.accessibility.vehicle_access && (
                 <div>
-                  <p className="text-[10px] uppercase font-semibold text-gray-400">Vehicle Access</p>
-                  {/* ✅ UPDATED: Handle both array (new) and string (old) formats */}
+                  <p className="text-[10px] uppercase font-semibold text-gray-400">
+                    Vehicle Access
+                  </p>
                   {Array.isArray(metaData.accessibility.vehicle_access) ? (
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {metaData.accessibility.vehicle_access.map((access: string, idx: number) => (
-                        <span key={idx} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-semibold">
-                          {access}
-                        </span>
-                      ))}
+                      {metaData.accessibility.vehicle_access.map(
+                        (access: string, idx: number) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-semibold"
+                          >
+                            {access}
+                          </span>
+                        ),
+                      )}
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-700">{metaData.accessibility.vehicle_access}</p>
+                    <p className="text-xs text-gray-700">
+                      {metaData.accessibility.vehicle_access}
+                    </p>
                   )}
                 </div>
               )}
               {metaData.accessibility.notes && (
                 <div>
-                  <p className="text-[10px] uppercase font-semibold text-gray-400">Notes</p>
-                  <p className="text-xs text-gray-700">{metaData.accessibility.notes}</p>
+                  <p className="text-[10px] uppercase font-semibold text-gray-400">
+                    Notes
+                  </p>
+                  <p className="text-xs text-gray-700">
+                    {metaData.accessibility.notes}
+                  </p>
                 </div>
               )}
               {metaData.accessibility.route_description && (
                 <div>
-                  <p className="text-[10px] uppercase font-semibold text-gray-400">Route Description</p>
-                  <p className="text-xs text-gray-700">{metaData.accessibility.route_description}</p>
+                  <p className="text-[10px] uppercase font-semibold text-gray-400">
+                    Route Description
+                  </p>
+                  <p className="text-xs text-gray-700">
+                    {metaData.accessibility.route_description}
+                  </p>
                 </div>
               )}
             </div>
@@ -429,7 +522,6 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
         </div>
       )}
 
-      {/* ✅ Legal Documents Section */}
       {metaData.legal_documents && (
         <div className="border border-green-200 rounded-lg overflow-hidden">
           <button
@@ -438,9 +530,15 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
           >
             <div className="flex items-center gap-2">
               <FileText size={14} className="text-green-600" />
-              <span className="text-xs font-bold text-green-800">Legal Documents</span>
+              <span className="text-xs font-bold text-green-800">
+                Legal Documents
+              </span>
             </div>
-            {expandedSections.legal_documents ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {expandedSections.legal_documents ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
           </button>
           {expandedSections.legal_documents && (
             <div className="p-3 bg-white space-y-3">
@@ -448,10 +546,14 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
                 <div className="p-2 bg-gray-50 rounded border border-gray-200">
                   <div className="flex items-center gap-1 mb-1">
                     <CheckCircle size={12} className="text-green-600" />
-                    <p className="text-xs font-bold text-gray-800">Land Title</p>
+                    <p className="text-xs font-bold text-gray-800">
+                      Land Title
+                    </p>
                   </div>
                   {metaData.legal_documents.land_title.note && (
-                    <p className="text-xs text-gray-600">{metaData.legal_documents.land_title.note}</p>
+                    <p className="text-xs text-gray-600">
+                      {metaData.legal_documents.land_title.note}
+                    </p>
                   )}
                 </div>
               )}
@@ -460,30 +562,43 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
                 <div className="p-2 bg-gray-50 rounded border border-gray-200">
                   <div className="flex items-center gap-1 mb-1">
                     <CheckCircle size={12} className="text-green-600" />
-                    <p className="text-xs font-bold text-gray-800">Tax Declaration</p>
+                    <p className="text-xs font-bold text-gray-800">
+                      Tax Declaration
+                    </p>
                   </div>
                   {metaData.legal_documents.tax_declaration.note && (
-                    <p className="text-xs text-gray-600">{metaData.legal_documents.tax_declaration.note}</p>
+                    <p className="text-xs text-gray-600">
+                      {metaData.legal_documents.tax_declaration.note}
+                    </p>
                   )}
                 </div>
               )}
 
-              {metaData.legal_documents.other_documents && Array.isArray(metaData.legal_documents.other_documents) && (
-                <div>
-                  <p className="text-[10px] uppercase font-semibold text-gray-400 mb-2">Other Documents</p>
-                  {metaData.legal_documents.other_documents.map((doc: any, idx: number) => (
-                    <div key={idx} className="p-2 bg-gray-50 rounded border border-gray-200 mb-2">
-                      {doc.note && <p className="text-xs text-gray-600">{doc.note}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
+              {metaData.legal_documents.other_documents &&
+                Array.isArray(metaData.legal_documents.other_documents) && (
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-gray-400 mb-2">
+                      Other Documents
+                    </p>
+                    {metaData.legal_documents.other_documents.map(
+                      (doc: any, idx: number) => (
+                        <div
+                          key={idx}
+                          className="p-2 bg-gray-50 rounded border border-gray-200 mb-2"
+                        >
+                          {doc.note && (
+                            <p className="text-xs text-gray-600">{doc.note}</p>
+                          )}
+                        </div>
+                      ),
+                    )}
+                  </div>
+                )}
             </div>
           )}
         </div>
       )}
 
-      {/* ✅ Security Concerns Section */}
       {metaData.security_concerns && (
         <div className="border border-orange-200 rounded-lg overflow-hidden">
           <button
@@ -492,9 +607,15 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
           >
             <div className="flex items-center gap-2">
               <ShieldAlert size={14} className="text-orange-600" />
-              <span className="text-xs font-bold text-orange-800">Security Concerns</span>
+              <span className="text-xs font-bold text-orange-800">
+                Security Concerns
+              </span>
             </div>
-            {expandedSections.security_concerns ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {expandedSections.security_concerns ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
           </button>
           {expandedSections.security_concerns && (
             <div className="p-3 bg-white space-y-2">
@@ -502,18 +623,26 @@ function AssessmentDataViewer({ data, landClassification, animalsPresent }: {
                 Array.isArray(metaData.security_concerns.selected) &&
                 metaData.security_concerns.selected.length > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase font-semibold text-gray-400 mb-2">Selected Concerns</p>
+                    <p className="text-[10px] uppercase font-semibold text-gray-400 mb-2">
+                      Selected Concerns
+                    </p>
                     <div className="flex flex-wrap gap-1">
-                      {metaData.security_concerns.selected.map((concern: string, idx: number) => (
-                        <SecurityBadge key={idx} concern={concern} />
-                      ))}
+                      {metaData.security_concerns.selected.map(
+                        (concern: string, idx: number) => (
+                          <SecurityBadge key={idx} concern={concern} />
+                        ),
+                      )}
                     </div>
                   </div>
                 )}
               {metaData.security_concerns.note && (
                 <div>
-                  <p className="text-[10px] uppercase font-semibold text-gray-400">Additional Notes</p>
-                  <p className="text-xs text-gray-700">{metaData.security_concerns.note}</p>
+                  <p className="text-[10px] uppercase font-semibold text-gray-400">
+                    Additional Notes
+                  </p>
+                  <p className="text-xs text-gray-700">
+                    {metaData.security_concerns.note}
+                  </p>
                 </div>
               )}
             </div>
@@ -533,29 +662,49 @@ export default function MetaDataVerification() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ✅ UPDATED: Use useUserRole hook instead of localStorage
+  const { userRole } = useUserRole();
+  const canManageAssessments =
+    userRole === "DataManager" || userRole === "CityENROHead";
+
   const [siteInfo, setSiteInfo] = useState<SiteInfo | null>(null);
-  const [verification, setVerification] = useState<VerificationRecord | null>(null);
+  const [verification, setVerification] = useState<VerificationRecord | null>(
+    null,
+  );
   const [assessmentCounts, setAssessmentCounts] = useState<AssessmentCounts>({
     total: 0,
     specific: 0,
     general: 0,
   });
 
-  const [verifiedSecurityConcerns, setVerifiedSecurityConcerns] = useState<string[]>([]);
-  const [verifiedAccessibility, setVerifiedAccessibility] = useState<AccessibilityEntry[]>([]);
-  const [verifiedLandClassificationId, setVerifiedLandClassificationId] = useState<number | "">("");
+  const [verifiedSecurityConcerns, setVerifiedSecurityConcerns] = useState<
+    string[]
+  >([]);
+  const [verifiedAccessibility, setVerifiedAccessibility] = useState<
+    AccessibilityEntry[]
+  >([]);
+  const [verifiedLandClassificationId, setVerifiedLandClassificationId] =
+    useState<number | "">("");
   const [decisionNote, setDecisionNote] = useState("");
-  const [referencedAssessmentIds, setReferencedAssessmentIds] = useState<number[]>([]);
-  
-  // ✅ NEW: Verified Animals State
+  const [referencedAssessmentIds, setReferencedAssessmentIds] = useState<
+    number[]
+  >([]);
   const [verifiedAnimals, setVerifiedAnimals] = useState<VerifiedAnimal[]>([]);
 
-  const [fieldAssessments, setFieldAssessments] = useState<FieldAssessment[]>([]);
-  const [assessmentFilter, setAssessmentFilter] = useState<AssessmentFilter>("all");
+  const [fieldAssessments, setFieldAssessments] = useState<FieldAssessment[]>(
+    [],
+  );
+  const [assessmentFilter, setAssessmentFilter] =
+    useState<AssessmentFilter>("all");
+
+  // ✅ NEW: Date Filter States
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
+
   const [permits, setPermits] = useState<PermitItem[]>([]);
-  const [landClassifications, setLandClassifications] = useState<LandClassificationOption[]>([]);
-  
-  // ✅ NEW: Master Animals List
+  const [landClassifications, setLandClassifications] = useState<
+    LandClassificationOption[]
+  >([]);
   const [animals, setAnimals] = useState<AnimalOption[]>([]);
 
   const [PSalert, setPSAlert] = useState<{
@@ -585,25 +734,133 @@ export default function MetaDataVerification() {
     type: "",
     description: "",
   });
-  
-  // ✅ NEW: New Animal Entry State
   const [newAnimalId, setNewAnimalId] = useState<number | "">("");
   const [newAnimalNotes, setNewAnimalNotes] = useState("");
 
   // Map Modal States
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
-  const [selectedAssessment, setSelectedAssessment] = useState<FieldAssessment | null>(null);
+  const [selectedAssessment, setSelectedAssessment] =
+    useState<FieldAssessment | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isPickingLocation, setIsPickingLocation] = useState(false);
   const [manualLat, setManualLat] = useState<string>("");
   const [manualLng, setManualLng] = useState<string>("");
-  const [mapMarkerPosition, setMapMarkerPosition] = useState<[number, number] | null>(null);
+  const [mapMarkerPosition, setMapMarkerPosition] = useState<
+    [number, number] | null
+  >(null);
   const [savingLocation, setSavingLocation] = useState(false);
 
+  // ✅ UPDATED: Filter Logic with Date Range
   const filteredAssessments = fieldAssessments.filter((a) => {
-    if (assessmentFilter === "all") return true;
-    return a.type === assessmentFilter;
+    if (assessmentFilter !== "all" && a.type !== assessmentFilter) return false;
+
+    if (filterDateFrom || filterDateTo) {
+      if (!a.assessment_date) return false;
+      const assessmentDate = new Date(a.assessment_date);
+      assessmentDate.setHours(0, 0, 0, 0);
+
+      if (filterDateFrom) {
+        const fromDate = new Date(filterDateFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        if (assessmentDate < fromDate) return false;
+      }
+      if (filterDateTo) {
+        const toDate = new Date(filterDateTo);
+        toDate.setHours(23, 59, 59, 999);
+        if (assessmentDate > toDate) return false;
+      }
+    }
+    return true;
   });
+
+  // ─────────────────────────────────────────────
+  // ✅ NEW: Management Action Handlers
+  // ─────────────────────────────────────────────
+  async function handleUnsendAssessment(assessmentId: number) {
+    setConfirmDialog({
+      title: "Unsend Assessment",
+      message:
+        "Are you sure you want to unsend this assessment? It will be reverted to a draft state.",
+      variant: "warning",
+      confirmLabel: "Unsend",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          const res = await fetch(
+            `${API}field_assessments/${assessmentId}/unsent/`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          );
+          const data = await res.json();
+          if (res.ok) {
+            setPSAlert({
+              type: "success",
+              title: "Success",
+              message: data.message || "Assessment marked as unsent.",
+            });
+            await fetchSiteVerification(); // Refresh list
+          } else {
+            setPSAlert({
+              type: "error",
+              title: "Error",
+              message: data.error || "Failed to unsend assessment.",
+            });
+          }
+        } catch (err) {
+          setPSAlert({
+            type: "error",
+            title: "Error",
+            message: "Network error while unsending.",
+          });
+        }
+      },
+    });
+  }
+
+  async function handleDeleteAssessment(assessmentId: number) {
+    setConfirmDialog({
+      title: "Delete Assessment",
+      message:
+        "Permanently delete this field assessment? This will also remove all associated images from the server. This action cannot be undone.",
+      variant: "danger",
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          const res = await fetch(
+            `${API}field_assessments/${assessmentId}/head_delete/`,
+            {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          );
+          const data = await res.json();
+          if (res.ok) {
+            setPSAlert({
+              type: "success",
+              title: "Deleted",
+              message: data.message || "Assessment deleted successfully.",
+            });
+            await fetchSiteVerification(); // Refresh list
+          } else {
+            setPSAlert({
+              type: "error",
+              title: "Error",
+              message: data.error || "Failed to delete assessment.",
+            });
+          }
+        } catch (err) {
+          setPSAlert({
+            type: "error",
+            title: "Error",
+            message: "Network error while deleting.",
+          });
+        }
+      },
+    });
+  }
 
   async function fetchSiteVerification() {
     if (!id || !token) return;
@@ -615,9 +872,15 @@ export default function MetaDataVerification() {
       if (verificationRes.ok) {
         const verificationData = await verificationRes.json();
         const ver = verificationData.verification;
-       
+
         setSiteInfo(verificationData.site_info);
-        setAssessmentCounts(verificationData.assessment_counts || { total: 0, specific: 0, general: 0 });
+        setAssessmentCounts(
+          verificationData.assessment_counts || {
+            total: 0,
+            specific: 0,
+            general: 0,
+          },
+        );
         setVerification(ver);
         setVerifiedSecurityConcerns(ver.verified_security_concerns || []);
 
@@ -630,7 +893,11 @@ export default function MetaDataVerification() {
               description: a.description || "",
             })),
           );
-        } else if (backendAcc && typeof backendAcc === "object" && Object.keys(backendAcc).length > 0) {
+        } else if (
+          backendAcc &&
+          typeof backendAcc === "object" &&
+          Object.keys(backendAcc).length > 0
+        ) {
           setVerifiedAccessibility([
             {
               id: "acc-0",
@@ -642,12 +909,12 @@ export default function MetaDataVerification() {
           setVerifiedAccessibility([]);
         }
 
-        setVerifiedLandClassificationId(ver.verified_land_classification_id || "");
+        setVerifiedLandClassificationId(
+          ver.verified_land_classification_id || "",
+        );
         setDecisionNote(ver.decision_note || "");
         setReferencedAssessmentIds(ver.referenced_assessment_ids || []);
         setFieldAssessments(verificationData.field_assessments || []);
-        
-        // ✅ NEW: Load verified animals
         setVerifiedAnimals(ver.verified_animals || []);
       } else {
         setPSAlert({
@@ -682,9 +949,12 @@ export default function MetaDataVerification() {
   async function fetchLandClassifications() {
     if (!token) return;
     try {
-      const res = await fetch(`${API}get_land_classifications_list/?for_reforestation=true`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(
+        `${API}get_land_classifications_list/?for_reforestation=true`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       const data = await res.json();
       if (res.ok && data.data) setLandClassifications(data.data);
     } catch (err) {
@@ -692,7 +962,6 @@ export default function MetaDataVerification() {
     }
   }
 
-  // ✅ NEW: Fetch Animals List
   async function fetchAnimals() {
     if (!token) return;
     try {
@@ -712,7 +981,11 @@ export default function MetaDataVerification() {
     if (!id || !token) return;
 
     if (!decisionNote.trim()) {
-      setPSAlert({ type: "failed", title: "Validation Error", message: "Decision note is required." });
+      setPSAlert({
+        type: "failed",
+        title: "Validation Error",
+        message: "Decision note is required.",
+      });
       return;
     }
 
@@ -729,12 +1002,13 @@ export default function MetaDataVerification() {
     try {
       const payload = {
         verified_security_concerns: verifiedSecurityConcerns,
-        verified_accessibility: verifiedAccessibility.map(({ type, description }) => ({ type, description })),
+        verified_accessibility: verifiedAccessibility.map(
+          ({ type, description }) => ({ type, description }),
+        ),
         verified_land_classification_id: verifiedLandClassificationId || null,
         decision_note: decisionNote,
         referenced_assessment_ids: referencedAssessmentIds,
         status: status,
-        // ✅ NEW: Include verified animals
         verified_animals: verifiedAnimals.map((a) => ({
           animal_id: a.animal_id,
           notes: a.admin_notes || "",
@@ -743,17 +1017,33 @@ export default function MetaDataVerification() {
 
       const res = await fetch(`${API}site/${id}/verification/update/`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(payload),
       });
 
       const data = await res.json();
       if (res.ok) {
-        const action = status === "draft" ? "saved as draft" : status === "verified" ? "approved" : "rejected";
-        setPSAlert({ type: "success", title: "Success", message: `Verification ${action}.` });
+        const action =
+          status === "draft"
+            ? "saved as draft"
+            : status === "verified"
+              ? "approved"
+              : "rejected";
+        setPSAlert({
+          type: "success",
+          title: "Success",
+          message: `Verification ${action}.`,
+        });
         await fetchSiteVerification();
       } else {
-        setPSAlert({ type: "error", title: "Error", message: data.error || "Failed to save verification." });
+        setPSAlert({
+          type: "error",
+          title: "Error",
+          message: data.error || "Failed to save verification.",
+        });
       }
     } catch (err) {
       setPSAlert({ type: "error", title: "Error", message: "Network error." });
@@ -780,11 +1070,24 @@ export default function MetaDataVerification() {
       const data = await res.json();
 
       if (res.ok) {
-        setPSAlert({ type: "success", title: "Uploaded", message: "Permit verified & saved." });
-        setNewPermit({ document_type: "land_title", permit_number: "", verification_notes: "", file: null });
+        setPSAlert({
+          type: "success",
+          title: "Uploaded",
+          message: "Permit verified & saved.",
+        });
+        setNewPermit({
+          document_type: "land_title",
+          permit_number: "",
+          verification_notes: "",
+          file: null,
+        });
         fetchPermits();
       } else {
-        setPSAlert({ type: "error", title: "Failed", message: data.error || "Upload failed." });
+        setPSAlert({
+          type: "error",
+          title: "Failed",
+          message: data.error || "Upload failed.",
+        });
       }
     } catch (err) {
       setPSAlert({ type: "error", title: "Error", message: "Upload failed." });
@@ -807,13 +1110,25 @@ export default function MetaDataVerification() {
             headers: { Authorization: `Bearer ${token}` },
           });
           if (res.ok) {
-            setPSAlert({ type: "success", title: "Deleted", message: "Permit deleted." });
+            setPSAlert({
+              type: "success",
+              title: "Deleted",
+              message: "Permit deleted.",
+            });
             fetchPermits();
           } else {
-            setPSAlert({ type: "error", title: "Failed", message: "Could not delete." });
+            setPSAlert({
+              type: "error",
+              title: "Failed",
+              message: "Could not delete.",
+            });
           }
         } catch {
-          setPSAlert({ type: "error", title: "Error", message: "Network error." });
+          setPSAlert({
+            type: "error",
+            title: "Error",
+            message: "Network error.",
+          });
         }
       },
     });
@@ -821,17 +1136,30 @@ export default function MetaDataVerification() {
 
   function toggleAssessmentReference(assessmentId: number) {
     setReferencedAssessmentIds((prev) =>
-      prev.includes(assessmentId) ? prev.filter((id) => id !== assessmentId) : [...prev, assessmentId],
+      prev.includes(assessmentId)
+        ? prev.filter((id) => id !== assessmentId)
+        : [...prev, assessmentId],
     );
   }
 
   function addAccessibilityEntry() {
     if (!newAccessibility.type) {
-      setPSAlert({ type: "failed", title: "Required", message: "Please select an access type." });
+      setPSAlert({
+        type: "failed",
+        title: "Required",
+        message: "Please select an access type.",
+      });
       return;
     }
-    if (newAccessibility.type === "other" && !newAccessibility.description.trim()) {
-      setPSAlert({ type: "failed", title: "Required", message: "Please describe access for 'Other' type." });
+    if (
+      newAccessibility.type === "other" &&
+      !newAccessibility.description.trim()
+    ) {
+      setPSAlert({
+        type: "failed",
+        title: "Required",
+        message: "Please describe access for 'Other' type.",
+      });
       return;
     }
     const entry: AccessibilityEntry = {
@@ -847,43 +1175,49 @@ export default function MetaDataVerification() {
     setVerifiedAccessibility((prev) => prev.filter((e) => e.id !== entryId));
   }
 
-  // ✅ NEW: Add Verified Animal
   function addVerifiedAnimal() {
     if (!newAnimalId) {
-      setPSAlert({ type: "failed", title: "Required", message: "Please select an animal." });
+      setPSAlert({
+        type: "failed",
+        title: "Required",
+        message: "Please select an animal.",
+      });
       return;
     }
-    
-    // Check if already added
+
     if (verifiedAnimals.some((a) => a.animal_id === newAnimalId)) {
-      setPSAlert({ type: "failed", title: "Duplicate", message: "This animal is already in the verified list." });
+      setPSAlert({
+        type: "failed",
+        title: "Duplicate",
+        message: "This animal is already in the verified list.",
+      });
       return;
     }
-    
+
     const animal = animals.find((a) => a.animal_id === newAnimalId);
     if (!animal) return;
-    
+
     const verifiedAnimal: VerifiedAnimal = {
       animal_id: animal.animal_id,
       name: animal.name,
       scientific_name: animal.scientific_name,
       admin_notes: newAnimalNotes,
     };
-    
+
     setVerifiedAnimals((prev) => [...prev, verifiedAnimal]);
     setNewAnimalId("");
     setNewAnimalNotes("");
   }
 
-  // ✅ NEW: Remove Verified Animal
   function removeVerifiedAnimal(animalId: number) {
     setVerifiedAnimals((prev) => prev.filter((a) => a.animal_id !== animalId));
   }
 
-  // ✅ NEW: Update Verified Animal Notes
   function updateVerifiedAnimalNotes(animalId: number, notes: string) {
     setVerifiedAnimals((prev) =>
-      prev.map((a) => (a.animal_id === animalId ? { ...a, admin_notes: notes } : a))
+      prev.map((a) =>
+        a.animal_id === animalId ? { ...a, admin_notes: notes } : a,
+      ),
     );
   }
 
@@ -894,7 +1228,11 @@ export default function MetaDataVerification() {
     setIsEditMode(false);
     setIsPickingLocation(false);
 
-    if (assessment.location && assessment.location.latitude && assessment.location.longitude) {
+    if (
+      assessment.location &&
+      assessment.location.latitude &&
+      assessment.location.longitude
+    ) {
       const lat = Number(assessment.location.latitude);
       const lng = Number(assessment.location.longitude);
       setMapMarkerPosition([lat, lng]);
@@ -990,7 +1328,8 @@ export default function MetaDataVerification() {
         coordinate: {
           latitude: lat,
           longitude: lng,
-          gps_accuracy_meters: selectedAssessment.location?.gps_accuracy_meters || 20,
+          gps_accuracy_meters:
+            selectedAssessment.location?.gps_accuracy_meters || 20,
         },
       };
 
@@ -1009,7 +1348,9 @@ export default function MetaDataVerification() {
         setPSAlert({
           type: "success",
           title: "Location Saved",
-          message: data.message || "Assessment location has been updated successfully.",
+          message:
+            data.message ||
+            "Assessment location has been updated successfully.",
         });
 
         setFieldAssessments((prev) =>
@@ -1069,10 +1410,10 @@ export default function MetaDataVerification() {
     if (id && token) {
       setLoading(true);
       Promise.all([
-        fetchSiteVerification(), 
-        fetchPermits(), 
+        fetchSiteVerification(),
+        fetchPermits(),
         fetchLandClassifications(),
-        fetchAnimals(),  // ✅ NEW
+        fetchAnimals(),
       ]).finally(() => setLoading(false));
     }
   }, [id, token]);
@@ -1112,9 +1453,13 @@ export default function MetaDataVerification() {
           <h2 className="text-xl font-bold text-green-700 flex items-center gap-2">
             <ClipboardCheck size={20} /> Inspector Submissions
           </h2>
-          <p className="text-sm text-gray-500 truncate mt-1">{siteInfo?.name || `Site #${id}`}</p>
+          <p className="text-sm text-gray-500 truncate mt-1">
+            {siteInfo?.name || `Site #${id}`}
+          </p>
           {siteInfo?.reforestation_area_name && (
-            <p className="text-xs text-gray-400 mt-0.5">Area: {siteInfo.reforestation_area_name}</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Area: {siteInfo.reforestation_area_name}
+            </p>
           )}
 
           <div className="mt-3 flex gap-1 bg-gray-100 p-1 rounded-lg">
@@ -1152,6 +1497,43 @@ export default function MetaDataVerification() {
               General ({assessmentCounts.general})
             </button>
           </div>
+
+          {/* ✅ NEW: Date Range Filter */}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] font-semibold text-gray-500 mb-1 block">
+                From Date
+              </label>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="w-full border border-gray-200 rounded-md p-1.5 text-xs bg-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-gray-500 mb-1 block">
+                To Date
+              </label>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="w-full border border-gray-200 rounded-md p-1.5 text-xs bg-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
+              />
+            </div>
+          </div>
+          {(filterDateFrom || filterDateTo) && (
+            <button
+              onClick={() => {
+                setFilterDateFrom("");
+                setFilterDateTo("");
+              }}
+              className="mt-2 w-full text-[10px] text-red-500 hover:text-red-700 font-semibold flex items-center justify-center gap-1"
+            >
+              <X size={10} /> Clear Dates
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
@@ -1169,13 +1551,18 @@ export default function MetaDataVerification() {
           ) : (
             filteredAssessments.map((item) => {
               const isSelected = referencedAssessmentIds.includes(item.id);
-              const hasLocation = item.location && item.location.latitude && item.location.longitude;
+              const hasLocation =
+                item.location &&
+                item.location.latitude &&
+                item.location.longitude;
 
               return (
                 <div
                   key={item.id}
                   className={`bg-white rounded-xl p-4 border shadow-sm transition-all ${
-                    isSelected ? "border-green-400 ring-2 ring-green-100" : "border-gray-200 hover:border-green-300"
+                    isSelected
+                      ? "border-green-400 ring-2 ring-green-100"
+                      : "border-gray-200 hover:border-green-300"
                   }`}
                 >
                   <div className="flex items-start gap-3 mb-3">
@@ -1195,7 +1582,9 @@ export default function MetaDataVerification() {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-800 truncate">{item.inspector_name}</p>
+                      <p className="text-sm font-bold text-gray-800 truncate">
+                        {item.inspector_name}
+                      </p>
                       <p className="text-xs text-gray-400">
                         {item.assessment_date
                           ? new Date(item.assessment_date).toLocaleDateString()
@@ -1205,8 +1594,9 @@ export default function MetaDataVerification() {
                     <AssessmentTypeBadge type={item.type} />
                   </div>
 
-                  {/* ✅ NEW: Show Land Classification & Animals Reported */}
-                  {(item.land_classification || (item.animals_present && item.animals_present.length > 0)) && (
+                  {(item.land_classification ||
+                    (item.animals_present &&
+                      item.animals_present.length > 0)) && (
                     <div className="mb-3 p-2 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
                       {item.land_classification && (
                         <div className="flex items-center gap-1">
@@ -1216,26 +1606,35 @@ export default function MetaDataVerification() {
                           </span>
                         </div>
                       )}
-                      {item.animals_present && item.animals_present.length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-1 mb-1">
-                            <PawPrint size={10} className="text-emerald-600" />
-                            <span className="text-[10px] font-semibold text-emerald-700">
-                              Animals ({item.animals_present.length})
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {item.animals_present.slice(0, 3).map((animal) => (
-                              <AnimalBadge key={animal.animal_id} animal={animal} />
-                            ))}
-                            {item.animals_present.length > 3 && (
-                              <span className="text-[9px] text-gray-500 self-center">
-                                +{item.animals_present.length - 3} more
+                      {item.animals_present &&
+                        item.animals_present.length > 0 && (
+                          <div>
+                            <div className="flex items-center gap-1 mb-1">
+                              <PawPrint
+                                size={10}
+                                className="text-emerald-600"
+                              />
+                              <span className="text-[10px] font-semibold text-emerald-700">
+                                Animals ({item.animals_present.length})
                               </span>
-                            )}
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {item.animals_present
+                                .slice(0, 3)
+                                .map((animal) => (
+                                  <AnimalBadge
+                                    key={animal.animal_id}
+                                    animal={animal}
+                                  />
+                                ))}
+                              {item.animals_present.length > 3 && (
+                                <span className="text-[9px] text-gray-500 self-center">
+                                  +{item.animals_present.length - 3} more
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
                     </div>
                   )}
 
@@ -1246,7 +1645,9 @@ export default function MetaDataVerification() {
                       onChange={() => toggleAssessmentReference(item.id)}
                       className="rounded text-green-600 focus:ring-green-500"
                     />
-                    <span className="text-xs font-medium text-gray-700">Use as evidence</span>
+                    <span className="text-xs font-medium text-gray-700">
+                      Use as evidence
+                    </span>
                   </label>
 
                   {item.images && item.images.length > 0 && (
@@ -1273,17 +1674,23 @@ export default function MetaDataVerification() {
                             {img.url ? (
                               <img
                                 src={
-                                  img.url.startsWith("http") ? img.url : `${img.url}`
+                                  img.url.startsWith("http")
+                                    ? img.url
+                                    : `${img.url}`
                                 }
                                 alt={img.description || img.layer}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = "none";
+                                  (e.target as HTMLImageElement).style.display =
+                                    "none";
                                 }}
                               />
                             ) : (
                               <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                                <ImageIcon size={12} className="text-gray-400" />
+                                <ImageIcon
+                                  size={12}
+                                  className="text-gray-400"
+                                />
                               </div>
                             )}
                           </a>
@@ -1312,13 +1719,35 @@ export default function MetaDataVerification() {
                         <span>No location recorded</span>
                       </div>
                     )}
-                    <button
-                      onClick={() => openMapModal(item)}
-                      className="flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[10px] font-semibold transition-colors border border-blue-200"
-                    >
-                      <MapIcon size={10} />
-                      {hasLocation ? "View Map" : "Set Location"}
-                    </button>
+
+                    <div className="flex items-center gap-1">
+                      {/* ✅ NEW: Management Actions (Unsend & Delete) */}
+                      {canManageAssessments && (
+                        <>
+                          <button
+                            onClick={() => handleUnsendAssessment(item.id)}
+                            title="Unsend Assessment"
+                            className="flex items-center justify-center p-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 rounded transition-colors border border-yellow-200"
+                          >
+                            <RotateCcw size={12} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAssessment(item.id)}
+                            title="Delete Assessment"
+                            className="flex items-center justify-center p-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors border border-red-200"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => openMapModal(item)}
+                        className="flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[10px] font-semibold transition-colors border border-blue-200"
+                      >
+                        <MapIcon size={10} />
+                        {hasLocation ? "View Map" : "Set Location"}
+                      </button>
+                    </div>
                   </div>
 
                   {item.field_assessment_data && (
@@ -1326,8 +1755,8 @@ export default function MetaDataVerification() {
                       <summary className="cursor-pointer text-gray-500 hover:text-gray-700 font-medium mb-2">
                         View assessment data
                       </summary>
-                      <AssessmentDataViewer 
-                        data={item.field_assessment_data} 
+                      <AssessmentDataViewer
+                        data={item.field_assessment_data}
                         landClassification={item.land_classification}
                         animalsPresent={item.animals_present}
                       />
@@ -1344,10 +1773,16 @@ export default function MetaDataVerification() {
       <div className="flex-1 bg-white rounded-2xl shadow p-8 flex flex-col gap-6 min-h-0 border border-gray-200 overflow-y-auto">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-green-700">Meta Data Verification</h2>
-            <p className="text-sm text-gray-500 mt-1">{siteInfo?.name || `Site #${id}`}</p>
+            <h2 className="text-2xl font-bold text-green-700">
+              Meta Data Verification
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              {siteInfo?.name || `Site #${id}`}
+            </p>
           </div>
-          {verification && <VerificationStatusBadge status={verification.status} />}
+          {verification && (
+            <VerificationStatusBadge status={verification.status} />
+          )}
         </div>
 
         {/* Legal Documents Upload */}
@@ -1356,19 +1791,26 @@ export default function MetaDataVerification() {
             <h3 className="font-bold text-gray-800 flex items-center gap-2">
               <FileText size={18} className="text-green-600" /> Legal Documents
             </h3>
-            <span className="text-xs text-gray-500">{permits.length} uploaded</span>
+            <span className="text-xs text-gray-500">
+              {permits.length} uploaded
+            </span>
           </div>
           {permits.length > 0 && (
             <div className="space-y-2 max-h-40 overflow-y-auto">
               {permits.map((permit) => (
-                <div key={permit.permit_id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div
+                  key={permit.permit_id}
+                  className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-gray-800 capitalize">
                         {permit.document_type.replace(/_/g, " ")}
                       </p>
                       {permit.permit_number && (
-                        <p className="text-xs text-gray-500">No. {permit.permit_number}</p>
+                        <p className="text-xs text-gray-500">
+                          No. {permit.permit_number}
+                        </p>
                       )}
                       {permit.file_url && (
                         <a
@@ -1398,10 +1840,17 @@ export default function MetaDataVerification() {
             </h4>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">Document Type *</label>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                  Document Type *
+                </label>
                 <select
                   value={newPermit.document_type}
-                  onChange={(e) => setNewPermit({ ...newPermit, document_type: e.target.value })}
+                  onChange={(e) =>
+                    setNewPermit({
+                      ...newPermit,
+                      document_type: e.target.value,
+                    })
+                  }
                   className="w-full border rounded-lg p-2 text-sm bg-white"
                 >
                   <option value="land_title">Land Title</option>
@@ -1420,18 +1869,30 @@ export default function MetaDataVerification() {
                 <input
                   type="text"
                   value={newPermit.permit_number}
-                  onChange={(e) => setNewPermit({ ...newPermit, permit_number: e.target.value })}
+                  onChange={(e) =>
+                    setNewPermit({
+                      ...newPermit,
+                      permit_number: e.target.value,
+                    })
+                  }
                   className="w-full border rounded-lg p-2 text-sm bg-white"
                   placeholder="Ex: LT-2024-001"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">Upload File *</label>
+                <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                  Upload File *
+                </label>
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => setNewPermit({ ...newPermit, file: e.target.files?.[0] || null })}
+                  onChange={(e) =>
+                    setNewPermit({
+                      ...newPermit,
+                      file: e.target.files?.[0] || null,
+                    })
+                  }
                   className="w-full text-sm"
                 />
               </div>
@@ -1483,7 +1944,10 @@ export default function MetaDataVerification() {
                     checked={verifiedSecurityConcerns.includes(concern)}
                     onChange={(e) => {
                       if (e.target.checked)
-                        setVerifiedSecurityConcerns([...verifiedSecurityConcerns, concern]);
+                        setVerifiedSecurityConcerns([
+                          ...verifiedSecurityConcerns,
+                          concern,
+                        ]);
                       else
                         setVerifiedSecurityConcerns(
                           verifiedSecurityConcerns.filter((c) => c !== concern),
@@ -1514,7 +1978,9 @@ export default function MetaDataVerification() {
                         {entry.type.replace(/_/g, " ")}
                       </p>
                       {entry.description && (
-                        <p className="text-xs text-gray-600 mt-1">{entry.description}</p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {entry.description}
+                        </p>
                       )}
                     </div>
                     <button
@@ -1530,16 +1996,24 @@ export default function MetaDataVerification() {
             <div className="p-3 bg-blue-100/50 rounded-lg border border-blue-200">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-semibold text-gray-600 mb-1 block">Type *</label>
+                  <label className="text-[10px] font-semibold text-gray-600 mb-1 block">
+                    Type *
+                  </label>
                   <select
                     value={newAccessibility.type}
                     onChange={(e) =>
-                      setNewAccessibility({ ...newAccessibility, type: e.target.value, description: "" })
+                      setNewAccessibility({
+                        ...newAccessibility,
+                        type: e.target.value,
+                        description: "",
+                      })
                     }
                     className="w-full border rounded-lg p-2 text-sm bg-white"
                   >
                     <option value="">-- Select --</option>
-                    <option value="vehicle_accessible">Vehicle Accessible</option>
+                    <option value="vehicle_accessible">
+                      Vehicle Accessible
+                    </option>
                     <option value="motorcycle_only">Motorcycle Only</option>
                     <option value="footpath_only">Footpath Only</option>
                     <option value="not_accessible">Not Accessible</option>
@@ -1554,7 +2028,10 @@ export default function MetaDataVerification() {
                     type="text"
                     value={newAccessibility.description}
                     onChange={(e) =>
-                      setNewAccessibility({ ...newAccessibility, description: e.target.value })
+                      setNewAccessibility({
+                        ...newAccessibility,
+                        description: e.target.value,
+                      })
                     }
                     className="w-full border rounded-lg p-2 text-sm bg-white"
                     placeholder="Ex: 2km dirt road, 4x4 required"
@@ -1578,25 +2055,30 @@ export default function MetaDataVerification() {
             </h3>
             <select
               value={verifiedLandClassificationId}
-              onChange={(e) => setVerifiedLandClassificationId(parseInt(e.target.value) || "")}
+              onChange={(e) =>
+                setVerifiedLandClassificationId(parseInt(e.target.value) || "")
+              }
               className="w-full border rounded-lg p-3 text-sm bg-white"
               disabled={landClassifications.length === 0}
             >
               <option value="">-- Select --</option>
               {landClassifications.map((lc) => (
-                <option key={lc.land_classification_id} value={lc.land_classification_id}>
+                <option
+                  key={lc.land_classification_id}
+                  value={lc.land_classification_id}
+                >
                   {lc.name}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* ✅ NEW: Verified Animals */}
+          {/* Verified Animals */}
           <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
             <h3 className="font-bold text-emerald-800 flex items-center gap-2 mb-3">
               <PawPrint size={16} /> Verified Animals ({verifiedAnimals.length})
             </h3>
-            
+
             {verifiedAnimals.length > 0 && (
               <div className="space-y-2 mb-4">
                 {verifiedAnimals.map((animal) => (
@@ -1606,9 +2088,13 @@ export default function MetaDataVerification() {
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
-                        <p className="text-sm font-bold text-emerald-800">{animal.name}</p>
+                        <p className="text-sm font-bold text-emerald-800">
+                          {animal.name}
+                        </p>
                         {animal.scientific_name && (
-                          <p className="text-[10px] text-emerald-600 italic">{animal.scientific_name}</p>
+                          <p className="text-[10px] text-emerald-600 italic">
+                            {animal.scientific_name}
+                          </p>
                         )}
                       </div>
                       <button
@@ -1621,7 +2107,12 @@ export default function MetaDataVerification() {
                     <input
                       type="text"
                       value={animal.admin_notes}
-                      onChange={(e) => updateVerifiedAnimalNotes(animal.animal_id, e.target.value)}
+                      onChange={(e) =>
+                        updateVerifiedAnimalNotes(
+                          animal.animal_id,
+                          e.target.value,
+                        )
+                      }
                       placeholder="Admin notes (optional)"
                       className="w-full border border-emerald-200 rounded p-2 text-xs bg-emerald-50/50"
                     />
@@ -1629,21 +2120,28 @@ export default function MetaDataVerification() {
                 ))}
               </div>
             )}
-            
+
             <div className="p-3 bg-emerald-100/50 rounded-lg border border-emerald-200">
               <div className="space-y-3">
                 <div>
-                  <label className="text-[10px] font-semibold text-gray-600 mb-1 block">Select Animal *</label>
+                  <label className="text-[10px] font-semibold text-gray-600 mb-1 block">
+                    Select Animal *
+                  </label>
                   <select
                     value={newAnimalId}
-                    onChange={(e) => setNewAnimalId(parseInt(e.target.value) || "")}
+                    onChange={(e) =>
+                      setNewAnimalId(parseInt(e.target.value) || "")
+                    }
                     className="w-full border rounded-lg p-2 text-sm bg-white"
                     disabled={animals.length === 0}
                   >
                     <option value="">-- Select Animal --</option>
                     {animals.map((animal) => (
                       <option key={animal.animal_id} value={animal.animal_id}>
-                        {animal.name} {animal.scientific_name ? `(${animal.scientific_name})` : ""}
+                        {animal.name}{" "}
+                        {animal.scientific_name
+                          ? `(${animal.scientific_name})`
+                          : ""}
                       </option>
                     ))}
                   </select>
@@ -1704,7 +2202,8 @@ export default function MetaDataVerification() {
                           : "bg-blue-100 text-blue-700 border-blue-200"
                       }`}
                     >
-                      #{refId} - {a?.inspector_name || "Unknown"} ({a?.type || "unknown"})
+                      #{refId} - {a?.inspector_name || "Unknown"} (
+                      {a?.type || "unknown"})
                     </span>
                   );
                 })}
@@ -1727,7 +2226,12 @@ export default function MetaDataVerification() {
             className="flex-1 border border-blue-600 text-blue-700 rounded-lg p-3 flex items-center justify-center gap-2 hover:bg-blue-50 font-semibold"
             disabled={saving}
           >
-            {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Save Draft
+            {saving ? (
+              <Loader2 className="animate-spin" size={18} />
+            ) : (
+              <Save size={18} />
+            )}{" "}
+            Save Draft
           </button>
           <div className="flex gap-2">
             <button
@@ -1740,7 +2244,9 @@ export default function MetaDataVerification() {
             <button
               onClick={() => saveVerification("verified")}
               className="px-6 py-3 bg-green-700 text-white rounded-lg flex items-center gap-2 hover:bg-green-800 font-bold shadow-md disabled:opacity-50"
-              disabled={saving || !decisionNote.trim() || !verifiedLandClassificationId}
+              disabled={
+                saving || !decisionNote.trim() || !verifiedLandClassificationId
+              }
             >
               <CheckCircle size={18} /> Accept
             </button>
@@ -1761,7 +2267,9 @@ export default function MetaDataVerification() {
                 <p className="text-xs text-gray-500 mt-1">
                   {selectedAssessment.inspector_name} •{" "}
                   {selectedAssessment.assessment_date
-                    ? new Date(selectedAssessment.assessment_date).toLocaleDateString()
+                    ? new Date(
+                        selectedAssessment.assessment_date,
+                      ).toLocaleDateString()
                     : "No date"}
                 </p>
               </div>
@@ -1792,7 +2300,6 @@ export default function MetaDataVerification() {
                   className="h-full w-full"
                   style={{ minHeight: "100%" }}
                 >
-                  {/* ✅ NEW: Mapbox Satellite Hybrid */}
                   <TileLayer
                     url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
                     tileSize={512}
@@ -1875,7 +2382,9 @@ export default function MetaDataVerification() {
                   </div>
 
                   <div className="border-t border-gray-200 pt-4 mb-4">
-                    <p className="text-xs text-gray-500 mb-3">Or click on map:</p>
+                    <p className="text-xs text-gray-500 mb-3">
+                      Or click on map:
+                    </p>
                     <button
                       onClick={startPickingLocation}
                       disabled={isPickingLocation}
@@ -1888,9 +2397,12 @@ export default function MetaDataVerification() {
 
                   {mapMarkerPosition && (
                     <div className="p-3 bg-green-50 rounded-lg border border-green-200 mb-4">
-                      <p className="text-xs font-semibold text-green-800 mb-1">Current Location:</p>
+                      <p className="text-xs font-semibold text-green-800 mb-1">
+                        Current Location:
+                      </p>
                       <p className="text-xs text-green-700 font-mono">
-                        {mapMarkerPosition[0].toFixed(6)}, {mapMarkerPosition[1].toFixed(6)}
+                        {mapMarkerPosition[0].toFixed(6)},{" "}
+                        {mapMarkerPosition[1].toFixed(6)}
                       </p>
                     </div>
                   )}
@@ -1922,8 +2434,12 @@ export default function MetaDataVerification() {
                           selectedAssessment.location.latitude &&
                           selectedAssessment.location.longitude
                         ) {
-                          const lat = Number(selectedAssessment.location.latitude);
-                          const lng = Number(selectedAssessment.location.longitude);
+                          const lat = Number(
+                            selectedAssessment.location.latitude,
+                          );
+                          const lng = Number(
+                            selectedAssessment.location.longitude,
+                          );
                           setMapMarkerPosition([lat, lng]);
                           setManualLat(lat.toString());
                           setManualLng(lng.toString());

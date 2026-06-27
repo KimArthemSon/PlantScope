@@ -12,7 +12,7 @@ from .models import (
 )
 from animals.models import Animal
 from django.db.models import Prefetch
-
+from django.http.multipartparser import MultiPartParser
 
 import logging
 
@@ -328,15 +328,24 @@ def update_field_assessment(request, field_assessment_id):
         is_multipart = request.content_type.startswith('multipart/form-data')
         
         if is_multipart:
+            # ✅ FIX: Django does not automatically parse multipart data for PUT requests into request.POST.
+            # We must parse it manually using MultiPartParser to avoid fields being set to null.
+            if request.method == 'PUT':
+                parser = MultiPartParser(request.META, request, request.upload_handlers)
+                post_data, files = parser.parse()
+            else:
+                post_data = request.POST
+                files = request.FILES
+
             data = {
-                'assessment_date': request.POST.get('assessment_date'),
-                'location': json.loads(request.POST.get('location', 'null')) if request.POST.get('location') else None,
-                'field_assessment_data': json.loads(request.POST.get('field_assessment_data', '{}')),
-                'land_classification_id': request.POST.get('land_classification_id'),
-                'animal_ids': json.loads(request.POST.get('animal_ids', '[]')) if request.POST.get('animal_ids') else []
+                'assessment_date': post_data.get('assessment_date'),
+                'location': json.loads(post_data.get('location', 'null')) if post_data.get('location') else None,
+                'field_assessment_data': json.loads(post_data.get('field_assessment_data', '{}')),
+                'land_classification_id': post_data.get('land_classification_id'),
+                'animal_ids': json.loads(post_data.get('animal_ids', '[]')) if post_data.get('animal_ids') else []
             }
-            images_files = request.FILES.getlist('images')
-            image_metadata_raw = request.POST.get('image_metadata', '[]')
+            images_files = files.getlist('images')
+            image_metadata_raw = post_data.get('image_metadata', '[]')
             image_metadata = json.loads(image_metadata_raw) if isinstance(image_metadata_raw, str) else []
         else:
             body = json.loads(request.body)
@@ -355,15 +364,16 @@ def update_field_assessment(request, field_assessment_id):
         # --- Update Land Classification ---
         if 'land_classification_id' in data:
             lc_id = data['land_classification_id']
-            if lc_id is None:
+            # ✅ FIX: Handle empty string from frontend as None
+            if lc_id == "" or lc_id is None:
                 if fa.land_classification is not None:
                     fa.land_classification = None; _changed.append('land_classification')
             else:
                 try:
-                    new_lc = LandClassification.objects.get(land_classification_id=lc_id)
+                    new_lc = LandClassification.objects.get(land_classification_id=int(lc_id))
                     if fa.land_classification != new_lc:
                         fa.land_classification = new_lc; _changed.append('land_classification')
-                except LandClassification.DoesNotExist:
+                except (LandClassification.DoesNotExist, ValueError):
                     return JsonResponse({'error': 'Invalid land_classification_id'}, status=400)
 
         fa.save()
@@ -398,7 +408,9 @@ def update_field_assessment(request, field_assessment_id):
 
         return JsonResponse({'message': 'Draft updated', 'updated_at': fa.updated_at.isoformat()}, status=200)
     except json.JSONDecodeError: return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    except Exception as e: return JsonResponse({'error': str(e)}, status=500)
+    except Exception as e: 
+        logger.error(f"Error in update_field_assessment: {e}", exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 

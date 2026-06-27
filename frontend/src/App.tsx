@@ -5,52 +5,109 @@ import { Suspense, lazy } from "react";
 const Login = lazy(() => import("./pages/auth/login"));
 const Dashboard = lazy(() => import("./pages/head/dashboard/dashboard"));
 const Sidebar = lazy(() => import("./components/layout/Sidebar"));
-const Reforestation_areas = lazy(() => import("./pages/head/reforestation_areas/reforestation_area"));
+const Reforestation_areas = lazy(
+  () => import("./pages/head/reforestation_areas/reforestation_area"),
+);
 const Calendar = lazy(() => import("./pages/dataManager/calendar/calendar"));
 const Registration = lazy(() => import("./pages/auth/registration"));
-const OfficailPlantingSites = lazy(() => import("./pages/approved/official_reforestation"));
-const SiteVerification = lazy(() => import("./pages/siteVerification/siteVerification"));
-const Land_classifications = lazy(() => import("./pages/head/maintain/land_classification"));
+const OfficailPlantingSites = lazy(
+  () => import("./pages/approved/official_reforestation"),
+);
+const SiteVerification = lazy(
+  () => import("./pages/siteVerification/siteVerification"),
+);
+const Land_classifications = lazy(
+  () => import("./pages/head/maintain/land_classification"),
+);
 const Soils = lazy(() => import("./pages/head/maintain/soils"));
 const Tree_species = lazy(() => import("./pages/head/maintain/tree_species"));
 const Privacy_policy = lazy(() => import("./pages/HomePage/privacy_policy"));
 const DashboardAFA = lazy(() => import("./pages/AFA/dashboardAFA"));
 const DashboardGISS = lazy(() => import("./pages/GISSpecialist/dashboardGISS"));
 const Accounts = lazy(() => import("./pages/head/accounts/accounts"));
-const TreeGrowersAccounts = lazy(() => import("./pages/head/accounts/treeGrowersAccounts"));
+const TreeGrowersAccounts = lazy(
+  () => import("./pages/head/accounts/treeGrowersAccounts"),
+);
 const Barangays = lazy(() => import("./pages/head/maintain/barangay"));
 const HomePage = lazy(() => import("./pages/HomePage/homepage"));
-const Reforestation_area_form = lazy(() => import("./pages/head/reforestation_areas/reforestation_area_form"));
+const Reforestation_area_form = lazy(
+  () => import("./pages/head/reforestation_areas/reforestation_area_form"),
+);
 const AuditTrail = lazy(() => import("./pages/head/accounts/auditTrail"));
-const Profile = lazy(() => import("./pages/head/accounts/profile").then(module => ({ default: module.Profile })));
+const Profile = lazy(() =>
+  import("./pages/head/accounts/profile").then((module) => ({
+    default: module.Profile,
+  })),
+);
 const Map = lazy(() => import("./pages/head/Map/Map"));
-const Classified_area_form = lazy(() => import("./pages/head/maintain/classified_areas/classified_area_form"));
-const Classified_areas = lazy(() => import("./pages/head/maintain/classified_areas/classified_areas"));
-const Assign_onsite_inspector = lazy(() => import("./pages/head/reforestation_areas/assigning"));
-const MetaDataVerification = lazy(() => import("./pages/head/reforestation_areas/meta_data"));
-const Reforestation_area_site = lazy(() => import("./pages/head/site/reforestation_area_site"));
+const Classified_area_form = lazy(
+  () => import("./pages/head/maintain/classified_areas/classified_area_form"),
+);
+const Classified_areas = lazy(
+  () => import("./pages/head/maintain/classified_areas/classified_areas"),
+);
+const Assign_onsite_inspector = lazy(
+  () => import("./pages/head/reforestation_areas/assigning"),
+);
+const MetaDataVerification = lazy(
+  () => import("./pages/head/reforestation_areas/meta_data"),
+);
+const Reforestation_area_site = lazy(
+  () => import("./pages/head/site/reforestation_area_site"),
+);
 const Sites = lazy(() => import("./pages/head/site/sites"));
-const Sites_analysis = lazy(() => import("./pages/head/analysis/site_analysis"));
-const Multicriteria_analysis = lazy(() => import("./pages/head/analysis/multicriteria_analysis"));
-const Sidebar_data_manager = lazy(() => import("./components/layout/Sidebar_data_manager"));
-const SidebarGISS = lazy(() => import("./components/layout/SidebarGISSpecialist"));
+const Sites_analysis = lazy(
+  () => import("./pages/head/analysis/site_analysis"),
+);
+const Multicriteria_analysis = lazy(
+  () => import("./pages/head/analysis/multicriteria_analysis"),
+);
+const Sidebar_data_manager = lazy(
+  () => import("./components/layout/Sidebar_data_manager"),
+);
+const SidebarGISS = lazy(
+  () => import("./components/layout/SidebarGISSpecialist"),
+);
 const OfficialSites = lazy(() => import("./pages/approved/OfficialSites"));
-const Site_information = lazy(() => import("./pages/approved/site_information"));
+const Site_information = lazy(
+  () => import("./pages/approved/site_information"),
+);
 const Ormoc_City = lazy(() => import("./pages/head/maintain/ormoc_city"));
-const Application = lazy(() => import("./pages/dataManager/application/application"));
-const Evaluation_application = lazy(() => import("./pages/dataManager/application/evaluation"));
-const Evaluation_confirmation = lazy(() => import("./pages/head/application/evaluation_confirmation"));
-const Application_confirmation = lazy(() => import("./pages/head/application/application_confirmation"));
-const Monitoring = lazy(() => import("./pages/dataManager/monitoring/application"));
-const Maintenance_report = lazy(() => import("./pages/dataManager/monitoring/maintenance_report"));
-const ViewReforestationArea = lazy(() => import("./pages/head/reforestation_areas/view_reforestation_area"));
+const Application = lazy(
+  () => import("./pages/dataManager/application/application"),
+);
+const Evaluation_application = lazy(
+  () => import("./pages/dataManager/application/evaluation"),
+);
+const Evaluation_confirmation = lazy(
+  () => import("./pages/head/application/evaluation_confirmation"),
+);
+const Application_confirmation = lazy(
+  () => import("./pages/head/application/application_confirmation"),
+);
+const Monitoring = lazy(
+  () => import("./pages/dataManager/monitoring/application"),
+);
+const Maintenance_report = lazy(
+  () => import("./pages/dataManager/monitoring/maintenance_report"),
+);
+const ViewReforestationArea = lazy(
+  () => import("./pages/head/reforestation_areas/view_reforestation_area"),
+);
 const MyProfile = lazy(() => import("./pages/dataManager/MyProfile"));
-const Terms_and_Conditions = lazy(() => import("./pages/HomePage/terms_and_Conditions"));
+const Terms_and_Conditions = lazy(
+  () => import("./pages/HomePage/terms_and_Conditions"),
+);
 const Request = lazy(() => import("./pages/dataManager/monitoring/request"));
 const Animals = lazy(() => import("./pages/head/maintain/animals"));
 const Reports = lazy(() => import("./pages/dataManager/reports/reports"));
-const Hazard_areas = lazy(() => import("./pages/head/maintain/hazard_areas/hazard_areas"));
-const Hazard_area_form = lazy(() => import("./pages/head/maintain/hazard_areas/hazard_area._form"));
+const Hazard_areas = lazy(
+  () => import("./pages/head/maintain/hazard_areas/hazard_areas"),
+);
+const Hazard_area_form = lazy(
+  () => import("./pages/head/maintain/hazard_areas/hazard_area._form"),
+);
+const GISReports = lazy(() => import("./pages/GISSpecialist/report"));
 
 // ============ LOADING FALLBACK ============
 function LoadingFallback() {
@@ -128,7 +185,6 @@ export default function App() {
             />
 
             <Route path="/reforestation/site/:id" element={<Sites />} />
-
             <Route
               path="/reforestation/site/:id/information/:site_id"
               element={<Site_information />}
@@ -145,12 +201,18 @@ export default function App() {
               path="/evaluation/:application_id"
               element={<Evaluation_confirmation />}
             />
-            <Route path="/applications" element={<Application_confirmation />} />
+            <Route
+              path="/applications"
+              element={<Application_confirmation />}
+            />
             <Route path="/monitoring" element={<Monitoring />} />
             <Route path="/calendar" element={<Calendar />} />
 
             <Route path="/maintenance/barangays/" element={<Barangays />} />
-            <Route path="/maintenance/tree-species" element={<Tree_species />} />
+            <Route
+              path="/maintenance/tree-species"
+              element={<Tree_species />}
+            />
             <Route path="/maintenance/soils" element={<Soils />} />
 
             <Route path="/Log-trail" element={<AuditTrail />} />
@@ -183,7 +245,10 @@ export default function App() {
 
             <Route path="/site_suitability" element={<Accounts />} />
             <Route path="/account-management" element={<Accounts />} />
-            <Route path="/account-management/profile/:id" element={<Profile />} />
+            <Route
+              path="/account-management/profile/:id"
+              element={<Profile />}
+            />
             <Route path="/account-management/profile/" element={<Profile />} />
             <Route path="/tree-growers" element={<TreeGrowersAccounts />} />
           </Route>
@@ -202,10 +267,7 @@ export default function App() {
               element={<Land_classifications />}
             />
 
-            <Route
-              path="/DataManager/maintenance/Classified_area_form/:id"
-              element={<Classified_area_form />}
-            />
+         
 
             <Route
               path="/DataManager/evaluation/:application_id"
@@ -217,26 +279,8 @@ export default function App() {
               path="/DataManager/maintenance_evaluation/:application_id"
               element={<Maintenance_report />}
             />
-            <Route
-              path="/DataManager/maintenance/Classified_area_form/"
-              element={<Classified_area_form />}
-            />
-            <Route
-              path="/DataManager/maintenance/Classified_areas/"
-              element={<Classified_areas />}
-            />
-            <Route
-              path="/DataManager/maintenance/hazard_area_form/"
-              element={<Hazard_area_form />}
-            />
-            <Route
-              path="/DataManager/maintenance/hazard_area_form/:id"
-              element={<Hazard_area_form />}
-            />
-            <Route
-              path="/DataManager/maintenance/hazard_areas/"
-              element={<Hazard_areas />}
-            />
+           
+           
             <Route
               path="/DataManager/assign_onsite_inpsector/:id"
               element={<Assign_onsite_inspector />}
@@ -310,6 +354,37 @@ export default function App() {
           <Route element={<SidebarGISS />}>
             <Route path="/dashboard/GISS" element={<DashboardGISS />} />
 
+            {/* ── NEW: GISS MAINTENANCE ROUTES ── */}
+            <Route
+              path="/GISS/maintenance/ormoc-city"
+              element={<Ormoc_City />}
+            />
+            <Route
+              path="/GISS/maintenance/Classified_areas"
+              element={<Classified_areas />}
+            />
+            <Route
+              path="/GISS/maintenance/hazard_areas"
+              element={<Hazard_areas />}
+            />
+            <Route
+              path="/GISS/maintenance/hazard_area_form"
+              element={<Hazard_area_form />}
+            />
+            <Route
+              path="/GISS/maintenance/hazard_area_form/:id"
+              element={<Hazard_area_form />}
+            />
+            <Route
+              path="/GISS/maintenance/Classified_area_form"
+              element={<Classified_area_form />}
+            />
+            <Route
+              path="/GISS/maintenance/Classified_area_form/:id"
+              element={<Classified_area_form />}
+            />
+            {/* ──────────────────────────────────── */}
+
             <Route
               path="/GISS/assign_onsite_inpsector/:id"
               element={<Assign_onsite_inspector />}
@@ -342,12 +417,10 @@ export default function App() {
               path="/GISS/analysis/multicriteria-analysis/:id"
               element={<Multicriteria_analysis />}
             />
-
             <Route
               path="/GISS/reforestation-areas"
               element={<Reforestation_areas />}
             />
-
             <Route
               path="/GISS/official-reforestation"
               element={<OfficailPlantingSites />}
@@ -366,9 +439,23 @@ export default function App() {
             />
             <Route path="/GISS/map" element={<Map />} />
             <Route path="/GISS/my-profile" element={<MyProfile />} />
+            <Route path="/GISS/reports" element={<GISReports />} />
+
             <Route
-              path="/reports"
-              element={<Placeholder title="Reports & Dashboard" />}
+              path="/GISS/maintenance/hazard_area_form/"
+              element={<Hazard_area_form />}
+            />
+            <Route
+              path="/GISS/maintenance/hazard_area_form/:id"
+              element={<Hazard_area_form />}
+            />
+            <Route
+              path="/GISS/maintenance/Classified_area_form/"
+              element={<Classified_area_form />}
+            />
+            <Route
+              path="/GISS/maintenance/Classified_areas/"
+              element={<Classified_areas />}
             />
           </Route>
         </Routes>

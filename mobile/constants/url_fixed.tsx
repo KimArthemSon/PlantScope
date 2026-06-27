@@ -1,1 +1,1 @@
-export const api = "https://bargraph-factsheet-halved.ngrok-free.dev";
+export const api = "http://192.168.254.103:8000";

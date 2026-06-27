@@ -71,20 +71,6 @@ export default function MaintenanceDropdown_Dm({
       {expanded && maintenanceOpen && (
         <div className="mt-2 ml-6 space-y-1">
           <Link
-            to="/DataManager/maintenance/ormoc-city"
-            className={`
-              flex items-center gap-3 px-4 py-3 text-[.75rem] rounded-md
-              ${
-                location.pathname === "/DataManager/maintenance/ormoc-city"
-                  ? "bg-white/20 text-white"
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
-              }
-            `}
-          >
-            <Home size={16} />
-            <span>Ormoc City</span>
-          </Link>
-          <Link
             to="/DataManager/maintenance/barangays"
             className={`
               flex items-center gap-3 px-4 py-3 text-[.75rem] rounded-md
@@ -141,36 +127,7 @@ export default function MaintenanceDropdown_Dm({
             <Layers size={16} />
             <span>Land Classification</span>
           </Link>
-          <Link
-            to="/DataManager/maintenance/Classified_areas"
-            className={`
-              flex items-center gap-3 px-4 py-3 text-[.75rem] rounded-md
-              ${
-                location.pathname ===
-                "/DataManager/maintenance/Classified_areas"
-                  ? "bg-white/20 text-white"
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
-              }
-            `}
-          >
-            <Map size={16} />
-            <span>Classified Areas</span>
-          </Link>
-          <Link
-            to="/DataManager/maintenance/hazard_areas/"
-            className={`
-              flex items-center gap-3 px-4 py-3 text-[.75rem] rounded-md
-              ${
-                location.pathname ===
-                "/DataManager/maintenance/hazard_areas/"
-                  ? "bg-white/20 text-white"
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
-              }
-            `}
-          >
-            <TriangleAlertIcon size={16} />
-            <span>Hazard Areas</span>
-          </Link>
+        
         </div>
       )}
     </div>

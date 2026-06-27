@@ -72,8 +72,13 @@ export default function Classified_areas() {
       setUseruserRole("");
       return;
     }
+
     if (userRole === "DataManager") {
       setUseruserRole("/DataManager");
+      return;
+    }
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("/GISS");
       return;
     }
   }, [userRole]);

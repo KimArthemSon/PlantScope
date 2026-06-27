@@ -18,6 +18,7 @@ import {
   Shield,
   Clock,
   AlertTriangle,
+  Home, // 👈 Added Home icon
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
@@ -41,18 +42,76 @@ interface UserData {
 
 // ─── Mock Notifications (replace with real API) ───────────────────────────────
 const INITIAL_NOTIFICATIONS = [
-  { id: 1, type: "alert",   title: "New Application Submitted", desc: "Reforestation permit #2024-089 awaiting review.",   time: "2 min ago",  read: false },
-  { id: 2, type: "success", title: "Monitoring Report Ready",   desc: "Site BNY-03 monthly report has been generated.",    time: "1 hr ago",   read: false },
-  { id: 3, type: "warning", title: "Calendar Reminder",         desc: "Field inspection scheduled for tomorrow, 8:00 AM.", time: "3 hr ago",   read: false },
-  { id: 4, type: "info",    title: "Account Updated",           desc: "Ranger Cruz's access level was modified by admin.", time: "Yesterday",  read: true  },
-  { id: 5, type: "success", title: "Tree Planting Logged",      desc: "480 seedlings recorded in Area MNL-07.",            time: "2 days ago", read: true  },
+  {
+    id: 1,
+    type: "alert",
+    title: "New Application Submitted",
+    desc: "Reforestation permit #2024-089 awaiting review.",
+    time: "2 min ago",
+    read: false,
+  },
+  {
+    id: 2,
+    type: "success",
+    title: "Monitoring Report Ready",
+    desc: "Site BNY-03 monthly report has been generated.",
+    time: "1 hr ago",
+    read: false,
+  },
+  {
+    id: 3,
+    type: "warning",
+    title: "Calendar Reminder",
+    desc: "Field inspection scheduled for tomorrow, 8:00 AM.",
+    time: "3 hr ago",
+    read: false,
+  },
+  {
+    id: 4,
+    type: "info",
+    title: "Account Updated",
+    desc: "Ranger Cruz's access level was modified by admin.",
+    time: "Yesterday",
+    read: true,
+  },
+  {
+    id: 5,
+    type: "success",
+    title: "Tree Planting Logged",
+    desc: "480 seedlings recorded in Area MNL-07.",
+    time: "2 days ago",
+    read: true,
+  },
 ];
 
-const NOTIF_TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string; bg: string; dot: string }> = {
-  alert:   { icon: <AlertTriangle size={13} />, color: "text-red-400",     bg: "bg-red-500/10",     dot: "bg-red-400"     },
-  success: { icon: <Check         size={13} />, color: "text-emerald-400", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
-  warning: { icon: <Clock         size={13} />, color: "text-amber-400",   bg: "bg-amber-500/10",   dot: "bg-amber-400"   },
-  info:    { icon: <Shield        size={13} />, color: "text-sky-400",     bg: "bg-sky-500/10",     dot: "bg-sky-400"     },
+const NOTIF_TYPE_CONFIG: Record<
+  string,
+  { icon: React.ReactNode; color: string; bg: string; dot: string }
+> = {
+  alert: {
+    icon: <AlertTriangle size={13} />,
+    color: "text-red-400",
+    bg: "bg-red-500/10",
+    dot: "bg-red-400",
+  },
+  success: {
+    icon: <Check size={13} />,
+    color: "text-emerald-400",
+    bg: "bg-emerald-500/10",
+    dot: "bg-emerald-400",
+  },
+  warning: {
+    icon: <Clock size={13} />,
+    color: "text-amber-400",
+    bg: "bg-amber-500/10",
+    dot: "bg-amber-400",
+  },
+  info: {
+    icon: <Shield size={13} />,
+    color: "text-sky-400",
+    bg: "bg-sky-500/10",
+    dot: "bg-sky-400",
+  },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -76,10 +135,17 @@ function useOutsideClick(ref: React.RefObject<HTMLDivElement>, cb: () => void) {
 }
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
-function UserAvatar({ user, size = "sm" }: { user: UserData | null; size?: "sm" | "lg" }) {
-  const dim = size === "lg"
-    ? "w-12 h-12 text-base rounded-xl"
-    : "w-8 h-8 text-[12px] rounded-lg";
+function UserAvatar({
+  user,
+  size = "sm",
+}: {
+  user: UserData | null;
+  size?: "sm" | "lg";
+}) {
+  const dim =
+    size === "lg"
+      ? "w-12 h-12 text-base rounded-xl"
+      : "w-8 h-8 text-[12px] rounded-lg";
 
   if (user?.profile_img) {
     return (
@@ -91,8 +157,10 @@ function UserAvatar({ user, size = "sm" }: { user: UserData | null; size?: "sm" 
     );
   }
   return (
-    <div className={`${dim} bg-gradient-to-br from-emerald-400 to-teal-600
-      flex items-center justify-center text-white font-bold shadow-md shrink-0`}>
+    <div
+      className={`${dim} bg-gradient-to-br from-emerald-400 to-teal-600
+      flex items-center justify-center text-white font-bold shadow-md shrink-0`}
+    >
       {initials(user?.full_name ?? "")}
     </div>
   );
@@ -106,17 +174,26 @@ interface NotifPanelProps {
   onClose: () => void;
 }
 
-function NotificationPanel({ notes, onMarkAll, onDismiss, onClose }: NotifPanelProps) {
+function NotificationPanel({
+  notes,
+  onMarkAll,
+  onDismiss,
+  onClose,
+}: NotifPanelProps) {
   const unread = notes.filter((n) => !n.read).length;
   return (
-    <div className="absolute right-0 top-full mt-3 w-[360px] z-50
+    <div
+      className="absolute right-0 top-full mt-3 w-[360px] z-50
       bg-[#0a3320]/95 backdrop-blur-xl border border-white/10
       rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
-      animate-slideDown">
+      animate-slideDown"
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
         <div className="flex items-center gap-2">
-          <span className="text-white font-semibold text-sm">Notifications</span>
+          <span className="text-white font-semibold text-sm">
+            Notifications
+          </span>
           {unread > 0 && (
             <span className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
               {unread} NEW
@@ -125,13 +202,17 @@ function NotificationPanel({ notes, onMarkAll, onDismiss, onClose }: NotifPanelP
         </div>
         <div className="flex items-center gap-2">
           {unread > 0 && (
-            <button onClick={onMarkAll}
-              className="text-[11px] text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer">
+            <button
+              onClick={onMarkAll}
+              className="text-[11px] text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+            >
               Mark all read
             </button>
           )}
-          <button onClick={onClose}
-            className="text-white/40 hover:text-white/80 transition-colors p-1 rounded-lg hover:bg-white/10 cursor-pointer">
+          <button
+            onClick={onClose}
+            className="text-white/40 hover:text-white/80 transition-colors p-1 rounded-lg hover:bg-white/10 cursor-pointer"
+          >
             <X size={14} />
           </button>
         </div>
@@ -141,32 +222,49 @@ function NotificationPanel({ notes, onMarkAll, onDismiss, onClose }: NotifPanelP
       <div className="max-h-[380px] overflow-y-auto notif-scroll">
         {notes.length === 0 ? (
           <div className="py-12 flex flex-col items-center gap-3 text-white/30">
-            <Bell size={26} /><span className="text-sm">No notifications</span>
+            <Bell size={26} />
+            <span className="text-sm">No notifications</span>
           </div>
-        ) : notes.map((n) => {
-          const cfg = NOTIF_TYPE_CONFIG[n.type];
-          return (
-            <div key={n.id}
-              className={`relative flex gap-3 px-5 py-3.5 border-b border-white/[0.05] transition-colors group
-                ${n.read ? "opacity-50" : "hover:bg-white/[0.04]"}`}>
-              {!n.read && (
-                <span className={`absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-              )}
-              <div className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center ${cfg.bg} ${cfg.color} mt-0.5`}>
-                {cfg.icon}
+        ) : (
+          notes.map((n) => {
+            const cfg = NOTIF_TYPE_CONFIG[n.type];
+            return (
+              <div
+                key={n.id}
+                className={`relative flex gap-3 px-5 py-3.5 border-b border-white/[0.05] transition-colors group
+                ${n.read ? "opacity-50" : "hover:bg-white/[0.04]"}`}
+              >
+                {!n.read && (
+                  <span
+                    className={`absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${cfg.dot}`}
+                  />
+                )}
+                <div
+                  className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center ${cfg.bg} ${cfg.color} mt-0.5`}
+                >
+                  {cfg.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/90 text-[13px] font-medium leading-tight">
+                    {n.title}
+                  </p>
+                  <p className="text-white/45 text-[11.5px] mt-0.5 leading-snug">
+                    {n.desc}
+                  </p>
+                  <span className="text-white/25 text-[11px] mt-1 block">
+                    {n.time}
+                  </span>
+                </div>
+                <button
+                  onClick={() => onDismiss(n.id)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-white/70 shrink-0 cursor-pointer mt-1"
+                >
+                  <X size={12} />
+                </button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-white/90 text-[13px] font-medium leading-tight">{n.title}</p>
-                <p className="text-white/45 text-[11.5px] mt-0.5 leading-snug">{n.desc}</p>
-                <span className="text-white/25 text-[11px] mt-1 block">{n.time}</span>
-              </div>
-              <button onClick={() => onDismiss(n.id)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-white/70 shrink-0 cursor-pointer mt-1">
-                <X size={12} />
-              </button>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
       {/* Footer */}
@@ -188,10 +286,12 @@ interface ProfileDropdownProps {
 
 function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
   return (
-    <div className="absolute right-0 top-full mt-3 w-[280px] z-50
+    <div
+      className="absolute right-0 top-full mt-3 w-[280px] z-50
       bg-[#0a3320]/95 backdrop-blur-xl border border-white/10
       rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
-      animate-slideDown">
+      animate-slideDown"
+    >
       {/* User card */}
       <div className="px-5 py-5 border-b border-white/10">
         <div className="flex items-center gap-3">
@@ -200,7 +300,10 @@ function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
             <p className="text-white font-semibold text-[14px] truncate">
               {user?.full_name ?? "—"}
             </p>
-            <p className="text-white/45 text-[11.5px] truncate" title={user?.email}>
+            <p
+              className="text-white/45 text-[11.5px] truncate"
+              title={user?.email}
+            >
               {user?.email ?? "—"}
             </p>
             <div className="flex items-center gap-1.5 mt-1.5">
@@ -216,16 +319,37 @@ function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
       {/* Menu items */}
       <div className="py-2">
         {[
-          { icon: <User size={14} />,     label: "My Profile", sub: "View & edit info",       path: "/GISS/my-profile" },
-          { icon: <Mail size={14} />,     label: "Inbox",      sub: "3 unread messages",      path: null               },
-          { icon: <Settings size={14} />, label: "Settings",   sub: "Preferences & security", path: null               },
+          {
+            icon: <User size={14} />,
+            label: "My Profile",
+            sub: "View & edit info",
+            path: "/GISS/my-profile",
+          },
+          {
+            icon: <Mail size={14} />,
+            label: "Inbox",
+            sub: "3 unread messages",
+            path: null,
+          },
+          {
+            icon: <Settings size={14} />,
+            label: "Settings",
+            sub: "Preferences & security",
+            path: null,
+          },
         ].map((item) => (
-          <button key={item.label}
+          <button
+            key={item.label}
             onClick={() => item.path && onNavigate(item.path)}
-            className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left cursor-pointer group">
-            <span className="text-white/40 group-hover:text-emerald-400 transition-colors">{item.icon}</span>
+            className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left cursor-pointer group"
+          >
+            <span className="text-white/40 group-hover:text-emerald-400 transition-colors">
+              {item.icon}
+            </span>
             <div>
-              <p className="text-white/80 text-[13px] group-hover:text-white transition-colors">{item.label}</p>
+              <p className="text-white/80 text-[13px] group-hover:text-white transition-colors">
+                {item.label}
+              </p>
               <p className="text-white/30 text-[11px]">{item.sub}</p>
             </div>
           </button>
@@ -236,9 +360,15 @@ function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
       <div className="border-t border-white/10 p-2">
         <button
           onClick={onLogout}
-          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-red-500/10 transition-colors text-left cursor-pointer group">
-          <LogOut size={14} className="text-red-400/60 group-hover:text-red-400 transition-colors" />
-          <span className="text-red-400/60 group-hover:text-red-400 text-[13px] transition-colors">Sign out</span>
+          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-red-500/10 transition-colors text-left cursor-pointer group"
+        >
+          <LogOut
+            size={14}
+            className="text-red-400/60 group-hover:text-red-400 transition-colors"
+          />
+          <span className="text-red-400/60 group-hover:text-red-400 text-[13px] transition-colors">
+            Sign out
+          </span>
         </button>
       </div>
     </div>
@@ -263,18 +393,25 @@ export default function SidebarGISS() {
   const { isAuthorized, isLoading, user_data } = useAuthorize("GISSpecialist");
 
   if (isLoading) return <PlantScopeLoader />;
-  if (!localStorage.getItem("token")) { navigate("/Login"); return null; }
+  if (!localStorage.getItem("token")) {
+    navigate("/Login");
+    return null;
+  }
   if (!isAuthorized) return <NotFoundPage />;
 
   const unread = notifications.filter((n) => !n.read).length;
 
   const PAGE_TITLES: Record<string, string> = {
-    "/dashboard/GISS":                    "Dashboard",
-    "/GISS/map":                          "Map",
-    "/GISS/reforestation-areas":          "Reforestation Area",
-    "/GISS/reforestation_area_site":      "Analysis",
-    "/GISS/official-reforestation":       "Official Sites",
-    "/GISS/analysis":                     "Reports",
+    "/dashboard/GISS": "Dashboard",
+    "/GISS/map": "Map",
+    "/GISS/reforestation-areas": "Reforestation Area",
+    "/GISS/reforestation_area_site": "Analysis",
+    "/GISS/official-reforestation": "Official Sites",
+    "/GISS/analysis": "Reports",
+    // 👇 Added new page titles for the header
+    "/GISS/maintenance/ormoc-city": "Ormoc City",
+    "/GISS/maintenance/Classified_areas": "Classified Areas",
+    "/GISS/maintenance/hazard_areas/": "Hazard Areas",
   };
   const pageTitle = PAGE_TITLES[location.pathname] ?? "PlantScope";
 
@@ -362,12 +499,49 @@ export default function SidebarGISS() {
         <div className="flex-1 p-1 overflow-x-hidden flex flex-col">
           <nav className="mt-1 gap-1 flex flex-col sidebar-scrollbar flex-1">
             {[
-              { to: "/dashboard/GISS",                   icon: <LayoutDashboard size={20} />, label: "Dashboard"          },
-              { to: "/GISS/map",                         icon: <Map size={20} />,             label: "Map"                },
-              { to: "/GISS/reforestation-areas",         icon: <ClipboardList size={20} />,   label: "Reforestation Area" },
-              { to: "/GISS/reforestation_area_site",     icon: <Layers2 size={20} />,         label: "Analysis"           },
-              { to: "/GISS/official-reforestation",      icon: <TreePine size={20} />,        label: "Official Sites"     },
-              { to: "/GISS/analysis",                    icon: <BarChart3 size={20} />,       label: "Reports"            },
+              {
+                to: "/dashboard/GISS",
+                icon: <LayoutDashboard size={20} />,
+                label: "Dashboard",
+              },
+              { to: "/GISS/map", icon: <Map size={20} />, label: "Map" },
+              {
+                to: "/GISS/reforestation-areas",
+                icon: <ClipboardList size={20} />,
+                label: "Reforestation Area",
+              },
+              {
+                to: "/GISS/reforestation_area_site",
+                icon: <Layers2 size={20} />,
+                label: "Analysis",
+              },
+              {
+                to: "/GISS/official-reforestation",
+                icon: <TreePine size={20} />,
+                label: "Official Sites",
+              },
+              {
+                to: "/GISS/maintenance/ormoc-city",
+                icon: <Home size={20} />,
+                label: "Ormoc City",
+              },
+              {
+                to: "/GISS/maintenance/Classified_areas",
+                icon: <Map size={20} />,
+                label: "Classified Areas",
+              },
+              {
+                to: "/GISS/maintenance/hazard_areas/",
+                icon: <AlertTriangle size={20} />,
+                label: "Hazard Areas",
+              },
+              {
+                to: "/GISS/reports",
+                icon: <BarChart3 size={20} />,
+                label: "Reports",
+              },
+            
+              
             ].map(({ to, icon, label }) => (
               <Link
                 key={to}
@@ -398,7 +572,9 @@ export default function SidebarGISS() {
 
         {/* Footer - version tag (logout moved to header) */}
         <div className="border-t border-white/20 p-4">
-          <p className={`text-white/20 text-[10px] text-center overflow-hidden transition-all ${expanded ? "opacity-100" : "opacity-0"}`}>
+          <p
+            className={`text-white/20 text-[10px] text-center overflow-hidden transition-all ${expanded ? "opacity-100" : "opacity-0"}`}
+          >
             PlantScope v1.0 • GIS Specialist
           </p>
         </div>
@@ -406,12 +582,12 @@ export default function SidebarGISS() {
 
       {/* ── Main content ── */}
       <main className="flex-1 overflow-y-auto overflow-x-auto bg-[rgba(255,255,255,0.1)]">
-
         {/* ══ ADVANCED HEADER ══════════════════════════════════════════════════ */}
-        <header className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
+        <header
+          className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
           border-b border-white/[0.07] px-6 h-[68px] flex items-center gap-4
-          shadow-[0_4px_40px_rgba(0,0,0,0.35)] sticky top-0 z-30">
-
+          shadow-[0_4px_40px_rgba(0,0,0,0.35)] sticky top-0 z-30"
+        >
           {/* Left — page title */}
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="w-1 h-8 rounded-full bg-gradient-to-b from-emerald-400 to-teal-500 shrink-0" />
@@ -426,18 +602,23 @@ export default function SidebarGISS() {
             {/* LIVE badge */}
             <div className="hidden sm:flex items-center gap-1.5 glass-btn rounded-full px-3 py-1.5 ml-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">LIVE</span>
+              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">
+                LIVE
+              </span>
             </div>
           </div>
 
           {/* Right — actions */}
           <div className="flex items-center gap-2 shrink-0">
-
             {/* Date */}
             <div className="hidden lg:flex items-center gap-2 glass-btn rounded-xl px-3.5 py-2">
               <Clock size={12} className="text-white/40" />
               <span className="text-white/50 text-[12px] font-medium">
-                {new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                {new Date().toLocaleDateString("en-PH", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
               </span>
             </div>
 
@@ -446,13 +627,19 @@ export default function SidebarGISS() {
             {/* Bell */}
             <div className="relative" ref={notifRef}>
               <button
-                onClick={() => { setShowNotifs(v => !v); setShowProfile(false); }}
-                className="glass-btn relative w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer">
+                onClick={() => {
+                  setShowNotifs((v) => !v);
+                  setShowProfile(false);
+                }}
+                className="glass-btn relative w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer"
+              >
                 <Bell size={16} className="text-white/70" />
                 {unread > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
+                  <span
+                    className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
                     bg-emerald-500 text-white text-[10px] font-bold rounded-full
-                    flex items-center justify-center notif-ring">
+                    flex items-center justify-center notif-ring"
+                  >
                     {unread}
                   </span>
                 )}
@@ -460,8 +647,14 @@ export default function SidebarGISS() {
               {showNotifs && (
                 <NotificationPanel
                   notes={notifications}
-                  onMarkAll={() => setNotifications(p => p.map(n => ({ ...n, read: true })))}
-                  onDismiss={(id) => setNotifications(p => p.filter(n => n.id !== id))}
+                  onMarkAll={() =>
+                    setNotifications((p) =>
+                      p.map((n) => ({ ...n, read: true })),
+                    )
+                  }
+                  onDismiss={(id) =>
+                    setNotifications((p) => p.filter((n) => n.id !== id))
+                  }
                   onClose={() => setShowNotifs(false)}
                 />
               )}
@@ -472,8 +665,12 @@ export default function SidebarGISS() {
             {/* Profile */}
             <div className="relative" ref={profileRef}>
               <button
-                onClick={() => { setShowProfile(v => !v); setShowNotifs(false); }}
-                className="glass-btn flex items-center gap-2.5 rounded-xl pl-1.5 pr-3 py-1.5 cursor-pointer">
+                onClick={() => {
+                  setShowProfile((v) => !v);
+                  setShowNotifs(false);
+                }}
+                className="glass-btn flex items-center gap-2.5 rounded-xl pl-1.5 pr-3 py-1.5 cursor-pointer"
+              >
                 <UserAvatar user={user_data ?? null} size="sm" />
                 <div className="hidden sm:block text-left min-w-0">
                   <p className="text-white/90 text-[12px] font-semibold leading-tight truncate max-w-[110px]">
@@ -483,18 +680,23 @@ export default function SidebarGISS() {
                     {user_data?.email ?? "—"}
                   </p>
                 </div>
-                <ChevronDown size={12} className={`text-white/35 hidden sm:block transition-transform duration-200 ${showProfile ? "rotate-180" : ""}`} />
+                <ChevronDown
+                  size={12}
+                  className={`text-white/35 hidden sm:block transition-transform duration-200 ${showProfile ? "rotate-180" : ""}`}
+                />
               </button>
 
               {showProfile && (
                 <ProfileDropdown
                   user={user_data ?? null}
                   onLogout={handleLogout}
-                  onNavigate={(path) => { setShowProfile(false); navigate(path); }}
+                  onNavigate={(path) => {
+                    setShowProfile(false);
+                    navigate(path);
+                  }}
                 />
               )}
             </div>
-
           </div>
         </header>
         {/* ══ END HEADER ══════════════════════════════════════════════════════ */}

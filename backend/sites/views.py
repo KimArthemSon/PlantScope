@@ -591,7 +591,7 @@ def finalize_site(request, site_id):
 
 
 # ─────────────────────────────────────────────
-# [KEEP] DELETE SITE
+# [KEEP] DELETE SITE (Hard Delete)
 # ─────────────────────────────────────────────
 @csrf_exempt
 def delete_site(request, site_id):
@@ -601,7 +601,7 @@ def delete_site(request, site_id):
     try:
         site = get_object_or_404(Sites, site_id=site_id, is_active=True)
         
-        # ✅ NEW: Delete all associated images from Cloudinary
+        # ✅ Delete all associated images from Cloudinary
         deleted_images = 0
         for img in site.site_images.all():
             if img.img:
@@ -609,7 +609,7 @@ def delete_site(request, site_id):
                 if delete_cloudinary_resource(img.img, resource_type='image'):
                     deleted_images += 1
         
-        # ✅ NEW: Delete all associated permit documents from Cloudinary
+        # ✅ Delete all associated permit documents from Cloudinary
         deleted_permits = 0
         for permit in site.permit_documents.all():
             if permit.file:
@@ -620,12 +620,20 @@ def delete_site(request, site_id):
                 elif delete_cloudinary_resource(permit.file, resource_type='image'):
                     deleted_permits += 1
         
-        # Soft delete the site (keeps it in database but marks as inactive)
-        site.is_active = False
-        site.save()
+        # ✅ Hard delete the site (CASCADE will delete all related records)
+        # This will automatically delete:
+        # - site_images (CASCADE)
+        # - permit_documents (CASCADE)
+        # - meta_verification (CASCADE)
+        # - site_data_versions (CASCADE)
+        # - species_recommendations (CASCADE)
+        # And will SET NULL:
+        # - potential_sites
+        # - field_assessments
+        site.delete()
         
         return JsonResponse({
-            "message": "Site deleted",
+            "message": "Site permanently deleted",
             "images_deleted": deleted_images,
             "permits_deleted": deleted_permits
         })

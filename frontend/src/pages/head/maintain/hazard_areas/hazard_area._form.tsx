@@ -115,6 +115,10 @@ export default function Hazard_area_form() {
       setUseruserRole("/DataManager");
       return;
     }
+    if (userRole === "GISSpecialist") {
+      setUseruserRole("/GISS");
+      return;
+    }
   }, [userRole]);
 
   const token = localStorage.getItem("token");
@@ -215,7 +219,7 @@ export default function Hazard_area_form() {
   const handleBarangayChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
     const barangayId = value === "" ? "" : Number(value);
-    
+
     setHazard_area((prev) => ({
       ...prev,
       barangay_id: barangayId,
@@ -223,12 +227,12 @@ export default function Hazard_area_form() {
 
     if (barangayId !== "" && mapRef.current) {
       const selectedBarangay = barangay_list.find(
-        (b) => b.barangay_id === barangayId
+        (b) => b.barangay_id === barangayId,
       );
-      
+
       if (selectedBarangay && selectedBarangay.coordinate) {
         const [lat, lng] = selectedBarangay.coordinate;
-        
+
         mapRef.current.flyTo([lat, lng], 16, {
           duration: 1.5,
         });

@@ -80,6 +80,10 @@ export default function Hazard_areas() {
       setUseruserRole("/DataManager");
       return;
     }
+     if (userRole === "GISSpecialist") {
+      setUseruserRole("/GISS");
+      return;
+    }
   }, [userRole]);
 
   // Fetch filter options on mount
