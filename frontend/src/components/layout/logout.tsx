@@ -1,5 +1,5 @@
 import { LogOut } from "lucide-react";
-
+import { api } from "@/constant/api";
 interface LogoutProps {
   setIsLogout: (value: boolean) => void;
   isLogout: boolean;
@@ -10,7 +10,7 @@ export default function Logout({ setIsLogout, isLogout }: LogoutProps) {
     try {
       const token = localStorage.getItem("token");
       if (!token) window.location.href = "/Login";
-      const response = await fetch("http://127.0.0.1:8000/api/logout/", {
+      const response = await fetch(api+"api/logout/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
