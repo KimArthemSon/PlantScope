@@ -1,23 +1,51 @@
 import ee
+import os
+import json
+import tempfile
+
 import logging
 
 logger = logging.getLogger(__name__)
 
-# ═══════════════════════════════════════════════════════════════
-# 🔑 EARTH ENGINE INITIALIZATION
-# ═══════════════════════════════════════════════════════════════
-
 def initialize_earth_engine():
-    """Initialize GEE - call once at app startup"""
+    """Initialize GEE - automatically works for both local and Render"""
     try:
-        ee.Initialize(project='plant-scope-ee')
-        logger.info("✅ Earth Engine initialized")
+        # Check for Render (JSON content in env var)
+        creds_content = os.environ.get('GEE_SERVICE_ACCOUNT_KEY_CONTENT')
+        
+        # Check for local (file path in env var)
+        creds_path = os.environ.get('GEE_SERVICE_ACCOUNT_KEY')
+        
+        if creds_content:
+            # ✅ RENDER: Write JSON content to a temporary file
+            print("🔑 Using GEE service account from Render environment")
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+                f.write(creds_content)
+                temp_path = f.name
+            
+            # Set the environment variable GEE expects
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_path
+            ee.Initialize(project='plant-scope-ee')
+            
+        elif creds_path and os.path.exists(creds_path):
+            # ✅ LOCAL: Use file path from .env
+            print(f"🔑 Using GEE service account file: {creds_path}")
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
+            ee.Initialize(project='plant-scope-ee')
+            
+        else:
+            # ✅ LOCAL DEV: Use user authentication (earthengine authenticate)
+            print("🔐 Using GEE user authentication (earthengine authenticate)")
+            ee.Initialize(project='plant-scope-ee')
+        
+        print("✅ Earth Engine initialized successfully")
         return True
+        
     except Exception as e:
-        logger.error(f"❌ GEE init failed: {e}")
-        raise RuntimeError(
-            "Earth Engine failed. Run: python -c \"import ee; ee.Authenticate()\""
-        ) from e
+        print(f"❌ GEE init failed: {e}")
+        print("💡 For local dev: Run 'earthengine authenticate' in terminal")
+        print("💡 For Render: Set GEE_SERVICE_ACCOUNT_KEY_CONTENT env var")
+        raise RuntimeError(f"Earth Engine failed: {e}") from e
 
 
 # ═══════════════════════════════════════════════════════════════

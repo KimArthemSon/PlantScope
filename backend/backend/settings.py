@@ -30,6 +30,12 @@ if not ALLOWED_HOSTS:
 
 # Application definition
 INSTALLED_APPS = [
+    
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.staticfiles',  
+    'django.contrib.sessions',
+
     'corsheaders',
     'cloudinary',
     'cloudinary_storage',
@@ -39,7 +45,7 @@ INSTALLED_APPS = [
     'tree_species',
     'barangay',
     'land_classifications',
-    'reforestation_areas',
+    'reforestation_areas.apps.ReforestationAreasConfig',
     'Field_assessment',
     'sites',
     'ormoc_city',
