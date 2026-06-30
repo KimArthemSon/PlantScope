@@ -17,6 +17,7 @@ import re
 from django.conf import settings
 from django.db import DatabaseError, connection, transaction
 from accounts.helper import get_cloudinary_url, delete_cloudinary_resource
+import traceback
 
 def _get_request_user(request):
     """Return (User, email) of the JWT-authenticated caller, or (None, '') on failure."""
@@ -166,60 +167,80 @@ def login_user(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
     
+    # 1. FIXED: Catch JSON errors and handle Render's Proxy IP format
     try:
         data = json.loads(request.body)
-        email = data['email']
-        password = data['password']
-        ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR"))
-    except KeyError:
-        return JsonResponse({'error': 'Missing fields, Please try again'}, status=400)
+        email = data.get('email')
+        password = data.get('password')
+        
+        # Render uses a proxy, so HTTP_X_FORWARDED_FOR is a comma-separated list.
+        # We must split it to get the actual user IP, otherwise the DB will crash.
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0].strip()
+        else:
+            ip = request.META.get("REMOTE_ADDR")
+            
+        if not email or not password:
+            raise KeyError("Missing email or password")
+            
+    except (KeyError, json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Missing or invalid fields, Please try again'}, status=400)
     
-    locked, remaining_seconds, attempts_left = get_lock_info(ip)
-    if locked:
-        return JsonResponse({
-            'error': 'Too many failed attempts. Try again later.',
-            'remaining_seconds': remaining_seconds,
-        }, status=403)
-
+    # 2. MASTER TRY/EXCEPT: Catches ANY 500 error and prints it to the Render terminal
     try:
-        user = User.objects.get(email=email)
-    except User.DoesNotExist:
-        log_event(None, email, SecurityLog.LOGIN_FAILED, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
-        _, _, attempts_left = get_lock_info(ip)
-        return JsonResponse({
-            'error': 'Login failed. Please check your credentials.',
-            'attempts_left': attempts_left,
-        }, status=401)
-
-    if not user.is_active:
-        return JsonResponse({'error': 'Your account is deactivated!'}, status=401)
-
-    # Hash the input password and compare
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    if hashed_password != user.password:
-        log_event(user, email, SecurityLog.LOGIN_FAILED, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
-        _, remaining_seconds, attempts_left = get_lock_info(ip)
-        if attempts_left == 0:
+        locked, remaining_seconds, attempts_left = get_lock_info(ip)
+        if locked:
             return JsonResponse({
                 'error': 'Too many failed attempts. Try again later.',
                 'remaining_seconds': remaining_seconds,
             }, status=403)
-        return JsonResponse({
-            'error': 'Login failed. Please check your credentials.',
-            'attempts_left': attempts_left,
-        }, status=401)
 
-    log_event(user, email, SecurityLog.LOGIN_SUCCESS, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
-  
-    payload = {
-        'user_id': user.id,
-        'email': user.email,
-        'user_role': user.user_role,
-        'exp': datetime.utcnow() + timedelta(seconds=settings.JWT_EXP_DELTA_SECONDS)
-    }
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            log_event(None, email, SecurityLog.LOGIN_FAILED, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
+            _, _, attempts_left = get_lock_info(ip)
+            return JsonResponse({
+                'error': 'Login failed. Please check your credentials.',
+                'attempts_left': attempts_left,
+            }, status=401)
 
-    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
-    return JsonResponse({'token': token, 'user_role': user.user_role, 'email': user.email})
+        if not user.is_active:
+            return JsonResponse({'error': 'Your account is deactivated!'}, status=401)
+
+        # Hash the input password and compare
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        if hashed_password != user.password:
+            log_event(user, email, SecurityLog.LOGIN_FAILED, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
+            _, remaining_seconds, attempts_left = get_lock_info(ip)
+            if attempts_left == 0:
+                return JsonResponse({
+                    'error': 'Too many failed attempts. Try again later.',
+                    'remaining_seconds': remaining_seconds,
+                }, status=403)
+            return JsonResponse({
+                'error': 'Login failed. Please check your credentials.',
+                'attempts_left': attempts_left,
+            }, status=401)
+
+        log_event(user, email, SecurityLog.LOGIN_SUCCESS, ip_address=ip, user_agent=request.META.get('HTTP_USER_AGENT'))
+      
+        payload = {
+            'user_id': user.id,
+            'email': user.email,
+            'user_role': user.user_role,
+            'exp': datetime.utcnow() + timedelta(seconds=settings.JWT_EXP_DELTA_SECONDS)
+        }
+
+        token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        return JsonResponse({'token': token, 'user_role': user.user_role, 'email': user.email})
+
+    except Exception as e:
+        # THIS IS THE MAGIC: It prints the exact terminal error to Render logs
+        print(f"🔥 CRITICAL ERROR IN LOGIN VIEW: {e}")
+        traceback.print_exc() 
+        return JsonResponse({'error': 'Internal server error'}, status=500)
 
 
 @csrf_exempt

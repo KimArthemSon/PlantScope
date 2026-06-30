@@ -243,3 +243,26 @@ if CLOUDINARY_STORAGE['CLOUD_NAME']:
     print("✅ Cloudinary is ACTIVE!")
 else:
     print("❌ Cloudinary is NOT configured - using local storage!")
+
+# settings.py
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'ERROR',  # Change to 'INFO' or 'DEBUG' if you want to see EVERYTHING
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+    },
+}
