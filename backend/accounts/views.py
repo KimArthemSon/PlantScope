@@ -266,7 +266,13 @@ def logout_user(request):
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
 
-    ip_address = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR"))
+    # FIXED: Extract only the first IP from the comma-separated list
+    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if x_forwarded_for:
+        ip_address = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip_address = request.META.get("REMOTE_ADDR")
+        
     user_agent = request.META.get("HTTP_USER_AGENT")
 
     log_event(user=user, email=email, event_type=SecurityLog.LOGOUT, ip_address=ip_address, user_agent=user_agent)
