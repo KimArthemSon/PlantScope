@@ -5,7 +5,7 @@ Django settings for backend project.
 from pathlib import Path
 import os
 from decouple import config
-
+import dj_database_url
 # Cloudinary imports
 import cloudinary
 import cloudinary.uploader
@@ -84,17 +84,32 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF Configuration
 CSRF_TRUSTED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:5173').split(',')
 
-# Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME', default='plantscope'),
-        'USER': config('DB_USER', default='postgres'),
-        'PASSWORD': config('DB_PASSWORD', default='246246'),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='5432'),
+# ✅ SMART DATABASE CONFIGURATION
+DATABASE_URL = config('DATABASE_URL', default='')
+
+if DATABASE_URL:
+    # 🌐 PRODUCTION: Use Render's PostgreSQL
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=True
+        )
     }
-}
+    print("🌐 Using PRODUCTION database (Render PostgreSQL)")
+else:
+    # 💻 LOCAL: Use your local PostgreSQL
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': config('DB_NAME', default='plantscope'),
+            'USER': config('DB_USER', default='postgres'),
+            'PASSWORD': config('DB_PASSWORD', default='246246'),
+            'HOST': config('DB_HOST', default='localhost'),
+            'PORT': config('DB_PORT', default='5432'),
+        }
+    }
+    print("💻 Using LOCAL database (PostgreSQL)")
 
 # Cloudinary Configuration (For file uploads - Images, PDFs, Word docs)
 CLOUDINARY_STORAGE = {
