@@ -31,7 +31,7 @@ export default function Logout({ setIsLogout, isLogout }: LogoutProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-10000 flex items-center justify-center bg-black/50 transition-opacity duration-300
+      className={`fixed inset-0 z-100000 flex items-center justify-center bg-black/50 transition-opacity duration-300
         ${isLogout ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}
       `}
     >

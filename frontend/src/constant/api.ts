@@ -1,4 +1,2 @@
 export const api = import.meta.env.VITE_DNS_FIRST || "http://127.0.0.1:8000/"
 export const api_second = import.meta.env.VITE_DNS_SECOND || "http://127.0.0.1:8000"
-
-console.log(api, "asdasdY Piu")

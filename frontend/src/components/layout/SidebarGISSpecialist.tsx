@@ -586,7 +586,7 @@ export default function SidebarGISS() {
         <header
           className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
           border-b border-white/[0.07] px-6 h-[68px] flex items-center gap-4
-          shadow-[0_4px_40px_rgba(0,0,0,0.35)] sticky top-0 z-30"
+          shadow-[0_4px_40px_rgba(0,0,0,0.35)] sticky top-0 z-10000"
         >
           {/* Left — page title */}
           <div className="flex items-center gap-3 flex-1 min-w-0">
