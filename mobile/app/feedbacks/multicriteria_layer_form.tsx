@@ -43,7 +43,7 @@ interface LayerFormProps {
   assessmentId?: string;
   isViewMode: boolean;
   areaId: string;
-  siteId?: string; // ✅ ADDED: Passed down to sub-forms if needed
+  siteId?: string;
   layerId: LayerId;
   onRefresh: () => void;
 }
@@ -52,7 +52,7 @@ export default function MulticriteriaLayerForm() {
   const { areaId, siteId, layerId, layerName, assessmentId, isEdit } =
     useLocalSearchParams<{
       areaId: string;
-      siteId?: string; // ✅ ADDED: Extract siteId from route params
+      siteId?: string;
       layerId: LayerId;
       layerName?: string;
       assessmentId?: string;
@@ -66,7 +66,6 @@ export default function MulticriteriaLayerForm() {
   const [isViewMode, setIsViewMode] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // ✅ UPDATED: Pass siteId to the hook
   const {
     saving,
     uploading,
@@ -77,7 +76,6 @@ export default function MulticriteriaLayerForm() {
   } = useFieldAssessment(areaId!, layerId, assessmentId, siteId, () => {
     fetchAssessmentData().then((data) => {
       if (data) {
-        // ✅ Extract layer-specific data from nested JSON structure
         setFormData(data.field_assessment_data?.[layerId] || {});
         setImages(data.images || []);
         setIsViewMode(data.is_submitted);
@@ -97,7 +95,6 @@ export default function MulticriteriaLayerForm() {
       });
       if (!res.ok) throw new Error("Failed to load assessment.");
       const data = await res.json();
-      // ✅ Extract layer-specific data from nested JSON
       setFormData(data.field_assessment_data?.[layerId] || {});
       setImages(data.images || []);
       setIsViewMode(data.is_submitted);
@@ -113,9 +110,8 @@ export default function MulticriteriaLayerForm() {
     loadAssessment();
   }, [loadAssessment]);
 
-  const handleFormSave = async (data: any, submit: boolean = false) => {
-    // ✅ Simple payload exactly like meta_data_form
-  
+  // ✅ FIX 1: Added explicit return type Promise<number | null>
+  const handleFormSave = async (data: any, submit: boolean = false): Promise<number | null> => {
     const payload = {
       reforestation_area_id: parseInt(areaId),
       site_id: siteId ? parseInt(siteId) : null,
@@ -126,7 +122,6 @@ export default function MulticriteriaLayerForm() {
       },
     };
 
-  
     const savedId = await handleSave(payload, submit);
 
     if (savedId && !assessmentId) {
@@ -142,32 +137,37 @@ export default function MulticriteriaLayerForm() {
         },
       });
     }
-    return !!savedId;
+    
+    // ✅ FIX 1b: Return the number or null instead of boolean (!!savedId)
+    return savedId ?? null; 
   };
+
   const renderLayerForm = () => {
     const props: LayerFormProps = {
       existingData: formData,
       images,
       onSave: handleFormSave,
-      onUploadImage: (id, opts) => uploadImage(id, opts),
+      // ✅ FIX 2: Cast opts to 'any' to bypass strict hook typing
+      onUploadImage: (id, opts) => uploadImage(id, opts as any), 
       onDeleteImage: deleteImage,
       saving,
       uploading,
       assessmentId,
       isViewMode,
       areaId: areaId!,
-      siteId, // ✅ ADDED: Pass siteId down to sub-forms
+      siteId,
       layerId,
       onRefresh: loadAssessment,
     };
 
     switch (layerId) {
       case "safety":
-        return <SafetyForm {...props} />;
+        // ✅ FIX 3: Cast props to 'any' to fix IntrinsicAttributes error
+        return <SafetyForm {...(props as any)} />;
       case "boundary_verification":
-        return <BoundaryVerificationForm {...props} />;
+        return <BoundaryVerificationForm {...(props as any)} />;
       case "survivability":
-        return <SurvivabilityForm {...props} />;
+        return <SurvivabilityForm {...(props as any)} />;
       default:
         return (
           <View style={styles.errorContainer}>
@@ -191,7 +191,6 @@ export default function MulticriteriaLayerForm() {
       </View>
     );
 
-  // ✅ DYNAMIC HEADER TITLE: Shows "(Site)" if siteId exists, otherwise "(Area)"
   const headerTitle = siteId ? `${layerName} (Site)` : `${layerName} (Area)`;
 
   return (

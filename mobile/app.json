@@ -1,19 +1,20 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "PLANTSCOPE",
+    "slug": "plant-scope",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "plantscope",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.sonkimarthem.plantscope",
       "infoPlist": {
-        "NSCameraUsageDescription": "Take photos with GPS coordinates for field assessments",
-        "NSLocationWhenInUseUsageDescription": "Record your location to stamp photos with coordinates for field assessments",
-        "NSPhotoLibraryAddUsageDescription": "Save captured photos to your library"
+        "NSCameraUsageDescription": "Allow PLANTSCOPE to access your camera to take photos for field assessments",
+        "NSLocationWhenInUseUsageDescription": "Allow PLANTSCOPE to use your location to stamp photos with GPS coordinates",
+        "NSPhotoLibraryAddUsageDescription": "Allow PLANTSCOPE to save captured photos to your library"
       }
     },
     "android": {
@@ -31,21 +32,13 @@
         "ACCESS_COARSE_LOCATION",
         "WRITE_EXTERNAL_STORAGE",
         "READ_EXTERNAL_STORAGE",
-        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "CAMERA",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_EXTERNAL_STORAGE",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "package": "com.anonymous.mobile"
+      "package": "com.sonkimarthem.plantscope",
+      "versionCode": 1
     },
     "web": {
       "output": "static",
@@ -69,15 +62,15 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to take photos for field assessments",
-          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for video recording",
+          "cameraPermission": "Allow PLANTSCOPE to access your camera to take photos for field assessments",
+          "microphonePermission": "Allow PLANTSCOPE to access your microphone for video recording",
           "recordAudioAndroid": true
         }
       ],
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to stamp photos with GPS coordinates"
+          "locationAlwaysAndWhenInUsePermission": "Allow PLANTSCOPE to use your location to stamp photos with GPS coordinates"
         }
       ],
       "expo-font",
@@ -86,6 +79,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "104a14cf-c725-4ec8-94ee-45ca95e530c8"
+      }
     }
   }
 }
