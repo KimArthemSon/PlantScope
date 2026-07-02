@@ -32,12 +32,20 @@ def _record_activity(user, request, action_type, entity_type, entity_id=None,
                      entity_label='', description='',
                      old_data=None, new_data=None, changed_fields=None):
     email = user.email if user else ''
-    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    
+    # FIXED: Extract only the first IP from the comma-separated list
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    
     log_activity(
         performed_by=user, email=email, action_type=action_type, entity_type=entity_type,
         entity_id=entity_id, entity_label=entity_label, description=description,
         old_data=old_data, new_data=new_data, changed_fields=changed_fields, ip_address=ip,
     )
+    
 
 def check_inspector_assignment(user, reforestation_area_id):
     if not user or user.user_role != "OnsiteInspector": return False

@@ -40,7 +40,14 @@ def record_activity(request, action_type, entity_type, entity_id=None,
                     old_data=None, new_data=None, changed_fields=None):
     """Log a business operation performed by the JWT-authenticated caller."""
     performer, email = _get_request_user(request)
-    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    
+    # FIXED: Extract only the first IP from the comma-separated list
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    
     log_activity(
         performed_by=performer,
         email=email,
