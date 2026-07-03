@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, use } from "react";
+import { useState, useEffect, useRef } from "react";
 import Loader from "../../components/layout/loader.tsx";
 import Navbar from "../../components/layout/nav.tsx";
 import background from "../../assets/background.jpg";
@@ -77,7 +77,7 @@ export default function App() {
 
       sections.forEach((sec) => {
         const top = sec.offsetTop;
-        if (window.scrollY >= top - 100) {
+        if (window.scrollY >= top - 150) {
           if (window.scrollY === 0) {
             current = sections[0].id;
           } else if (sec.id === "home") {
@@ -102,6 +102,24 @@ export default function App() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  const handleDownload = () => {
+    const isMobile =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent,
+      );
+
+    if (isMobile) {
+      alert(
+        'The APK will download. After it finishes, open your Downloads folder and tap the file to install. You may need to enable "Install from unknown sources" in settings.',
+      );
+    }
+
+    window.open(
+      "https://github.com/KimArthemSon/PlantScope/releases/download/v1.0.0/plantsope.apk",
+      "_blank",
+    );
+  };
 
   return (
     <div>
@@ -852,9 +870,8 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-3">
-                    <a
-                      href="https://github.com/KimArthemSon/PlantScope/releases/download/v1.0.0/application-9b7292bb-6098-460b-8331-afc2d3037204.apk"
-                      download
+                    <button
+                      onClick={handleDownload}
                       className="flex-1 inline-flex items-center justify-center gap-2 bg-[#7CD56A] hover:bg-[#6BC45A] text-[#0F4A2F] px-4 md:px-5 py-2.5 rounded-xl font-bold transition-all transform hover:scale-[1.02] shadow-lg hover:shadow-[#7CD56A]/50 text-sm"
                     >
                       <svg
@@ -871,7 +888,7 @@ export default function App() {
                         />
                       </svg>
                       Download APK
-                    </a>
+                    </button>
 
                     <button className="flex-1 inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 md:px-5 py-2.5 rounded-xl font-semibold transition-all border border-white/20 text-sm">
                       <svg

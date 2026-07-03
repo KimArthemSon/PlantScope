@@ -16,15 +16,9 @@ import {
 import { useLocalSearchParams } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import MapView, { Marker } from "react-native-maps";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import * as SecureStore from "expo-secure-store";
-
 import { useFieldAssessment, LocalImage } from "@/hooks/useFieldAssessment";
 import { api } from "@/constants/url_fixed";
-
-const API_BASE = `${api}/api`;
-const { width: SW, height: SH } = Dimensions.get("window");
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -622,16 +616,11 @@ export default function BoundaryVerificationForm() {
   const [gettingLocation, setGettingLocation] = useState(false);
 
   const [images, setImages] = useState<BoundaryImage[]>([]);
-  
-  // ✅ NEW: Local images (captured before save)
   const [localImages, setLocalImages] = useState<LocalImage[]>([]);
-  
   const [isViewMode, setIsViewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!assessmentId);
   const [showGPSCamera, setShowGPSCamera] = useState(false);
-  
-  // Custom modal state for photo note
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState<{
     uri: string;
@@ -650,7 +639,9 @@ export default function BoundaryVerificationForm() {
           if (data.location) {
             setLocationLat(data.location.latitude?.toString() || "");
             setLocationLng(data.location.longitude?.toString() || "");
-            setLocationAccuracy(data.location.gps_accuracy_meters?.toString() || "");
+            setLocationAccuracy(
+              data.location.gps_accuracy_meters?.toString() || "",
+            );
           }
           setImages(data.images || []);
           setIsViewMode(!!data.is_submitted);
@@ -696,7 +687,6 @@ export default function BoundaryVerificationForm() {
     }
   };
 
-  // ✅ UPDATED: Handle photo capture - NO LONGER requires assessmentId
   const handleGPSPhotoCaptured = async (
     uri: string,
     location: LocationData,
@@ -707,13 +697,11 @@ export default function BoundaryVerificationForm() {
     setShowNoteModal(true);
   };
 
-  // ✅ UPDATED: Handle note submission - stores locally OR uploads immediately
   const handleNoteSubmit = async (note: string) => {
     if (!pendingPhoto) return;
 
     const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
 
-    // If we have an assessmentId, upload immediately
     if (numericAssessmentId && !isNaN(numericAssessmentId)) {
       setUploading(true);
       try {
@@ -740,7 +728,10 @@ export default function BoundaryVerificationForm() {
           }
           Alert.alert("Success", "Photo uploaded with GPS data!");
         } else {
-          Alert.alert("Upload Failed", "Could not upload photo. Please try again.");
+          Alert.alert(
+            "Upload Failed",
+            "Could not upload photo. Please try again.",
+          );
         }
       } catch (error) {
         Alert.alert(
@@ -751,7 +742,6 @@ export default function BoundaryVerificationForm() {
         setUploading(false);
       }
     } else {
-      // ✅ NEW: Store locally if no assessmentId
       const localImg: LocalImage = {
         id: `local-${Date.now()}`,
         uri: pendingPhoto.uri,
@@ -762,7 +752,10 @@ export default function BoundaryVerificationForm() {
         description: note || `Boundary marker photo`,
       };
       setLocalImages([...localImages, localImg]);
-      Alert.alert("Photo Captured", "Photo will be uploaded when you save the draft.");
+      Alert.alert(
+        "Photo Captured",
+        "Photo will be uploaded when you save the draft.",
+      );
     }
 
     setShowNoteModal(false);
@@ -770,7 +763,6 @@ export default function BoundaryVerificationForm() {
     setPendingNote("");
   };
 
-  // ✅ NEW: Remove local image
   const removeLocalImage = (id: string) => {
     setLocalImages(localImages.filter((img) => img.id !== id));
   };
@@ -803,11 +795,10 @@ export default function BoundaryVerificationForm() {
     };
   };
 
-  // ✅ UPDATED: handleDraft now passes localImages
   const handleDraft = async () => {
     const payload = buildPayload();
     const savedId = await handleSave(payload, false, localImages);
-    
+
     if (savedId) {
       setLocalImages([]);
       const data = await fetchAssessmentData();
@@ -819,7 +810,6 @@ export default function BoundaryVerificationForm() {
     }
   };
 
-  // ✅ UPDATED: handleSubmit also passes localImages
   const handleSubmit = async () => {
     Alert.alert(
       "Submit Assessment",
@@ -833,7 +823,6 @@ export default function BoundaryVerificationForm() {
             if (savedId) {
               setLocalImages([]);
               setIsViewMode(true);
-            
             }
           },
         },
@@ -864,13 +853,14 @@ export default function BoundaryVerificationForm() {
     return `${api}${imgUrl}`;
   };
 
-  // ✅ NEW: Render local images
   const renderLocalImages = () => {
     if (localImages.length === 0) return null;
 
     return (
       <View style={styles.localImagesSection}>
-        <Text style={styles.localImagesLabel}>Pending Upload ({localImages.length})</Text>
+        <Text style={styles.localImagesLabel}>
+          Pending Upload ({localImages.length})
+        </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {localImages.map((img) => (
             <View key={img.id} style={styles.thumbWrapper}>
@@ -878,9 +868,22 @@ export default function BoundaryVerificationForm() {
                 onPress={() => setPreviewImage(img.uri)}
                 activeOpacity={0.85}
               >
-                <Image source={{ uri: img.uri }} style={styles.thumb} resizeMode="cover" />
-                <View style={[styles.thumbOverlay, { backgroundColor: "rgba(245,158,11,0.6)" }]}>
-                  <Ionicons name="cloud-upload-outline" size={14} color="#fff" />
+                <Image
+                  source={{ uri: img.uri }}
+                  style={styles.thumb}
+                  resizeMode="cover"
+                />
+                <View
+                  style={[
+                    styles.thumbOverlay,
+                    { backgroundColor: "rgba(245,158,11,0.6)" },
+                  ]}
+                >
+                  <Ionicons
+                    name="cloud-upload-outline"
+                    size={14}
+                    color="#fff"
+                  />
                 </View>
                 <View style={styles.thumbCoords}>
                   <Text style={styles.thumbCoordsText}>
@@ -893,7 +896,12 @@ export default function BoundaryVerificationForm() {
                   {img.description}
                 </Text>
               ) : (
-                <Text style={[styles.thumbNote, { color: "#F59E0B", fontStyle: "italic" }]}>
+                <Text
+                  style={[
+                    styles.thumbNote,
+                    { color: "#F59E0B", fontStyle: "italic" },
+                  ]}
+                >
                   Pending
                 </Text>
               )}
@@ -1080,7 +1088,7 @@ export default function BoundaryVerificationForm() {
         {/* SECTION 3: Boundary Markers (Geocam Only) */}
         <SectionCard
           title="Boundary Markers"
-          subtitle={`${images.length + localImages.length} GPS photo${(images.length + localImages.length) !== 1 ? "s" : ""} · Tap to add`}
+          subtitle={`${images.length + localImages.length} GPS photo${images.length + localImages.length !== 1 ? "s" : ""} · Tap to add`}
           iconName="map-marker"
           iconLib="mci"
           accentColor="#0369A1"
@@ -1105,27 +1113,37 @@ export default function BoundaryVerificationForm() {
                   <View style={styles.thumbOverlay}>
                     <Ionicons name="eye-outline" size={14} color="#fff" />
                   </View>
-                  
-                  {(img.latitude != null && img.longitude != null) && (
+
+                  {img.latitude != null && img.longitude != null && (
                     <View style={styles.thumbCoords}>
                       <Text style={styles.thumbCoordsText}>
-                        {typeof img.latitude === 'number' ? img.latitude.toFixed(4) : img.latitude}, 
-                        {typeof img.longitude === 'number' ? img.longitude.toFixed(4) : img.longitude}
+                        {typeof img.latitude === "number"
+                          ? img.latitude.toFixed(4)
+                          : img.latitude}
+                        ,{" "}
+                        {typeof img.longitude === "number"
+                          ? img.longitude.toFixed(4)
+                          : img.longitude}
                       </Text>
                     </View>
                   )}
                 </TouchableOpacity>
-                
+
                 {img.description ? (
                   <Text style={styles.thumbNote} numberOfLines={1}>
                     {img.description}
                   </Text>
                 ) : (
-                  <Text style={[styles.thumbNote, { color: "#94A3B8", fontStyle: "italic" }]}>
+                  <Text
+                    style={[
+                      styles.thumbNote,
+                      { color: "#94A3B8", fontStyle: "italic" },
+                    ]}
+                  >
                     No note
                   </Text>
                 )}
-                
+
                 {!isViewMode && (
                   <TouchableOpacity
                     style={styles.deletePhotoBtn}
@@ -1152,7 +1170,6 @@ export default function BoundaryVerificationForm() {
             )}
           </ScrollView>
 
-          {/* ✅ NEW: Render local images */}
           {renderLocalImages()}
 
           {images.length === 0 && localImages.length === 0 && isViewMode && (
@@ -1249,7 +1266,7 @@ export default function BoundaryVerificationForm() {
           onClose={() => setShowGPSCamera(false)}
         />
       </Modal>
-      
+
       {/* Custom Note Modal */}
       <Modal
         visible={showNoteModal}
@@ -1260,8 +1277,10 @@ export default function BoundaryVerificationForm() {
         <View style={modalStyles.overlay}>
           <View style={modalStyles.modal}>
             <Text style={modalStyles.title}>Add Note for This Photo</Text>
-            <Text style={modalStyles.subtitle}>Describe this boundary marker (optional)</Text>
-            
+            <Text style={modalStyles.subtitle}>
+              Describe this boundary marker (optional)
+            </Text>
+
             <TextInput
               style={modalStyles.input}
               placeholder="e.g., BM-01 concrete post, intact"
@@ -1273,7 +1292,7 @@ export default function BoundaryVerificationForm() {
               numberOfLines={3}
               textAlignVertical="top"
             />
-            
+
             <View style={modalStyles.buttons}>
               <TouchableOpacity
                 style={modalStyles.cancelBtn}
@@ -1614,7 +1633,6 @@ const styles = StyleSheet.create({
   },
   addPhotoBtnGPS: { borderColor: "#BBF7D0", backgroundColor: "#F0FDF4" },
   addPhotoBtnText: { fontSize: 10, color: "#0369A1", fontWeight: "600" },
-  // ✅ NEW: Local images section styles
   localImagesSection: {
     marginTop: 12,
     paddingTop: 12,

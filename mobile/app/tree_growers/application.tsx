@@ -19,48 +19,137 @@ import {
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
-import * as MapViewLib from "react-native-maps";
+import { WebView } from "react-native-webview";
+
 import { Ionicons } from "@expo/vector-icons";
-import { api } from "@/constants/url_fixed";
 
-// Fallback component for web since react-native-maps is native-only
-const FallbackMap = (props: any) => (
-  <View
-    style={[
-      props.style,
-      {
-        backgroundColor: "#E8F5E9",
-        justifyContent: "center",
-        alignItems: "center",
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: "#C8E6C9",
-      },
-    ]}
-  >
-    <Ionicons name="map-outline" size={24} color="#2E7D32" />
-    <Text
-      style={{
-        color: "#2E7D32",
-        fontSize: 12,
-        fontWeight: "600",
-        marginTop: 4,
+import { api, MAPBOX_TOKEN } from "@/constants/url_fixed";
+
+// ─── FIXED OSM / Leaflet Map Component ─────────────────────────────────────
+const OSMMap = ({
+  region,
+  polygon,
+  marker,
+  style,
+}: {
+  region: any;
+  polygon: any[];
+  marker: any | null;
+  style?: any;
+}) => {
+  // ✅ Safe fallbacks to prevent Leaflet crashes from undefined coordinates
+  const safeLat = region?.latitude || 11.036;
+  const safeLng = region?.longitude || 124.635;
+
+  // ✅ Robust polygon parsing (handles both arrays and objects)
+  const safePolygon =
+    polygon && polygon.length > 0
+      ? JSON.stringify(
+          polygon.map((p) => (Array.isArray(p) ? p : [p.latitude, p.longitude]))
+        )
+      : "[]";
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      <style>
+        /* ✅ CRITICAL: Explicit heights prevent WebView collapsing to 0px */
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+        #map { width: 100%; height: 100vh; }
+        .leaflet-control-attribution { font-size: 9px; background: rgba(255,255,255,0.7); }
+        .custom-marker-wrapper { background: transparent; border: none; }
+      </style>
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    </head>
+    <body>
+      <div id="map"></div>
+      <script>
+        try {
+          var map = L.map('map', {
+            center: [${safeLat}, ${safeLng}],
+            zoom: 15,
+            zoomControl: true
+          });
+          
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap',
+            maxZoom: 19,
+            crossOrigin: true
+          }).addTo(map);
+          
+          var polygonCoords = ${safePolygon};
+          if (polygonCoords.length > 0) {
+            var poly = L.polygon(polygonCoords, {
+              color: '#0F4A2F',
+              fillColor: '#0F4A2F',
+              fillOpacity: 0.3,
+              weight: 2
+            }).addTo(map);
+            map.fitBounds(poly.getBounds(), { padding: [20, 20] });
+          }
+          
+          ${
+            marker
+              ? `
+          var customIcon = L.divIcon({
+            className: 'custom-marker-wrapper',
+            html: '<div style="width: 20px; height: 20px; background-color: #0F4A2F; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+          });
+          L.marker([${marker?.latitude || safeLat}, ${marker?.longitude || safeLng}], {icon: customIcon}).addTo(map)
+            .bindPopup('${marker?.title || "Site"}');
+          `
+              : ""
+          }
+          
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({type: 'info', message: 'Map loaded successfully'}));
+          }
+        } catch(e) {
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({type: 'error', message: e.message}));
+          }
+        }
+      </script>
+    </body>
+    </html>
+  `;
+
+  return (
+    <WebView
+      source={{ html }}
+      style={style || { flex: 1, width: "100%", height: "100%" }}
+      scrollEnabled={false}
+      javaScriptEnabled={true}
+      domStorageEnabled={true}
+      
+      // ✅ CRITICAL PROPS FOR ANDROID / EXPO GO
+      mixedContentMode="always" 
+      originWhitelist={["*"]}
+      androidHardwareAccelerationDisabled={true} // ✅ Fixes blank/gray map tiles on Android
+      setSupportMultipleWindows={false} // ✅ Prevents WebView crashes/blank screens
+      nestedScrollEnabled={true} // ✅ Allows parent ScrollView to scroll when touching map
+      
+      onMessage={(event) => {
+        try {
+          const data = JSON.parse(event.nativeEvent.data);
+          if (data.type === "error") {
+            console.error("🗺️ Map JS Error:", data.message);
+          } else {
+            console.log("🗺️ Map Info:", data.message);
+          }
+        } catch (e) {}
       }}
-    >
-      Map view is not available on web
-    </Text>
-  </View>
-);
-
-const MapView = (
-  Platform.OS === "web" ? FallbackMap : MapViewLib.default || MapViewLib
-) as any;
-const Marker = (
-  Platform.OS === "web" ? () => null : MapViewLib.Marker || (() => null)
-) as any;
-const Polygon = (
-  Platform.OS === "web" ? () => null : MapViewLib.Polygon || (() => null)
-) as any;
+      onError={(syntheticEvent) => {
+        console.error("🗺️ WebView Native Error: ", syntheticEvent.nativeEvent);
+      }}
+    />
+  );
+};
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -879,7 +968,7 @@ const ApplicationPage: React.FC = () => {
                           source={{
                             uri: img.image_url?.startsWith("http")
                               ? img.image_url
-                              : `${img.image_url}`,
+                              : `${api}${img.image_url}`, // ✅ FIXED: Prepend API URL if relative
                           }}
                           style={{
                             width: "100%",
@@ -1081,28 +1170,13 @@ const ApplicationPage: React.FC = () => {
                   style={styles.mapPreviewWrap}
                   onPress={() => setShowMap(true)}
                 >
-                  <MapView
-                    style={StyleSheet.absoluteFill}
-                    initialRegion={getMapRegion()}
-                    scrollEnabled={false}
-                    zoomEnabled={false}
-                    pointerEvents="none"
-                  >
-                    {polygonCoords.length > 0 && (
-                      <Polygon
-                        coordinates={polygonCoords}
-                        strokeColor="#0F4A2F"
-                        fillColor="rgba(15,74,47,0.3)"
-                        strokeWidth={2}
-                      />
-                    )}
-                    {centroid && (
-                      <Marker
-                        coordinate={centroid}
-                        title={assigned_site.name}
-                      />
-                    )}
-                  </MapView>
+                  <OSMMap
+                    region={getMapRegion()}
+                    polygon={polygonCoords}
+                    marker={centroid}
+                    style={{ width: "100%", height: "100%" }}
+                  />
+
                   <View style={styles.mapTapOverlay}>
                     <Ionicons name="expand-outline" size={16} color="#fff" />
                     <Text style={styles.mapTapText}>Tap to expand map</Text>
@@ -1287,7 +1361,6 @@ const ApplicationPage: React.FC = () => {
                 </Text>
               </View>
             ) : (
-              // ✅ FIX: Replaced FlatList with .map() to avoid nesting VirtualizedLists inside ScrollView
               allProgressReports.map((item) => (
                 <TouchableOpacity
                   key={item.report_id}
@@ -1348,25 +1421,13 @@ const ApplicationPage: React.FC = () => {
         onRequestClose={() => setShowMap(false)}
       >
         <View style={{ flex: 1 }}>
-          <MapView
-            style={StyleSheet.absoluteFill}
-            initialRegion={getMapRegion()}
-          >
-            {polygonCoords.length > 0 && (
-              <Polygon
-                coordinates={polygonCoords}
-                strokeColor="#0F4A2F"
-                fillColor="rgba(15,74,47,0.3)"
-                strokeWidth={3}
-              />
-            )}
-            {centroid && (
-              <Marker
-                coordinate={centroid}
-                title={assigned_site?.name ?? "Site"}
-              />
-            )}
-          </MapView>
+          <OSMMap
+            region={getMapRegion()}
+            polygon={polygonCoords}
+            marker={centroid}
+            style={{ flex: 1 }}
+          />
+
           <View style={styles.mapModalBar}>
             <TouchableOpacity
               style={styles.mapCloseBtn}
@@ -1508,7 +1569,7 @@ const ApplicationPage: React.FC = () => {
                     source={{
                       uri: reportDetailModal.proof_image.startsWith("http")
                         ? reportDetailModal.proof_image
-                        : `${reportDetailModal.proof_image}`,
+                        : `${api}${reportDetailModal.proof_image}`, // ✅ FIXED: Prepend API URL if relative
                     }}
                     style={sheet.proofImage}
                     resizeMode="cover"
@@ -2208,6 +2269,22 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontStyle: "italic",
   },
+  markerContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  markerDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#0F4A2F",
+    borderWidth: 3,
+    borderColor: "#fff",
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
 });
 
 const badge = StyleSheet.create({
@@ -2320,7 +2397,6 @@ const form_ = StyleSheet.create({
     marginBottom: 12,
   },
   textarea: { height: 96, paddingTop: 12 },
-
   actions: { flexDirection: "row", gap: 12, marginTop: 10 },
   cancelBtn: {
     flex: 1,
@@ -2349,5 +2425,4 @@ const form_ = StyleSheet.create({
   submitDisabled: { opacity: 0.6 },
   submitTxt: { color: "#fff", fontWeight: "800", fontSize: 14 },
 });
-
 export default ApplicationPage;

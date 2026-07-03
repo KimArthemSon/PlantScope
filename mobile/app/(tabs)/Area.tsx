@@ -15,14 +15,13 @@ import {
   RefreshControl,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
-import MapView, { Marker } from "react-native-maps";
+import { WebView } from "react-native-webview"; 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 
 const screenHeight = Dimensions.get("window").height;
 const API_BASE_URL = api + "/api";
 
-// ✅ UPDATED: Match new minimal API response structure (No barangay, no polygon)
 type ReforestationArea = {
   reforestation_area_id: string;
   assigned_onsite_inspector_id: string;
@@ -39,7 +38,6 @@ const ReforestationAreas: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(null);
   
-  // ✅ NEW: State for the Assessment Type Action Sheet
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
   const [actionSheetArea, setActionSheetArea] = useState<ReforestationArea | null>(null);
 
@@ -51,6 +49,77 @@ const ReforestationAreas: React.FC = () => {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   
   const router = useRouter();
+
+  // ✅ FIXED: Generate OpenStreetMap HTML with proper CSS heights and error handling
+  const generateMapHtml = (lat: number, lng: number, title: string) => {
+    const safeLat = lat || 11.0;
+    const safeLng = lng || 124.6;
+    const safeTitle = title ? title.replace(/'/g, "\\'").replace(/"/g, '\\"') : "Area";
+    
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>
+          /* ✅ FIX: Explicitly set html/body height to prevent 100vh from collapsing */
+          html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+          #map { width: 100%; height: 100vh; }
+          .custom-marker {
+            background-color: #0F4A2F;
+            border: 3px solid #fff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          }
+          .leaflet-div-icon {
+            background: transparent;
+            border: none;
+          }
+        </style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          try {
+            var map = L.map('map', {
+              zoomControl: true,
+              attributionControl: true
+            }).setView([${safeLat}, ${safeLng}], 15);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '© OpenStreetMap contributors',
+              maxZoom: 19,
+              crossOrigin: true,
+              errorTileUrl: ''
+            }).addTo(map);
+            
+            var customIcon = L.divIcon({
+              className: 'custom-marker-wrapper',
+              html: '<div class="custom-marker"></div>',
+              iconSize: [20, 20],
+              iconAnchor: [10, 10]
+            });
+            
+            L.marker([${safeLat}, ${safeLng}], {icon: customIcon})
+              .addTo(map)
+              .bindPopup('${safeTitle}')
+              .openPopup();
+              
+            // Send success message to React Native
+            window.ReactNativeWebView.postMessage(JSON.stringify({type: 'info', message: 'Map loaded successfully'}));
+          } catch(e) {
+            // Send error message to React Native if Leaflet fails to initialize
+            window.ReactNativeWebView.postMessage(JSON.stringify({type: 'error', message: e.message}));
+          }
+        </script>
+      </body>
+      </html>
+    `;
+  };
 
   const fetchAssignedAreas = useCallback(async (showRefreshIndicator = false) => {
     if (showRefreshIndicator) setRefreshing(true);
@@ -70,7 +139,6 @@ const ReforestationAreas: React.FC = () => {
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
 
-      // ✅ UPDATED: Simplified mapping
       const mappedAreas: ReforestationArea[] = data.map((item: any) => {
         const { lat, lng, coordDisplay } = parseCoordinate(item.coordinate);
         return {
@@ -124,9 +192,8 @@ const ReforestationAreas: React.FC = () => {
   const openModal = (area: ReforestationArea) => { setSelectedArea(area); setModalVisible(true); };
   const closeModal = () => { setSelectedArea(null); setModalVisible(false); };
 
-  // ✅ NEW: Action Sheet Handlers
   const openActionSheet = (area: ReforestationArea) => {
-    closeModal(); // Close map modal if open
+    closeModal(); 
     setActionSheetArea(area);
     setActionSheetVisible(true);
   };
@@ -134,11 +201,11 @@ const ReforestationAreas: React.FC = () => {
   const handleGeneralAssessment = () => {
     if (actionSheetArea) {
       router.push({
-        pathname: "/feedbacks/site_field_assessment", // Your form screen
+        pathname: "/feedbacks/site_field_assessment", 
         params: { 
           areaId: actionSheetArea.reforestation_area_id, 
           areaName: actionSheetArea.name,
-          assessmentType: 'general' // Tells next screen to send site_id = null
+          assessmentType: 'general' 
         },
       });
     }
@@ -148,11 +215,11 @@ const ReforestationAreas: React.FC = () => {
   const handleSpecificAssessment = () => {
     if (actionSheetArea) {
       router.push({
-        pathname: "/feedbacks/select_site", // You need a screen to list sites for this area
+        pathname: "/feedbacks/select_site", 
         params: { 
           areaId: actionSheetArea.reforestation_area_id, 
           areaName: actionSheetArea.name,
-          assessmentType: 'specific' // Tells next screen to require site_id
+          assessmentType: 'specific' 
         },
       });
     }
@@ -207,7 +274,6 @@ const ReforestationAreas: React.FC = () => {
                   <Text style={styles.cardName} numberOfLines={1}>{area.name}</Text>
                 </View>
 
-                {/* ✅ REMOVED: Barangay meta row */}
                 <View style={styles.metaRow}>
                   <Ionicons name="navigate-outline" size={13} color="#9CA3AF" />
                   <Text style={styles.metaText}>{area.coord_display}</Text>
@@ -219,7 +285,6 @@ const ReforestationAreas: React.FC = () => {
                     <Text style={styles.viewBtnText}>View Map</Text>
                   </TouchableOpacity>
                   
-                  {/* ✅ UPDATED: Opens Action Sheet instead of navigating directly */}
                   <TouchableOpacity style={styles.assessBtn} onPress={() => openActionSheet(area)} activeOpacity={0.85}>
                     <Text style={styles.assessBtnText}>Start Assessment</Text>
                     <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
@@ -246,9 +311,31 @@ const ReforestationAreas: React.FC = () => {
             {selectedArea && (
               <>
                 <View style={styles.dragHandle} />
-                <MapView style={styles.map} initialRegion={{ latitude: selectedArea.latitude, longitude: selectedArea.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 }}>
-                  <Marker coordinate={{ latitude: selectedArea.latitude, longitude: selectedArea.longitude }} title={selectedArea.name} />
-                </MapView>
+                
+                {/* ✅ FIXED: Added mixedContentMode, onError, and onMessage for debugging */}
+                <WebView
+                  source={{ html: generateMapHtml(selectedArea.latitude, selectedArea.longitude, selectedArea.name) }}
+                  style={styles.map}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  mixedContentMode="always" // Crucial for Android to load external tiles/scripts
+                  startInLoadingState={true}
+                  originWhitelist={['*']}
+                  onMessage={(event) => {
+                    try {
+                      const data = JSON.parse(event.nativeEvent.data);
+                      if (data.type === 'error') {
+                        console.error('Map JS Error:', data.message);
+                        Alert.alert('Map Error', data.message);
+                      }
+                    } catch (e) {}
+                  }}
+                  onError={(syntheticEvent) => {
+                    const { nativeEvent } = syntheticEvent;
+                    console.error('WebView Native Error: ', nativeEvent);
+                    Alert.alert('WebView Error', nativeEvent.description || 'Failed to load map');
+                  }}
+                />
 
                 <ScrollView style={styles.modalInfo} showsVerticalScrollIndicator={false}>
                   <Text style={styles.modalTitle}>{selectedArea.name}</Text>
@@ -268,7 +355,7 @@ const ReforestationAreas: React.FC = () => {
         </View>
       </Modal>
 
-      {/* ✅ NEW: Assessment Type Action Sheet */}
+      {/* Assessment Type Action Sheet */}
       <Modal animationType="slide" transparent visible={actionSheetVisible} onRequestClose={() => setActionSheetVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setActionSheetVisible(false)}>
           <Pressable style={styles.actionSheet} onPress={(e) => e.stopPropagation()}>
@@ -339,7 +426,10 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
   modalSheet: { height: screenHeight * 0.6, backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: "hidden" },
   dragHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#E5E7EB", alignSelf: "center", marginTop: 10, marginBottom: 8 },
-  map: { width: "100%", height: 230, backgroundColor: "#E5E7EB" },
+  
+  // ✅ FIXED: Gave the map a fixed height to prevent Flexbox bugs inside the Modal
+  map: { width: "100%", height: screenHeight * 0.35, backgroundColor: "#E5E7EB" }, 
+  
   modalInfo: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
   modalTitle: { fontSize: 18, fontWeight: "700", color: "#0F2D1C", marginBottom: 16 },
   infoRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 14 },
@@ -353,7 +443,6 @@ const styles = StyleSheet.create({
   startBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
   scrollView: { flex: 1 },
 
-  // ✅ NEW: Action Sheet Styles
   actionSheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40, gap: 16 },
   actionSheetTitle: { fontSize: 18, fontWeight: "700", color: "#0F2D1C", textAlign: "center" },
   actionSheetSubtitle: { fontSize: 13, color: "#6B7280", textAlign: "center", marginBottom: 8 },

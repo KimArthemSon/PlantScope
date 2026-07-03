@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   View,
@@ -15,41 +15,147 @@ import {
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
+import { WebView } from "react-native-webview";
+
 import { api } from "@/constants/url_fixed";
-import MapView, { Marker, Polygon } from "react-native-maps";
 
 const { width } = Dimensions.get("window");
 
-// Web fallback for maps
-const FallbackMap = (props: any) => (
-  <View
-    style={[
-      props.style,
-      {
-        backgroundColor: "#E8F5E9",
-        justifyContent: "center",
-        alignItems: "center",
-        borderRadius: 12,
-      },
-    ]}
-  >
-    <Ionicons name="map-outline" size={48} color="#2E7D32" />
-    <Text
-      style={{
-        color: "#2E7D32",
-        fontSize: 12,
-        fontWeight: "600",
-        marginTop: 4,
-      }}
-    >
-      Map view is not available on web
-    </Text>
-  </View>
-);
+// --- OSM / Leaflet Map Component ---
 
-const MapViewComponent = Platform.OS === "web" ? FallbackMap : MapView;
-const MarkerComponent = Platform.OS === "web" ? () => null : Marker;
-const PolygonComponent = Platform.OS === "web" ? () => null : Polygon;
+interface OsmMapProps {
+  centerCoordinate: [number, number]; // [lat, lng]
+  polygonCoordinates: [number, number][] | null; // [[lat, lng], ...]
+  title: string;
+  style?: any;
+}
+
+const OsmMapComponent = ({
+  centerCoordinate,
+  polygonCoordinates,
+  title,
+  style,
+}: OsmMapProps) => {
+  const webViewRef = useRef<WebView>(null);
+
+  // Generate the HTML content for Leaflet
+  const generateMapHtml = () => {
+    const [lat, lng] = centerCoordinate || [11.0, 124.6];
+    const safeLat = lat || 11.0;
+    const safeLng = lng || 124.6;
+    
+    // ✅ FIX: Escape quotes for safe JS string injection
+    const safeTitle = title ? title.replace(/'/g, "\\'").replace(/"/g, '\\"') : "Site Location";
+    
+    // Prepare Polygon Data for JS injection
+    let polygonScript = "";
+    if (polygonCoordinates && polygonCoordinates.length >= 3) {
+      const points = JSON.stringify(polygonCoordinates);
+      
+      polygonScript = `
+        // Draw Polygon
+        var polygon = L.polygon(${points}, {
+          color: '#0F4A2F',
+          fillColor: '#0F4A2F',
+          fillOpacity: 0.3,
+          weight: 2
+        }).addTo(map);
+        
+        // Fit bounds to show polygon nicely if it exists, otherwise keep center
+        map.fitBounds(polygon.getBounds(), { padding: [50, 50] });
+      `;
+    }
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>
+          /* ✅ FIX: Explicitly set html/body height to prevent 100vh from collapsing */
+          html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+          #map { width: 100%; height: 100vh; }
+          .leaflet-control-attribution { font-size: 9px; background: rgba(255,255,255,0.7); }
+          .custom-div-icon { background: transparent; border: none; }
+        </style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          try {
+            // Initialize map centered on the site
+            var map = L.map('map', { zoomControl: true, attributionControl: true }).setView([${safeLat}, ${safeLng}], 15);
+
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '&copy; OpenStreetMap contributors',
+              maxZoom: 19,
+              crossOrigin: true,
+              errorTileUrl: ''
+            }).addTo(map);
+
+            // Custom Marker Style
+            var greenIcon = L.divIcon({
+              className: 'custom-div-icon',
+              html: "<div style='background-color:#0F4A2F; width:16px; height:16px; border-radius:50%; border:2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'></div>",
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
+            });
+
+            // Add Marker for Center
+            var marker = L.marker([${safeLat}, ${safeLng}], {icon: greenIcon}).addTo(map);
+            marker.bindPopup("<b>${safeTitle}</b><br>Site Location").openPopup();
+
+            ${polygonScript}
+
+            // Disable scroll zoom to prevent conflict with parent ScrollView
+            map.scrollWheelZoom.disable();
+            
+            // Send success message to React Native
+            window.ReactNativeWebView.postMessage(JSON.stringify({type: 'info', message: 'Map loaded successfully'}));
+          } catch(e) {
+            // Send error message to React Native if Leaflet fails to initialize
+            window.ReactNativeWebView.postMessage(JSON.stringify({type: 'error', message: e.message}));
+          }
+        </script>
+      </body>
+      </html>
+    `;
+  };
+
+  return (
+    <View style={[styles.mapContainer, style]}>
+      <WebView
+        ref={webViewRef}
+        source={{ html: generateMapHtml() }}
+        style={styles.webview}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        mixedContentMode="always" // ✅ Crucial for Android to load external tiles/scripts
+        scrollEnabled={false} // Important for nested scrolling
+        nestedScrollEnabled={true} // ✅ Allows Android to scroll the parent ScrollView when touching the map
+        originWhitelist={['*']}
+        onMessage={(event: any) => {
+          try {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.type === 'error') {
+              console.error('Map JS Error:', data.message);
+              Alert.alert('Map Error', data.message);
+            }
+          } catch (e) {}
+        }}
+        onError={(syntheticEvent: any) => {
+          const { nativeEvent } = syntheticEvent;
+          console.error('WebView Native Error: ', nativeEvent);
+        }}
+      />
+    </View>
+  );
+};
+
+// --- Main Screen Component ---
 
 interface SiteDetails {
   site_id: number;
@@ -88,7 +194,7 @@ export default function SiteDetails() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const siteId = params.site_id as string;
-  const hasOngoing = params.has_ongoing === "true"; // ✅ Get ongoing application status
+  const hasOngoing = params.has_ongoing === "true";
 
   const [details, setDetails] = useState<SiteDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,12 +210,11 @@ export default function SiteDetails() {
         `${api}/api/get_site_details_for_tree_grower/${siteId}/`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        },
+        }
       );
 
       const data = await res.json();
-      if (!res.ok)
-        throw new Error(data.error || "Failed to fetch site details");
+      if (!res.ok) throw new Error(data.error || "Failed to fetch site details");
       setDetails(data);
     } catch (err: any) {
       console.error("Fetch details error:", err);
@@ -128,7 +233,7 @@ export default function SiteDetails() {
       Alert.alert(
         "Cannot Apply",
         "You already have an ongoing application. Please wait for it to be completed or rejected before applying to a new site.",
-        [{ text: "OK" }],
+        [{ text: "OK" }]
       );
       return;
     }
@@ -192,14 +297,14 @@ export default function SiteDetails() {
                 <View key={img.image_id} style={styles.carouselImageWrapper}>
                   <Image
                     source={{
+                      // ✅ FIXED: Prepend API URL if the backend returns a relative path
                       uri: img.url?.startsWith("http")
                         ? img.url
-                        : `${img.url}`,
+                        : `${api}${img.url}`, 
                     }}
                     style={styles.carouselImage}
                     resizeMode="cover"
                   />
-                 
                 </View>
               ))}
             </ScrollView>
@@ -310,9 +415,7 @@ export default function SiteDetails() {
               <View key={species.species_id} style={styles.speciesCard}>
                 <View style={styles.speciesHeader}>
                   <View style={styles.speciesRank}>
-                    <Text style={styles.rankText}>
-                      #{species.priority_rank}
-                    </Text>
+                    <Text style={styles.rankText}>#{species.priority_rank}</Text>
                   </View>
                   <Text style={styles.speciesName}>{species.name}</Text>
                 </View>
@@ -327,45 +430,16 @@ export default function SiteDetails() {
           </View>
         )}
 
-        {/* ✅ REAL MAP IMPLEMENTATION */}
+        {/* ✅ OPENSTREETMAP IMPLEMENTATION */}
         {details.center_coordinate && (
           <View style={styles.contentSection}>
             <Text style={styles.sectionTitle}>Location Map</Text>
-            <View style={styles.mapContainer}>
-              <MapViewComponent
-                style={styles.map}
-                initialRegion={{
-                  latitude: details.center_coordinate[0],
-                  longitude: details.center_coordinate[1],
-                  latitudeDelta: 0.01,
-                  longitudeDelta: 0.01,
-                }}
-                scrollEnabled={false}
-                zoomEnabled={false}
-                pitchEnabled={false}
-                rotateEnabled={false}
-              >
-                {details.polygon_coordinates &&
-                  details.polygon_coordinates.length >= 3 && (
-                    <PolygonComponent
-                      coordinates={details.polygon_coordinates.map((c) => ({
-                        latitude: c[0],
-                        longitude: c[1],
-                      }))}
-                      strokeColor="#0F4A2F"
-                      fillColor="rgba(15, 74, 47, 0.3)"
-                      strokeWidth={2}
-                    />
-                  )}
-                <MarkerComponent
-                  coordinate={{
-                    latitude: details.center_coordinate[0],
-                    longitude: details.center_coordinate[1],
-                  }}
-                  title={details.name}
-                />
-              </MapViewComponent>
-            </View>
+            <OsmMapComponent
+              centerCoordinate={details.center_coordinate}
+              polygonCoordinates={details.polygon_coordinates}
+              title={details.name}
+              style={styles.mapWrapper}
+            />
           </View>
         )}
 
@@ -422,15 +496,6 @@ const styles = StyleSheet.create({
   carouselContainer: { backgroundColor: "#fff", marginBottom: 16 },
   carouselImageWrapper: { width: width, height: 280 },
   carouselImage: { width: "100%", height: "100%" },
-  imageCaption: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    padding: 12,
-  },
-  captionText: { color: "#fff", fontSize: 13, fontWeight: "500" },
   pagination: {
     flexDirection: "row",
     justifyContent: "center",
@@ -577,15 +642,21 @@ const styles = StyleSheet.create({
   },
   speciesNotes: { fontSize: 12, color: "#0F4A2F", fontStyle: "italic" },
 
-  // ✅ Map Styles
-  mapContainer: {
+  // ✅ Map Styles for WebView
+  mapWrapper: {
+    height: 250,
     borderRadius: 12,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    height: 250,
   },
-  map: { width: "100%", height: "100%" },
+  mapContainer: {
+    width: "100%",
+    height: "100%",
+  },
+  webview: {
+    flex: 1,
+  },
 
   // Apply Button
   applyButton: {

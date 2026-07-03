@@ -10,7 +10,7 @@ const CustomHeader: React.FC = () => {
   const insets = useSafeAreaInsets();
 
   // TODO: Replace these with actual data from your Auth Context or AsyncStorage
-  const userName = "Tree Grower"; 
+  const userName = "Tree Grower";
   const userEmail = "grower@plantscopev2.ph";
 
   return (
@@ -135,13 +135,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
-       <Tabs.Screen
+      <Tabs.Screen
         name="siteDetails"
         options={{
           href: null,
         }}
       />
-      
+
       {/* ✅ HIDE REPORTS FROM TAB BAR (Now accessed via a button inside the Profile screen) */}
       <Tabs.Screen
         name="reports"
