@@ -3,15 +3,16 @@ import string
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.core.cache import cache
-from django.core.mail import send_mail
 import json
 import re
 from django.conf import settings
 
 from django.core.mail import EmailMultiAlternatives
-from django.template.loader import render_to_string
 from email.mime.image import MIMEImage
 import os
+
+# ✅ 1. Import your User model here
+from .models import User 
 
 
 @csrf_exempt
@@ -27,6 +28,10 @@ def send_otp(request):
     email = body.get('email', '').strip().lower()
     if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
         return JsonResponse({'error': 'A valid email is required.'}, status=400)
+
+    # ✅ 2. Check if the email already exists in the database
+    if User.objects.filter(email=email).exists():
+        return JsonResponse({'error': 'This email is already registered. Please use another email or log in.'}, status=400)
 
     # Rate-limit: block if a fresh OTP was sent in the last 60 seconds
     if cache.get(f'otp_cooldown_{email}'):
@@ -170,4 +175,3 @@ def verify_otp(request):
     cache.delete(f'otp_{email}')
     cache.delete(f'otp_cooldown_{email}')
     return JsonResponse({'message': 'Email verified successfully.'}, status=200)
-

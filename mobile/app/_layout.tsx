@@ -9,33 +9,35 @@ import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { AlertProvider } from "@/components/AlertContext";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   return (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <Stack>
-        {/* Login screen first */}
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="homepage" options={{ headerShown: false }} />
-        <Stack.Screen name="signup" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="privacy_policy" options={{ headerShown: false }} />
-        <Stack.Screen name="terms_and_conditions" options={{ headerShown: false }} />
-        <Stack.Screen name="feedbacks" options={{ headerShown: false }} />
-        <Stack.Screen name="tree_growers" options={{ headerShown: false }} />
+    <AlertProvider>
+      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+        <Stack>
+          {/* Login screen first */}
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="homepage" options={{ headerShown: false }} />
+          <Stack.Screen name="signup" options={{ headerShown: false }} />
+          <Stack.Screen name="privacy_policy" options={{ headerShown: false }} />
+          <Stack.Screen name="terms_and_conditions" options={{ headerShown: false }} />
+          <Stack.Screen name="feedbacks" options={{ headerShown: false }} />
+          <Stack.Screen name="tree_growers" options={{ headerShown: false }} />
 
-        {/* Tabs after login */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="editProfile" options={{ headerShown: false }} />
+          {/* Tabs after login */}
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="editProfile" options={{ headerShown: false }} />
 
-        <Stack.Screen
-          name="modal"
-          options={{ presentation: "modal", title: "Modal" }}
-        />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+          <Stack.Screen
+            name="modal"
+            options={{ presentation: "modal", title: "Modal" }}
+          />
+        </Stack>
+        <StatusBar style="auto" />
+      </ThemeProvider>
+    </AlertProvider>
   );
 }

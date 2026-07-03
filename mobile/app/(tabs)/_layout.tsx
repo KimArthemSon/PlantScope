@@ -1,27 +1,123 @@
-import React from "react";
-import { TouchableOpacity, View, Text, Image, StyleSheet } from "react-native";
-import { Tabs } from "expo-router";
+import React, { useState, useEffect } from "react";
+import {
+  TouchableOpacity,
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  ActivityIndicator,
+  Platform,
+} from "react-native";
+import { Tabs, useRouter } from "expo-router";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as SecureStore from "expo-secure-store";
+import { api } from "@/constants/url_fixed";
+
+const API = api + "/api";
+
+/* ---------- TYPES ---------- */
+type UserData = {
+  id: number;
+  email: string;
+  profile_img: string | null;
+  full_name: string;
+  user_role: string | null;
+};
+
+/* ---------- TOKEN STORAGE ---------- */
+const TOKEN_KEY = "token";
+
+const getToken = async () => {
+  if (Platform.OS === "web") return localStorage.getItem(TOKEN_KEY);
+  return await SecureStore.getItemAsync(TOKEN_KEY);
+};
 
 /* ---------- CUSTOM HEADER ---------- */
-
 const CustomHeader: React.FC = () => {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchUserData();
+  }, []);
+
+  const fetchUserData = async () => {
+    try {
+      const token = await getToken();
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      const res = await fetch(`${API}/get_me/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setUserData(data);
+      }
+    } catch (error) {
+      console.error("Error fetching user data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const displayName = userData?.full_name || "Inspector";
+  const displayEmail = userData?.email || "Loading...";
+  const profileImage = userData?.profile_img;
+
+  // Get initials for fallback
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || "I";
+  };
 
   return (
     <View style={[hdr.wrap, { paddingTop: insets.top + 10 }]}>
       {/* Left: avatar + name + email */}
-      <View style={hdr.left}>
-        <Image
-          source={require("../../assets/images/logo.jpg")}
-          style={hdr.avatar}
-        />
-        <View>
-          <Text style={hdr.name}>Juan dela Cruz</Text>
-          <Text style={hdr.email}>inspector@plantscopev2.ph</Text>
+      <TouchableOpacity
+        style={hdr.left}
+        activeOpacity={0.7}
+        onPress={() => router.push("/profile")}
+      >
+        {loading ? (
+          <View style={hdr.avatarPlaceholder}>
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          </View>
+        ) : profileImage ? (
+          <Image
+            source={{ uri: profileImage }}
+            style={hdr.avatar}
+            defaultSource={require("../../assets/images/logo.jpg")}
+          />
+        ) : (
+          <View style={hdr.avatarFallback}>
+            <Text style={hdr.avatarInitials}>{getInitials(displayName)}</Text>
+          </View>
+        )}
+        <View style={hdr.textContainer}>
+          <Text style={hdr.name} numberOfLines={1}>
+            {displayName}
+          </Text>
+          <Text style={hdr.email} numberOfLines={1}>
+            {displayEmail}
+          </Text>
         </View>
-      </View>
+      </TouchableOpacity>
 
       {/* Right: notification bell */}
       <TouchableOpacity style={hdr.bellWrap} activeOpacity={0.7}>
@@ -33,7 +129,6 @@ const CustomHeader: React.FC = () => {
 };
 
 /* ---------- LAYOUT ---------- */
-
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
 
@@ -77,32 +172,28 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Grow — floating center */}
-
-<Tabs.Screen
-  name="Area"
-  options={{
-    tabBarIcon: ({ color, focused }) => (
-      <Ionicons
-        name={focused ? "layers" : "layers-outline"}
-        size={24}
-        color={color}
+      <Tabs.Screen
+        name="Area"
+        options={{
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "layers" : "layers-outline"}
+              size={24}
+              color={color}
+            />
+          ),
+          tabBarLabel: "Assessment",
+        }}
       />
-    ),
-    tabBarLabel: "Assessment",
-  }}
-/>
+
+      {/* Map — floating center */}
       <Tabs.Screen
         name="map"
         options={{
           tabBarLabel: () => null,
           tabBarIcon: () => (
             <View style={styles.centerButton}>
-              <MaterialCommunityIcons
-                name="map"
-                size={28}
-                color="#FFFFFF"
-              />
+              <MaterialCommunityIcons name="map" size={28} color="#FFFFFF" />
             </View>
           ),
           tabBarButton: (props) => (
@@ -117,6 +208,7 @@ export default function TabLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="monitoring"
         options={{
@@ -130,6 +222,7 @@ export default function TabLayout() {
           tabBarLabel: "Monitoring",
         }}
       />
+
       <Tabs.Screen
         name="profile"
         options={{
@@ -148,7 +241,6 @@ export default function TabLayout() {
 }
 
 /* ---------- STYLES ---------- */
-
 const hdr = StyleSheet.create({
   wrap: {
     backgroundColor: "#0F4A2F",
@@ -162,6 +254,8 @@ const hdr = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    flex: 1,
+    marginRight: 10,
   },
   avatar: {
     width: 36,
@@ -169,6 +263,35 @@ const hdr = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  avatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarInitials: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  textContainer: {
+    flex: 1,
   },
   name: {
     fontSize: 14,

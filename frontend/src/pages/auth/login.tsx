@@ -52,7 +52,7 @@ export default function Login() {
         setPSAlert({
           type: "success",
           title: "Login Successful",
-          message: `Welcome ${data.email}!, Redirecting to dashboard...`,
+          message: `Redirecting to dashboard...`,
         });
 
         if (data.token) {
@@ -69,7 +69,7 @@ export default function Login() {
           } else if (data.user_role === "AFA") {
             navigate("/dashboard/AFA");
           }
-        }, 3000);
+        }, 2000);
       }
     } catch (error) {
       setIsLoading(false);
@@ -109,7 +109,7 @@ export default function Login() {
         setPSAlert({
           type: "success",
           title: "Login Successful",
-          message: `Welcome ${data.email}!, Redirecting to dashboard...`,
+          message: `Redirecting to dashboard...`,
         });
 
         if (data.token) {

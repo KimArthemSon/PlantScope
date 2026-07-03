@@ -1,10 +1,31 @@
+import { useState, useEffect } from "react";
 import { useRouter } from "expo-router";
-import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView, Alert } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  ScrollView,
+  ActivityIndicator,
+} from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import { api } from "@/constants/url_fixed";
+import { useAlert } from "@/components/AlertContext";
+
+const API = api + "/api";
+
+/* ---------- TYPES ---------- */
+type UserData = {
+  id: number;
+  email: string;
+  profile_img: string | null;
+  full_name: string;
+  user_role: string | null;
+};
 
 /* ---------- DATA ---------- */
-
 const STATS = [
   { icon: "sprout",              value: "2,456", label: "Trees Planted" },
   { icon: "map-marker-multiple", value: "18",    label: "Sites"         },
@@ -31,27 +52,101 @@ const MENU: {
   },
 ];
 
-/* ---------- SCREEN ---------- */
+/* ---------- ROLE DISPLAY MAP ---------- */
+const roleDisplayMap: Record<string, string> = {
+  treeGrowers: "Tree Grower",
+  OnsiteInspector: "On-Site Inspector",
+  GISSpecialist: "GIS Specialist",
+  CityENROHead: "City ENRO Head",
+  DataManager: "Data Manager",
+};
 
+/* ---------- SCREEN ---------- */
 export default function ProfilePage() {
   const router = useRouter();
+  const alert = useAlert();
 
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch user data on mount
+  useEffect(() => {
+    fetchUserData();
+  }, []);
+
+  const fetchUserData = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) {
+        router.replace("/homepage");
+        return;
+      }
+
+      const res = await fetch(`${API}/get_me/`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setUserData(data);
+      } else {
+        alert.error("Error", "Failed to load profile data.");
+      }
+    } catch (e: any) {
+      alert.error("Network Error", e.message ?? "Unable to fetch profile.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ Custom alert for logout confirmation
   const handleLogout = () => {
-    Alert.alert(
+    alert.confirm(
       "Log Out",
-      "Are you sure you want to log out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Log Out",
-          style: "destructive",
-          onPress: async () => {
-            await SecureStore.deleteItemAsync("token");
-            router.replace("/login");
-          },
-        },
-      ]
+      "Are you sure you want to log out of your account?",
+      async () => {
+        try {
+          await SecureStore.deleteItemAsync("token");
+          alert.success("Logged Out", "You have been successfully logged out.");
+          setTimeout(() => router.replace("/homepage"), 800);
+        } catch (e) {
+          alert.error("Error", "Failed to log out. Please try again.");
+        }
+      },
+      {
+        confirmText: "Yes, Log Out",
+        cancelText: "Cancel",
+        type: "warning",
+      }
     );
+  };
+
+  // ✅ Loading state
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0F4A2F" />
+        <Text style={styles.loadingText}>Loading profile…</Text>
+      </View>
+    );
+  }
+
+  // ✅ Fallback values
+  const displayName = userData?.full_name || "Inspector";
+  const displayEmail = userData?.email || "inspector@plantscope.ph";
+  const profileImage = userData?.profile_img;
+  const userRole = userData?.user_role || "OnsiteInspector";
+  const roleLabel = roleDisplayMap[userRole] || "On-Site Inspector";
+
+  // ✅ Get initials for fallback avatar
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || "I";
   };
 
   return (
@@ -64,18 +159,27 @@ export default function ProfilePage() {
       <View style={styles.heroCard}>
         {/* Avatar */}
         <View style={styles.avatarRing}>
-          <Image
-            source={require("../../assets/images/logo.jpg")}
-            style={styles.avatar}
-          />
+          {profileImage ? (
+            <Image
+              source={{ uri: profileImage }}
+              style={styles.avatar}
+              defaultSource={require("../../assets/images/logo.jpg")}
+            />
+          ) : (
+            <View style={styles.avatarFallback}>
+              <Text style={styles.avatarInitials}>
+                {getInitials(displayName)}
+              </Text>
+            </View>
+          )}
         </View>
 
-        <Text style={styles.heroName}>Juan dela Cruz</Text>
-        <Text style={styles.heroEmail}>inspector@plantscopev2.ph</Text>
+        <Text style={styles.heroName}>{displayName}</Text>
+        <Text style={styles.heroEmail}>{displayEmail}</Text>
 
         <View style={styles.roleBadge}>
           <Ionicons name="shield-checkmark" size={13} color="#0F4A2F" />
-          <Text style={styles.roleText}>On-Site Inspector</Text>
+          <Text style={styles.roleText}>{roleLabel}</Text>
         </View>
       </View>
 
@@ -132,7 +236,6 @@ export default function ProfilePage() {
 }
 
 /* ---------- STYLES ---------- */
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -140,6 +243,17 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: 36,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F4F7F5",
+    gap: 12,
+  },
+  loadingText: {
+    color: "#6B7280",
+    fontSize: 14,
   },
 
   /* Hero */
@@ -165,6 +279,18 @@ const styles = StyleSheet.create({
   avatar: {
     width: "100%",
     height: "100%",
+  },
+  avatarFallback: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarInitials: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
   heroName: {
     fontSize: 20,

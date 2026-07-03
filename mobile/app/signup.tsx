@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'expo-router';
-import { api } from '@/constants/url_fixed';
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "expo-router";
+import { api } from "@/constants/url_fixed";
 import {
   View,
   Text,
@@ -12,297 +12,147 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Platform,
-  Alert,
-  Modal,
-} from 'react-native';
+} from "react-native";
 import {
-  Mail, Lock, Eye, EyeOff, User, Phone, MapPin,
-  Building2, FileText, ChevronRight, ChevronLeft,
-  CheckCircle, Calendar, Leaf, Shield, Check, Users,
-} from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  User,
+  Phone,
+  MapPin,
+  Building2,
+  FileText,
+  ChevronRight,
+  ChevronLeft,
+  CheckCircle,
+  Calendar,
+  Check,
+  Users,
+  Shield,
+} from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 
-const { width: windowWidth } = Dimensions.get('window');
+// ✅ Import extracted components
+import DatePickerModal from "@/components/DatePickerModal";
+import PrivacyPolicyModal from "@/components/PrivacyPolicyModal";
+import TermsModal from "@/components/TermsModal";
+
+// ✅ Import custom alert
+import { useAlert } from "@/components/AlertContext";
+
+const { width: windowWidth } = Dimensions.get("window");
 const MAX_CARD_WIDTH = 480;
 const HORIZONTAL_PADDING = 16;
 
 const inputStyleOverride = {
-  outlineStyle: 'none',
+  outlineStyle: "none",
   outlineWidth: 0,
-  outlineColor: 'transparent',
+  outlineColor: "transparent",
 } as any;
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
 const STEPS = [
-  { label: 'Account', icon: '🔐', Icon: Lock },
-  { label: 'Verify', icon: '📧', Icon: Mail },
-  { label: 'Personal', icon: '👤', Icon: User },
-  { label: 'Group', icon: '🌿', Icon: Building2 },
-  { label: 'Review', icon: '✅', Icon: CheckCircle },
+  { label: "Account", icon: "🔐", Icon: Lock },
+  { label: "Verify", icon: "📧", Icon: Mail },
+  { label: "Personal", icon: "👤", Icon: User },
+  { label: "Group", icon: "🌿", Icon: Building2 },
+  { label: "Review", icon: "✅", Icon: CheckCircle },
 ];
 
 const GROUP_TYPES = [
-  { value: 'formal_org', label: 'Formal Organization' },
-  { value: 'community_group', label: 'Community Group' },
-  { value: 'informal_group', label: 'Informal Group' },
+  { value: "formal_org", label: "Formal Organization" },
+  { value: "community_group", label: "Community Group" },
+  { value: "informal_group", label: "Informal Group" },
 ];
 
-// ─── Date Picker Modal ─────────────────────────────────────────────────────
-type DatePickerModalProps = {
-  visible: boolean;
+// ─── Sub-components (Field, FileButton, GenderPicker, GroupTypePicker, ReviewSection, ReviewRow) ───
+// [Keep these exactly as they were in your original file - no changes needed]
+
+type FieldProps = {
+  label: string;
+  icon?: React.ReactNode;
   value: string;
-  onConfirm: (date: string) => void;
-  onClose: () => void;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+  keyboardType?: any;
+  autoCapitalize?: any;
+  secureTextEntry?: boolean;
+  multiline?: boolean;
+  required?: boolean;
 };
-function DatePickerModal({ visible, value, onConfirm, onClose }: DatePickerModalProps) {
-  const [year, setYear] = useState(2000);
-  const [month, setMonth] = useState(0);
-  const [selectedDay, setSelectedDay] = useState(0);
-
-  useEffect(() => {
-    if (visible) {
-      if (value) {
-        const p = value.split('-');
-        setYear(parseInt(p[0]) || 2000);
-        setMonth((parseInt(p[1]) || 1) - 1);
-        setSelectedDay(parseInt(p[2]) || 0);
-      } else {
-        setYear(2000);
-        setMonth(0);
-        setSelectedDay(0);
-      }
-    }
-  }, [visible]);
-
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDay = new Date(year, month, 1).getDay();
-  const day = Math.min(selectedDay, daysInMonth);
-  const cells: (number | null)[] = [
-    ...Array(firstDay).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  const prevMonth = () => {
-    setSelectedDay(0);
-    if (month === 0) { setMonth(11); setYear(y => y - 1); }
-    else setMonth(m => m - 1);
-  };
-  const nextMonth = () => {
-    setSelectedDay(0);
-    if (month === 11) { setMonth(0); setYear(y => y + 1); }
-    else setMonth(m => m + 1);
-  };
-
-  const confirmDate = () => {
-    if (!day) return;
-    onConfirm(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
-    onClose();
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={dpStyles.overlay}>
-        <View style={dpStyles.container}>
-          <Text style={dpStyles.title}>Select Date</Text>
-          <View style={dpStyles.navRow}>
-            <TouchableOpacity onPress={() => { setYear(y => y - 1); setSelectedDay(0); }} style={dpStyles.navBtn}>
-              <ChevronLeft size={15} color="#4caf72" />
-            </TouchableOpacity>
-            <Text style={dpStyles.yearLabel}>{year}</Text>
-            <TouchableOpacity onPress={() => { setYear(y => y + 1); setSelectedDay(0); }} style={dpStyles.navBtn}>
-              <ChevronRight size={15} color="#4caf72" />
-            </TouchableOpacity>
-            <View style={dpStyles.divider} />
-            <TouchableOpacity onPress={prevMonth} style={dpStyles.navBtn}>
-              <ChevronLeft size={15} color="#4caf72" />
-            </TouchableOpacity>
-            <Text style={dpStyles.monthLabel}>{MONTHS[month]}</Text>
-            <TouchableOpacity onPress={nextMonth} style={dpStyles.navBtn}>
-              <ChevronRight size={15} color="#4caf72" />
-            </TouchableOpacity>
-          </View>
-          <View style={dpStyles.weekRow}>
-            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-              <View key={d} style={dpStyles.cell}><Text style={dpStyles.weekDay}>{d}</Text></View>
-            ))}
-          </View>
-          <View style={dpStyles.grid}>
-            {cells.map((d, i) => (
-              <TouchableOpacity
-                key={i}
-                style={[dpStyles.cell, d !== null && d === day && dpStyles.cellSelected]}
-                onPress={() => d !== null && setSelectedDay(d)}
-                disabled={d === null}
-                activeOpacity={d === null ? 1 : 0.7}
-              >
-                <Text style={[dpStyles.cellText, d === null && { opacity: 0 }, d !== null && d === day && dpStyles.cellTextSelected]}>
-                  {d ?? '·'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={dpStyles.actions}>
-            <TouchableOpacity style={dpStyles.cancelBtn} onPress={onClose}>
-              <Text style={dpStyles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[dpStyles.confirmBtn, !day && { opacity: 0.4 }]}
-              onPress={confirmDate}
-              disabled={!day}
-            >
-              <Text style={dpStyles.confirmText}>Confirm</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-// ─── Privacy Policy Modal ──────────────────────────────────────────────────
-type PrivacyPolicyModalProps = { visible: boolean; onClose: () => void; };
-function PrivacyPolicyModal({ visible, onClose }: PrivacyPolicyModalProps) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={ppStyles.overlay}>
-        <View style={ppStyles.container}>
-          <View style={ppStyles.header}>
-            <Shield size={18} color="#4caf72" />
-            <Text style={ppStyles.title}>Data Privacy Notice</Text>
-          </View>
-          <Text style={ppStyles.effective}>Issued pursuant to Republic Act No. 10173 (Data Privacy Act of 2012)</Text>
-          <ScrollView style={ppStyles.scroll} showsVerticalScrollIndicator={false}>
-            <Text style={ppStyles.sectionTitle}>PREAMBLE</Text>
-            <Text style={ppStyles.body}>
-              <Text style={ppStyles.bold}>PLANTSCOPE</Text> is a GIS-based reforestation monitoring and site suitability assessment platform developed by students of the{' '}<Text style={ppStyles.bold}>College of ICT and Engineering, Western Leyte College of Ormoc City</Text>, in collaboration with the <Text style={ppStyles.bold}>City Environment and Natural Resources Office (City ENRO)</Text>{' '}and the <Text style={ppStyles.bold}>City Planning and Development Office (CPDO)</Text> of Ormoc City.
-            </Text>
-            <Text style={ppStyles.body}>This Data Privacy Notice explains how PLANTSCOPE collects, uses, stores, protects, and disposes of personal data from its users, and informs all data subjects of their rights under Philippine law.</Text>
-            <View style={ppStyles.highlightBox}><Text style={ppStyles.highlightText}>By registering an account or accessing any feature of PLANTSCOPE, users acknowledge that they have read and understood this notice.</Text></View>
-            <Text style={ppStyles.sectionTitle}>SECTION 1: PERSONAL INFORMATION CONTROLLER</Text>
-            <Text style={ppStyles.body}><Text style={ppStyles.bold}>Entity: </Text>City Environment and Natural Resources Office (City ENRO), Ormoc City LGU, in coordination with the College of ICT and Engineering, Western Leyte College of Ormoc City{'\n'}<Text style={ppStyles.bold}>Address: </Text>A. Bonifacio St., Ormoc City, Leyte, Philippines{'\n'}<Text style={ppStyles.bold}>DPO / Contact: </Text>Designated Data Protection Officer (DPO) of Ormoc City LGU or the PLANTSCOPE Data Manager{'\n'}<Text style={ppStyles.bold}>Email: </Text>system.admin@plantscope.gov.ph{'\n'}<Text style={ppStyles.bold}>Phone: </Text>+63-XXX-XXX-XXXX (to be assigned upon deployment)</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 2: PERSONAL DATA COLLECTED</Text>
-            <Text style={ppStyles.body}>PLANTSCOPE collects the following categories of personal data from its registered users, depending on their assigned system role:</Text>
-            <Text style={ppStyles.subHeading}>2.5 Community User / Tree Growers</Text>
-            <Text style={ppStyles.body}>{'• Full name and affiliated group\n'}{'• Gender, address, contact details\n'}{'• Username and encrypted password\n'}{'• Registration details and program preferences\n'}{'• Tree planting progress updates and assigned site records'}</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 3: SENSITIVE PERSONAL INFORMATION</Text>
-            <Text style={ppStyles.body}>The following data may qualify as sensitive or privileged under Section 3(l) of RA 10173:</Text>
-            <Text style={ppStyles.body}><Text style={ppStyles.bold}>Precise GPS Coordinates: </Text>Location data tied to a person's presence at a field site may reveal movement patterns or physical location.{'\n\n'}<Text style={ppStyles.bold}>Geotagged Photographs: </Text>Photographs with embedded EXIF data contain both visual and locational sensitive information.{'\n\n'}<Text style={ppStyles.bold}>Community Group Affiliation: </Text>Affiliation with schools or civic organizations may intersect with sensitive community information.</Text>
-            <Text style={ppStyles.noteText}>* GPS coordinate submission by Onsite Inspectors is optional and voluntary.</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 4: PURPOSE AND LEGAL BASIS FOR DATA PROCESSING</Text>
-            <Text style={ppStyles.body}>Processing is conducted on the basis of:</Text>
-            <Text style={ppStyles.body}>{'• Consent of the data subject (for community users, upon registration)\n'}{'• Fulfillment of a contract or quasi-contract (for LGU personnel)\n'}{'• Compliance with legal obligations (RA 10173, RA 7160, environmental laws)\n'}{'• Exercise of official authority or performance of a task in the public interest'}</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 5: HOW DATA IS USED AND PROCESSED</Text>
-            <Text style={ppStyles.body}><Text style={ppStyles.bold}>Collection: </Text>Data is gathered through the web platform, mobile field application, and community registration portal.{'\n\n'}<Text style={ppStyles.bold}>Storage: </Text>All data is stored in a PostgreSQL 13+ database deployed on Ormoc City LGU infrastructure.{'\n\n'}<Text style={ppStyles.bold}>Sharing: </Text>Personal data is shared only among authorized PLANTSCOPE users for official duties. Data is <Text style={ppStyles.bold}>NOT</Text> sold, traded, or shared with unauthorized third parties.{'\n\n'}<Text style={ppStyles.bold}>Archiving & Disposal: </Text>Inactive records are managed through the Archive Data Management module. Data subject to deletion is irreversibly removed per retention schedules.</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 6: DATA RETENTION PERIOD</Text>
-            <Text style={ppStyles.body}>{'• User Account Data (LGU Staff): Employment + 5 years\n'}{'• User Account Data (Community Users): Active participation + 2 years\n'}{'• Field Assessment Records: Minimum 10 years\n'}{'• Finalized Site Records: Permanent or until superseded\n'}{'• Audit Trail & Version History: Permanent\n'}{'• GPS Coordinates & Geotagged Photos: Monitoring program + 5 years\n'}{'• Community Program Records: Program duration + 5 years\n'}{'• System & Session Logs: 1 year from record date'}</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 7: SECURITY MEASURES</Text>
-            <Text style={ppStyles.body}>PLANTSCOPE implements appropriate organizational, technical, and physical security measures in accordance with Section 20 of RA 10173 and NPC Circular No. 16-01:</Text>
-            <Text style={ppStyles.body}>{'• Password hashing & encryption using industry-standard cryptographic methods; TLS/SSL for data in transit\n'}{'• Role-Based Access Control (RBAC) with minimum necessary permissions per role\n'}{'• Token-based authentication with session expiration and automatic logout\n'}{'• Audit trails with timestamps; finalized site_data records are versioned and immutable\n'}{'• Data minimization: only necessary data collected; optional fields clearly indicated'}</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 8: RIGHTS OF DATA SUBJECTS</Text>
-            <Text style={ppStyles.body}>In accordance with Chapter IV of RA 10173, all users are entitled to:</Text>
-            <Text style={ppStyles.body}>{'• Right to be Informed\n'}{'• Right to Access\n'}{'• Right to Correction\n'}{'• Right to Erasure or Blocking\n'}{'• Right to Object\n'}{'• Right to Data Portability\n'}{'• Right to Lodge a Complaint with the NPC'}</Text>
-            <Text style={ppStyles.body}>Requests will be acknowledged within five (5) business days and acted upon within thirty (30) days.</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 9: CONTACT INFORMATION</Text>
-            <Text style={ppStyles.body}><Text style={ppStyles.bold}>PRIMARY: </Text>PLANTSCOPE Data Manager (System Administrator){'\n'}City Environment and Natural Resources Office (City ENRO), Ormoc City LGU{'\n'}Email: system.admin@plantscope.gov.ph{'\n\n'}<Text style={ppStyles.bold}>SECONDARY: </Text>Ormoc City LGU Data Protection Officer (DPO){'\n'}Email: dpo@ormoccity.gov.ph{'\n'}Office: Ormoc City Hall, A. Bonifacio St., Ormoc City{'\n\n'}<Text style={ppStyles.bold}>REGULATORY AUTHORITY: </Text>National Privacy Commission (NPC){'\n'}3F Core G Building, GSIS Complex, Roxas Blvd., Pasay City{'\n'}Email: info@privacy.gov.ph | Website: www.privacy.gov.ph</Text>
-            <View style={ppStyles.ackBox}><Text style={ppStyles.ackText}><Text style={ppStyles.bold}>ACKNOWLEDGMENT: </Text>By accessing or using PLANTSCOPE, you confirm that you have read, understood, and agreed to this Data Privacy Notice.</Text><Text style={ppStyles.ackSub}>PLANTSCOPE | Western Leyte College of Ormoc City | RA 10173 Compliant</Text></View>
-          </ScrollView>
-          <TouchableOpacity style={ppStyles.closeBtn} onPress={onClose}><Text style={ppStyles.closeText}>I Understand</Text></TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-// ─── Terms & Conditions Modal ──────────────────────────────────────────────
-type TermsModalProps = { visible: boolean; onClose: () => void; };
-function TermsModal({ visible, onClose }: TermsModalProps) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={ppStyles.overlay}>
-        <View style={ppStyles.container}>
-          <View style={ppStyles.header}>
-            <FileText size={18} color="#4caf72" />
-            <Text style={ppStyles.title}>Terms and Conditions</Text>
-          </View>
-          <Text style={ppStyles.effective}>Governing access, registration, and use of the PLANTSCOPE System</Text>
-          <ScrollView style={ppStyles.scroll} showsVerticalScrollIndicator={false}>
-            <Text style={ppStyles.sectionTitle}>PREAMBLE</Text>
-            <Text style={ppStyles.body}>These Terms and Conditions govern the access, registration, and use of{' '}<Text style={ppStyles.bold}>PLANTSCOPE</Text> — a GIS-Based Site Suitability Assessment and Reforestation Monitoring System developed by students of the{' '}<Text style={ppStyles.bold}>College of ICT and Engineering, Western Leyte College of Ormoc City</Text>, in collaboration with the <Text style={ppStyles.bold}>City ENRO</Text> and{' '}<Text style={ppStyles.bold}>CPDO</Text> of Ormoc City.</Text>
-            <View style={ppStyles.warningBox}><Text style={ppStyles.warningTitle}>⚠️ IMPORTANT – PLEASE READ CAREFULLY</Text><Text style={ppStyles.warningText}>By registering an account, logging in, or otherwise accessing PLANTSCOPE, you acknowledge that you have read, understood, and agree to be legally bound by these Terms and Conditions in their entirety. If you do not agree, you must immediately discontinue use and request account deactivation from the Data Manager.</Text></View>
-            <Text style={ppStyles.sectionTitle}>SECTION 1: SCOPE AND PURPOSE OF SYSTEM USE</Text>
-            <Text style={ppStyles.subHeading}>1.1 Scope</Text>
-            <Text style={ppStyles.body}>These Terms apply to all individuals who access, register, or use PLANTSCOPE, including:</Text>
-            <Text style={ppStyles.body}>{'• City ENRO Head — primary authority for reforestation program oversight\n'}{'• Data Manager (System Administrator) — maintains technical and data integrity\n'}{'• GIS Specialists — perform technical site suitability validation\n'}{'• Onsite Inspectors — collect and submit field assessment data via mobile app\n'}{'• Community Users (Tree Growers) — register for the Public Tree Planting Program'}</Text>
-            <Text style={ppStyles.subHeading}>1.2 Purpose</Text>
-            <Text style={ppStyles.body}>PLANTSCOPE is designed exclusively to support reforestation site assessment, field data collection, reforestation monitoring, community engagement, archive data management, and compliance & audit functions of Ormoc City.</Text>
-            <Text style={ppStyles.subHeading}>1.3 Non-Commercial Use</Text>
-            <Text style={ppStyles.body}>PLANTSCOPE is a non-commercial, government-deployed environmental management system. It shall not be used for commercial gain, private business operations, or activities outside the environmental mandate of the Ormoc City LGU.</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 2: USER RESPONSIBILITIES AND ACCEPTABLE USE</Text>
-            <Text style={ppStyles.subHeading}>2.1 General Responsibilities of All Users</Text>
-            <Text style={ppStyles.body}><Text style={ppStyles.bold}>Account Security: </Text>Users are solely responsible for maintaining the confidentiality of their login credentials. Unauthorized use must be reported immediately to the Data Manager.{'\n\n'}<Text style={ppStyles.bold}>Accuracy of Information: </Text>All data, records, and submissions must be accurate, truthful, and complete. Submission of false or misleading information is strictly prohibited.{'\n\n'}<Text style={ppStyles.bold}>Role Compliance: </Text>Users must access and use only the features and data authorized for their assigned role.{'\n\n'}<Text style={ppStyles.bold}>System Integrity: </Text>Users must not perform any action that compromises the integrity, availability, or security of the PLANTSCOPE system.{'\n\n'}<Text style={ppStyles.bold}>Compliance with Laws: </Text>Users must comply with all applicable Philippine laws, including RA 10173, RA 7160, environmental protection laws, and civil service regulations.</Text>
-            <Text style={ppStyles.subHeading}>2.2 Community User / Tree Grower Responsibilities</Text>
-            <Text style={ppStyles.body}>{'• Provides accurate registration information including full name, contact details, and group affiliation\n'}{'• Submits genuine and timely progress updates for assigned tree planting sites\n'}{'• Complies with the assigned schedule and site allocation provided by the Data Manager\n'}{'• Notifies the Data Manager of any change in contact information or group status\n'}{'• Responsible for ensuring that participants they represent are aware of these Terms'}</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 3: PROHIBITED ACTIVITIES</Text>
-            <Text style={ppStyles.body}>The following activities are strictly prohibited on PLANTSCOPE. Violation may result in immediate account suspension and legal action under applicable Philippine laws:</Text>
-            <Text style={ppStyles.body}>{'• Unauthorized access to accounts, data records, or system features not authorized for your role\n'}{'• Sharing or transferring login credentials; logging in as another user\n'}{'• Submitting data that is knowingly false, fabricated, or deliberately misleading\n'}{'• Copying, exporting, or transmitting personal data or spatial records to unauthorized individuals\n'}{'• Introducing malicious code, performing denial-of-service attacks, SQL injection, or technical interference\n'}{'• Modifying or deleting any system record without proper authority\n'}{'• Using personal data accessed through PLANTSCOPE for unauthorized purposes\n'}{'• Using PLANTSCOPE for activities beyond its stated environmental management functions'}</Text>
-            <View style={ppStyles.warningBox}><Text style={ppStyles.warningTitle}>⚖️ Legal Warning</Text><Text style={ppStyles.warningText}>Violations may constitute criminal offenses under RA 10173 (Data Privacy Act), RA 10175 (Cybercrime Prevention Act), RA 3019 (Anti-Graft), and other applicable Philippine laws.</Text></View>
-            <Text style={ppStyles.sectionTitle}>SECTION 4: DATA OWNERSHIP AND HANDLING</Text>
-            <Text style={ppStyles.body}>All data submitted to, processed by, or generated within PLANTSCOPE is the property of the{' '}<Text style={ppStyles.bold}>Ormoc City Local Government Unit</Text>, acting through City ENRO and CPDO. Personal data submitted by individual users remains subject to the rights of the data subject under RA 10173.</Text>
-            <Text style={ppStyles.body}>Personal data shall not be disclosed to private companies, commercial entities, or individuals not affiliated with the system's official mandate. Spatial data, GIS maps, and site records shall not be published or commercialized without prior written approval of the CPDO and City ENRO.</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 5: ACCOUNT MANAGEMENT AND ACCESS CONTROL</Text>
-            <Text style={ppStyles.body}>Community user accounts require submission of a registration request through the community portal, subject to review from the Data Manager with final approval by the Head.{'\n\n'}Providing false registration information is grounds for immediate account rejection or termination.</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 6: LIMITATION OF LIABILITY</Text>
-            <Text style={ppStyles.body}>PLANTSCOPE is provided on an "as-is" and "as-available" basis. The development team and Western Leyte College of Ormoc City make no warranty that the system will operate without interruption, error, or defect at all times.{'\n\n'}The system does not automatically verify the accuracy of user-submitted data. The PLANTSCOPE development team shall not be liable for decisions made based on inaccurate, incomplete, or false data submitted by users.</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 7: RA 10173 COMPLIANCE</Text>
-            <Text style={ppStyles.body}>PLANTSCOPE is designed and operated in full compliance with Republic Act No. 10173 and its IRR, as enforced by the National Privacy Commission (NPC) of the Philippines. Key principles applied: Transparency, Legitimate Purpose, Proportionality, Data Security, Data Subject Rights, Data Retention & Disposal, and Breach Notification.</Text>
-            <Text style={ppStyles.noteText}>These Terms must be read in conjunction with the PLANTSCOPE Data Privacy Notice. In matters of data privacy, the Data Privacy Notice shall prevail.</Text>
-            <Text style={ppStyles.sectionTitle}>SECTION 8: ACCEPTANCE OF TERMS</Text>
-            <View style={ppStyles.ackBox}><Text style={ppStyles.body}>{'1. I have read, understood, and voluntarily agree to comply with all provisions of these Terms and Conditions.\n\n'}{'2. I have read and understood the PLANTSCOPE Data Privacy Notice and consent to the collection, processing, and use of my personal data as described therein.\n\n'}{'3. I understand that continued use of PLANTSCOPE after any amendment constitutes my acceptance of the updated Terms.\n\n'}{'4. I understand that violation of these Terms may result in account suspension, termination, and legal consequences under applicable Philippine law.\n\n'}{'5. I affirm that all information I provide to the system is accurate, truthful, and complete.\n\n'}{'6. I acknowledge that PLANTSCOPE is a government-deployed environmental management system and commit to using it exclusively for its stated purposes.'}</Text></View>
-            <Text style={ppStyles.sectionTitle}>SECTION 9: GOVERNING LAW AND JURISDICTION</Text>
-            <Text style={ppStyles.body}>These Terms and Conditions shall be governed by the laws of the Republic of the Philippines, including RA 10173, RA 10175, RA 7160, RA 3019, and NPC Circulars. Any dispute shall be subject to the jurisdiction of the appropriate government agencies and courts, with venue in{' '}<Text style={ppStyles.bold}>Ormoc City, Leyte</Text>.</Text>
-            <View style={ppStyles.ackBox}><Text style={ppStyles.ackText}>TERMS AND CONDITIONS – END OF DOCUMENT</Text><Text style={ppStyles.ackSub}>PLANTSCOPE | Western Leyte College of Ormoc City | College of ICT and Engineering | RA 10173 Compliant</Text></View>
-          </ScrollView>
-          <TouchableOpacity style={ppStyles.closeBtn} onPress={onClose}><Text style={ppStyles.closeText}>I Understand</Text></TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-// ─── Sub-components ────────────────────────────────────────────────────────
-type FieldProps = { label: string; icon?: React.ReactNode; value: string; onChangeText: (v: string) => void; placeholder?: string; keyboardType?: any; autoCapitalize?: any; secureTextEntry?: boolean; multiline?: boolean; required?: boolean; };
-function Field({ label, icon, value, onChangeText, placeholder, keyboardType = 'default', autoCapitalize = 'words', secureTextEntry = false, multiline = false, required = false }: FieldProps) {
+function Field({
+  label, icon, value, onChangeText, placeholder,
+  keyboardType = "default", autoCapitalize = "words",
+  secureTextEntry = false, multiline = false, required = false,
+}: FieldProps) {
   return (
     <View style={styles.formGroup}>
-      <Text style={styles.label}>{label} {required && <Text style={{ color: '#ef4444' }}>*</Text>}</Text>
-      <View style={[styles.inputContainer, multiline && { alignItems: 'flex-start', minHeight: 90 }]}>
-        {icon && <View style={[styles.inputIcon, multiline && { marginTop: 4 }]}>{icon}</View>}
-        <TextInput style={[styles.input, inputStyleOverride, multiline && { textAlignVertical: 'top', paddingTop: 4 }]} placeholder={placeholder ?? `Enter ${label.toLowerCase()}`} placeholderTextColor="#5a8a6a" value={value} onChangeText={onChangeText} keyboardType={keyboardType} autoCapitalize={autoCapitalize} secureTextEntry={secureTextEntry} multiline={multiline} numberOfLines={multiline ? 3 : 1} />
+      <Text style={styles.label}>
+        {label} {required && <Text style={{ color: "#ef4444" }}>*</Text>}
+      </Text>
+      <View
+        style={[
+          styles.inputContainer,
+          multiline && { alignItems: "flex-start", minHeight: 90 },
+        ]}
+      >
+        {icon && (
+          <View style={[styles.inputIcon, multiline && { marginTop: 4 }]}>
+            {icon}
+          </View>
+        )}
+        <TextInput
+          style={[
+            styles.input,
+            inputStyleOverride,
+            multiline && { textAlignVertical: "top", paddingTop: 4 },
+          ]}
+          placeholder={placeholder ?? `Enter ${label.toLowerCase()}`}
+          placeholderTextColor="#5a8a6a"
+          value={value}
+          onChangeText={onChangeText}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          secureTextEntry={secureTextEntry}
+          multiline={multiline}
+          numberOfLines={multiline ? 3 : 1}
+        />
       </View>
     </View>
   );
 }
 
-type FileButtonProps = { label: string; value: any; onPress: () => void; isImage?: boolean; required?: boolean; };
+type FileButtonProps = {
+  label: string;
+  value: any;
+  onPress: () => void;
+  isImage?: boolean;
+  required?: boolean;
+};
 function FileButton({ label, value, onPress, isImage = false, required = false }: FileButtonProps) {
   return (
     <View style={styles.formGroup}>
-      <Text style={styles.label}>{label} {required && <Text style={{ color: '#ef4444' }}>*</Text>}</Text>
+      <Text style={styles.label}>
+        {label} {required && <Text style={{ color: "#ef4444" }}>*</Text>}
+      </Text>
       {isImage && value?.uri ? (
-        <TouchableOpacity style={styles.imagePreviewBtn} onPress={onPress} activeOpacity={0.8}>
+        <TouchableOpacity
+          style={styles.imagePreviewBtn}
+          onPress={onPress}
+          activeOpacity={0.8}
+        >
           <Image source={{ uri: value.uri }} style={styles.imagePreview} resizeMode="cover" />
-          <View style={styles.imagePreviewOverlay}><Text style={styles.imagePreviewText}>Tap to change</Text></View>
+          <View style={styles.imagePreviewOverlay}>
+            <Text style={styles.imagePreviewText}>Tap to change</Text>
+          </View>
         </TouchableOpacity>
       ) : (
         <TouchableOpacity style={styles.fileButton} onPress={onPress} activeOpacity={0.7}>
           <FileText size={18} color="#a8c5b3" />
-          <Text style={styles.fileButtonText} numberOfLines={1}>{value ? value.name : `Tap to upload ${label}`}</Text>
+          <Text style={styles.fileButtonText} numberOfLines={1}>
+            {value ? value.name : `Tap to upload ${label}`}
+          </Text>
           {value && <CheckCircle size={16} color="#4caf72" />}
         </TouchableOpacity>
       )}
@@ -310,15 +160,21 @@ function FileButton({ label, value, onPress, isImage = false, required = false }
   );
 }
 
-type GenderPickerProps = { value: string; onChange: (v: string) => void; };
-function GenderPicker({ value, onChange }: GenderPickerProps) {
+function GenderPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <View style={styles.formGroup}>
       <Text style={styles.label}>Gender</Text>
       <View style={styles.genderRow}>
-        {['Male', 'Female', 'Other'].map((g) => (
-          <TouchableOpacity key={g} style={[styles.genderChip, value === g.toLowerCase() && styles.genderChipActive]} onPress={() => onChange(g.toLowerCase())} activeOpacity={0.7}>
-            <Text style={[styles.genderChipText, value === g.toLowerCase() && styles.genderChipTextActive]}>{g}</Text>
+        {["Male", "Female", "Other"].map((g) => (
+          <TouchableOpacity
+            key={g}
+            style={[styles.genderChip, value === g.toLowerCase() && styles.genderChipActive]}
+            onPress={() => onChange(g.toLowerCase())}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.genderChipText, value === g.toLowerCase() && styles.genderChipTextActive]}>
+              {g}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -326,17 +182,18 @@ function GenderPicker({ value, onChange }: GenderPickerProps) {
   );
 }
 
-type GroupTypePickerProps = { value: string; onChange: (v: string) => void; };
-function GroupTypePicker({ value, onChange }: GroupTypePickerProps) {
+function GroupTypePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <View style={styles.formGroup}>
-      <Text style={styles.label}>Group Type <Text style={{ color: '#ef4444' }}>*</Text></Text>
+      <Text style={styles.label}>
+        Group Type <Text style={{ color: "#ef4444" }}>*</Text>
+      </Text>
       <View style={styles.groupTypeRow}>
         {GROUP_TYPES.map((type) => (
-          <TouchableOpacity 
-            key={type.value} 
-            style={[styles.groupTypeChip, value === type.value && styles.groupTypeChipActive]} 
-            onPress={() => onChange(type.value)} 
+          <TouchableOpacity
+            key={type.value}
+            style={[styles.groupTypeChip, value === type.value && styles.groupTypeChipActive]}
+            onPress={() => onChange(type.value)}
             activeOpacity={0.7}
           >
             <Text style={[styles.groupTypeChipText, value === type.value && styles.groupTypeChipTextActive]}>
@@ -350,29 +207,47 @@ function GroupTypePicker({ value, onChange }: GroupTypePickerProps) {
 }
 
 function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (<View style={styles.reviewSection}><Text style={styles.reviewSectionTitle}>{title}</Text>{children}</View>);
+  return (
+    <View style={styles.reviewSection}>
+      <Text style={styles.reviewSectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
 }
+
 function ReviewRow({ label, value }: { label: string; value: string }) {
-  return (<View style={styles.reviewRow}><Text style={styles.reviewLabel}>{label}</Text><Text style={styles.reviewValue} numberOfLines={2}>{value || '—'}</Text></View>);
+  return (
+    <View style={styles.reviewRow}>
+      <Text style={styles.reviewLabel}>{label}</Text>
+      <Text style={styles.reviewValue} numberOfLines={2}>
+        {value || "—"}
+      </Text>
+    </View>
+  );
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────
 export default function Signup() {
   const router = useRouter();
+  const alert = useAlert(); // ✅ Custom alert hook
+  
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  
-  // ✅ Date picker states
+
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showProposedDatePicker, setShowProposedDatePicker] = useState(false);
-  
+
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
 
-  const [otp, setOtp] = useState('');
+  // ✅ Track whether user has actually viewed the documents
+  const [hasViewedPrivacy, setHasViewedPrivacy] = useState(false);
+  const [hasViewedTerms, setHasViewedTerms] = useState(false);
+
+  const [otp, setOtp] = useState("");
   const [sendingOtp, setSendingOtp] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const otpInputRef = useRef<TextInput>(null);
@@ -384,77 +259,95 @@ export default function Signup() {
   }, [resendCooldown]);
 
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    confirmPassword: '',
-    first_name: '',
-    middle_name: '',
-    last_name: '',
-    birthday: '',
-    contact: '',
-    address: '',
-    gender: '',
+    email: "",
+    password: "",
+    confirmPassword: "",
+    first_name: "",
+    middle_name: "",
+    last_name: "",
+    birthday: "",
+    contact: "",
+    address: "",
+    gender: "",
     profile_img: null as any,
-    group_name: '',
-    group_type: '',
-    group_address: '',
-    group_contact: '',
+    group_name: "",
+    group_type: "",
+    group_address: "",
+    group_contact: "",
     group_profile: null as any,
-    title: '',
-    total_treegrowers_will_participate: '',
+    title: "",
+    total_treegrowers_will_participate: "",
     maintenance_plan: null as any,
-    // ✅ NEW: Proposed orientation date for all applicants
-    proposed_orientation_date: '', 
+    proposed_orientation_date: "",
   });
 
-  const update = (key: string, value: any) => setFormData((prev) => ({ ...prev, [key]: value }));
+  const update = (key: string, value: any) =>
+    setFormData((prev) => ({ ...prev, [key]: value }));
 
   const pickImage = async (field: string) => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.8,
+    });
     if (!result.canceled && result.assets.length > 0) {
       const asset = result.assets[0];
-      update(field, { uri: asset.uri, name: asset.fileName ?? `${field}.jpg`, type: asset.mimeType ?? 'image/jpeg' });
+      update(field, {
+        uri: asset.uri,
+        name: asset.fileName ?? `${field}.jpg`,
+        type: asset.mimeType ?? "image/jpeg",
+      });
     }
   };
-  
+
   const pickDocument = async (field: string) => {
-    const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ["application/pdf", "image/*"],
+      copyToCacheDirectory: true,
+    });
     if (!result.canceled && result.assets.length > 0) {
       const asset = result.assets[0];
-      update(field, { uri: asset.uri, name: asset.name, type: asset.mimeType ?? 'application/octet-stream' });
+      update(field, {
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType ?? "application/octet-stream",
+      });
     }
   };
 
   const validateStep = (): string | null => {
     if (step === 0) {
-      if (!formData.email) return 'Email is required.';
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) return 'Enter a valid email.';
-      if (!formData.password) return 'Password is required.';
+      if (!formData.email) return "Email is required.";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
+        return "Enter a valid email.";
+      if (!formData.password) return "Password is required.";
       if (!/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(formData.password))
-        return 'Password needs uppercase, lowercase, number, special char and 8+ characters.';
-      if (formData.password !== formData.confirmPassword) return 'Passwords do not match.';
+        return "Password needs uppercase, lowercase, number, special char and 8+ characters.";
+      if (formData.password !== formData.confirmPassword)
+        return "Passwords do not match.";
     }
     if (step === 2) {
-      if (!formData.first_name) return 'First name is required.';
-      if (!formData.last_name) return 'Last name is required.';
-      if (!formData.contact) return 'Contact number is required.';
-      if (!formData.address) return 'Address is required.';
-      if (!formData.gender) return 'Gender is required.';
+      if (!formData.first_name) return "First name is required.";
+      if (!formData.last_name) return "Last name is required.";
+      if (!formData.contact) return "Contact number is required.";
+      if (!formData.address) return "Address is required.";
+      if (!formData.gender) return "Gender is required.";
     }
     if (step === 3) {
-      if (!formData.group_name) return 'Group name is required.';
-      if (!formData.group_type) return 'Group type is required.';
-      if (!formData.group_address) return 'Group address is required.';
-      if (!formData.group_contact) return 'Group contact is required.';
-      if (!formData.title) return 'Project title is required.';
-      if (!formData.total_treegrowers_will_participate) return 'Total tree growers is required.';
-      
+      if (!formData.group_name) return "Group name is required.";
+      if (!formData.group_type) return "Group type is required.";
+      if (!formData.group_address) return "Group address is required.";
+      if (!formData.group_contact) return "Group contact is required.";
+      if (!formData.title) return "Project title is required.";
+      if (!formData.total_treegrowers_will_participate)
+        return "Total tree growers is required.";
+
       const totalGrowers = parseInt(formData.total_treegrowers_will_participate);
       if (isNaN(totalGrowers) || totalGrowers < 2) {
-        return 'Minimum of 2 tree growers required per group.';
+        return "Minimum of 2 tree growers required per group.";
       }
-      
-      if (!formData.maintenance_plan) return 'Maintenance plan document is required.';
+
+      if (!formData.maintenance_plan)
+        return "Maintenance plan document is required.";
     }
     return null;
   };
@@ -462,150 +355,211 @@ export default function Signup() {
   const sendOtp = async () => {
     setSendingOtp(true);
     try {
-      const res = await fetch(api + '/api/send_otp/', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ email: formData.email }) 
+      const res = await fetch(api + "/api/send_otp/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email }),
       });
       const json = await res.json();
-      if (!res.ok) { 
-        Alert.alert('Error', json.error ?? 'Failed to send verification code.'); 
-        return; 
+      if (!res.ok) {
+        alert.error("OTP Failed", json.error ?? "Failed to send verification code.");
+        return;
       }
-      setOtp('');
+      setOtp("");
       setResendCooldown(60);
       setStep(1);
+      alert.info("Code Sent", `Verification code sent to ${formData.email}`, 3000);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Network error.');
+      alert.error("Network Error", e.message ?? "Unable to connect to server.");
     } finally {
       setSendingOtp(false);
     }
   };
 
   const verifyOtp = async () => {
-    if (otp.length !== 6) { 
-      Alert.alert('Invalid Code', 'Please enter the 6-digit code sent to your email.'); 
-      return; 
+    if (otp.length !== 6) {
+      alert.warning("Invalid Code", "Please enter the 6-digit code sent to your email.");
+      return;
     }
     setLoading(true);
     try {
-      const res = await fetch(api + '/api/verify_otp/', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ email: formData.email, otp }) 
+      const res = await fetch(api + "/api/verify_otp/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email, otp }),
       });
       const json = await res.json();
-      if (!res.ok) { 
-        Alert.alert('Verification Failed', json.error ?? 'Incorrect code.'); 
-        return; 
+      if (!res.ok) {
+        alert.error("Verification Failed", json.error ?? "Incorrect code.");
+        return;
       }
+      alert.success("Email Verified", "Your email has been successfully verified!");
       setStep(2);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Network error.');
+      alert.error("Network Error", e.message ?? "Unable to connect to server.");
     } finally {
       setLoading(false);
     }
   };
 
   const goNext = () => {
-    if (step === 0) { 
-      const err = validateStep(); 
-      if (err) { Alert.alert('Missing Info', err); return; } 
-      sendOtp(); 
-      return; 
+    if (step === 0) {
+      const err = validateStep();
+      if (err) {
+        alert.warning("Missing Information", err);
+        return;
+      }
+      sendOtp();
+      return;
     }
-    if (step === 1) { 
-      verifyOtp(); 
-      return; 
+    if (step === 1) {
+      verifyOtp();
+      return;
     }
     const err = validateStep();
-    if (err) { Alert.alert('Missing Info', err); return; }
+    if (err) {
+      alert.warning("Missing Information", err);
+      return;
+    }
     setStep((s) => s + 1);
   };
 
-  const goBack = () => { 
-    if (step === 1) { setOtp(''); } 
-    setStep((s) => s - 1); 
+  const goBack = () => {
+    if (step === 1) {
+      setOtp("");
+    }
+    setStep((s) => s - 1);
   };
 
-  const handleSubmit = async () => {
-    if (!agreedToPrivacy) { 
-      Alert.alert('Privacy Policy', 'Please read and agree to the Privacy Policy before submitting.'); 
-      return; 
+  // ✅ Handle agreement checkbox - must have viewed both documents
+  const handleAgreementToggle = () => {
+    if (!hasViewedPrivacy || !hasViewedTerms) {
+      alert.warning(
+        "Documents Required",
+        "Please read both the Privacy Policy and Terms & Conditions before agreeing.",
+        4000
+      );
+      return;
     }
+    setAgreedToPrivacy(!agreedToPrivacy);
+  };
+
+  // ✅ Submit with confirmation dialog
+  const handleSubmit = () => {
+    if (!agreedToPrivacy) {
+      alert.warning(
+        "Agreement Required",
+        "Please agree to the Privacy Policy and Terms & Conditions before submitting."
+      );
+      return;
+    }
+
+    // Show confirmation dialog before submitting
+    alert.confirm(
+      "Submit Application?",
+      "Are you sure you want to submit your tree grower application? Please ensure all information is accurate. Once submitted, your application will be reviewed by the administrator.",
+      performSubmit,
+      {
+        confirmText: "Yes, Submit",
+        cancelText: "Review Again",
+        type: "warning",
+      }
+    );
+  };
+
+  // ✅ Actual submission logic
+  const performSubmit = async () => {
     setLoading(true);
     try {
       const fd = new FormData();
-      
-      fd.append('email', formData.email);
-      fd.append('password', formData.password);
-      fd.append('user_role', 'treeGrowers');
-      fd.append('first_name', formData.first_name);
-      fd.append('last_name', formData.last_name);
-      fd.append('middle_name', formData.middle_name);
-      fd.append('contact', formData.contact);
-      fd.append('address', formData.address);
-      
+
+      fd.append("email", formData.email);
+      fd.append("password", formData.password);
+      fd.append("user_role", "treeGrowers");
+      fd.append("first_name", formData.first_name);
+      fd.append("last_name", formData.last_name);
+      fd.append("middle_name", formData.middle_name);
+      fd.append("contact", formData.contact);
+      fd.append("address", formData.address);
+
       if (formData.birthday) {
-        fd.append('birthday', formData.birthday);
+        fd.append("birthday", formData.birthday);
       }
-      
-      let g = 'O';
-      if (formData.gender === 'male') g = 'M';
-      else if (formData.gender === 'female') g = 'F';
-      fd.append('gender', g);
-      fd.append('is_active', 'false');
+
+      let g = "O";
+      if (formData.gender === "male") g = "M";
+      else if (formData.gender === "female") g = "F";
+      fd.append("gender", g);
+      fd.append("is_active", "false");
 
       if (formData.profile_img) {
-        fd.append('profile_img', { 
-          uri: formData.profile_img.uri, 
-          name: formData.profile_img.name, 
-          type: formData.profile_img.type 
+        fd.append("profile_img", {
+          uri: formData.profile_img.uri,
+          name: formData.profile_img.name,
+          type: formData.profile_img.type,
         } as any);
       }
 
-      fd.append('group_name', formData.group_name);
-      fd.append('group_type', formData.group_type);
-      fd.append('group_address', formData.group_address);
-      fd.append('group_contact', formData.group_contact);
-      
+      fd.append("group_name", formData.group_name);
+      fd.append("group_type", formData.group_type);
+      fd.append("group_address", formData.group_address);
+      fd.append("group_contact", formData.group_contact);
+
       if (formData.group_profile) {
-        fd.append('group_profile', { 
-          uri: formData.group_profile.uri, 
-          name: formData.group_profile.name, 
-          type: formData.group_profile.type 
+        fd.append("group_profile", {
+          uri: formData.group_profile.uri,
+          name: formData.group_profile.name,
+          type: formData.group_profile.type,
         } as any);
       }
 
-      fd.append('title', formData.title);
-      fd.append('total_treegrowers_will_participate', formData.total_treegrowers_will_participate);
-      
-      // ✅ NEW: Append proposed orientation date if provided
+      fd.append("title", formData.title);
+      fd.append("total_treegrowers_will_participate", formData.total_treegrowers_will_participate);
+
       if (formData.proposed_orientation_date) {
-        fd.append('proposed_orientation_date', formData.proposed_orientation_date);
+        fd.append("proposed_orientation_date", formData.proposed_orientation_date);
       }
-      
+
       if (formData.maintenance_plan) {
-        fd.append('maintenance_plan', { 
-          uri: formData.maintenance_plan.uri, 
-          name: formData.maintenance_plan.name, 
-          type: formData.maintenance_plan.type 
+        fd.append("maintenance_plan", {
+          uri: formData.maintenance_plan.uri,
+          name: formData.maintenance_plan.name,
+          type: formData.maintenance_plan.type,
         } as any);
       }
 
-      const res = await fetch(api + '/api/register_tree_grower/', { method: 'POST', body: fd });
+      const res = await fetch(api + "/api/register_tree_grower/", {
+        method: "POST",
+        body: fd,
+      });
       const json = await res.json();
 
       if (!res.ok) {
-        Alert.alert('Registration Failed', json.error ?? 'Something went wrong.');
+        alert.error(
+          "Registration Failed",
+          json.error ?? "Something went wrong. Please try again.",
+          5000
+        );
         return;
       }
 
-      Alert.alert('Success 🌱', 'Account created! Your application is under evaluation. You can request seedlings once your application is accepted.', [
-        { text: 'Sign In', onPress: () => router.push('/login') },
-      ]);
+      // ✅ Success - show informative alert with button to go to homepage
+      alert.success(
+        "Application Submitted! 🌱",
+        "Your application has been successfully sent and is now under evaluation. You will be notified via email once your application is accepted or rejected. Please check your email regularly for updates.",
+        8000
+      );
+
+      // Navigate to homepage after a short delay
+      setTimeout(() => {
+        router.push("/homepage");
+      }, 2500);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Network error.');
+      alert.error(
+        "Connection Error",
+        e.message ?? "Unable to reach the server. Please check your internet connection.",
+        5000
+      );
     } finally {
       setLoading(false);
     }
@@ -618,22 +572,66 @@ export default function Signup() {
           <>
             <Text style={styles.stepTitle}>Account Information</Text>
             <Text style={styles.stepSubtitle}>Set up your login credentials</Text>
-            <Field label="Email Address" icon={<Mail size={18} color="#5a8a6a" />} value={formData.email} onChangeText={(v) => update('email', v)} keyboardType="email-address" autoCapitalize="none" required />
+            <Field
+              label="Email Address"
+              icon={<Mail size={18} color="#5a8a6a" />}
+              value={formData.email}
+              onChangeText={(v) => update("email", v)}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              required
+            />
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Password <Text style={{ color: '#ef4444' }}>*</Text></Text>
+              <Text style={styles.label}>
+                Password <Text style={{ color: "#ef4444" }}>*</Text>
+              </Text>
               <View style={styles.inputContainer}>
-                <View style={styles.inputIcon}><Lock size={18} color="#5a8a6a" /></View>
-                <TextInput style={[styles.input, inputStyleOverride]} placeholder="Enter password" placeholderTextColor="#5a8a6a" value={formData.password} onChangeText={(v) => update('password', v)} secureTextEntry={!showPassword} autoCapitalize="none" />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeButton}>{showPassword ? <EyeOff size={18} color="#5a8a6a" /> : <Eye size={18} color="#5a8a6a" />}</TouchableOpacity>
+                <View style={styles.inputIcon}>
+                  <Lock size={18} color="#5a8a6a" />
+                </View>
+                <TextInput
+                  style={[styles.input, inputStyleOverride]}
+                  placeholder="Enter password"
+                  placeholderTextColor="#5a8a6a"
+                  value={formData.password}
+                  onChangeText={(v) => update("password", v)}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeButton}
+                >
+                  {showPassword ? <EyeOff size={18} color="#5a8a6a" /> : <Eye size={18} color="#5a8a6a" />}
+                </TouchableOpacity>
               </View>
-              <Text style={styles.hint}>8+ chars · uppercase · lowercase · number · special char</Text>
+              <Text style={styles.hint}>
+                8+ chars · uppercase · lowercase · number · special char
+              </Text>
             </View>
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Confirm Password <Text style={{ color: '#ef4444' }}>*</Text></Text>
+              <Text style={styles.label}>
+                Confirm Password <Text style={{ color: "#ef4444" }}>*</Text>
+              </Text>
               <View style={styles.inputContainer}>
-                <View style={styles.inputIcon}><Lock size={18} color="#5a8a6a" /></View>
-                <TextInput style={[styles.input, inputStyleOverride]} placeholder="Confirm password" placeholderTextColor="#5a8a6a" value={formData.confirmPassword} onChangeText={(v) => update('confirmPassword', v)} secureTextEntry={!showConfirmPassword} autoCapitalize="none" />
-                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeButton}>{showConfirmPassword ? <EyeOff size={18} color="#5a8a6a" /> : <Eye size={18} color="#5a8a6a" />}</TouchableOpacity>
+                <View style={styles.inputIcon}>
+                  <Lock size={18} color="#5a8a6a" />
+                </View>
+                <TextInput
+                  style={[styles.input, inputStyleOverride]}
+                  placeholder="Confirm password"
+                  placeholderTextColor="#5a8a6a"
+                  value={formData.confirmPassword}
+                  onChangeText={(v) => update("confirmPassword", v)}
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={styles.eyeButton}
+                >
+                  {showConfirmPassword ? <EyeOff size={18} color="#5a8a6a" /> : <Eye size={18} color="#5a8a6a" />}
+                </TouchableOpacity>
               </View>
             </View>
           </>
@@ -642,22 +640,65 @@ export default function Signup() {
         return (
           <>
             <Text style={styles.stepTitle}>Verify Your Email</Text>
-            <Text style={styles.stepSubtitle}>Enter the 6-digit code sent to your email</Text>
-            <View style={styles.otpEmailBadge}><Mail size={14} color="#4caf72" /><Text style={styles.otpEmailText} numberOfLines={1}>{formData.email}</Text></View>
+            <Text style={styles.stepSubtitle}>
+              Enter the 6-digit code sent to your email
+            </Text>
+            <View style={styles.otpEmailBadge}>
+              <Mail size={14} color="#4caf72" />
+              <Text style={styles.otpEmailText} numberOfLines={1}>
+                {formData.email}
+              </Text>
+            </View>
             <View style={styles.otpWrapper}>
-              <TextInput ref={otpInputRef} style={[styles.otpHiddenInput, inputStyleOverride]} value={otp} onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, '').slice(0, 6))} keyboardType="number-pad" maxLength={6} autoFocus />
-              <TouchableOpacity style={styles.otpBoxRow} onPress={() => otpInputRef.current?.focus()} activeOpacity={1}>
-                {Array(6).fill(null).map((_, i) => (
-                  <View key={i} style={[styles.otpBox, otp.length > i && styles.otpBoxFilled, otp.length === i && styles.otpBoxCursor]}>
-                    <Text style={styles.otpBoxText}>{otp[i] ?? ''}</Text>
-                  </View>
-                ))}
+              <TextInput
+                ref={otpInputRef}
+                style={[styles.otpHiddenInput, inputStyleOverride]}
+                value={otp}
+                onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, 6))}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+              />
+              <TouchableOpacity
+                style={styles.otpBoxRow}
+                onPress={() => otpInputRef.current?.focus()}
+                activeOpacity={1}
+              >
+                {Array(6)
+                  .fill(null)
+                  .map((_, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.otpBox,
+                        otp.length > i && styles.otpBoxFilled,
+                        otp.length === i && styles.otpBoxCursor,
+                      ]}
+                    >
+                      <Text style={styles.otpBoxText}>{otp[i] ?? ""}</Text>
+                    </View>
+                  ))}
               </TouchableOpacity>
             </View>
-            <Text style={styles.otpNote}>Didn't receive the code? Check your spam folder or{' '}</Text>
-            <TouchableOpacity onPress={sendOtp} disabled={resendCooldown > 0 || sendingOtp} activeOpacity={0.7}>
-              <Text style={[styles.otpResend, (resendCooldown > 0 || sendingOtp) && styles.otpResendDisabled]}>
-                {sendingOtp ? 'Sending…' : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code'}
+            <Text style={styles.otpNote}>
+              Didn't receive the code? Check your spam folder or{" "}
+            </Text>
+            <TouchableOpacity
+              onPress={sendOtp}
+              disabled={resendCooldown > 0 || sendingOtp}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.otpResend,
+                  (resendCooldown > 0 || sendingOtp) && styles.otpResendDisabled,
+                ]}
+              >
+                {sendingOtp
+                  ? "Sending…"
+                  : resendCooldown > 0
+                    ? `Resend in ${resendCooldown}s`
+                    : "Resend Code"}
               </Text>
             </TouchableOpacity>
           </>
@@ -667,68 +708,173 @@ export default function Signup() {
           <>
             <Text style={styles.stepTitle}>Personal Information</Text>
             <Text style={styles.stepSubtitle}>Tell us a little about yourself</Text>
-            <Field label="First Name" icon={<User size={18} color="#5a8a6a" />} value={formData.first_name} onChangeText={(v) => update('first_name', v)} required />
-            <Field label="Middle Name" icon={<User size={18} color="#5a8a6a" />} value={formData.middle_name} onChangeText={(v) => update('middle_name', v)} />
-            <Field label="Last Name" icon={<User size={18} color="#5a8a6a" />} value={formData.last_name} onChangeText={(v) => update('last_name', v)} required />
+            <Field
+              label="First Name"
+              icon={<User size={18} color="#5a8a6a" />}
+              value={formData.first_name}
+              onChangeText={(v) => update("first_name", v)}
+              required
+            />
+            <Field
+              label="Middle Name"
+              icon={<User size={18} color="#5a8a6a" />}
+              value={formData.middle_name}
+              onChangeText={(v) => update("middle_name", v)}
+            />
+            <Field
+              label="Last Name"
+              icon={<User size={18} color="#5a8a6a" />}
+              value={formData.last_name}
+              onChangeText={(v) => update("last_name", v)}
+              required
+            />
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Birthday <Text style={{ color: '#5a8a6a', fontSize: 10 }}>(optional)</Text></Text>
-              <TouchableOpacity style={styles.inputContainer} onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
-                <View style={styles.inputIcon}><Calendar size={18} color="#5a8a6a" /></View>
-                <Text style={[styles.dateDisplay, !formData.birthday && styles.dateDisplayPlaceholder]}>
-                  {formData.birthday || 'Select your birthday'}
+              <Text style={styles.label}>
+                Birthday{" "}
+                <Text style={{ color: "#5a8a6a", fontSize: 10 }}>(optional)</Text>
+              </Text>
+              <TouchableOpacity
+                style={styles.inputContainer}
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.inputIcon}>
+                  <Calendar size={18} color="#5a8a6a" />
+                </View>
+                <Text
+                  style={[
+                    styles.dateDisplay,
+                    !formData.birthday && styles.dateDisplayPlaceholder,
+                  ]}
+                >
+                  {formData.birthday || "Select your birthday"}
                 </Text>
                 <Calendar size={16} color="#2d5f3c" />
               </TouchableOpacity>
             </View>
-            <Field label="Contact Number" icon={<Phone size={18} color="#5a8a6a" />} value={formData.contact} onChangeText={(v) => update('contact', v)} keyboardType="phone-pad" autoCapitalize="none" required />
-            <Field label="Address" icon={<MapPin size={18} color="#5a8a6a" />} value={formData.address} onChangeText={(v) => update('address', v)} required />
-            <GenderPicker value={formData.gender} onChange={(v) => update('gender', v)} />
-            <FileButton label="Profile Image" value={formData.profile_img} onPress={() => pickImage('profile_img')} isImage />
+            <Field
+              label="Contact Number"
+              icon={<Phone size={18} color="#5a8a6a" />}
+              value={formData.contact}
+              onChangeText={(v) => update("contact", v)}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+              required
+            />
+            <Field
+              label="Address"
+              icon={<MapPin size={18} color="#5a8a6a" />}
+              value={formData.address}
+              onChangeText={(v) => update("address", v)}
+              required
+            />
+            <GenderPicker value={formData.gender} onChange={(v) => update("gender", v)} />
+            <FileButton
+              label="Profile Image"
+              value={formData.profile_img}
+              onPress={() => pickImage("profile_img")}
+              isImage
+            />
           </>
         );
       case 3:
         return (
           <>
             <Text style={styles.stepTitle}>Group & Project</Text>
-            <Text style={styles.stepSubtitle}>Details about your group and maintenance plan</Text>
+            <Text style={styles.stepSubtitle}>
+              Details about your group and maintenance plan
+            </Text>
 
             <Text style={styles.sectionHeading}>Group Details</Text>
-            <Field label="Group Name" icon={<Building2 size={18} color="#5a8a6a" />} value={formData.group_name} onChangeText={(v) => update('group_name', v)} required />
-            <GroupTypePicker value={formData.group_type} onChange={(v) => update('group_type', v)} />
-            <Field label="Group Address" icon={<MapPin size={18} color="#5a8a6a" />} value={formData.group_address} onChangeText={(v) => update('group_address', v)} required />
-            <Field label="Group Contact" icon={<Phone size={18} color="#5a8a6a" />} value={formData.group_contact} onChangeText={(v) => update('group_contact', v)} keyboardType="phone-pad" autoCapitalize="none" required />
-            <FileButton label="Group Logo" value={formData.group_profile} onPress={() => pickImage('group_profile')} isImage />
+            <Field
+              label="Group Name"
+              icon={<Building2 size={18} color="#5a8a6a" />}
+              value={formData.group_name}
+              onChangeText={(v) => update("group_name", v)}
+              required
+            />
+            <GroupTypePicker value={formData.group_type} onChange={(v) => update("group_type", v)} />
+            <Field
+              label="Group Address"
+              icon={<MapPin size={18} color="#5a8a6a" />}
+              value={formData.group_address}
+              onChangeText={(v) => update("group_address", v)}
+              required
+            />
+            <Field
+              label="Group Contact"
+              icon={<Phone size={18} color="#5a8a6a" />}
+              value={formData.group_contact}
+              onChangeText={(v) => update("group_contact", v)}
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+              required
+            />
+            <FileButton
+              label="Group Logo"
+              value={formData.group_profile}
+              onPress={() => pickImage("group_profile")}
+              isImage
+            />
 
-            <Text style={[styles.sectionHeading, { marginTop: 18 }]}>Project / Application</Text>
-            <Field label="Project Title" icon={<FileText size={18} color="#5a8a6a" />} value={formData.title} onChangeText={(v) => update('title', v)} required />
-            <Field 
-              label="Total Tree Growers" 
-              icon={<Users size={18} color="#5a8a6a" />} 
-              value={formData.total_treegrowers_will_participate} 
-              onChangeText={(v) => update('total_treegrowers_will_participate', v)} 
-              keyboardType="numeric" 
-              autoCapitalize="none" 
-              required 
+            <Text style={[styles.sectionHeading, { marginTop: 18 }]}>
+              Project / Application
+            </Text>
+            <Field
+              label="Project Title"
+              icon={<FileText size={18} color="#5a8a6a" />}
+              value={formData.title}
+              onChangeText={(v) => update("title", v)}
+              required
+            />
+            <Field
+              label="Total Tree Growers"
+              icon={<Users size={18} color="#5a8a6a" />}
+              value={formData.total_treegrowers_will_participate}
+              onChangeText={(v) => update("total_treegrowers_will_participate", v)}
+              keyboardType="numeric"
+              autoCapitalize="none"
+              required
             />
             <Text style={styles.hint}>Minimum 2 tree growers required per group</Text>
 
-            {/* ✅ NEW: Proposed Orientation Date Picker */}
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Proposed Orientation Date <Text style={{ color: '#5a8a6a', fontSize: 10 }}>(optional)</Text></Text>
-              <TouchableOpacity style={styles.inputContainer} onPress={() => setShowProposedDatePicker(true)} activeOpacity={0.7}>
-                <View style={styles.inputIcon}><Calendar size={18} color="#5a8a6a" /></View>
-                <Text style={[styles.dateDisplay, !formData.proposed_orientation_date && styles.dateDisplayPlaceholder]}>
-                  {formData.proposed_orientation_date || 'Select preferred date (optional)'}
+              <Text style={styles.label}>
+                Proposed Orientation Date{" "}
+                <Text style={{ color: "#5a8a6a", fontSize: 10 }}>(optional)</Text>
+              </Text>
+              <TouchableOpacity
+                style={styles.inputContainer}
+                onPress={() => setShowProposedDatePicker(true)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.inputIcon}>
+                  <Calendar size={18} color="#5a8a6a" />
+                </View>
+                <Text
+                  style={[
+                    styles.dateDisplay,
+                    !formData.proposed_orientation_date && styles.dateDisplayPlaceholder,
+                  ]}
+                >
+                  {formData.proposed_orientation_date || "Select preferred date (optional)"}
                 </Text>
                 <Calendar size={16} color="#2d5f3c" />
               </TouchableOpacity>
             </View>
 
-            <FileButton label="Maintenance Plan" value={formData.maintenance_plan} onPress={() => pickDocument('maintenance_plan')} required />
+            <FileButton
+              label="Maintenance Plan"
+              value={formData.maintenance_plan}
+              onPress={() => pickDocument("maintenance_plan")}
+              required
+            />
 
             <View style={styles.noteBox}>
               <Text style={styles.noteText}>
-                🌱 <Text style={styles.noteBold}>Seedling Request:</Text> You can request seedlings after your application is accepted and you know your assigned site.
+                🌱 <Text style={styles.noteBold}>Seedling Request:</Text> You
+                can request seedlings after your application is accepted and you
+                know your assigned site.
               </Text>
             </View>
           </>
@@ -737,7 +883,9 @@ export default function Signup() {
         return (
           <>
             <Text style={styles.stepTitle}>Review Your Application</Text>
-            <Text style={styles.stepSubtitle}>Please confirm your details before submitting</Text>
+            <Text style={styles.stepSubtitle}>
+              Please confirm your details before submitting
+            </Text>
 
             <ReviewSection title="🔐 Account">
               <ReviewRow label="Email" value={formData.email} />
@@ -745,50 +893,108 @@ export default function Signup() {
             </ReviewSection>
 
             <ReviewSection title="👤 Personal">
-              <ReviewRow label="Name" value={`${formData.first_name} ${formData.middle_name} ${formData.last_name}`.trim()} />
-              <ReviewRow label="Birthday" value={formData.birthday || 'Not provided'} />
+              <ReviewRow
+                label="Name"
+                value={`${formData.first_name} ${formData.middle_name} ${formData.last_name}`.trim()}
+              />
+              <ReviewRow label="Birthday" value={formData.birthday || "Not provided"} />
               <ReviewRow label="Contact" value={formData.contact} />
               <ReviewRow label="Address" value={formData.address} />
               <ReviewRow label="Gender" value={formData.gender} />
-              <ReviewRow label="Profile Image" value={formData.profile_img?.name ?? 'Not provided'} />
+              <ReviewRow label="Profile Image" value={formData.profile_img?.name ?? "Not provided"} />
             </ReviewSection>
 
             <ReviewSection title="🌿 Group">
               <ReviewRow label="Group Name" value={formData.group_name} />
-              <ReviewRow label="Group Type" value={GROUP_TYPES.find(t => t.value === formData.group_type)?.label || '—'} />
+              <ReviewRow
+                label="Group Type"
+                value={GROUP_TYPES.find((t) => t.value === formData.group_type)?.label || "—"}
+              />
               <ReviewRow label="Group Address" value={formData.group_address} />
               <ReviewRow label="Group Contact" value={formData.group_contact} />
-              <ReviewRow label="Group Logo" value={formData.group_profile?.name ?? 'Not provided'} />
+              <ReviewRow label="Group Logo" value={formData.group_profile?.name ?? "Not provided"} />
             </ReviewSection>
 
             <ReviewSection title="📋 Project">
               <ReviewRow label="Title" value={formData.title} />
               <ReviewRow label="Tree Growers" value={formData.total_treegrowers_will_participate} />
-              {/* ✅ NEW: Show proposed orientation date in review */}
-              <ReviewRow label="Proposed Orientation" value={formData.proposed_orientation_date || 'Not specified'} />
-              <ReviewRow label="Maintenance Plan" value={formData.maintenance_plan?.name ?? '—'} />
+              <ReviewRow label="Proposed Orientation" value={formData.proposed_orientation_date || "Not specified"} />
+              <ReviewRow label="Maintenance Plan" value={formData.maintenance_plan?.name ?? "—"} />
             </ReviewSection>
 
             <View style={styles.noteBox}>
               <Text style={styles.noteText}>
-                ⚠️ Your account will be set as <Text style={styles.noteBold}>For Evaluation</Text> until approved by an administrator. Seedling requests can be made after acceptance.
+                ⚠️ Your account will be set as{" "}
+                <Text style={styles.noteBold}>For Evaluation</Text> until
+                approved by an administrator. Seedling requests can be made
+                after acceptance.
               </Text>
             </View>
 
             <View style={styles.privacyAgreementBox}>
               <View style={styles.legalInfoBox}>
                 <Text style={styles.legalInfoText}>
-                  Before submitting, please read our{' '}
-                  <Text style={styles.privacyLink} onPress={() => setShowPrivacyPolicy(true)}>Data Privacy Notice</Text>
-                  {' '}and{' '}
-                  <Text style={styles.privacyLink} onPress={() => setShowTerms(true)}>Terms & Conditions</Text>. Your field data, GPS coordinates, and photos are collected as part of the reforestation monitoring program.
+                  Before submitting, please read our{" "}
+                  <Text
+                    style={[
+                      styles.privacyLink,
+                      hasViewedPrivacy && styles.privacyLinkViewed,
+                    ]}
+                    onPress={() => setShowPrivacyPolicy(true)}
+                  >
+                    {hasViewedPrivacy ? "✓ " : ""}Data Privacy Notice
+                  </Text>{" "}
+                  and{" "}
+                  <Text
+                    style={[
+                      styles.privacyLink,
+                      hasViewedTerms && styles.privacyLinkViewed,
+                    ]}
+                    onPress={() => setShowTerms(true)}
+                  >
+                    {hasViewedTerms ? "✓ " : ""}Terms & Conditions
+                  </Text>
+                  . Your field data, GPS coordinates, and photos are collected
+                  as part of the reforestation monitoring program.
                 </Text>
               </View>
-              <TouchableOpacity style={styles.checkRow} onPress={() => setAgreedToPrivacy(!agreedToPrivacy)} activeOpacity={0.7}>
-                <View style={[styles.checkbox, agreedToPrivacy && styles.checkboxChecked]}>
+
+              {/* ✅ Show status if not yet viewed */}
+              {(!hasViewedPrivacy || !hasViewedTerms) && (
+                <View style={styles.viewStatusBox}>
+                  <Text style={styles.viewStatusText}>
+                    {!hasViewedPrivacy && !hasViewedTerms
+                      ? "📖 Please read both documents before agreeing"
+                      : !hasViewedPrivacy
+                      ? "📖 Please read the Privacy Policy first"
+                      : "📖 Please read the Terms & Conditions first"}
+                  </Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.checkRow,
+                  (!hasViewedPrivacy || !hasViewedTerms) && styles.checkRowDisabled,
+                ]}
+                onPress={handleAgreementToggle}
+                activeOpacity={0.7}
+              >
+                <View
+                  style={[
+                    styles.checkbox,
+                    agreedToPrivacy && styles.checkboxChecked,
+                    (!hasViewedPrivacy || !hasViewedTerms) && styles.checkboxDisabled,
+                  ]}
+                >
                   {agreedToPrivacy && <Check size={11} color="#ffffff" strokeWidth={3} />}
                 </View>
-                <Text style={styles.privacyText}>I agree to the Privacy Notice and Terms & Conditions</Text>
+                <Text style={[
+                  styles.privacyText,
+                  (!hasViewedPrivacy || !hasViewedTerms) && styles.privacyTextDisabled,
+                ]}>
+                  I agree to the Privacy Notice and Terms & Conditions
+                </Text>
               </TouchableOpacity>
             </View>
           </>
@@ -799,16 +1005,34 @@ export default function Signup() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={[styles.container, { maxWidth: Math.min(MAX_CARD_WIDTH, windowWidth - HORIZONTAL_PADDING * 2) }]}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View
+          style={[
+            styles.container,
+            {
+              maxWidth: Math.min(MAX_CARD_WIDTH, windowWidth - HORIZONTAL_PADDING * 2),
+            },
+          ]}
+        >
           <View style={styles.authContainer}>
             <View style={styles.logoContainer}>
               <View style={styles.logoCircle}>
-                <Image source={require('../assets/images/logo.jpg')} style={styles.logo} />
+                <Image
+                  source={require("../assets/images/logo.jpg")}
+                  style={styles.logo}
+                />
               </View>
               <Text style={styles.brandTitle}>PlantScope</Text>
-              <Text style={styles.brandSubtitle}>Nature's Digital System for TreeGrowers</Text>
+              <Text style={styles.brandSubtitle}>
+                Nature's Digital System for TreeGrowers
+              </Text>
             </View>
 
             <View style={styles.stepsRow}>
@@ -816,14 +1040,31 @@ export default function Signup() {
                 const IconComponent = s.Icon;
                 const items: React.ReactElement[] = [
                   <View key={`step-${i}`} style={styles.stepItem}>
-                    <View style={[styles.stepDot, i <= step && styles.stepDotActive, i < step && styles.stepDotDone]}>
-                      {i < step ? <Check size={14} color="#ffffff" strokeWidth={2.5} /> : <IconComponent size={16} color={i === step ? '#4caf72' : '#5a8a6a'} />}
+                    <View
+                      style={[
+                        styles.stepDot,
+                        i <= step && styles.stepDotActive,
+                        i < step && styles.stepDotDone,
+                      ]}
+                    >
+                      {i < step ? (
+                        <Check size={14} color="#ffffff" strokeWidth={2.5} />
+                      ) : (
+                        <IconComponent size={16} color={i === step ? "#4caf72" : "#5a8a6a"} />
+                      )}
                     </View>
-                    <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]}>{s.label}</Text>
+                    <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]}>
+                      {s.label}
+                    </Text>
                   </View>,
                 ];
                 if (i < STEPS.length - 1) {
-                  items.push(<View key={`line-${i}`} style={[styles.stepConnector, i < step && styles.stepConnectorDone]} />);
+                  items.push(
+                    <View
+                      key={`line-${i}`}
+                      style={[styles.stepConnector, i < step && styles.stepConnectorDone]}
+                    />,
+                  );
                 }
                 return items;
               })}
@@ -834,7 +1075,11 @@ export default function Signup() {
 
               <View style={styles.navRow}>
                 {step > 0 && (
-                  <TouchableOpacity style={styles.backButton} onPress={goBack} activeOpacity={0.7}>
+                  <TouchableOpacity
+                    style={styles.backButton}
+                    onPress={goBack}
+                    activeOpacity={0.7}
+                  >
                     <ChevronLeft size={18} color="#a8c5b3" />
                     <Text style={styles.backButtonText}>Back</Text>
                   </TouchableOpacity>
@@ -842,13 +1087,23 @@ export default function Signup() {
 
                 {step < 4 ? (
                   <TouchableOpacity
-                    style={[styles.nextButton, step === 0 && styles.nextButtonFull, (sendingOtp || loading) && styles.nextButtonDisabled]}
+                    style={[
+                      styles.nextButton,
+                      step === 0 && styles.nextButtonFull,
+                      (sendingOtp || loading) && styles.nextButtonDisabled,
+                    ]}
                     onPress={goNext}
                     disabled={sendingOtp || loading}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.nextButtonText}>
-                      {step === 0 && sendingOtp ? 'Sending Code…' : step === 1 && loading ? 'Verifying…' : step === 1 ? 'Verify Email' : 'Continue'}
+                      {step === 0 && sendingOtp
+                        ? "Sending Code…"
+                        : step === 1 && loading
+                          ? "Verifying…"
+                          : step === 1
+                            ? "Verify Email"
+                            : "Continue"}
                     </Text>
                     {!(sendingOtp || loading) && <ChevronRight size={18} color="#fff" />}
                   </TouchableOpacity>
@@ -859,7 +1114,9 @@ export default function Signup() {
                     disabled={loading}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.nextButtonText}>{loading ? 'Submitting…' : 'Submit Application'}</Text>
+                    <Text style={styles.nextButtonText}>
+                      {loading ? "Submitting…" : "Submit Application"}
+                    </Text>
                     {!loading && <CheckCircle size={18} color="#fff" />}
                   </TouchableOpacity>
                 )}
@@ -868,7 +1125,7 @@ export default function Signup() {
 
             <View style={styles.bottomText}>
               <Text style={styles.registerText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/login')}>
+              <TouchableOpacity onPress={() => router.push("/homepage")}>
                 <Text style={styles.registerLink}>Sign In</Text>
               </TouchableOpacity>
             </View>
@@ -878,173 +1135,413 @@ export default function Signup() {
         </View>
       </ScrollView>
 
-      {/* ✅ Modals for Date Pickers */}
-      <DatePickerModal visible={showDatePicker} value={formData.birthday} onConfirm={(d) => update('birthday', d)} onClose={() => setShowDatePicker(false)} />
-      <DatePickerModal visible={showProposedDatePicker} value={formData.proposed_orientation_date} onConfirm={(d) => update('proposed_orientation_date', d)} onClose={() => setShowProposedDatePicker(false)} />
-      
-      <PrivacyPolicyModal visible={showPrivacyPolicy} onClose={() => setShowPrivacyPolicy(false)} />
-      <TermsModal visible={showTerms} onClose={() => setShowTerms(false)} />
+      {/* ✅ Extracted Modals */}
+      <DatePickerModal
+        visible={showDatePicker}
+        value={formData.birthday}
+        onConfirm={(d) => update("birthday", d)}
+        onClose={() => setShowDatePicker(false)}
+      />
+      <DatePickerModal
+        visible={showProposedDatePicker}
+        value={formData.proposed_orientation_date}
+        onConfirm={(d) => update("proposed_orientation_date", d)}
+        onClose={() => setShowProposedDatePicker(false)}
+      />
+
+      <PrivacyPolicyModal
+        visible={showPrivacyPolicy}
+        onClose={() => setShowPrivacyPolicy(false)}
+        onViewed={() => setHasViewedPrivacy(true)}
+        hasViewed={hasViewedPrivacy}
+      />
+      <TermsModal
+        visible={showTerms}
+        onClose={() => setShowTerms(false)}
+        onViewed={() => setHasViewedTerms(true)}
+        hasViewed={hasViewedTerms}
+      />
     </KeyboardAvoidingView>
   );
 }
 
 // ─── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0d2a17' },
-  scrollContent: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 24, paddingHorizontal: HORIZONTAL_PADDING },
-  container: { width: '100%' },
-  authContainer: { width: '100%', alignItems: 'center' },
-  logoContainer: { alignItems: 'center', marginBottom: 22 },
-  logoCircle: { width: 82, height: 82, borderRadius: 41, backgroundColor: 'rgba(255,255,255,0.08)', justifyContent: 'center', alignItems: 'center', marginBottom: 12, borderWidth: 2, borderColor: 'rgba(76,175,114,0.35)' },
+  root: { flex: 1, backgroundColor: "#0d2a17" },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 24,
+    paddingHorizontal: HORIZONTAL_PADDING,
+  },
+  container: { width: "100%" },
+  authContainer: { width: "100%", alignItems: "center" },
+  logoContainer: { alignItems: "center", marginBottom: 22 },
+  logoCircle: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "rgba(76,175,114,0.35)",
+  },
   logo: { width: 66, height: 66, borderRadius: 33 },
-  brandTitle: { fontSize: 28, fontWeight: '800', color: '#ffffff', letterSpacing: 0.6 },
-  brandSubtitle: { fontSize: 12, color: '#a8c5b3', marginTop: 4, textAlign: 'center' },
-  stepsRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20, width: '100%' },
-  stepItem: { alignItems: 'center', width: 46 },
-  stepConnector: { flex: 1, height: 2, backgroundColor: '#2d5f3c', marginTop: 19 },
-  stepConnectorDone: { backgroundColor: '#4caf72' },
-  stepDot: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#122b1a', borderWidth: 2, borderColor: '#2d5f3c', justifyContent: 'center', alignItems: 'center' },
-  stepDotActive: { borderColor: '#4caf72', backgroundColor: '#1a4228' },
-  stepDotDone: { backgroundColor: '#2d5f3c', borderColor: '#4caf72' },
-  stepDotText: { fontSize: 14 },
-  stepLabel: { fontSize: 10, color: '#5a8a6a', marginTop: 4, textAlign: 'center' },
-  stepLabelActive: { color: '#a8c5b3', fontWeight: '700' },
-  authCard: { width: '100%', backgroundColor: '#183d23', borderRadius: 18, padding: 22, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderTopColor: 'rgba(76,175,114,0.45)', borderTopWidth: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.5, shadowRadius: 18, elevation: 14 },
-  stepTitle: { fontSize: 20, color: '#ffffff', fontWeight: '700', marginBottom: 4 },
-  stepSubtitle: { fontSize: 12, color: '#5a8a6a', marginBottom: 18 },
-  sectionHeading: { fontSize: 11, color: '#4caf72', fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10, marginTop: 4 },
+  brandTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#ffffff",
+    letterSpacing: 0.6,
+  },
+  brandSubtitle: {
+    fontSize: 12,
+    color: "#a8c5b3",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  stepsRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 20,
+    width: "100%",
+  },
+  stepItem: { alignItems: "center", width: 46 },
+  stepConnector: {
+    flex: 1,
+    height: 2,
+    backgroundColor: "#2d5f3c",
+    marginTop: 19,
+  },
+  stepConnectorDone: { backgroundColor: "#4caf72" },
+  stepDot: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#122b1a",
+    borderWidth: 2,
+    borderColor: "#2d5f3c",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  stepDotActive: { borderColor: "#4caf72", backgroundColor: "#1a4228" },
+  stepDotDone: { backgroundColor: "#2d5f3c", borderColor: "#4caf72" },
+  stepLabel: {
+    fontSize: 10,
+    color: "#5a8a6a",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  stepLabelActive: { color: "#a8c5b3", fontWeight: "700" },
+  authCard: {
+    width: "100%",
+    backgroundColor: "#183d23",
+    borderRadius: 18,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    borderTopColor: "rgba(76,175,114,0.45)",
+    borderTopWidth: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 18,
+    elevation: 14,
+  },
+  stepTitle: {
+    fontSize: 20,
+    color: "#ffffff",
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  stepSubtitle: { fontSize: 12, color: "#5a8a6a", marginBottom: 18 },
+  sectionHeading: {
+    fontSize: 11,
+    color: "#4caf72",
+    fontWeight: "700",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginBottom: 10,
+    marginTop: 4,
+  },
   formGroup: { marginBottom: 12 },
-  label: { color: '#a8c5b3', fontSize: 12, marginBottom: 6, fontWeight: '600' },
-  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0b2211', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 8, minHeight: 46 },
+  label: { color: "#a8c5b3", fontSize: 12, marginBottom: 6, fontWeight: "600" },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#0b2211",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 46,
+  },
   inputIcon: { marginRight: 8 },
-  input: { flex: 1, color: '#ffffff', fontSize: 15, paddingVertical: 6, backgroundColor: 'transparent', borderWidth: 0 },
-  dateDisplay: { flex: 1, color: '#ffffff', fontSize: 15, paddingVertical: 6 },
-  dateDisplayPlaceholder: { color: '#5a8a6a' },
+  input: {
+    flex: 1,
+    color: "#ffffff",
+    fontSize: 15,
+    paddingVertical: 6,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+  },
+  dateDisplay: { flex: 1, color: "#ffffff", fontSize: 15, paddingVertical: 6 },
+  dateDisplayPlaceholder: { color: "#5a8a6a" },
   eyeButton: { padding: 6 },
-  hint: { fontSize: 10, color: '#5a8a6a', marginTop: 4 },
-  genderRow: { flexDirection: 'row', gap: 8 },
-  genderChip: { flex: 1, paddingVertical: 11, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0b2211', alignItems: 'center' },
-  genderChipActive: { borderColor: '#4caf72', backgroundColor: '#1a4228' },
-  genderChipText: { color: '#5a8a6a', fontSize: 13, fontWeight: '600' },
-  genderChipTextActive: { color: '#ffffff' },
-  fileButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0b2211', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', borderStyle: 'dashed', paddingHorizontal: 14, paddingVertical: 12, gap: 10 },
-  fileButtonText: { flex: 1, color: '#a8c5b3', fontSize: 13 },
-  imagePreviewBtn: { borderRadius: 10, overflow: 'hidden', height: 110, borderWidth: 1, borderColor: 'rgba(76,175,114,0.3)' },
-  imagePreview: { width: '100%', height: '100%' },
-  imagePreviewOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.55)', paddingVertical: 6, alignItems: 'center' },
-  imagePreviewText: { color: '#ffffff', fontSize: 12, fontWeight: '600' },
-  reviewSection: { backgroundColor: '#0b2211', borderRadius: 10, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
-  reviewSectionTitle: { fontSize: 11, color: '#4caf72', fontWeight: '700', marginBottom: 10, letterSpacing: 0.6, textTransform: 'uppercase' },
-  reviewRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.04)' },
-  reviewLabel: { color: '#5a8a6a', fontSize: 12, flex: 1 },
-  reviewValue: { color: '#e0ece4', fontSize: 12, flex: 2, textAlign: 'right', fontWeight: '600' },
-  noteBox: { backgroundColor: 'rgba(76,175,114,0.08)', borderRadius: 8, padding: 12, marginTop: 4, borderWidth: 1, borderColor: 'rgba(76,175,114,0.2)' },
-  noteText: { color: '#a8c5b3', fontSize: 12, lineHeight: 18 },
-  noteBold: { color: '#4caf72', fontWeight: '700' },
-  privacyAgreementBox: { marginTop: 12, padding: 14, backgroundColor: 'rgba(76,175,114,0.06)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(76,175,114,0.2)' },
-  legalInfoBox: { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  legalInfoText: { color: '#a8c5b3', fontSize: 12, lineHeight: 19 },
-  checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 2, borderColor: 'rgba(255,255,255,0.22)', backgroundColor: '#0b2211', justifyContent: 'center', alignItems: 'center', marginTop: 1 },
-  checkboxChecked: { backgroundColor: '#4caf72', borderColor: '#4caf72' },
-  privacyText: { flex: 1, color: '#a8c5b3', fontSize: 12, lineHeight: 18 },
-  privacyLink: { color: '#4caf72', fontWeight: '700' },
-  otpEmailBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(76,175,114,0.1)', borderWidth: 1, borderColor: 'rgba(76,175,114,0.25)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 22 },
-  otpEmailText: { color: '#a8c5b3', fontSize: 13, flex: 1 },
-  otpWrapper: { alignItems: 'center', marginBottom: 20, height: 54 },
-  otpHiddenInput: { position: 'absolute', opacity: 0, width: '100%', height: 54, zIndex: 10 },
-  otpBoxRow: { flexDirection: 'row', gap: 8 },
-  otpBox: { width: 44, height: 54, borderRadius: 10, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: '#0b2211', justifyContent: 'center', alignItems: 'center' },
-  otpBoxFilled: { borderColor: '#4caf72', backgroundColor: '#122b1a' },
-  otpBoxCursor: { borderColor: '#4caf72', borderWidth: 2 },
-  otpBoxText: { color: '#ffffff', fontSize: 22, fontWeight: '700' },
-  otpNote: { color: '#5a8a6a', fontSize: 12, textAlign: 'center', marginBottom: 4 },
-  otpResend: { color: '#4caf72', fontSize: 13, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
-  otpResendDisabled: { color: '#5a8a6a' },
-  navRow: { flexDirection: 'row', marginTop: 20, gap: 10 },
-  backButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', gap: 4 },
-  backButtonText: { color: '#a8c5b3', fontSize: 14, fontWeight: '600' },
-  nextButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#2d5f3c', borderRadius: 10, paddingVertical: 14, gap: 6, borderWidth: 1, borderColor: 'rgba(76,175,114,0.3)' },
-  nextButtonFull: { flex: 1 },
-  nextButtonDisabled: { opacity: 0.5 },
-  nextButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
-  bottomText: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 18 },
-  registerText: { color: '#a8c5b3', fontSize: 14 },
-  registerLink: { color: '#4caf72', fontWeight: '700', fontSize: 14 },
-  footer: { color: '#5a8a6a', fontSize: 11, marginTop: 16, textAlign: 'center' },
-  groupTypeRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  groupTypeChip: { 
-    flex: 1, 
-    minWidth: 100,
-    paddingVertical: 11, 
-    paddingHorizontal: 8,
-    borderRadius: 8, 
-    borderWidth: 1, 
-    borderColor: 'rgba(255,255,255,0.1)', 
-    backgroundColor: '#0b2211', 
-    alignItems: 'center',
+  hint: { fontSize: 10, color: "#5a8a6a", marginTop: 4 },
+  genderRow: { flexDirection: "row", gap: 8 },
+  genderChip: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "#0b2211",
+    alignItems: "center",
+  },
+  genderChipActive: { borderColor: "#4caf72", backgroundColor: "#1a4228" },
+  genderChipText: { color: "#5a8a6a", fontSize: 13, fontWeight: "600" },
+  genderChipTextActive: { color: "#ffffff" },
+  fileButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#0b2211",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    borderStyle: "dashed",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  fileButtonText: { flex: 1, color: "#a8c5b3", fontSize: 13 },
+  imagePreviewBtn: {
+    borderRadius: 10,
+    overflow: "hidden",
+    height: 110,
+    borderWidth: 1,
+    borderColor: "rgba(76,175,114,0.3)",
+  },
+  imagePreview: { width: "100%", height: "100%" },
+  imagePreviewOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingVertical: 6,
+    alignItems: "center",
+  },
+  imagePreviewText: { color: "#ffffff", fontSize: 12, fontWeight: "600" },
+  reviewSection: {
+    backgroundColor: "#0b2211",
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  reviewSectionTitle: {
+    fontSize: 11,
+    color: "#4caf72",
+    fontWeight: "700",
+    marginBottom: 10,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  reviewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.04)",
+  },
+  reviewLabel: { color: "#5a8a6a", fontSize: 12, flex: 1 },
+  reviewValue: {
+    color: "#e0ece4",
+    fontSize: 12,
+    flex: 2,
+    textAlign: "right",
+    fontWeight: "600",
+  },
+  noteBox: {
+    backgroundColor: "rgba(76,175,114,0.08)",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: "rgba(76,175,114,0.2)",
+  },
+  noteText: { color: "#a8c5b3", fontSize: 12, lineHeight: 18 },
+  noteBold: { color: "#4caf72", fontWeight: "700" },
+  privacyAgreementBox: {
+    marginTop: 12,
+    padding: 14,
+    backgroundColor: "rgba(76,175,114,0.06)",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(76,175,114,0.2)",
+  },
+  legalInfoBox: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  legalInfoText: { color: "#a8c5b3", fontSize: 12, lineHeight: 19 },
+  // ✅ New styles for document viewing status
+  viewStatusBox: {
+    backgroundColor: "rgba(245,158,11,0.08)",
+    borderLeftWidth: 3,
+    borderLeftColor: "#f59e0b",
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 12,
+  },
+  viewStatusText: {
+    color: "#fbbf24",
+    fontSize: 11,
+    fontWeight: "600",
+    lineHeight: 16,
+  },
+  checkRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  checkRowDisabled: { opacity: 0.5 },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "#0b2211",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 1,
+  },
+  checkboxChecked: { backgroundColor: "#4caf72", borderColor: "#4caf72" },
+  checkboxDisabled: { opacity: 0.5 },
+  privacyText: { flex: 1, color: "#a8c5b3", fontSize: 12, lineHeight: 18 },
+  privacyTextDisabled: { color: "#5a8a6a" },
+  privacyLink: { color: "#4caf72", fontWeight: "700" },
+  privacyLinkViewed: { color: "#10b981", textDecorationLine: "underline" },
+  otpEmailBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(76,175,114,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(76,175,114,0.25)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 22,
+  },
+  otpEmailText: { color: "#a8c5b3", fontSize: 13, flex: 1 },
+  otpWrapper: { alignItems: "center", marginBottom: 20, height: 54 },
+  otpHiddenInput: {
+    position: "absolute",
+    opacity: 0,
+    width: "100%",
+    height: 54,
+    zIndex: 10,
+  },
+  otpBoxRow: { flexDirection: "row", gap: 8 },
+  otpBox: {
+    width: 44,
+    height: 54,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "#0b2211",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  otpBoxFilled: { borderColor: "#4caf72", backgroundColor: "#122b1a" },
+  otpBoxCursor: { borderColor: "#4caf72", borderWidth: 2 },
+  otpBoxText: { color: "#ffffff", fontSize: 22, fontWeight: "700" },
+  otpNote: {
+    color: "#5a8a6a",
+    fontSize: 12,
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  otpResend: {
+    color: "#4caf72",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center",
     marginBottom: 8,
   },
-  groupTypeChipActive: { 
-    borderColor: '#4caf72', 
-    backgroundColor: '#1a4228' 
+  otpResendDisabled: { color: "#5a8a6a" },
+  navRow: { flexDirection: "row", marginTop: 20, gap: 10 },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    gap: 4,
   },
-  groupTypeChipText: { 
-    color: '#5a8a6a', 
-    fontSize: 11, 
-    fontWeight: '600',
-    textAlign: 'center',
+  backButtonText: { color: "#a8c5b3", fontSize: 14, fontWeight: "600" },
+  nextButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#2d5f3c",
+    borderRadius: 10,
+    paddingVertical: 14,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "rgba(76,175,114,0.3)",
   },
-  groupTypeChipTextActive: { 
-    color: '#ffffff' 
+  nextButtonFull: { flex: 1 },
+  nextButtonDisabled: { opacity: 0.5 },
+  nextButtonText: { color: "#ffffff", fontSize: 15, fontWeight: "700" },
+  bottomText: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    marginTop: 18,
   },
-});
-
-// ─── Date Picker Styles ────────────────────────────────────────────────────
-const dpStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center' },
-  container: { backgroundColor: '#183d23', borderRadius: 20, padding: 20, width: Math.min(320, windowWidth - 48), borderWidth: 1, borderColor: 'rgba(76,175,114,0.35)', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.6, shadowRadius: 20, elevation: 16 },
-  title: { fontSize: 15, color: '#ffffff', fontWeight: '700', textAlign: 'center', marginBottom: 16 },
-  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 14 },
-  navBtn: { padding: 6, borderRadius: 8, backgroundColor: 'rgba(76,175,114,0.12)' },
-  yearLabel: { color: '#ffffff', fontSize: 14, fontWeight: '700', minWidth: 46, textAlign: 'center' },
-  monthLabel: { color: '#ffffff', fontSize: 14, fontWeight: '700', minWidth: 82, textAlign: 'center' },
-  divider: { width: 1, height: 18, backgroundColor: 'rgba(255,255,255,0.15)', marginHorizontal: 4 },
-  weekRow: { flexDirection: 'row', marginBottom: 6 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 16 },
-  cell: { width: `${100 / 7}%` as any, aspectRatio: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 999 },
-  cellSelected: { backgroundColor: '#4caf72' },
-  weekDay: { color: '#4caf72', fontSize: 11, fontWeight: '700' },
-  cellText: { color: '#a8c5b3', fontSize: 13, fontWeight: '500' },
-  cellTextSelected: { color: '#ffffff', fontWeight: '700' },
-  actions: { flexDirection: 'row', gap: 10 },
-  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', alignItems: 'center' },
-  cancelText: { color: '#a8c5b3', fontSize: 14, fontWeight: '600' },
-  confirmBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#2d5f3c', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(76,175,114,0.3)' },
-  confirmText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
-});
-
-// ─── Privacy Policy & Terms Styles ────────────────────────────────────────
-const ppStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.82)', justifyContent: 'flex-end' },
-  container: { backgroundColor: '#183d23', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: Platform.OS === 'ios' ? 36 : 20, maxHeight: '88%', borderTopWidth: 1, borderTopColor: 'rgba(76,175,114,0.4)' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  title: { fontSize: 16, color: '#ffffff', fontWeight: '700' },
-  effective: { fontSize: 11, color: '#5a8a6a', marginBottom: 14 },
-  scroll: { flexGrow: 0 },
-  sectionTitle: { fontSize: 11, color: '#4caf72', fontWeight: '700', marginTop: 16, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.8 },
-  subHeading: { fontSize: 12, color: '#e0ece4', fontWeight: '700', marginTop: 10, marginBottom: 4 },
-  body: { fontSize: 12, color: '#a8c5b3', lineHeight: 19, marginBottom: 4 },
-  bold: { fontWeight: '700', color: '#e0ece4' },
-  noteText: { fontSize: 11, color: '#4caf72', fontStyle: 'italic', marginTop: 6, marginBottom: 4 },
-  highlightBox: { backgroundColor: 'rgba(76,175,114,0.1)', borderLeftWidth: 3, borderLeftColor: '#4caf72', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 6, marginVertical: 8 },
-  highlightText: { fontSize: 12, color: '#e0ece4', fontStyle: 'italic', lineHeight: 18 },
-  warningBox: { backgroundColor: 'rgba(239,68,68,0.1)', borderLeftWidth: 3, borderLeftColor: '#ef4444', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 6, marginVertical: 8 },
-  warningTitle: { fontSize: 12, color: '#ffffff', fontWeight: '700', marginBottom: 4 },
-  warningText: { fontSize: 11, color: '#a8c5b3', lineHeight: 17 },
-  ackBox: { backgroundColor: 'rgba(76,175,114,0.1)', borderWidth: 1, borderColor: 'rgba(76,175,114,0.35)', borderRadius: 10, padding: 14, marginTop: 16, marginBottom: 4, alignItems: 'center' },
-  ackText: { fontSize: 12, color: '#e0ece4', fontWeight: '700', textAlign: 'center', marginBottom: 4 },
-  ackSub: { fontSize: 10, color: '#5a8a6a', textAlign: 'center' },
-  closeBtn: { marginTop: 16, paddingVertical: 14, borderRadius: 10, backgroundColor: '#2d5f3c', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(76,175,114,0.3)' },
-  closeText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
+  registerText: { color: "#a8c5b3", fontSize: 14 },
+  registerLink: { color: "#4caf72", fontWeight: "700", fontSize: 14 },
+  footer: {
+    color: "#5a8a6a",
+    fontSize: 11,
+    marginTop: 16,
+    textAlign: "center",
+  },
+  groupTypeRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  groupTypeChip: {
+    flex: 1,
+    minWidth: 100,
+    paddingVertical: 11,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "#0b2211",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  groupTypeChipActive: {
+    borderColor: "#4caf72",
+    backgroundColor: "#1a4228",
+  },
+  groupTypeChipText: {
+    color: "#5a8a6a",
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  groupTypeChipTextActive: {
+    color: "#ffffff",
+  },
 });

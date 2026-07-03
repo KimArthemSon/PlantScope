@@ -19,7 +19,8 @@ urlpatterns = [
     path('register_tree_grower/', treegrowers_views.register_tree_grower, name='register_tree_grower'),
     path('list_tree_growers/', views.list_tree_growers, name='list_tree_growers'),
     path('get_tree_grower_detail/<int:user_id>/', views.get_tree_grower_detail, name='get_tree_grower_detail'),
-    
+    path('update_tree_grower/<int:user_id>/', treegrowers_views.update_tree_grower, name='update_tree_grower'),
+
     # Email OTP
     path('send_otp/', emailviews.send_otp, name='send_otp'),
     path('verify_otp/', emailviews.verify_otp, name='verify_otp'),
