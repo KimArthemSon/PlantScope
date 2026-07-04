@@ -387,6 +387,8 @@ export default function Sidebar() {
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  
+  // ✅ NEW: Pending applications count state
   const [pendingHeadCount, setPendingHeadCount] = useState(0);
 
   const notifRef: any = useRef<HTMLDivElement>(null);
@@ -397,8 +399,10 @@ export default function Sidebar() {
   useOutsideClick(notifRef, () => setShowNotifs(false));
   useOutsideClick(profileRef, () => setShowProfile(false));
 
+  // ── Auth + real user data ──────────────────────────────────────────────────
   const { isAuthorized, isLoading, user_data } = useAuthorize("CityENROHead");
 
+  // ── ✅ NEW: Fetch pending count function ───────────────────────────────────
   const fetchPendingCount = useCallback(async () => {
     if (isFetchingRef.current) return;
     if (document.hidden) return;
@@ -425,6 +429,7 @@ export default function Sidebar() {
     }
   }, [isAuthorized]);
 
+  // ── ✅ NEW: Smart polling effect ───────────────────────────────────────────
   useEffect(() => {
     if (!isAuthorized) {
       setPendingHeadCount(0);
@@ -432,9 +437,15 @@ export default function Sidebar() {
     }
 
     fetchPendingCount();
-    intervalRef.current = setInterval(() => fetchPendingCount(), 60000);
 
-    const handleVisibilityChange = () => { if (!document.hidden) fetchPendingCount(); };
+    intervalRef.current = setInterval(() => {
+      fetchPendingCount();
+    }, 60000);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) fetchPendingCount();
+    };
+
     const handleFocus = () => fetchPendingCount();
     const handleNavigation = () => fetchPendingCount();
 
@@ -472,232 +483,232 @@ export default function Sidebar() {
   };
   const pageTitle = PAGE_TITLES[location.pathname] ?? "PlantScope";
 
+  // ── ✅ NEW: Grouped Navigation Items ───────────────────────────────────────
   const navGroups = [
     {
       title: "Main",
       items: [
-        { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Dashboard", badge: null },
-        { to: "/map", icon: <Map size={20} />, label: "Map", badge: null },
+        { to: "/dashboard", icon: <LayoutDashboard size={18} />, label: "Dashboard", badge: null },
+        { to: "/map", icon: <Map size={18} />, label: "Map", badge: null },
       ],
     },
     {
       title: "Management",
       items: [
-        { to: "/applications", icon: <ListCheck size={20} />, label: "Applications", badge: pendingHeadCount > 0 ? pendingHeadCount : null },
-        { to: "/calendar", icon: <Calendar size={20} />, label: "Calendar", badge: null },
-        { to: "/monitoring", icon: <MonitorDot size={20} />, label: "Monitoring", badge: null },
+        { 
+          to: "/applications", 
+          icon: <ListCheck size={18} />, 
+          label: "Applications", 
+          badge: pendingHeadCount > 0 ? pendingHeadCount : null 
+        },
+        { to: "/calendar", icon: <Calendar size={18} />, label: "Calendar", badge: null },
+        { to: "/monitoring", icon: <MonitorDot size={18} />, label: "Monitoring", badge: null },
       ],
     },
     {
       title: "Analytics",
       items: [
-        { to: "/reports", icon: <BarChart3 size={20} />, label: "Report", badge: null },
-        { to: "/Log-trail", icon: <Satellite size={20} />, label: "Audit Trail", badge: null },
+        { to: "/reports", icon: <BarChart3 size={18} />, label: "Report", badge: null },
+        { to: "/Log-trail", icon: <Satellite size={18} />, label: "Audit Trail", badge: null },
       ],
     },
     {
       title: "Administration",
       items: [
-        { to: "/account-management", icon: <Users size={20} />, label: "Accounts", badge: null },
-        { to: "/tree-growers", icon: <Leaf size={20} />, label: "Tree Growers", badge: null },
+        { to: "/account-management", icon: <Users size={18} />, label: "Accounts", badge: null },
+        { to: "/tree-growers", icon: <Leaf size={18} />, label: "Tree Growers", badge: null },
       ],
     },
   ];
 
   return (
     <div className="flex">
+      {/* ── Global styles ── */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap');
-        .ps-header * { font-family: 'Inter', sans-serif; }
-        .ps-title { font-family: 'Syne', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap');
+        .ps-header * { font-family: 'DM Sans', sans-serif; }
+        .ps-title    { font-family: 'Syne', sans-serif; }
 
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-8px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+        @keyframes ps-slideDown {
+          from { opacity:0; transform:translateY(-8px) scale(0.98); }
+          to   { opacity:1; transform:translateY(0) scale(1); }
         }
-        .animate-slideDown { animation: slideDown 0.2s ease forwards; }
+        .animate-slideDown { animation: ps-slideDown 0.18s ease forwards; }
 
-        @keyframes badgePulse {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.05); opacity: 0.9; }
+        .glass-btn {
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.09);
+          backdrop-filter: blur(12px);
+          transition: background .2s, border-color .2s, transform .15s;
         }
-        .badge-pulse { animation: badgePulse 2s ease-in-out infinite; }
+        .glass-btn:hover {
+          background: rgba(255,255,255,0.11);
+          border-color: rgba(255,255,255,0.18);
+          transform: translateY(-1px);
+        }
+        .glass-btn:active { transform: translateY(0); }
 
-        .sidebar-scrollbar::-webkit-scrollbar { width: 4px; }
-        .sidebar-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .sidebar-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
-        .sidebar-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+        @keyframes notif-pulse {
+          0%  { box-shadow: 0 0 0 0   rgba(74,222,128,.6); }
+          60% { box-shadow: 0 0 0 7px rgba(74,222,128,0);  }
+          100%{ box-shadow: 0 0 0 0   rgba(74,222,128,0);  }
+        }
+        .notif-ring { animation: notif-pulse 2.2s ease infinite; }
 
-        .nav-item {
-          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        /* ✅ IMPROVED: Smaller badge animation */
+        @keyframes badge-pulse {
+          0%  { box-shadow: 0 0 0 0   rgba(239,68,68,.5); }
+          60% { box-shadow: 0 0 0 4px rgba(239,68,68,0);  }
+          100%{ box-shadow: 0 0 0 0   rgba(239,68,68,0);  }
         }
-        .nav-item:hover {
-          transform: translateX(4px);
-        }
-        .nav-item.active {
-          background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%);
+        .badge-pulse { animation: badge-pulse 2s ease infinite; }
+
+        .notif-scroll::-webkit-scrollbar       { width:4px; }
+        .notif-scroll::-webkit-scrollbar-track { background:transparent; }
+        .notif-scroll::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:99px; }
+
+        .hdr-divider {
+          width:1px; height:28px;
+          background: linear-gradient(to bottom, transparent, rgba(255,255,255,.15), transparent);
         }
       `}</style>
 
       <Logout setIsLogout={setIsLogout} isLogout={isLogout} />
 
-      {/* ── Modern Sidebar ─────────────────────────────────────────────────── */}
-      <aside
-        className={`sticky top-0 h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white flex flex-col shadow-2xl transition-all duration-500 ease-out ${
-          expanded ? "w-72" : "w-20"
+      {/* ── Sidebar ── */}
+      <div
+        className={`sticky top-0 pt-0 pb-0 h-screen bg-gradient-to-b from-[#0F4A2F] to-[#0a3a24] text-white flex flex-col justify-between shadow-2xl transition-all duration-500 ease-in-out ${
+          expanded ? "p-3 w-[260px] min-w-[260px]" : "p-2 w-[80px] min-w-[80px]"
         }`}
       >
-        {/* Logo Section */}
-        <div className="p-5 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 p-0.5 shadow-lg shadow-emerald-500/20">
-                <img src={logo} alt="Logo" className="w-full h-full rounded-[10px] object-cover bg-white" />
-              </div>
-              <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-slate-800" />
-            </div>
-            
-            {expanded && (
-              <div className="flex-1 min-w-0">
-                <h1 className="text-lg font-bold text-white tracking-tight truncate">
+        {/* Logo / brand */}
+        <div className="p-3 mb-3 flex flex-row items-center border-b border-white/10">
+          <img
+            src={logo}
+            alt="Logo"
+            className="w-10 h-10 object-cover rounded-xl border-2 border-white/30 cursor-pointer shrink-0 shadow-lg"
+            onClick={() => setExpanded(!expanded)}
+          />
+          {expanded && (
+            <>
+              <div className="ml-3 flex-1">
+                <h1 className="text-lg font-bold tracking-wide leading-tight text-white">
                   PlantScope
                 </h1>
-                <p className="text-xs text-emerald-400/80 font-medium truncate">
+                <p className="text-[9px] text-emerald-300/70 uppercase tracking-wider">
                   ENRO Ormoc City
                 </p>
               </div>
-            )}
-            
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className={`p-2 rounded-lg hover:bg-white/10 transition-all duration-200 ${!expanded && 'mx-auto'}`}
-            >
-              {expanded ? (
-                <ChevronLeft size={18} className="text-white/60" />
-              ) : (
-                <ChevronLeft size={18} className="text-white/60 rotate-180" />
-              )}
-            </button>
-          </div>
+              <button
+                className="p-1.5 rounded-lg hover:bg-white/10 cursor-pointer transition-all"
+                onClick={() => setExpanded(!expanded)}
+              >
+                <ChevronLeft size={16} />
+              </button>
+            </>
+          )}
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto sidebar-scrollbar p-4 space-y-6">
-          {navGroups.map((group) => (
-            <div key={group.title}>
-              {expanded && (
-                <div className="mb-3 px-3">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-semibold">
-                    {group.title}
-                  </p>
-                </div>
-              )}
-              
-              <div className="space-y-1">
-                {group.items.map(({ to, icon, label, badge }) => {
-                  const isActive = location.pathname === to;
-                  const hasBadge = badge !== null && badge > 0;
-                  
-                  return (
+        {/* Nav groups */}
+        <div className="flex-1 overflow-y-auto sidebar-scrollbar">
+          <nav className="flex flex-col gap-4">
+            {navGroups.map((group, groupIndex) => (
+              <div key={group.title} className="flex flex-col">
+                {expanded && (
+                  <div className="mb-2 px-3">
+                    <p className="text-[10px] font-bold text-emerald-300/60 uppercase tracking-wider">
+                      {group.title}
+                    </p>
+                    <div className="mt-1 h-px bg-gradient-to-r from-emerald-500/30 to-transparent" />
+                  </div>
+                )}
+                <div className="flex flex-col gap-1">
+                  {group.items.map(({ to, icon, label, badge }) => (
                     <Link
                       key={to}
                       to={to}
                       onClick={() => {
                         if (to === "/applications") fetchPendingCount();
                       }}
-                      className={`nav-item group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer relative overflow-hidden ${
-                        isActive
-                          ? "active bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                          : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
-                      } ${!expanded && 'justify-center'}`}
+                      className={`flex items-center transition-all duration-200 rounded-xl px-3 py-2.5 relative group
+                        ${location.pathname === to
+                          ? "bg-white/20 text-white shadow-lg"
+                          : "text-white/70 hover:bg-white/10 hover:text-white"
+                        }`}
                     >
-                      {/* Active indicator */}
-                      {isActive && expanded && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-emerald-500 rounded-r-full" />
-                      )}
-                      
-                      {/* Icon */}
-                      <span className={`relative shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400 group-hover:text-white'}`}>
-                        {icon}
-                        {isActive && (
-                          <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/20" />
-                        )}
-                      </span>
-                      
-                      {/* Label */}
+                      <span className="shrink-0">{icon}</span>
                       {expanded && (
-                        <span className="flex-1 text-sm font-medium truncate">
-                          {label}
-                        </span>
-                      )}
-                      
-                      {/* Badge */}
-                      {expanded && hasBadge && (
-                        <span className="relative shrink-0">
-                          <span className="flex items-center justify-center min-w-[20px] h-5 px-1.5 bg-gradient-to-r from-red-500 to-rose-500 text-white text-[10px] font-bold rounded-full badge-pulse shadow-lg shadow-red-500/30">
-                            {badge > 9 ? '9+' : badge}
+                        <>
+                          <span className="ml-3 text-sm font-medium flex-1">
+                            {label}
                           </span>
-                        </span>
+                          {/* ✅ IMPROVED: Smaller, better badge */}
+                          {badge !== null && (
+                            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md min-w-[18px] h-[18px] flex items-center justify-center badge-pulse shadow-md">
+                              {badge > 9 ? '9+' : badge}
+                            </span>
+                          )}
+                        </>
                       )}
-                      
-                      {/* Collapsed badge dot */}
-                      {!expanded && hasBadge && (
-                        <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                      {/* Badge when collapsed */}
+                      {!expanded && badge !== null && (
+                        <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
                       )}
                     </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        {/* Footer */}
-        {expanded && (
-          <div className="p-4 border-t border-white/10">
-            <div className="bg-gradient-to-r from-slate-800/50 to-slate-700/50 rounded-xl p-3 border border-white/5">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50" />
-                  <span className="text-xs font-semibold text-white">System Online</span>
+                  ))}
                 </div>
-                <span className="text-[10px] text-slate-400">v1.0.0</span>
               </div>
-              <div className="flex items-center justify-between text-[10px] text-slate-400">
-                <span>ENRO Ormoc</span>
-                <span>2024</span>
+            ))}
+          </nav>
+        </div>
+
+        {/* Footer version tag */}
+        {expanded && (
+          <div className="border-t border-white/10 pt-3 mt-3">
+            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-white/5">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] text-white/60">v1.0.0</span>
               </div>
+              <span className="text-[10px] text-white/40">ENRO</span>
             </div>
           </div>
         )}
-      </aside>
+      </div>
 
-      {/* ── Main Content ─────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gradient-to-br from-slate-50 to-slate-100">
-        {/* Header */}
-        <header className="bg-white/80 backdrop-blur-xl border-b border-slate-200/60 px-8 h-[72px] flex items-center gap-6 sticky top-0 z-50 shadow-sm">
-          <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="w-1.5 h-10 rounded-full bg-gradient-to-b from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30" />
-            <div className="min-w-0 flex-1">
-              <h1 className="ps-title text-slate-800 text-2xl font-bold tracking-tight leading-none">
+      {/* ── Main content ── */}
+      <main className="flex-1 overflow-y-auto overflow-x-hidden bg-[#f5faf6]">
+        {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
+        <header
+          className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
+          border-b border-white/[0.07] px-6 h-[68px] flex items-center gap-4
+          shadow-[0_4px_40px_rgba(0,0,0,0.35)] z-9998"
+        >
+          {/* Left — page title */}
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-1 h-8 rounded-full bg-gradient-to-b from-emerald-400 to-teal-500 shrink-0" />
+            <div className="min-w-0">
+              <h1 className="ps-title text-white text-[21px] font-extrabold tracking-tight leading-none">
                 {pageTitle}
               </h1>
-              <p className="text-slate-500 text-xs mt-0.5 font-medium uppercase tracking-wide">
-                City Environment & Natural Resources Office
+              <p className="text-white/30 text-[10.5px] mt-0.5 tracking-widest uppercase font-medium">
+                City Environment &amp; Natural Resources Office
               </p>
             </div>
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-emerald-700 text-xs font-bold tracking-wide">
+            <div className="hidden sm:flex items-center gap-1.5 glass-btn rounded-full px-3 py-1.5 ml-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">
                 LIVE
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-50 border border-slate-200">
-              <Clock size={14} className="text-slate-400" />
-              <span className="text-slate-600 text-sm font-semibold">
+          {/* Right — actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Date */}
+            <div className="hidden lg:flex items-center gap-2 glass-btn rounded-xl px-3.5 py-2">
+              <Clock size={12} className="text-white/40" />
+              <span className="text-white/50 text-[12px] font-medium">
                 {new Date().toLocaleDateString("en-PH", {
                   month: "short",
                   day: "numeric",
@@ -706,17 +717,24 @@ export default function Sidebar() {
               </span>
             </div>
 
-            <div className="w-px h-8 bg-slate-200 hidden lg:block" />
+            <div className="hdr-divider mx-1 hidden lg:block" />
 
-            {/* Notifications */}
+            {/* Bell */}
             <div className="relative" ref={notifRef}>
               <button
-                onClick={() => { setShowNotifs((v) => !v); setShowProfile(false); }}
-                className="relative w-10 h-10 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-center transition-all duration-200 hover:scale-105"
+                onClick={() => {
+                  setShowNotifs((v) => !v);
+                  setShowProfile(false);
+                }}
+                className="glass-btn relative w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer"
               >
-                <Bell size={18} className="text-slate-600" />
+                <Bell size={16} className="text-white/70" />
                 {unread > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1.5 bg-gradient-to-r from-red-500 to-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-lg shadow-red-500/30 animate-pulse">
+                  <span
+                    className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
+                    bg-emerald-500 text-white text-[10px] font-bold rounded-full
+                    flex items-center justify-center notif-ring"
+                  >
                     {unread}
                   </span>
                 )}
@@ -724,43 +742,59 @@ export default function Sidebar() {
               {showNotifs && (
                 <NotificationPanel
                   notes={notifications}
-                  onMarkAll={() => setNotifications((p) => p.map((n) => ({ ...n, read: true })))}
-                  onDismiss={(id) => setNotifications((p) => p.filter((n) => n.id !== id))}
+                  onMarkAll={() =>
+                    setNotifications((p) =>
+                      p.map((n) => ({ ...n, read: true })),
+                    )
+                  }
+                  onDismiss={(id) =>
+                    setNotifications((p) => p.filter((n) => n.id !== id))
+                  }
                   onClose={() => setShowNotifs(false)}
                 />
               )}
             </div>
 
-            <div className="w-px h-8 bg-slate-200" />
+            <div className="hdr-divider mx-1" />
 
-            {/* Profile */}
+            {/* Profile button */}
             <div className="relative" ref={profileRef}>
               <button
-                onClick={() => { setShowProfile((v) => !v); setShowNotifs(false); }}
-                className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-all duration-200 hover:scale-[1.02]"
+                onClick={() => {
+                  setShowProfile((v) => !v);
+                  setShowNotifs(false);
+                }}
+                className="glass-btn flex items-center gap-2.5 rounded-xl pl-1.5 pr-3 py-1.5 cursor-pointer"
               >
                 <UserAvatar user={user_data ?? null} size="sm" />
-                <div className="hidden lg:block text-left min-w-0">
-                  <p className="text-slate-800 text-sm font-semibold leading-tight truncate max-w-[120px]">
+                <div className="hidden sm:block text-left min-w-0">
+                  <p className="text-white/90 text-[12px] font-semibold leading-tight truncate max-w-[110px]">
                     {user_data?.full_name ?? "—"}
                   </p>
-                  <p className="text-slate-500 text-[11px] truncate max-w-[120px]">
-                    {user_data?.user_role ?? "—"}
+                  <p className="text-white/35 text-[10.5px] truncate max-w-[110px]">
+                    {user_data?.email ?? "—"}
                   </p>
                 </div>
-                <ChevronDown size={14} className={`text-slate-400 hidden lg:block transition-transform duration-200 ${showProfile ? "rotate-180" : ""}`} />
+                <ChevronDown
+                  size={12}
+                  className={`text-white/35 hidden sm:block transition-transform duration-200 ${showProfile ? "rotate-180" : ""}`}
+                />
               </button>
 
               {showProfile && (
                 <ProfileDropdown
                   user={user_data ?? null}
                   onLogout={() => setIsLogout(true)}
-                  onNavigate={(path) => { setShowProfile(false); navigate(path); }}
+                  onNavigate={(path) => {
+                    setShowProfile(false);
+                    navigate(path);
+                  }}
                 />
               )}
             </div>
           </div>
         </header>
+        {/* ══ END HEADER ══════════════════════════════════════════════════════ */}
 
         <Outlet />
       </main>
