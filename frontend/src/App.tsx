@@ -22,7 +22,7 @@ const Land_classifications = lazy(
 const Soils = lazy(() => import("./pages/head/maintain/soils"));
 const Tree_species = lazy(() => import("./pages/head/maintain/tree_species"));
 const Privacy_policy = lazy(() => import("./pages/HomePage/privacy_policy"));
-const DashboardAFA = lazy(() => import("./pages/AFA/dashboardAFA"));
+const DashboardAFA = lazy(() => import("./pages/dataManager/dashboardAFA"));
 const DashboardGISS = lazy(() => import("./pages/GISSpecialist/dashboardGISS"));
 const Accounts = lazy(() => import("./pages/head/accounts/accounts"));
 const TreeGrowersAccounts = lazy(
@@ -108,7 +108,7 @@ const Hazard_area_form = lazy(
   () => import("./pages/head/maintain/hazard_areas/hazard_area._form"),
 );
 const GISReports = lazy(() => import("./pages/GISSpecialist/report"));
-
+const HeadReports = lazy(() => import("./pages/head/reports/headReports"));
 // ============ LOADING FALLBACK ============
 function LoadingFallback() {
   return (
@@ -148,6 +148,7 @@ export default function App() {
           <Route element={<Sidebar />}>
             {/* Main Dashboard */}
             <Route path="/dashboard" element={<Dashboard />} />
+        
 
             {/* maintenance */}
             <Route
@@ -241,7 +242,7 @@ export default function App() {
             <Route path="/map" element={<Map />} />
             <Route path="/my-profile" element={<MyProfile />} />
 
-            <Route path="/reports" element={<Reports />} />
+            <Route path="/reports" element={<HeadReports />} />
 
             <Route path="/site_suitability" element={<Accounts />} />
             <Route path="/account-management" element={<Accounts />} />

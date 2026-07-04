@@ -19,6 +19,16 @@ from django.db.models import Sum, Count, Q
 from django.db.models.functions import TruncMonth
 from datetime import datetime, timedelta
 import cloudinary.uploader
+
+from django.db.models import Sum, F, Count, Q
+from django.db.models.functions import Coalesce
+from reforestation_areas.models import Reforestation_areas
+from sites.models import Sites, SiteMetaDataVerification
+
+from django.db.models import Sum, Count, Q, F
+from django.db.models.functions import Coalesce, TruncMonth
+from datetime import datetime, timedelta
+
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPER FUNCTIONS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -456,20 +466,19 @@ def evaluate_application(request, application_id):
 
     site_id = request.POST.get('site_id')
     orientation_date = request.POST.get('orientation_date')
+    status = request.POST.get('status')
     reason_text = request.POST.get('reason', '').strip()
-
-    if not site_id:
-        return JsonResponse({'error': 'site_id is required'}, status=400)
+    site=None
+    if site_id:
+        site = get_object_or_404(Sites, site_id=site_id)
     if not orientation_date:
         return JsonResponse({'error': 'orientation_date is required'}, status=400)
-
-    site = get_object_or_404(Sites, site_id=site_id)
 
     try:
         with transaction.atomic():
             app.site = site
             app.orientation_date = orientation_date
-            app.status = 'for_head'
+            app.status = status
             
             if 'agreement_image' in request.FILES:
                 app.agreement_image = request.FILES['agreement_image']
@@ -480,7 +489,7 @@ def evaluate_application(request, application_id):
                 application=app,
                 status_layer='new_program',
                 reason=reason_text,
-                status='for_head'
+                status=status
             )
 
         return JsonResponse({
@@ -1493,4 +1502,205 @@ def get_available_sites_for_tree_grower(request):
         'entries': entries,
         'has_next': has_next,
         'has_ongoing_application': has_ongoing
+    }, status=200)
+
+
+
+@csrf_exempt
+def get_seedling_analytics(request):
+    """Aggregates seedling distribution and survival data per species."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    # 1. Overall Totals
+    total_requested = SeedlingRequestSpecies.objects.filter(
+        seedling_request__status='accepted'
+    ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
+
+    progress_stats = ProgressReportSpecies.objects.aggregate(
+        total_survived=Coalesce(Sum('no_survived'), 0),
+        total_dead=Coalesce(Sum('no_dead'), 0)
+    )
+
+    # 2. Top 5 Most Requested Species
+    requested_by_species = SeedlingRequestSpecies.objects.filter(
+        seedling_request__status='accepted'
+    ).values(
+        species_id=F('tree_species__tree_specie_id'),
+        species_name=F('tree_species__name')
+    ).annotate(
+        total_requested=Sum('quantity')
+    ).order_by('-total_requested')[:5]
+
+    # 3. Survival Data by Species
+    survived_by_species = ProgressReportSpecies.objects.values(
+        species_id=F('tree_species__tree_specie_id'),
+        species_name=F('tree_species__name')
+    ).annotate(
+        total_survived=Sum('no_survived'),
+        total_dead=Sum('no_dead')
+    )
+
+    # 4. Merge the data in Python
+    species_map = {item['species_id']: item for item in survived_by_species}
+    final_species_data = []
+    
+    for req in requested_by_species:
+        sid = req['species_id']
+        surv_data = species_map.get(sid, {'total_survived': 0, 'total_dead': 0})
+        total_plants = surv_data['total_survived'] + surv_data['total_dead']
+        survival_rate = round((surv_data['total_survived'] / total_plants) * 100, 2) if total_plants > 0 else 0
+        
+        final_species_data.append({
+            "species_id": sid,
+            "species_name": req['species_name'],
+            "requested": req['total_requested'],
+            "survived": surv_data['total_survived'],
+            "dead": surv_data['total_dead'],
+            "survival_rate": survival_rate
+        })
+
+    return JsonResponse({
+        "total_requested": total_requested,
+        "total_survived": progress_stats['total_survived'],
+        "total_dead": progress_stats['total_dead'],
+        "species_breakdown": final_species_data
+    }, status=200)
+
+@csrf_exempt
+def get_geographic_analytics(request):
+    """Aggregates spatial and land classification data."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    # 1. KPIs
+    total_areas = Reforestation_areas.objects.filter(deleted_at__isnull=True).count()
+    total_sites = Sites.objects.filter(status__in=['accepted', 'completed', 'under_monitoring']).count()
+    
+    # ✅ FIX: Changed 0 to 0.0 to match FloatField type
+    total_hectares = Sites.objects.aggregate(total=Coalesce(Sum('total_area_hectares'), 0.0))['total']
+    
+    pending_verifications = SiteMetaDataVerification.objects.filter(status='pending').count()
+
+    # 2. Hectares by Barangay
+    hectares_by_barangay = Sites.objects.filter(
+        reforestation_area__barangay__isnull=False
+    ).values(
+        barangay_name=F('reforestation_area__barangay__name')
+    ).annotate(
+        total_hectares=Sum('total_area_hectares')
+    ).order_by('-total_hectares')
+
+    # 3. Land Classification Distribution
+    land_class_dist = SiteMetaDataVerification.objects.filter(
+        verified_land_classification__isnull=False
+    ).values(
+        classification_name=F('verified_land_classification__name')
+    ).annotate(
+        count=Count('id')
+    ).order_by('-count')
+
+    return JsonResponse({
+        "kpis": {
+            "total_areas": total_areas,
+            "total_sites": total_sites,
+            "total_hectares": round(total_hectares, 2),
+            "pending_verifications": pending_verifications
+        },
+        "hectares_by_barangay": list(hectares_by_barangay),
+        "land_classification_distribution": list(land_class_dist)
+    }, status=200)
+
+
+
+@csrf_exempt
+def get_monitoring_compliance(request):
+    """
+    Aggregates monitoring compliance data for tree planting programs.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    # 1. KPIs
+    active_programs = Application.objects.filter(status__in=['accepted', 'under_monitoring']).count()
+    total_reports = ProgressReport.objects.count()
+    
+    # Calculate compliance rate (programs with at least 1 progress report)
+    programs_with_reports = Application.objects.filter(
+        status__in=['accepted', 'under_monitoring'],
+        progress_reports__isnull=False
+    ).distinct().count()
+    
+    compliance_rate = (programs_with_reports / active_programs * 100) if active_programs > 0 else 0
+
+    # 2. Monthly Report Submissions (Last 6 months)
+    six_months_ago = datetime.now() - timedelta(days=180)
+    monthly_submissions = ProgressReport.objects.filter(
+        created_at__gte=six_months_ago
+    ).annotate(
+        month=TruncMonth('created_at')
+    ).values('month').annotate(
+        reports=Count('progress_report_id')
+    ).order_by('month')
+
+    monthly_data = [
+        {
+            "month": entry['month'].strftime('%b'),
+            "reports": entry['reports']
+        } for entry in monthly_submissions
+    ]
+
+    # 3. Compliance Tracker - Get all active programs with their monitoring data
+    active_apps = Application.objects.filter(
+        status__in=['accepted', 'under_monitoring']
+    ).select_related(
+        'user__tree_grower_group',
+        'site'
+    ).prefetch_related(
+        'progress_reports__report_species'
+    ).order_by('-created_at')
+
+    compliance_tracker = []
+    for app in active_apps:
+        # Get latest progress report
+        latest_report = app.progress_reports.order_by('-created_at').first()
+        
+        # Calculate days since last report
+        days_since = None
+        last_report_date = None
+        if latest_report:
+            last_report_date = latest_report.created_at
+            days_since = (datetime.now() - last_report_date).days
+        
+        # Calculate overall survival rate for this program
+        total_survived = 0
+        total_dead = 0
+        for report in app.progress_reports.all():
+            if report.status == 'accepted':
+                total_survived += report.total_survived
+                total_dead += report.total_dead
+        
+        total_plants = total_survived + total_dead
+        survival_rate = (total_survived / total_plants * 100) if total_plants > 0 else 0
+
+        compliance_tracker.append({
+            "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "Unknown",
+            "site_name": app.site.name if app.site else "No site assigned",
+            "last_report_date": last_report_date.isoformat() if last_report_date else None,
+            "days_since_last_report": days_since,
+            "survival_rate": round(survival_rate, 1)
+        })
+
+    return JsonResponse({
+        "kpis": {
+            "active_programs": active_programs,
+            "total_reports": total_reports,
+            "compliance_rate": round(compliance_rate, 1)
+        },
+        "monthly_submissions": monthly_data,
+        "compliance_tracker": compliance_tracker
     }, status=200)

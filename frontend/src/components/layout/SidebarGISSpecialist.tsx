@@ -18,7 +18,7 @@ import {
   Shield,
   Clock,
   AlertTriangle,
-  Home, // 👈 Added Home icon
+  Home,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
@@ -40,7 +40,7 @@ interface UserData {
   user_role: string;
 }
 
-// ─── Mock Notifications (replace with real API) ───────────────────────────────
+// ─── Mock Notifications ───────────────────────────────────────────────────────
 const INITIAL_NOTIFICATIONS = [
   {
     id: 1,
@@ -188,12 +188,9 @@ function NotificationPanel({
       rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
       animate-slideDown"
     >
-      {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
         <div className="flex items-center gap-2">
-          <span className="text-white font-semibold text-sm">
-            Notifications
-          </span>
+          <span className="text-white font-semibold text-sm">Notifications</span>
           {unread > 0 && (
             <span className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
               {unread} NEW
@@ -218,7 +215,6 @@ function NotificationPanel({
         </div>
       </div>
 
-      {/* List */}
       <div className="max-h-[380px] overflow-y-auto notif-scroll">
         {notes.length === 0 ? (
           <div className="py-12 flex flex-col items-center gap-3 text-white/30">
@@ -245,15 +241,9 @@ function NotificationPanel({
                   {cfg.icon}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-white/90 text-[13px] font-medium leading-tight">
-                    {n.title}
-                  </p>
-                  <p className="text-white/45 text-[11.5px] mt-0.5 leading-snug">
-                    {n.desc}
-                  </p>
-                  <span className="text-white/25 text-[11px] mt-1 block">
-                    {n.time}
-                  </span>
+                  <p className="text-white/90 text-[13px] font-medium leading-tight">{n.title}</p>
+                  <p className="text-white/45 text-[11.5px] mt-0.5 leading-snug">{n.desc}</p>
+                  <span className="text-white/25 text-[11px] mt-1 block">{n.time}</span>
                 </div>
                 <button
                   onClick={() => onDismiss(n.id)}
@@ -267,7 +257,6 @@ function NotificationPanel({
         )}
       </div>
 
-      {/* Footer */}
       <div className="px-5 py-3 border-t border-white/10 text-center">
         <button className="text-[12px] text-emerald-400/70 hover:text-emerald-300 transition-colors cursor-pointer">
           View all notifications →
@@ -292,83 +281,47 @@ function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
       rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
       animate-slideDown"
     >
-      {/* User card */}
       <div className="px-5 py-5 border-b border-white/10">
         <div className="flex items-center gap-3">
           <UserAvatar user={user} size="lg" />
           <div className="min-w-0 flex-1">
-            <p className="text-white font-semibold text-[14px] truncate">
-              {user?.full_name ?? "—"}
-            </p>
-            <p
-              className="text-white/45 text-[11.5px] truncate"
-              title={user?.email}
-            >
-              {user?.email ?? "—"}
-            </p>
+            <p className="text-white font-semibold text-[14px] truncate">{user?.full_name ?? "—"}</p>
+            <p className="text-white/45 text-[11.5px] truncate" title={user?.email}>{user?.email ?? "—"}</p>
             <div className="flex items-center gap-1.5 mt-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-400/80 text-[11px] font-medium">
-                {user?.user_role ?? "—"}
-              </span>
+              <span className="text-emerald-400/80 text-[11px] font-medium">{user?.user_role ?? "—"}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Menu items */}
       <div className="py-2">
         {[
-          {
-            icon: <User size={14} />,
-            label: "My Profile",
-            sub: "View & edit info",
-            path: "/GISS/my-profile",
-          },
-          {
-            icon: <Mail size={14} />,
-            label: "Inbox",
-            sub: "3 unread messages",
-            path: null,
-          },
-          {
-            icon: <Settings size={14} />,
-            label: "Settings",
-            sub: "Preferences & security",
-            path: null,
-          },
+          { icon: <User size={14} />, label: "My Profile", sub: "View & edit info", path: "/GISS/my-profile" },
+          { icon: <Mail size={14} />, label: "Inbox", sub: "3 unread messages", path: null },
+          { icon: <Settings size={14} />, label: "Settings", sub: "Preferences & security", path: null },
         ].map((item) => (
           <button
             key={item.label}
             onClick={() => item.path && onNavigate(item.path)}
             className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left cursor-pointer group"
           >
-            <span className="text-white/40 group-hover:text-emerald-400 transition-colors">
-              {item.icon}
-            </span>
+            <span className="text-white/40 group-hover:text-emerald-400 transition-colors">{item.icon}</span>
             <div>
-              <p className="text-white/80 text-[13px] group-hover:text-white transition-colors">
-                {item.label}
-              </p>
+              <p className="text-white/80 text-[13px] group-hover:text-white transition-colors">{item.label}</p>
               <p className="text-white/30 text-[11px]">{item.sub}</p>
             </div>
           </button>
         ))}
       </div>
 
-      {/* Sign out */}
       <div className="border-t border-white/10 p-2">
         <button
           onClick={onLogout}
           className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-red-500/10 transition-colors text-left cursor-pointer group"
         >
-          <LogOut
-            size={14}
-            className="text-red-400/60 group-hover:text-red-400 transition-colors"
-          />
-          <span className="text-red-400/60 group-hover:text-red-400 text-[13px] transition-colors">
-            Sign out
-          </span>
+          <LogOut size={14} className="text-red-400/60 group-hover:text-red-400 transition-colors" />
+          <span className="text-red-400/60 group-hover:text-red-400 text-[13px] transition-colors">Sign out</span>
         </button>
       </div>
     </div>
@@ -378,6 +331,7 @@ function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
 // ─── Sidebar GIS Specialist ───────────────────────────────────────────────────
 export default function SidebarGISS() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [isLogout, setIsLogout] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
@@ -389,7 +343,6 @@ export default function SidebarGISS() {
   useOutsideClick(notifRef, () => setShowNotifs(false));
   useOutsideClick(profileRef, () => setShowProfile(false));
 
-  const navigate = useNavigate();
   const { isAuthorized, isLoading, user_data } = useAuthorize("GISSpecialist");
 
   if (isLoading) return <PlantScopeLoader />;
@@ -407,8 +360,7 @@ export default function SidebarGISS() {
     "/GISS/reforestation-areas": "Reforestation Area",
     "/GISS/reforestation_area_site": "Analysis",
     "/GISS/official-reforestation": "Official Sites",
-    "/GISS/analysis": "Reports",
-    // 👇 Added new page titles for the header
+    "/GISS/reports": "Reports",
     "/GISS/maintenance/ormoc-city": "Ormoc City",
     "/GISS/maintenance/Classified_areas": "Classified Areas",
     "/GISS/maintenance/hazard_areas/": "Hazard Areas",
@@ -417,8 +369,41 @@ export default function SidebarGISS() {
 
   const handleLogout = () => setIsLogout(true);
 
+  // ── ✅ Grouped Navigation ────────────────────────────────────────────────────
+  const navGroups = [
+    {
+      title: "Overview",
+      items: [
+        { to: "/dashboard/GISS", icon: <LayoutDashboard size={18} />, label: "Dashboard" },
+        { to: "/GISS/map", icon: <Map size={18} />, label: "Map" },
+      ],
+    },
+    {
+      title: "Reforestation",
+      items: [
+        { to: "/GISS/reforestation-areas", icon: <ClipboardList size={18} />, label: "Reforestation Area" },
+        { to: "/GISS/reforestation_area_site", icon: <Layers2 size={18} />, label: "Analysis" },
+        { to: "/GISS/official-reforestation", icon: <TreePine size={18} />, label: "Official Sites" },
+      ],
+    },
+    {
+      title: "Maintenance",
+      items: [
+        { to: "/GISS/maintenance/ormoc-city", icon: <Home size={18} />, label: "Ormoc City" },
+        { to: "/GISS/maintenance/Classified_areas", icon: <Map size={18} />, label: "Classified Areas" },
+        { to: "/GISS/maintenance/hazard_areas/", icon: <AlertTriangle size={18} />, label: "Hazard Areas" },
+      ],
+    },
+    {
+      title: "Analytics",
+      items: [
+        { to: "/GISS/reports", icon: <BarChart3 size={18} />, label: "Reports" },
+      ],
+    },
+  ];
+
   return (
-    <div className="flex">
+    <div className="flex h-screen overflow-hidden">
       {/* ── Global styles ── */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap');
@@ -459,136 +444,132 @@ export default function SidebarGISS() {
           width:1px; height:28px;
           background: linear-gradient(to bottom, transparent, rgba(255,255,255,.15), transparent);
         }
+
+        .nav-item {
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .nav-item:hover {
+          transform: translateX(2px);
+        }
       `}</style>
 
       <Logout setIsLogout={setIsLogout} isLogout={isLogout} />
 
       {/* ── Sidebar ── */}
-      <div
-        className={`sticky top-0 p-1 pt-0 pb-0 h-screen bg-[#0F4A2F] text-white flex flex-col justify-between shadow-2xl transition-normal duration-500 ease-in-out ${
-          expanded ? "p-2 w-[226px] min-w-[226px]" : "p-1 w-[88px] min-w-[88px]"
+      <aside
+        className={` top-0 h-screen bg-gradient-to-b from-[#0F4A2F] via-[#0d4028] to-[#0a3320] text-white flex flex-col shadow-2xl transition-all duration-500 ease-out ${
+          expanded ? "w-[260px] min-w-[260px]" : "w-[80px] min-w-[80px]"
         }`}
       >
-        {/* Header */}
-        <div className="p-4 gap-2 mb-2 flex flex-row items-center border-b border-white/20">
-          <img
-            src={logo}
-            alt="Logo"
-            className="w-12 h-12 object-cover rounded-full border-2 border-white/50 cursor-pointer"
-            onClick={() => setExpanded(!expanded)}
-          />
-          <h1
-            className={`text-[.8rem] font-bold tracking-wide leading-tight overflow-hidden transition-all ${
-              expanded ? "opacity-100 ml-1" : "opacity-0 w-0"
-            }`}
-          >
-            PlantScope
-          </h1>
-          <div className="flex-1" />
-          <button
-            className={`p-2 rounded-[5px] hover:bg-white/10 bg-[#0f4a2fe0] cursor-pointer overflow-hidden transition-all ${
-              !expanded && "opacity-0"
-            }`}
-            onClick={() => setExpanded(!expanded)}
-          >
-            <ChevronLeft size={18} />
-          </button>
-        </div>
-
-        {/* Navigation */}
-        <div className="flex-1 p-1 overflow-x-hidden flex flex-col">
-          <nav className="mt-1 gap-1 flex flex-col sidebar-scrollbar flex-1">
-            {[
-              {
-                to: "/dashboard/GISS",
-                icon: <LayoutDashboard size={20} />,
-                label: "Dashboard",
-              },
-              { to: "/GISS/map", icon: <Map size={20} />, label: "Map" },
-              {
-                to: "/GISS/reforestation-areas",
-                icon: <ClipboardList size={20} />,
-                label: "Reforestation Area",
-              },
-              {
-                to: "/GISS/reforestation_area_site",
-                icon: <Layers2 size={20} />,
-                label: "Analysis",
-              },
-              {
-                to: "/GISS/official-reforestation",
-                icon: <TreePine size={20} />,
-                label: "Official Sites",
-              },
-              {
-                to: "/GISS/maintenance/ormoc-city",
-                icon: <Home size={20} />,
-                label: "Ormoc City",
-              },
-              {
-                to: "/GISS/maintenance/Classified_areas",
-                icon: <Map size={20} />,
-                label: "Classified Areas",
-              },
-              {
-                to: "/GISS/maintenance/hazard_areas/",
-                icon: <AlertTriangle size={20} />,
-                label: "Hazard Areas",
-              },
-              {
-                to: "/GISS/reports",
-                icon: <BarChart3 size={20} />,
-                label: "Reports",
-              },
+        {/* Logo Section */}
+        <div className="p-4 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="relative shrink-0">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 p-0.5 shadow-lg shadow-emerald-500/20 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+                <img src={logo} alt="Logo" className="w-full h-full rounded-[10px] object-cover bg-white" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#0F4A2F] animate-pulse" />
+            </div>
             
-              
-            ].map(({ to, icon, label }) => (
-              <Link
-                key={to}
-                to={to}
-                className={`
-                  flex flex-row items-center transition-all duration-200 rounded-md
-                  px-6 py-3 justify-center
-                  ${
-                    location.pathname === to
-                      ? "bg-white/25 text-white shadow-inner"
-                      : "text-white/80 hover:bg-white/10 hover:text-white"
-                  }
-                `}
-              >
-                <span className="mr-auto shrink-0">{icon}</span>
-                <span
-                  className={`
-                    text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap duration-600 ease-in-out mr-auto flex-1
-                    ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}
-                  `}
+            {expanded && (
+              <>
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-base font-bold text-white tracking-tight truncate">PlantScope</h1>
+                  <p className="text-[10px] text-emerald-300/70 uppercase tracking-wider font-semibold">GIS Specialist</p>
+                </div>
+                <button
+                  onClick={() => setExpanded(!expanded)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 transition-all"
                 >
-                  {label}
-                </span>
-              </Link>
-            ))}
-          </nav>
+                  <ChevronLeft size={16} className="text-white/60" />
+                </button>
+              </>
+            )}
+            {!expanded && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="p-1.5 rounded-lg hover:bg-white/10 transition-all mx-auto"
+              >
+                <ChevronLeft size={16} className="text-white/60 rotate-180" />
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Footer - version tag (logout moved to header) */}
-        <div className="border-t border-white/20 p-4">
-          <p
-            className={`text-white/20 text-[10px] text-center overflow-hidden transition-all ${expanded ? "opacity-100" : "opacity-0"}`}
-          >
-            PlantScope v1.0 • GIS Specialist
-          </p>
-        </div>
-      </div>
+        {/* Navigation Groups */}
+        <nav className="flex-1 overflow-y-auto sidebar-scrollbar p-3 space-y-5">
+          {navGroups.map((group) => (
+            <div key={group.title}>
+              {expanded && (
+                <div className="mb-2 px-3 flex items-center gap-2">
+                  <p className="text-[10px] font-bold text-emerald-300/60 uppercase tracking-wider">
+                    {group.title}
+                  </p>
+                  <div className="flex-1 h-px bg-gradient-to-r from-emerald-500/30 to-transparent" />
+                </div>
+              )}
+              
+              <div className="space-y-0.5">
+                {group.items.map(({ to, icon, label }) => {
+                  const isActive = location.pathname === to;
+                  
+                  return (
+                    <Link
+                      key={to}
+                      to={to}
+                      className={`nav-item group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer relative overflow-hidden ${
+                        isActive
+                          ? "bg-white/15 text-white shadow-lg border border-white/10"
+                          : "text-white/70 hover:text-white hover:bg-white/5 border border-transparent"
+                      } ${!expanded && 'justify-center'}`}
+                    >
+                      {/* Active indicator */}
+                      {isActive && expanded && (
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-emerald-400 rounded-r-full shadow-lg shadow-emerald-400/50" />
+                      )}
+                      
+                      {/* Icon */}
+                      <span className={`relative shrink-0 ${isActive ? 'text-emerald-400' : 'text-white/60 group-hover:text-white'}`}>
+                        {icon}
+                      </span>
+                      
+                      {/* Label */}
+                      {expanded && (
+                        <span className="flex-1 text-sm font-medium truncate">{label}</span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        {expanded && (
+          <div className="p-3 border-t border-white/10">
+            <div className="bg-gradient-to-r from-white/5 to-transparent rounded-xl p-3 border border-white/5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50" />
+                  <span className="text-[10px] font-semibold text-white/80">System Online</span>
+                </div>
+                <span className="text-[9px] text-white/40">v1.0</span>
+              </div>
+              <p className="text-[9px] text-white/40">ENRO Ormoc City • 2024</p>
+            </div>
+          </div>
+        )}
+      </aside>
 
       {/* ── Main content ── */}
-      <main className="flex-1 overflow-y-auto overflow-x-auto bg-[rgba(255,255,255,0.1)]">
-        {/* ══ ADVANCED HEADER ══════════════════════════════════════════════════ */}
+      <main className="flex-1 overflow-y-auto overflow-x-auto bg-[#f5faf6]">
+        {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
         <header
           className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
           border-b border-white/[0.07] px-6 h-[68px] flex items-center gap-4
-          shadow-[0_4px_40px_rgba(0,0,0,0.35)] sticky top-0 z-10000"
+          shadow-[0_4px_40px_rgba(0,0,0,0.35)] z-10000"
         >
-          {/* Left — page title */}
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="w-1 h-8 rounded-full bg-gradient-to-b from-emerald-400 to-teal-500 shrink-0" />
             <div className="min-w-0">
@@ -599,26 +580,17 @@ export default function SidebarGISS() {
                 City Environment &amp; Natural Resources Office
               </p>
             </div>
-            {/* LIVE badge */}
             <div className="hidden sm:flex items-center gap-1.5 glass-btn rounded-full px-3 py-1.5 ml-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">
-                LIVE
-              </span>
+              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">LIVE</span>
             </div>
           </div>
 
-          {/* Right — actions */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Date */}
             <div className="hidden lg:flex items-center gap-2 glass-btn rounded-xl px-3.5 py-2">
               <Clock size={12} className="text-white/40" />
               <span className="text-white/50 text-[12px] font-medium">
-                {new Date().toLocaleDateString("en-PH", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
+                {new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
               </span>
             </div>
 
@@ -627,19 +599,12 @@ export default function SidebarGISS() {
             {/* Bell */}
             <div className="relative" ref={notifRef}>
               <button
-                onClick={() => {
-                  setShowNotifs((v) => !v);
-                  setShowProfile(false);
-                }}
+                onClick={() => { setShowNotifs((v) => !v); setShowProfile(false); }}
                 className="glass-btn relative w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer"
               >
                 <Bell size={16} className="text-white/70" />
                 {unread > 0 && (
-                  <span
-                    className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
-                    bg-emerald-500 text-white text-[10px] font-bold rounded-full
-                    flex items-center justify-center notif-ring"
-                  >
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-emerald-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center notif-ring">
                     {unread}
                   </span>
                 )}
@@ -647,14 +612,8 @@ export default function SidebarGISS() {
               {showNotifs && (
                 <NotificationPanel
                   notes={notifications}
-                  onMarkAll={() =>
-                    setNotifications((p) =>
-                      p.map((n) => ({ ...n, read: true })),
-                    )
-                  }
-                  onDismiss={(id) =>
-                    setNotifications((p) => p.filter((n) => n.id !== id))
-                  }
+                  onMarkAll={() => setNotifications((p) => p.map((n) => ({ ...n, read: true })))}
+                  onDismiss={(id) => setNotifications((p) => p.filter((n) => n.id !== id))}
                   onClose={() => setShowNotifs(false)}
                 />
               )}
@@ -665,10 +624,7 @@ export default function SidebarGISS() {
             {/* Profile */}
             <div className="relative" ref={profileRef}>
               <button
-                onClick={() => {
-                  setShowProfile((v) => !v);
-                  setShowNotifs(false);
-                }}
+                onClick={() => { setShowProfile((v) => !v); setShowNotifs(false); }}
                 className="glass-btn flex items-center gap-2.5 rounded-xl pl-1.5 pr-3 py-1.5 cursor-pointer"
               >
                 <UserAvatar user={user_data ?? null} size="sm" />
@@ -690,10 +646,7 @@ export default function SidebarGISS() {
                 <ProfileDropdown
                   user={user_data ?? null}
                   onLogout={handleLogout}
-                  onNavigate={(path) => {
-                    setShowProfile(false);
-                    navigate(path);
-                  }}
+                  onNavigate={(path) => { setShowProfile(false); navigate(path); }}
                 />
               )}
             </div>

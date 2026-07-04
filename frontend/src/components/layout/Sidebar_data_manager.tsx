@@ -24,15 +24,17 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Logout from "./logout";
 import { Outlet } from "react-router-dom";
 import PlantScopeLoader from "../alert/PlantScopeLoader";
 import NotFoundPage from "./NotFoundPage";
 import { useAuthorize } from "../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
+import { api } from "@/constant/api.ts";
 import "../../global css/sidebarScrollbar.css";
 import MaintenanceDropdown_Dm from "./maintenance/MaintenanceDropdown_Dm";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface UserData {
   id: number;
@@ -42,7 +44,7 @@ interface UserData {
   user_role: string;
 }
 
-// ─── Mock Notifications (replace with real API) ───────────────────────────────
+// ─── Mock Notifications ───────────────────────────────────────────────────────
 const INITIAL_NOTIFICATIONS = [
   {
     id: 1,
@@ -190,12 +192,9 @@ function NotificationPanel({
       rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
       animate-slideDown"
     >
-      {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
         <div className="flex items-center gap-2">
-          <span className="text-white font-semibold text-sm">
-            Notifications
-          </span>
+          <span className="text-white font-semibold text-sm">Notifications</span>
           {unread > 0 && (
             <span className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
               {unread} NEW
@@ -220,7 +219,6 @@ function NotificationPanel({
         </div>
       </div>
 
-      {/* List */}
       <div className="max-h-[380px] overflow-y-auto notif-scroll">
         {notes.length === 0 ? (
           <div className="py-12 flex flex-col items-center gap-3 text-white/30">
@@ -247,15 +245,9 @@ function NotificationPanel({
                   {cfg.icon}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-white/90 text-[13px] font-medium leading-tight">
-                    {n.title}
-                  </p>
-                  <p className="text-white/45 text-[11.5px] mt-0.5 leading-snug">
-                    {n.desc}
-                  </p>
-                  <span className="text-white/25 text-[11px] mt-1 block">
-                    {n.time}
-                  </span>
+                  <p className="text-white/90 text-[13px] font-medium leading-tight">{n.title}</p>
+                  <p className="text-white/45 text-[11.5px] mt-0.5 leading-snug">{n.desc}</p>
+                  <span className="text-white/25 text-[11px] mt-1 block">{n.time}</span>
                 </div>
                 <button
                   onClick={() => onDismiss(n.id)}
@@ -269,7 +261,6 @@ function NotificationPanel({
         )}
       </div>
 
-      {/* Footer */}
       <div className="px-5 py-3 border-t border-white/10 text-center">
         <button className="text-[12px] text-emerald-400/70 hover:text-emerald-300 transition-colors cursor-pointer">
           View all notifications →
@@ -294,106 +285,157 @@ function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
       rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
       animate-slideDown"
     >
-      {/* User card */}
       <div className="px-5 py-5 border-b border-white/10">
         <div className="flex items-center gap-3">
           <UserAvatar user={user} size="lg" />
           <div className="min-w-0 flex-1">
-            <p className="text-white font-semibold text-[14px] truncate">
-              {user?.full_name ?? "—"}
-            </p>
-            <p
-              className="text-white/45 text-[11.5px] truncate"
-              title={user?.email}
-            >
-              {user?.email ?? "—"}
-            </p>
+            <p className="text-white font-semibold text-[14px] truncate">{user?.full_name ?? "—"}</p>
+            <p className="text-white/45 text-[11.5px] truncate" title={user?.email}>{user?.email ?? "—"}</p>
             <div className="flex items-center gap-1.5 mt-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-400/80 text-[11px] font-medium">
-                {user?.user_role ?? "—"}
-              </span>
+              <span className="text-emerald-400/80 text-[11px] font-medium">{user?.user_role ?? "—"}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Menu items */}
       <div className="py-2">
         {[
-          {
-            icon: <User size={14} />,
-            label: "My Profile",
-            sub: "View & edit info",
-            path: "/DataManager/my-profile",
-          },
-          {
-            icon: <Mail size={14} />,
-            label: "Inbox",
-            sub: "3 unread messages",
-            path: null,
-          },
-          {
-            icon: <Settings size={14} />,
-            label: "Settings",
-            sub: "Preferences & security",
-            path: null,
-          },
+          { icon: <User size={14} />, label: "My Profile", sub: "View & edit info", path: "/DataManager/my-profile" },
+          { icon: <Mail size={14} />, label: "Inbox", sub: "3 unread messages", path: null },
+          { icon: <Settings size={14} />, label: "Settings", sub: "Preferences & security", path: null },
         ].map((item) => (
           <button
             key={item.label}
             onClick={() => item.path && onNavigate(item.path)}
             className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left cursor-pointer group"
           >
-            <span className="text-white/40 group-hover:text-emerald-400 transition-colors">
-              {item.icon}
-            </span>
+            <span className="text-white/40 group-hover:text-emerald-400 transition-colors">{item.icon}</span>
             <div>
-              <p className="text-white/80 text-[13px] group-hover:text-white transition-colors">
-                {item.label}
-              </p>
+              <p className="text-white/80 text-[13px] group-hover:text-white transition-colors">{item.label}</p>
               <p className="text-white/30 text-[11px]">{item.sub}</p>
             </div>
           </button>
         ))}
       </div>
 
-      {/* Sign out */}
       <div className="border-t border-white/10 p-2">
         <button
           onClick={onLogout}
           className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-red-500/10 transition-colors text-left cursor-pointer group"
         >
-          <LogOut
-            size={14}
-            className="text-red-400/60 group-hover:text-red-400 transition-colors"
-          />
-          <span className="text-red-400/60 group-hover:text-red-400 text-[13px] transition-colors">
-            Sign out
-          </span>
+          <LogOut size={14} className="text-red-400/60 group-hover:text-red-400 transition-colors" />
+          <span className="text-red-400/60 group-hover:text-red-400 text-[13px] transition-colors">Sign out</span>
         </button>
       </div>
     </div>
   );
 }
 
+// ─── Badge Component ──────────────────────────────────────────────────────────
+function Badge({ count, variant = "red" }: { count: number; variant?: "red" | "amber" | "emerald" }) {
+  if (!count || count <= 0) return null;
+  
+  const variants = {
+    red: "from-red-500 to-rose-500 shadow-red-500/30",
+    amber: "from-amber-500 to-orange-500 shadow-amber-500/30",
+    emerald: "from-emerald-500 to-teal-500 shadow-emerald-500/30",
+  };
+  
+  return (
+    <span className={`flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-gradient-to-r ${variants[variant]} text-white text-[9px] font-bold rounded-full badge-pulse shadow-lg`}>
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
 // ─── Sidebar Data Manager ─────────────────────────────────────────────────────
 export default function Sidebar_data_manager() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [isLogout, setIsLogout] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  
+  // ✅ NEW: Badge counts
+  const [pendingAppCount, setPendingAppCount] = useState(0);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
 
   const notifRef: any = useRef<HTMLDivElement>(null);
   const profileRef: any = useRef<HTMLDivElement>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isFetchingRef = useRef(false);
+  
   useOutsideClick(notifRef, () => setShowNotifs(false));
   useOutsideClick(profileRef, () => setShowProfile(false));
 
-  const navigate = useNavigate();
   const { isAuthorized, isLoading, user_data } = useAuthorize("DataManager");
+
+  // ✅ NEW: Fetch both counts in parallel
+  const fetchPendingCounts = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    if (document.hidden) return;
+    if (!isAuthorized) return;
+
+    isFetchingRef.current = true;
+    
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      const headers = { Authorization: `Bearer ${token}` };
+
+      // Fetch both counts in parallel
+      const [appRes, reqRes] = await Promise.all([
+        fetch(`${api}api/get_pending_dm_application_count/`, { headers }),
+        fetch(`${api}api/get_pending_request_count/`, { headers }),
+      ]);
+
+      if (appRes.ok) {
+        const appData = await appRes.json();
+        setPendingAppCount(appData.pending_count || 0);
+      }
+
+      if (reqRes.ok) {
+        const reqData = await reqRes.json();
+        setPendingRequestCount(reqData.pending_count || 0);
+      }
+    } catch (err) {
+      console.error("Failed to fetch pending counts:", err);
+    } finally {
+      isFetchingRef.current = false;
+    }
+  }, [isAuthorized]);
+
+  // ✅ NEW: Smart polling effect
+  useEffect(() => {
+    if (!isAuthorized) {
+      setPendingAppCount(0);
+      setPendingRequestCount(0);
+      return;
+    }
+
+    fetchPendingCounts();
+    intervalRef.current = setInterval(() => fetchPendingCounts(), 60000);
+
+    const handleVisibilityChange = () => { if (!document.hidden) fetchPendingCounts(); };
+    const handleFocus = () => fetchPendingCounts();
+    const handleNavigation = () => fetchPendingCounts();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('popstate', handleNavigation);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('popstate', handleNavigation);
+    };
+  }, [isAuthorized, fetchPendingCounts]);
 
   if (isLoading) return <PlantScopeLoader />;
   if (!localStorage.getItem("token")) {
@@ -414,8 +456,43 @@ export default function Sidebar_data_manager() {
     "/DataManager/calendar": "Calendar",
     "/DataManager/monitoring": "Monitoring",
     "/DataManager/reports": "Reports",
+    "/DataManager/request": "Requests",
   };
   const pageTitle = PAGE_TITLES[location.pathname] ?? "PlantScope";
+
+  // ── ✅ Grouped Navigation ────────────────────────────────────────────────────
+  const navGroups = [
+    {
+      title: "Overview",
+      items: [
+        { to: "/dashboard-data-manager", icon: <LayoutDashboard size={18} />, label: "Dashboard", badge: null },
+        { to: "/DataManager/map", icon: <Map size={18} />, label: "Map", badge: null },
+      ],
+    },
+    {
+      title: "Reforestation",
+      items: [
+        { to: "/DataManager/reforestation-areas", icon: <ClipboardList size={18} />, label: "Reforestation Area", badge: null },
+        { to: "/DataManager/reforestation_area_site", icon: <Layers2 size={18} />, label: "Sites", badge: null },
+        { to: "/DataManager/official-reforestation", icon: <TreePine size={18} />, label: "Official Sites", badge: null },
+      ],
+    },
+    {
+      title: "Operations",
+      items: [
+        { to: "/DataManager/applications", icon: <ListCheck size={18} />, label: "Applications", badge: pendingAppCount > 0 ? pendingAppCount : null },
+        { to: "/DataManager/request", icon: <ListChevronsUpDown size={18} />, label: "Requests", badge: pendingRequestCount > 0 ? pendingRequestCount : null },
+        { to: "/DataManager/calendar", icon: <Calendar size={18} />, label: "Calendar", badge: null },
+        { to: "/DataManager/monitoring", icon: <MonitorDot size={18} />, label: "Monitoring", badge: null },
+      ],
+    },
+    {
+      title: "Analytics",
+      items: [
+        { to: "/DataManager/reports", icon: <FileText size={18} />, label: "Reports", badge: null },
+      ],
+    },
+  ];
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -451,6 +528,12 @@ export default function Sidebar_data_manager() {
         }
         .notif-ring { animation: notif-pulse 2.2s ease infinite; }
 
+        @keyframes badge-pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.08); opacity: 0.9; }
+        }
+        .badge-pulse { animation: badge-pulse 2s ease-in-out infinite; }
+
         .notif-scroll::-webkit-scrollbar       { width:4px; }
         .notif-scroll::-webkit-scrollbar-track { background:transparent; }
         .notif-scroll::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:99px; }
@@ -459,138 +542,157 @@ export default function Sidebar_data_manager() {
           width:1px; height:28px;
           background: linear-gradient(to bottom, transparent, rgba(255,255,255,.15), transparent);
         }
+
+        .nav-item {
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .nav-item:hover {
+          transform: translateX(2px);
+        }
       `}</style>
 
       <Logout setIsLogout={setIsLogout} isLogout={isLogout} />
 
       {/* ── Sidebar ── */}
-      <div
-        className={`sticky top-0 pt-0 pb-0 h-screen bg-[#0F4A2F] text-white flex flex-col justify-between shadow-2xl transition-all duration-500 ease-in-out ${
-          expanded ? "p-2 w-[226px] min-w-[226px]" : "p-1 w-[88px] min-w-[88px]"
+      <aside
+        className={`sticky top-0 h-screen bg-gradient-to-b from-[#0F4A2F] via-[#0d4028] to-[#0a3320] text-white flex flex-col shadow-2xl transition-all duration-500 ease-out ${
+          expanded ? "w-[260px] min-w-[260px]" : "w-[80px] min-w-[80px]"
         }`}
       >
-        {/* Logo / brand */}
-        <div className="p-4 gap-2 mb-2 flex flex-row items-center border-b border-white/20">
-          <img
-            src={logo}
-            alt="Logo"
-            className="w-12 h-12 object-cover rounded-full border-2 border-white/50 cursor-pointer shrink-0"
-            onClick={() => setExpanded(!expanded)}
-          />
-          <h1
-            className={`text-[.8rem] font-bold tracking-wide leading-tight overflow-hidden transition-all whitespace-nowrap ${expanded ? "opacity-100 ml-1" : "opacity-0 w-0"}`}
-          >
-            PlantScope
-          </h1>
-          <div className="flex-1" />
-          <button
-            className={`p-2 rounded-[5px] hover:bg-white/10 cursor-pointer transition-all ${!expanded && "opacity-0 pointer-events-none"}`}
-            onClick={() => setExpanded(!expanded)}
-          >
-            <ChevronLeft size={18} />
-          </button>
-        </div>
-
-        {/* Nav links */}
-        <div className="flex-1 p-1 overflow-x-hidden flex flex-col">
-          <nav className="mt-1 gap-1 flex flex-col sidebar-scrollbar flex-1">
-            {[
-              {
-                to: "/dashboard-data-manager",
-                icon: <LayoutDashboard size={20} />,
-                label: "Dashboard",
-              },
-              { to: "/DataManager/map", icon: <Map size={20} />, label: "Map" },
-              {
-                to: "/DataManager/reforestation-areas",
-                icon: <ClipboardList size={20} />,
-                label: "Reforestation Area",
-              },
-              {
-                to: "/DataManager/reforestation_area_site",
-                icon: <Layers2 size={20} />,
-                label: "Sites",
-              },
-              {
-                to: "/DataManager/official-reforestation",
-                icon: <TreePine size={20} />,
-                label: "Official Sites",
-              },
-              {
-                to: "/DataManager/applications",
-                icon: <ListCheck size={20} />,
-                label: "Applications",
-              },
-              {
-                to: "/DataManager/calendar",
-                icon: <Calendar size={20} />,
-                label: "Calendar",
-              },
-              {
-                to: "/DataManager/request",
-                icon: <ListChevronsUpDown size={20} />,
-                label: "Requests",
-              },
-
-              {
-                to: "/DataManager/monitoring",
-                icon: <MonitorDot size={20} />,
-                label: "Monitoring",
-              },
-              {
-                to: "/DataManager/reports",
-                icon: <FileText size={20} />,
-                label: "Reports",
-              },
-            ].map(({ to, icon, label }) => (
-              <Link
-                key={to}
-                to={to}
-                className={`flex flex-row items-center transition-all duration-200 rounded-md px-6 py-3 justify-center
-                  ${
-                    location.pathname === to
-                      ? "bg-white/25 text-white shadow-inner"
-                      : "text-white/80 hover:bg-white/10 hover:text-white"
-                  }`}
-              >
-                <span className="mr-auto shrink-0">{icon}</span>
-                <span
-                  className={`text-[.8rem] overflow-hidden tracking-wide leading-tight transition-all whitespace-nowrap ease-in-out mr-auto flex-1
-                  ${expanded ? "ml-3 w-auto opacity-100" : "w-0 ml-0 opacity-0"}`}
+        {/* Logo Section */}
+        <div className="p-4 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="relative shrink-0">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 p-0.5 shadow-lg shadow-emerald-500/20 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+                <img src={logo} alt="Logo" className="w-full h-full rounded-[10px] object-cover bg-white" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#0F4A2F] animate-pulse" />
+            </div>
+            
+            {expanded && (
+              <>
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-base font-bold text-white tracking-tight truncate">PlantScope</h1>
+                  <p className="text-[10px] text-emerald-300/70 uppercase tracking-wider font-semibold">DataManager</p>
+                </div>
+                <button
+                  onClick={() => setExpanded(!expanded)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 transition-all"
                 >
-                  {label}
-                </span>
-              </Link>
-            ))}
-
-            {/* Maintenance Dropdown — kept outside the map since it has its own component */}
-            <MaintenanceDropdown_Dm
-              expanded={expanded}
-              maintenanceOpen={maintenanceOpen}
-              setMaintenanceOpen={setMaintenanceOpen}
-            />
-          </nav>
+                  <ChevronLeft size={16} className="text-white/60" />
+                </button>
+              </>
+            )}
+            {!expanded && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="p-1.5 rounded-lg hover:bg-white/10 transition-all mx-auto"
+              >
+                <ChevronLeft size={16} className="text-white/60 rotate-180" />
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Footer version tag */}
-        <div className="border-t border-white/20 p-4">
-          <p
-            className={`text-white/20 text-[10px] text-center overflow-hidden transition-all ${expanded ? "opacity-100" : "opacity-0"}`}
-          >
-            PlantScope v1.0 • ENRO Ormoc
-          </p>
-        </div>
-      </div>
+        {/* Navigation Groups */}
+        <nav className="flex-1 overflow-y-auto sidebar-scrollbar p-3 space-y-5">
+          {navGroups.map((group) => (
+            <div key={group.title}>
+              {expanded && (
+                <div className="mb-2 px-3 flex items-center gap-2">
+                  <p className="text-[10px] font-bold text-emerald-300/60 uppercase tracking-wider">
+                    {group.title}
+                  </p>
+                  <div className="flex-1 h-px bg-gradient-to-r from-emerald-500/30 to-transparent" />
+                </div>
+              )}
+              
+              <div className="space-y-0.5">
+                {group.items.map(({ to, icon, label, badge }) => {
+                  const isActive = location.pathname === to;
+                  const hasBadge = badge !== null && badge > 0;
+                  
+                  return (
+                    <Link
+                      key={to}
+                      to={to}
+                      onClick={() => {
+                        if (to === "/DataManager/applications" || to === "/DataManager/request") {
+                          fetchPendingCounts();
+                        }
+                      }}
+                      className={`nav-item group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer relative overflow-hidden ${
+                        isActive
+                          ? "bg-white/15 text-white shadow-lg border border-white/10"
+                          : "text-white/70 hover:text-white hover:bg-white/5 border border-transparent"
+                      } ${!expanded && 'justify-center'}`}
+                    >
+                      {/* Active indicator */}
+                      {isActive && expanded && (
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-emerald-400 rounded-r-full shadow-lg shadow-emerald-400/50" />
+                      )}
+                      
+                      {/* Icon */}
+                      <span className={`relative shrink-0 ${isActive ? 'text-emerald-400' : 'text-white/60 group-hover:text-white'}`}>
+                        {icon}
+                      </span>
+                      
+                      {/* Label */}
+                      {expanded && (
+                        <>
+                          <span className="flex-1 text-sm font-medium truncate">{label}</span>
+                          
+                          {/* Badge */}
+                          {hasBadge && (
+                            <Badge count={badge!} variant="red" />
+                          )}
+                        </>
+                      )}
+                      
+                      {/* Collapsed badge dot */}
+                      {!expanded && hasBadge && (
+                        <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          {/* Maintenance Dropdown */}
+          <MaintenanceDropdown_Dm
+            expanded={expanded}
+            maintenanceOpen={maintenanceOpen}
+            setMaintenanceOpen={setMaintenanceOpen}
+          />
+        </nav>
+
+        {/* Footer */}
+        {expanded && (
+          <div className="p-3 border-t border-white/10">
+            <div className="bg-gradient-to-r from-white/5 to-transparent rounded-xl p-3 border border-white/5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50" />
+                  <span className="text-[10px] font-semibold text-white/80">System Online</span>
+                </div>
+                <span className="text-[9px] text-white/40">v1.0</span>
+              </div>
+              <p className="text-[9px] text-white/40">ENRO Ormoc City • 2024</p>
+            </div>
+          </div>
+        )}
+      </aside>
 
       {/* ── Main content ── */}
-      <main className="flex-1 overflow-y-auto overflow-x-auto bg-[rgba(255,255,255,0.1)]">
+      <main className="flex-1 overflow-y-auto overflow-x-auto bg-[#f5faf6]">
         {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
         <header
           className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
           border-b border-white/[0.07] px-6 h-[68px] flex items-center gap-4
-          shadow-[0_4px_40px_rgba(0,0,0,0.35)]  z-9999"
+          shadow-[0_4px_40px_rgba(0,0,0,0.35)] z-9999"
         >
-          {/* Left — page title */}
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="w-1 h-8 rounded-full bg-gradient-to-b from-emerald-400 to-teal-500 shrink-0" />
             <div className="min-w-0">
@@ -603,23 +705,15 @@ export default function Sidebar_data_manager() {
             </div>
             <div className="hidden sm:flex items-center gap-1.5 glass-btn rounded-full px-3 py-1.5 ml-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">
-                LIVE
-              </span>
+              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">LIVE</span>
             </div>
           </div>
 
-          {/* Right — actions */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Date */}
             <div className="hidden lg:flex items-center gap-2 glass-btn rounded-xl px-3.5 py-2">
               <Clock size={12} className="text-white/40" />
               <span className="text-white/50 text-[12px] font-medium">
-                {new Date().toLocaleDateString("en-PH", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
+                {new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
               </span>
             </div>
 
@@ -628,19 +722,12 @@ export default function Sidebar_data_manager() {
             {/* Bell */}
             <div className="relative" ref={notifRef}>
               <button
-                onClick={() => {
-                  setShowNotifs((v) => !v);
-                  setShowProfile(false);
-                }}
+                onClick={() => { setShowNotifs((v) => !v); setShowProfile(false); }}
                 className="glass-btn relative w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer"
               >
                 <Bell size={16} className="text-white/70" />
                 {unread > 0 && (
-                  <span
-                    className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
-                    bg-emerald-500 text-white text-[10px] font-bold rounded-full
-                    flex items-center justify-center notif-ring"
-                  >
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-emerald-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center notif-ring">
                     {unread}
                   </span>
                 )}
@@ -648,14 +735,8 @@ export default function Sidebar_data_manager() {
               {showNotifs && (
                 <NotificationPanel
                   notes={notifications}
-                  onMarkAll={() =>
-                    setNotifications((p) =>
-                      p.map((n) => ({ ...n, read: true })),
-                    )
-                  }
-                  onDismiss={(id) =>
-                    setNotifications((p) => p.filter((n) => n.id !== id))
-                  }
+                  onMarkAll={() => setNotifications((p) => p.map((n) => ({ ...n, read: true })))}
+                  onDismiss={(id) => setNotifications((p) => p.filter((n) => n.id !== id))}
                   onClose={() => setShowNotifs(false)}
                 />
               )}
@@ -666,10 +747,7 @@ export default function Sidebar_data_manager() {
             {/* Profile */}
             <div className="relative" ref={profileRef}>
               <button
-                onClick={() => {
-                  setShowProfile((v) => !v);
-                  setShowNotifs(false);
-                }}
+                onClick={() => { setShowProfile((v) => !v); setShowNotifs(false); }}
                 className="glass-btn flex items-center gap-2.5 rounded-xl pl-1.5 pr-3 py-1.5 cursor-pointer"
               >
                 <UserAvatar user={user_data ?? null} size="sm" />
@@ -691,10 +769,7 @@ export default function Sidebar_data_manager() {
                 <ProfileDropdown
                   user={user_data ?? null}
                   onLogout={() => setIsLogout(true)}
-                  onNavigate={(path) => {
-                    setShowProfile(false);
-                    navigate(path);
-                  }}
+                  onNavigate={(path) => { setShowProfile(false); navigate(path); }}
                 />
               )}
             </div>
