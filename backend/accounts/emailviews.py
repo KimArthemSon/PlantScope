@@ -6,18 +6,11 @@ from django.core.cache import cache
 import json
 import re
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
-from email.mime.image import MIMEImage
-import os
-import threading
+import resend
 from .models import User
 
-def send_email_async(msg):
-    """Send email in background thread to prevent timeout"""
-    try:
-        msg.send(fail_silently=False)
-    except Exception as e:
-        print(f"Failed to send email: {str(e)}")
+# ✅ Initialize Resend with your API key from settings
+resend.api_key = settings.RESEND_API_KEY
 
 @csrf_exempt
 def send_otp(request):
@@ -43,8 +36,7 @@ def send_otp(request):
     cache.set(f'otp_{email}', otp_code, timeout=600)
     cache.set(f'otp_cooldown_{email}', True, timeout=60)
 
-    banner_path = os.path.join(settings.BASE_DIR, 'static', 'images', 'plantscope_banner.png')
-    
+    # ✅ HTML Content for the email
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -62,8 +54,9 @@ def send_otp(request):
                           box-shadow:0 4px 20px rgba(0,0,0,0.08);">
               <tr>
                 <td style="padding:0; line-height:0;">
-                  <img src="cid:plantscope_banner" alt="PlantScope"
-                       style="width:100%; height:auto; display:block;">
+                  <div style="background-color: #0F4A2F; padding: 20px; text-align: center;">
+                      <h1 style="color: white; margin: 0; font-family: Arial, sans-serif;">PlantScope</h1>
+                  </div>
                 </td>
               </tr>
               <tr>
@@ -106,37 +99,21 @@ def send_otp(request):
     </html>
     """
 
-    text_content = (
-        f"Hello,\n\n"
-        f"Your PlantScope verification code is: {otp_code}\n\n"
-        f"This code expires in 10 minutes. Do not share it with anyone.\n\n"
-        f"If you did not request this code, please ignore this email.\n\n"
-        f"— PlantScope System"
-    )
-
     try:
-        msg = EmailMultiAlternatives(
-            subject='PlantScope – Email Verification Code',
-            body=text_content,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[email],
-        )
-        msg.attach_alternative(html_content, "text/html")
+        # ✅ Send email using Resend API with your verified domain
+        params = {
+            "from": "PlantScope <noreply@plantscope.org>",  # ✅ Using your verified domain
+            "to": [email],
+            "subject": "PlantScope – Email Verification Code",
+            "html": html_content,
+        }
 
-        if os.path.exists(banner_path):
-            with open(banner_path, 'rb') as f:
-                banner_img = MIMEImage(f.read(), _subtype='png')
-            banner_img.add_header('Content-ID', '<plantscope_banner>')
-            banner_img.add_header('Content-Disposition', 'inline', filename='plantscope_banner.png')
-            msg.attach(banner_img)
-
-        # ✅ Send email in background thread
-        email_thread = threading.Thread(target=send_email_async, args=(msg,))
-        email_thread.start()
+        resend.Emails.send(params)
 
     except Exception as e:
         cache.delete(f'otp_{email}')
         cache.delete(f'otp_cooldown_{email}')
+        print(f"Resend Error: {str(e)}")
         return JsonResponse({'error': f'Failed to send email: {str(e)}'}, status=500)
 
     return JsonResponse({'message': 'Verification code sent to your email.'}, status=200)

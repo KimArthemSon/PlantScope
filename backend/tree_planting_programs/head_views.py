@@ -1093,7 +1093,6 @@ def get_audit_trail_report(request):
 
 
 
-
 @csrf_exempt
 def get_pending_head_count(request):
     """

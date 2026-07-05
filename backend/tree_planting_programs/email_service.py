@@ -1,50 +1,33 @@
 """
 Reusable email notification service for PlantScope.
 Sends branded HTML emails to tree growers at key workflow milestones.
+Uses Resend API for reliable email delivery.
 """
-import os
 import logging
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
-from email.mime.image import MIMEImage
+import resend
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-# Banner image path (reuse from your OTP email)
-BANNER_PATH = os.path.join(settings.BASE_DIR, 'static', 'images', 'plantscope_banner.png')
-
-
-def _get_banner_cid():
-    """Attach banner image and return its Content-ID for inline use."""
-    if not os.path.exists(BANNER_PATH):
-        return None
-    with open(BANNER_PATH, 'rb') as f:
-        banner_img = MIMEImage(f.read(), _subtype='png')
-    banner_img.add_header('Content-ID', '<plantscope_banner>')
-    banner_img.add_header('Content-Disposition', 'inline', filename='plantscope_banner.png')
-    return banner_img
+# ✅ Initialize Resend with your API key from settings
+resend.api_key = settings.RESEND_API_KEY
 
 
 def _send_email(subject, to_email, html_content, text_content):
     """
-    Core email sender. Handles attachment and delivery.
+    Core email sender using Resend API.
     Returns True on success, False on failure.
     """
     try:
-        msg = EmailMultiAlternatives(
-            subject=subject,
-            body=text_content,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[to_email],
-        )
-        msg.attach_alternative(html_content, "text/html")
+        params = {
+            "from": "PlantScope <noreply@plantscope.org>",  # ✅ Using your verified domain
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content,
+        }
 
-        banner = _get_banner_cid()
-        if banner:
-            msg.attach(banner)
-
-        msg.send(fail_silently=False)
+        resend.Emails.send(params)
         logger.info(f"Email sent to {to_email}: {subject}")
         return True
     except Exception as e:
@@ -76,8 +59,10 @@ def _base_html(body_html, greeting="Hello"):
 
               <tr>
                 <td style="padding:0; line-height:0;">
-                  <img src="cid:plantscope_banner" alt="PlantScope"
-                       style="width:100%; height:auto; display:block;">
+                  <!-- ✅ Using header div instead of cid: image for Resend compatibility -->
+                  <div style="background-color: #0F4A2F; padding: 20px; text-align: center;">
+                      <h1 style="color: white; margin: 0; font-family: Arial, sans-serif; font-size: 28px;">PlantScope</h1>
+                  </div>
                 </td>
               </tr>
 
@@ -179,18 +164,12 @@ def send_application_accepted_email(user, application):
     """
 
     html_content = _base_html(body_html, greeting)
-    text_content = (
-        f"{greeting},\n\n"
-        f"Congratulations! Your application '{app_title}' has been approved.\n\n"
-        f"Please coordinate with the ENRO office for the next steps.\n\n"
-        f"— PlantScope System"
-    )
 
     return _send_email(
         subject="PlantScope – Your Application Has Been Approved! 🎉",
         to_email=user.email,
         html_content=html_content,
-        text_content=text_content,
+        text_content="",  # Resend uses HTML only
     )
 
 
@@ -231,18 +210,12 @@ def send_application_rejected_email(user, application, reason_text=""):
     """
 
     html_content = _base_html(body_html, greeting)
-    text_content = (
-        f"{greeting},\n\n"
-        f"Your application '{app_title}' was not approved.\n"
-        f"{'Reason: ' + reason_text if reason_text else ''}\n\n"
-        f"— PlantScope System"
-    )
 
     return _send_email(
         subject="PlantScope – Application Update",
         to_email=user.email,
         html_content=html_content,
-        text_content=text_content,
+        text_content="",
     )
 
 
@@ -279,18 +252,12 @@ def send_program_completed_email(user, application):
     """
 
     html_content = _base_html(body_html, greeting)
-    text_content = (
-        f"{greeting},\n\n"
-        f"Congratulations! Your program '{app_title}' has been completed.\n"
-        f"Thank you for your contribution to Ormoc City's reforestation efforts.\n\n"
-        f"— PlantScope System"
-    )
 
     return _send_email(
         subject="PlantScope – Program Completed Successfully! 🏆",
         to_email=user.email,
         html_content=html_content,
-        text_content=text_content,
+        text_content="",
     )
 
 
@@ -329,18 +296,12 @@ def send_program_failed_email(user, application, reason_text=""):
     """
 
     html_content = _base_html(body_html, greeting)
-    text_content = (
-        f"{greeting},\n\n"
-        f"Your program '{app_title}' has been marked as failed.\n"
-        f"{'Reason: ' + reason_text if reason_text else ''}\n\n"
-        f"— PlantScope System"
-    )
 
     return _send_email(
         subject="PlantScope – Program Update",
         to_email=user.email,
         html_content=html_content,
-        text_content=text_content,
+        text_content="",
     )
 
 
@@ -376,19 +337,12 @@ def send_seedling_request_accepted_email(user, application, seedling_request):
     """
 
     html_content = _base_html(body_html, greeting)
-    text_content = (
-        f"{greeting},\n\n"
-        f"Your seedling request for '{app_title}' has been approved.\n"
-        f"Total seedlings approved: {total_seedlings:,}\n\n"
-        f"Please coordinate with the ENRO Nursery for pickup.\n\n"
-        f"— PlantScope System"
-    )
 
     return _send_email(
         subject=f"PlantScope – Seedling Request Approved ({total_seedlings:,} seedlings) 🌱",
         to_email=user.email,
         html_content=html_content,
-        text_content=text_content,
+        text_content="",
     )
 
 
@@ -428,19 +382,14 @@ def send_seedling_request_rejected_email(user, application, seedling_request, re
     """
 
     html_content = _base_html(body_html, greeting)
-    text_content = (
-        f"{greeting},\n\n"
-        f"Your seedling request for '{app_title}' was not approved.\n"
-        f"{'Reason: ' + reason_text if reason_text else ''}\n\n"
-        f"— PlantScope System"
-    )
 
     return _send_email(
         subject="PlantScope – Seedling Request Update",
         to_email=user.email,
         html_content=html_content,
-        text_content=text_content,
+        text_content="",
     )
+
 
 def send_application_evaluated_email(user, application):
     """Sent when DataManager evaluates application and forwards to Head."""
@@ -457,14 +406,12 @@ def send_application_evaluated_email(user, application):
     orientation_html = ""
     if application.orientation_date:
         if isinstance(application.orientation_date, str):
-            # If it's a string, try to parse it, otherwise just use the string
             try:
                 parsed_date = datetime.strptime(application.orientation_date, '%Y-%m-%d').date()
                 formatted_date = parsed_date.strftime("%B %d, %Y")
             except ValueError:
                 formatted_date = application.orientation_date
         else:
-            # If it's already a date object
             formatted_date = application.orientation_date.strftime("%B %d, %Y")
 
         orientation_html = f"""
@@ -508,15 +455,10 @@ def send_application_evaluated_email(user, application):
     """
 
     html_content = _base_html(body_html, greeting)
-    text_content = (
-        f"{greeting},\n\n"
-        f"Your application '{app_title}' has been evaluated and forwarded to the Head.\n\n"
-        f"— PlantScope System"
-    )
 
     return _send_email(
         subject="PlantScope – Application Evaluated & Forwarded to Head 📋",
         to_email=user.email,
         html_content=html_content,
-        text_content=text_content,
+        text_content="",
     )
