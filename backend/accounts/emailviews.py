@@ -6,14 +6,18 @@ from django.core.cache import cache
 import json
 import re
 from django.conf import settings
-
 from django.core.mail import EmailMultiAlternatives
 from email.mime.image import MIMEImage
 import os
+import threading
+from .models import User
 
-# ✅ 1. Import your User model here
-from .models import User 
-
+def send_email_async(msg):
+    """Send email in background thread to prevent timeout"""
+    try:
+        msg.send(fail_silently=False)
+    except Exception as e:
+        print(f"Failed to send email: {str(e)}")
 
 @csrf_exempt
 def send_otp(request):
@@ -29,21 +33,18 @@ def send_otp(request):
     if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
         return JsonResponse({'error': 'A valid email is required.'}, status=400)
 
-    # ✅ 2. Check if the email already exists in the database
     if User.objects.filter(email=email).exists():
         return JsonResponse({'error': 'This email is already registered. Please use another email or log in.'}, status=400)
 
-    # Rate-limit: block if a fresh OTP was sent in the last 60 seconds
     if cache.get(f'otp_cooldown_{email}'):
         return JsonResponse({'error': 'Please wait before requesting a new code.'}, status=429)
 
     otp_code = ''.join(random.choices(string.digits, k=6))
-    cache.set(f'otp_{email}', otp_code, timeout=600)       # 10-minute TTL
-    cache.set(f'otp_cooldown_{email}', True, timeout=60)   # 60-second resend lock
+    cache.set(f'otp_{email}', otp_code, timeout=600)
+    cache.set(f'otp_cooldown_{email}', True, timeout=60)
 
-    # --- Build HTML email with banner ---
     banner_path = os.path.join(settings.BASE_DIR, 'static', 'images', 'plantscope_banner.png')
-    print(banner_path)
+    
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -59,16 +60,12 @@ def send_otp(request):
             <table role="presentation" width="600" cellpadding="0" cellspacing="0"
                    style="background-color:#ffffff; border-radius:12px; overflow:hidden;
                           box-shadow:0 4px 20px rgba(0,0,0,0.08);">
-
-              <!-- Banner -->
               <tr>
                 <td style="padding:0; line-height:0;">
                   <img src="cid:plantscope_banner" alt="PlantScope"
                        style="width:100%; height:auto; display:block;">
                 </td>
               </tr>
-
-              <!-- Body -->
               <tr>
                 <td style="padding:40px 40px 30px 40px; text-align:center;">
                   <h1 style="margin:0 0 10px 0; color:#2d5a2d; font-size:22px; font-weight:600;">
@@ -78,8 +75,6 @@ def send_otp(request):
                     Hello,<br>
                     Your PlantScope verification code is:
                   </p>
-
-                  <!-- OTP Code Box -->
                   <div style="background:#eaf5ea; border:2px dashed #2d5a2d; border-radius:10px;
                               padding:20px; margin:0 auto 25px auto; max-width:320px;">
                     <span style="font-size:36px; font-weight:700; letter-spacing:8px;
@@ -87,7 +82,6 @@ def send_otp(request):
                       {otp_code}
                     </span>
                   </div>
-
                   <p style="margin:0 0 10px 0; color:#555555; font-size:14px; line-height:1.6;">
                     This code expires in <strong>10 minutes</strong>.<br>
                     Do not share it with anyone.
@@ -97,8 +91,6 @@ def send_otp(request):
                   </p>
                 </td>
               </tr>
-
-              <!-- Footer -->
               <tr>
                 <td style="background-color:#2d5a2d; padding:18px 40px; text-align:center;">
                   <p style="margin:0; color:#ffffff; font-size:13px;">
@@ -106,7 +98,6 @@ def send_otp(request):
                   </p>
                 </td>
               </tr>
-
             </table>
           </td>
         </tr>
@@ -115,7 +106,6 @@ def send_otp(request):
     </html>
     """
 
-    # Plain-text fallback for clients that don't render HTML
     text_content = (
         f"Hello,\n\n"
         f"Your PlantScope verification code is: {otp_code}\n\n"
@@ -133,7 +123,6 @@ def send_otp(request):
         )
         msg.attach_alternative(html_content, "text/html")
 
-        # Attach banner image inline (referenced via cid:plantscope_banner in HTML)
         if os.path.exists(banner_path):
             with open(banner_path, 'rb') as f:
                 banner_img = MIMEImage(f.read(), _subtype='png')
@@ -141,7 +130,9 @@ def send_otp(request):
             banner_img.add_header('Content-Disposition', 'inline', filename='plantscope_banner.png')
             msg.attach(banner_img)
 
-        msg.send(fail_silently=False)
+        # ✅ Send email in background thread
+        email_thread = threading.Thread(target=send_email_async, args=(msg,))
+        email_thread.start()
 
     except Exception as e:
         cache.delete(f'otp_{email}')
