@@ -11,8 +11,7 @@ from .models import (
     ProgressReport, ProgressReportSpecies, Reason
 )
 from sites.models import Sites
-# ✅ UPDATED IMPORT: Added get_cloudinary_url
-from accounts.helper import get_user_from_token, get_cloudinary_url, delete_cloudinary_resource
+from accounts.helper import get_user_from_token, get_cloudinary_url, delete_cloudinary_resource, create_notification
 from accounts.models import User
 from tree_species.models import Tree_species
 from django.db.models import Sum, Count, Q
@@ -28,6 +27,19 @@ from sites.models import Sites, SiteMetaDataVerification
 from django.db.models import Sum, Count, Q, F
 from django.db.models.functions import Coalesce, TruncMonth
 from datetime import datetime, timedelta
+from .email_service import (
+    send_application_accepted_email,
+    send_application_rejected_email,
+    send_program_completed_email,
+    send_program_failed_email,
+    send_seedling_request_accepted_email,
+    send_seedling_request_rejected_email,
+    send_application_evaluated_email,
+)
+import logging
+
+# Define the logger at the module level (outside any function)
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPER FUNCTIONS
@@ -97,7 +109,6 @@ def get_applications(request):
         "application_id": app.application_id,
         "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "N/A",
         "group_type": app.user.tree_grower_group.get_group_type_display() if hasattr(app.user, 'tree_grower_group') else "N/A",
-        # ✅ UPDATED: Use Cloudinary helper
         "group_profile": get_cloudinary_url(str(app.user.tree_grower_group.profile_img)) if hasattr(app.user, 'tree_grower_group') and app.user.tree_grower_group.profile_img else None,
         "title": app.title,
         "orientation_date": app.orientation_date,
@@ -132,20 +143,16 @@ def get_application(request, application_id):
     seedling_requests = SeedlingRequest.objects.filter(application=app).order_by('-created_at')
     progress_reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
 
-    # ─── RICH SITE SERIALIZATION ────────────────────────────────────────────
     assigned_site_data = None
     if app.site:
         site = app.site
         meta = getattr(site, 'meta_verification', None)
         
-        # Fetch General Images
         general_images = [
-            # ✅ UPDATED: Use Cloudinary helper
             {"image_url": get_cloudinary_url(str(img.img)) if img.img else None, "caption": img.caption} 
             for img in site.site_images.filter(layer_tag='general').order_by('-created_at')
         ]
         
-        # Fetch Recommended Species
         recommended_species = [
             {
                 "species_id": rec.tree_species.tree_specie_id if rec.tree_species else None,
@@ -189,7 +196,6 @@ def get_application(request, application_id):
             "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
             "proposed_orientation_date": app.proposed_orientation_date.isoformat() if app.proposed_orientation_date else None,
             "confirmed_at": app.confirmed_at.isoformat() if app.confirmed_at else None,
-            # ✅ UPDATED: Use Cloudinary helper for files
             "maintenance_plan": get_cloudinary_url(str(app.maintenance_plan)) if app.maintenance_plan else None,
             "agreement_image": get_cloudinary_url(str(app.agreement_image)) if app.agreement_image else None,
             "created_at": app.created_at.isoformat(),
@@ -200,7 +206,6 @@ def get_application(request, application_id):
             "group_type": app.user.tree_grower_group.get_group_type_display() if hasattr(app.user, 'tree_grower_group') else "N/A",
             "group_contact": app.user.tree_grower_group.contact if hasattr(app.user, 'tree_grower_group') else "",
             "group_address": app.user.tree_grower_group.address if hasattr(app.user, 'tree_grower_group') else "",
-            # ✅ UPDATED: Use Cloudinary helper
             "group_profile": get_cloudinary_url(str(app.user.tree_grower_group.profile_img)) if hasattr(app.user, 'tree_grower_group') and app.user.tree_grower_group.profile_img else None,
         },
         "profile": {
@@ -226,7 +231,6 @@ def get_application(request, application_id):
             "species": serialize_progress_report_species(pr),
             "description": pr.description,
             "status": pr.status,
-            # ✅ UPDATED: Use Cloudinary helper
             "proof_image": get_cloudinary_url(str(pr.proof_image_monitor_required)) if pr.proof_image_monitor_required else None,
             "submitted_at": pr.submitted_at.isoformat() if pr.submitted_at else None
         } for pr in progress_reports],
@@ -301,13 +305,11 @@ def get_tree_grower_application(request):
         'site__species_recommendations__tree_species'
     ).filter(user=user).order_by('-created_at').first()
     
-    # Base user/group data
     group_data = {
         "group_name": user.tree_grower_group.group_name,
         "group_type": user.tree_grower_group.get_group_type_display(),
         "group_contact": user.tree_grower_group.contact,
         "group_address": user.tree_grower_group.address,
-        # ✅ UPDATED: Use Cloudinary helper
         "group_profile": get_cloudinary_url(str(user.tree_grower_group.profile_img)) if user.tree_grower_group.profile_img else None,
     } if hasattr(user, 'tree_grower_group') else None
     
@@ -316,7 +318,6 @@ def get_tree_grower_application(request):
         "last_name": user.profile.last_name,
         "contact": user.profile.contact,
         "gender": user.profile.gender,
-        # ✅ UPDATED: Use Cloudinary helper
         "profile_img": get_cloudinary_url(str(user.profile.profile_img)) if user.profile.profile_img else None,
     } if hasattr(user, 'profile') and user.profile else None
 
@@ -336,23 +337,19 @@ def get_tree_grower_application(request):
     progress_reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
     latest_reason = Reason.objects.filter(application=app).order_by('-created').first()
 
-    # ─── Helper to serialize assigned site with all new details ─────────────
     assigned_site_data = None
     if app.site:
         site = app.site
         meta = getattr(site, 'meta_verification', None)
         
-        # Fetch General Images (Filtered for 'general' tag only)
         general_images = [
             {
-                # ✅ UPDATED: Use Cloudinary helper
                 "image_url": get_cloudinary_url(str(img.img)) if img.img else None,
                 "caption": img.caption
             } 
             for img in site.site_images.filter(layer_tag='general').order_by('-created_at')
         ]
         
-        # Fetch Recommended Species
         recommended_species = [
             {
                 "species_id": rec.tree_species.tree_specie_id if rec.tree_species else None,
@@ -383,7 +380,6 @@ def get_tree_grower_application(request):
             "recommended_species": recommended_species,
         }
 
-    # ─── Helper to serialize proposed site ──────────────────────────────────
     proposed_site_data = None
     if app.proposed_site:
         prop = app.proposed_site
@@ -407,7 +403,6 @@ def get_tree_grower_application(request):
             "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
             "proposed_orientation_date": app.proposed_orientation_date.isoformat() if app.proposed_orientation_date else None,
             "confirmed_at": app.confirmed_at.isoformat() if app.confirmed_at else None,
-            # ✅ UPDATED: Use Cloudinary helper for files
             "maintenance_plan": get_cloudinary_url(str(app.maintenance_plan)) if app.maintenance_plan else None,
             "agreement_image": get_cloudinary_url(str(app.agreement_image)) if app.agreement_image else None,
             "created_at": app.created_at.isoformat(),
@@ -432,7 +427,6 @@ def get_tree_grower_application(request):
             "species": serialize_progress_report_species(pr),
             "description": pr.description,
             "status": pr.status,
-            # ✅ UPDATED: Use Cloudinary helper
             "proof_image": get_cloudinary_url(str(pr.proof_image_monitor_required)) if pr.proof_image_monitor_required else None,
             "submitted_at": pr.submitted_at.isoformat() if pr.submitted_at else None
         } for pr in progress_reports],
@@ -465,14 +459,21 @@ def evaluate_application(request, application_id):
         return JsonResponse({'error': 'Application not in evaluation stage'}, status=400)
 
     site_id = request.POST.get('site_id')
-    orientation_date = request.POST.get('orientation_date')
+    orientation_date_str = request.POST.get('orientation_date')
     status = request.POST.get('status')
     reason_text = request.POST.get('reason', '').strip()
-    site=None
+    
+    site = None
     if site_id:
         site = get_object_or_404(Sites, site_id=site_id)
-    if not orientation_date:
+        
+    if not orientation_date_str:
         return JsonResponse({'error': 'orientation_date is required'}, status=400)
+
+    try:
+        orientation_date = datetime.strptime(orientation_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'error': 'Invalid date format. Please use YYYY-MM-DD.'}, status=400)
 
     try:
         with transaction.atomic():
@@ -492,6 +493,32 @@ def evaluate_application(request, application_id):
                 status=status
             )
 
+        # ✅ CREATE NOTIFICATION FOR TREE GROWER
+        try:
+            site_info = ""
+            if site:
+                site_info = f" at {site.name}"
+            
+            orientation_info = ""
+            if orientation_date:
+                orientation_info = f" Orientation scheduled for {orientation_date.strftime('%B %d, %Y')}."
+            
+            create_notification(
+                user=app.user,
+                type='info',
+                title='📋 Application Evaluated',
+                description=f'Your application "{app.title}" has been evaluated by the Data Manager and forwarded to the City ENRO Head for final approval.{site_info}.{orientation_info}',
+                link='/tree-growers/applications'
+            )
+        except Exception as notif_err:
+            logger.error(f"Failed to create evaluation notification: {str(notif_err)}")
+
+        # ✅ SEND EMAIL NOTIFICATION (non-blocking)
+        try:
+            send_application_evaluated_email(app.user, app)
+        except Exception as email_err:
+            logger.error(f"Failed to send evaluation email: {str(email_err)}")
+
         return JsonResponse({
             'message': 'Application evaluated and forwarded to Head', 
             'application_id': app.application_id
@@ -501,7 +528,7 @@ def evaluate_application(request, application_id):
         return JsonResponse({'error': 'Selected site not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
-    
+
 
 @csrf_exempt
 def confirm_application(request, application_id):
@@ -550,6 +577,37 @@ def confirm_application(request, application_id):
                 reason=reason_text,
                 status=status
             )
+
+        # ✅ CREATE NOTIFICATION FOR TREE GROWER
+        try:
+            if status == 'accepted':
+                create_notification(
+                    user=app.user,
+                    type='success',
+                    title='🎉 Application Approved!',
+                    description=f'Congratulations! Your application "{app.title}" has been approved by the City ENRO Head. Please prepare for the orientation and coordinate with the ENRO office for next steps.',
+                    link='/tree-growers/applications'
+                )
+            else:
+                reason_display = f" Reason: {reason_text}" if reason_text else ""
+                create_notification(
+                    user=app.user,
+                    type='alert',
+                    title='❌ Application Rejected',
+                    description=f'Your application "{app.title}" was not approved by the City ENRO Head.{reason_display}',
+                    link='/tree-growers/applications'
+                )
+        except Exception as notif_err:
+            logger.error(f"Failed to create confirmation notification: {str(notif_err)}")
+
+        # ✅ SEND EMAIL NOTIFICATION (non-blocking)
+        try:
+            if status == 'accepted':
+                send_application_accepted_email(app.user, app)
+            else:
+                send_application_rejected_email(app.user, app, reason_text)
+        except Exception as email_err:
+            logger.error(f"Failed to send confirmation email: {str(email_err)}")
 
         return JsonResponse({
             'message': f'Application {status}', 
@@ -603,6 +661,37 @@ def complete_application(request, application_id):
                 app.site.status = 'completed'
                 app.site.save()
 
+        # ✅ CREATE NOTIFICATION FOR TREE GROWER
+        try:
+            if new_status == 'completed':
+                create_notification(
+                    user=app.user,
+                    type='success',
+                    title='🏆 Program Completed!',
+                    description=f'Congratulations! Your tree planting program "{app.title}" has been successfully completed. Thank you for your valuable contribution to Ormoc City\'s reforestation efforts! You are now eligible to apply for future programs.',
+                    link='/tree-growers/applications'
+                )
+            else:
+                reason_display = f" Reason: {reason_text}" if reason_text else ""
+                create_notification(
+                    user=app.user,
+                    type='alert',
+                    title='⚠️ Program Failed',
+                    description=f'Your tree planting program "{app.title}" has been marked as failed.{reason_display} Please coordinate with the ENRO office to discuss next steps.',
+                    link='/tree-growers/applications'
+                )
+        except Exception as notif_err:
+            logger.error(f"Failed to create completion notification: {str(notif_err)}")
+
+        # ✅ SEND EMAIL NOTIFICATION (non-blocking)
+        try:
+            if new_status == 'completed':
+                send_program_completed_email(app.user, app)
+            else:
+                send_program_failed_email(app.user, app, reason_text)
+        except Exception as email_err:
+            logger.error(f"Failed to send completion email: {str(email_err)}")
+
         return JsonResponse({
             'message': f'Application marked as {new_status}',
             'new_status': new_status
@@ -610,7 +699,7 @@ def complete_application(request, application_id):
         
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
+    
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SEEDLING REQUESTS (Assistance Requests)
@@ -646,7 +735,6 @@ def create_seedling_request(request):
 
     try:
         with transaction.atomic():
-            # ✅ REMOVED: request_file parameter
             req = SeedlingRequest.objects.create(
                 application=app,
                 description=description,
@@ -756,6 +844,39 @@ def update_seedling_request(request, request_id):
                 reason=reason_text,
                 status=status
             )
+
+        # ✅ CREATE NOTIFICATION FOR TREE GROWER
+        try:
+            tree_grower_user = req.application.user
+            if status == 'accepted':
+                create_notification(
+                    user=tree_grower_user,
+                    type='success',
+                    title='🌱 Seedling Request Approved!',
+                    description=f'Your seedling request for "{req.application.title}" has been approved. Total seedlings: {req.no_request_seedling:,}. Please coordinate with the ENRO Nursery for pickup/distribution.',
+                    link='/tree-growers/requests'
+                )
+            else:
+                reason_display = f" Reason: {reason_text}" if reason_text else ""
+                create_notification(
+                    user=tree_grower_user,
+                    type='alert',
+                    title='❌ Seedling Request Rejected',
+                    description=f'Your seedling request for "{req.application.title}" was not approved.{reason_display}',
+                    link='/tree-growers/requests'
+                )
+        except Exception as notif_err:
+            logger.error(f"Failed to create seedling request notification: {str(notif_err)}")
+
+        # ✅ SEND EMAIL NOTIFICATION (non-blocking)
+        try:
+            tree_grower_user = req.application.user
+            if status == 'accepted':
+                send_seedling_request_accepted_email(tree_grower_user, req.application, req)
+            else:
+                send_seedling_request_rejected_email(tree_grower_user, req.application, req, reason_text)
+        except Exception as email_err:
+            logger.error(f"Failed to send seedling request email: {str(email_err)}")
 
         return JsonResponse({'message': f'Request {status}'}, status=200)
     except Tree_species.DoesNotExist as e:
@@ -968,7 +1089,6 @@ def get_progress_reports(request):
         "species": serialize_progress_report_species(r),
         "description": r.description,
         "status": r.status,
-        # ✅ UPDATED: Use Cloudinary helper
         "proof_image": get_cloudinary_url(str(r.proof_image_monitor_required)) if r.proof_image_monitor_required else None,
         "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None
     } for r in qs]
@@ -1254,7 +1374,6 @@ def get_general_report_data(request):
 
 @csrf_exempt
 def get_program_history(request):
-
     """Fetch application history with linked site details, supporting filters"""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -1304,7 +1423,6 @@ def get_program_history(request):
         "total_treegrowers_will_participate": app.total_treegrowers_will_participate,
         "created_at": app.created_at.strftime("%Y-%m-%d"),
         "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "Unknown",
-        # ✅ UPDATED: Use Cloudinary helper
         "group_profile": get_cloudinary_url(str(app.user.tree_grower_group.profile_img)) if hasattr(app.user, 'tree_grower_group') and app.user.tree_grower_group.profile_img else None,
         "site_name": app.site.name if app.site else None,
         "site_status": app.site.status if app.site else None,
@@ -1319,7 +1437,6 @@ def get_program_history(request):
         'entries': entries, 
         'total': total
     }, status=200)
-
 
 
 @csrf_exempt
@@ -1337,7 +1454,6 @@ def delete_application(request, application_id):
 
     app = get_object_or_404(Application, application_id=application_id)
     
-    # Permission check
     if user.user_role != 'DataManager' and app.user != user:
         return JsonResponse({'error': 'Unauthorized to delete this application'}, status=403)
 
@@ -1351,52 +1467,38 @@ def delete_application(request, application_id):
         deleted_files = []
         failed_files = []
         
-       
-        
-        # 1️⃣ DELETE APPLICATION FILES
         if app.maintenance_plan:
             try:
-              
                 success = delete_cloudinary_resource(app.maintenance_plan, resource_type='raw')
                 if success:
                     deleted_files.append('maintenance_plan')
                 else:
                     failed_files.append('maintenance_plan (not found in Cloudinary)')
             except Exception as e:
-              
                 failed_files.append(f'maintenance_plan: {str(e)}')
         
         if app.agreement_image:
             try:
-             
                 success = delete_cloudinary_resource(app.agreement_image, resource_type='image')
                 if success:
                     deleted_files.append('agreement_image')
                 else:
                     failed_files.append('agreement_image (not found in Cloudinary)')
             except Exception as e:
-              
                 failed_files.append(f'agreement_image: {str(e)}')
         
-        # 3️⃣ DELETE PROGRESS REPORT FILES
         for pr in app.progress_reports.all():
             if pr.proof_image_monitor_required:
                 try:
-                   
                     success = delete_cloudinary_resource(pr.proof_image_monitor_required, resource_type='image')
                     if success:
                         deleted_files.append(f'progress_report_{pr.progress_report_id}')
                     else:
                         failed_files.append(f'progress_report_{pr.progress_report_id} (not found)')
                 except Exception as e:
-                   
                     failed_files.append(f'progress_report_{pr.progress_report_id}: {str(e)}')
         
-        # 4️⃣ DELETE FROM DATABASE
-      
         app.delete()
-        
-       
         
         return JsonResponse({
             'message': f'Application "{app_title}" deleted successfully.',
@@ -1407,11 +1509,9 @@ def delete_application(request, application_id):
         }, status=200)
         
     except Exception as e:
-       
         import traceback
         traceback.print_exc()
         return JsonResponse({'error': f'Failed to delete application: {str(e)}'}, status=500)
-
 
 
 @csrf_exempt
@@ -1477,7 +1577,6 @@ def get_available_sites_for_tree_grower(request):
             if img.img:
                 images_data.append({
                     'image_id': img.site_image_id,
-                    # ✅ UPDATED: Use Cloudinary helper
                     'url': get_cloudinary_url(str(img.img)),
                     'caption': img.caption
                 })
@@ -1505,14 +1604,12 @@ def get_available_sites_for_tree_grower(request):
     }, status=200)
 
 
-
 @csrf_exempt
 def get_seedling_analytics(request):
     """Aggregates seedling distribution and survival data per species."""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
-    # 1. Overall Totals
     total_requested = SeedlingRequestSpecies.objects.filter(
         seedling_request__status='accepted'
     ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
@@ -1522,7 +1619,6 @@ def get_seedling_analytics(request):
         total_dead=Coalesce(Sum('no_dead'), 0)
     )
 
-    # 2. Top 5 Most Requested Species
     requested_by_species = SeedlingRequestSpecies.objects.filter(
         seedling_request__status='accepted'
     ).values(
@@ -1532,7 +1628,6 @@ def get_seedling_analytics(request):
         total_requested=Sum('quantity')
     ).order_by('-total_requested')[:5]
 
-    # 3. Survival Data by Species
     survived_by_species = ProgressReportSpecies.objects.values(
         species_id=F('tree_species__tree_specie_id'),
         species_name=F('tree_species__name')
@@ -1541,7 +1636,6 @@ def get_seedling_analytics(request):
         total_dead=Sum('no_dead')
     )
 
-    # 4. Merge the data in Python
     species_map = {item['species_id']: item for item in survived_by_species}
     final_species_data = []
     
@@ -1567,22 +1661,18 @@ def get_seedling_analytics(request):
         "species_breakdown": final_species_data
     }, status=200)
 
+
 @csrf_exempt
 def get_geographic_analytics(request):
     """Aggregates spatial and land classification data."""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
-    # 1. KPIs
     total_areas = Reforestation_areas.objects.filter(deleted_at__isnull=True).count()
     total_sites = Sites.objects.filter(status__in=['accepted', 'completed', 'under_monitoring']).count()
-    
-    # ✅ FIX: Changed 0 to 0.0 to match FloatField type
     total_hectares = Sites.objects.aggregate(total=Coalesce(Sum('total_area_hectares'), 0.0))['total']
-    
     pending_verifications = SiteMetaDataVerification.objects.filter(status='pending').count()
 
-    # 2. Hectares by Barangay
     hectares_by_barangay = Sites.objects.filter(
         reforestation_area__barangay__isnull=False
     ).values(
@@ -1591,7 +1681,6 @@ def get_geographic_analytics(request):
         total_hectares=Sum('total_area_hectares')
     ).order_by('-total_hectares')
 
-    # 3. Land Classification Distribution
     land_class_dist = SiteMetaDataVerification.objects.filter(
         verified_land_classification__isnull=False
     ).values(
@@ -1612,7 +1701,6 @@ def get_geographic_analytics(request):
     }, status=200)
 
 
-
 @csrf_exempt
 def get_monitoring_compliance(request):
     """
@@ -1625,11 +1713,9 @@ def get_monitoring_compliance(request):
     if not user:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-    # 1. KPIs
     active_programs = Application.objects.filter(status__in=['accepted', 'under_monitoring']).count()
     total_reports = ProgressReport.objects.count()
     
-    # Calculate compliance rate (programs with at least 1 progress report)
     programs_with_reports = Application.objects.filter(
         status__in=['accepted', 'under_monitoring'],
         progress_reports__isnull=False
@@ -1637,7 +1723,6 @@ def get_monitoring_compliance(request):
     
     compliance_rate = (programs_with_reports / active_programs * 100) if active_programs > 0 else 0
 
-    # 2. Monthly Report Submissions (Last 6 months)
     six_months_ago = datetime.now() - timedelta(days=180)
     monthly_submissions = ProgressReport.objects.filter(
         created_at__gte=six_months_ago
@@ -1654,7 +1739,6 @@ def get_monitoring_compliance(request):
         } for entry in monthly_submissions
     ]
 
-    # 3. Compliance Tracker - Get all active programs with their monitoring data
     active_apps = Application.objects.filter(
         status__in=['accepted', 'under_monitoring']
     ).select_related(
@@ -1666,17 +1750,14 @@ def get_monitoring_compliance(request):
 
     compliance_tracker = []
     for app in active_apps:
-        # Get latest progress report
         latest_report = app.progress_reports.order_by('-created_at').first()
         
-        # Calculate days since last report
         days_since = None
         last_report_date = None
         if latest_report:
             last_report_date = latest_report.created_at
             days_since = (datetime.now() - last_report_date).days
         
-        # Calculate overall survival rate for this program
         total_survived = 0
         total_dead = 0
         for report in app.progress_reports.all():

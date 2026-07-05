@@ -109,6 +109,7 @@ const Hazard_area_form = lazy(
 );
 const GISReports = lazy(() => import("./pages/GISSpecialist/report"));
 const HeadReports = lazy(() => import("./pages/head/reports/headReports"));
+const NotificationsPage = lazy(() => import("./pages/dataManager/Notifications/NotificationsPage"));
 // ============ LOADING FALLBACK ============
 function LoadingFallback() {
   return (
@@ -121,16 +122,7 @@ function LoadingFallback() {
   );
 }
 
-// ============ TEMPORARY PLACEHOLDER ============
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="flex min-h-screen">
-      <div className="flex-1 flex items-center justify-center text-3xl font-bold text-gray-700">
-        {title}
-      </div>
-    </div>
-  );
-}
+
 
 // ============ MAIN APP ============
 export default function App() {
@@ -144,11 +136,13 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/terms" element={<Terms_and_Conditions />} />
           <Route path="/privacy-policy" element={<Privacy_policy />} />
-
+          
+          {/* #head */}
           <Route element={<Sidebar />}>
             {/* Main Dashboard */}
             <Route path="/dashboard" element={<Dashboard />} />
-        
+             <Route path="/notification" element={<NotificationsPage />} />
+           
 
             {/* maintenance */}
             <Route
@@ -256,7 +250,7 @@ export default function App() {
 
           <Route element={<Sidebar_data_manager />}>
             <Route path="/dashboard-data-manager" element={<DashboardAFA />} />
-
+            <Route path="/DataManager/notification" element={<NotificationsPage />} />
             <Route path="/DataManager/calendar" element={<Calendar />} />
 
             <Route
@@ -354,7 +348,7 @@ export default function App() {
 
           <Route element={<SidebarGISS />}>
             <Route path="/dashboard/GISS" element={<DashboardGISS />} />
-
+             <Route path="/GISS/notification" element={<NotificationsPage />} />
             {/* ── NEW: GISS MAINTENANCE ROUTES ── */}
             <Route
               path="/GISS/maintenance/ormoc-city"

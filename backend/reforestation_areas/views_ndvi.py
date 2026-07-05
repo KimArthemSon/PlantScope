@@ -80,7 +80,19 @@ def ndvi_canopy(request):
         ndvi = s2.normalizedDifference(["B8", "B4"]).rename("NDVI")
         canopy = classify_canopy(ndvi)
         
-        map_id = canopy.getMapId({"min": 0, "max": 3, "palette": ["#ccc", "#f1c40f", "#e67e22", "#27ae60"]})
+        # ✅ NEW: Clip canopy to Ormoc City boundary
+        # This masks out everything outside the polygon
+        canopy_clipped = canopy.clip(roi)
+        
+        # ✅ Create a mask image for visualization
+        # Areas inside Ormoc City will show NDVI colors
+        # Areas outside will be gray (no data/transparent)
+        map_id = canopy_clipped.getMapId({
+            "min": 0, 
+            "max": 3, 
+            "palette": ["#cccccc", "#f1c40f", "#e67e22", "#27ae60"]  # Gray, Yellow, Orange, Green
+        })
+        
         return JsonResponse({
             "tile_url": map_id["tile_fetcher"].url_format,
             "date_range": f"{start} to {end}",

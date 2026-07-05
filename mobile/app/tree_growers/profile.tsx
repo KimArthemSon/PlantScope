@@ -34,7 +34,13 @@ const STATS = [
 
 const MENU: {
   section: string;
-  items: { icon: string; label: string; path: string; danger?: boolean }[];
+  items: {
+    icon: string;
+    label: string;
+    path: string;
+    danger?: boolean;
+    badge?: number;
+  }[];
 }[] = [
   {
     section: "Account",
@@ -47,9 +53,13 @@ const MENU: {
       {
         icon: "file-chart-outline",
         label: "My Reports",
-        path: "/reports",
+        path: "/tree_growers/reports",
       },
-      { icon: "bell-outline", label: "Notifications", path: "/" },
+      {
+        icon: "bell-outline",
+        label: "Notifications",
+        path: "/tree_growers/notifications",
+      },
     ],
   },
   {
@@ -77,10 +87,12 @@ export default function ProfilePage() {
 
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Fetch user data on mount
   useEffect(() => {
     fetchUserData();
+    fetchUnreadNotifications();
   }, []);
 
   const fetchUserData = async () => {
@@ -109,6 +121,24 @@ export default function ProfilePage() {
     }
   };
 
+  const fetchUnreadNotifications = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) return;
+
+      const res = await fetch(`${API}/notifications/unread-count/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadCount(data.unread_count || 0);
+      }
+    } catch (e) {
+      console.error("Failed to fetch unread notifications:", e);
+    }
+  };
+
   // ✅ Custom alert for logout confirmation
   const handleLogout = () => {
     alert.confirm(
@@ -127,7 +157,7 @@ export default function ProfilePage() {
         confirmText: "Yes, Log Out",
         cancelText: "Cancel",
         type: "warning",
-      }
+      },
     );
   };
 
@@ -150,13 +180,25 @@ export default function ProfilePage() {
 
   // ✅ Get initials for fallback avatar
   const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2) || "U";
+    return (
+      name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2) || "U"
+    );
   };
+
+  // ✅ Update menu with unread count
+  const menuWithBadges = MENU.map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      badge:
+        item.path === "/tree_growers/notifications" ? unreadCount : undefined,
+    })),
+  }));
 
   return (
     <ScrollView
@@ -207,7 +249,7 @@ export default function ProfilePage() {
       </View>
 
       {/* Menu Sections */}
-      {MENU.map((group) => (
+      {menuWithBadges.map((group) => (
         <View key={group.section} style={styles.menuGroup}>
           <Text style={styles.menuSection}>{group.section}</Text>
           <View style={styles.menuCard}>
@@ -228,7 +270,16 @@ export default function ProfilePage() {
                     color="#0F4A2F"
                   />
                 </View>
-                <Text style={styles.menuLabel}>{item.label}</Text>
+                <View style={styles.menuLabelContainer}>
+                  <Text style={styles.menuLabel}>{item.label}</Text>
+                  {item.badge !== undefined && item.badge > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>
+                        {item.badge > 99 ? "99+" : item.badge.toString()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
                 <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
               </TouchableOpacity>
             ))}
@@ -409,11 +460,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  menuLabel: {
+  menuLabelContainer: {
     flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  menuLabel: {
     fontSize: 14,
     fontWeight: "600",
     color: "#0F2D1C",
+  },
+  badge: {
+    backgroundColor: "#EF4444",
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
   },
 
   /* Logout */

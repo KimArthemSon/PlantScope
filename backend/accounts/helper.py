@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404
 from accounts.models import User
 import cloudinary.uploader
 import re
-
+from accounts.models import Notification
 
 def get_user_from_token(request):
     """
@@ -97,3 +97,60 @@ def delete_cloudinary_resource(file_field, resource_type='image'):
     except Exception as e:
         print(f"Failed to delete from Cloudinary: {e}")
         return False
+    
+
+# ─────────────────────────────────────────────
+# NOTIFICATION HELPERS
+# ─────────────────────────────────────────────
+
+def create_notification(
+    user,
+    type,
+    title,
+    description="",
+    link=None
+):
+    """
+    Create a specific notification for a single user.
+    """
+    try:
+        return Notification.objects.create(
+            user=user,
+            type=type,
+            title=title,
+            description=description,
+            link=link
+        )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to create notification: {str(e)}")
+        return None
+
+
+def create_general_notification(
+    type,
+    title,
+    description="",
+    target_role=None,
+    link=None
+):
+    """
+    Create a general/broadcast notification.
+    - target_role=None: visible to ALL users
+    - target_role="DataManager": visible only to DataManagers
+    """
+    try:
+        return Notification.objects.create(
+            user=None,  # General notification
+            target_role=target_role,
+            type=type,
+            title=title,
+            description=description,
+            link=link
+        )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to create general notification: {str(e)}")
+        return None

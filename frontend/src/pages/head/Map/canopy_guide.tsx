@@ -48,7 +48,7 @@ export default function CanopyGuideModal({
                 <Check size={12} className="text-green-600" />
               </div>
               <p className="text-[10px] text-gray-600 truncate">
-                Bare soil, concrete, rock
+                Bare soil, concrete, rock, clouds, water
               </p>
               <p className="text-[9px] text-gray-500 font-mono">
                 0.0 ≤ NDVI {"<"} 0.2

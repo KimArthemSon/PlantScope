@@ -40,9 +40,15 @@ const CustomHeader: React.FC = () => {
 
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     fetchUserData();
+    fetchUnreadCount();
+
+    // ✅ Poll unread count every 60 seconds
+    const interval = setInterval(fetchUnreadCount, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchUserData = async () => {
@@ -72,18 +78,41 @@ const CustomHeader: React.FC = () => {
     }
   };
 
+  const fetchUnreadCount = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+
+      const res = await fetch(`${API}/notifications/unread-count/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadCount(data.unread_count || 0);
+      }
+    } catch (error) {
+      console.error("Error fetching unread count:", error);
+    }
+  };
+
   const displayName = userData?.full_name || "Inspector";
   const displayEmail = userData?.email || "Loading...";
   const profileImage = userData?.profile_img;
 
+  // ✅ Format badge count
+  const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
+
   // Get initials for fallback
   const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2) || "I";
+    return (
+      name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2) || "I"
+    );
   };
 
   return (
@@ -92,7 +121,7 @@ const CustomHeader: React.FC = () => {
       <TouchableOpacity
         style={hdr.left}
         activeOpacity={0.7}
-        onPress={() => router.push("/profile")}
+        onPress={() => router.push("/(tabs)/profile")}
       >
         {loading ? (
           <View style={hdr.avatarPlaceholder}>
@@ -119,10 +148,22 @@ const CustomHeader: React.FC = () => {
         </View>
       </TouchableOpacity>
 
-      {/* Right: notification bell */}
-      <TouchableOpacity style={hdr.bellWrap} activeOpacity={0.7}>
+      {/* Right: notification bell with count badge */}
+      <TouchableOpacity
+        style={hdr.bellWrap}
+        activeOpacity={0.7}
+        onPress={() => router.push("/(tabs)/notifications")}
+      >
         <Ionicons name="notifications-outline" size={23} color="#FFFFFF" />
-        <View style={hdr.dot} />
+
+        {/* ✅ Dynamic badge: shows count if > 0, otherwise small green dot */}
+        {unreadCount > 0 ? (
+          <View style={hdr.badge}>
+            <Text style={hdr.badgeText}>{badgeText}</Text>
+          </View>
+        ) : (
+          <View style={hdr.dot} />
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -236,6 +277,10 @@ export default function TabLayout() {
           tabBarLabel: "Profile",
         }}
       />
+
+      {/* Hidden routes */}
+      <Tabs.Screen name="notifications" options={{ href: null }} />
+      <Tabs.Screen name="editProfile" options={{ href: null }} />
     </Tabs>
   );
 }
@@ -306,18 +351,41 @@ const hdr = StyleSheet.create({
   },
   bellWrap: {
     position: "relative",
-    padding: 4,
+    padding: 6,
+    minWidth: 36,
+    alignItems: "center",
+    justifyContent: "center",
   },
   dot: {
     position: "absolute",
-    top: 3,
-    right: 3,
+    top: 4,
+    right: 4,
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: "#5FD08A",
     borderWidth: 1.5,
     borderColor: "#0F4A2F",
+  },
+  badge: {
+    position: "absolute",
+    top: -2,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: "#EF4444",
+    borderWidth: 1.5,
+    borderColor: "#0F4A2F",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "800",
+    textAlign: "center",
   },
 });
 

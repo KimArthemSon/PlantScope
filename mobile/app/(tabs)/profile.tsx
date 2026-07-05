@@ -27,27 +27,41 @@ type UserData = {
 
 /* ---------- DATA ---------- */
 const STATS = [
-  { icon: "sprout",              value: "2,456", label: "Trees Planted" },
-  { icon: "map-marker-multiple", value: "18",    label: "Sites"         },
-  { icon: "clipboard-check",     value: "4",     label: "Reports"       },
+  { icon: "sprout", value: "2,456", label: "Trees Planted" },
+  { icon: "map-marker-multiple", value: "18", label: "Sites" },
+  { icon: "clipboard-check", value: "4", label: "Reports" },
 ];
 
 const MENU: {
   section: string;
-  items: { icon: string; label: string; path: string; danger?: boolean }[];
+  items: {
+    icon: string;
+    label: string;
+    path: string;
+    danger?: boolean;
+    badge?: number;
+  }[];
 }[] = [
   {
     section: "Account",
     items: [
-      { icon: "account-edit-outline", label: "Edit Profile",    path: "/editProfile" },
-      { icon: "bell-outline",         label: "Notifications",   path: "/" },
+      {
+        icon: "account-edit-outline",
+        label: "Edit Profile",
+        path: "/editProfile",
+      },
+      {
+        icon: "bell-outline",
+        label: "Notifications",
+        path: "/(tabs)/notifications",
+      },
     ],
   },
   {
     section: "Support",
     items: [
-      { icon: "help-circle-outline",        label: "Help & Support", path: "/" },
-      { icon: "information-outline",        label: "About",          path: "/" },
+      { icon: "help-circle-outline", label: "Help & Support", path: "/" },
+      { icon: "information-outline", label: "About", path: "/" },
     ],
   },
 ];
@@ -68,10 +82,12 @@ export default function ProfilePage() {
 
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Fetch user data on mount
   useEffect(() => {
     fetchUserData();
+    fetchUnreadNotifications();
   }, []);
 
   const fetchUserData = async () => {
@@ -100,6 +116,24 @@ export default function ProfilePage() {
     }
   };
 
+  const fetchUnreadNotifications = async () => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+      if (!token) return;
+
+      const res = await fetch(`${API}/notifications/unread-count/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadCount(data.unread_count || 0);
+      }
+    } catch (e) {
+      console.error("Failed to fetch unread notifications:", e);
+    }
+  };
+
   // ✅ Custom alert for logout confirmation
   const handleLogout = () => {
     alert.confirm(
@@ -118,7 +152,7 @@ export default function ProfilePage() {
         confirmText: "Yes, Log Out",
         cancelText: "Cancel",
         type: "warning",
-      }
+      },
     );
   };
 
@@ -141,13 +175,27 @@ export default function ProfilePage() {
 
   // ✅ Get initials for fallback avatar
   const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2) || "I";
+    return (
+      name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2) || "I"
+    );
   };
+
+  // ✅ Update menu with unread count
+  const menuWithBadges = MENU.map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({
+      ...item,
+      badge:
+        item.path === "/onsite_inspector/notifications"
+          ? unreadCount
+          : undefined,
+    })),
+  }));
 
   return (
     <ScrollView
@@ -187,7 +235,11 @@ export default function ProfilePage() {
       <View style={styles.statsRow}>
         {STATS.map((s) => (
           <View key={s.label} style={styles.statCard}>
-            <MaterialCommunityIcons name={s.icon as any} size={22} color="#0F4A2F" />
+            <MaterialCommunityIcons
+              name={s.icon as any}
+              size={22}
+              color="#0F4A2F"
+            />
             <Text style={styles.statValue}>{s.value}</Text>
             <Text style={styles.statLabel}>{s.label}</Text>
           </View>
@@ -195,7 +247,7 @@ export default function ProfilePage() {
       </View>
 
       {/* Menu Sections */}
-      {MENU.map((group) => (
+      {menuWithBadges.map((group) => (
         <View key={group.section} style={styles.menuGroup}>
           <Text style={styles.menuSection}>{group.section}</Text>
           <View style={styles.menuCard}>
@@ -210,9 +262,22 @@ export default function ProfilePage() {
                 activeOpacity={0.7}
               >
                 <View style={styles.menuIconWrap}>
-                  <MaterialCommunityIcons name={item.icon as any} size={18} color="#0F4A2F" />
+                  <MaterialCommunityIcons
+                    name={item.icon as any}
+                    size={18}
+                    color="#0F4A2F"
+                  />
                 </View>
-                <Text style={styles.menuLabel}>{item.label}</Text>
+                <View style={styles.menuLabelContainer}>
+                  <Text style={styles.menuLabel}>{item.label}</Text>
+                  {item.badge !== undefined && item.badge > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>
+                        {item.badge > 99 ? "99+" : String(item.badge)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
                 <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
               </TouchableOpacity>
             ))}
@@ -230,7 +295,7 @@ export default function ProfilePage() {
         <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>PlantScope v2.0  ·  On-Site Module</Text>
+      <Text style={styles.version}>PlantScope v2.0 · On-Site Module</Text>
     </ScrollView>
   );
 }
@@ -393,11 +458,31 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  menuLabelContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   menuLabel: {
     flex: 1,
     fontSize: 14,
     fontWeight: "600",
     color: "#0F2D1C",
+  },
+  badge: {
+    backgroundColor: "#EF4444",
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
   },
 
   /* Logout */

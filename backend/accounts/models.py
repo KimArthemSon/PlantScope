@@ -130,3 +130,66 @@ class TreeGrowerGroup(models.Model):
 
     def __str__(self):
         return f"{self.group_name} ({self.get_group_type_display()})"
+    
+# ─────────────────────────────────────────────
+# NOTIFICATION (System Notifications)
+# ─────────────────────────────────────────────
+class Notification(models.Model):
+    """
+    System-wide notification model.
+    - If user is set: specific notification for that user
+    - If user is NULL + target_role is set: broadcast to users with that role
+    - If user is NULL + target_role is NULL: system-wide broadcast
+    """
+    NOTIFICATION_TYPES = (
+        ('alert', 'Alert'),
+        ('success', 'Success'),
+        ('warning', 'Warning'),
+        ('info', 'Info'),
+    )
+
+    notification_id = models.BigAutoField(primary_key=True)
+
+    # Targeting: user-specific OR role-based OR system-wide
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='notifications',
+        help_text="Specific user. NULL = general notification"
+    )
+    target_role = models.CharField(
+        max_length=30,
+        null=True,
+        blank=True,
+        help_text="Broadcast to all users with this role (only if user is NULL)"
+    )
+
+    # Content
+    type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, default='info')
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    link = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Route to navigate to when clicked (e.g., /DataManager/applications/123)"
+    )
+
+    # Status
+    is_read = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Notification"
+        verbose_name_plural = "Notifications"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_read', '-created_at']),
+            models.Index(fields=['target_role', 'is_read', '-created_at']),
+        ]
+
+    def __str__(self):
+        target = self.user.email if self.user else (self.target_role or "System-wide")
+        return f"[{self.type}] {self.title} → {target}"

@@ -536,6 +536,7 @@ def get_me(request):
         if not auth_header or not auth_header.startswith('Bearer '):
             return JsonResponse({'error': 'Authorization header missing or invalid'}, status=401)
         token = auth_header.split(' ')[1]
+       
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         user_id = payload.get('user_id')
         user = get_object_or_404(User, id=user_id)

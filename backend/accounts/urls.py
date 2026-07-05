@@ -1,7 +1,5 @@
 from django.urls import path
-from . import views
-from . import treegrowers_views
-from . import emailviews
+from . import views, treegrowers_views, emailviews, notification_views
 
 urlpatterns = [
     # Basic user management
@@ -24,4 +22,12 @@ urlpatterns = [
     # Email OTP
     path('send_otp/', emailviews.send_otp, name='send_otp'),
     path('verify_otp/', emailviews.verify_otp, name='verify_otp'),
+
+    # Notifications
+    path('notifications/', notification_views.get_notifications, name='get_notifications'),
+    path('notifications/unread-count/', notification_views.get_unread_notification_count, name='get_unread_notification_count'),
+    path('notifications/<int:notification_id>/read/', notification_views.mark_notification_read, name='mark_notification_read'),
+    path('notifications/mark-all-read/', notification_views.mark_all_notifications_read, name='mark_all_notifications_read'),
+    path('notifications/<int:notification_id>/', notification_views.delete_notification, name='delete_notification'),
+
 ]

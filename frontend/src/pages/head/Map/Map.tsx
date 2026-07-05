@@ -1251,7 +1251,7 @@ export default function Map() {
       </div>
 
       {/* Search Reforestation Areas */}
-      <div className="absolute top-4 left-4 z-[1001] w-[280px]">
+      <div className="absolute top-4 left-15 z-[1001] w-[280px]">
         <div className="bg-white rounded-xl shadow-lg border border-gray-200">
           <div className="flex items-center gap-2 px-3 py-2.5">
             <Search size={15} className="text-gray-400 flex-shrink-0" />
@@ -1406,7 +1406,6 @@ export default function Map() {
           <House size={16} /> Home
         </button>
         <div className="flex gap-1 ml-auto">
-
           {/* NDVI PANEL */}
           {userRole != "DataManager" && userRole != "CityENROHead" && (
             <div className="relative ml-auto">
