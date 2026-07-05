@@ -168,7 +168,7 @@ class Notification(models.Model):
 
     # Content
     type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, default='info')
-    title = models.CharField(max_length=254)
+    title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     link = models.CharField(
         max_length=255,
