@@ -13,6 +13,22 @@ from accounts.helper import get_cloudinary_url, delete_cloudinary_resource
 from django.shortcuts import get_object_or_404
 import traceback
 
+
+def get_client_ip(request):
+    """
+    Extract the real client IP address from request.
+    Handles Render's proxy format: "client_ip, proxy1, proxy2"
+    Returns only the first IP (the actual client).
+    """
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        # Take the first IP (the actual client)
+        ip = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
+
 def _get_request_user(request):
     """Return User of the JWT-authenticated caller, or None on failure."""
     try:
@@ -37,7 +53,10 @@ def record_activity(request, action_type, entity_type, entity_id=None,
     """Log a business operation."""
     performer = _get_request_user(request)
     email = performer.email if performer else ''
-    ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR'))
+    
+    # ✅ FIX: Extract only the first IP from X-Forwarded-For header
+    ip = get_client_ip(request)
+    
     log_activity(
         performed_by=performer,
         email=email,
@@ -66,13 +85,13 @@ def register_tree_grower(request):
     data = request.POST
     files = request.FILES
 
-    # 1️ Validate required user fields
+    # 1️⃣ Validate required user fields
     required_fields = ['email', 'password', 'first_name', 'last_name', 'contact', 'address', 'gender']
     missing = [f for f in required_fields if not data.get(f)]
     if missing:
         return JsonResponse({'error': 'Missing required fields', 'fields': missing}, status=400)
 
-    # 2️ Extract & sanitize basic user data
+    # 2️⃣ Extract & sanitize basic user data
     email = data.get('email').strip().lower()
     password = data.get('password')
     first_name = data.get('first_name').strip()
@@ -90,18 +109,18 @@ def register_tree_grower(request):
         except ValueError:
             return JsonResponse({'error': 'Invalid birthday format. Use YYYY-MM-DD.'}, status=400)
 
-    # 3️ Validate password format
+    # 3️⃣ Validate password format
     password_regex = r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$'
     if not re.match(password_regex, password):
         return JsonResponse({
             'error': 'Password must contain uppercase, lowercase, number, special character, and be at least 8 characters long.'
         }, status=400)
 
-    # 4️ Check email uniqueness
+    # 4️⃣ Check email uniqueness
     if User.objects.filter(email=email).exists():
         return JsonResponse({'error': 'Email already exists'}, status=400)
 
-    # 5️ Handle Tree Grower Group data
+    # 5️⃣ Handle Tree Grower Group data
     group_required = ['group_name', 'group_type', 'group_address', 'group_contact']
     group_missing = [f for f in group_required if not data.get(f)]
     if group_missing:
@@ -122,7 +141,7 @@ def register_tree_grower(request):
             'error': f'Invalid group_type. Must be one of: {", ".join(valid_group_types)}'
         }, status=400)
 
-    # 6️ Handle Application data
+    # 6️⃣ Handle Application data
     app_required = ['title', 'total_treegrowers_will_participate']
     app_missing = [f for f in app_required if not data.get(f)]
     if not files.get('maintenance_plan'):
@@ -153,7 +172,7 @@ def register_tree_grower(request):
         except ValueError:
             return JsonResponse({'error': 'Invalid proposed_orientation_date format. Use YYYY-MM-DD.'}, status=400)
 
-    # 7️ Database Transaction (NO SEEDLING REQUEST HERE)
+    # 7️⃣ Database Transaction (NO SEEDLING REQUEST HERE)
     try:
         with transaction.atomic():
             # Create User
@@ -200,7 +219,7 @@ def register_tree_grower(request):
                 proposed_orientation_date=proposed_orientation_date,
             )
 
-        # 8️ Activity Logging
+        # 8️⃣ Activity Logging
         record_activity(
             request,
             action_type='CREATE',
@@ -221,6 +240,7 @@ def register_tree_grower(request):
 
     except Exception as e:
         print(f"Registration failed: {str(e)}")
+        traceback.print_exc()
         return JsonResponse({'error': f'Registration failed: {str(e)}'}, status=500)
     
 
