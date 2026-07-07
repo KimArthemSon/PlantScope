@@ -139,13 +139,32 @@ export default function ProfilePage() {
     }
   };
 
-  // ✅ Custom alert for logout confirmation
+   // ✅ Custom alert for logout confirmation
   const handleLogout = () => {
     alert.confirm(
       "Log Out",
       "Are you sure you want to log out of your account?",
       async () => {
         try {
+          const token = await SecureStore.getItemAsync("token");
+
+          // 1. Call the backend logout API to log the security event
+          if (token) {
+            try {
+              await fetch(`${API}/logout/`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+              });
+            } catch (apiError) {
+              // Log the error but proceed with local logout so the user isn't stuck
+              console.warn("Logout API call failed:", apiError);
+            }
+          }
+
+          // 2. Clear the local token and redirect
           await SecureStore.deleteItemAsync("token");
           alert.success("Logged Out", "You have been successfully logged out.");
           setTimeout(() => router.replace("/homepage"), 800);

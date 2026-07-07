@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   ChevronRight,
   ChevronLeft,
@@ -6,6 +6,10 @@ import {
   FileCheck2,
   Search,
   Users,
+  AlertTriangle,
+  Clock,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { useNavigate } from "react-router-dom";
@@ -25,6 +29,8 @@ interface Application {
   classification: "new" | "old";
   status: string;
   created_at: string;
+  last_report_date: string | null;
+  days_since_last_report: number | null;
 }
 
 interface Filter {
@@ -34,10 +40,18 @@ interface Filter {
   total_page: number;
   status: string;
   classification: string;
+  days_since: string;
+}
+
+interface MonitoringStats {
+  total: number;
+  no_report: number;
+  days_30_plus: number;
+  days_60_plus: number;
+  days_90_plus: number;
 }
 
 // ─── Status Config ──────────────────────────────────────────────────────────
-// ✅ Removed 'under_monitoring' entirely
 
 const STATUS_CONFIG: Record<
   string,
@@ -46,7 +60,6 @@ const STATUS_CONFIG: Record<
   accepted: { label: "Accepted", bg: "bg-green-100", text: "text-green-700" },
   completed: { label: "Completed", bg: "bg-gray-100", text: "text-gray-700" },
   failed: { label: "Failed", bg: "bg-red-100", text: "text-red-700" },
-  // Fallbacks for other statuses just in case "All" is selected
   for_evaluation: {
     label: "For Evaluation",
     bg: "bg-yellow-100",
@@ -54,19 +67,76 @@ const STATUS_CONFIG: Record<
   },
   for_head: { label: "For Head", bg: "bg-blue-100", text: "text-blue-700" },
   rejected: { label: "Rejected", bg: "bg-red-100", text: "text-red-700" },
+  under_monitoring: {
+    label: "Under Monitoring",
+    bg: "bg-purple-100",
+    text: "text-purple-700",
+  },
 };
+
+// ─── Days Badge Component ───────────────────────────────────────────────────
+
+function DaysBadge({ days }: { days: number | null }) {
+  if (days === null) {
+    return (
+      <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-xs font-semibold flex items-center gap-1">
+        <XCircle size={12} />
+        No Report
+      </span>
+    );
+  }
+
+  if (days >= 90) {
+    return (
+      <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-xs font-semibold flex items-center gap-1 animate-pulse">
+        <AlertTriangle size={12} />
+        {days} days (URGENT)
+      </span>
+    );
+  }
+  if (days >= 60) {
+    return (
+      <span className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold flex items-center gap-1">
+        <AlertTriangle size={12} />
+        {days} days (Warning)
+      </span>
+    );
+  }
+  if (days >= 30) {
+    return (
+      <span className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-semibold flex items-center gap-1">
+        <Clock size={12} />
+        {days} days
+      </span>
+    );
+  }
+  return (
+    <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-xs font-semibold flex items-center gap-1">
+      <CheckCircle2 size={12} />
+      {days} days
+    </span>
+  );
+}
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function Monitoring() {
   const [applications, setApplications] = useState<Application[]>([]);
+  const [stats, setStats] = useState<MonitoringStats>({
+    total: 0,
+    no_report: 0,
+    days_30_plus: 0,
+    days_60_plus: 0,
+    days_90_plus: 0,
+  });
   const [filter, setFilter] = useState<Filter>({
     search: "",
     entries: 10,
     page: 1,
     total_page: 1,
-    status: "accepted", // ✅ Default to "All"
+    status: "accepted",
     classification: "All",
+    days_since: "all",
   });
 
   const [loading, setLoading] = useState(false);
@@ -79,50 +149,7 @@ export default function Monitoring() {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
   const API_BASE = api;
-
-  // ─── Fetch Applications ───────────────────────────────────────────────────
-
-  const fetchApplications = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        search: filter.search,
-        page: filter.page.toString(),
-        entries: filter.entries.toString(),
-        classification: filter.classification,
-      });
-
-      // ✅ Only append status if it's not "All" (Backend handles "All" natively)
-      if (filter.status !== "All") {
-        params.append("status", filter.status);
-      }
-
-      const response = await fetch(
-        `${API_BASE}api/get_applications/?${params.toString()}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      if (!response.ok) throw new Error("Failed to fetch applications.");
-
-      const data = await response.json();
-
-      setApplications(data.data);
-      setFilter((prev) => ({ ...prev, total_page: data.total_page }));
-    } catch (err: any) {
-      setPSAlert({
-        type: "error",
-        title: "Failed",
-        message: err.message || "Failed to load applications.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchApplications();
-  }, [filter.page, filter.entries, filter.classification]);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const { userRole } = useUserRole();
   const [useruserRole, setUseruserRole] = useState("");
@@ -141,6 +168,77 @@ export default function Monitoring() {
       return;
     }
   }, [userRole]);
+
+  // ─── Fetch Monitoring Stats ─────────────────────────────────────────────────
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}api/get_monitoring_stats/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch monitoring stats:", err);
+    }
+  }, [token, API_BASE]);
+
+  // ─── Fetch Applications ───────────────────────────────────────────────────
+
+  const fetchApplications = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        search: filter.search,
+        page: filter.page.toString(),
+        entries: filter.entries.toString(),
+        classification: filter.classification,
+        status: filter.status,
+      });
+
+      if (filter.days_since !== "all") {
+        params.append("days_since", filter.days_since);
+      }
+
+      const response = await fetch(
+        `${API_BASE}api/get_applications/?${params.toString()}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (!response.ok) throw new Error("Failed to fetch applications.");
+
+      const data = await response.json();
+      setApplications(data.data);
+      setFilter((prev) => ({ ...prev, total_page: data.total_page }));
+    } catch (err: any) {
+      setPSAlert({
+        type: "error",
+        title: "Failed",
+        message: err.message || "Failed to load applications.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchApplications();
+    fetchStats();
+  }, [filter.page, filter.entries, filter.classification, filter.days_since, filter.status]);
+
+  // ─── Live Polling for Stats ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    fetchStats();
+    intervalRef.current = setInterval(fetchStats, 60000); // Poll every 60 seconds
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [fetchStats]);
 
   // ─── Navigate to Maintenance Report ───────────────────────────────────────
 
@@ -172,11 +270,137 @@ export default function Monitoring() {
           </p>
         </div>
 
-        {/* Filters */}
+        {/* Simplified Priority Section */}
+        <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+                <AlertTriangle size={20} className="text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">
+                  Monitoring Priority
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Applications requiring attention
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-red-600" />
+                <span className="text-2xl font-bold text-red-700">{stats.days_90_plus}</span>
+              </div>
+              <p className="text-xs text-red-600 mt-1 font-medium">90+ Days</p>
+            </div>
+            
+            <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-orange-600" />
+                <span className="text-2xl font-bold text-orange-700">{stats.days_60_plus}</span>
+              </div>
+              <p className="text-xs text-orange-600 mt-1 font-medium">60-89 Days</p>
+            </div>
+            
+            <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2">
+                <XCircle size={16} className="text-gray-600" />
+                <span className="text-2xl font-bold text-gray-700">{stats.no_report}</span>
+              </div>
+              <p className="text-xs text-gray-600 mt-1 font-medium">No Report</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Tabs */}
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <button
+            onClick={() => setFilter({ ...filter, days_since: "all", page: 1 })}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              filter.days_since === "all"
+                ? "bg-[#0F4A2F] text-white"
+                : "bg-white text-gray-700 hover:bg-gray-50 border border-gray-200"
+            }`}
+          >
+            All Applications
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+              filter.days_since === "all" ? "bg-white/20" : "bg-gray-100"
+            }`}>
+              {stats.total}
+            </span>
+          </button>
+          
+          <button
+            onClick={() => setFilter({ ...filter, days_since: "no_report", page: 1 })}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              filter.days_since === "no_report"
+                ? "bg-gray-700 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-50 border border-gray-200"
+            }`}
+          >
+            No Report
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+              filter.days_since === "no_report" ? "bg-white/20" : "bg-gray-100"
+            }`}>
+              {stats.no_report}
+            </span>
+          </button>
+          
+          <button
+            onClick={() => setFilter({ ...filter, days_since: "30_plus", page: 1 })}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              filter.days_since === "30_plus"
+                ? "bg-yellow-500 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-50 border border-gray-200"
+            }`}
+          >
+            30+ Days
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+              filter.days_since === "30_plus" ? "bg-white/20" : "bg-yellow-100 text-yellow-700"
+            }`}>
+              {stats.days_30_plus}
+            </span>
+          </button>
+          
+          <button
+            onClick={() => setFilter({ ...filter, days_since: "60_plus", page: 1 })}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              filter.days_since === "60_plus"
+                ? "bg-orange-500 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-50 border border-gray-200"
+            }`}
+          >
+            60+ Days
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+              filter.days_since === "60_plus" ? "bg-white/20" : "bg-orange-100 text-orange-700"
+            }`}>
+              {stats.days_60_plus}
+            </span>
+          </button>
+          
+          <button
+            onClick={() => setFilter({ ...filter, days_since: "90_plus", page: 1 })}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              filter.days_since === "90_plus"
+                ? "bg-red-600 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-50 border border-gray-200"
+            }`}
+          >
+            90+ Days
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+              filter.days_since === "90_plus" ? "bg-white/20" : "bg-red-100 text-red-700"
+            }`}>
+              {stats.days_90_plus}
+            </span>
+          </button>
+        </div>
+
+        {/* Additional Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
-          <label className="text-sm font-medium text-gray-600">
-            Show entries:
-          </label>
+          <label className="text-sm font-medium text-gray-600">Show:</label>
           <select
             value={filter.entries}
             onChange={(e) =>
@@ -262,7 +486,10 @@ export default function Monitoring() {
                   Growers
                 </th>
                 <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
-                  Created
+                  Last Report
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Days Since
                 </th>
                 <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
                   Actions
@@ -274,10 +501,16 @@ export default function Monitoring() {
                 applications.map((app, index) => {
                   const statusConf =
                     STATUS_CONFIG[app.status] || STATUS_CONFIG.accepted;
+                  const isUrgent =
+                    app.days_since_last_report === null ||
+                    app.days_since_last_report >= 90;
+
                   return (
                     <tr
                       key={app.application_id}
-                      className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} transition hover:bg-green-50/30`}
+                      className={`${
+                        isUrgent ? "bg-red-50" : index % 2 === 0 ? "bg-white" : "bg-gray-50"
+                      } transition hover:bg-green-50/30`}
                     >
                       <td className="py-3 px-5 text-[.85rem] text-gray-600">
                         {index + 1 + (filter.page - 1) * filter.entries}
@@ -343,8 +576,24 @@ export default function Monitoring() {
                           {app.total_treegrowers_will_participate}
                         </div>
                       </td>
-                      <td className="py-3 px-5 text-[.85rem] text-gray-500">
-                        {app.created_at}
+                      <td className="py-3 px-5 text-[.85rem]">
+                        {app.last_report_date ? (
+                          <div>
+                            <div className="font-medium text-gray-800">
+                              {new Date(app.last_report_date).toLocaleDateString(
+                                "en-PH",
+                                { month: "short", day: "numeric", year: "numeric" }
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 italic text-xs">
+                            No report yet
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-5">
+                        <DaysBadge days={app.days_since_last_report} />
                       </td>
                       <td className="py-3 px-5">
                         <button
@@ -362,7 +611,7 @@ export default function Monitoring() {
               ) : (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="text-center py-10 text-gray-500 italic bg-gray-50"
                   >
                     {filter.search

@@ -1,5 +1,5 @@
 import logo from "../../assets/logo.png";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, LockIcon, Book } from "lucide-react";
 import { useEffect, useState } from "react";
 import "../../global css/login.css";
 import { useNavigate } from "react-router-dom";
@@ -40,7 +40,7 @@ export default function Login() {
       return;
     }
     try {
-      const response = await fetch(api+"api/get_me/", {
+      const response = await fetch(api + "api/get_me/", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -92,7 +92,7 @@ export default function Login() {
     }
     console.log("Logging in with:", username, password);
     try {
-      const response = await fetch(api+"api/login/", {
+      const response = await fetch(api + "api/login/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -304,16 +304,18 @@ export default function Login() {
         <div className="pointer-events-auto flex items-center gap-5 px-6 py-2.5 text-sm font-medium text-white/75 bg-black/30 backdrop-blur-md rounded-full border border-white/20 shadow-xl">
           <a
             href="/privacy-policy"
-            className="hover:text-white transition-colors duration-200"
+            className="flex items-center gap-2 hover:text-white transition-colors duration-200"
           >
-            🔒 Privacy Policy
+            <LockIcon size={16} className="text-green-400 " /> Privacy Policy
           </a>
+
           <span className="text-white/30">|</span>
+
           <a
             href="/terms"
-            className="hover:text-white transition-colors duration-200"
+            className="flex items-center gap-2 hover:text-white transition-colors duration-200"
           >
-            📜 Terms of Service
+            <Book size={16} className="text-blue-400 " /> Terms of Service
           </a>
         </div>
       </footer>

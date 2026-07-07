@@ -1,43 +1,47 @@
-from django.utils import timezone
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import get_object_or_404
-from django.db import transaction
 import json
+import logging
 import math
-
-from .models import (
-    Application, SeedlingRequest, SeedlingRequestSpecies,
-    ProgressReport, ProgressReportSpecies, Reason
-)
-from sites.models import Sites
-from accounts.helper import get_user_from_token, get_cloudinary_url, delete_cloudinary_resource, create_notification
-from accounts.models import User
-from tree_species.models import Tree_species
-from django.db.models import Sum, Count, Q
-from django.db.models.functions import TruncMonth
 from datetime import datetime, timedelta
+
 import cloudinary.uploader
-
-from django.db.models import Sum, F, Count, Q
-from django.db.models.functions import Coalesce
-from reforestation_areas.models import Reforestation_areas
-from sites.models import Sites, SiteMetaDataVerification
-
-from django.db.models import Sum, Count, Q, F
+from django.db import transaction
+from django.db.models import Case, Count, F, Max, Q, Sum, When, fields
 from django.db.models.functions import Coalesce, TruncMonth
-from datetime import datetime, timedelta
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+
+from accounts.helper import (
+    create_notification,
+    delete_cloudinary_resource,
+    get_cloudinary_url,
+    get_user_from_token,
+)
+from accounts.models import User
+from reforestation_areas.models import Reforestation_areas
+from sites.models import SiteMetaDataVerification, Sites
+from tree_species.models import Tree_species
+
 from .email_service import (
     send_application_accepted_email,
+    send_application_evaluated_email,
     send_application_rejected_email,
     send_program_completed_email,
     send_program_failed_email,
     send_seedling_request_accepted_email,
     send_seedling_request_rejected_email,
-    send_application_evaluated_email,
 )
-import logging
-
+from .models import (
+    Application,
+    ProgressReport,
+    ProgressReportSpecies,
+    Reason,
+    SeedlingRequest,
+    SeedlingRequestSpecies,
+)
+from django.db.models.functions import TruncDate
+from django.db.models import DateField
 # Define the logger at the module level (outside any function)
 logger = logging.getLogger(__name__)
 
@@ -74,7 +78,7 @@ def serialize_progress_report_species(progress_report):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# APPLICATION LIST & DETAILS
+# APPLICATIONS (For DataManager Web Monitoring Page)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @csrf_exempt
@@ -85,6 +89,7 @@ def get_applications(request):
     status_filter = request.GET.get('status', 'All')
     classification_filter = request.GET.get('classification', 'All')
     search = request.GET.get('search', '').strip()
+    days_since_filter = request.GET.get('days_since', '').strip()
     
     try:
         entries = max(int(request.GET.get('entries', 10)), 10)
@@ -94,31 +99,93 @@ def get_applications(request):
 
     qs = Application.objects.select_related('user__tree_grower_group').order_by('-created_at')
     
+    # Annotate with effective date (last_report OR orientation_date)
+    qs = qs.annotate(
+        last_report_date=Max('progress_reports__created_at'),
+        total_reports=Count('progress_reports'),
+        effective_date=Case(
+            When(last_report_date__isnull=False, 
+                 then=TruncDate('last_report_date')),
+            When(orientation_date__isnull=False, 
+                 then=F('orientation_date')),
+            default=None,
+            output_field=DateField()
+        )
+    )
+    
     if status_filter != 'All':
         qs = qs.filter(status=status_filter)
     if classification_filter != 'All':
         qs = qs.filter(classification=classification_filter)
     if search:
         qs = qs.filter(user__tree_grower_group__group_name__icontains=search)
+    
+    # Filter by effective date with MUTUALLY EXCLUSIVE ranges
+    today = timezone.now().date()
+    
+    if days_since_filter == 'no_report':
+        # No ProgressReport exists at all
+        qs = qs.filter(total_reports=0)
+    elif days_since_filter == '30_plus':
+        cutoff_30 = today - timedelta(days=30)
+        cutoff_60 = today - timedelta(days=60)
+        qs = qs.filter(
+            Q(effective_date__gte=cutoff_60, effective_date__lt=cutoff_30)
+        )
+    elif days_since_filter == '60_plus':
+        cutoff_60 = today - timedelta(days=60)
+        cutoff_90 = today - timedelta(days=90)
+        qs = qs.filter(
+            Q(effective_date__gte=cutoff_90, effective_date__lt=cutoff_60)
+        )
+    elif days_since_filter == '90_plus':
+        cutoff_90 = today - timedelta(days=90)
+        qs = qs.filter(effective_date__lt=cutoff_90)
 
     total = qs.count()
     total_page = math.ceil(total / entries) if total > 0 else 1
     offset = (page - 1) * entries
 
-    data = [{
-        "application_id": app.application_id,
-        "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "N/A",
-        "group_type": app.user.tree_grower_group.get_group_type_display() if hasattr(app.user, 'tree_grower_group') else "N/A",
-        "group_profile": get_cloudinary_url(str(app.user.tree_grower_group.profile_img)) if hasattr(app.user, 'tree_grower_group') and app.user.tree_grower_group.profile_img else None,
-        "title": app.title,
-        "orientation_date": app.orientation_date,
-        "classification": app.classification,
-        "status": app.status,
-        "total_treegrowers_will_participate": app.total_treegrowers_will_participate,
-        "created_at": app.created_at.strftime("%d/%m/%Y")
-    } for app in qs[offset:offset + entries]]
+    data = []
+    for app in qs[offset:offset + entries]:
+        # Calculate days since effective date
+        effective_date = None
+        if app.last_report_date:
+            effective_date = app.last_report_date
+        elif app.orientation_date:
+            effective_date = app.orientation_date
+        
+        days_since = None
+        last_report_date_str = None
+        
+        if effective_date:
+            days_since = (today - effective_date).days
+                
+        if app.last_report_date:
+            last_report_date_str = app.last_report_date.isoformat()
+        
+        data.append({
+            "application_id": app.application_id,
+            "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "N/A",
+            "group_type": app.user.tree_grower_group.get_group_type_display() if hasattr(app.user, 'tree_grower_group') else "N/A",
+            "group_profile": get_cloudinary_url(str(app.user.tree_grower_group.profile_img)) if hasattr(app.user, 'tree_grower_group') and app.user.tree_grower_group.profile_img else None,
+            "title": app.title,
+            "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
+            "classification": app.classification,
+            "status": app.status,
+            "total_treegrowers_will_participate": app.total_treegrowers_will_participate,
+            "created_at": app.created_at.strftime("%d/%m/%Y"),
+            "last_report_date": last_report_date_str,
+            "days_since_last_report": days_since,
+        })
 
-    return JsonResponse({'data': data, 'total_page': total_page, 'page': page, 'entries': entries, 'total': total}, status=200)
+    return JsonResponse({
+        'data': data, 
+        'total_page': total_page, 
+        'page': page, 
+        'entries': entries, 
+        'total': total
+    }, status=200)
 
 
 @csrf_exempt
@@ -245,7 +312,7 @@ def get_application(request, application_id):
 
 @csrf_exempt
 def get_ongoing_applications(request):
-    """GET /api/ongoing-applications/?barangay=San+Isidro"""
+    """GET /api/ongoing-applications/?barangay=San+Isidro&urgency=all&sort=newest"""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -254,32 +321,150 @@ def get_ongoing_applications(request):
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
     barangay = request.GET.get('barangay', '').strip()
+    urgency_filter = request.GET.get('urgency', 'all').strip()
+    sort_by = request.GET.get('sort', 'newest').strip()
+    classification = request.GET.get('classification', 'all').strip()
+    
     status_list = ['accepted', 'under_monitoring']
     
     qs = Application.objects.filter(status__in=status_list).select_related(
         'site__reforestation_area__barangay', 
-        'user__tree_grower_group'
+        'site__meta_verification__verified_land_classification',
+        'site__meta_verification',
+        'user__tree_grower_group',
+        'user__profile'
+    ).prefetch_related(
+        'progress_reports__report_species__tree_species',
+        'site__species_recommendations__tree_species'
+    ).annotate(
+        last_report_date=Max('progress_reports__created_at'),
+        total_survived=Coalesce(Sum('progress_reports__report_species__no_survived', 
+                                   filter=Q(progress_reports__status='accepted')), 0),
+        total_dead=Coalesce(Sum('progress_reports__report_species__no_dead',
+                               filter=Q(progress_reports__status='accepted')), 0),
+        total_reports=Count('progress_reports'),
+        effective_date=Case(
+            When(last_report_date__isnull=False, 
+                 then=TruncDate('last_report_date')),
+            When(orientation_date__isnull=False, 
+                 then=F('orientation_date')),
+            default=None,
+            output_field=DateField()
+        )
     )
     
     if barangay:
         qs = qs.filter(site__reforestation_area__barangay__name__icontains=barangay)
+    
+    if classification != 'all':
+        qs = qs.filter(classification=classification)
+    
+    today = timezone.now().date()
+    
+    if urgency_filter != 'all':
+        if urgency_filter == 'no_report':
+            # No ProgressReport exists at all
+            qs = qs.filter(total_reports=0)
+        elif urgency_filter == '90_plus':
+            cutoff_date = today - timedelta(days=90)
+            qs = qs.filter(effective_date__lt=cutoff_date)
+        elif urgency_filter == '60_plus':
+            cutoff_60 = today - timedelta(days=60)
+            cutoff_90 = today - timedelta(days=90)
+            qs = qs.filter(
+                Q(effective_date__gte=cutoff_90, effective_date__lt=cutoff_60)
+            )
+        elif urgency_filter == '30_plus':
+            cutoff_30 = today - timedelta(days=30)
+            cutoff_60 = today - timedelta(days=60)
+            qs = qs.filter(
+                Q(effective_date__gte=cutoff_60, effective_date__lt=cutoff_30)
+            )
+    
+    # Sorting
+    if sort_by == 'newest':
+        qs = qs.order_by('-created_at')
+    elif sort_by == 'oldest':
+        qs = qs.order_by('created_at')
+    elif sort_by == 'urgent':
+        qs = qs.order_by(F('effective_date').asc(nulls_first=True))
+    
+    data = []
+    for app in qs:
+        # Calculate days since effective date
+        effective_date = None
+        if app.last_report_date:
+            effective_date = app.last_report_date
+        elif app.orientation_date:
+            effective_date = app.orientation_date
         
-    qs = qs.order_by('-created_at')
-
-    data = [{
-        "application_id": app.application_id,
-        "title": app.title,
-        "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "N/A",
-        "status": app.status,
-        "site_name": app.site.name if app.site else None,
-        "barangay": (
-            app.site.reforestation_area.barangay.name 
-            if app.site and app.site.reforestation_area and app.site.reforestation_area.barangay 
-            else None
-        ),
-        "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
-        "created_at": app.created_at.strftime("%d/%m/%Y")
-    } for app in qs]
+        days_since = None
+        if effective_date:
+            days_since = (today - effective_date).days
+        
+        # Calculate survival rate
+        total_plants = app.total_survived + app.total_dead
+        survival_rate = round((app.total_survived / total_plants * 100), 1) if total_plants > 0 else 0
+        
+        # Get site details
+        site_data = None
+        recommended_species = []
+        if app.site:
+            meta = getattr(app.site, 'meta_verification', None)
+            
+            recommended_species = [
+                {
+                    "species_id": rec.tree_species.tree_specie_id if rec.tree_species else None,
+                    "species_name": rec.tree_species.name if rec.tree_species else "Unknown",
+                    "priority_rank": rec.priority_rank,
+                    "notes": rec.notes
+                }
+                for rec in app.site.species_recommendations.select_related('tree_species').all().order_by('priority_rank')[:3]
+            ]
+            
+            site_data = {
+                "site_id": app.site.site_id,
+                "name": app.site.name,
+                "total_area_hectares": app.site.total_area_hectares,
+                "ndvi_value": app.site.ndvi_value,
+                "accessibility": meta.verified_accessibility if meta else None,
+                "land_classification": (
+                    meta.verified_land_classification.name 
+                    if meta and meta.verified_land_classification else None
+                ),
+                "recommended_species": recommended_species,
+            }
+        
+        # Get group contact
+        group_contact = None
+        if hasattr(app.user, 'profile') and app.user.profile:
+            group_contact = {
+                "contact": app.user.profile.contact,
+                "full_name": f"{app.user.profile.first_name} {app.user.profile.last_name}",
+            }
+        
+        data.append({
+            "application_id": app.application_id,
+            "title": app.title,
+            "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "N/A",
+            "group_contact": group_contact,
+            "status": app.status,
+            "classification": app.classification,
+            "site_name": app.site.name if app.site else None,
+            "barangay": (
+                app.site.reforestation_area.barangay.name 
+                if app.site and app.site.reforestation_area and app.site.reforestation_area.barangay 
+                else None
+            ),
+            "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
+            "last_report_date": app.last_report_date.isoformat() if app.last_report_date else None,
+            "days_since_last_report": days_since,
+            "total_survived": app.total_survived,
+            "total_dead": app.total_dead,
+            "survival_rate": survival_rate,
+            "total_reports": app.total_reports,
+            "site_details": site_data,
+        })
 
     return JsonResponse(data, safe=False, status=200)
 
@@ -1784,4 +1969,105 @@ def get_monitoring_compliance(request):
         },
         "monthly_submissions": monthly_data,
         "compliance_tracker": compliance_tracker
+    }, status=200)
+
+
+@csrf_exempt
+def update_application_orientation(request, application_id):
+    """
+    Update orientation date for an application (called from calendar scheduling).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    app = get_object_or_404(Application, application_id=application_id)
+    
+    orientation_date_str = request.POST.get('orientation_date')
+    if not orientation_date_str:
+        return JsonResponse({'error': 'orientation_date is required'}, status=400)
+
+    try:
+        orientation_date = datetime.strptime(orientation_date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
+
+    try:
+        with transaction.atomic():
+            app.orientation_date = orientation_date
+            # Only update if not already set or if user has permission
+            if user.user_role in ['DataManager', 'CityENROHead']:
+                app.save()
+            else:
+                return JsonResponse({'error': 'Unauthorized to update orientation'}, status=403)
+
+        return JsonResponse({
+            'message': 'Orientation date updated successfully',
+            'application_id': app.application_id,
+            'orientation_date': orientation_date.isoformat()
+        }, status=200)
+        
+    except Exception as e:
+        return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
+    
+@csrf_exempt
+def get_monitoring_stats(request):
+    """Get live counts for monitoring priority levels"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    active_apps = Application.objects.filter(
+        status__in=['accepted', 'under_monitoring']
+    )
+
+    apps_with_dates = active_apps.annotate(
+        last_report_date=Max('progress_reports__created_at'),
+        total_reports=Count('progress_reports'),
+        effective_date=Case(
+            When(last_report_date__isnull=False, 
+                 then=TruncDate('last_report_date')),
+            When(orientation_date__isnull=False, 
+                 then=F('orientation_date')),
+            default=None,
+            output_field=DateField()
+        )
+    )
+
+    today = timezone.now().date()
+    
+    total = apps_with_dates.count()
+    
+    # No ProgressReport exists at all
+    no_report = apps_with_dates.filter(total_reports=0).count()
+    
+    # 90+ days since effective date
+    days_90_plus = apps_with_dates.filter(
+        effective_date__lt=today - timedelta(days=90)
+    ).count()
+    
+    # 60-89 days since effective date
+    days_60_plus = apps_with_dates.filter(
+        effective_date__gte=today - timedelta(days=90),
+        effective_date__lt=today - timedelta(days=60)
+    ).count()
+    
+    # 30-59 days since effective date
+    days_30_plus = apps_with_dates.filter(
+        effective_date__gte=today - timedelta(days=60),
+        effective_date__lt=today - timedelta(days=30)
+    ).count()
+
+    return JsonResponse({
+        'total': total,
+        'no_report': no_report,
+        'days_30_plus': days_30_plus,
+        'days_60_plus': days_60_plus,
+        'days_90_plus': days_90_plus,
     }, status=200)

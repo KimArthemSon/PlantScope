@@ -21,7 +21,7 @@ import { api } from "@/constants/url_fixed";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_PADDING = 16;
-const IMAGE_WIDTH = SCREEN_WIDTH - (CARD_PADDING * 2);
+const IMAGE_WIDTH = SCREEN_WIDTH - CARD_PADDING * 2;
 
 interface SiteImage {
   image_id: number;
@@ -48,7 +48,7 @@ interface Barangay {
   coordinate: any;
 }
 
-// ✅ SiteCard component
+// ✅ Compact & Modern SiteCard Component
 const SiteCard = ({
   item,
   hasOngoingApplication,
@@ -64,6 +64,7 @@ const SiteCard = ({
 
   return (
     <View style={styles.card}>
+      {/* Compact Image */}
       <View style={styles.imageContainer}>
         {item.images && item.images.length > 0 ? (
           <>
@@ -73,7 +74,7 @@ const SiteCard = ({
               showsHorizontalScrollIndicator={false}
               onMomentumScrollEnd={(e) => {
                 const index = Math.round(
-                  e.nativeEvent.contentOffset.x / IMAGE_WIDTH
+                  e.nativeEvent.contentOffset.x / IMAGE_WIDTH,
                 );
                 setCurrentImageIndex(index);
               }}
@@ -82,9 +83,7 @@ const SiteCard = ({
                 <View key={img.image_id} style={styles.carouselImageWrapper}>
                   <Image
                     source={{
-                      uri: img.url.startsWith("http")
-                        ? img.url
-                        : `${img.url}`,
+                      uri: img.url.startsWith("http") ? img.url : `${img.url}`,
                     }}
                     style={styles.cardImage}
                     resizeMode="cover"
@@ -109,81 +108,83 @@ const SiteCard = ({
           </>
         ) : (
           <View style={[styles.cardImage, styles.placeholderImage]}>
-            <Ionicons name="images-outline" size={48} color="#9CA3AF" />
-            <Text style={styles.placeholderText}>No images available</Text>
+            <Ionicons name="images-outline" size={32} color="#CBD5E1" />
           </View>
         )}
 
-        {item.is_pinned && (
-          <View style={styles.pinnedBadge}>
-            <Ionicons name="star" size={12} color="#F59E0B" />
-            <Text style={styles.pinnedText}>Pinned</Text>
-          </View>
-        )}
-
-        <View style={styles.verifiedBadge}>
-          <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-          <Text style={styles.verifiedText}>Available</Text>
+        {/* Status Badge */}
+        <View style={styles.statusBadge}>
+          <Ionicons name="checkmark-circle" size={12} color="#10B981" />
+          <Text style={styles.statusText}>Available</Text>
         </View>
       </View>
 
+      {/* Content */}
       <View style={styles.cardContent}>
-        <Text style={styles.siteName} numberOfLines={2}>
-          {item.name}
-        </Text>
-
-        <View style={styles.locationRow}>
-          <Ionicons name="location-outline" size={14} color="#6B7280" />
-          <Text style={styles.locationText} numberOfLines={1}>
-            {item.barangay}, {item.reforestation_area}
-          </Text>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            <Text style={styles.siteName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            {item.is_pinned && (
+              <Ionicons name="star" size={14} color="#F59E0B" />
+            )}
+          </View>
+          <View style={styles.locationRow}>
+            <Ionicons name="location" size={12} color="#6B7280" />
+            <Text style={styles.locationText} numberOfLines={1}>
+              {item.barangay}, {item.reforestation_area}
+            </Text>
+          </View>
         </View>
 
+        {/* Compact Metrics */}
         <View style={styles.metricsRow}>
-          <View style={styles.metric}>
+          <View style={styles.metricItem}>
+            <Ionicons name="leaf-outline" size={14} color="#059669" />
             <Text style={styles.metricValue}>
               {item.total_area_hectares.toFixed(2)}
             </Text>
-            <Text style={styles.metricLabel}>Hectares</Text>
+            <Text style={styles.metricLabel}>hectares</Text>
           </View>
 
           <View style={styles.metricDivider} />
 
-          <View style={styles.metric}>
+          <View style={styles.metricItem}>
+            <Ionicons name="analytics-outline" size={14} color="#2563EB" />
             <Text style={styles.metricValue}>
               {item.ndvi_value !== null ? item.ndvi_value.toFixed(2) : "N/A"}
             </Text>
-            <Text style={styles.metricLabel}>NDVI Score</Text>
+            <Text style={styles.metricLabel}>NDVI</Text>
           </View>
         </View>
 
+        {/* Action Buttons */}
         <View style={styles.buttonRow}>
           <TouchableOpacity
-            style={styles.viewDetailsButton}
+            style={styles.btnDetails}
             activeOpacity={0.7}
             onPress={() => onViewDetails(item)}
           >
             <Ionicons name="eye-outline" size={16} color="#0F4A2F" />
-            <Text style={styles.viewDetailsText}>View Details</Text>
+            <Text style={styles.btnDetailsText}>Details</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.applyButton,
-              hasOngoingApplication && styles.applyButtonDisabled,
+              styles.btnApply,
+              hasOngoingApplication && styles.btnApplyDisabled,
             ]}
             activeOpacity={hasOngoingApplication ? 1 : 0.7}
             onPress={() => onApply(item)}
             disabled={hasOngoingApplication}
           >
             {hasOngoingApplication ? (
-              <>
-                <Ionicons name="lock-closed" size={14} color="#9CA3AF" />
-                <Text style={styles.applyButtonTextDisabled}>Locked</Text>
-              </>
+              <Ionicons name="lock-closed" size={16} color="#9CA3AF" />
             ) : (
               <>
-                <Text style={styles.applyButtonText}>Apply</Text>
+                <Text style={styles.btnApplyText}>Apply</Text>
                 <Ionicons name="arrow-forward" size={16} color="#fff" />
               </>
             )}
@@ -196,28 +197,20 @@ const SiteCard = ({
 
 export default function Sites() {
   const router = useRouter();
-  
-  // ✅ Data states
+
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  
-  // ✅ Filter states
   const [search, setSearch] = useState("");
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [availableBarangays, setAvailableBarangays] = useState<Barangay[]>([]);
   const [showBarangayDropdown, setShowBarangayDropdown] = useState(false);
-  
-  // ✅ Pagination states
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  
-  // ✅ Ongoing application state
   const [hasOngoingApplication, setHasOngoingApplication] = useState(false);
 
-  // ✅ Fetch barangays from dedicated endpoint
   const fetchBarangays = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -236,22 +229,17 @@ export default function Sites() {
     }
   };
 
-  // ✅ FIXED: Accept filter values as parameters to avoid stale state
   const fetchSites = async (
-    pageNum: number = 1, 
-    isRefresh: boolean = false, 
+    pageNum: number = 1,
+    isRefresh: boolean = false,
     isLoadMore: boolean = false,
-    currentSearch: string = search, 
-    currentBarangay: string = selectedBarangay
+    currentSearch: string = search,
+    currentBarangay: string = selectedBarangay,
   ) => {
     try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else if (isLoadMore) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-      }
+      if (isRefresh) setRefreshing(true);
+      else if (isLoadMore) setLoadingMore(true);
+      else setLoading(true);
 
       const token = await SecureStore.getItemAsync("token");
       if (!token) throw new Error("No authentication token found.");
@@ -261,29 +249,17 @@ export default function Sites() {
         entries: "10",
       });
 
-      // ✅ Use the passed parameters instead of state variables
-      if (currentSearch.trim()) {
-        params.append("search", currentSearch.trim());
-      }
-
-      if (currentBarangay) {
-        params.append("barangay", currentBarangay);
-      }
+      if (currentSearch.trim()) params.append("search", currentSearch.trim());
+      if (currentBarangay) params.append("barangay", currentBarangay);
 
       const res = await fetch(
         `${api}/api/get_available_sites_for_tree_grower/?${params.toString()}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to fetch sites");
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to fetch sites");
-      }
-
-      // ✅ Update data
       if (isLoadMore) {
         setSites((prev) => [...prev, ...(data.data || [])]);
       } else {
@@ -294,7 +270,6 @@ export default function Sites() {
       setTotal(data.total || 0);
       setHasOngoingApplication(data.has_ongoing_application === true);
       setPage(pageNum);
-      
     } catch (err: any) {
       console.error("Fetch sites error:", err);
       Alert.alert("Error", err.message);
@@ -305,30 +280,25 @@ export default function Sites() {
     }
   };
 
-  // ✅ Initial load - fetch both barangays and sites
   useEffect(() => {
     fetchBarangays();
     fetchSites(1, false, false, "", "");
   }, []);
 
-  // ✅ FIXED: Pass current values explicitly
   const handleSearch = () => {
     setPage(1);
     setSites([]);
     fetchSites(1, false, false, search, selectedBarangay);
   };
 
-  // ✅ FIXED: Pass the NEW barangay value directly to fetchSites
   const handleBarangayFilter = (barangay: string) => {
     setSelectedBarangay(barangay);
     setShowBarangayDropdown(false);
     setPage(1);
     setSites([]);
-    // Pass 'barangay' (the new value) instead of 'selectedBarangay' (the old state)
-    fetchSites(1, false, false, search, barangay); 
+    fetchSites(1, false, false, search, barangay);
   };
 
-  // ✅ FIXED: Pass empty strings to clear filters
   const clearFilters = () => {
     setSearch("");
     setSelectedBarangay("");
@@ -337,13 +307,11 @@ export default function Sites() {
     fetchSites(1, false, false, "", "");
   };
 
-  // ✅ FIXED: Pass current values
   const handleRefresh = () => {
     setPage(1);
     fetchSites(1, true, false, search, selectedBarangay);
   };
 
-  // ✅ FIXED: Pass current values
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
       fetchSites(page + 1, false, true, search, selectedBarangay);
@@ -362,11 +330,9 @@ export default function Sites() {
 
   const handleApply = (site: Site) => {
     if (hasOngoingApplication) {
-      Alert.alert(
-        "Cannot Apply",
-        "You already have an ongoing application. Please wait for it to be completed or rejected before applying to a new site.",
-        [{ text: "OK" }],
-      );
+      Alert.alert("Cannot Apply", "You already have an ongoing application.", [
+        { text: "OK" },
+      ]);
       return;
     }
 
@@ -379,33 +345,33 @@ export default function Sites() {
     });
   };
 
-  // ✅ Render footer for loading more
   const renderFooter = () => {
     if (!loadingMore) return null;
     return (
       <View style={styles.footer}>
         <ActivityIndicator size="small" color="#0F4A2F" />
-        <Text style={styles.footerText}>Loading more sites...</Text>
       </View>
     );
   };
 
-  // ✅ Render empty state
   const renderEmpty = () => {
     if (loading) return null;
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="map-outline" size={64} color="#D1D5DB" />
+        <Ionicons name="map-outline" size={48} color="#D1D5DB" />
         <Text style={styles.emptyTitle}>
           {search || selectedBarangay ? "No sites found" : "No available sites"}
         </Text>
         <Text style={styles.emptySubtitle}>
           {search || selectedBarangay
             ? "Try adjusting your filters"
-            : "Check back later for new planting sites in your area."}
+            : "Check back later for new sites"}
         </Text>
         {(search || selectedBarangay) && (
-          <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+          <TouchableOpacity
+            style={styles.clearFiltersButton}
+            onPress={clearFilters}
+          >
             <Text style={styles.clearFiltersText}>Clear Filters</Text>
           </TouchableOpacity>
         )}
@@ -416,17 +382,15 @@ export default function Sites() {
   return (
     <SafeAreaView style={styles.container}>
       {hasOngoingApplication && (
-        <View style={styles.ongoingBanner}>
-          <Ionicons name="information-circle" size={18} color="#F59E0B" />
-          <Text style={styles.ongoingBannerText}>
-            You have an ongoing application. You can browse sites but cannot apply.
-          </Text>
+        <View style={styles.banner}>
+          <Ionicons name="information-circle" size={16} color="#F59E0B" />
+          <Text style={styles.bannerText}>You have an ongoing application</Text>
         </View>
       )}
 
-      {/* ✅ Search Bar */}
+      {/* Search */}
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
+        <Ionicons name="search" size={18} color="#9CA3AF" />
         <TextInput
           style={styles.searchInput}
           placeholder="Search sites..."
@@ -437,40 +401,45 @@ export default function Sites() {
           returnKeyType="search"
         />
         {search.length > 0 && (
-          <TouchableOpacity onPress={() => { setSearch(""); handleSearch(); }}>
-            <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+          <TouchableOpacity
+            onPress={() => {
+              setSearch("");
+              handleSearch();
+            }}
+          >
+            <Ionicons name="close-circle" size={18} color="#9CA3AF" />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* ✅ Barangay Filter */}
+      {/* Filter */}
       <View style={styles.filterContainer}>
         <TouchableOpacity
-          style={styles.barangayFilterButton}
+          style={styles.filterButton}
           onPress={() => setShowBarangayDropdown(!showBarangayDropdown)}
         >
-          <Ionicons name="location-outline" size={16} color="#0F4A2F" />
-          <Text style={styles.barangayFilterText}>
-            {selectedBarangay || "Filter by Barangay"}
+          <Ionicons name="funnel-outline" size={16} color="#0F4A2F" />
+          <Text style={styles.filterText}>
+            {selectedBarangay || "All Barangays"}
           </Text>
-          <Ionicons 
-            name={showBarangayDropdown ? "chevron-up" : "chevron-down"} 
-            size={16} 
-            color="#6B7280" 
+          <Ionicons
+            name={showBarangayDropdown ? "chevron-up" : "chevron-down"}
+            size={16}
+            color="#6B7280"
           />
         </TouchableOpacity>
 
         {selectedBarangay && (
-          <TouchableOpacity style={styles.clearFilterButton} onPress={() => handleBarangayFilter("")}>
+          <TouchableOpacity onPress={() => handleBarangayFilter("")}>
             <Ionicons name="close-circle" size={18} color="#EF4444" />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* ✅ Barangay Dropdown */}
+      {/* Dropdown */}
       {showBarangayDropdown && (
         <View style={styles.dropdownContainer}>
-          <ScrollView style={styles.dropdownScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false}>
             <TouchableOpacity
               style={styles.dropdownItem}
               onPress={() => handleBarangayFilter("")}
@@ -482,14 +451,18 @@ export default function Sites() {
                 key={barangay.barangay_id}
                 style={[
                   styles.dropdownItem,
-                  selectedBarangay === barangay.name && styles.dropdownItemActive,
+                  selectedBarangay === barangay.name &&
+                    styles.dropdownItemActive,
                 ]}
                 onPress={() => handleBarangayFilter(barangay.name)}
               >
-                <Text style={[
-                  styles.dropdownItemText,
-                  selectedBarangay === barangay.name && styles.dropdownItemTextActive,
-                ]}>
+                <Text
+                  style={[
+                    styles.dropdownItemText,
+                    selectedBarangay === barangay.name &&
+                      styles.dropdownItemTextActive,
+                  ]}
+                >
                   {barangay.name}
                 </Text>
               </TouchableOpacity>
@@ -498,20 +471,17 @@ export default function Sites() {
         </View>
       )}
 
-      {/* ✅ Results Count */}
+      {/* Results Count */}
       {!loading && sites.length > 0 && (
-        <View style={styles.resultsCount}>
-          <Text style={styles.resultsCountText}>
-            Showing {sites.length} of {total} sites
-          </Text>
-        </View>
+        <Text style={styles.resultsText}>
+          Showing {sites.length} of {total} sites
+        </Text>
       )}
 
-      {/* ✅ Sites List with Infinite Scroll */}
+      {/* List */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#0F4A2F" />
-          <Text style={styles.loadingText}>Loading available sites...</Text>
         </View>
       ) : (
         <FlatList
@@ -544,27 +514,26 @@ export default function Sites() {
   );
 }
 
+// ✅ COMPACT & MODERN STYLES
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F4F7F5" },
+  container: { flex: 1, backgroundColor: "#F5F5F5" },
 
-  ongoingBanner: {
+  banner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "#FEF3C7",
+    gap: 6,
+    backgroundColor: "#FFFBEB",
     marginHorizontal: 16,
     marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: "#F59E0B",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: "flex-start",
   },
-  ongoingBannerText: {
-    flex: 1,
+  bannerText: {
     fontSize: 12,
     color: "#92400E",
-    fontWeight: "600",
+    fontWeight: "500",
   },
 
   searchContainer: {
@@ -573,262 +542,264 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     marginHorizontal: 16,
     marginTop: 12,
-    marginBottom: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 5,
+    paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#E5E7EB",
+    gap: 8,
   },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 15, color: "#111827" },
+  searchInput: { flex: 1, fontSize: 14, color: "#111" },
 
   filterContainer: {
     flexDirection: "row",
     alignItems: "center",
     marginHorizontal: 16,
+    marginTop: 10,
     marginBottom: 8,
     gap: 8,
   },
-  barangayFilterButton: {
+  filterButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#E5E7EB",
     gap: 8,
   },
-  barangayFilterText: {
+  filterText: {
     flex: 1,
-    fontSize: 14,
-    color: "#111827",
-  },
-  clearFilterButton: {
-    padding: 8,
+    fontSize: 13,
+    color: "#111",
   },
 
   dropdownContainer: {
     marginHorizontal: 16,
     marginBottom: 8,
     backgroundColor: "#fff",
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    maxHeight: 200,
-    overflow: "hidden",
-  },
-  dropdownScroll: {
-    paddingVertical: 4,
+    maxHeight: 180,
   },
   dropdownItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   dropdownItemActive: {
     backgroundColor: "#F0FDF4",
   },
   dropdownItemText: {
-    fontSize: 14,
-    color: "#111827",
+    fontSize: 13,
+    color: "#111",
   },
   dropdownItemTextActive: {
     color: "#0F4A2F",
     fontWeight: "600",
   },
 
-  resultsCount: {
+  resultsText: {
     marginHorizontal: 16,
     marginBottom: 8,
-  },
-  resultsCountText: {
     fontSize: 12,
     color: "#6B7280",
-    fontWeight: "500",
   },
 
-  listContent: { paddingHorizontal: 16, paddingBottom: 32 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 24 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  loadingText: { marginTop: 12, color: "#6B7280", fontSize: 14 },
 
   footer: {
-    paddingVertical: 20,
-    flexDirection: "row",
-    justifyContent: "center",
+    paddingVertical: 16,
     alignItems: "center",
-    gap: 8,
-  },
-  footerText: {
-    fontSize: 14,
-    color: "#6B7280",
   },
 
+  // CARD - COMPACT DESIGN
   card: {
     backgroundColor: "#fff",
-    borderRadius: 20,
-    marginBottom: 20,
+    borderRadius: 16,
+    marginBottom: 16,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
-  
-  imageContainer: { 
-    position: "relative", 
-    height: 220 
+
+  imageContainer: {
+    position: "relative",
+    height: 140, // Reduced from 200
   },
   carouselImageWrapper: {
     width: IMAGE_WIDTH,
-    height: 220,
+    height: 140,
   },
-  cardImage: { 
-    width: "100%", 
-    height: "100%" 
+  cardImage: {
+    width: "100%",
+    height: "100%",
   },
   pagination: {
     position: "absolute",
-    bottom: 12,
+    bottom: 8,
     left: 0,
     right: 0,
     flexDirection: "row",
     justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
+    gap: 4,
   },
   dot: {
-    width: 6,
-    height: 6,
+    width: 5,
+    height: 5,
     borderRadius: 3,
-    backgroundColor: "rgba(255,255,255,0.5)",
+    backgroundColor: "rgba(255,255,255,0.6)",
   },
   activeDot: {
-    width: 18,
-    borderRadius: 3,
+    width: 14,
     backgroundColor: "#fff",
   },
-  
+
   placeholderImage: {
     backgroundColor: "#F3F4F6",
     justifyContent: "center",
     alignItems: "center",
   },
-  placeholderText: {
-    color: "#9CA3AF",
-    fontSize: 12,
-    marginTop: 8,
-  },
-  
-  pinnedBadge: {
+
+  statusBadge: {
     position: "absolute",
-    top: 12,
-    left: 12,
+    top: 8,
+    right: 8,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(255, 255, 255, 0.95)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 12,
-    gap: 4,
+    gap: 3,
   },
-  pinnedText: { fontSize: 11, fontWeight: "700", color: "#F59E0B" },
-  verifiedBadge: {
-    position: "absolute",
-    top: 12,
-    right: 12,
+  statusText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#10B981",
+  },
+
+  cardContent: { padding: 12 }, // Reduced padding
+
+  header: { marginBottom: 10 },
+  titleRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    gap: 4,
+    justifyContent: "space-between",
+    marginBottom: 4,
   },
-  verifiedText: { fontSize: 11, fontWeight: "700", color: "#10B981" },
-  cardContent: { padding: 16 },
   siteName: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#111827",
-    marginBottom: 6,
+    fontSize: 15, // Reduced from 17
+    fontWeight: "700",
+    color: "#111",
+    flex: 1,
   },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginBottom: 14,
   },
-  locationText: { fontSize: 13, color: "#6B7280", flex: 1 },
+  locationText: {
+    fontSize: 11, // Reduced from 13
+    color: "#6B7280",
+    flex: 1,
+  },
+
   metricsRow: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 14,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 10,
   },
-  metric: { flex: 1, alignItems: "center" },
-  metricValue: { fontSize: 16, fontWeight: "800", color: "#0F4A2F" },
-  metricLabel: { fontSize: 11, color: "#6B7280", marginTop: 2 },
-  metricDivider: { width: 1, height: 32, backgroundColor: "#E5E7EB" },
+  metricItem: {
+    flex: 1,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 4,
+  },
+  metricValue: {
+    fontSize: 13, // Reduced from 16
+    fontWeight: "700",
+    color: "#0F4A2F",
+  },
+  metricLabel: {
+    fontSize: 10, // Reduced from 11
+    color: "#6B7280",
+    textTransform: "lowercase",
+  },
+  metricDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "#E5E7EB",
+  },
 
-  buttonRow: { flexDirection: "row", gap: 8 },
-  viewDetailsButton: {
+  buttonRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  btnDetails: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#fff",
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: "#0F4A2F",
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 10, // Reduced from 14
+    borderRadius: 10,
     gap: 6,
   },
-  viewDetailsText: { color: "#0F4A2F", fontSize: 14, fontWeight: "700" },
-  applyButton: {
+  btnDetailsText: {
+    color: "#0F4A2F",
+    fontSize: 13, // Reduced from 14
+    fontWeight: "600",
+  },
+  btnApply: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#0F4A2F",
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     gap: 6,
   },
-  applyButtonDisabled: {
+  btnApplyDisabled: {
     backgroundColor: "#E5E7EB",
   },
-  applyButtonText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-  applyButtonTextDisabled: {
-    color: "#9CA3AF",
-    fontSize: 14,
-    fontWeight: "700",
+  btnApplyText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
   },
 
-  emptyState: { alignItems: "center", marginTop: 80, gap: 12 },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#374151" },
+  emptyState: { alignItems: "center", marginTop: 80, gap: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: "600", color: "#374151" },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#6B7280",
     textAlign: "center",
-    maxWidth: 250,
+    paddingHorizontal: 32,
   },
   clearFiltersButton: {
     marginTop: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     backgroundColor: "#0F4A2F",
-    borderRadius: 10,
+    borderRadius: 8,
   },
   clearFiltersText: {
     color: "#fff",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
   },
 });

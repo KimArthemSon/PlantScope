@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -16,69 +17,6 @@ interface OrientationDate {
   status: string;
 }
 
-// ✅ Updated to match actual application workflow statuses
-const STATUS_CONFIG: Record<
-  string,
-  { bg: string; text: string; dot: string; border: string; label: string }
-> = {
-  for_evaluation: {
-    bg: "bg-gray-50",
-    text: "text-gray-700",
-    dot: "bg-gray-500",
-    border: "border-gray-200",
-    label: "For Evaluation",
-  },
-  for_head: {
-    bg: "bg-blue-50",
-    text: "text-blue-700",
-    dot: "bg-blue-500",
-    border: "border-blue-200",
-    label: "For Head",
-  },
-  accepted: {
-    bg: "bg-emerald-50",
-    text: "text-emerald-700",
-    dot: "bg-emerald-500",
-    border: "border-emerald-200",
-    label: "Accepted",
-  },
-  under_monitoring: {
-    bg: "bg-purple-50",
-    text: "text-purple-700",
-    dot: "bg-purple-500",
-    border: "border-purple-200",
-    label: "Monitoring",
-  },
-  rejected: {
-    bg: "bg-rose-50",
-    text: "text-rose-700",
-    dot: "bg-rose-500",
-    border: "border-rose-200",
-    label: "Rejected",
-  },
-  completed: {
-    bg: "bg-slate-100",
-    text: "text-slate-700",
-    dot: "bg-slate-500",
-    border: "border-slate-200",
-    label: "Completed",
-  },
-  failed: {
-    bg: "bg-red-50",
-    text: "text-red-700",
-    dot: "bg-red-500",
-    border: "border-red-200",
-    label: "Failed",
-  },
-  cancelled: {
-    bg: "bg-orange-50",
-    text: "text-orange-700",
-    dot: "bg-orange-500",
-    border: "border-orange-200",
-    label: "Cancelled",
-  },
-};
-
 // ── KEY FIX: build YYYY-MM-DD from LOCAL time, NOT UTC ───────────────────────
 const toLocalDateStr = (date: Date): string => {
   const y = date.getFullYear();
@@ -88,15 +26,26 @@ const toLocalDateStr = (date: Date): string => {
 };
 
 export default function Calendar() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+
   const [data, setData] = useState<OrientationDate[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"month" | "week" | "day">("month");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const token = localStorage.getItem("token");
+
+  // ✅ NEW: Check if coming from evaluation page
+  const fromEvaluation = searchParams.get("from") === "evaluation";
+  const applicationId = searchParams.get("appId");
+  const applicationTitle = searchParams.get("appTitle") || "Application";
+
+  // ✅ NEW: Schedule modal state
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   async function fetchOrientationDates() {
     try {
@@ -108,7 +57,7 @@ export default function Calendar() {
       setData(jsonData);
     } catch (error) {
       console.error("Failed to fetch orientation dates");
-      setData([]); // ✅ Gracefully handle API errors instead of using mock data
+      setData([]);
     } finally {
       setLoading(false);
     }
@@ -117,14 +66,18 @@ export default function Calendar() {
   useEffect(() => {
     setLoading(true);
     fetchOrientationDates();
-  }, []);
+
+    // If coming from evaluation, show schedule modal when date is selected
+    if (fromEvaluation) {
+      // Auto-open instructions or hint
+    }
+  }, [fromEvaluation]);
 
   const filteredData = data.filter((item) => {
-    const matchStatus = filterStatus === "all" || item.status === filterStatus;
     const matchSearch = item.title
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
-    return matchStatus && matchSearch;
+    return matchSearch;
   });
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -160,7 +113,7 @@ export default function Calendar() {
       (item) => item.orientation_date === toLocalDateStr(date),
     );
 
-  const navigate = (dir: "prev" | "next") => {
+  const navigateCalendar = (dir: "prev" | "next") => {
     const d = new Date(currentDate);
     const delta = dir === "next" ? 1 : -1;
     if (view === "month") d.setMonth(d.getMonth() + delta);
@@ -208,6 +161,47 @@ export default function Calendar() {
       .sort((a, b) => a.orientation_date.localeCompare(b.orientation_date));
   })();
 
+  // ✅ NEW: Handle date selection for scheduling
+  const handleDateSelect = (date: Date) => {
+    setSelectedDate(date);
+
+    if (fromEvaluation && applicationId) {
+      // Open schedule confirmation modal
+      setShowScheduleModal(true);
+    }
+  };
+
+  // ✅ NEW: Save orientation date and return to evaluation
+  const handleConfirmSchedule = async () => {
+    if (!selectedDate || !applicationId) return;
+
+    setSavingSchedule(true);
+    try {
+      const fd = new FormData();
+      fd.append("orientation_date", toLocalDateStr(selectedDate));
+
+      // Update the application with the orientation date
+      const res = await fetch(
+        `${api}api/update_application_orientation/${applicationId}/`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: fd,
+        },
+      );
+
+      if (!res.ok) throw new Error("Failed to save");
+
+      // ✅ FIXED: Navigate back to the correct evaluation page
+      navigate(`/DataManager/evaluation/${applicationId}`);
+    } catch (error) {
+      console.error("Failed to save orientation date:", error);
+      alert("Failed to save orientation date. Please try again.");
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
   // ── Month grid ────────────────────────────────────────────────────────────
   const renderMonthView = () => {
     const days = getDaysInMonth(currentDate);
@@ -233,13 +227,23 @@ export default function Calendar() {
             const isSelected = selectedDate
               ? toLocalDateStr(selectedDate) === toLocalDateStr(day)
               : false;
+
+            // Check if this date is clickable (from evaluation mode)
+            const isClickable =
+              fromEvaluation &&
+              !items.some(
+                (item) => item.application_id === Number(applicationId),
+              );
+
             return (
               <div
                 key={idx}
-                onClick={() => setSelectedDate(day)}
-                className={`relative p-2 border-b border-r border-gray-100 cursor-pointer transition-all duration-150
+                onClick={() => isClickable && handleDateSelect(day)}
+                className={`relative p-2 border-b border-r border-gray-100 transition-all duration-150
                   ${idx % 7 === 6 ? "border-r-0" : ""}
-                  ${isCurrentMonth ? "bg-white hover:bg-gray-50" : "bg-gray-50/60"}`}
+                  ${isCurrentMonth ? "bg-white" : "bg-gray-50/60"}
+                  ${isClickable ? "cursor-pointer hover:bg-green-50" : ""}
+                  ${!isClickable && items.length > 0 ? "cursor-default" : ""}`}
                 style={
                   isSelected ? { boxShadow: "inset 0 0 0 2px #0f4a2f" } : {}
                 }
@@ -259,18 +263,14 @@ export default function Calendar() {
                   </span>
                 </div>
                 <div className="space-y-1">
-                  {items.slice(0, 2).map((item) => {
-                    const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
-                    return (
-                      <div
-                        key={item.application_id}
-                        className={`text-xs px-2 py-0.5 rounded-md font-medium truncate ${cfg.bg} ${cfg.text} ${cfg.border} border`}
-                        title={cfg.label}
-                      >
-                        {item.title}
-                      </div>
-                    );
-                  })}
+                  {items.slice(0, 2).map((item) => (
+                    <div
+                      key={item.application_id}
+                      className="text-xs px-2 py-0.5 rounded-md font-medium truncate bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    >
+                      {item.title}
+                    </div>
+                  ))}
                   {items.length > 2 && (
                     <div className="text-xs text-gray-400 px-1">
                       +{items.length - 2} more
@@ -294,11 +294,18 @@ export default function Calendar() {
         <div className="grid grid-cols-7 border-b border-gray-100">
           {days.map((day, idx) => {
             const isToday = toLocalDateStr(day) === todayStr;
+            const items = getItemsForDate(day);
+            const isClickable =
+              fromEvaluation &&
+              !items.some(
+                (item) => item.application_id === Number(applicationId),
+              );
+
             return (
               <div
                 key={idx}
-                onClick={() => setSelectedDate(day)}
-                className={`py-4 text-center cursor-pointer transition hover:bg-gray-50 ${idx < 6 ? "border-r border-gray-100" : ""}`}
+                onClick={() => isClickable && handleDateSelect(day)}
+                className={`py-4 text-center transition ${isClickable ? "cursor-pointer hover:bg-gray-50" : "cursor-default"} ${idx < 6 ? "border-r border-gray-100" : ""}`}
               >
                 <div className="text-xs font-semibold text-gray-400 tracking-widest uppercase mb-1">
                   {day.toLocaleDateString("en-US", { weekday: "short" })}
@@ -320,32 +327,27 @@ export default function Calendar() {
         <div className="grid grid-cols-7 flex-1 overflow-y-auto">
           {days.map((day, idx) => {
             const items = getItemsForDate(day);
+            const isClickable =
+              fromEvaluation &&
+              !items.some(
+                (item) => item.application_id === Number(applicationId),
+              );
+
             return (
               <div
                 key={idx}
                 className={`p-3 space-y-2 ${idx < 6 ? "border-r border-gray-100" : ""}`}
               >
-                {items.map((item) => {
-                  const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
-                  return (
-                    <div
-                      key={item.application_id}
-                      className={`p-3 rounded-xl border ${cfg.bg} ${cfg.border} cursor-pointer hover:shadow-sm transition`}
-                    >
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
-                        <span
-                          className={`text-xs font-semibold uppercase tracking-wide ${cfg.text}`}
-                        >
-                          {cfg.label}
-                        </span>
-                      </div>
-                      <div className="text-sm font-semibold text-gray-800 truncate">
-                        {item.title}
-                      </div>
+                {items.map((item) => (
+                  <div
+                    key={item.application_id}
+                    className="p-3 rounded-xl border bg-emerald-50 border-emerald-200"
+                  >
+                    <div className="text-sm font-semibold text-gray-800 truncate">
+                      {item.title}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             );
           })}
@@ -367,28 +369,22 @@ export default function Calendar() {
             </p>
           </div>
         ) : (
-          items.map((item) => {
-            const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
-            return (
-              <div
-                key={item.application_id}
-                className={`flex items-center gap-4 p-4 rounded-2xl border ${cfg.bg} ${cfg.border}`}
-              >
-                <div className={`w-1 self-stretch rounded-full ${cfg.dot}`} />
-                <div className="flex-1">
-                  <div className="font-semibold text-gray-800 text-base">
-                    {item.title}
-                  </div>
-                  <div className={`text-xs font-medium mt-0.5 ${cfg.text}`}>
-                    {cfg.label}
-                  </div>
-                </div>
-                <div className="text-xs text-gray-400">
-                  {item.orientation_date}
+          items.map((item) => (
+            <div
+              key={item.application_id}
+              className="flex items-center gap-4 p-4 rounded-2xl border bg-emerald-50 border-emerald-200"
+            >
+              <div className="w-1 self-stretch rounded-full bg-emerald-500" />
+              <div className="flex-1">
+                <div className="font-semibold text-gray-800 text-base">
+                  {item.title}
                 </div>
               </div>
-            );
-          })
+              <div className="text-xs text-gray-400">
+                {item.orientation_date}
+              </div>
+            </div>
+          ))
         )}
       </div>
     );
@@ -428,13 +424,13 @@ export default function Calendar() {
             </span>
             <div className="flex gap-0.5">
               <button
-                onClick={() => navigate("prev")}
+                onClick={() => navigateCalendar("prev")}
                 className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 transition"
               >
                 <ChevronLeft size={14} />
               </button>
               <button
-                onClick={() => navigate("next")}
+                onClick={() => navigateCalendar("next")}
                 className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 transition"
               >
                 <ChevronRight size={14} />
@@ -456,7 +452,7 @@ export default function Calendar() {
                 <button
                   key={idx}
                   onClick={() => {
-                    setSelectedDate(day);
+                    handleDateSelect(day);
                     setCurrentDate(day);
                   }}
                   className={`text-xs w-7 h-7 mx-auto flex items-center justify-center rounded-full transition font-medium relative
@@ -483,47 +479,14 @@ export default function Calendar() {
 
         <hr className="border-gray-100" />
 
-        {/* ✅ Updated Status filter to match actual workflow */}
-        <div>
-          <p className="text-xs font-semibold text-gray-400 tracking-widest uppercase mb-3">
-            Filter by Status
-          </p>
-          <div className="space-y-1">
-            {["all", "for_head", "accepted", "under_monitoring", "completed", "rejected"].map((s) => {
-              const cfg = s !== "all" ? STATUS_CONFIG[s] : null;
-              const isActive = filterStatus === s;
-              return (
-                <button
-                  key={s}
-                  onClick={() => setFilterStatus(s)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition hover:opacity-90"
-                  style={
-                    isActive
-                      ? { backgroundColor: "#0f4a2f", color: "white" }
-                      : { color: "#4b5563" }
-                  }
-                >
-                  <span
-                    className={`w-2.5 h-2.5 rounded-full ${cfg ? cfg.dot : "bg-gray-300"}`}
-                  />
-                  {cfg ? cfg.label : "All Statuses"}
-                  <span className="ml-auto text-xs opacity-60">
-                    {s === "all"
-                      ? data.length
-                      : data.filter((i) => i.status === s).length}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {/* ✅ REMOVED: Status filters - No longer needed */}
 
         <hr className="border-gray-100" />
 
         {/* Upcoming agenda */}
         <div className="flex-1 overflow-y-auto min-h-0">
           <p className="text-xs font-semibold text-gray-400 tracking-widest uppercase mb-3">
-            Upcoming
+            Upcoming Orientations
           </p>
           {loading ? (
             <div className="space-y-2">
@@ -541,7 +504,6 @@ export default function Calendar() {
           ) : (
             <div className="space-y-2">
               {agendaItems.map((item) => {
-                const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
                 const [yr, mo, dy] = item.orientation_date
                   .split("-")
                   .map(Number);
@@ -556,18 +518,12 @@ export default function Calendar() {
                 return (
                   <div
                     key={item.application_id}
-                    className={`p-3 rounded-xl border ${cfg.bg} ${cfg.border} cursor-pointer hover:shadow-sm transition`}
+                    className="p-3 rounded-xl border bg-emerald-50 border-emerald-200"
                   >
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                      <span className={`text-xs font-semibold ${cfg.text}`}>
-                        {cfg.label}
-                      </span>
-                    </div>
                     <div className="text-sm font-semibold text-gray-800 truncate">
                       {item.title}
                     </div>
-                    <div className="flex items-center gap-1 mt-0.5 text-xs text-gray-400">
+                    <div className="flex items-center gap-1 mt-0.5 text-xs text-gray-500">
                       <Clock size={10} />
                       {displayDate}
                     </div>
@@ -583,11 +539,20 @@ export default function Calendar() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-gray-100 px-6 py-4 flex items-center gap-4">
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">
-              Calendar
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-gray-900 tracking-tight">
+                Calendar
+              </h1>
+              {fromEvaluation && (
+                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-lg">
+                  Scheduling Mode
+                </span>
+              )}
+            </div>
             <p className="text-sm text-gray-400">
-              View and manage your orientation schedule
+              {fromEvaluation
+                ? `Select a date for: ${applicationTitle}`
+                : "View and manage your orientation schedule"}
             </p>
           </div>
 
@@ -627,7 +592,7 @@ export default function Calendar() {
           {/* Navigation */}
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-xl px-1.5 py-1">
             <button
-              onClick={() => navigate("prev")}
+              onClick={() => navigateCalendar("prev")}
               className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm transition text-gray-500"
             >
               <ChevronLeft size={15} />
@@ -641,7 +606,7 @@ export default function Calendar() {
               Today
             </button>
             <button
-              onClick={() => navigate("next")}
+              onClick={() => navigateCalendar("next")}
               className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm transition text-gray-500"
             >
               <ChevronRight size={15} />
@@ -716,30 +681,85 @@ export default function Calendar() {
               </p>
             ) : (
               <div className="flex gap-3 flex-wrap">
-                {getItemsForDate(selectedDate).map((item) => {
-                  const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.for_head;
-                  return (
-                    <div
-                      key={item.application_id}
-                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border ${cfg.bg} ${cfg.border}`}
-                    >
-                      <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
-                      <div>
-                        <div className="font-semibold text-gray-800 text-sm">
-                          {item.title}
-                        </div>
-                        <div className={`text-xs font-medium ${cfg.text}`}>
-                          {cfg.label}
-                        </div>
+                {getItemsForDate(selectedDate).map((item) => (
+                  <div
+                    key={item.application_id}
+                    className="flex items-center gap-3 px-4 py-2.5 rounded-xl border bg-emerald-50 border-emerald-200"
+                  >
+                    <div>
+                      <div className="font-semibold text-gray-800 text-sm">
+                        {item.title}
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         )}
       </main>
+
+      {/* ✅ Schedule Confirmation Modal (Only in scheduling mode) */}
+      {showScheduleModal && selectedDate && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold text-gray-800">
+                Schedule Orientation
+              </h3>
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="mb-5">
+              <p className="text-sm text-gray-600 mb-2">
+                You are scheduling orientation for:
+              </p>
+              <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-green-800 font-semibold text-sm mb-3">
+                {applicationTitle}
+              </div>
+
+              <p className="text-sm text-gray-600 mb-2">Selected Date:</p>
+              <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 font-semibold">
+                <CalendarIcon size={16} />
+                {selectedDate.toLocaleDateString("en-US", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSchedule}
+                disabled={savingSchedule}
+                className="flex-1 py-2.5 rounded-xl bg-[#0f4a2f] text-white text-sm font-bold hover:bg-[#1a6b44] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {savingSchedule ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Confirm & Return"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

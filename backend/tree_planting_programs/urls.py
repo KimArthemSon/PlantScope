@@ -51,6 +51,8 @@ urlpatterns = [
     path('get_audit_trail_report/', head_views.get_audit_trail_report, name='get_audit_trail_report'),
     path('get_pending_head_count/', head_views.get_pending_head_count, name='get_pending_head_count'),
 
+    path('update_application_orientation/<int:application_id>/', views.update_application_orientation, name='update_application_orientation'),
+    path('get_monitoring_stats/', views.get_monitoring_stats, name='get_monitoring_stats'),
      # In urls.py
     #   path('application/<int:application_id>/download-maintenance-plan-debug/', file_views.download_maintenance_plan_debug, name="download_maintenance_plan_debug"),
 ]

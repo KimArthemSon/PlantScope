@@ -370,19 +370,29 @@ function FirstTimeEvaluator({
   loadingSites,
   selectedSite,
   setSelectedSite,
+  navigate,
+  applicationId,
+  applicationTitle,
 }: any) {
-  // ✅ Pre-fill orientation date if proposed by the grower
+  // ✅ FIXED: Prioritize actual orientation_date, then fall back to proposed_orientation_date
   useEffect(() => {
-    if (
-      detail.application.proposed_orientation_date &&
-      !decisionForm.orientation_date
-    ) {
-      setDecisionForm((p: any) => ({
-        ...p,
-        orientation_date: detail.application.proposed_orientation_date,
-      }));
+    if (!decisionForm.orientation_date) {
+      // Check if there's already an actual orientation date set
+      const dateToUse =
+        detail.application.orientation_date ||
+        detail.application.proposed_orientation_date;
+
+      if (dateToUse) {
+        setDecisionForm((p: any) => ({
+          ...p,
+          orientation_date: dateToUse,
+        }));
+      }
     }
-  }, [detail.application.proposed_orientation_date]);
+  }, [
+    detail.application.orientation_date,
+    detail.application.proposed_orientation_date,
+  ]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -471,6 +481,20 @@ function FirstTimeEvaluator({
               className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] transition-colors"
             />
           </div>
+
+          {/* ✅ FIXED: Go to Calendar Button */}
+          <button
+            type="button"
+            onClick={() => {
+              navigate(
+                `/DataManager/calendar?from=evaluation&appId=${applicationId}&appTitle=${encodeURIComponent(applicationTitle)}`,
+              );
+            }}
+            className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#0F4A2F] text-[#0F4A2F] text-sm font-semibold hover:bg-green-50 transition-colors"
+          >
+            <Calendar size={16} />
+            Open Calendar to Select Date
+          </button>
         </div>
       </div>
 
@@ -514,10 +538,13 @@ function ReturningEvaluator({
   loadingSites,
   selectedSite,
   setSelectedSite,
+  navigate,
+  applicationId,
+  applicationTitle,
 }: any) {
   const [acceptProposed, setAcceptProposed] = useState(true);
 
-  // ✅ Auto-select proposed site and pre-fill date when accepting
+  // ✅ FIXED: Prioritize actual orientation_date, then fall back to proposed_orientation_date
   useEffect(() => {
     if (acceptProposed) {
       if (detail.proposed_site) {
@@ -532,16 +559,23 @@ function ReturningEvaluator({
           created_at: "",
         });
       }
-      if (detail.application.proposed_orientation_date) {
+
+      // Check if there's already an actual orientation date set
+      const dateToUse =
+        detail.application.orientation_date ||
+        detail.application.proposed_orientation_date;
+
+      if (dateToUse) {
         setDecisionForm((p: any) => ({
           ...p,
-          orientation_date: detail.application.proposed_orientation_date,
+          orientation_date: dateToUse,
         }));
       }
     }
   }, [
     acceptProposed,
     detail.proposed_site,
+    detail.application.orientation_date,
     detail.application.proposed_orientation_date,
   ]);
 
@@ -694,6 +728,20 @@ function ReturningEvaluator({
                 className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] transition-colors"
               />
             </div>
+
+            {/* ✅ NEW: Go to Calendar Button for Returning Evaluator */}
+            <button
+              type="button"
+              onClick={() => {
+                navigate(
+                  `/DataManager/calendar?from=evaluation&appId=${applicationId}&appTitle=${encodeURIComponent(applicationTitle)}`,
+                );
+              }}
+              className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#0F4A2F] text-[#0F4A2F] text-sm font-semibold hover:bg-green-50 transition-colors"
+            >
+              <Calendar size={16} />
+              Open Calendar to Select Date
+            </button>
           </div>
         </div>
 
@@ -926,7 +974,7 @@ export default function Evaluation_application() {
     }
   };
 
- const handleDownloadMaintenancePlan = async () => {
+  const handleDownloadMaintenancePlan = async () => {
     if (!detail?.application?.maintenance_plan) {
       setPSAlert({
         type: "failed",
@@ -947,7 +995,7 @@ export default function Evaluation_application() {
           headers: {
             Authorization: `Bearer ${token}`,
           },
-        }
+        },
       );
 
       if (!response.ok) {
@@ -957,13 +1005,13 @@ export default function Evaluation_application() {
 
       // ✅ Get the PDF blob directly from backend
       const blob = await response.blob();
-      
+
       // Verify it's a valid PDF
       if (blob.size === 0) {
         throw new Error("Downloaded file is empty");
       }
-      
-      if (blob.type !== 'application/pdf') {
+
+      if (blob.type !== "application/pdf") {
         console.warn("Unexpected content type:", blob.type);
       }
 
@@ -976,13 +1024,12 @@ export default function Evaluation_application() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       setPSAlert({
         type: "success",
         title: "Download Successful",
         message: "Your file has been downloaded.",
       });
-      
     } catch (error: any) {
       console.error("💥 Download error:", error);
       setPSAlert({
@@ -1355,6 +1402,9 @@ export default function Evaluation_application() {
                 loadingSites={loadingSites}
                 selectedSite={selectedSite}
                 setSelectedSite={setSelectedSite}
+                navigate={navigate}
+                applicationId={application_id}
+                applicationTitle={application.title}
               />
             ) : (
               <ReturningEvaluator
@@ -1375,6 +1425,9 @@ export default function Evaluation_application() {
                 loadingSites={loadingSites}
                 selectedSite={selectedSite}
                 setSelectedSite={setSelectedSite}
+                navigate={navigate}
+                applicationId={application_id}
+                applicationTitle={application.title}
               />
             )}
 
