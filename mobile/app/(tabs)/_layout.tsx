@@ -7,16 +7,19 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Alert,
 } from "react-native";
-import { Tabs, useRouter } from "expo-router";
+import { Tabs, useRouter, usePathname } from "expo-router";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "@/constants/url_fixed";
+import { useNetworkStatus } from "@/utils/networkStatus";
 
 const API = api + "/api";
+const USER_DATA_KEY = "@plantscope_user_data";
 
-/* ---------- TYPES ---------- */
 type UserData = {
   id: number;
   email: string;
@@ -25,7 +28,6 @@ type UserData = {
   user_role: string | null;
 };
 
-/* ---------- TOKEN STORAGE ---------- */
 const TOKEN_KEY = "token";
 
 const getToken = async () => {
@@ -33,8 +35,7 @@ const getToken = async () => {
   return await SecureStore.getItemAsync(TOKEN_KEY);
 };
 
-/* ---------- CUSTOM HEADER ---------- */
-const CustomHeader: React.FC = () => {
+const CustomHeader: React.FC<{ isOnline: boolean }> = ({ isOnline }) => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
@@ -43,15 +44,37 @@ const CustomHeader: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    fetchUserData();
-    fetchUnreadCount();
+    if (isOnline) {
+      fetchUserData();
+      fetchUnreadCount();
 
-    // ✅ Poll unread count every 60 seconds
-    const interval = setInterval(fetchUnreadCount, 60000);
-    return () => clearInterval(interval);
-  }, []);
+      const interval = setInterval(fetchUnreadCount, 60000);
+      return () => clearInterval(interval);
+    } else {
+      loadCachedUserData();
+    }
+  }, [isOnline]);
+
+  const loadCachedUserData = async () => {
+    try {
+      const cached = await AsyncStorage.getItem(USER_DATA_KEY);
+      if (cached) {
+        setUserData(JSON.parse(cached));
+      }
+    } catch (error) {
+      console.error("Error loading cached user data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchUserData = async () => {
+    // ✅ STRICT SAFEGUARD: Do not fetch if offline
+    if (!isOnline) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const token = await getToken();
       if (!token) {
@@ -70,6 +93,7 @@ const CustomHeader: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setUserData(data);
+        await AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(data));
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
@@ -79,6 +103,8 @@ const CustomHeader: React.FC = () => {
   };
 
   const fetchUnreadCount = async () => {
+    if (!isOnline) return;
+
     try {
       const token = await getToken();
       if (!token) return;
@@ -97,13 +123,11 @@ const CustomHeader: React.FC = () => {
   };
 
   const displayName = userData?.full_name || "Inspector";
-  const displayEmail = userData?.email || "Loading...";
+  const displayEmail = userData?.email || "";
   const profileImage = userData?.profile_img;
 
-  // ✅ Format badge count
   const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
 
-  // Get initials for fallback
   const getInitials = (name: string) => {
     return (
       name
@@ -117,11 +141,16 @@ const CustomHeader: React.FC = () => {
 
   return (
     <View style={[hdr.wrap, { paddingTop: insets.top + 10 }]}>
-      {/* Left: avatar + name + email */}
+      {/* Left Side: User Info (Not clickable when offline) */}
       <TouchableOpacity
         style={hdr.left}
         activeOpacity={0.7}
-        onPress={() => router.push("/(tabs)/profile")}
+        onPress={() => {
+          if (isOnline) {
+            router.push("/(tabs)/profile");
+          }
+        }}
+        disabled={!isOnline}
       >
         {loading ? (
           <View style={hdr.avatarPlaceholder}>
@@ -148,47 +177,173 @@ const CustomHeader: React.FC = () => {
         </View>
       </TouchableOpacity>
 
-      {/* Right: notification bell with count badge */}
-      <TouchableOpacity
-        style={hdr.bellWrap}
-        activeOpacity={0.7}
-        onPress={() => router.push("/(tabs)/notifications")}
-      >
-        <Ionicons name="notifications-outline" size={23} color="#FFFFFF" />
+      <View style={hdr.rightContainer}>
+        {/* Status Badge */}
+        <View
+          style={[
+            hdr.statusBadge,
+            {
+              backgroundColor: isOnline
+                ? "rgba(74, 222, 128, 0.15)"
+                : "rgba(239, 68, 68, 0.15)",
+            },
+          ]}
+        >
+          <View
+            style={[
+              hdr.statusDot,
+              { backgroundColor: isOnline ? "#4ADE80" : "#EF4444" },
+            ]}
+          />
+          <Text
+            style={[
+              hdr.statusText,
+              { color: isOnline ? "#4ADE80" : "#EF4444" },
+            ]}
+          >
+            {isOnline ? "Online" : "Offline"}
+          </Text>
+        </View>
 
-        {/* ✅ Dynamic badge: shows count if > 0, otherwise small green dot */}
-        {unreadCount > 0 ? (
-          <View style={hdr.badge}>
-            <Text style={hdr.badgeText}>{badgeText}</Text>
-          </View>
-        ) : (
-          <View style={hdr.dot} />
+        {/* ✅ Notification Bell - Only show when online */}
+        {isOnline && (
+          <TouchableOpacity
+            style={hdr.bellWrap}
+            activeOpacity={0.7}
+            onPress={() => router.push("/(tabs)/notifications")}
+          >
+            <Ionicons name="notifications-outline" size={23} color="#FFFFFF" />
+
+            {unreadCount > 0 ? (
+              <View style={hdr.badge}>
+                <Text style={hdr.badgeText}>{badgeText}</Text>
+              </View>
+            ) : (
+              <View style={hdr.dot} />
+            )}
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
-/* ---------- LAYOUT ---------- */
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const pathname = usePathname();
+  const isOnline = useNetworkStatus();
+
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [hasShownOfflineAlert, setHasShownOfflineAlert] = useState(false);
+
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      // ✅ STRICT SAFEGUARD: Do not fetch if offline
+      if (!isOnline) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          setLoading(false);
+          return;
+        }
+
+        const res = await fetch(`${API}/get_me/`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setUserRole(data.user_role);
+        }
+      } catch (error) {
+        console.error("Error fetching user role:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (isOnline) {
+      fetchUserRole();
+    } else {
+      loadCachedUserRole();
+    }
+  }, [isOnline]);
+
+  const loadCachedUserRole = async () => {
+    try {
+      const cached = await AsyncStorage.getItem(USER_DATA_KEY);
+      if (cached) {
+        const data = JSON.parse(cached);
+        setUserRole(data.user_role);
+      }
+    } catch (error) {
+      console.error("Error loading cached user role:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const shouldHideAllTabs = !isOnline;
+
+  useEffect(() => {
+    if (shouldHideAllTabs && !loading) {
+      if (!pathname.startsWith("/Area") && !pathname.startsWith("/feedbacks")) {
+        router.replace("/Area");
+      }
+
+      if (!hasShownOfflineAlert) {
+        Alert.alert(
+          "Offline Mode",
+          "You are currently offline. Only Assessment is available.",
+          [{ text: "OK", onPress: () => setHasShownOfflineAlert(true) }],
+        );
+      }
+    } else if (isOnline) {
+      setHasShownOfflineAlert(false);
+    }
+  }, [shouldHideAllTabs, loading, pathname, hasShownOfflineAlert, isOnline]);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0F4A2F" />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <Tabs
+      key={shouldHideAllTabs ? "offline" : "online"}
       screenOptions={{
-        header: () => <CustomHeader />,
+        header: () => <CustomHeader isOnline={isOnline} />,
         tabBarStyle: {
+          display: shouldHideAllTabs ? "none" : "flex",
+          height: shouldHideAllTabs ? 0 : 60 + insets.bottom,
           backgroundColor: "#FFFFFF",
-          borderTopWidth: 1,
+          borderTopWidth: shouldHideAllTabs ? 0 : 1,
           borderTopColor: "#E5E7EB",
-          height: 60 + insets.bottom,
-          paddingBottom: insets.bottom > 0 ? insets.bottom : 10,
-          paddingTop: 8,
+          paddingBottom: shouldHideAllTabs
+            ? 0
+            : insets.bottom > 0
+              ? insets.bottom
+              : 10,
+          paddingTop: shouldHideAllTabs ? 0 : 8,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -3 },
-          shadowOpacity: 0.08,
-          shadowRadius: 10,
-          elevation: 12,
+          shadowOpacity: shouldHideAllTabs ? 0 : 0.08,
+          shadowRadius: shouldHideAllTabs ? 0 : 10,
+          elevation: shouldHideAllTabs ? 0 : 12,
         },
         tabBarActiveTintColor: "#0F4A2F",
         tabBarInactiveTintColor: "#9CA3AF",
@@ -210,6 +365,10 @@ export default function TabLayout() {
             />
           ),
           tabBarLabel: "Home",
+          tabBarButton: (props) => {
+            if (shouldHideAllTabs) return null;
+            return <TouchableOpacity {...props} />;
+          },
         }}
       />
 
@@ -224,10 +383,13 @@ export default function TabLayout() {
             />
           ),
           tabBarLabel: "Assessment",
+          tabBarButton: (props) => {
+            if (shouldHideAllTabs) return null;
+            return <TouchableOpacity {...props} />;
+          },
         }}
       />
 
-      {/* Map — floating center */}
       <Tabs.Screen
         name="map"
         options={{
@@ -237,16 +399,19 @@ export default function TabLayout() {
               <MaterialCommunityIcons name="map" size={28} color="#FFFFFF" />
             </View>
           ),
-          tabBarButton: (props) => (
-            <TouchableOpacity
-              onPress={props.onPress}
-              accessibilityRole="button"
-              accessibilityState={props.accessibilityState}
-              style={[styles.centerTabButton, { bottom: insets.bottom }]}
-            >
-              {props.children}
-            </TouchableOpacity>
-          ),
+          tabBarButton: (props) => {
+            if (shouldHideAllTabs) return null;
+            return (
+              <TouchableOpacity
+                onPress={props.onPress}
+                accessibilityRole="button"
+                accessibilityState={props.accessibilityState}
+                style={[styles.centerTabButton, { bottom: insets.bottom }]}
+              >
+                {props.children}
+              </TouchableOpacity>
+            );
+          },
         }}
       />
 
@@ -261,6 +426,10 @@ export default function TabLayout() {
             />
           ),
           tabBarLabel: "Monitoring",
+          tabBarButton: (props) => {
+            if (shouldHideAllTabs) return null;
+            return <TouchableOpacity {...props} />;
+          },
         }}
       />
 
@@ -275,17 +444,18 @@ export default function TabLayout() {
             />
           ),
           tabBarLabel: "Profile",
+          tabBarButton: (props) => {
+            if (shouldHideAllTabs) return null;
+            return <TouchableOpacity {...props} />;
+          },
         }}
       />
 
-      {/* Hidden routes */}
       <Tabs.Screen name="notifications" options={{ href: null }} />
-      <Tabs.Screen name="editProfile" options={{ href: null }} />
     </Tabs>
   );
 }
 
-/* ---------- STYLES ---------- */
 const hdr = StyleSheet.create({
   wrap: {
     backgroundColor: "#0F4A2F",
@@ -301,6 +471,11 @@ const hdr = StyleSheet.create({
     gap: 10,
     flex: 1,
     marginRight: 10,
+  },
+  rightContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   avatar: {
     width: 36,
@@ -387,6 +562,23 @@ const hdr = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
 });
 
 const styles = StyleSheet.create({
@@ -408,5 +600,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     top: -18,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F4F7F5",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: "#6B7280",
   },
 });

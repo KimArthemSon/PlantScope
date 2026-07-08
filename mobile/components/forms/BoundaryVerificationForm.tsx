@@ -13,13 +13,21 @@ import {
   Platform,
   Dimensions,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useFieldAssessment, LocalImage } from "@/hooks/useFieldAssessment";
+import {
+  saveOfflineDraft,
+  updateOfflineDraft,
+  getOfflineDraft,
+  generateLocalUUID,
+  OfflineImage,
+} from "@/hooks/useOfflineFieldAssessment";
 import { api } from "@/constants/url_fixed";
-
+import { useNetworkStatus } from "@/utils/networkStatus";
+import FloatingMapButton from "@/components/FloatingMapButton";
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
@@ -45,14 +53,18 @@ interface BoundaryImage {
 }
 
 // ─────────────────────────────────────────────
-// GPS CAMERA COMPONENT (SimpleGeocam)
+// GPS CAMERA COMPONENT (SimpleGeocam) - Two Button Version
 // ─────────────────────────────────────────────
 
 function SimpleGeocam({
   onCapture,
   onClose,
 }: {
-  onCapture: (uri: string, location: LocationData) => void;
+  onCapture: (
+    uri: string,
+    location: LocationData | null,
+    withGPS: boolean,
+  ) => void;
   onClose: () => void;
 }) {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -69,17 +81,46 @@ function SimpleGeocam({
       if (!locationPermission?.granted) {
         const s = await requestLocationPermission();
         if (!s?.granted) {
-          Alert.alert("Permission Denied", "Location access is required.");
           return null;
         }
       }
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Highest,
-      });
-      const [addr] = await Location.reverseGeocodeAsync({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      });
+
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        return null;
+      }
+
+      let loc;
+      try {
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+      } catch (highAccError) {
+        try {
+          loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+        } catch (balancedAccError) {
+          loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Lowest,
+          });
+        }
+      }
+
+      if (!loc || !loc.coords) {
+        return null;
+      }
+
+      let addr: Location.LocationGeocodedAddress | undefined;
+      try {
+        [addr] = await Location.reverseGeocodeAsync({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
+      } catch (geoError) {
+        // Silent fail
+      }
+
       const data: LocationData = {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
@@ -96,10 +137,11 @@ function SimpleGeocam({
         }),
         accuracy: loc.coords.accuracy ?? undefined,
       };
+
       setCurrentLocation(data);
       return data;
     } catch (error) {
-      Alert.alert("Error", "Could not get GPS location.");
+      console.error("GPS Error:", error);
       return null;
     }
   };
@@ -108,18 +150,22 @@ function SimpleGeocam({
     getCurrentLocation();
   }, []);
 
-  const takePicture = async () => {
+  const takePictureWithGPS = async () => {
     if (!cameraRef.current || capturing) return;
+
+    const locData = currentLocation ?? (await getCurrentLocation());
+
+    if (!locData) {
+      Alert.alert(
+        "GPS Required",
+        "GPS coordinates are not available. Please use 'Photo Only' button or move to an area with better GPS signal.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
+
     setCapturing(true);
     try {
-      const locData = currentLocation ?? (await getCurrentLocation());
-      if (!locData) {
-        Alert.alert(
-          "Location Required",
-          "GPS coordinates are needed to capture a photo.",
-        );
-        return;
-      }
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.9,
         base64: false,
@@ -128,7 +174,30 @@ function SimpleGeocam({
         Alert.alert("Error", "Failed to capture photo.");
         return;
       }
-      onCapture(photo.uri, locData);
+      onCapture(photo.uri, locData, true);
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        `Failed to capture photo: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  const takePictureOnly = async () => {
+    if (!cameraRef.current || capturing) return;
+    setCapturing(true);
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.9,
+        base64: false,
+      });
+      if (!photo?.uri) {
+        Alert.alert("Error", "Failed to capture photo.");
+        return;
+      }
+      onCapture(photo.uri, null, false);
     } catch (error) {
       Alert.alert(
         "Error",
@@ -214,7 +283,7 @@ function SimpleGeocam({
           <Text style={cam.locationPillText} numberOfLines={1}>
             {hasGPS
               ? currentLocation!.city || currentLocation!.barangay || "Located"
-              : "Getting GPS…"}
+              : "No GPS"}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -246,7 +315,7 @@ function SimpleGeocam({
               ]}
             />
             <Text style={cam.gpsCardLabel}>
-              {hasGPS ? "GPS Active" : "Acquiring GPS…"}
+              {hasGPS ? "GPS Active" : "No GPS Signal"}
             </Text>
           </View>
           <View style={cam.signalBars}>
@@ -282,27 +351,55 @@ function SimpleGeocam({
             </View>
           </>
         ) : (
-          <Text style={cam.gpsWaiting}>Searching for satellites…</Text>
+          <Text style={cam.gpsWaiting}>
+            GPS unavailable - use "Photo Only" button below
+          </Text>
         )}
       </View>
 
-      {/* Capture Area */}
+      {/* Two Capture Buttons */}
       <View style={cam.captureArea}>
-        <TouchableOpacity
-          style={[cam.captureRing, !hasGPS && { opacity: 0.4 }]}
-          onPress={takePicture}
-          disabled={capturing || !hasGPS}
-          activeOpacity={0.8}
-        >
-          {capturing ? (
-            <ActivityIndicator color="#0F4A2F" size="large" />
-          ) : (
-            <View style={cam.captureCore} />
-          )}
-        </TouchableOpacity>
-        <Text style={cam.captureHint}>
-          {hasGPS ? "Tap to capture" : "Waiting for GPS…"}
-        </Text>
+        <View style={cam.captureButtonsRow}>
+          {/* GPS Photo Button */}
+          <View style={cam.captureButtonColumn}>
+            <TouchableOpacity
+              style={[cam.gpsCaptureRing, !hasGPS && cam.captureRingDisabled]}
+              onPress={takePictureWithGPS}
+              disabled={capturing || !hasGPS}
+              activeOpacity={0.8}
+            >
+              {capturing ? (
+                <ActivityIndicator color="#0F4A2F" size="large" />
+              ) : (
+                <View style={cam.gpsCaptureCore}>
+                  <Ionicons name="location" size={20} color="#0F4A2F" />
+                </View>
+              )}
+            </TouchableOpacity>
+            <Text style={cam.captureHint}>
+              {hasGPS ? "GPS Photo" : "GPS Unavailable"}
+            </Text>
+          </View>
+
+          {/* Photo Only Button */}
+          <View style={cam.captureButtonColumn}>
+            <TouchableOpacity
+              style={cam.photoOnlyRing}
+              onPress={takePictureOnly}
+              disabled={capturing}
+              activeOpacity={0.8}
+            >
+              {capturing ? (
+                <ActivityIndicator color="#FFFFFF" size="large" />
+              ) : (
+                <View style={cam.photoOnlyCore}>
+                  <Ionicons name="camera" size={20} color="#FFFFFF" />
+                </View>
+              )}
+            </TouchableOpacity>
+            <Text style={cam.captureHint}>Photo Only</Text>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -433,7 +530,7 @@ const cam = StyleSheet.create({
   },
   gpsCard: {
     position: "absolute",
-    bottom: 120,
+    bottom: 160,
     left: 12,
     right: 12,
     backgroundColor: "rgba(0,0,0,0.78)",
@@ -501,11 +598,45 @@ const cam = StyleSheet.create({
     alignItems: "center",
     zIndex: 10,
   },
-  captureRing: {
+  captureButtonsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 32,
+  },
+  captureButtonColumn: {
+    alignItems: "center",
+    gap: 8,
+  },
+  // GPS Capture Ring
+  gpsCaptureRing: {
     width: 80,
     height: 80,
     borderRadius: 40,
     borderWidth: 3,
+    borderColor: "#4ADE80",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(74,222,128,0.15)",
+    shadowColor: "#4ADE80",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  gpsCaptureCore: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  // Photo Only Ring
+  photoOnlyRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
     borderColor: "rgba(255,255,255,0.6)",
     justifyContent: "center",
     alignItems: "center",
@@ -515,16 +646,23 @@ const cam = StyleSheet.create({
     shadowRadius: 10,
     elevation: 10,
   },
-  captureCore: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "#FFFFFF",
+  photoOnlyCore: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#0F4A2F",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  // Disabled state
+  captureRingDisabled: {
+    opacity: 0.4,
+    borderColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
   captureHint: {
     color: "rgba(255,255,255,0.7)",
-    fontSize: 12,
-    marginTop: 10,
+    fontSize: 11,
     fontWeight: "600",
   },
 });
@@ -600,12 +738,19 @@ const FieldLabel = ({
 
 export default function BoundaryVerificationForm() {
   const params = useLocalSearchParams();
+  const router = useRouter();
   const areaId = params.areaId as string;
   const assessmentId = params.assessmentId as string | undefined;
+  const offlineDraftId = params.offlineDraftId as string | undefined;
   const layerId = "boundary_verification";
   const siteId = params.siteId as string | undefined;
+  const isEditingOfflineDraft = !!offlineDraftId;
+
   const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
     useFieldAssessment(areaId, layerId, assessmentId);
+
+  const isOnline = useNetworkStatus();
+  const isOfflineMode = !isOnline;
 
   const [overallNote, setOverallNote] = useState("");
   const [locationContext, setLocationContext] = useState("");
@@ -619,19 +764,25 @@ export default function BoundaryVerificationForm() {
   const [localImages, setLocalImages] = useState<LocalImage[]>([]);
   const [isViewMode, setIsViewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!!assessmentId);
+  const [loading, setLoading] = useState(
+    !!assessmentId || isEditingOfflineDraft,
+  );
+  const [savingOffline, setSavingOffline] = useState(false);
   const [showGPSCamera, setShowGPSCamera] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState<{
     uri: string;
-    location: LocationData;
+    location: LocationData | null;
+    withGPS: boolean;
   } | null>(null);
   const [pendingNote, setPendingNote] = useState("");
   const [uploading, setUploading] = useState(false);
 
   // Load existing data
   useEffect(() => {
-    if (assessmentId) {
+    if (isEditingOfflineDraft) {
+      loadOfflineDraftData();
+    } else if (assessmentId) {
       (async () => {
         const data = await fetchAssessmentData();
         if (data) {
@@ -651,7 +802,49 @@ export default function BoundaryVerificationForm() {
     } else {
       setLoading(false);
     }
-  }, [assessmentId]);
+  }, [assessmentId, offlineDraftId]);
+
+  const loadOfflineDraftData = async () => {
+    if (!offlineDraftId) return;
+
+    try {
+      const draft = await getOfflineDraft(offlineDraftId);
+      if (!draft) {
+        Alert.alert("Error", "Draft not found.");
+        return;
+      }
+
+      const payload = draft.payload;
+
+      populateForm(payload.field_assessment_data || {});
+
+      if (payload.location) {
+        setLocationLat(payload.location.latitude?.toString() || "");
+        setLocationLng(payload.location.longitude?.toString() || "");
+        setLocationAccuracy(
+          payload.location.gps_accuracy_meters?.toString() || "",
+        );
+      }
+
+      if (Array.isArray(draft.images)) {
+        const loadedImages: LocalImage[] = draft.images.map((img) => ({
+          id: img.id,
+          uri: img.uri,
+          latitude: img.latitude || 0,
+          longitude: img.longitude || 0,
+          accuracy: undefined,
+          subLayerCode: "verification",
+          description: img.description || "",
+        }));
+        setLocalImages(loadedImages);
+      }
+    } catch (e: any) {
+      console.error("Error loading offline draft:", e);
+      Alert.alert("Error", "Failed to load draft.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const populateForm = (data: any) => {
     const bv = data?.boundary_verification || data || {};
@@ -670,18 +863,59 @@ export default function BoundaryVerificationForm() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission Denied", "Please enable location access.");
+        Alert.alert(
+          "Permission Denied",
+          "Please enable location access in your device settings.",
+        );
+        setGettingLocation(false);
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        Alert.alert(
+          "Location Services Disabled",
+          "Please enable GPS/Location in your device settings.",
+        );
+        setGettingLocation(false);
+        return;
+      }
+
+      let loc;
+      try {
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+      } catch (highAccError) {
+        console.log("High accuracy failed, trying balanced...");
+        try {
+          loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+        } catch (balancedAccError) {
+          console.log("Balanced failed, trying lowest...");
+          loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Lowest,
+          });
+        }
+      }
+
+      if (!loc || !loc.coords) {
+        Alert.alert("Error", "Could not retrieve location data.");
+        setGettingLocation(false);
+        return;
+      }
+
       setLocationLat(loc.coords.latitude.toFixed(6));
       setLocationLng(loc.coords.longitude.toFixed(6));
       setLocationAccuracy(loc.coords.accuracy?.toFixed(1) || "");
       Alert.alert("Location Captured", "GPS coordinates updated.");
     } catch (error) {
-      Alert.alert("Error", "Could not get current location.");
+      console.error("Location error:", error);
+      Alert.alert(
+        "GPS Error",
+        "Could not get current location. Make sure GPS is enabled and you're outdoors or near a window.",
+      );
     } finally {
       setGettingLocation(false);
     }
@@ -689,10 +923,11 @@ export default function BoundaryVerificationForm() {
 
   const handleGPSPhotoCaptured = async (
     uri: string,
-    location: LocationData,
+    location: LocationData | null,
+    withGPS: boolean,
   ) => {
     setShowGPSCamera(false);
-    setPendingPhoto({ uri, location });
+    setPendingPhoto({ uri, location, withGPS });
     setPendingNote("");
     setShowNoteModal(true);
   };
@@ -701,23 +936,30 @@ export default function BoundaryVerificationForm() {
     if (!pendingPhoto) return;
 
     const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
+    const photoLocation = pendingPhoto.location || {
+      latitude: 0,
+      longitude: 0,
+      timestamp: new Date().toISOString(),
+    };
 
-    if (numericAssessmentId && !isNaN(numericAssessmentId)) {
+    if (numericAssessmentId && !isNaN(numericAssessmentId) && isOnline) {
       setUploading(true);
       try {
         const ok = await uploadImage(
           numericAssessmentId,
           {
             uri: pendingPhoto.uri,
-            latitude: pendingPhoto.location.latitude,
-            longitude: pendingPhoto.location.longitude,
-            accuracy: pendingPhoto.location.accuracy,
+            latitude: photoLocation.latitude,
+            longitude: photoLocation.longitude,
+            accuracy: photoLocation.accuracy,
           },
           {
             subLayerCode: "verification",
             description:
               note ||
-              `Boundary marker at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
+              (pendingPhoto.withGPS
+                ? `Boundary marker at ${photoLocation.latitude.toFixed(6)}, ${photoLocation.longitude.toFixed(6)}`
+                : `Boundary marker photo (no GPS)`),
           },
         );
 
@@ -726,7 +968,7 @@ export default function BoundaryVerificationForm() {
           if (data) {
             setImages(data.images || []);
           }
-          Alert.alert("Success", "Photo uploaded with GPS data!");
+          Alert.alert("Success", "Photo uploaded!");
         } else {
           Alert.alert(
             "Upload Failed",
@@ -745,16 +987,22 @@ export default function BoundaryVerificationForm() {
       const localImg: LocalImage = {
         id: `local-${Date.now()}`,
         uri: pendingPhoto.uri,
-        latitude: pendingPhoto.location.latitude,
-        longitude: pendingPhoto.location.longitude,
-        accuracy: pendingPhoto.location.accuracy,
+        latitude: photoLocation.latitude,
+        longitude: photoLocation.longitude,
+        accuracy: photoLocation.accuracy,
         subLayerCode: "verification",
-        description: note || `Boundary marker photo`,
+        description:
+          note ||
+          (pendingPhoto.withGPS
+            ? `Boundary marker photo`
+            : `Boundary marker photo (no GPS)`),
       };
       setLocalImages([...localImages, localImg]);
       Alert.alert(
         "Photo Captured",
-        "Photo will be uploaded when you save the draft.",
+        pendingPhoto.withGPS
+          ? "Photo will be uploaded when you save the draft."
+          : "Photo saved without GPS. Will upload when you save.",
       );
     }
 
@@ -793,6 +1041,66 @@ export default function BoundaryVerificationForm() {
         boundary_verification: layerData,
       },
     };
+  };
+
+  const handleSaveOffline = async (): Promise<string | null> => {
+    setSavingOffline(true);
+    try {
+      const payload = buildPayload();
+
+      const offlineImages: OfflineImage[] = localImages.map((img) => ({
+        id: img.id,
+        uri: img.uri,
+        layerCode: "bound_verification",
+        description: img.description || `Boundary marker photo`,
+        latitude: img.latitude,
+        longitude: img.longitude,
+      }));
+
+      if (isEditingOfflineDraft && offlineDraftId) {
+        await updateOfflineDraft(offlineDraftId, {
+          payload,
+          images: offlineImages,
+          status: "pending",
+        });
+
+        Alert.alert(
+          "Updated Offline",
+          "Draft updated locally. Will sync when online.",
+          [{ text: "OK", onPress: () => router.back() }],
+        );
+        return offlineDraftId;
+      }
+
+      const localUuid = generateLocalUUID();
+      const draft = {
+        local_uuid: localUuid,
+        area_id: parseInt(areaId),
+        site_id: siteId ? parseInt(siteId) : null,
+        layer: layerId,
+        payload,
+        images: offlineImages,
+        created_at: new Date().toISOString(),
+        status: "pending" as const,
+      };
+
+      await saveOfflineDraft(draft);
+      setLocalImages([]);
+
+      Alert.alert(
+        "Saved Offline",
+        "Assessment saved locally. Will sync when online.",
+        [{ text: "OK", onPress: () => router.back() }],
+      );
+
+      return localUuid;
+    } catch (e: any) {
+      console.error("Error saving offline:", e);
+      Alert.alert("Error", "Failed to save offline. Please try again.");
+      return null;
+    } finally {
+      setSavingOffline(false);
+    }
   };
 
   const handleDraft = async () => {
@@ -885,11 +1193,13 @@ export default function BoundaryVerificationForm() {
                     color="#fff"
                   />
                 </View>
-                <View style={styles.thumbCoords}>
-                  <Text style={styles.thumbCoordsText}>
-                    {img.latitude.toFixed(4)},{img.longitude.toFixed(4)}
-                  </Text>
-                </View>
+                {img.latitude !== 0 && img.longitude !== 0 && (
+                  <View style={styles.thumbCoords}>
+                    <Text style={styles.thumbCoordsText}>
+                      {img.latitude.toFixed(4)},{img.longitude.toFixed(4)}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
               {img.description ? (
                 <Text style={styles.thumbNote} numberOfLines={1}>
@@ -938,6 +1248,15 @@ export default function BoundaryVerificationForm() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {isOfflineMode && !isViewMode && (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline-outline" size={16} color="#fff" />
+            <Text style={styles.offlineBannerText}>
+              Offline Mode - Save Offline to sync later
+            </Text>
+          </View>
+        )}
+
         {isViewMode && (
           <View style={styles.viewModeBanner}>
             <Ionicons name="eye-outline" size={16} color="#fff" />
@@ -945,7 +1264,6 @@ export default function BoundaryVerificationForm() {
           </View>
         )}
 
-        {/* SECTION 1: Overall Assessment */}
         <SectionCard
           title="Overall Assessment"
           subtitle="Summary notes for GIS Specialist"
@@ -978,7 +1296,6 @@ export default function BoundaryVerificationForm() {
           />
         </SectionCard>
 
-        {/* SECTION 2: Assessment Location */}
         <SectionCard
           title="Assessment Location"
           subtitle="Your GPS position during this assessment"
@@ -1085,10 +1402,9 @@ export default function BoundaryVerificationForm() {
           </View>
         </SectionCard>
 
-        {/* SECTION 3: Boundary Markers (Geocam Only) */}
         <SectionCard
           title="Boundary Markers"
-          subtitle={`${images.length + localImages.length} GPS photo${images.length + localImages.length !== 1 ? "s" : ""} · Tap to add`}
+          subtitle={`${images.length + localImages.length} photo${images.length + localImages.length !== 1 ? "s" : ""} · Tap to add`}
           iconName="map-marker"
           iconLib="mci"
           accentColor="#0369A1"
@@ -1114,19 +1430,21 @@ export default function BoundaryVerificationForm() {
                     <Ionicons name="eye-outline" size={14} color="#fff" />
                   </View>
 
-                  {img.latitude != null && img.longitude != null && (
-                    <View style={styles.thumbCoords}>
-                      <Text style={styles.thumbCoordsText}>
-                        {typeof img.latitude === "number"
-                          ? img.latitude.toFixed(4)
-                          : img.latitude}
-                        ,{" "}
-                        {typeof img.longitude === "number"
-                          ? img.longitude.toFixed(4)
-                          : img.longitude}
-                      </Text>
-                    </View>
-                  )}
+                  {img.latitude != null &&
+                    img.longitude != null &&
+                    img.latitude !== 0 && (
+                      <View style={styles.thumbCoords}>
+                        <Text style={styles.thumbCoordsText}>
+                          {typeof img.latitude === "number"
+                            ? img.latitude.toFixed(4)
+                            : img.latitude}
+                          ,{" "}
+                          {typeof img.longitude === "number"
+                            ? img.longitude.toFixed(4)
+                            : img.longitude}
+                        </Text>
+                      </View>
+                    )}
                 </TouchableOpacity>
 
                 {img.description ? (
@@ -1164,7 +1482,7 @@ export default function BoundaryVerificationForm() {
               >
                 <Ionicons name="camera-outline" size={26} color="#0F4A2F" />
                 <Text style={[styles.addPhotoBtnText, { color: "#0F4A2F" }]}>
-                  Add Marker Photo
+                  Add Photo
                 </Text>
               </TouchableOpacity>
             )}
@@ -1186,8 +1504,8 @@ export default function BoundaryVerificationForm() {
                 color="#0369A1"
               />
               <Text style={[styles.hintText, { color: "#0369A1" }]}>
-                Each photo automatically captures GPS coordinates. Add a note to
-                describe the marker (e.g., "BM-01 concrete post, intact").
+                Choose "GPS Photo" for location-tagged photos or "Photo Only"
+                for photos without GPS.
               </Text>
             </View>
           )}
@@ -1196,45 +1514,94 @@ export default function BoundaryVerificationForm() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Fixed Footer */}
       {!isViewMode && (
         <View style={styles.footer}>
           <TouchableOpacity
-            style={[styles.footerBtn, styles.footerBtnDraft]}
-            onPress={handleDraft}
-            disabled={saving || uploading}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons
-              name="content-save-outline"
-              size={16}
-              color="#0F4A2F"
-            />
-            <Text style={styles.footerBtnDraftText}>Save Draft</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[
               styles.footerBtn,
-              styles.footerBtnSubmit,
-              (saving || uploading) && styles.footerBtnDisabled,
+              styles.footerBtnOffline,
+              (savingOffline || saving || uploading) &&
+                styles.footerBtnDisabled,
             ]}
-            onPress={handleSubmit}
-            disabled={saving || uploading}
+            onPress={handleSaveOffline}
+            disabled={savingOffline || saving || uploading}
             activeOpacity={0.8}
           >
-            {saving || uploading ? (
-              <ActivityIndicator color="#fff" size="small" />
+            {savingOffline ? (
+              <ActivityIndicator color="#F59E0B" size="small" />
             ) : (
               <>
-                <Ionicons name="send-outline" size={16} color="#fff" />
-                <Text style={styles.footerBtnSubmitText}>Submit</Text>
+                <Ionicons
+                  name="cloud-download-outline"
+                  size={16}
+                  color="#F59E0B"
+                />
+                <Text style={styles.footerBtnOfflineText}>
+                  {isEditingOfflineDraft ? "Update Offline" : "Save Offline"}
+                </Text>
               </>
             )}
           </TouchableOpacity>
+
+          {isOnline && (
+            <TouchableOpacity
+              style={[
+                styles.footerBtn,
+                styles.footerBtnDraft,
+                (saving || uploading) && styles.footerBtnDisabled,
+              ]}
+              onPress={handleDraft}
+              disabled={saving || uploading || savingOffline}
+              activeOpacity={0.8}
+            >
+              {saving ? (
+                <ActivityIndicator color="#0F4A2F" size="small" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons
+                    name="content-save-outline"
+                    size={16}
+                    color="#0F4A2F"
+                  />
+                  <Text style={styles.footerBtnDraftText}>Save Draft</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {isOnline && (
+            <TouchableOpacity
+              style={[
+                styles.footerBtn,
+                styles.footerBtnSubmit,
+                (saving || uploading) && styles.footerBtnDisabled,
+              ]}
+              onPress={handleSubmit}
+              disabled={saving || uploading || savingOffline}
+              activeOpacity={0.8}
+            >
+              {saving || uploading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="send-outline" size={16} color="#fff" />
+                  <Text style={styles.footerBtnSubmitText}>Submit</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {isOfflineMode && (
+            <View style={styles.offlineNotice}>
+              <Ionicons name="information-circle" size={14} color="#F59E0B" />
+              <Text style={styles.offlineNoticeText}>
+                You're offline. Save offline to sync later.
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
-      {/* Full Screen Image Preview */}
       <Modal visible={!!previewImage} transparent animationType="fade">
         <View style={styles.previewModal}>
           <TouchableOpacity
@@ -1254,7 +1621,6 @@ export default function BoundaryVerificationForm() {
         </View>
       </Modal>
 
-      {/* GPS Camera Modal */}
       <Modal
         visible={showGPSCamera}
         animationType="slide"
@@ -1267,7 +1633,6 @@ export default function BoundaryVerificationForm() {
         />
       </Modal>
 
-      {/* Custom Note Modal */}
       <Modal
         visible={showNoteModal}
         transparent
@@ -1276,7 +1641,11 @@ export default function BoundaryVerificationForm() {
       >
         <View style={modalStyles.overlay}>
           <View style={modalStyles.modal}>
-            <Text style={modalStyles.title}>Add Note for This Photo</Text>
+            <Text style={modalStyles.title}>
+              {pendingPhoto?.withGPS
+                ? "Add Note for GPS Photo"
+                : "Add Note for Photo"}
+            </Text>
             <Text style={modalStyles.subtitle}>
               Describe this boundary marker (optional)
             </Text>
@@ -1292,6 +1661,15 @@ export default function BoundaryVerificationForm() {
               numberOfLines={3}
               textAlignVertical="top"
             />
+
+            {!pendingPhoto?.withGPS && (
+              <View style={styles.noGpsWarning}>
+                <Ionicons name="information-circle" size={14} color="#F59E0B" />
+                <Text style={styles.noGpsWarningText}>
+                  This photo has no GPS coordinates
+                </Text>
+              </View>
+            )}
 
             <View style={modalStyles.buttons}>
               <TouchableOpacity
@@ -1319,6 +1697,15 @@ export default function BoundaryVerificationForm() {
           </View>
         </View>
       </Modal>
+
+      <FloatingMapButton
+        areaId={parseInt(areaId)}
+        areaName={params.areaName as string}
+        siteId={siteId ? parseInt(siteId) : undefined}
+        siteName={params.siteName as string}
+        userLat={locationLat ? parseFloat(locationLat) : undefined}
+        userLng={locationLng ? parseFloat(locationLng) : undefined}
+      />
     </View>
   );
 }
@@ -1422,6 +1809,19 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   loadingText: { fontSize: 14, color: "#475569", fontWeight: "500" },
+
+  offlineBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#F59E0B",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+  },
+  offlineBannerText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+
   viewModeBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1654,6 +2054,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingVertical: 12,
   },
+  noGpsWarning: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  noGpsWarningText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#92400E",
+    fontWeight: "500",
+  },
   footer: {
     position: "absolute",
     bottom: 0,
@@ -1666,7 +2081,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
     flexDirection: "row",
-    gap: 12,
+    gap: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.06,
@@ -1678,19 +2093,43 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 10,
-    gap: 8,
+    gap: 6,
   },
+  footerBtnOffline: {
+    borderWidth: 1.5,
+    borderColor: "#F59E0B",
+    backgroundColor: "#FFFBEB",
+  },
+  footerBtnOfflineText: { color: "#F59E0B", fontWeight: "700", fontSize: 12 },
   footerBtnDraft: {
     borderWidth: 1.5,
     borderColor: "#0F4A2F",
     backgroundColor: "#fff",
   },
-  footerBtnDraftText: { color: "#0F4A2F", fontWeight: "700", fontSize: 14 },
+  footerBtnDraftText: { color: "#0F4A2F", fontWeight: "700", fontSize: 12 },
   footerBtnSubmit: { backgroundColor: "#0F4A2F" },
-  footerBtnSubmitText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  footerBtnSubmitText: { color: "#fff", fontWeight: "700", fontSize: 12 },
   footerBtnDisabled: { opacity: 0.65 },
+  offlineNotice: {
+    position: "absolute",
+    bottom: 70,
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    padding: 10,
+    borderRadius: 8,
+  },
+  offlineNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#92400E",
+    fontWeight: "600",
+  },
   previewModal: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.92)",

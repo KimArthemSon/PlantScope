@@ -40,7 +40,7 @@ const Home: React.FC = () => {
       {/* Greeting */}
       <View style={styles.greeting}>
         <View>
-          <Text style={styles.greetTitle}>Good day, Inspector</Text>
+          <Text style={styles.greetTitle}>Good day, Inspector123</Text>
           <Text style={styles.greetSub}>April 28, 2026</Text>
         </View>
         <View style={styles.badge}>
@@ -56,17 +56,34 @@ const Home: React.FC = () => {
           <Text style={styles.progressPct}>{progress}%</Text>
         </View>
         <View style={styles.progressBg}>
-          <View style={[styles.progressFill, { width: `${progress}%` as any }]} />
+          <View
+            style={[styles.progressFill, { width: `${progress}%` as any }]}
+          />
         </View>
         <Text style={styles.progressSub}>72 ha planted · 120 ha assigned</Text>
       </View>
 
       {/* Stats Grid */}
       <View style={styles.grid}>
-        <StatCard icon="leaf" title="Assigned Area" value="120 ha" tint="#0F4A2F" />
+        <StatCard
+          icon="leaf"
+          title="Assigned Area"
+          value="120 ha"
+          tint="#0F4A2F"
+        />
         <StatCard icon="tree" title="Reforested" value="95 ha" tint="#1B6B3A" />
-        <StatCard icon="map-marker-multiple" title="Total Sites" value="18" tint="#2E7D52" />
-        <StatCard icon="sprout" title="Seedlings" value="4,560" tint="#3A9E64" />
+        <StatCard
+          icon="map-marker-multiple"
+          title="Total Sites"
+          value="18"
+          tint="#2E7D52"
+        />
+        <StatCard
+          icon="sprout"
+          title="Seedlings"
+          value="4,560"
+          tint="#3A9E64"
+        />
       </View>
 
       {/* Chart */}
@@ -124,9 +141,15 @@ const StatCard: React.FC<StatCardProps> = ({ icon, title, value, tint }) => (
   </View>
 );
 
-const FeedbackItem: React.FC<FeedbackItemProps> = ({ site, message, status }) => (
+const FeedbackItem: React.FC<FeedbackItemProps> = ({
+  site,
+  message,
+  status,
+}) => (
   <View style={styles.feedbackItem}>
-    <View style={[styles.statusDot, { backgroundColor: STATUS_COLOR[status] }]} />
+    <View
+      style={[styles.statusDot, { backgroundColor: STATUS_COLOR[status] }]}
+    />
     <View style={styles.feedbackBody}>
       <Text style={styles.feedbackSite}>{site}</Text>
       <Text style={styles.feedbackMsg}>{message}</Text>

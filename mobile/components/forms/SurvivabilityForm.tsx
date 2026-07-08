@@ -13,15 +13,23 @@ import {
   Platform,
   Dimensions,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
 
 import { useFieldAssessment, LocalImage } from "@/hooks/useFieldAssessment";
+import {
+  saveOfflineDraft,
+  updateOfflineDraft,
+  getOfflineDraft,
+  generateLocalUUID,
+  OfflineImage,
+} from "@/hooks/useOfflineFieldAssessment";
 import { api } from "@/constants/url_fixed";
-
+import { useNetworkStatus } from "@/utils/networkStatus";
+import FloatingMapButton from "@/components/FloatingMapButton";
 const API_BASE = `${api}/api`;
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -50,7 +58,7 @@ interface SurvivabilityImage {
 }
 
 // ─────────────────────────────────────────────
-// GPS CAMERA COMPONENT (SimpleGeocam)
+// GPS CAMERA COMPONENT (SimpleGeocam) - Offline Ready
 // ─────────────────────────────────────────────
 
 function SimpleGeocam({
@@ -69,8 +77,10 @@ function SimpleGeocam({
   );
   const cameraRef = useRef<CameraView>(null);
 
+  // ✅ FIXED: Works offline with fallback accuracy
   const getCurrentLocation = async (): Promise<LocationData | null> => {
     try {
+      // Step 1: Check permissions
       if (!locationPermission?.granted) {
         const s = await requestLocationPermission();
         if (!s?.granted) {
@@ -78,13 +88,53 @@ function SimpleGeocam({
           return null;
         }
       }
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Highest,
-      });
-      const [addr] = await Location.reverseGeocodeAsync({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      });
+
+      // Step 2: Check if location services are enabled
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        Alert.alert(
+          "Location Services Disabled",
+          "Please enable GPS/Location services in your device settings.",
+        );
+        return null;
+      }
+
+      // Step 3: Try to get location with fallback accuracy
+      let loc;
+      try {
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+      } catch (highAccError) {
+        console.log("High accuracy failed, trying balanced...");
+        try {
+          loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+        } catch (balancedAccError) {
+          console.log("Balanced failed, trying lowest...");
+          loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Lowest,
+          });
+        }
+      }
+
+      if (!loc || !loc.coords) {
+        Alert.alert("Error", "Could not retrieve location data.");
+        return null;
+      }
+
+      // Step 4: Try reverse geocoding (optional, fails silently offline)
+      let addr: Location.LocationGeocodedAddress | undefined;
+      try {
+        [addr] = await Location.reverseGeocodeAsync({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
+      } catch (geoError) {
+        console.log("Reverse geocoding failed (probably offline):", geoError);
+      }
+
       const data: LocationData = {
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
@@ -101,10 +151,15 @@ function SimpleGeocam({
         }),
         accuracy: loc.coords.accuracy ?? undefined,
       };
+
       setCurrentLocation(data);
       return data;
     } catch (error) {
-      Alert.alert("Error", "Could not get GPS location.");
+      console.error("GPS Error:", error);
+      Alert.alert(
+        "GPS Error",
+        "Could not get GPS location. Make sure GPS is enabled and you're outdoors or near a window.",
+      );
       return null;
     }
   };
@@ -606,12 +661,20 @@ const FieldLabel = ({
 
 export default function SurvivabilityForm() {
   const params = useLocalSearchParams();
+  const router = useRouter(); // ✅ Added for navigation
   const areaId = params.areaId as string;
   const assessmentId = params.assessmentId as string | undefined;
+  const offlineDraftId = params.offlineDraftId as string | undefined; // ✅ NEW
   const layerId = "survivability";
   const siteId = params.siteId as string | undefined;
+  const isEditingOfflineDraft = !!offlineDraftId; // ✅ NEW
+
   const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
     useFieldAssessment(areaId, layerId, assessmentId);
+
+  // ✅ NEW: Network status
+  const isOnline = useNetworkStatus();
+  const isOfflineMode = !isOnline;
 
   // Category overall notes
   const [soilNote, setSoilNote] = useState("");
@@ -636,7 +699,10 @@ export default function SurvivabilityForm() {
   // View mode & loading
   const [isViewMode, setIsViewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!!assessmentId);
+  const [loading, setLoading] = useState(
+    !!assessmentId || isEditingOfflineDraft,
+  );
+  const [savingOffline, setSavingOffline] = useState(false); // ✅ NEW
 
   // Geocam & note modal state
   const [showGPSCamera, setShowGPSCamera] = useState(false);
@@ -653,7 +719,9 @@ export default function SurvivabilityForm() {
 
   // Load existing data
   useEffect(() => {
-    if (assessmentId) {
+    if (isEditingOfflineDraft) {
+      loadOfflineDraftData();
+    } else if (assessmentId) {
       (async () => {
         const data = await fetchAssessmentData();
         if (data) {
@@ -691,7 +759,52 @@ export default function SurvivabilityForm() {
     } else {
       setLoading(false);
     }
-  }, [assessmentId]);
+  }, [assessmentId, offlineDraftId]);
+
+  // ✅ NEW: Load offline draft data
+  const loadOfflineDraftData = async () => {
+    if (!offlineDraftId) return;
+
+    try {
+      const draft = await getOfflineDraft(offlineDraftId);
+      if (!draft) {
+        Alert.alert("Error", "Draft not found.");
+        return;
+      }
+
+      const payload = draft.payload;
+      const surv = payload.field_assessment_data?.survivability || {};
+
+      populateForm(payload.field_assessment_data || {});
+
+      if (payload.location) {
+        setLocationLat(payload.location.latitude?.toString() || "");
+        setLocationLng(payload.location.longitude?.toString() || "");
+        setLocationAccuracy(
+          payload.location.gps_accuracy_meters?.toString() || "",
+        );
+      }
+
+      // Load images from draft
+      if (Array.isArray(draft.images)) {
+        const loadedImages: LocalImage[] = draft.images.map((img) => ({
+          id: img.id,
+          uri: img.uri,
+          latitude: img.latitude || 0,
+          longitude: img.longitude || 0,
+          accuracy: undefined,
+          subLayerCode: img.layerCode.replace("surv_", ""),
+          description: img.description || "",
+        }));
+        setLocalImages(loadedImages);
+      }
+    } catch (e: any) {
+      console.error("Error loading offline draft:", e);
+      Alert.alert("Error", "Failed to load draft.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Handle BOTH old (double-nested) and new (single-nested) structures
   const populateForm = (data: any) => {
@@ -704,23 +817,65 @@ export default function SurvivabilityForm() {
     setOverallNote(surv.overall_notes || "");
   };
 
+  // ✅ FIXED: Works offline with fallback accuracy
   const handleGetCurrentLocation = async () => {
     setGettingLocation(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission Denied", "Please enable location access.");
+        Alert.alert(
+          "Permission Denied",
+          "Please enable location access in your device settings.",
+        );
+        setGettingLocation(false);
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
+        Alert.alert(
+          "Location Services Disabled",
+          "Please enable GPS/Location in your device settings.",
+        );
+        setGettingLocation(false);
+        return;
+      }
+
+      let loc;
+      try {
+        loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+      } catch (highAccError) {
+        console.log("High accuracy failed, trying balanced...");
+        try {
+          loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+        } catch (balancedAccError) {
+          console.log("Balanced failed, trying lowest...");
+          loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Lowest,
+          });
+        }
+      }
+
+      if (!loc || !loc.coords) {
+        Alert.alert("Error", "Could not retrieve location data.");
+        setGettingLocation(false);
+        return;
+      }
+
       setLocationLat(loc.coords.latitude.toFixed(6));
       setLocationLng(loc.coords.longitude.toFixed(6));
       setLocationAccuracy(loc.coords.accuracy?.toFixed(1) || "");
       Alert.alert("Location Captured", "GPS coordinates updated.");
     } catch (error) {
-      Alert.alert("Error", "Could not get current location.");
+      console.error("Location error:", error);
+      Alert.alert(
+        "GPS Error",
+        "Could not get current location. Make sure GPS is enabled and you're outdoors or near a window.",
+      );
     } finally {
       setGettingLocation(false);
     }
@@ -745,8 +900,8 @@ export default function SurvivabilityForm() {
 
     const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
 
-    // If we have an assessmentId, upload immediately
-    if (numericAssessmentId && !isNaN(numericAssessmentId)) {
+    // If we have an assessmentId AND online, upload immediately
+    if (numericAssessmentId && !isNaN(numericAssessmentId) && isOnline) {
       setUploading(true);
       try {
         const ok = await uploadImage(
@@ -790,7 +945,10 @@ export default function SurvivabilityForm() {
           }
           Alert.alert("Success", "Photo uploaded with GPS data!");
         } else {
-          Alert.alert("Upload Failed", "Could not upload photo. Please try again.");
+          Alert.alert(
+            "Upload Failed",
+            "Could not upload photo. Please try again.",
+          );
         }
       } catch (error) {
         Alert.alert(
@@ -801,7 +959,7 @@ export default function SurvivabilityForm() {
         setUploading(false);
       }
     } else {
-      // ✅ NEW: Store locally if no assessmentId
+      // ✅ NEW: Store locally if no assessmentId OR offline
       const localImg: LocalImage = {
         id: `local-${Date.now()}`,
         uri: pendingPhoto.uri,
@@ -812,7 +970,10 @@ export default function SurvivabilityForm() {
         description: note || `Survivability ${activeCategory} photo`,
       };
       setLocalImages([...localImages, localImg]);
-      Alert.alert("Photo Captured", "Photo will be uploaded when you save the draft.");
+      Alert.alert(
+        "Photo Captured",
+        "Photo will be uploaded when you save the draft.",
+      );
     }
 
     setShowNoteModal(false);
@@ -857,11 +1018,75 @@ export default function SurvivabilityForm() {
     };
   };
 
+  // ✅ NEW: Save Offline
+  const handleSaveOffline = async (): Promise<string | null> => {
+    setSavingOffline(true);
+    try {
+      const payload = buildPayload();
+
+      const offlineImages: OfflineImage[] = localImages.map((img) => ({
+        id: img.id,
+        uri: img.uri,
+        layerCode: `surv_${img.subLayerCode}`,
+        description:
+          img.description || `Survivability ${img.subLayerCode} photo`,
+        latitude: img.latitude,
+        longitude: img.longitude,
+      }));
+
+      // If editing existing offline draft, update it
+      if (isEditingOfflineDraft && offlineDraftId) {
+        await updateOfflineDraft(offlineDraftId, {
+          payload,
+          images: offlineImages,
+          status: "pending",
+        });
+
+        Alert.alert(
+          "Updated Offline",
+          "Draft updated locally. Will sync when online.",
+          [{ text: "OK", onPress: () => router.back() }],
+        );
+        return offlineDraftId;
+      }
+
+      // Otherwise create new draft
+      const localUuid = generateLocalUUID();
+      const draft = {
+        local_uuid: localUuid,
+        area_id: parseInt(areaId),
+        site_id: siteId ? parseInt(siteId) : null,
+        layer: layerId,
+        payload,
+        images: offlineImages,
+        created_at: new Date().toISOString(),
+        status: "pending" as const,
+      };
+
+      await saveOfflineDraft(draft);
+      setLocalImages([]);
+
+      Alert.alert(
+        "Saved Offline",
+        "Assessment saved locally. Will sync when online.",
+        [{ text: "OK", onPress: () => router.back() }],
+      );
+
+      return localUuid;
+    } catch (e: any) {
+      console.error("Error saving offline:", e);
+      Alert.alert("Error", "Failed to save offline. Please try again.");
+      return null;
+    } finally {
+      setSavingOffline(false);
+    }
+  };
+
   // ✅ UPDATED: handleDraft now passes localImages
   const handleDraft = async () => {
     const payload = buildPayload();
     const savedId = await handleSave(payload, false, localImages);
-    
+
     if (savedId) {
       setLocalImages([]);
       const data = await fetchAssessmentData();
@@ -902,7 +1127,6 @@ export default function SurvivabilityForm() {
             if (savedId) {
               setLocalImages([]);
               setIsViewMode(true);
-             
             }
           },
         },
@@ -956,21 +1180,23 @@ export default function SurvivabilityForm() {
     return `${api}${imgUrl}`;
   };
 
-  const openGeocamForCategory = (
-    category: "soil" | "water" | "slope",
-  ) => {
+  const openGeocamForCategory = (category: "soil" | "water" | "slope") => {
     setActiveCategory(category);
     setShowGPSCamera(true);
   };
 
   // ✅ NEW: Render local images for a category
   const renderLocalImages = (category: "soil" | "water" | "slope") => {
-    const categoryLocalImages = localImages.filter((img) => img.subLayerCode === category);
+    const categoryLocalImages = localImages.filter(
+      (img) => img.subLayerCode === category,
+    );
     if (categoryLocalImages.length === 0) return null;
 
     return (
       <View style={styles.localImagesSection}>
-        <Text style={styles.localImagesLabel}>Pending Upload ({categoryLocalImages.length})</Text>
+        <Text style={styles.localImagesLabel}>
+          Pending Upload ({categoryLocalImages.length})
+        </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {categoryLocalImages.map((img) => (
             <View key={img.id} style={styles.thumbWrapper}>
@@ -978,9 +1204,22 @@ export default function SurvivabilityForm() {
                 onPress={() => setPreviewImage(img.uri)}
                 activeOpacity={0.85}
               >
-                <Image source={{ uri: img.uri }} style={styles.thumb} resizeMode="cover" />
-                <View style={[styles.thumbOverlay, { backgroundColor: "rgba(245,158,11,0.6)" }]}>
-                  <Ionicons name="cloud-upload-outline" size={14} color="#fff" />
+                <Image
+                  source={{ uri: img.uri }}
+                  style={styles.thumb}
+                  resizeMode="cover"
+                />
+                <View
+                  style={[
+                    styles.thumbOverlay,
+                    { backgroundColor: "rgba(245,158,11,0.6)" },
+                  ]}
+                >
+                  <Ionicons
+                    name="cloud-upload-outline"
+                    size={14}
+                    color="#fff"
+                  />
                 </View>
                 <View style={styles.thumbCoords}>
                   <Text style={styles.thumbCoordsText}>
@@ -993,7 +1232,12 @@ export default function SurvivabilityForm() {
                   {img.description}
                 </Text>
               ) : (
-                <Text style={[styles.thumbNote, { color: "#F59E0B", fontStyle: "italic" }]}>
+                <Text
+                  style={[
+                    styles.thumbNote,
+                    { color: "#F59E0B", fontStyle: "italic" },
+                  ]}
+                >
                   Pending
                 </Text>
               )}
@@ -1032,6 +1276,16 @@ export default function SurvivabilityForm() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* ✅ NEW: Offline Mode Banner */}
+        {isOfflineMode && !isViewMode && (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline-outline" size={16} color="#fff" />
+            <Text style={styles.offlineBannerText}>
+              Offline Mode - Save Offline to sync later
+            </Text>
+          </View>
+        )}
+
         {isViewMode && (
           <View style={styles.viewModeBanner}>
             <Ionicons name="eye-outline" size={16} color="#fff" />
@@ -1042,7 +1296,7 @@ export default function SurvivabilityForm() {
         {/* SECTION 1: Soil */}
         <SectionCard
           title="Soil"
-          subtitle={`${soilImages.length + localImages.filter(i => i.subLayerCode === "soil").length} GPS photo${(soilImages.length + localImages.filter(i => i.subLayerCode === "soil").length) !== 1 ? "s" : ""}`}
+          subtitle={`${soilImages.length + localImages.filter((i) => i.subLayerCode === "soil").length} GPS photo${soilImages.length + localImages.filter((i) => i.subLayerCode === "soil").length !== 1 ? "s" : ""}`}
           iconName="leaf-outline"
           iconLib="ion"
           accentColor="#92400E"
@@ -1138,7 +1392,7 @@ export default function SurvivabilityForm() {
         {/* SECTION 2: Water Availability */}
         <SectionCard
           title="Water Availability"
-          subtitle={`${waterImages.length + localImages.filter(i => i.subLayerCode === "water").length} GPS photo${(waterImages.length + localImages.filter(i => i.subLayerCode === "water").length) !== 1 ? "s" : ""}`}
+          subtitle={`${waterImages.length + localImages.filter((i) => i.subLayerCode === "water").length} GPS photo${waterImages.length + localImages.filter((i) => i.subLayerCode === "water").length !== 1 ? "s" : ""}`}
           iconName="water-outline"
           iconLib="ion"
           accentColor="#1D4ED8"
@@ -1233,7 +1487,7 @@ export default function SurvivabilityForm() {
         {/* SECTION 3: Slope */}
         <SectionCard
           title="Slope"
-          subtitle={`${slopeImages.length + localImages.filter(i => i.subLayerCode === "slope").length} GPS photo${(slopeImages.length + localImages.filter(i => i.subLayerCode === "slope").length) !== 1 ? "s" : ""}`}
+          subtitle={`${slopeImages.length + localImages.filter((i) => i.subLayerCode === "slope").length} GPS photo${slopeImages.length + localImages.filter((i) => i.subLayerCode === "slope").length !== 1 ? "s" : ""}`}
           iconName="trending-up"
           iconLib="ion"
           accentColor="#B91C1C"
@@ -1447,41 +1701,96 @@ export default function SurvivabilityForm() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Fixed Footer */}
+      {/* ✅ UPDATED: Fixed Footer with offline support */}
       {!isViewMode && (
         <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.footerBtn, styles.footerBtnDraft]}
-            onPress={handleDraft}
-            disabled={saving || uploading}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons
-              name="content-save-outline"
-              size={16}
-              color="#0F4A2F"
-            />
-            <Text style={styles.footerBtnDraftText}>Save Draft</Text>
-          </TouchableOpacity>
+          {/* Save Offline Button - Always visible */}
           <TouchableOpacity
             style={[
               styles.footerBtn,
-              styles.footerBtnSubmit,
-              (saving || uploading) && styles.footerBtnDisabled,
+              styles.footerBtnOffline,
+              (savingOffline || saving || uploading) &&
+                styles.footerBtnDisabled,
             ]}
-            onPress={handleSubmit}
-            disabled={saving || uploading}
+            onPress={handleSaveOffline}
+            disabled={savingOffline || saving || uploading}
             activeOpacity={0.8}
           >
-            {saving || uploading ? (
-              <ActivityIndicator color="#fff" size="small" />
+            {savingOffline ? (
+              <ActivityIndicator color="#F59E0B" size="small" />
             ) : (
               <>
-                <Ionicons name="send-outline" size={16} color="#fff" />
-                <Text style={styles.footerBtnSubmitText}>Submit</Text>
+                <Ionicons
+                  name="cloud-download-outline"
+                  size={16}
+                  color="#F59E0B"
+                />
+                <Text style={styles.footerBtnOfflineText}>
+                  {isEditingOfflineDraft ? "Update Offline" : "Save Offline"}
+                </Text>
               </>
             )}
           </TouchableOpacity>
+
+          {/* Save Draft Button - Only when online */}
+          {isOnline && (
+            <TouchableOpacity
+              style={[
+                styles.footerBtn,
+                styles.footerBtnDraft,
+                (saving || uploading) && styles.footerBtnDisabled,
+              ]}
+              onPress={handleDraft}
+              disabled={saving || uploading || savingOffline}
+              activeOpacity={0.8}
+            >
+              {saving ? (
+                <ActivityIndicator color="#0F4A2F" size="small" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons
+                    name="content-save-outline"
+                    size={16}
+                    color="#0F4A2F"
+                  />
+                  <Text style={styles.footerBtnDraftText}>Save Draft</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Submit Button - Only when online */}
+          {isOnline && (
+            <TouchableOpacity
+              style={[
+                styles.footerBtn,
+                styles.footerBtnSubmit,
+                (saving || uploading) && styles.footerBtnDisabled,
+              ]}
+              onPress={handleSubmit}
+              disabled={saving || uploading || savingOffline}
+              activeOpacity={0.8}
+            >
+              {saving || uploading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="send-outline" size={16} color="#fff" />
+                  <Text style={styles.footerBtnSubmitText}>Submit</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Offline Mode Notice */}
+          {isOfflineMode && (
+            <View style={styles.offlineNotice}>
+              <Ionicons name="information-circle" size={14} color="#F59E0B" />
+              <Text style={styles.offlineNoticeText}>
+                You're offline. Save offline to sync later.
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -1574,6 +1883,14 @@ export default function SurvivabilityForm() {
           </View>
         </View>
       </Modal>
+         <FloatingMapButton
+              areaId={parseInt(areaId)}
+              areaName={params.areaName as string}
+              siteId={siteId ? parseInt(siteId) : undefined}
+              siteName={params.siteName as string}
+              userLat={locationLat ? parseFloat(locationLat) : undefined}
+              userLng={locationLng ? parseFloat(locationLng) : undefined}
+            />
     </View>
   );
 }
@@ -1677,6 +1994,20 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   loadingText: { fontSize: 14, color: "#475569", fontWeight: "500" },
+
+  // ✅ NEW: Offline Banner
+  offlineBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#F59E0B",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+  },
+  offlineBannerText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+
   viewModeBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1916,7 +2247,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
     flexDirection: "row",
-    gap: 12,
+    gap: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.06,
@@ -1928,19 +2259,49 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 10,
-    gap: 8,
+    gap: 6,
   },
+
+  // ✅ NEW: Offline button style
+  footerBtnOffline: {
+    borderWidth: 1.5,
+    borderColor: "#F59E0B",
+    backgroundColor: "#FFFBEB",
+  },
+  footerBtnOfflineText: { color: "#F59E0B", fontWeight: "700", fontSize: 12 },
+
   footerBtnDraft: {
     borderWidth: 1.5,
     borderColor: "#0F4A2F",
     backgroundColor: "#fff",
   },
-  footerBtnDraftText: { color: "#0F4A2F", fontWeight: "700", fontSize: 14 },
+  footerBtnDraftText: { color: "#0F4A2F", fontWeight: "700", fontSize: 12 },
   footerBtnSubmit: { backgroundColor: "#0F4A2F" },
-  footerBtnSubmitText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  footerBtnSubmitText: { color: "#fff", fontWeight: "700", fontSize: 12 },
   footerBtnDisabled: { opacity: 0.65 },
+
+  // ✅ NEW: Offline notice
+  offlineNotice: {
+    position: "absolute",
+    bottom: 70,
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    padding: 10,
+    borderRadius: 8,
+  },
+  offlineNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#92400E",
+    fontWeight: "600",
+  },
+
   previewModal: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.92)",

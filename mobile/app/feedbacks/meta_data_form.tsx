@@ -16,9 +16,19 @@ import {
 import * as SecureStore from "expo-secure-store";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
+import NetInfo from "@react-native-community/netinfo";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
+import {
+  saveOfflineDraft,
+  updateOfflineDraft, // ✅ NEW
+  getOfflineDraft, // ✅ NEW
+  generateLocalUUID,
+  OfflineDraft, // ✅ NEW
+  OfflineImage,
+} from "@/hooks/useOfflineFieldAssessment";
+import { useNetworkStatus } from "@/utils/networkStatus";
 
 const API_BASE = api;
 
@@ -61,19 +71,24 @@ interface AnimalOption {
 
 /* ---------- SCREEN ---------- */
 export default function MetaDataForm() {
-  const { id, areaId, siteId } = useLocalSearchParams<{
+  // ✅ NEW: Added offlineDraftId to params
+  const { id, areaId, siteId, offlineDraftId } = useLocalSearchParams<{
     id?: string;
     areaId: string;
     siteId?: string;
+    offlineDraftId?: string; // ✅ NEW
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const isEditMode = !!id;
+  const isEditingOfflineDraft = !!offlineDraftId; // ✅ NEW
 
-  const [loading, setLoading] = useState(isEditMode);
+  const [loading, setLoading] = useState(isEditMode || isEditingOfflineDraft);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [savingOffline, setSavingOffline] = useState(false);
+  const [networkChecked, setNetworkChecked] = useState(false);
 
   /* Form State */
   const [assessmentDate, setAssessmentDate] = useState(
@@ -95,6 +110,9 @@ export default function MetaDataForm() {
   const [otherDocs, setOtherDocs] = useState<
     { photo_url: string | null; note: string }[]
   >([]);
+
+  const isOnline = useNetworkStatus();
+  const isOfflineMode = !isOnline;
 
   // Animals
   const [selectedAnimalIds, setSelectedAnimalIds] = useState<number[]>([]);
@@ -121,11 +139,29 @@ export default function MetaDataForm() {
   const [localImages, setLocalImages] = useState<LocalDocImage[]>([]);
   const [existingImages, setExistingImages] = useState<any[]>([]);
 
+  /* ---------- ✅ Direct Network Check on Mount ---------- */
+  useEffect(() => {
+    const checkNetworkOnMount = async () => {
+      try {
+        const networkState = await NetInfo.fetch();
+        console.log("Network state on mount:", networkState.isConnected);
+      } catch (error) {
+        console.error("Error checking network:", error);
+      } finally {
+        setNetworkChecked(true);
+      }
+    };
+
+    checkNetworkOnMount();
+  }, []);
+
   /* ---------- Load Dropdown Options ---------- */
   useEffect(() => {
-    fetchLandClassifications();
-    fetchAnimals();
-  }, []);
+    if (networkChecked && !isOfflineMode) {
+      fetchLandClassifications();
+      fetchAnimals();
+    }
+  }, [networkChecked, isOfflineMode]);
 
   const fetchLandClassifications = async () => {
     try {
@@ -141,7 +177,7 @@ export default function MetaDataForm() {
         setLandClassifications(data.data || []);
       }
     } catch (e) {
-      
+      console.error("Error fetching land classifications:", e);
     }
   };
 
@@ -156,11 +192,104 @@ export default function MetaDataForm() {
         setAnimals(data || []);
       }
     } catch (e) {
-     
+      console.error("Error fetching animals:", e);
     }
   };
 
-  /* ---------- Load Detail (Edit Mode) ---------- */
+  /* ---------- ✅ NEW: Load Offline Draft (Edit Offline Draft Mode) ---------- */
+  useEffect(() => {
+    if (isEditingOfflineDraft) {
+      loadOfflineDraftData();
+    }
+  }, [offlineDraftId]);
+
+  const loadOfflineDraftData = async () => {
+    if (!offlineDraftId) return;
+
+    try {
+      const draft = await getOfflineDraft(offlineDraftId);
+      if (!draft) {
+        Alert.alert("Error", "Draft not found.");
+        router.back();
+        return;
+      }
+
+      const payload = draft.payload;
+      const meta = payload.field_assessment_data?.meta_data || {};
+
+      // Populate form with draft data
+      setAssessmentDate(
+        payload.assessment_date || new Date().toISOString().split("T")[0],
+      );
+      setLocation(payload.location || null);
+
+      if (payload.location) {
+        setLocationLat(payload.location.latitude?.toString() || "");
+        setLocationLng(payload.location.longitude?.toString() || "");
+        setLocationAccuracy(
+          payload.location.gps_accuracy_meters?.toString() || "",
+        );
+      }
+
+      // Legal Docs
+      setLandTitleNote(meta.legal_documents?.land_title?.note || "");
+      setLandTitlePhoto(meta.legal_documents?.land_title?.photo_url || null);
+      setTaxDeclNote(meta.legal_documents?.tax_declaration?.note || "");
+      setTaxDeclPhoto(meta.legal_documents?.tax_declaration?.photo_url || null);
+      setLandClassId(payload.land_classification_id || null);
+      setLandClassNote(
+        meta.legal_documents?.land_classification?.inspector_notes || "",
+      );
+      setOtherDocs(meta.legal_documents?.other_documents || []);
+
+      // Animals
+      if (Array.isArray(payload.animal_ids)) {
+        setSelectedAnimalIds(payload.animal_ids);
+      }
+
+      // Security
+      setSecuritySelected(meta.security_concerns?.selected || []);
+      setSecurityNote(meta.security_concerns?.note || "");
+
+      // Accessibility
+      const accessData = meta.accessibility?.vehicle_access;
+      if (Array.isArray(accessData)) {
+        setVehicleAccess(accessData);
+      } else if (accessData) {
+        setVehicleAccess([accessData]);
+      }
+      setAccessNotes(meta.accessibility?.notes || "");
+
+      // ✅ Load images from draft
+      if (Array.isArray(draft.images)) {
+        const loadedImages: LocalDocImage[] = draft.images.map((img) => {
+          // Map layerCode back to docType
+          let docType: keyof typeof DOC_LAYER_CODES = "other_doc";
+          for (const [key, value] of Object.entries(DOC_LAYER_CODES)) {
+            if (value === img.layerCode) {
+              docType = key as keyof typeof DOC_LAYER_CODES;
+              break;
+            }
+          }
+          return {
+            id: img.id,
+            type: docType,
+            uri: img.uri,
+            note: img.description || "",
+          };
+        });
+        setLocalImages(loadedImages);
+      }
+    } catch (e: any) {
+      console.error("Error loading offline draft:", e);
+      Alert.alert("Error", "Failed to load draft.");
+      router.back();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ---------- Load Detail (Edit Online Mode) ---------- */
   useEffect(() => {
     if (isEditMode) fetchDetail();
   }, []);
@@ -183,7 +312,6 @@ export default function MetaDataForm() {
       );
       setLocation(data.location || null);
 
-      // Location
       if (data.location) {
         setLocationLat(data.location.latitude?.toString() || "");
         setLocationLng(data.location.longitude?.toString() || "");
@@ -192,7 +320,6 @@ export default function MetaDataForm() {
         );
       }
 
-      // Legal Docs
       setLandTitleNote(meta.legal_documents?.land_title?.note || "");
       setLandTitlePhoto(meta.legal_documents?.land_title?.photo_url || null);
       setTaxDeclNote(meta.legal_documents?.tax_declaration?.note || "");
@@ -203,16 +330,13 @@ export default function MetaDataForm() {
       );
       setOtherDocs(meta.legal_documents?.other_documents || []);
 
-      // Animals
       if (Array.isArray(data.animals_present)) {
         setSelectedAnimalIds(data.animals_present.map((a: any) => a.animal_id));
       }
 
-      // Security
       setSecuritySelected(meta.security_concerns?.selected || []);
       setSecurityNote(meta.security_concerns?.note || "");
 
-      // Accessibility (NOW ARRAY)
       const accessData = meta.accessibility?.vehicle_access;
       if (Array.isArray(accessData)) {
         setVehicleAccess(accessData);
@@ -252,7 +376,6 @@ export default function MetaDataForm() {
       });
       Alert.alert("Location Captured", "GPS coordinates updated.");
     } catch (error) {
-     
       Alert.alert("Error", "Could not get current location.");
     } finally {
       setGettingLocation(false);
@@ -315,7 +438,7 @@ export default function MetaDataForm() {
     setLocalImages(localImages.filter((i) => i.id !== id));
   };
 
-  /* ---------- Security Toggle ---------- */
+  /* ---------- Toggles ---------- */
   const toggleSecurity = (item: SecurityConcern) => {
     if (item === "Other" && securitySelected.includes("Other")) {
       setSecuritySelected(securitySelected.filter((s) => s !== "Other"));
@@ -330,7 +453,6 @@ export default function MetaDataForm() {
     }
   };
 
-  /* ---------- Accessibility Toggle (MULTISELECT) ---------- */
   const toggleAccessibility = (item: AccessibilityType) => {
     if (vehicleAccess.includes(item)) {
       setVehicleAccess(vehicleAccess.filter((v) => v !== item));
@@ -339,7 +461,6 @@ export default function MetaDataForm() {
     }
   };
 
-  /* ---------- Animal Toggle ---------- */
   const toggleAnimal = (animalId: number) => {
     if (selectedAnimalIds.includes(animalId)) {
       setSelectedAnimalIds(selectedAnimalIds.filter((id) => id !== animalId));
@@ -348,7 +469,116 @@ export default function MetaDataForm() {
     }
   };
 
-  /* ---------- Save Draft ---------- */
+  /* ---------- Build Payload ---------- */
+  const buildPayload = () => {
+    const locationObj =
+      locationLat && locationLng
+        ? {
+            latitude: parseFloat(locationLat),
+            longitude: parseFloat(locationLng),
+            gps_accuracy_meters: locationAccuracy
+              ? parseFloat(locationAccuracy)
+              : undefined,
+          }
+        : null;
+
+    return {
+      reforestation_area_id: parseInt(areaId),
+      site_id: siteId ? parseInt(siteId) : null,
+      assessment_date: assessmentDate,
+      location: locationObj,
+      land_classification_id: landClassId,
+      animal_ids: selectedAnimalIds,
+      field_assessment_data: {
+        meta_data: {
+          legal_documents: {
+            land_title: { photo_url: landTitlePhoto, note: landTitleNote },
+            tax_declaration: { photo_url: taxDeclPhoto, note: taxDeclNote },
+            land_classification: { inspector_notes: landClassNote },
+            other_documents: otherDocs,
+          },
+          security_concerns: {
+            selected: securitySelected,
+            note: securityNote,
+          },
+          accessibility: {
+            vehicle_access: vehicleAccess,
+            notes: accessNotes,
+          },
+        },
+      },
+    };
+  };
+
+  /* ---------- ✅ UPDATED: Save Offline (handles edit mode) ---------- */
+  const handleSaveOffline = async (): Promise<string | null> => {
+    if (!assessmentDate) {
+      Alert.alert("Missing Info", "Assessment date is required.");
+      return null;
+    }
+
+    setSavingOffline(true);
+    try {
+      const payload = buildPayload();
+
+      const offlineImages: OfflineImage[] = localImages.map((img) => ({
+        id: img.id,
+        uri: img.uri,
+        layerCode: DOC_LAYER_CODES[img.type],
+        description: img.note || `${img.type.replace("_", " ")} photo`,
+        latitude: payload.location?.latitude,
+        longitude: payload.location?.longitude,
+      }));
+
+      // ✅ If editing existing offline draft, update it
+      if (isEditingOfflineDraft && offlineDraftId) {
+        await updateOfflineDraft(offlineDraftId, {
+          payload,
+          images: offlineImages,
+          status: "pending",
+        });
+
+        Alert.alert(
+          "Updated Offline",
+          "Draft updated locally. Will sync when online.",
+          [{ text: "OK", onPress: () => router.back() }],
+        );
+        return offlineDraftId;
+      }
+
+      // Otherwise create new draft
+      const localUuid = generateLocalUUID();
+      const draft: OfflineDraft = {
+        local_uuid: localUuid,
+        area_id: parseInt(areaId),
+        site_id: siteId ? parseInt(siteId) : null,
+        layer: "meta_data",
+        payload,
+        images: offlineImages,
+        created_at: new Date().toISOString(),
+        status: "pending",
+      };
+
+      await saveOfflineDraft(draft);
+      setLocalImages([]);
+
+      Alert.alert(
+        "Saved Offline",
+        "Assessment saved locally. Will sync when online.",
+        [{ text: "OK", onPress: () => router.back() }],
+      );
+
+      return localUuid;
+    } catch (e: any) {
+      console.error("Error saving offline:", e);
+      Alert.alert("Error", "Failed to save offline. Please try again.");
+      return null;
+    } finally {
+      setSavingOffline(false);
+    }
+  };
+
+  /* ---------- Save Draft (Online) ---------- */
   const handleSaveDraft = async (): Promise<number | null> => {
     if (!assessmentDate) {
       Alert.alert("Missing Info", "Assessment date is required.");
@@ -357,45 +587,7 @@ export default function MetaDataForm() {
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync("token");
-
-      // Build location object
-      const locationObj =
-        locationLat && locationLng
-          ? {
-              latitude: parseFloat(locationLat),
-              longitude: parseFloat(locationLng),
-              gps_accuracy_meters: locationAccuracy
-                ? parseFloat(locationAccuracy)
-                : undefined,
-            }
-          : null;
-
-      const payload = {
-        reforestation_area_id: parseInt(areaId),
-        site_id: siteId ? parseInt(siteId) : null,
-        assessment_date: assessmentDate,
-        location: locationObj,
-        land_classification_id: landClassId,
-        animal_ids: selectedAnimalIds,
-        field_assessment_data: {
-          meta_data: {
-            legal_documents: {
-              land_title: { photo_url: landTitlePhoto, note: landTitleNote },
-              tax_declaration: { photo_url: taxDeclPhoto, note: taxDeclNote },
-              land_classification: { inspector_notes: landClassNote },
-              other_documents: otherDocs,
-            },
-            security_concerns: {
-              selected: securitySelected,
-              note: securityNote,
-            },
-            accessibility: {
-              vehicle_access: vehicleAccess,
-              notes: accessNotes,
-            },
-          },
-        },
-      };
+      const payload = buildPayload();
 
       const url = isEditMode
         ? `${API_BASE}/api/field_assessments/${id}/update/`
@@ -403,7 +595,6 @@ export default function MetaDataForm() {
 
       let res;
       if (localImages.length > 0) {
-        // Multipart upload
         const fd = new FormData();
         fd.append(
           "reforestation_area_id",
@@ -422,7 +613,6 @@ export default function MetaDataForm() {
           JSON.stringify(payload.field_assessment_data),
         );
 
-        // Append images
         localImages.forEach((img) => {
           fd.append("images", {
             uri: img.uri,
@@ -431,12 +621,11 @@ export default function MetaDataForm() {
           } as any);
         });
 
-        // Append image metadata
         const imageMetadata = localImages.map((img) => ({
           layer: DOC_LAYER_CODES[img.type],
           description: img.note || `${img.type.replace("_", " ")} photo`,
-          latitude: locationObj?.latitude || 11.0,
-          longitude: locationObj?.longitude || 124.6,
+          latitude: payload.location?.latitude || 11.0,
+          longitude: payload.location?.longitude || 124.6,
         }));
         fd.append("image_metadata", JSON.stringify(imageMetadata));
 
@@ -446,7 +635,6 @@ export default function MetaDataForm() {
           body: fd,
         });
       } else {
-        // JSON only
         res = await fetch(url, {
           method: isEditMode ? "PUT" : "POST",
           headers: {
@@ -477,7 +665,7 @@ export default function MetaDataForm() {
     }
   };
 
-  /* ---------- Submit ---------- */
+  /* ---------- Submit (Online Only) ---------- */
   const handleSubmit = async () => {
     const savedId = await handleSaveDraft();
     if (!savedId) return;
@@ -520,11 +708,13 @@ export default function MetaDataForm() {
     );
   };
 
-  if (loading) {
+  if (!networkChecked || loading) {
     return (
       <View style={styles.loadingScreen}>
         <ActivityIndicator size="large" color="#0F4A2F" />
-        <Text style={styles.loadingText}>Loading…</Text>
+        <Text style={styles.loadingText}>
+          {!networkChecked ? "Checking connection…" : "Loading…"}
+        </Text>
       </View>
     );
   }
@@ -545,7 +735,14 @@ export default function MetaDataForm() {
     })),
   ];
 
-  const baseTitle = isEditMode ? "Edit Meta Data" : "New Meta Data";
+  // ✅ Updated header title logic
+  const getBaseTitle = () => {
+    if (isEditingOfflineDraft) return "Edit Offline Draft";
+    if (isEditMode) return "Edit Meta Data";
+    return "New Meta Data";
+  };
+
+  const baseTitle = getBaseTitle();
   const headerTitle = siteId ? `${baseTitle} (Site)` : `${baseTitle} (Area)`;
 
   const selectedLandClassName =
@@ -567,6 +764,15 @@ export default function MetaDataForm() {
         </View>
         <View style={{ width: 40 }} />
       </View>
+
+      {isOfflineMode && !isReadOnly && (
+        <View style={styles.offlineBanner}>
+          <Ionicons name="cloud-offline-outline" size={16} color="#FFFFFF" />
+          <Text style={styles.offlineBannerText}>
+            Offline Mode - Save Offline to sync later
+          </Text>
+        </View>
+      )}
 
       {isReadOnly && (
         <View style={styles.submittedBanner}>
@@ -614,18 +820,31 @@ export default function MetaDataForm() {
             hint="Official designation per DENR/CENRO records"
           />
           {!isReadOnly ? (
-            <TouchableOpacity
-              style={styles.dropdown}
-              onPress={() => setShowDropdown(true)}
-            >
-              <MaterialCommunityIcons
-                name="tag-outline"
-                size={16}
-                color="#0F4A2F"
-              />
-              <Text style={styles.dropdownText}>{selectedLandClassName}</Text>
-              <Ionicons name="chevron-down" size={16} color="#6B7280" />
-            </TouchableOpacity>
+            isOfflineMode ? (
+              <View style={styles.offlineFieldNotice}>
+                <Ionicons
+                  name="cloud-offline-outline"
+                  size={14}
+                  color="#F59E0B"
+                />
+                <Text style={styles.offlineFieldText}>
+                  Dropdown not available offline. Add note instead.
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.dropdown}
+                onPress={() => setShowDropdown(true)}
+              >
+                <MaterialCommunityIcons
+                  name="tag-outline"
+                  size={16}
+                  color="#0F4A2F"
+                />
+                <Text style={styles.dropdownText}>{selectedLandClassName}</Text>
+                <Ionicons name="chevron-down" size={16} color="#6B7280" />
+              </TouchableOpacity>
+            )
           ) : (
             <Text style={styles.readonlyText}>{selectedLandClassName}</Text>
           )}
@@ -689,19 +908,32 @@ export default function MetaDataForm() {
           title="Animal Presence"
           sub="Select observed animals"
         >
-          <TouchableOpacity
-            style={styles.animalSelectorBtn}
-            onPress={() => !isReadOnly && setShowAnimalModal(true)}
-            disabled={isReadOnly}
-          >
-            <MaterialCommunityIcons name="paw" size={18} color="#0F4A2F" />
-            <Text style={styles.animalSelectorText}>
-              {selectedAnimalIds.length > 0
-                ? `${selectedAnimalIds.length} animal${selectedAnimalIds.length > 1 ? "s" : ""} selected`
-                : "Tap to select animals"}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color="#6B7280" />
-          </TouchableOpacity>
+          {!isReadOnly && isOfflineMode ? (
+            <View style={styles.offlineFieldNotice}>
+              <Ionicons
+                name="cloud-offline-outline"
+                size={14}
+                color="#F59E0B"
+              />
+              <Text style={styles.offlineFieldText}>
+                Animal selection not available offline. Add note instead.
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.animalSelectorBtn}
+              onPress={() => !isReadOnly && setShowAnimalModal(true)}
+              disabled={isReadOnly}
+            >
+              <MaterialCommunityIcons name="paw" size={18} color="#0F4A2F" />
+              <Text style={styles.animalSelectorText}>
+                {selectedAnimalIds.length > 0
+                  ? `${selectedAnimalIds.length} animal${selectedAnimalIds.length > 1 ? "s" : ""} selected`
+                  : "Tap to select animals"}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color="#6B7280" />
+            </TouchableOpacity>
+          )}
           {selectedAnimalIds.length > 0 && (
             <View style={styles.selectedAnimalsList}>
               {selectedAnimalIds.map((animalId) => {
@@ -960,33 +1192,73 @@ export default function MetaDataForm() {
         {!isReadOnly && (
           <View style={styles.actions}>
             <TouchableOpacity
-              style={[styles.draftBtn, saving && styles.btnDisabled]}
-              onPress={handleSaveDraft}
-              disabled={saving}
+              style={[
+                styles.offlineBtn,
+                (savingOffline || saving) && styles.btnDisabled,
+              ]}
+              onPress={handleSaveOffline}
+              disabled={savingOffline || saving}
             >
-              {saving ? (
-                <ActivityIndicator size="small" color="#0F4A2F" />
+              {savingOffline ? (
+                <ActivityIndicator size="small" color="#F59E0B" />
               ) : (
-                <Ionicons name="save-outline" size={16} color="#0F4A2F" />
+                <Ionicons
+                  name="cloud-download-outline"
+                  size={16}
+                  color="#F59E0B"
+                />
               )}
-              <Text style={styles.draftBtnText}>
-                {saving ? "Saving…" : "Save Draft"}
+              <Text style={styles.offlineBtnText}>
+                {savingOffline
+                  ? "Saving…"
+                  : isEditingOfflineDraft
+                    ? "Update Offline Draft"
+                    : "Save Offline"}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.submitBtn, submitting && styles.btnDisabled]}
-              onPress={handleSubmit}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Ionicons name="send-outline" size={16} color="#FFFFFF" />
-              )}
-              <Text style={styles.submitBtnText}>
-                {submitting ? "Submitting…" : "Submit to GIS"}
-              </Text>
-            </TouchableOpacity>
+
+            {!isOfflineMode && (
+              <TouchableOpacity
+                style={[styles.draftBtn, saving && styles.btnDisabled]}
+                onPress={handleSaveDraft}
+                disabled={saving || savingOffline}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#0F4A2F" />
+                ) : (
+                  <Ionicons name="save-outline" size={16} color="#0F4A2F" />
+                )}
+                <Text style={styles.draftBtnText}>
+                  {saving ? "Saving…" : "Save Draft"}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {!isOfflineMode && (
+              <TouchableOpacity
+                style={[styles.submitBtn, submitting && styles.btnDisabled]}
+                onPress={handleSubmit}
+                disabled={submitting || saving || savingOffline}
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons name="send-outline" size={16} color="#FFFFFF" />
+                )}
+                <Text style={styles.submitBtnText}>
+                  {submitting ? "Submitting…" : "Submit to GIS"}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {isOfflineMode && (
+              <View style={styles.offlineNotice}>
+                <Ionicons name="information-circle" size={16} color="#F59E0B" />
+                <Text style={styles.offlineNoticeText}>
+                  You're offline. Save offline to sync later.
+                </Text>
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -1087,6 +1359,7 @@ export default function MetaDataForm() {
           </View>
         </View>
       </Modal>
+        
     </View>
   );
 }
@@ -1216,6 +1489,18 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: "center" },
   headerTitle: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
   headerSub: { fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 1 },
+
+  offlineBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F59E0B",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  offlineBannerText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
+
   submittedBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1321,6 +1606,23 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   dropdownText: { flex: 1, fontSize: 13, color: "#0F2D1C" },
+
+  offlineFieldNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  offlineFieldText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#92400E",
+    fontWeight: "500",
+  },
+
   animalSelectorBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1526,6 +1828,24 @@ const styles = StyleSheet.create({
   },
   addPhotoBtnText: { fontSize: 13, fontWeight: "600", color: "#0F4A2F" },
   actions: { gap: 10, marginTop: 4 },
+
+  offlineBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: "#F59E0B",
+    borderRadius: 14,
+    paddingVertical: 14,
+    backgroundColor: "#FFFBEB",
+  },
+  offlineBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#F59E0B",
+  },
+
   draftBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1554,6 +1874,22 @@ const styles = StyleSheet.create({
   },
   submitBtnText: { fontSize: 14, fontWeight: "700", color: "#FFFFFF" },
   btnDisabled: { opacity: 0.55 },
+
+  offlineNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  offlineNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#92400E",
+    fontWeight: "600",
+  },
 });
 
 const modalStyles = StyleSheet.create({
