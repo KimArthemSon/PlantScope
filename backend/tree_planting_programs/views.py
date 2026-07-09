@@ -148,12 +148,8 @@ def get_applications(request):
 
     data = []
     for app in qs[offset:offset + entries]:
-        # Calculate days since effective date
-        effective_date = None
-        if app.last_report_date:
-            effective_date = app.last_report_date
-        elif app.orientation_date:
-            effective_date = app.orientation_date
+        # ✅ FIX: Use the annotated effective_date which is already cast to a DateField
+        effective_date = app.effective_date 
         
         days_since = None
         last_report_date_str = None
@@ -391,12 +387,8 @@ def get_ongoing_applications(request):
     
     data = []
     for app in qs:
-        # Calculate days since effective date
-        effective_date = None
-        if app.last_report_date:
-            effective_date = app.last_report_date
-        elif app.orientation_date:
-            effective_date = app.orientation_date
+        # ✅ FIX: Use the annotated effective_date which is already cast to a DateField
+        effective_date = app.effective_date
         
         days_since = None
         if effective_date:
@@ -1941,7 +1933,9 @@ def get_monitoring_compliance(request):
         last_report_date = None
         if latest_report:
             last_report_date = latest_report.created_at
-            days_since = (datetime.now() - last_report_date).days
+            # ✅ FIX: Use timezone.now() and convert both to .date() to safely subtract
+            # This prevents "can't subtract offset-naive and offset-aware datetimes"
+            days_since = (timezone.now().date() - last_report_date.date()).days
         
         total_survived = 0
         total_dead = 0
