@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
-  Alert,
+  // ❌ REMOVED: Alert
 } from "react-native";
 import { Tabs, useRouter, usePathname } from "expo-router";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
@@ -16,6 +16,9 @@ import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
+
+// ✅ ADDED: Import the useAlert hook
+import { useAlert } from "@/components/AlertContext";
 
 const API = api + "/api";
 const USER_DATA_KEY = "@plantscope_user_data";
@@ -69,7 +72,6 @@ const CustomHeader: React.FC<{ isOnline: boolean }> = ({ isOnline }) => {
   };
 
   const fetchUserData = async () => {
-    // ✅ STRICT SAFEGUARD: Do not fetch if offline
     if (!isOnline) {
       setLoading(false);
       return;
@@ -234,13 +236,15 @@ export default function TabLayout() {
   const pathname = usePathname();
   const isOnline = useNetworkStatus();
 
+  // ✅ ADDED: Initialize the warning method from useAlert
+  const { warning } = useAlert();
+
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasShownOfflineAlert, setHasShownOfflineAlert] = useState(false);
 
   useEffect(() => {
     const fetchUserRole = async () => {
-      // ✅ STRICT SAFEGUARD: Do not fetch if offline
       if (!isOnline) {
         setLoading(false);
         return;
@@ -301,17 +305,26 @@ export default function TabLayout() {
         router.replace("/Area");
       }
 
+      // ✅ UPDATED: Replaced native Alert with custom warning() toast
       if (!hasShownOfflineAlert) {
-        Alert.alert(
+        warning(
           "Offline Mode",
           "You are currently offline. Only Assessment is available.",
-          [{ text: "OK", onPress: () => setHasShownOfflineAlert(true) }],
         );
+        // Since toasts are non-blocking, we can immediately set this to true
+        setHasShownOfflineAlert(true);
       }
     } else if (isOnline) {
       setHasShownOfflineAlert(false);
     }
-  }, [shouldHideAllTabs, loading, pathname, hasShownOfflineAlert, isOnline]);
+  }, [
+    shouldHideAllTabs,
+    loading,
+    pathname,
+    hasShownOfflineAlert,
+    isOnline,
+    warning,
+  ]);
 
   if (loading) {
     return (
@@ -456,6 +469,7 @@ export default function TabLayout() {
   );
 }
 
+/* ---------- STYLES (Unchanged) ---------- */
 const hdr = StyleSheet.create({
   wrap: {
     backgroundColor: "#0F4A2F",

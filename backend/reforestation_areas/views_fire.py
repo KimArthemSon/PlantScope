@@ -2,6 +2,7 @@ import requests
 import csv
 import io
 import json
+from datetime import datetime, timedelta
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -44,7 +45,7 @@ def fetch_firms(token, source, bbox, day_range, date=None):
     try:
         logger.info(f"📡 Fetching {source} | days={day_range} | date={date or 'recent'}")
         logger.info(f"🔗 URL: {url}")
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=30)
         
         if response.status_code != 200:
             logger.warning(f"⚠️ {source} returned {response.status_code}: {response.text[:150]}")
@@ -92,6 +93,64 @@ def deduplicate_fires(fires):
             unique.append(f)
     return unique
 
+def get_date_ranges(start_date, end_date, max_days_per_call=5):
+    """
+    Split date range into chunks of max_days_per_call days.
+    Returns list of (start_date, end_date) tuples.
+    """
+    start = datetime.strptime(start_date, '%Y-%m-%d')
+    end = datetime.strptime(end_date, '%Y-%m-%d')
+    
+    if start > end:
+        start, end = end, start
+    
+    date_ranges = []
+    current_start = start
+    
+    while current_start <= end:
+        current_end = min(current_start + timedelta(days=max_days_per_call-1), end)
+        date_ranges.append((
+            current_start.strftime('%Y-%m-%d'),
+            current_end.strftime('%Y-%m-%d')
+        ))
+        current_start = current_end + timedelta(days=1)
+    
+    return date_ranges
+
+def fetch_firms_for_date_range(token, bbox, start_date, end_date):
+    """
+    Fetch FIRMS data for a custom date range by making multiple API calls.
+    """
+    all_fires = []
+    date_ranges = get_date_ranges(start_date, end_date, max_days_per_call=5)
+    
+    logger.info(f"📅 Fetching FIRMS data from {start_date} to {end_date}")
+    logger.info(f"📊 Split into {len(date_ranges)} API call(s)")
+    
+    # Determine which sources to use based on date range
+    today = datetime.now().date()
+    end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+    
+    # Use NRT for recent data (last 2 days), SP for older data
+    if (today - end_dt).days <= 2:
+        sources = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'MODIS_NRT']
+    else:
+        sources = ['VIIRS_SNPP_SP', 'VIIRS_NOAA20_SP', 'MODIS_SP']
+    
+    for range_start, range_end in date_ranges:
+        # Calculate days in this range
+        start_dt = datetime.strptime(range_start, '%Y-%m-%d')
+        end_dt = datetime.strptime(range_end, '%Y-%m-%d')
+        days = (end_dt - start_dt).days + 1
+        
+        logger.info(f"  🔸 Fetching {range_start} to {range_end} ({days} days)")
+        
+        for source in sources:
+            fires = fetch_firms(token, source, bbox, days, range_end)
+            all_fires.extend(fires)
+    
+    return all_fires
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def get_firms_fire_data(request):
@@ -99,6 +158,8 @@ def get_firms_fire_data(request):
         data = json.loads(request.body)
         bbox = data.get('bbox')
         time_range = data.get('time_range', 'today')
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
         
         if not bbox:
             return JsonResponse({"success": False, "error": "Missing bbox"}, status=400)
@@ -109,15 +170,33 @@ def get_firms_fire_data(request):
             return JsonResponse({"success": False, "error": str(err)}, status=400)
         
         bbox_str = f"{w},{s},{e},{n}"
-        logger.info(f"🔥 FIRMS Request - BBox: {bbox_str}, Time Range: {time_range}")
         
+        # Handle custom date range
+        if start_date and end_date:
+            logger.info(f" FIRMS Request - Custom Date Range: {start_date} to {end_date}")
+            all_fires = fetch_firms_for_date_range(settings.FIRMS_API_TOKEN, bbox_str, start_date, end_date)
+            unique_fires = deduplicate_fires(all_fires)
+            
+            return JsonResponse({
+                "success": True,
+                "fire_count": len(unique_fires),
+                "fires": unique_fires,
+                "bbox": bbox_str,
+                "time_range": "custom",
+                "start_date": start_date,
+                "end_date": end_date,
+                "total_detections": len(all_fires),
+                "unique_fires": len(unique_fires)
+            })
+        
+        # Handle preset time ranges
+        logger.info(f"🔥 FIRMS Request - BBox: {bbox_str}, Time Range: {time_range}")
         all_fires = []
         
         # NRT (Near Real-Time) - for TODAY and 24H
         nrt_sources = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'MODIS_NRT']
         
         # Standard Processing (Historical) - for 7D
-        # ✅ FIXED: Use correct source names with _SP suffix
         sp_sources = ['VIIRS_SNPP_SP', 'VIIRS_NOAA20_SP', 'MODIS_SP']
         
         if time_range == 'today':
@@ -126,19 +205,22 @@ def get_firms_fire_data(request):
                 all_fires.extend(fetch_firms(settings.FIRMS_API_TOKEN, src, bbox_str, 1))
                 
         elif time_range == '24hrs':
-            logger.info("📅 Using 24HRS (NRT, day_range=2)")
+            logger.info(" Using 24HRS (NRT, day_range=2)")
             for src in nrt_sources:
                 all_fires.extend(fetch_firms(settings.FIRMS_API_TOKEN, src, bbox_str, 2))
                 
         elif time_range == '7days':
-            logger.info("📅 Using 7DAYS (Standard sources, day_range=5 max)")
-            # ✅ FIXED: 
-            # 1. Use correct source names (_SP suffix)
-            # 2. Use day_range=5 (maximum allowed by API)
-            # 3. DO NOT pass date parameter (avoids using server's incorrect 2026 date)
-            # Note: API limits day_range to 1-5. We get 5 days of recent data.
-            for src in sp_sources:
-                all_fires.extend(fetch_firms(settings.FIRMS_API_TOKEN, src, bbox_str, 5))
+            logger.info("📅 Using 7DAYS (Standard sources, multiple calls)")
+            # Fetch last 7 days using multiple API calls
+            today = datetime.now().date()
+            seven_days_ago = today - timedelta(days=6)
+            
+            all_fires = fetch_firms_for_date_range(
+                settings.FIRMS_API_TOKEN, 
+                bbox_str, 
+                seven_days_ago.strftime('%Y-%m-%d'),
+                today.strftime('%Y-%m-%d')
+            )
         else:
             for src in nrt_sources:
                 all_fires.extend(fetch_firms(settings.FIRMS_API_TOKEN, src, bbox_str, 1))
@@ -168,9 +250,13 @@ def get_firms_fire_count(request):
             data = json.loads(request.body)
             bbox = data.get('bbox')
             time_range = data.get('time_range', 'today')
+            start_date = data.get('start_date')
+            end_date = data.get('end_date')
         else:
             bbox = request.GET.get('bbox')
             time_range = request.GET.get('time_range', 'today')
+            start_date = request.GET.get('start_date')
+            end_date = request.GET.get('end_date')
         
         if not bbox:
             return JsonResponse({"success": False, "error": "Missing bbox parameter"}, status=400)
@@ -181,6 +267,24 @@ def get_firms_fire_count(request):
             return JsonResponse({"success": False, "error": str(err)}, status=400)
         
         bbox_str = f"{w},{s},{e},{n}"
+        
+        # Handle custom date range
+        if start_date and end_date:
+            all_fires = fetch_firms_for_date_range(settings.FIRMS_API_TOKEN, bbox_str, start_date, end_date)
+            unique_fires = deduplicate_fires(all_fires)
+            
+            return JsonResponse({
+                "success": True,
+                "fire_count": len(unique_fires),
+                "bbox": bbox_str,
+                "time_range": "custom",
+                "start_date": start_date,
+                "end_date": end_date,
+                "total_detections": len(all_fires),
+                "unique_fires": len(unique_fires)
+            })
+        
+        # Handle preset time ranges
         all_fires = []
         
         nrt_sources = ['VIIRS_SNPP_NRT', 'VIIRS_NOAA20_NRT', 'MODIS_NRT']
@@ -193,9 +297,14 @@ def get_firms_fire_count(request):
             for src in nrt_sources:
                 all_fires.extend(fetch_firms(settings.FIRMS_API_TOKEN, src, bbox_str, 2))
         elif time_range == '7days':
-            # ✅ FIXED: Use day_range=5 with correct _SP sources
-            for src in sp_sources:
-                all_fires.extend(fetch_firms(settings.FIRMS_API_TOKEN, src, bbox_str, 5))
+            today = datetime.now().date()
+            seven_days_ago = today - timedelta(days=6)
+            all_fires = fetch_firms_for_date_range(
+                settings.FIRMS_API_TOKEN, 
+                bbox_str, 
+                seven_days_ago.strftime('%Y-%m-%d'),
+                today.strftime('%Y-%m-%d')
+            )
         else:
             for src in nrt_sources:
                 all_fires.extend(fetch_firms(settings.FIRMS_API_TOKEN, src, bbox_str, 1))

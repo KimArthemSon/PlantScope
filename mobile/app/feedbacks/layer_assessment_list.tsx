@@ -6,7 +6,7 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Alert,
+  // ❌ REMOVED: Alert
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
@@ -21,6 +21,9 @@ import {
   deleteOfflineDraft,
   OfflineDraft,
 } from "@/hooks/useOfflineFieldAssessment";
+
+// ✅ ADDED: Import the useAlert hook
+import { useAlert } from "@/components/AlertContext";
 
 const API_BASE = api;
 
@@ -92,6 +95,9 @@ export default function LayerAssessmentList() {
   const insets = useSafeAreaInsets();
   const layer = getLayer(layerId);
   const isOnline = useNetworkStatus();
+
+  // ✅ ADDED: Initialize useAlert
+  const { success, error: showError, warning, info, confirm } = useAlert();
 
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [offlineDrafts, setOfflineDrafts] = useState<OfflineDraft[]>([]);
@@ -184,58 +190,63 @@ export default function LayerAssessmentList() {
     fetchAssessments();
   }, [isOnline]);
 
+  // ✅ UPDATED: Converted to use confirm() dialog
   const handleDeleteOffline = (localUuid: string) => {
-    Alert.alert(
+    confirm(
       "Delete Offline Draft",
       "This cannot be undone. Are you sure?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteOfflineDraft(localUuid);
-              Alert.alert("Deleted", "Offline draft deleted.");
-              fetchAssessments();
-            } catch (e: any) {
-              Alert.alert("Error", "Failed to delete offline draft.");
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          await deleteOfflineDraft(localUuid);
+          success("Deleted", "Offline draft deleted.");
+          fetchAssessments();
+        } catch (e: any) {
+          showError("Error", "Failed to delete offline draft.");
+        }
+      },
+      {
+        type: "error",
+        confirmText: "Delete",
+        cancelText: "Cancel",
+      },
     );
   };
 
+  // ✅ UPDATED: Converted to use confirm() dialog and warning()
   const handleDeleteOnline = (id: number) => {
     if (isOfflineMode) {
-      Alert.alert("Offline Mode", "Cannot delete assessments while offline.");
+      warning("Offline Mode", "Cannot delete assessments while offline.");
       return;
     }
 
-    Alert.alert("Delete Draft", "This cannot be undone. Are you sure?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const token = await SecureStore.getItemAsync("token");
-            const res = await fetch(
-              `${API_BASE}/api/field_assessments/${id}/delete/`,
-              {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
-              },
-            );
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            fetchAssessments();
-          } catch (e: any) {
-            Alert.alert("Error", e.message ?? "Failed to delete.");
-          }
-        },
+    confirm(
+      "Delete Draft",
+      "This cannot be undone. Are you sure?",
+      async () => {
+        try {
+          const token = await SecureStore.getItemAsync("token");
+          const res = await fetch(
+            `${API_BASE}/api/field_assessments/${id}/delete/`,
+            {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          );
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          // Added success toast for better UX upon successful deletion
+          success("Deleted", "Assessment deleted successfully.");
+          fetchAssessments();
+        } catch (e: any) {
+          showError("Error", e.message ?? "Failed to delete.");
+        }
       },
-    ]);
+      {
+        type: "error",
+        confirmText: "Delete",
+        cancelText: "Cancel",
+      },
+    );
   };
 
   const handleCreateNew = () => {

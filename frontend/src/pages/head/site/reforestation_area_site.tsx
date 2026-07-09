@@ -1,31 +1,41 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Trash2,
-  Edit,
+  Plus,
   ChevronRight,
   ChevronLeft,
-  List,
+  Leaf,
+  Eye,
+  Ruler,
+  Target,
+  Pin,
+  PinOff,
   CheckCircle,
+  XCircle,
   AlertCircle,
-  Clock,
   FileText,
-  MapPin,
-  TrendingUp,
-  BarChart3,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
+  Shield,
+  Layers,
   X,
   PieChart,
   Activity,
   Trees,
-  ShieldCheck,
-  Users,
+  MapPin,
   Calendar,
+  BarChart3,
+  Search,
+  Filter,
+  List,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
-import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
-import { api } from "@/constant/api.ts";
+import { api } from "@/constant/api";
 
 import {
   LineChart,
@@ -39,16 +49,55 @@ import {
   PieChart as RePieChart,
   Pie,
   Cell,
-  BarChart,
-  Bar,
 } from "recharts";
 
 // ─────────────────────────────────────────────────────────────
 // Types & Interfaces
-// ─────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────
 interface Barangay {
   barangay_id: number;
   name: string;
+}
+
+interface LandClassificationOption {
+  land_classification_id: number;
+  name: string;
+}
+
+interface ValidationStatus {
+  has_safety_note: boolean;
+  has_survivability_note: boolean;
+  final_decision: "ACCEPT" | "REJECT" | null;
+  is_ready_to_finalize: boolean;
+}
+
+interface SiteMetrics {
+  ndvi: number | null;
+  area_hectares: number;
+  seedlings: number;
+}
+
+interface VerificationInfo {
+  status: "pending" | "draft" | "verified" | "rejected";
+  land_classification: {
+    id: number;
+    name: string;
+  } | null;
+  security_concerns_count: number;
+  has_accessibility: boolean;
+  accessibility_type: string | null;
+}
+
+interface Site {
+  site_id: number;
+  name: string;
+  status: string;
+  is_pinned: boolean;
+  created_at: string;
+  validation: ValidationStatus;
+  verification: VerificationInfo;
+  permit_count: number;
+  metrics: SiteMetrics;
 }
 
 interface ReforestationArea {
@@ -65,6 +114,8 @@ interface ReforestationArea {
   verification_status?: "pending" | "draft" | "verified" | "rejected";
   verification_decision_note?: string | null;
   created_at: string;
+  site_count?: number;
+  total_area_hectares?: number;
 }
 
 interface Filter {
@@ -73,6 +124,17 @@ interface Filter {
   page: number;
   total_page: number;
   barangay_id: string;
+}
+
+interface SiteFilter {
+  search: string;
+  entries: number;
+  page: number;
+  total_page: number;
+  status: string;
+  pinned_only: boolean;
+  verification_status: string;
+  land_classification_id: string;
 }
 
 interface AreaDetails {
@@ -95,51 +157,63 @@ interface AreaDetails {
   }>;
 }
 
-const DEFAULT_FILTER: Omit<Filter, "total_page"> = {
+const DEFAULT_AREA_FILTER: Omit<Filter, "total_page"> = {
   search: "",
   entries: 10,
   page: 1,
   barangay_id: "All",
 };
 
-const STATIC_OVERVIEW_STATS = {
-  total_areas: 0,
-  pending_verification: 0,
-  verified: 0,
-  rejected: 0,
-  draft: 0,
-  avg_verification_rate: 0,
+const DEFAULT_SITE_FILTER: Omit<SiteFilter, "total_page"> = {
+  search: "",
+  entries: 10,
+  page: 1,
+  status: "all",
+  pinned_only: false,
+  verification_status: "all",
+  land_classification_id: "",
 };
-
-const STATIC_CHART_DATA = [
-  { period: "Jan 24", pending: 0, verified: 0, rejected: 0 },
-  { period: "Feb 24", pending: 0, verified: 0, rejected: 0 },
-  { period: "Mar 24", pending: 0, verified: 0, rejected: 0 },
-  { period: "Apr 24", pending: 0, verified: 0, rejected: 0 },
-  { period: "May 24", pending: 0, verified: 0, rejected: 0 },
-  { period: "Jun 24", pending: 0, verified: 0, rejected: 0 },
-];
 
 const COLORS = ["#10B981", "#F59E0B", "#EF4444", "#3B82F6"];
 
-export default function Reforestation_areas() {
-  const [areas, setAreas] = useState<ReforestationArea[]>([]);
-  const [barangays, setBarangays] = useState<Barangay[]>([]);
+export default function ReforestationAreaSiteCombined() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const token = localStorage.getItem("token");
+  const { userRole } = useUserRole();
 
-  const [filter, setFilter] = useState<Filter>({
-    ...DEFAULT_FILTER,
+  // States
+  const [areas, setAreas] = useState<ReforestationArea[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
+  const [barangays, setBarangays] = useState<Barangay[]>([]);
+  const [landClassifications, setLandClassifications] = useState<LandClassificationOption[]>([]);
+  
+  const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(null);
+  
+  const [areaFilter, setAreaFilter] = useState<Filter>({
+    ...DEFAULT_AREA_FILTER,
+    total_page: 1,
+  });
+  
+  const [siteFilter, setSiteFilter] = useState<SiteFilter>({
+    ...DEFAULT_SITE_FILTER,
     total_page: 1,
   });
 
-  const [loading, setLoading] = useState(false);
+  // Floating Filter State
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  const [loadingAreas, setLoadingAreas] = useState(false);
+  const [loadingSites, setLoadingSites] = useState(false);
+  
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteType, setDeleteType] = useState<"area" | "site" | null>(null);
 
-  // ✅ NEW: View Details Modal State
+  // View Details Modal
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(
-    null,
-  );
+  const [viewArea, setViewArea] = useState<ReforestationArea | null>(null);
   const [areaDetails, setAreaDetails] = useState<AreaDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
@@ -149,30 +223,33 @@ export default function Reforestation_areas() {
     message: string;
   } | null>(null);
 
-  const [overviewStats] = useState(STATIC_OVERVIEW_STATS);
-  const [chartData] = useState(STATIC_CHART_DATA);
+  const [userPath, setUserPath] = useState("");
 
-  const navigate = useNavigate();
-  const token = localStorage.getItem("token");
-  const { userRole } = useUserRole();
-  const [useruserRole, setUseruserRole] = useState("");
-
+  // User role path setup
   useEffect(() => {
     if (userRole === "treeGrowers" || userRole === "CityENROHead") {
-      setUseruserRole("");
-      return;
-    }
-    if (userRole === "GISSpecialist") {
-      setUseruserRole("/GISS");
-      return;
-    }
-    if (userRole === "DataManager") {
-      setUseruserRole("/DataManager");
-      return;
+      setUserPath("");
+    } else if (userRole === "GISSpecialist") {
+      setUserPath("/GISS");
+    } else if (userRole === "DataManager") {
+      setUserPath("/DataManager");
     }
   }, [userRole]);
 
-  // ── Fetch Barangays ─────────────────────────────────────────
+  // Click outside to close filter panel
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+        setIsFilterOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [filterRef]);
+
+  // Fetch Barangays
   useEffect(() => {
     const fetchBarangays = async () => {
       try {
@@ -190,15 +267,34 @@ export default function Reforestation_areas() {
     fetchBarangays();
   }, [token]);
 
+  // Fetch Land Classifications
+  useEffect(() => {
+    const fetchLandClassifications = async () => {
+      try {
+        const res = await fetch(`${api}api/get_land_classifications_list/?for_reforestation=true`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setLandClassifications(data.data || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch land classifications:", err);
+      }
+    };
+    fetchLandClassifications();
+  }, [token]);
+
+  // Fetch Reforestation Areas
   const fetchAreas = async () => {
-    setLoading(true);
+    setLoadingAreas(true);
     try {
       const params = new URLSearchParams({
-        search: filter.search,
-        page: filter.page.toString(),
-        entries: filter.entries.toString(),
-        ...(filter.barangay_id !== "All" && {
-          barangay_id: filter.barangay_id,
+        search: areaFilter.search,
+        page: areaFilter.page.toString(),
+        entries: areaFilter.entries.toString(),
+        ...(areaFilter.barangay_id !== "All" && {
+          barangay_id: areaFilter.barangay_id,
         }),
       });
       const response = await fetch(
@@ -209,7 +305,11 @@ export default function Reforestation_areas() {
       const data = await response.json();
 
       setAreas(data.data);
-      setFilter((prev) => ({ ...prev, total_page: data.total_page }));
+      setAreaFilter((prev) => ({ ...prev, total_page: data.total_page }));
+      
+      if (!selectedArea && data.data.length > 0) {
+        handleSelectArea(data.data[0]);
+      }
     } catch {
       setPSAlert({
         type: "error",
@@ -217,15 +317,146 @@ export default function Reforestation_areas() {
         message: "Failed to load reforestation areas.",
       });
     } finally {
-      setLoading(false);
+      setLoadingAreas(false);
+    }
+  };
+
+  // Fetch Sites for selected area
+  const fetchSites = async () => {
+    if (!selectedArea) return;
+    setLoadingSites(true);
+    try {
+      const params = new URLSearchParams({
+        search: siteFilter.search,
+        page: siteFilter.page.toString(),
+        entries: siteFilter.entries.toString(),
+        status: siteFilter.status,
+        pinned_only: siteFilter.pinned_only ? "true" : "false",
+        verification_status: siteFilter.verification_status,
+      });
+
+      if (siteFilter.land_classification_id) {
+        params.append("land_classification_id", siteFilter.land_classification_id);
+      }
+
+      const response = await fetch(
+        `${api}api/get_sites/${selectedArea.reforestation_area_id}/?${params}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (!response.ok) throw new Error("Failed to fetch sites");
+
+      const data = await response.json();
+      setSites(data.data);
+      setSiteFilter((prev) => ({ ...prev, total_page: data.total_page }));
+    } catch {
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to load sites",
+      });
+    } finally {
+      setLoadingSites(false);
     }
   };
 
   useEffect(() => {
     fetchAreas();
-  }, [filter.page, filter.entries, filter.barangay_id]);
+  }, [areaFilter.page, areaFilter.entries, areaFilter.barangay_id]);
 
-  // ✅ NEW: Fetch Area Details
+  useEffect(() => {
+    if (selectedArea) {
+      fetchSites();
+    }
+  }, [
+    selectedArea,
+    siteFilter.page,
+    siteFilter.entries,
+    siteFilter.status,
+    siteFilter.pinned_only,
+    siteFilter.verification_status,
+    siteFilter.land_classification_id,
+  ]);
+
+  const handleSelectArea = (area: ReforestationArea) => {
+    setSelectedArea(area);
+    setSiteFilter({ ...DEFAULT_SITE_FILTER, total_page: 1 });
+  };
+
+  const handleTogglePin = async (siteId: number, currentPin: boolean) => {
+    try {
+      const response = await fetch(`${api}api/toggle_pin/${siteId}/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (response.ok) {
+        setSites((prev) =>
+          prev.map((s) =>
+            s.site_id === siteId ? { ...s, is_pinned: !currentPin } : s,
+          ),
+        );
+      }
+    } catch {
+      // Silent fail
+    }
+  };
+
+  const setDelete = (id: number, type: "area" | "site") => {
+    setDeleteId(id);
+    setDeleteType(type);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId || !deleteType) return;
+    
+    try {
+      const endpoint = deleteType === "area" 
+        ? `api/delete_reforestation_areas/${deleteId}/`
+        : `api/delete_site/${deleteId}/`;
+        
+      const response = await fetch(api + endpoint, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        setPSAlert({
+          type: "success",
+          title: "Deleted",
+          message: data.message,
+        });
+        
+        if (deleteType === "area") {
+          fetchAreas();
+          if (selectedArea?.reforestation_area_id === deleteId) {
+            setSelectedArea(null);
+            setSites([]);
+          }
+        } else {
+          fetchSites();
+        }
+      } else {
+        setPSAlert({
+          type: "failed",
+          title: "Failed",
+          message: data.message || "Delete failed",
+        });
+      }
+    } catch {
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Something went wrong",
+      });
+    }
+    setIsDeleteModalOpen(false);
+  };
+
   const fetchAreaDetails = async (areaId: number) => {
     setLoadingDetails(true);
     try {
@@ -236,7 +467,6 @@ export default function Reforestation_areas() {
         const data = await response.json();
         setAreaDetails(data);
       } else {
-        // Mock data for demonstration
         setAreaDetails({
           total_sites: 12,
           verified_sites: 7,
@@ -272,86 +502,125 @@ export default function Reforestation_areas() {
     }
   };
 
-  // ✅ NEW: Open View Modal
   const handleViewDetails = (area: ReforestationArea) => {
-    setSelectedArea(area);
+    setViewArea(area);
     setIsViewModalOpen(true);
     fetchAreaDetails(area.reforestation_area_id);
   };
 
-  const setDelete = (id: number) => {
-    setDeleteId(id);
-    setIsDeleteModalOpen(true);
+  const clearSiteFilters = () => {
+    setSiteFilter({
+      ...DEFAULT_SITE_FILTER,
+      total_page: siteFilter.total_page,
+    });
   };
 
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      const response = await fetch(
-        api + `api/delete_reforestation_areas/${deleteId}/`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
-      );
-      const data = await response.json();
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Deleted",
-          message: data.message,
-        });
-        fetchAreas();
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.message || "Delete failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong.",
-      });
+  // Helper functions
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "completed":
+      case "accepted":
+        return "bg-emerald-100 text-emerald-700 border border-emerald-200";
+      case "rejected":
+        return "bg-red-100 text-red-700 border border-red-200";
+      case "under_review":
+        return "bg-blue-100 text-blue-700 border border-blue-200";
+      default:
+        return "bg-amber-100 text-amber-700 border border-amber-200";
     }
-    setIsDeleteModalOpen(false);
   };
 
-  const StatCard = ({
-    title,
-    value,
-    icon: Icon,
-    color,
-    trend,
-  }: {
-    title: string;
-    value: number | string;
-    icon: any;
-    color: string;
-    trend?: string;
-  }) => (
-    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-            {title}
-          </p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
-          {trend && (
-            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-              <TrendingUp size={10} />
-              {trend}
-            </p>
-          )}
-        </div>
-        <div className={`p-3 rounded-lg ${color}`}>
-          <Icon size={20} className="text-white" />
-        </div>
-      </div>
-    </div>
-  );
+  const getVerificationBadge = (status: string) => {
+    switch (status) {
+      case "verified":
+        return {
+          icon: ShieldCheck,
+          color: "bg-emerald-100 text-emerald-700 border border-emerald-300",
+          label: "Verified",
+        };
+      case "rejected":
+        return {
+          icon: ShieldX,
+          color: "bg-red-100 text-red-700 border border-red-300",
+          label: "Rejected",
+        };
+      case "draft":
+        return {
+          icon: FileText,
+          color: "bg-blue-100 text-blue-700 border border-blue-300",
+          label: "Draft",
+        };
+      default:
+        return {
+          icon: ShieldAlert,
+          color: "bg-slate-100 text-slate-700 border border-slate-300",
+          label: "Pending",
+        };
+    }
+  };
+
+  const getValidationBadge = (validation: ValidationStatus) => {
+    if (validation.final_decision === "ACCEPT") {
+      return {
+        icon: CheckCircle,
+        color: "bg-emerald-100 text-emerald-700",
+        label: "Accepted",
+      };
+    }
+    if (validation.final_decision === "REJECT") {
+      return {
+        icon: XCircle,
+        color: "bg-red-100 text-red-700",
+        label: "Rejected",
+      };
+    }
+    if (validation.is_ready_to_finalize) {
+      return {
+        icon: FileText,
+        color: "bg-blue-100 text-blue-700",
+        label: "Ready",
+      };
+    }
+    if (validation.has_safety_note && validation.has_survivability_note) {
+      return {
+        icon: FileText,
+        color: "bg-purple-100 text-purple-700",
+        label: "Notes Added",
+      };
+    }
+    if (validation.has_safety_note || validation.has_survivability_note) {
+      return {
+        icon: AlertCircle,
+        color: "bg-amber-100 text-amber-700",
+        label: "In Progress",
+      };
+    }
+    return {
+      icon: AlertCircle,
+      color: "bg-slate-100 text-slate-600",
+      label: "Not Started",
+    };
+  };
+
+  const getAreaStatusBadge = (status?: string) => {
+    switch (status) {
+      case "verified":
+        return { color: "bg-emerald-100 text-emerald-700 border border-emerald-300", label: "Verified" };
+      case "rejected":
+        return { color: "bg-red-100 text-red-700 border border-red-300", label: "Rejected" };
+      case "draft":
+        return { color: "bg-blue-100 text-blue-700 border border-blue-300", label: "Draft" };
+      default:
+        return { color: "bg-amber-100 text-amber-700 border border-amber-300", label: "Pending" };
+    }
+  };
+
+  const hasActiveFilters = siteFilter.verification_status !== "all" || 
+                           siteFilter.land_classification_id !== "" || 
+                           siteFilter.pinned_only;
 
   return (
-    <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
+    <div className="flex min-h-dvh bg-slate-50">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -367,101 +636,96 @@ export default function Reforestation_areas() {
         onDelete={handleDelete}
       />
 
-      {/* ✅ NEW: View Details Modal */}
-      {isViewModalOpen && selectedArea && (
-        <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
-            
-            {/* Modal Header */}
-            <div className="flex-shrink-0 bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white px-6 py-4 rounded-t-2xl flex items-center justify-between">
-              <div className="flex items-center gap-3 min-w-0">
-                <MapPin size={24} className="text-green-300 flex-shrink-0" />
-                <div className="min-w-0">
-                  <h2 className="text-xl font-bold truncate">{selectedArea.name}</h2>
-                  <p className="text-xs text-green-200">
-                    Area #{selectedArea.reforestation_area_id}
-                  </p>
+      {/* View Details Modal */}
+      {isViewModalOpen && viewArea && (
+        <div className="fixed inset-0 bg-black/50 z-[1000] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="flex-shrink-0 bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/10 rounded-lg">
+                  <MapPin size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold">{viewArea.name}</h2>
+                  <p className="text-xs text-green-200">Area #{viewArea.reforestation_area_id}</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsViewModalOpen(false)}
-                className="p-2 hover:bg-white/20 rounded-lg transition-colors flex-shrink-0"
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
               {loadingDetails ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0F4A2F]"></div>
+                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#0F4A2F] border-t-transparent"></div>
                 </div>
               ) : areaDetails ? (
                 <>
-                  {/* Stats Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-xl border border-green-200">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-4 rounded-xl border border-emerald-200">
                       <div className="flex items-center justify-between">
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-green-600 uppercase">Total Sites</p>
-                          <p className="text-3xl font-bold text-green-800 mt-1 truncate">{areaDetails.total_sites}</p>
+                        <div>
+                          <p className="text-xs font-medium text-emerald-600">Total Sites</p>
+                          <p className="text-2xl font-bold text-emerald-800 mt-0.5">{areaDetails.total_sites}</p>
                         </div>
-                        <Trees className="w-10 h-10 text-green-600 opacity-50 flex-shrink-0" />
+                        <Trees className="w-8 h-8 text-emerald-600/50" />
                       </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200">
+                    <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 p-4 rounded-xl border border-blue-200">
                       <div className="flex items-center justify-between">
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-blue-600 uppercase">Total Area</p>
-                          <p className="text-3xl font-bold text-blue-800 mt-1 truncate">{areaDetails.total_area_hectares.toFixed(1)} ha</p>
+                        <div>
+                          <p className="text-xs font-medium text-blue-600">Total Area</p>
+                          <p className="text-2xl font-bold text-blue-800 mt-0.5">{areaDetails.total_area_hectares.toFixed(1)} <span className="text-sm font-normal">ha</span></p>
                         </div>
-                        <MapPin className="w-10 h-10 text-blue-600 opacity-50 flex-shrink-0" />
+                        <MapPin className="w-8 h-8 text-blue-600/50" />
                       </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-xl border border-purple-200">
+                    <div className="bg-gradient-to-br from-purple-50 to-purple-100/50 p-4 rounded-xl border border-purple-200">
                       <div className="flex items-center justify-between">
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-purple-600 uppercase">Seedlings</p>
-                          <p className="text-3xl font-bold text-purple-800 mt-1 truncate">{areaDetails.total_seedlings.toLocaleString()}</p>
+                        <div>
+                          <p className="text-xs font-medium text-purple-600">Seedlings</p>
+                          <p className="text-2xl font-bold text-purple-800 mt-0.5">{areaDetails.total_seedlings.toLocaleString()}</p>
                         </div>
-                        <Activity className="w-10 h-10 text-purple-600 opacity-50 flex-shrink-0" />
+                        <Activity className="w-8 h-8 text-purple-600/50" />
                       </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-amber-50 to-amber-100 p-4 rounded-xl border border-amber-200">
+                    <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 p-4 rounded-xl border border-amber-200">
                       <div className="flex items-center justify-between">
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-amber-600 uppercase">Species</p>
-                          <p className="text-3xl font-bold text-amber-800 mt-1 truncate">{areaDetails.species_count}</p>
+                        <div>
+                          <p className="text-xs font-medium text-amber-600">Species</p>
+                          <p className="text-2xl font-bold text-amber-800 mt-0.5">{areaDetails.species_count}</p>
                         </div>
-                        <Trees className="w-10 h-10 text-amber-600 opacity-50 flex-shrink-0" />
+                        <Trees className="w-8 h-8 text-amber-600/50" />
                       </div>
                     </div>
                   </div>
 
-                  {/* Charts Row */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Pie Chart - Status Distribution */}
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                      <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                        <PieChart size={16} className="text-[#0F4A2F] flex-shrink-0" />
-                        <span className="truncate">Site Status Distribution</span>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                      <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                        <PieChart size={16} className="text-[#0F4A2F]" />
+                        Status Distribution
                       </h3>
-                      <div className="h-64 w-full relative">
+                      <div className="h-56">
                         <ResponsiveContainer width="100%" height="100%">
                           <RePieChart>
                             <Pie
                               data={areaDetails.status_distribution}
                               cx="50%"
                               cy="50%"
-                              innerRadius={60}
-                              outerRadius={80}
-                              paddingAngle={5}
+                              innerRadius={50}
+                              outerRadius={70}
+                              paddingAngle={4}
                               dataKey="value"
                               label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                              labelLine={false}
                             >
                               {areaDetails.status_distribution.map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -471,535 +735,577 @@ export default function Reforestation_areas() {
                           </RePieChart>
                         </ResponsiveContainer>
                       </div>
-                      <div className="flex flex-wrap justify-center gap-3 mt-4">
-                        {areaDetails.status_distribution.map((item, index) => (
-                          <div key={item.name} className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[index] }}></div>
-                            <span className="text-xs text-gray-600">{item.name}: {item.value}</span>
-                          </div>
-                        ))}
-                      </div>
                     </div>
 
-                    {/* Line Chart - Monthly Trend */}
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                      <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                        <BarChart3 size={16} className="text-[#0F4A2F] flex-shrink-0" />
-                        <span className="truncate">Monthly Activity</span>
+                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                      <h3 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                        <BarChart3 size={16} className="text-[#0F4A2F]" />
+                        Monthly Activity
                       </h3>
-                      <div className="h-64 w-full relative">
+                      <div className="h-56">
                         <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={areaDetails.monthly_data} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                          <LineChart data={areaDetails.monthly_data}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                             <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                             <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
                             <Tooltip />
-                            <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }} />
-                            <Line type="monotone" dataKey="sites_created" name="Sites Created" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
-                            <Line type="monotone" dataKey="verified" name="Verified" stroke="#3B82F6" strokeWidth={2} dot={{ r: 3 }} />
+                            <Legend wrapperStyle={{ fontSize: "11px" }} />
+                            <Line type="monotone" dataKey="sites_created" name="Created" stroke="#10B981" strokeWidth={2} dot={false} />
+                            <Line type="monotone" dataKey="verified" name="Verified" stroke="#3B82F6" strokeWidth={2} dot={false} />
                           </LineChart>
                         </ResponsiveContainer>
                       </div>
                     </div>
                   </div>
-
-                  {/* Verification Rate */}
-                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-xl border border-green-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-gray-800">Verification Progress</h3>
-                        <p className="text-xs text-gray-600 mt-1">Overall verification status of sites</p>
-                      </div>
-                      <ShieldCheck className="w-8 h-8 text-green-600 flex-shrink-0" />
-                    </div>
-                    <div className="flex flex-col sm:flex-row items-center gap-6">
-                      <div className="relative w-32 h-32 flex-shrink-0">
-                        <svg className="w-full h-full" viewBox="0 0 36 36">
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke="#e2e8f0"
-                            strokeWidth="3"
-                          />
-                          <path
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke="#10B981"
-                            strokeWidth="3"
-                            strokeDasharray={`${areaDetails.verification_rate}, 100`}
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-2xl font-bold text-green-700">
-                            {areaDetails.verification_rate.toFixed(1)}%
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex-1 w-full space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Verified Sites</span>
-                          <span className="text-sm font-semibold text-green-700">
-                            {areaDetails.verified_sites} / {areaDetails.total_sites}
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-green-600 h-2 rounded-full transition-all"
-                            style={{
-                              width: `${(areaDetails.verified_sites / areaDetails.total_sites) * 100}%`,
-                            }}
-                          ></div>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Pending Review</span>
-                          <span className="text-sm font-semibold text-amber-600">
-                            {areaDetails.pending_sites}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Rejected</span>
-                          <span className="text-sm font-semibold text-red-600">
-                            {areaDetails.rejected_sites}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Additional Info */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <MapPin size={16} className="text-[#0F4A2F] flex-shrink-0" />
-                        <h4 className="text-sm font-semibold text-gray-800">Location</h4>
-                      </div>
-                      <p className="text-sm text-gray-600 break-words">
-                        {selectedArea.barangay?.name || "N/A"}
-                      </p>
-                      {selectedArea.land_classification && (
-                        <p className="text-xs text-gray-500 mt-1 break-words">
-                          {selectedArea.land_classification.name}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Calendar size={16} className="text-[#0F4A2F] flex-shrink-0" />
-                        <h4 className="text-sm font-semibold text-gray-800">Created</h4>
-                      </div>
-                      <p className="text-sm text-gray-600 break-words">
-                        {new Date(selectedArea.created_at).toLocaleDateString("en-PH", {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })}
-                      </p>
-                    </div>
-                  </div>
                 </>
               ) : (
-                <div className="text-center py-12 text-gray-400">
+                <div className="text-center py-12 text-slate-400">
                   <AlertCircle className="w-12 h-12 mx-auto mb-2" />
                   <p>Failed to load area details</p>
                 </div>
               )}
             </div>
-
-            {/* Modal Footer */}
-            <div className="flex-shrink-0 bg-gray-50 px-6 py-4 border-t border-gray-200 rounded-b-2xl flex justify-end gap-3">
-              <button
-                onClick={() => setIsViewModalOpen(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  setIsViewModalOpen(false);
-                  navigate(`${useruserRole}/reforestation/site/${selectedArea.reforestation_area_id}`);
-                }}
-                className="px-4 py-2 bg-[#0F4A2F] text-white rounded-lg hover:bg-[#0a3522] transition-colors flex items-center gap-2"
-              >
-                <List size={16} />
-                View Sites
-              </button>
-            </div>
           </div>
         </div>
       )}
 
-      <main className="flex-1 p-8 max-w-7xl mx-auto">
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-              <FileText size={18} className="text-[#0F4A2F]" />
-              Verification Overview
-            </h2>
-            <button
-              onClick={fetchAreas}
-              className="text-xs text-[#0F4A2F] hover:underline flex items-center gap-1"
-            >
-              Refresh
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            <StatCard
-              title="Total Areas"
-              value={overviewStats.total_areas}
-              icon={MapPin}
-              color="bg-[#0F4A2F]"
-            />
-            <StatCard
-              title="Pending Verification"
-              value={overviewStats.pending_verification}
-              icon={Clock}
-              color="bg-amber-500"
-            />
-            <StatCard
-              title="Draft"
-              value={overviewStats.draft}
-              icon={Edit}
-              color="bg-blue-500"
-            />
-            <StatCard
-              title="Verified"
-              value={overviewStats.verified}
-              icon={CheckCircle}
-              color="bg-green-600"
-            />
-            <StatCard
-              title="Rejected"
-              value={overviewStats.rejected}
-              icon={AlertCircle}
-              color="bg-red-500"
-            />
-          </div>
-
-          <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-green-800 font-medium">
-                Overall Verification Rate
-              </span>
-              <span className="text-lg font-bold text-green-700">
-                {overviewStats.avg_verification_rate}%
-              </span>
+      <main className="flex-1 p-5 w-full">
+        <div className="flex gap-5 h-[calc(100vh-120px)]">
+          {/* Left Sidebar - Reforestation Areas */}
+          <div className="w-96 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-4 border-b border-slate-200 bg-slate-50/50">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+                  <Trees size={18} className="text-[#0F4A2F]" />
+                  Reforestation Areas
+                </h2>
+                <span className="text-xs text-slate-500 bg-slate-200 px-2 py-1 rounded-full">
+                  {areas.length}
+                </span>
+              </div>
+              
+              <div className="flex gap-2">
+                <select
+                  value={areaFilter.barangay_id}
+                  onChange={(e) =>
+                    setAreaFilter((prev) => ({
+                      ...prev,
+                      barangay_id: e.target.value,
+                      page: 1,
+                    }))
+                  }
+                  className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                >
+                  <option value="All">All Barangays</option>
+                  {barangays.map((b) => (
+                    <option key={b.barangay_id} value={b.barangay_id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+                
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={areaFilter.search}
+                    onChange={(e) =>
+                      setAreaFilter((prev) => ({
+                        ...prev,
+                        search: e.target.value,
+                        page: 1,
+                      }))
+                    }
+                    className="w-full border border-slate-300 rounded-lg pl-8 pr-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="mt-2 h-2 bg-green-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-green-600 rounded-full transition-all duration-300"
-                style={{ width: `${overviewStats.avg_verification_rate}%` }}
-              />
-            </div>
-          </div>
-        </section>
 
-        <div className="flex items-center flex-wrap mb-4 gap-3">
-          <label className="text-sm text-gray-600">Show:</label>
-          <select
-            value={filter.entries}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                entries: Number(e.target.value),
-                page: 1,
-              }))
-            }
-            className="border border-black p-2 rounded-md text-[.8rem]"
-          >
-            <option value={10}>10</option>
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-          </select>
-
-          {/* ✅ Barangay Filter */}
-          <label className="text-sm text-gray-600">Barangay:</label>
-          <select
-            value={filter.barangay_id}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                barangay_id: e.target.value,
-                page: 1,
-              }))
-            }
-            className="border border-gray-300 p-2 rounded-lg text-[.8rem] focus:outline-none focus:ring-2 focus:ring-green-400"
-          >
-            <option value="All">All</option>
-            {barangays.map((b) => (
-              <option key={b.barangay_id} value={b.barangay_id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-
-          <input
-            type="text"
-            placeholder="Search reforestation areas..."
-            value={filter.search}
-            onChange={(e) =>
-              setFilter((prev) => ({
-                ...prev,
-                search: e.target.value,
-                page: 1,
-              }))
-            }
-            onKeyDown={(e) => {
-              if (e.key === "Enter") fetchAreas();
-            }}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
-          />
-        </div>
-
-        <div className="overflow-x-auto shadow-lg border border-gray-200">
-          {loading && <LoaderPending />}
-          <table className="min-w-full bg-white">
-            <thead className="bg-[#0f4a2fe0] text-white">
-              <tr>
-                <th className="py-3 px-5 text-left">No</th>
-                <th className="py-3 px-5 text-left">Name</th>
-                <th className="py-3 px-5 text-left">Barangay</th>
-                <th className="py-3 px-5 text-left">Created</th>
-                <th className="py-3 px-5 text-left">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {areas.length > 0 ? (
-                areas.map((area, index) => {
-                  const status = area.verification_status;
-                  const badgeClass =
-                    status === "pending"
-                      ? "bg-amber-100 text-amber-700"
-                      : status === "draft"
-                        ? "bg-blue-100 text-blue-700"
-                        : status === "verified"
-                          ? "bg-green-100 text-green-700"
-                          : status === "rejected"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-gray-100 text-gray-700";
-
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {loadingAreas ? (
+                <LoaderPending />
+              ) : areas.length > 0 ? (
+                areas.map((area) => {
+                  const statusBadge = getAreaStatusBadge(area.verification_status);
+                  const isSelected = selectedArea?.reforestation_area_id === area.reforestation_area_id;
+                  
                   return (
-                    <tr
+                    <div
                       key={area.reforestation_area_id}
-                      className={`${index % 2 ? "bg-[#0F4A2F0D]" : ""}`}
+                      onClick={() => handleSelectArea(area)}
+                      className={`p-3.5 rounded-lg border cursor-pointer transition-all duration-200 group ${
+                        isSelected
+                          ? "border-emerald-500 bg-emerald-50/60 shadow-sm ring-1 ring-emerald-500"
+                          : "border-slate-200 bg-white hover:border-emerald-300 hover:shadow-sm"
+                      }`}
                     >
-                      <td className="py-3 px-5">
-                        {index + 1 + (filter.page - 1) * filter.entries}
-                      </td>
-                      <td className="py-3 px-5 font-medium">{area.name}</td>
-                      <td className="py-3 px-5">
-                        {area.barangay?.name ?? (
-                          <span className="text-gray-400 italic">N/A</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-5">{area.created_at}</td>
-                      <td className="py-3 px-5">
-                        <div className="flex gap-2">
-                          {/* ✅ NEW: View Details Button */}
-                          <button
-                            onClick={() => handleViewDetails(area)}
-                            className="text-blue-600 cursor-pointer border border-blue-600 rounded-full p-1 hover:bg-blue-50 transition-colors"
-                            title="View Details"
-                          >
-                            <BarChart3 size={18} />
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              navigate(
-                                `${useruserRole}/reforestation/site/${area.reforestation_area_id}`,
-                              )
-                            }
-                            className="text-green-900 cursor-pointer border border-green-900 rounded-full p-1 hover:bg-green-50 transition-colors"
-                            title="View Sites"
-                          >
-                            <List size={18} />
-                          </button>
-
-                          {userRole !== "DataManager" && (
-                            <button
-                              onClick={() =>
-                                setDelete(area.reforestation_area_id)
-                              }
-                              className="text-red-500 cursor-pointer hover:bg-red-50 p-1 rounded"
-                              title="Delete Area"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          )}
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="font-semibold text-slate-800 text-sm line-clamp-1 flex-1">
+                          {area.name}
+                        </h3>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusBadge.color}`}>
+                          {statusBadge.label}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5 mb-2.5">
+                        <MapPin size={12} className="text-slate-400 flex-shrink-0" />
+                        <span className="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                          {area.barangay?.name || "N/A"}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex items-center gap-1">
+                            <Trees size={12} />
+                            {area.site_count || 0}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Ruler size={12} />
+                            {area.total_area_hectares?.toFixed(1) || 0} ha
+                          </span>
                         </div>
-                      </td>
-                    </tr>
+                        <span className="flex items-center gap-1 text-slate-400">
+                          <Calendar size={12} />
+                          {new Date(area.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      
+                      <div className="flex gap-1.5 pt-2 border-t border-slate-100">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDetails(area);
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-700 rounded-md transition-colors text-[11px] font-medium"
+                        >
+                          <BarChart3 size={12} />
+                          Details
+                        </button>
+                        {userRole !== "DataManager" && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDelete(area.reforestation_area_id, "area");
+                            }}
+                            className="px-2.5 py-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   );
                 })
               ) : (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="text-center py-5 text-gray-500 italic"
-                  >
-                    No areas found
-                  </td>
-                </tr>
+                <div className="text-center py-8 text-slate-400">
+                  <Trees size={32} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-xs">No areas found</p>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
+            </div>
 
-        <div className="flex items-center gap-1 mt-5">
-          <button
-            disabled={filter.page <= 1}
-            onClick={() =>
-              setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
-            }
-            className="px-2 py-1 border rounded-md ml-auto"
-          >
-            <ChevronLeft size={19} />
-          </button>
-          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map(
-            (p) => (
+            <div className="p-2.5 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between">
               <button
-                key={p}
-                onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
-                className={`px-2 py-1 border rounded-md text-[.8rem] ${p === filter.page ? "bg-green-600 text-white" : ""}`}
+                disabled={areaFilter.page <= 1}
+                onClick={() => setAreaFilter((prev) => ({ ...prev, page: prev.page - 1 }))}
+                className="p-1.5 border border-slate-300 rounded-md disabled:opacity-50 hover:bg-white transition-colors"
               >
-                {p}
+                <ChevronLeft size={14} />
               </button>
-            ),
-          )}
-          <button
-            disabled={filter.page >= filter.total_page}
-            onClick={() =>
-              setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
-            }
-            className="px-2 py-1 border rounded-md"
-          >
-            <ChevronRight size={19} />
-          </button>
-        </div>
-
-        <section className="mt-12 mb-4">
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                <BarChart3 size={18} className="text-[#0F4A2F]" />
-                Verification Trends (Last 6 Months)
-              </h2>
-              <div className="flex items-center gap-4 text-xs">
-                <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-full bg-amber-500"></span>{" "}
-                  Pending
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-full bg-green-600"></span>{" "}
-                  Verified
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-3 h-3 rounded-full bg-red-500"></span>{" "}
-                  Rejected
-                </span>
-              </div>
-            </div>
-
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={chartData}
-                  margin={{ top: 10, right: 20, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis
-                    dataKey="period"
-                    tick={{ fontSize: 11, fill: "#64748b" }}
-                    axisLine={{ stroke: "#e2e8f0" }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "#64748b" }}
-                    axisLine={{ stroke: "#e2e8f0" }}
-                    allowDecimals={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#fff",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                    }}
-                    labelStyle={{ fontWeight: "600", color: "#0F4A2F" }}
-                  />
-                  <Legend
-                    wrapperStyle={{ fontSize: "11px", paddingTop: "10px" }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="pending"
-                    name="Pending"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    dot={{
-                      r: 3,
-                      fill: "#f59e0b",
-                      strokeWidth: 2,
-                      stroke: "#fff",
-                    }}
-                    activeDot={{ r: 5 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="verified"
-                    name="Verified"
-                    stroke="#16a34a"
-                    strokeWidth={2}
-                    dot={{
-                      r: 3,
-                      fill: "#16a34a",
-                      strokeWidth: 2,
-                      stroke: "#fff",
-                    }}
-                    activeDot={{ r: 5 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="rejected"
-                    name="Rejected"
-                    stroke="#ef4444"
-                    strokeWidth={2}
-                    dot={{
-                      r: 3,
-                      fill: "#ef4444",
-                      strokeWidth: 2,
-                      stroke: "#fff",
-                    }}
-                    activeDot={{ r: 5 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4 text-center">
-              <div>
-                <p className="text-2xl font-bold text-amber-600">
-                  {chartData.reduce((sum, d) => sum + d.pending, 0)}
-                </p>
-                <p className="text-xs text-gray-500">Total Pending</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-green-600">
-                  {chartData.reduce((sum, d) => sum + d.verified, 0)}
-                </p>
-                <p className="text-xs text-gray-500">Total Verified</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-red-600">
-                  {chartData.reduce((sum, d) => sum + d.rejected, 0)}
-                </p>
-                <p className="text-xs text-gray-500">Total Rejected</p>
-              </div>
+              <span className="text-xs text-slate-600">
+                Page {areaFilter.page} of {areaFilter.total_page}
+              </span>
+              <button
+                disabled={areaFilter.page >= areaFilter.total_page}
+                onClick={() => setAreaFilter((prev) => ({ ...prev, page: prev.page + 1 }))}
+                className="p-1.5 border border-slate-300 rounded-md disabled:opacity-50 hover:bg-white transition-colors"
+              >
+                <ChevronRight size={14} />
+              </button>
             </div>
           </div>
-        </section>
+
+          {/* Right Panel - Sites */}
+          <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            {selectedArea ? (
+              <>
+                {/* Header */}
+                <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                      <List size={18} className="text-[#0F4A2F]" />
+                      Sites for {selectedArea.name}
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Manage and verify reforestation sites
+                    </p>
+                  </div>
+                  
+                  {userRole !== "DataManager" && (
+                    <button
+                      onClick={() =>
+                        navigate(
+                          `${userPath}/analysis/multicriteria-analysis/new?areaId=${selectedArea.reforestation_area_id}`,
+                        )
+                      }
+                      className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm hover:shadow-md hover:shadow-emerald-200"
+                    >
+                      <Plus size={16} />
+                      Add New Site
+                    </button>
+                  )}
+                </div>
+
+                {/* Modern Toolbar with Floating Filters */}
+                <div className="p-3 border-b border-slate-200 bg-white flex items-center gap-3">
+                  {/* Show Entries */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 font-medium">Show:</span>
+                    <select
+                      value={siteFilter.entries}
+                      onChange={(e) =>
+                        setSiteFilter((prev) => ({
+                          ...prev,
+                          entries: Number(e.target.value),
+                          page: 1,
+                        }))
+                      }
+                      className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                    >
+                      {[10, 25, 50, 100].map((e) => (
+                        <option key={e} value={e}>{e}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative flex-1 max-w-md">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search sites..."
+                      value={siteFilter.search}
+                      onChange={(e) =>
+                        setSiteFilter((prev) => ({
+                          ...prev,
+                          search: e.target.value,
+                          page: 1,
+                        }))
+                      }
+                      onKeyDown={(e) => e.key === "Enter" && fetchSites()}
+                      className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-shadow"
+                    />
+                  </div>
+
+                  {/* Filter Button & Floating Panel */}
+                  <div className="relative ml-auto" ref={filterRef}>
+                    <button
+                      onClick={() => setIsFilterOpen(!isFilterOpen)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all ${
+                        isFilterOpen 
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm" 
+                          : hasActiveFilters
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                            : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Filter size={14} />
+                      Filters
+                      {hasActiveFilters && (
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      )}
+                    </button>
+
+                    {/* Floating Filter Container */}
+                    {isFilterOpen && (
+                      <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-semibold text-slate-800">Advanced Filters</h3>
+                            <button 
+                              onClick={() => setIsFilterOpen(false)}
+                              className="text-slate-400 hover:text-slate-600"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+
+                          <div>
+                            <label className="text-xs font-medium text-slate-700 mb-1.5 block">Verification Status</label>
+                            <select
+                              value={siteFilter.verification_status}
+                              onChange={(e) =>
+                                setSiteFilter((prev) => ({
+                                  ...prev,
+                                  verification_status: e.target.value,
+                                  page: 1,
+                                }))
+                              }
+                              className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                            >
+                              <option value="all">All Statuses</option>
+                              <option value="verified">Verified</option>
+                              <option value="pending">Pending</option>
+                              <option value="draft">Draft</option>
+                              <option value="rejected">Rejected</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="text-xs font-medium text-slate-700 mb-1.5 block">Land Classification</label>
+                            <select
+                              value={siteFilter.land_classification_id}
+                              onChange={(e) =>
+                                setSiteFilter((prev) => ({
+                                  ...prev,
+                                  land_classification_id: e.target.value,
+                                  page: 1,
+                                }))
+                              }
+                              className="w-full border border-purple-200 bg-purple-50 rounded-lg px-2.5 py-2 text-sm text-purple-800 outline-none focus:ring-2 focus:ring-purple-400"
+                            >
+                              <option value="">All Classifications</option>
+                              {landClassifications.map((lc) => (
+                                <option key={lc.land_classification_id} value={lc.land_classification_id}>
+                                  {lc.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                            <input
+                              type="checkbox"
+                              id="pinned-only"
+                              checked={siteFilter.pinned_only}
+                              onChange={(e) =>
+                                setSiteFilter((prev) => ({
+                                  ...prev,
+                                  pinned_only: e.target.checked,
+                                  page: 1,
+                                }))
+                              }
+                              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-400"
+                            />
+                            <label htmlFor="pinned-only" className="text-sm text-slate-700 cursor-pointer select-none flex items-center gap-1.5">
+                              <Pin size={14} className={siteFilter.pinned_only ? "text-emerald-600" : "text-slate-400"} />
+                              Pinned only
+                            </label>
+                          </div>
+
+                          <div className="flex gap-2 pt-3">
+                            <button 
+                              onClick={clearSiteFilters}
+                              className="flex-1 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+                            >
+                              Clear All
+                            </button>
+                            <button 
+                              onClick={() => setIsFilterOpen(false)}
+                              className="flex-1 px-3 py-2 text-xs font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+                            >
+                              Apply & Close
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sites Table */}
+                <div className="flex-1 overflow-auto">
+                  {loadingSites && <LoaderPending />}
+                  <table className="min-w-full">
+                    <thead className="bg-[#0F4A2F] text-white sticky top-0">
+                      <tr>
+                        <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">No</th>
+                        <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Name</th>
+                        <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Status</th>
+                        <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Verification</th>
+                        <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Validation</th>
+                       
+                        <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Created</th>
+                        <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {sites.length > 0 ? (
+                        sites.map((site, index) => {
+                          const validationBadge = getValidationBadge(site.validation);
+                          const ValidationIcon = validationBadge.icon;
+                          const verificationBadge = getVerificationBadge(site.verification.status);
+                          const VerificationIcon = verificationBadge.icon;
+
+                          return (
+                            <tr
+                              key={site.site_id}
+                              className={`hover:bg-slate-50 transition-colors ${
+                                index % 2 ? "bg-slate-50/30" : "bg-white"
+                              } ${
+                                site.is_pinned
+                                  ? "border-l-2 border-emerald-500 bg-emerald-50/40"
+                                  : ""
+                              }`}
+                            >
+                              <td className="py-2.5 px-3 text-xs text-slate-600">
+                                {index + 1 + (siteFilter.page - 1) * siteFilter.entries}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => handleTogglePin(site.site_id, site.is_pinned)}
+                                    className={`p-0.5 rounded hover:bg-slate-200 transition ${
+                                      site.is_pinned ? "text-emerald-600" : "text-slate-400"
+                                    }`}
+                                  >
+                                    {site.is_pinned ? (
+                                      <Pin size={12} className="fill-current" />
+                                    ) : (
+                                      <PinOff size={12} />
+                                    )}
+                                  </button>
+                                  <span className="font-medium text-xs text-slate-800">{site.name}</span>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className={`px-2 py-1 rounded-full text-[10px] font-medium ${getStatusColor(site.status)}`}>
+                                  {site.status.replace("_", " ")}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${verificationBadge.color}`}>
+                                  <VerificationIcon size={10} />
+                                  {verificationBadge.label}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${validationBadge.color}`}>
+                                    <ValidationIcon size={10} />
+                                    {validationBadge.label}
+                                  </span>
+                                  <div className="flex gap-0.5">
+                                    {site.validation.has_safety_note && (
+                                      <span className="text-[9px] text-blue-600 bg-blue-50 px-1 rounded border border-blue-200" title="Safety note">S</span>
+                                    )}
+                                    {site.validation.has_survivability_note && (
+                                      <span className="text-[9px] text-purple-600 bg-purple-50 px-1 rounded border border-purple-200" title="Survivability note">V</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            
+                              <td className="py-2.5 px-3 text-xs text-slate-600">
+                                {new Date(site.created_at).toLocaleDateString()}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() =>
+                                      navigate(`${userPath}/reforestation/site/${selectedArea.reforestation_area_id}/information/${site.site_id}`)
+                                    }
+                                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors border border-emerald-600"
+                                    title="View Details"
+                                  >
+                                    <Eye size={12} />
+                                  </button>
+                                  {userRole !== "GISSpecialist" && (
+                                    <button
+                                      onClick={() =>
+                                        navigate(`${userPath}/verification/meta-data/${site.site_id}`)
+                                      }
+                                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors border border-blue-600"
+                                      title="Verify"
+                                    >
+                                      <ShieldCheck size={12} />
+                                    </button>
+                                  )}
+                                  {userRole !== "DataManager" && (
+                                    <button
+                                      onClick={() => setDelete(site.site_id, "site")}
+                                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors border border-red-600"
+                                      title="Delete"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={8} className="text-center py-12 text-slate-400">
+                            <div className="flex flex-col items-center gap-2">
+                              <Leaf size={32} className="opacity-50" />
+                              <p className="text-sm font-medium text-slate-600">No sites found</p>
+                              <p className="text-xs">Try adjusting your filters or add a new site</p>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Site Pagination */}
+                <div className="p-2.5 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                  <button
+                    disabled={siteFilter.page <= 1}
+                    onClick={() => setSiteFilter((prev) => ({ ...prev, page: prev.page - 1 }))}
+                    className="p-1.5 border border-slate-300 rounded-md disabled:opacity-50 hover:bg-white transition-colors"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <div className="flex gap-1">
+                    {Array.from({ length: Math.min(siteFilter.total_page, 5) }, (_, i) => {
+                      let pageNum = i + 1;
+                      if (siteFilter.total_page > 5 && siteFilter.page > 3) {
+                        pageNum = Math.min(siteFilter.page - 2 + i, siteFilter.total_page);
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setSiteFilter((prev) => ({ ...prev, page: pageNum }))}
+                          className={`px-2.5 py-1.5 border rounded-md text-xs transition-colors ${
+                            pageNum === siteFilter.page
+                              ? "bg-[#0F4A2F] text-white border-[#0F4A2F]"
+                              : "border-slate-300 hover:bg-white"
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    disabled={siteFilter.page >= siteFilter.total_page}
+                    onClick={() => setSiteFilter((prev) => ({ ...prev, page: prev.page + 1 }))}
+                    className="p-1.5 border border-slate-300 rounded-md disabled:opacity-50 hover:bg-white transition-colors"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center bg-slate-50/30">
+                <div className="text-center text-slate-400">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Trees size={32} className="opacity-50" />
+                  </div>
+                  <h3 className="text-base font-semibold text-slate-700 mb-1">Select a Reforestation Area</h3>
+                  <p className="text-sm">Choose an area from the left to view and manage its sites</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </main>
     </div>
   );

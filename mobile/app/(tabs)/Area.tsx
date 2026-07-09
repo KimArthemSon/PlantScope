@@ -11,7 +11,7 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
-  Alert,
+  // ❌ REMOVED: Alert
   RefreshControl,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
@@ -20,6 +20,9 @@ import { WebView } from "react-native-webview";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
+
+// ✅ ADDED: Import the useAlert hook
+import { useAlert } from "@/components/AlertContext";
 
 const screenHeight = Dimensions.get("window").height;
 const API_BASE_URL = api + "/api";
@@ -38,6 +41,9 @@ type ReforestationArea = {
 };
 
 const ReforestationAreas: React.FC = () => {
+  // ✅ ADDED: Initialize useAlert. We alias 'error' to 'showError' to avoid conflicting with your 'error' state variable.
+  const { success, error: showError, warning, info, confirm } = useAlert();
+
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(
     null,
@@ -90,7 +96,8 @@ const ReforestationAreas: React.FC = () => {
         (a) => a.reforestation_area_id === area.reforestation_area_id,
       );
       if (alreadySaved) {
-        Alert.alert("Info", `${area.name} is already saved for offline use.`);
+        // ✅ UPDATED
+        info("Info", `${area.name} is already saved for offline use.`);
         return;
       }
 
@@ -106,61 +113,58 @@ const ReforestationAreas: React.FC = () => {
       newSet.add(area.reforestation_area_id);
       setOfflineAreaIds(newSet);
 
-      Alert.alert("Success", `${area.name} saved for offline use.`);
+      // ✅ UPDATED
+      success("Success", `${area.name} saved for offline use.`);
     } catch (error) {
-      Alert.alert("Error", "Failed to save area for offline use.");
+      // ✅ UPDATED
+      showError("Error", "Failed to save area for offline use.");
     } finally {
       setSavingOffline(null);
     }
   };
 
-  const removeAreaFromOffline = async (area: ReforestationArea) => {
-    Alert.alert(
+  // ✅ UPDATED: Converted to use confirm() dialog.
+  const removeAreaFromOffline = (area: ReforestationArea) => {
+    confirm(
       "Remove from Offline",
       `Remove "${area.name}" from offline storage?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            setSavingOffline(area.reforestation_area_id);
-            try {
-              // Get existing saved areas
-              const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
-              const savedAreas: ReforestationArea[] = saved
-                ? JSON.parse(saved)
-                : [];
+      async () => {
+        setSavingOffline(area.reforestation_area_id);
+        try {
+          // Get existing saved areas
+          const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
+          const savedAreas: ReforestationArea[] = saved
+            ? JSON.parse(saved)
+            : [];
 
-              // Remove the area
-              const updatedAreas = savedAreas.filter(
-                (a) => a.reforestation_area_id !== area.reforestation_area_id,
-              );
-              await AsyncStorage.setItem(
-                OFFLINE_AREAS_KEY,
-                JSON.stringify(updatedAreas),
-              );
+          // Remove the area
+          const updatedAreas = savedAreas.filter(
+            (a) => a.reforestation_area_id !== area.reforestation_area_id,
+          );
+          await AsyncStorage.setItem(
+            OFFLINE_AREAS_KEY,
+            JSON.stringify(updatedAreas),
+          );
 
-              // Update state
-              const newSet = new Set(offlineAreaIds);
-              newSet.delete(area.reforestation_area_id);
-              setOfflineAreaIds(newSet);
+          // Update state
+          const newSet = new Set(offlineAreaIds);
+          newSet.delete(area.reforestation_area_id);
+          setOfflineAreaIds(newSet);
 
-              Alert.alert(
-                "Removed",
-                `${area.name} removed from offline storage.`,
-              );
-            } catch (error) {
-              Alert.alert(
-                "Error",
-                "Failed to remove area from offline storage.",
-              );
-            } finally {
-              setSavingOffline(null);
-            }
-          },
-        },
-      ],
+          // ✅ UPDATED
+          success("Removed", `${area.name} removed from offline storage.`);
+        } catch (error) {
+          // ✅ UPDATED
+          showError("Error", "Failed to remove area from offline storage.");
+        } finally {
+          setSavingOffline(null);
+        }
+      },
+      {
+        type: "error",
+        confirmText: "Remove",
+        cancelText: "Cancel",
+      },
     );
   };
 
@@ -221,9 +225,17 @@ const ReforestationAreas: React.FC = () => {
       } catch (err: any) {
         setError(err.message);
         if (err.message.includes("token")) {
-          Alert.alert("Authentication Error", "Please log in again.", [
-            { text: "OK", onPress: () => router.replace("/") },
-          ]);
+          // ✅ UPDATED: Replaced with confirm(). cancelText: "" hides the cancel button to act like a standard blocking alert.
+          confirm(
+            "Authentication Error",
+            "Please log in again.",
+            () => router.replace("/"),
+            {
+              type: "error",
+              confirmText: "OK",
+              cancelText: "",
+            },
+          );
         }
       } finally {
         setLoading(false);
@@ -293,7 +305,8 @@ const ReforestationAreas: React.FC = () => {
 
   const openModal = (area: ReforestationArea) => {
     if (!isOnline) {
-      Alert.alert("Offline Mode", "Map is not available offline.");
+      // ✅ UPDATED
+      warning("Offline Mode", "Map is not available offline.");
       return;
     }
     setSelectedArea(area);
@@ -613,14 +626,16 @@ const ReforestationAreas: React.FC = () => {
                       const data = JSON.parse(event.nativeEvent.data);
                       if (data.type === "error") {
                         console.error("Map JS Error:", data.message);
-                        Alert.alert("Map Error", data.message);
+                        // ✅ UPDATED
+                        showError("Map Error", data.message);
                       }
                     } catch (e) {}
                   }}
                   onError={(syntheticEvent) => {
                     const { nativeEvent } = syntheticEvent;
                     console.error("WebView Native Error: ", nativeEvent);
-                    Alert.alert(
+                    // ✅ UPDATED
+                    showError(
                       "WebView Error",
                       nativeEvent.description || "Failed to load map",
                     );

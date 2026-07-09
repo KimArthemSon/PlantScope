@@ -5,7 +5,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Alert,
   StyleSheet,
   Image,
   ActivityIndicator,
@@ -30,6 +29,10 @@ import {
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import FloatingMapButton from "@/components/FloatingMapButton";
+
+// ✅ ADDED: Import the useAlert hook
+import { useAlert } from "@/components/AlertContext";
+
 const API_BASE = `${api}/api`;
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -58,14 +61,18 @@ interface SurvivabilityImage {
 }
 
 // ─────────────────────────────────────────────
-// GPS CAMERA COMPONENT (SimpleGeocam) - Offline Ready
+// GPS CAMERA COMPONENT (SimpleGeocam) - Two Button Version
 // ─────────────────────────────────────────────
 
 function SimpleGeocam({
   onCapture,
   onClose,
 }: {
-  onCapture: (uri: string, location: LocationData) => void;
+  onCapture: (
+    uri: string,
+    location: LocationData | null,
+    withGPS: boolean,
+  ) => void;
   onClose: () => void;
 }) {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -77,42 +84,39 @@ function SimpleGeocam({
   );
   const cameraRef = useRef<CameraView>(null);
 
-  // ✅ FIXED: Works offline with fallback accuracy
+  // ✅ ADDED: Initialize useAlert for this sub-component
+  const { warning, error: showError } = useAlert();
+
   const getCurrentLocation = async (): Promise<LocationData | null> => {
     try {
-      // Step 1: Check permissions
       if (!locationPermission?.granted) {
         const s = await requestLocationPermission();
         if (!s?.granted) {
-          Alert.alert("Permission Denied", "Location access is required.");
+          warning("Permission Denied", "Location access is required.");
           return null;
         }
       }
 
-      // Step 2: Check if location services are enabled
       const servicesEnabled = await Location.hasServicesEnabledAsync();
       if (!servicesEnabled) {
-        Alert.alert(
+        warning(
           "Location Services Disabled",
           "Please enable GPS/Location services in your device settings.",
         );
         return null;
       }
 
-      // Step 3: Try to get location with fallback accuracy
       let loc;
       try {
         loc = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High,
         });
       } catch (highAccError) {
-        console.log("High accuracy failed, trying balanced...");
         try {
           loc = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
           });
         } catch (balancedAccError) {
-          console.log("Balanced failed, trying lowest...");
           loc = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Lowest,
           });
@@ -120,11 +124,10 @@ function SimpleGeocam({
       }
 
       if (!loc || !loc.coords) {
-        Alert.alert("Error", "Could not retrieve location data.");
+        showError("Error", "Could not retrieve location data.");
         return null;
       }
 
-      // Step 4: Try reverse geocoding (optional, fails silently offline)
       let addr: Location.LocationGeocodedAddress | undefined;
       try {
         [addr] = await Location.reverseGeocodeAsync({
@@ -132,7 +135,7 @@ function SimpleGeocam({
           longitude: loc.coords.longitude,
         });
       } catch (geoError) {
-        console.log("Reverse geocoding failed (probably offline):", geoError);
+        // Silent fail
       }
 
       const data: LocationData = {
@@ -156,7 +159,7 @@ function SimpleGeocam({
       return data;
     } catch (error) {
       console.error("GPS Error:", error);
-      Alert.alert(
+      showError(
         "GPS Error",
         "Could not get GPS location. Make sure GPS is enabled and you're outdoors or near a window.",
       );
@@ -168,29 +171,57 @@ function SimpleGeocam({
     getCurrentLocation();
   }, []);
 
-  const takePicture = async () => {
+  // ✅ NEW: Capture WITH GPS (requires location)
+  const takePictureWithGPS = async () => {
     if (!cameraRef.current || capturing) return;
+
+    const locData = currentLocation ?? (await getCurrentLocation());
+
+    if (!locData) {
+      warning(
+        "GPS Required",
+        "GPS coordinates are not available. Please use 'Photo Only' button or move to an area with better GPS signal.",
+      );
+      return;
+    }
+
     setCapturing(true);
     try {
-      const locData = currentLocation ?? (await getCurrentLocation());
-      if (!locData) {
-        Alert.alert(
-          "Location Required",
-          "GPS coordinates are needed to capture a photo.",
-        );
-        return;
-      }
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.9,
         base64: false,
       });
       if (!photo?.uri) {
-        Alert.alert("Error", "Failed to capture photo.");
+        showError("Error", "Failed to capture photo.");
         return;
       }
-      onCapture(photo.uri, locData);
+      onCapture(photo.uri, locData, true);
     } catch (error) {
-      Alert.alert(
+      showError(
+        "Error",
+        `Failed to capture photo: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  // ✅ NEW: Capture WITHOUT GPS (always works)
+  const takePictureOnly = async () => {
+    if (!cameraRef.current || capturing) return;
+    setCapturing(true);
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.9,
+        base64: false,
+      });
+      if (!photo?.uri) {
+        showError("Error", "Failed to capture photo.");
+        return;
+      }
+      onCapture(photo.uri, null, false);
+    } catch (error) {
+      showError(
         "Error",
         `Failed to capture photo: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
@@ -274,7 +305,7 @@ function SimpleGeocam({
           <Text style={cam.locationPillText} numberOfLines={1}>
             {hasGPS
               ? currentLocation!.city || currentLocation!.barangay || "Located"
-              : "Getting GPS…"}
+              : "No GPS"}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -306,7 +337,7 @@ function SimpleGeocam({
               ]}
             />
             <Text style={cam.gpsCardLabel}>
-              {hasGPS ? "GPS Active" : "Acquiring GPS…"}
+              {hasGPS ? "GPS Active" : "No GPS Signal"}
             </Text>
           </View>
           <View style={cam.signalBars}>
@@ -342,27 +373,55 @@ function SimpleGeocam({
             </View>
           </>
         ) : (
-          <Text style={cam.gpsWaiting}>Searching for satellites…</Text>
+          <Text style={cam.gpsWaiting}>
+            GPS unavailable - use "Photo Only" button below
+          </Text>
         )}
       </View>
 
-      {/* Capture Area */}
+      {/* Two Capture Buttons */}
       <View style={cam.captureArea}>
-        <TouchableOpacity
-          style={[cam.captureRing, !hasGPS && { opacity: 0.4 }]}
-          onPress={takePicture}
-          disabled={capturing || !hasGPS}
-          activeOpacity={0.8}
-        >
-          {capturing ? (
-            <ActivityIndicator color="#0F4A2F" size="large" />
-          ) : (
-            <View style={cam.captureCore} />
-          )}
-        </TouchableOpacity>
-        <Text style={cam.captureHint}>
-          {hasGPS ? "Tap to capture" : "Waiting for GPS…"}
-        </Text>
+        <View style={cam.captureButtonsRow}>
+          {/* GPS Photo Button */}
+          <View style={cam.captureButtonColumn}>
+            <TouchableOpacity
+              style={[cam.gpsCaptureRing, !hasGPS && cam.captureRingDisabled]}
+              onPress={takePictureWithGPS}
+              disabled={capturing || !hasGPS}
+              activeOpacity={0.8}
+            >
+              {capturing ? (
+                <ActivityIndicator color="#0F4A2F" size="large" />
+              ) : (
+                <View style={cam.gpsCaptureCore}>
+                  <Ionicons name="location" size={20} color="#0F4A2F" />
+                </View>
+              )}
+            </TouchableOpacity>
+            <Text style={cam.captureHint}>
+              {hasGPS ? "GPS Photo" : "GPS Unavailable"}
+            </Text>
+          </View>
+
+          {/* Photo Only Button */}
+          <View style={cam.captureButtonColumn}>
+            <TouchableOpacity
+              style={cam.photoOnlyRing}
+              onPress={takePictureOnly}
+              disabled={capturing}
+              activeOpacity={0.8}
+            >
+              {capturing ? (
+                <ActivityIndicator color="#FFFFFF" size="large" />
+              ) : (
+                <View style={cam.photoOnlyCore}>
+                  <Ionicons name="camera" size={20} color="#FFFFFF" />
+                </View>
+              )}
+            </TouchableOpacity>
+            <Text style={cam.captureHint}>Photo Only</Text>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -493,7 +552,7 @@ const cam = StyleSheet.create({
   },
   gpsCard: {
     position: "absolute",
-    bottom: 120,
+    bottom: 160,
     left: 12,
     right: 12,
     backgroundColor: "rgba(0,0,0,0.78)",
@@ -561,11 +620,43 @@ const cam = StyleSheet.create({
     alignItems: "center",
     zIndex: 10,
   },
-  captureRing: {
+  captureButtonsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 32,
+  },
+  captureButtonColumn: {
+    alignItems: "center",
+    gap: 8,
+  },
+  gpsCaptureRing: {
     width: 80,
     height: 80,
     borderRadius: 40,
     borderWidth: 3,
+    borderColor: "#4ADE80",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(74,222,128,0.15)",
+    shadowColor: "#4ADE80",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  gpsCaptureCore: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  photoOnlyRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
     borderColor: "rgba(255,255,255,0.6)",
     justifyContent: "center",
     alignItems: "center",
@@ -575,16 +666,22 @@ const cam = StyleSheet.create({
     shadowRadius: 10,
     elevation: 10,
   },
-  captureCore: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "#FFFFFF",
+  photoOnlyCore: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#0F4A2F",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  captureRingDisabled: {
+    opacity: 0.4,
+    borderColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
   captureHint: {
     color: "rgba(255,255,255,0.7)",
-    fontSize: 12,
-    marginTop: 10,
+    fontSize: 11,
     fontWeight: "600",
   },
 });
@@ -661,63 +758,62 @@ const FieldLabel = ({
 
 export default function SurvivabilityForm() {
   const params = useLocalSearchParams();
-  const router = useRouter(); // ✅ Added for navigation
+  const router = useRouter();
   const areaId = params.areaId as string;
   const assessmentId = params.assessmentId as string | undefined;
-  const offlineDraftId = params.offlineDraftId as string | undefined; // ✅ NEW
+  const offlineDraftId = params.offlineDraftId as string | undefined;
   const layerId = "survivability";
   const siteId = params.siteId as string | undefined;
-  const isEditingOfflineDraft = !!offlineDraftId; // ✅ NEW
+  const isEditingOfflineDraft = !!offlineDraftId;
+
+  // ✅ ADDED: Initialize useAlert
+  const { success, error: showError, warning, confirm } = useAlert();
 
   const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
     useFieldAssessment(areaId, layerId, assessmentId);
 
-  // ✅ NEW: Network status
   const isOnline = useNetworkStatus();
   const isOfflineMode = !isOnline;
 
-  // Category overall notes
   const [soilNote, setSoilNote] = useState("");
   const [waterNote, setWaterNote] = useState("");
   const [slopeNote, setSlopeNote] = useState("");
   const [overallNote, setOverallNote] = useState("");
 
-  // Assessment location
   const [locationLat, setLocationLat] = useState("");
   const [locationLng, setLocationLng] = useState("");
   const [locationAccuracy, setLocationAccuracy] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
 
-  // Images per category
   const [soilImages, setSoilImages] = useState<SurvivabilityImage[]>([]);
   const [waterImages, setWaterImages] = useState<SurvivabilityImage[]>([]);
   const [slopeImages, setSlopeImages] = useState<SurvivabilityImage[]>([]);
 
-  // ✅ NEW: Local images (captured before save)
   const [localImages, setLocalImages] = useState<LocalImage[]>([]);
 
-  // View mode & loading
   const [isViewMode, setIsViewMode] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(
     !!assessmentId || isEditingOfflineDraft,
   );
-  const [savingOffline, setSavingOffline] = useState(false); // ✅ NEW
+  const [savingOffline, setSavingOffline] = useState(false);
 
-  // Geocam & note modal state
   const [showGPSCamera, setShowGPSCamera] = useState(false);
   const [activeCategory, setActiveCategory] = useState<
     "soil" | "water" | "slope" | null
   >(null);
   const [showNoteModal, setShowNoteModal] = useState(false);
+
+  // ✅ UPDATED: State now supports null location and withGPS flag
   const [pendingPhoto, setPendingPhoto] = useState<{
     uri: string;
-    location: LocationData;
+    location: LocationData | null;
+    withGPS: boolean;
   } | null>(null);
+
   const [pendingNote, setPendingNote] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // Load existing data
   useEffect(() => {
     if (isEditingOfflineDraft) {
       loadOfflineDraftData();
@@ -734,7 +830,6 @@ export default function SurvivabilityForm() {
             );
           }
 
-          // Filter images by layer
           const allImages = data.images || [];
           setSoilImages(
             allImages.filter(
@@ -761,19 +856,17 @@ export default function SurvivabilityForm() {
     }
   }, [assessmentId, offlineDraftId]);
 
-  // ✅ NEW: Load offline draft data
   const loadOfflineDraftData = async () => {
     if (!offlineDraftId) return;
 
     try {
       const draft = await getOfflineDraft(offlineDraftId);
       if (!draft) {
-        Alert.alert("Error", "Draft not found.");
+        showError("Error", "Draft not found.");
         return;
       }
 
       const payload = draft.payload;
-      const surv = payload.field_assessment_data?.survivability || {};
 
       populateForm(payload.field_assessment_data || {});
 
@@ -785,7 +878,6 @@ export default function SurvivabilityForm() {
         );
       }
 
-      // Load images from draft
       if (Array.isArray(draft.images)) {
         const loadedImages: LocalImage[] = draft.images.map((img) => ({
           id: img.id,
@@ -800,13 +892,12 @@ export default function SurvivabilityForm() {
       }
     } catch (e: any) {
       console.error("Error loading offline draft:", e);
-      Alert.alert("Error", "Failed to load draft.");
+      showError("Error", "Failed to load draft.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle BOTH old (double-nested) and new (single-nested) structures
   const populateForm = (data: any) => {
     const surv =
       data?.survivability?.survivability || data?.survivability || data || {};
@@ -817,13 +908,12 @@ export default function SurvivabilityForm() {
     setOverallNote(surv.overall_notes || "");
   };
 
-  // ✅ FIXED: Works offline with fallback accuracy
   const handleGetCurrentLocation = async () => {
     setGettingLocation(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
+        warning(
           "Permission Denied",
           "Please enable location access in your device settings.",
         );
@@ -833,7 +923,7 @@ export default function SurvivabilityForm() {
 
       const servicesEnabled = await Location.hasServicesEnabledAsync();
       if (!servicesEnabled) {
-        Alert.alert(
+        warning(
           "Location Services Disabled",
           "Please enable GPS/Location in your device settings.",
         );
@@ -847,13 +937,11 @@ export default function SurvivabilityForm() {
           accuracy: Location.Accuracy.High,
         });
       } catch (highAccError) {
-        console.log("High accuracy failed, trying balanced...");
         try {
           loc = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
           });
         } catch (balancedAccError) {
-          console.log("Balanced failed, trying lowest...");
           loc = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Lowest,
           });
@@ -861,7 +949,7 @@ export default function SurvivabilityForm() {
       }
 
       if (!loc || !loc.coords) {
-        Alert.alert("Error", "Could not retrieve location data.");
+        showError("Error", "Could not retrieve location data.");
         setGettingLocation(false);
         return;
       }
@@ -869,10 +957,10 @@ export default function SurvivabilityForm() {
       setLocationLat(loc.coords.latitude.toFixed(6));
       setLocationLng(loc.coords.longitude.toFixed(6));
       setLocationAccuracy(loc.coords.accuracy?.toFixed(1) || "");
-      Alert.alert("Location Captured", "GPS coordinates updated.");
+      success("Location Captured", "GPS coordinates updated.");
     } catch (error) {
       console.error("Location error:", error);
-      Alert.alert(
+      showError(
         "GPS Error",
         "Could not get current location. Make sure GPS is enabled and you're outdoors or near a window.",
       );
@@ -881,26 +969,31 @@ export default function SurvivabilityForm() {
     }
   };
 
-  // ✅ UPDATED: Handle photo capture - NO LONGER requires assessmentId
+  // ✅ UPDATED: Handle photo capture - receives withGPS flag
   const handleGPSPhotoCaptured = async (
     uri: string,
-    location: LocationData,
+    location: LocationData | null,
+    withGPS: boolean,
   ) => {
     setShowGPSCamera(false);
-    setPendingPhoto({ uri, location });
+    setPendingPhoto({ uri, location, withGPS });
     setPendingNote("");
     setShowNoteModal(true);
   };
 
-  // ✅ UPDATED: Handle note submission - stores locally OR uploads immediately
+  // ✅ UPDATED: Handle note submission - handles photos with or without GPS
   const handleNoteSubmit = async (note: string) => {
     if (!pendingPhoto || !activeCategory) {
       return;
     }
 
     const numericAssessmentId = assessmentId ? parseInt(assessmentId) : null;
+    const photoLocation = pendingPhoto.location || {
+      latitude: 0,
+      longitude: 0,
+      timestamp: new Date().toISOString(),
+    };
 
-    // If we have an assessmentId AND online, upload immediately
     if (numericAssessmentId && !isNaN(numericAssessmentId) && isOnline) {
       setUploading(true);
       try {
@@ -908,15 +1001,17 @@ export default function SurvivabilityForm() {
           numericAssessmentId,
           {
             uri: pendingPhoto.uri,
-            latitude: pendingPhoto.location.latitude,
-            longitude: pendingPhoto.location.longitude,
-            accuracy: pendingPhoto.location.accuracy,
+            latitude: photoLocation.latitude,
+            longitude: photoLocation.longitude,
+            accuracy: photoLocation.accuracy,
           },
           {
             subLayerCode: activeCategory,
             description:
               note ||
-              `Survivability ${activeCategory} at ${pendingPhoto.location.latitude.toFixed(6)}, ${pendingPhoto.location.longitude.toFixed(6)}`,
+              (pendingPhoto.withGPS
+                ? `Survivability ${activeCategory} at ${photoLocation.latitude.toFixed(6)}, ${photoLocation.longitude.toFixed(6)}`
+                : `Survivability ${activeCategory} photo (no GPS)`),
           },
         );
 
@@ -943,36 +1038,34 @@ export default function SurvivabilityForm() {
                 ),
               );
           }
-          Alert.alert("Success", "Photo uploaded with GPS data!");
-        } else {
-          Alert.alert(
-            "Upload Failed",
-            "Could not upload photo. Please try again.",
-          );
+          // ✅ FIX: Removed redundant success alert. The hook already shows "Geocam image uploaded."
         }
       } catch (error) {
-        Alert.alert(
-          "Upload Error",
-          `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        );
+        // ✅ FIX: Removed redundant error alert. The hook already handles it.
       } finally {
         setUploading(false);
       }
     } else {
-      // ✅ NEW: Store locally if no assessmentId OR offline
       const localImg: LocalImage = {
         id: `local-${Date.now()}`,
         uri: pendingPhoto.uri,
-        latitude: pendingPhoto.location.latitude,
-        longitude: pendingPhoto.location.longitude,
-        accuracy: pendingPhoto.location.accuracy,
+        latitude: photoLocation.latitude,
+        longitude: photoLocation.longitude,
+        accuracy: photoLocation.accuracy,
         subLayerCode: activeCategory,
-        description: note || `Survivability ${activeCategory} photo`,
+        description:
+          note ||
+          (pendingPhoto.withGPS
+            ? `Survivability ${activeCategory} photo`
+            : `Survivability ${activeCategory} photo (no GPS)`),
       };
       setLocalImages([...localImages, localImg]);
-      Alert.alert(
+
+      success(
         "Photo Captured",
-        "Photo will be uploaded when you save the draft.",
+        pendingPhoto.withGPS
+          ? "Photo will be uploaded when you save the draft."
+          : "Photo saved without GPS. Will upload when you save.",
       );
     }
 
@@ -982,12 +1075,10 @@ export default function SurvivabilityForm() {
     setActiveCategory(null);
   };
 
-  // ✅ NEW: Remove local image
   const removeLocalImage = (id: string) => {
     setLocalImages(localImages.filter((img) => img.id !== id));
   };
 
-  // Return FLAT structure - let the hook handle wrapping under 'survivability'
   const buildPayload = () => {
     const location =
       locationLat && locationLng
@@ -1018,7 +1109,6 @@ export default function SurvivabilityForm() {
     };
   };
 
-  // ✅ NEW: Save Offline
   const handleSaveOffline = async (): Promise<string | null> => {
     setSavingOffline(true);
     try {
@@ -1034,7 +1124,6 @@ export default function SurvivabilityForm() {
         longitude: img.longitude,
       }));
 
-      // If editing existing offline draft, update it
       if (isEditingOfflineDraft && offlineDraftId) {
         await updateOfflineDraft(offlineDraftId, {
           payload,
@@ -1042,15 +1131,14 @@ export default function SurvivabilityForm() {
           status: "pending",
         });
 
-        Alert.alert(
+        success(
           "Updated Offline",
           "Draft updated locally. Will sync when online.",
-          [{ text: "OK", onPress: () => router.back() }],
         );
+        router.back();
         return offlineDraftId;
       }
 
-      // Otherwise create new draft
       const localUuid = generateLocalUUID();
       const draft = {
         local_uuid: localUuid,
@@ -1066,23 +1154,22 @@ export default function SurvivabilityForm() {
       await saveOfflineDraft(draft);
       setLocalImages([]);
 
-      Alert.alert(
+      success(
         "Saved Offline",
         "Assessment saved locally. Will sync when online.",
-        [{ text: "OK", onPress: () => router.back() }],
       );
+      router.back();
 
       return localUuid;
     } catch (e: any) {
       console.error("Error saving offline:", e);
-      Alert.alert("Error", "Failed to save offline. Please try again.");
+      showError("Error", "Failed to save offline. Please try again.");
       return null;
     } finally {
       setSavingOffline(false);
     }
   };
 
-  // ✅ UPDATED: handleDraft now passes localImages
   const handleDraft = async () => {
     const payload = buildPayload();
     const savedId = await handleSave(payload, false, localImages);
@@ -1109,28 +1196,26 @@ export default function SurvivabilityForm() {
           ),
         );
       }
-      Alert.alert("Saved", "Draft saved successfully.");
+      // ✅ FIX: Removed redundant success alert. The hook already shows "Saved".
     }
   };
 
-  // ✅ UPDATED: handleSubmit also passes localImages
   const handleSubmit = async () => {
-    Alert.alert(
+    confirm(
       "Submit Assessment",
       "Are you sure? You cannot edit after submission.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Submit",
-          onPress: async () => {
-            const savedId = await handleSave(buildPayload(), true, localImages);
-            if (savedId) {
-              setLocalImages([]);
-              setIsViewMode(true);
-            }
-          },
-        },
-      ],
+      async () => {
+        const savedId = await handleSave(buildPayload(), true, localImages);
+        if (savedId) {
+          setLocalImages([]);
+          setIsViewMode(true);
+        }
+      },
+      {
+        type: "warning",
+        confirmText: "Submit",
+        cancelText: "Cancel",
+      },
     );
   };
 
@@ -1138,38 +1223,40 @@ export default function SurvivabilityForm() {
     img: SurvivabilityImage,
     category: "soil" | "water" | "slope",
   ) => {
-    Alert.alert("Delete Photo", "Remove this photo?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          await deleteImage(img.image_id);
-          const d = await fetchAssessmentData();
-          if (d) {
-            const allImages = d.images || [];
-            if (category === "soil")
-              setSoilImages(
-                allImages.filter(
-                  (i: SurvivabilityImage) => i.layer === "surv_soil",
-                ),
-              );
-            else if (category === "water")
-              setWaterImages(
-                allImages.filter(
-                  (i: SurvivabilityImage) => i.layer === "surv_water",
-                ),
-              );
-            else if (category === "slope")
-              setSlopeImages(
-                allImages.filter(
-                  (i: SurvivabilityImage) => i.layer === "surv_slope",
-                ),
-              );
-          }
-        },
+    confirm(
+      "Delete Photo",
+      "Remove this photo?",
+      async () => {
+        await deleteImage(img.image_id);
+        const d = await fetchAssessmentData();
+        if (d) {
+          const allImages = d.images || [];
+          if (category === "soil")
+            setSoilImages(
+              allImages.filter(
+                (i: SurvivabilityImage) => i.layer === "surv_soil",
+              ),
+            );
+          else if (category === "water")
+            setWaterImages(
+              allImages.filter(
+                (i: SurvivabilityImage) => i.layer === "surv_water",
+              ),
+            );
+          else if (category === "slope")
+            setSlopeImages(
+              allImages.filter(
+                (i: SurvivabilityImage) => i.layer === "surv_slope",
+              ),
+            );
+        }
       },
-    ]);
+      {
+        type: "error",
+        confirmText: "Delete",
+        cancelText: "Cancel",
+      },
+    );
   };
 
   const getImageUrl = (imgUrl: string) => {
@@ -1185,7 +1272,6 @@ export default function SurvivabilityForm() {
     setShowGPSCamera(true);
   };
 
-  // ✅ NEW: Render local images for a category
   const renderLocalImages = (category: "soil" | "water" | "slope") => {
     const categoryLocalImages = localImages.filter(
       (img) => img.subLayerCode === category,
@@ -1221,11 +1307,14 @@ export default function SurvivabilityForm() {
                     color="#fff"
                   />
                 </View>
-                <View style={styles.thumbCoords}>
-                  <Text style={styles.thumbCoordsText}>
-                    {img.latitude.toFixed(4)},{img.longitude.toFixed(4)}
-                  </Text>
-                </View>
+                {/* ✅ UPDATED: Only show coords if they exist */}
+                {img.latitude !== 0 && img.longitude !== 0 && (
+                  <View style={styles.thumbCoords}>
+                    <Text style={styles.thumbCoordsText}>
+                      {img.latitude.toFixed(4)},{img.longitude.toFixed(4)}
+                    </Text>
+                  </View>
+                )}
               </TouchableOpacity>
               {img.description ? (
                 <Text style={styles.thumbNote} numberOfLines={1}>
@@ -1276,7 +1365,6 @@ export default function SurvivabilityForm() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ✅ NEW: Offline Mode Banner */}
         {isOfflineMode && !isViewMode && (
           <View style={styles.offlineBanner}>
             <Ionicons name="cloud-offline-outline" size={16} color="#fff" />
@@ -1385,7 +1473,6 @@ export default function SurvivabilityForm() {
             </ScrollView>
           </View>
 
-          {/* ✅ NEW: Render local images */}
           {renderLocalImages("soil")}
         </SectionCard>
 
@@ -1701,10 +1788,8 @@ export default function SurvivabilityForm() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* ✅ UPDATED: Fixed Footer with offline support */}
       {!isViewMode && (
         <View style={styles.footer}>
-          {/* Save Offline Button - Always visible */}
           <TouchableOpacity
             style={[
               styles.footerBtn,
@@ -1732,7 +1817,6 @@ export default function SurvivabilityForm() {
             )}
           </TouchableOpacity>
 
-          {/* Save Draft Button - Only when online */}
           {isOnline && (
             <TouchableOpacity
               style={[
@@ -1759,7 +1843,6 @@ export default function SurvivabilityForm() {
             </TouchableOpacity>
           )}
 
-          {/* Submit Button - Only when online */}
           {isOnline && (
             <TouchableOpacity
               style={[
@@ -1782,7 +1865,6 @@ export default function SurvivabilityForm() {
             </TouchableOpacity>
           )}
 
-          {/* Offline Mode Notice */}
           {isOfflineMode && (
             <View style={styles.offlineNotice}>
               <Ionicons name="information-circle" size={14} color="#F59E0B" />
@@ -1794,7 +1876,6 @@ export default function SurvivabilityForm() {
         </View>
       )}
 
-      {/* Full Screen Image Preview */}
       <Modal visible={!!previewImage} transparent animationType="fade">
         <View style={styles.previewModal}>
           <TouchableOpacity
@@ -1814,7 +1895,6 @@ export default function SurvivabilityForm() {
         </View>
       </Modal>
 
-      {/* GPS Camera Modal */}
       <Modal
         visible={showGPSCamera}
         animationType="slide"
@@ -1830,7 +1910,6 @@ export default function SurvivabilityForm() {
         />
       </Modal>
 
-      {/* Custom Note Modal */}
       <Modal
         visible={showNoteModal}
         transparent
@@ -1839,7 +1918,11 @@ export default function SurvivabilityForm() {
       >
         <View style={modalStyles.overlay}>
           <View style={modalStyles.modal}>
-            <Text style={modalStyles.title}>Add Note for This Photo</Text>
+            <Text style={modalStyles.title}>
+              {pendingPhoto?.withGPS
+                ? "Add Note for GPS Photo"
+                : "Add Note for Photo"}
+            </Text>
             <Text style={modalStyles.subtitle}>
               Describe this observation (optional)
             </Text>
@@ -1855,6 +1938,16 @@ export default function SurvivabilityForm() {
               numberOfLines={3}
               textAlignVertical="top"
             />
+
+            {/* ✅ NEW: Show warning if photo was taken without GPS */}
+            {!pendingPhoto?.withGPS && (
+              <View style={styles.noGpsWarning}>
+                <Ionicons name="information-circle" size={14} color="#F59E0B" />
+                <Text style={styles.noGpsWarningText}>
+                  This photo has no GPS coordinates
+                </Text>
+              </View>
+            )}
 
             <View style={modalStyles.buttons}>
               <TouchableOpacity
@@ -1883,14 +1976,14 @@ export default function SurvivabilityForm() {
           </View>
         </View>
       </Modal>
-         <FloatingMapButton
-              areaId={parseInt(areaId)}
-              areaName={params.areaName as string}
-              siteId={siteId ? parseInt(siteId) : undefined}
-              siteName={params.siteName as string}
-              userLat={locationLat ? parseFloat(locationLat) : undefined}
-              userLng={locationLng ? parseFloat(locationLng) : undefined}
-            />
+      <FloatingMapButton
+        areaId={parseInt(areaId)}
+        areaName={params.areaName as string}
+        siteId={siteId ? parseInt(siteId) : undefined}
+        siteName={params.siteName as string}
+        userLat={locationLat ? parseFloat(locationLat) : undefined}
+        userLng={locationLng ? parseFloat(locationLng) : undefined}
+      />
     </View>
   );
 }
@@ -1995,7 +2088,6 @@ const styles = StyleSheet.create({
   },
   loadingText: { fontSize: 14, color: "#475569", fontWeight: "500" },
 
-  // ✅ NEW: Offline Banner
   offlineBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -2219,7 +2311,6 @@ const styles = StyleSheet.create({
   },
   addPhotoBtnGPS: { borderColor: "#BBF7D0", backgroundColor: "#F0FDF4" },
   addPhotoBtnText: { fontSize: 10, color: "#0369A1", fontWeight: "600" },
-  // ✅ NEW: Local images section styles
   localImagesSection: {
     marginTop: 12,
     paddingTop: 12,
@@ -2234,6 +2325,22 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  // ✅ NEW: No GPS Warning Styles
+  noGpsWarning: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  noGpsWarningText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#92400E",
+    fontWeight: "500",
   },
   footer: {
     position: "absolute",
@@ -2264,7 +2371,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
 
-  // ✅ NEW: Offline button style
   footerBtnOffline: {
     borderWidth: 1.5,
     borderColor: "#F59E0B",
@@ -2282,7 +2388,6 @@ const styles = StyleSheet.create({
   footerBtnSubmitText: { color: "#fff", fontWeight: "700", fontSize: 12 },
   footerBtnDisabled: { opacity: 0.65 },
 
-  // ✅ NEW: Offline notice
   offlineNotice: {
     position: "absolute",
     bottom: 70,

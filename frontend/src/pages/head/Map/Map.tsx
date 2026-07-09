@@ -345,6 +345,17 @@ export default function Map() {
 
   const { userRole } = useUserRole();
 
+  // Add these new state variables
+  const [firmsStartDate, setFirmsStartDate] = useState<string>(() => {
+    const today = new Date();
+    return formatDate(today);
+  });
+  const [firmsEndDate, setFirmsEndDate] = useState<string>(() => {
+    const today = new Date();
+    return formatDate(today);
+  });
+  const [useCustomDateRange, setUseCustomDateRange] = useState(false);
+
   useEffect(() => {
     if (!showNDVI) setShowCanopyGuide(false);
   }, [showNDVI]);
@@ -1020,17 +1031,36 @@ export default function Map() {
     [],
   );
 
-  const fetchFirmsData = async (timeRange?: "today" | "24hrs" | "7days") => {
+  // Update fetchFirmsData function
+  const fetchFirmsData = async (
+    timeRange?: "today" | "24hrs" | "7days",
+    startDate?: string,
+    endDate?: string,
+  ) => {
     if (!mapRef.current) {
       console.error("❌ Map reference not available");
       return;
     }
 
     const effectiveTimeRange = timeRange || firmsTimeRange;
+    const useCustom = startDate && endDate;
+    const payloadStartDate = useCustom ? startDate : firmsStartDate;
+    const payloadEndDate = useCustom ? endDate : firmsEndDate;
 
     try {
       const bounds = mapRef.current.getBounds();
       const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+
+      const requestBody: any = {
+        bbox: bbox,
+        time_range: effectiveTimeRange,
+      };
+
+      // Add custom date range if using it
+      if (useCustom || useCustomDateRange) {
+        requestBody.start_date = payloadStartDate;
+        requestBody.end_date = payloadEndDate;
+      }
 
       const response = await fetch(api + "api/firms-fire-data/", {
         method: "POST",
@@ -1038,10 +1068,7 @@ export default function Map() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          bbox: bbox,
-          time_range: effectiveTimeRange,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -1061,7 +1088,7 @@ export default function Map() {
         if (data.fires && Array.isArray(data.fires) && data.fires.length > 0) {
           const geoJsonData = {
             type: "FeatureCollection",
-            features: data.fires.map((fire) => ({
+            features: data.fires.map((fire: any) => ({
               type: "Feature",
               geometry: {
                 type: "Point",
@@ -1104,33 +1131,43 @@ export default function Map() {
                     : "🟠 Nominal";
 
               layer.bindPopup(`
-                <div style="font-size: 12px; min-width: 200px;">
-                  <strong style="color: #dc2626; font-size: 14px;">🔥 Fire Hotspot</strong>
-                  <hr style="margin: 6px 0; border-color: #ddd;"/>
-                  <div><strong>📍 Location:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>
-                  <div><strong>🌡️ Brightness:</strong> ${p.brightness ? p.brightness.toFixed(1) : "N/A"} K</div>
-                  <div><strong>🔥 FRP:</strong> ${p.frp || "N/A"} GW</div>
-                  <div><strong>📊 Confidence:</strong> ${confidenceLabel}</div>
-                  <div><strong>📅 Date:</strong> ${p.acq_date || "N/A"}</div>
-                  <div><strong>⏰ Time:</strong> ${p.acq_time || "N/A"}</div>
-                  <div><strong>🛰️ Satellite:</strong> ${p.satellite} (${p.instrument})</div>
-                </div>
-              `);
+              <div style="font-size: 12px; min-width: 200px;">
+                <strong style="color: #dc2626; font-size: 14px;">🔥 Fire Hotspot</strong>
+                <hr style="margin: 6px 0; border-color: #ddd;"/>
+                <div><strong>📍 Location:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>
+                <div><strong>🌡️ Brightness:</strong> ${p.brightness ? p.brightness.toFixed(1) : "N/A"} K</div>
+                <div><strong>🔥 FRP:</strong> ${p.frp || "N/A"} GW</div>
+                <div><strong>📊 Confidence:</strong> ${confidenceLabel}</div>
+                <div><strong> Date:</strong> ${p.acq_date || "N/A"}</div>
+                <div><strong>⏰ Time:</strong> ${p.acq_time || "N/A"}</div>
+                <div><strong>🛰️ Satellite:</strong> ${p.satellite} (${p.instrument})</div>
+              </div>
+            `);
             },
           }).addTo(mapRef.current);
 
           setFirmsGeoJsonLayer(geoJsonLayer);
 
+          const dateInfo =
+            useCustom || useCustomDateRange
+              ? `${payloadStartDate} to ${payloadEndDate}`
+              : effectiveTimeRange;
+
           setPSAlert({
             type: "success",
             title: "Fires Detected",
-            message: `Found ${data.fires.length} active fire hotspot${data.fires.length > 1 ? "s" : ""}`,
+            message: `Found ${data.fires.length} active fire hotspot${data.fires.length > 1 ? "s" : ""} (${dateInfo})`,
           });
         } else {
+          const dateInfo =
+            useCustom || useCustomDateRange
+              ? `${payloadStartDate} to ${payloadEndDate}`
+              : effectiveTimeRange;
+
           setPSAlert({
             type: "success",
             title: "All Clear",
-            message: "No active fires detected in current view",
+            message: `No active fires detected in current view (${dateInfo})`,
           });
         }
       } else {
@@ -1151,6 +1188,7 @@ export default function Map() {
     }
   };
 
+  // Update toggleFirms function
   const toggleFirms = () => {
     const newState = !showFirms;
     setShowFirms(newState);
@@ -1162,18 +1200,41 @@ export default function Map() {
       }
       setFireCount(0);
     } else {
-      setTimeout(() => fetchFirmsData(), 500);
+      setTimeout(() => {
+        if (useCustomDateRange) {
+          fetchFirmsData(firmsTimeRange, firmsStartDate, firmsEndDate);
+        } else {
+          fetchFirmsData();
+        }
+      }, 500);
     }
   };
 
+  // Update updateFirmsTimeRange function
   const updateFirmsTimeRange = (range: "today" | "24hrs" | "7days") => {
     setFirmsTimeRange(range);
+    setUseCustomDateRange(false);
     if (showFirms) {
       if (firmsGeoJsonLayer && mapRef.current) {
         mapRef.current.removeLayer(firmsGeoJsonLayer);
         setFirmsGeoJsonLayer(null);
       }
       setTimeout(() => fetchFirmsData(range), 300);
+    }
+  };
+
+  // Add new function for custom date range
+  const applyCustomDateRange = () => {
+    setUseCustomDateRange(true);
+    if (showFirms) {
+      if (firmsGeoJsonLayer && mapRef.current) {
+        mapRef.current.removeLayer(firmsGeoJsonLayer);
+        setFirmsGeoJsonLayer(null);
+      }
+      setTimeout(
+        () => fetchFirmsData(firmsTimeRange, firmsStartDate, firmsEndDate),
+        300,
+      );
     }
   };
 
@@ -1642,6 +1703,14 @@ export default function Map() {
               onFetchFirmsData={fetchFirmsData}
               onToggleFirms={toggleFirms}
               onUpdateFirmsTimeRange={updateFirmsTimeRange}
+              // NEW PROPS
+              firmsStartDate={firmsStartDate}
+              setFirmsStartDate={setFirmsStartDate}
+              firmsEndDate={firmsEndDate}
+              setFirmsEndDate={setFirmsEndDate}
+              useCustomDateRange={useCustomDateRange}
+              setUseCustomDateRange={setUseCustomDateRange}
+              onApplyCustomDateRange={applyCustomDateRange}
             />
             <button
               onClick={() => {

@@ -1,8 +1,11 @@
 import { useState } from "react";
 import * as SecureStore from "expo-secure-store";
-import { Alert } from "react-native";
+// ❌ REMOVED: import { Alert } from "react-native";
 import { api } from "@/constants/url_fixed";
 import { getStrictLayerCode } from "@/utils/layerCodes";
+
+// ✅ ADDED: Import the useAlert hook
+import { useAlert } from "@/components/AlertContext";
 
 const API_BASE = `${api}/api`;
 
@@ -26,7 +29,11 @@ export interface AssessmentResponse {
   created_at: string;
   updated_at: string;
   land_classification?: { id: number; name: string } | null;
-  animals_present?: { animal_id: number; name: string; scientific_name: string }[];
+  animals_present?: {
+    animal_id: number;
+    name: string;
+    scientific_name: string;
+  }[];
 }
 
 export interface LocalImage {
@@ -42,7 +49,11 @@ export interface LocalImage {
 export interface UseFieldAssessmentReturn {
   saving: boolean;
   uploading: boolean;
-  handleSave: (data: any, submit?: boolean, localImages?: LocalImage[]) => Promise<number | null>;
+  handleSave: (
+    data: any,
+    submit?: boolean,
+    localImages?: LocalImage[],
+  ) => Promise<number | null>;
   uploadImage: (
     assessmentId: number,
     photoData: {
@@ -66,6 +77,9 @@ export const useFieldAssessment = (
 ): UseFieldAssessmentReturn => {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  // ✅ ADDED: Initialize useAlert
+  const { success, error: showError } = useAlert();
 
   const handleSave = async (
     payload: any,
@@ -91,7 +105,10 @@ export const useFieldAssessment = (
 
         // Append all payload fields
         if (payload.reforestation_area_id != null) {
-          formData.append("reforestation_area_id", payload.reforestation_area_id.toString());
+          formData.append(
+            "reforestation_area_id",
+            payload.reforestation_area_id.toString(),
+          );
         }
         if (payload.site_id != null) {
           formData.append("site_id", payload.site_id.toString());
@@ -103,13 +120,19 @@ export const useFieldAssessment = (
           formData.append("location", JSON.stringify(payload.location));
         }
         if (payload.land_classification_id != null) {
-          formData.append("land_classification_id", payload.land_classification_id.toString());
+          formData.append(
+            "land_classification_id",
+            payload.land_classification_id.toString(),
+          );
         }
         if (payload.animal_ids && Array.isArray(payload.animal_ids)) {
           formData.append("animal_ids", JSON.stringify(payload.animal_ids));
         }
         if (payload.field_assessment_data) {
-          formData.append("field_assessment_data", JSON.stringify(payload.field_assessment_data));
+          formData.append(
+            "field_assessment_data",
+            JSON.stringify(payload.field_assessment_data),
+          );
         }
 
         // Append images
@@ -126,7 +149,9 @@ export const useFieldAssessment = (
         // Append image metadata as JSON array
         const imageMetadata = localImages.map((img) => ({
           layer: getStrictLayerCode(layerId, img.subLayerCode),
-          description: img.description || `Photo at ${img.latitude.toFixed(6)}, ${img.longitude.toFixed(6)}`,
+          description:
+            img.description ||
+            `Photo at ${img.latitude.toFixed(6)}, ${img.longitude.toFixed(6)}`,
           latitude: img.latitude,
           longitude: img.longitude,
         }));
@@ -169,7 +194,8 @@ export const useFieldAssessment = (
           },
         );
         if (subRes.ok) {
-          Alert.alert("Success", "Assessment submitted!");
+          // ✅ UPDATED
+          success("Success", "Assessment submitted!");
           onRefresh?.();
           return savedId as number;
         }
@@ -177,12 +203,14 @@ export const useFieldAssessment = (
         throw new Error(err.error || "Submission failed.");
       }
 
-      Alert.alert("Saved", isEdit ? "Draft updated." : "Draft saved.");
+      // ✅ UPDATED
+      success("Saved", isEdit ? "Draft updated." : "Draft saved.");
       onRefresh?.();
       return savedId as number;
     } catch (error: any) {
       console.error("Save Error:", error);
-      Alert.alert("Error", error.message || "Network error while saving.");
+      // ✅ UPDATED
+      showError("Error", error.message || "Network error while saving.");
       return null;
     } finally {
       setSaving(false);
@@ -243,14 +271,16 @@ export const useFieldAssessment = (
 
       if (res.ok) {
         const responseData = JSON.parse(responseText);
-        Alert.alert("Success", "Geocam image uploaded.");
+        // ✅ UPDATED
+        success("Success", "Geocam image uploaded.");
         onRefresh?.();
         return true;
       } else {
         try {
           const errData = JSON.parse(responseText);
           console.error("❌ [Upload] Backend error:", errData);
-          Alert.alert(
+          // ✅ UPDATED
+          showError(
             "Upload Failed",
             errData.error || `Server error: ${res.status}`,
           );
@@ -259,7 +289,8 @@ export const useFieldAssessment = (
             "❌ [Upload] Failed to parse error response:",
             responseText,
           );
-          Alert.alert(
+          // ✅ UPDATED
+          showError(
             "Upload Failed",
             `Server returned ${res.status}: ${responseText.substring(0, 100)}`,
           );
@@ -268,7 +299,8 @@ export const useFieldAssessment = (
       }
     } catch (error: any) {
       console.error("💥 [Upload] CRITICAL ERROR:", error);
-      Alert.alert(
+      // ✅ UPDATED
+      showError(
         "Upload Error",
         `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
@@ -294,7 +326,8 @@ export const useFieldAssessment = (
       }
       throw new Error("Delete failed.");
     } catch {
-      Alert.alert("Error", "Network error deleting image.");
+      // ✅ UPDATED
+      showError("Error", "Network error deleting image.");
       return false;
     }
   };
@@ -312,10 +345,8 @@ export const useFieldAssessment = (
       if (res.ok) return await res.json();
       throw new Error("Failed to fetch.");
     } catch (error: any) {
-      Alert.alert(
-        "Error",
-        error.message || "Network error loading assessment.",
-      );
+      // ✅ UPDATED
+      showError("Error", error.message || "Network error loading assessment.");
       return null;
     }
   };

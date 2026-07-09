@@ -298,8 +298,7 @@ function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
       <div className="py-2">
         {[
           { icon: <User size={14} />, label: "My Profile", sub: "View & edit info", path: "/GISS/my-profile" },
-          { icon: <Mail size={14} />, label: "Inbox", sub: "3 unread messages", path: null },
-          { icon: <Settings size={14} />, label: "Settings", sub: "Preferences & security", path: null },
+          
         ].map((item) => (
           <button
             key={item.label}

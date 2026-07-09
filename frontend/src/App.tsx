@@ -52,7 +52,7 @@ const Assign_onsite_inspector = lazy(
 const MetaDataVerification = lazy(
   () => import("./pages/head/reforestation_areas/meta_data"),
 );
-const Reforestation_area_site = lazy(
+const ReforestationAreaSiteCombined = lazy(
   () => import("./pages/head/site/reforestation_area_site"),
 );
 const Sites = lazy(() => import("./pages/head/site/sites"));
@@ -109,7 +109,9 @@ const Hazard_area_form = lazy(
 );
 const GISReports = lazy(() => import("./pages/GISSpecialist/report"));
 const HeadReports = lazy(() => import("./pages/head/reports/headReports"));
-const NotificationsPage = lazy(() => import("./pages/dataManager/Notifications/NotificationsPage"));
+const NotificationsPage = lazy(
+  () => import("./pages/dataManager/Notifications/NotificationsPage"),
+);
 // ============ LOADING FALLBACK ============
 function LoadingFallback() {
   return (
@@ -121,8 +123,6 @@ function LoadingFallback() {
     </div>
   );
 }
-
-
 
 // ============ MAIN APP ============
 export default function App() {
@@ -136,13 +136,12 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/terms" element={<Terms_and_Conditions />} />
           <Route path="/privacy-policy" element={<Privacy_policy />} />
-          
+
           {/* #head */}
           <Route element={<Sidebar />}>
             {/* Main Dashboard */}
             <Route path="/dashboard" element={<Dashboard />} />
-             <Route path="/notification" element={<NotificationsPage />} />
-           
+            <Route path="/notification" element={<NotificationsPage />} />
 
             {/* maintenance */}
             <Route
@@ -190,7 +189,7 @@ export default function App() {
             />
             <Route
               path="/reforestation_area_site"
-              element={<Reforestation_area_site />}
+              element={<ReforestationAreaSiteCombined />}
             />
             <Route
               path="/evaluation/:application_id"
@@ -250,7 +249,10 @@ export default function App() {
 
           <Route element={<Sidebar_data_manager />}>
             <Route path="/dashboard-data-manager" element={<DashboardAFA />} />
-            <Route path="/DataManager/notification" element={<NotificationsPage />} />
+            <Route
+              path="/DataManager/notification"
+              element={<NotificationsPage />}
+            />
             <Route path="/DataManager/calendar" element={<Calendar />} />
 
             <Route
@@ -262,8 +264,6 @@ export default function App() {
               element={<Land_classifications />}
             />
 
-         
-
             <Route
               path="/DataManager/evaluation/:application_id"
               element={<Evaluation_application />}
@@ -274,8 +274,7 @@ export default function App() {
               path="/DataManager/maintenance_evaluation/:application_id"
               element={<Maintenance_report />}
             />
-           
-           
+
             <Route
               path="/DataManager/assign_onsite_inpsector/:id"
               element={<Assign_onsite_inspector />}
@@ -303,7 +302,7 @@ export default function App() {
             />
             <Route
               path="/DataManager/reforestation_area_site"
-              element={<Reforestation_area_site />}
+              element={<ReforestationAreaSiteCombined />}
             />
 
             <Route
@@ -348,7 +347,7 @@ export default function App() {
 
           <Route element={<SidebarGISS />}>
             <Route path="/dashboard/GISS" element={<DashboardGISS />} />
-             <Route path="/GISS/notification" element={<NotificationsPage />} />
+            <Route path="/GISS/notification" element={<NotificationsPage />} />
             {/* ── NEW: GISS MAINTENANCE ROUTES ── */}
             <Route
               path="/GISS/maintenance/ormoc-city"
@@ -401,7 +400,7 @@ export default function App() {
 
             <Route
               path="/GISS/reforestation_area_site"
-              element={<Reforestation_area_site />}
+              element={<ReforestationAreaSiteCombined />}
             />
 
             <Route

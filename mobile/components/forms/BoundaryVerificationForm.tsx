@@ -5,7 +5,7 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Alert,
+  // ❌ REMOVED: Alert
   StyleSheet,
   Image,
   ActivityIndicator,
@@ -28,6 +28,10 @@ import {
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import FloatingMapButton from "@/components/FloatingMapButton";
+
+// ✅ ADDED: Import the useAlert hook
+import { useAlert } from "@/components/AlertContext";
+
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
@@ -75,6 +79,9 @@ function SimpleGeocam({
     null,
   );
   const cameraRef = useRef<CameraView>(null);
+
+  // ✅ ADDED: Initialize useAlert for this sub-component
+  const { warning, error: showError } = useAlert();
 
   const getCurrentLocation = async (): Promise<LocationData | null> => {
     try {
@@ -156,10 +163,10 @@ function SimpleGeocam({
     const locData = currentLocation ?? (await getCurrentLocation());
 
     if (!locData) {
-      Alert.alert(
+      // ✅ UPDATED
+      warning(
         "GPS Required",
         "GPS coordinates are not available. Please use 'Photo Only' button or move to an area with better GPS signal.",
-        [{ text: "OK" }],
       );
       return;
     }
@@ -171,12 +178,14 @@ function SimpleGeocam({
         base64: false,
       });
       if (!photo?.uri) {
-        Alert.alert("Error", "Failed to capture photo.");
+        // ✅ UPDATED
+        showError("Error", "Failed to capture photo.");
         return;
       }
       onCapture(photo.uri, locData, true);
     } catch (error) {
-      Alert.alert(
+      // ✅ UPDATED
+      showError(
         "Error",
         `Failed to capture photo: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
@@ -194,12 +203,14 @@ function SimpleGeocam({
         base64: false,
       });
       if (!photo?.uri) {
-        Alert.alert("Error", "Failed to capture photo.");
+        // ✅ UPDATED
+        showError("Error", "Failed to capture photo.");
         return;
       }
       onCapture(photo.uri, null, false);
     } catch (error) {
-      Alert.alert(
+      // ✅ UPDATED
+      showError(
         "Error",
         `Failed to capture photo: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
@@ -406,7 +417,7 @@ function SimpleGeocam({
 }
 
 // ─────────────────────────────────────────────
-// CAMERA STYLES
+// CAMERA STYLES (Unchanged)
 // ─────────────────────────────────────────────
 
 const cam = StyleSheet.create({
@@ -668,7 +679,7 @@ const cam = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────
-// FORM SUB-COMPONENTS
+// FORM SUB-COMPONENTS (Unchanged)
 // ─────────────────────────────────────────────
 
 type SectionCardProps = {
@@ -746,6 +757,9 @@ export default function BoundaryVerificationForm() {
   const siteId = params.siteId as string | undefined;
   const isEditingOfflineDraft = !!offlineDraftId;
 
+  // ✅ ADDED: Initialize useAlert
+  const { success, error: showError, warning, confirm } = useAlert();
+
   const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
     useFieldAssessment(areaId, layerId, assessmentId);
 
@@ -810,7 +824,8 @@ export default function BoundaryVerificationForm() {
     try {
       const draft = await getOfflineDraft(offlineDraftId);
       if (!draft) {
-        Alert.alert("Error", "Draft not found.");
+        // ✅ UPDATED
+        showError("Error", "Draft not found.");
         return;
       }
 
@@ -840,7 +855,8 @@ export default function BoundaryVerificationForm() {
       }
     } catch (e: any) {
       console.error("Error loading offline draft:", e);
-      Alert.alert("Error", "Failed to load draft.");
+      // ✅ UPDATED
+      showError("Error", "Failed to load draft.");
     } finally {
       setLoading(false);
     }
@@ -863,7 +879,8 @@ export default function BoundaryVerificationForm() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
+        // ✅ UPDATED
+        warning(
           "Permission Denied",
           "Please enable location access in your device settings.",
         );
@@ -873,7 +890,8 @@ export default function BoundaryVerificationForm() {
 
       const servicesEnabled = await Location.hasServicesEnabledAsync();
       if (!servicesEnabled) {
-        Alert.alert(
+        // ✅ UPDATED
+        warning(
           "Location Services Disabled",
           "Please enable GPS/Location in your device settings.",
         );
@@ -901,7 +919,8 @@ export default function BoundaryVerificationForm() {
       }
 
       if (!loc || !loc.coords) {
-        Alert.alert("Error", "Could not retrieve location data.");
+        // ✅ UPDATED
+        showError("Error", "Could not retrieve location data.");
         setGettingLocation(false);
         return;
       }
@@ -909,10 +928,13 @@ export default function BoundaryVerificationForm() {
       setLocationLat(loc.coords.latitude.toFixed(6));
       setLocationLng(loc.coords.longitude.toFixed(6));
       setLocationAccuracy(loc.coords.accuracy?.toFixed(1) || "");
-      Alert.alert("Location Captured", "GPS coordinates updated.");
+
+      // ✅ UPDATED
+      success("Location Captured", "GPS coordinates updated.");
     } catch (error) {
       console.error("Location error:", error);
-      Alert.alert(
+      // ✅ UPDATED
+      showError(
         "GPS Error",
         "Could not get current location. Make sure GPS is enabled and you're outdoors or near a window.",
       );
@@ -968,18 +990,11 @@ export default function BoundaryVerificationForm() {
           if (data) {
             setImages(data.images || []);
           }
-          Alert.alert("Success", "Photo uploaded!");
-        } else {
-          Alert.alert(
-            "Upload Failed",
-            "Could not upload photo. Please try again.",
-          );
+          // ✅ FIX: Removed redundant success alert. The hook already shows "Geocam image uploaded."
         }
+        // ✅ FIX: Removed redundant error alerts. The hook already handles upload failures.
       } catch (error) {
-        Alert.alert(
-          "Upload Error",
-          `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        );
+        // ✅ FIX: Removed redundant error alert. The hook already handles it.
       } finally {
         setUploading(false);
       }
@@ -998,7 +1013,9 @@ export default function BoundaryVerificationForm() {
             : `Boundary marker photo (no GPS)`),
       };
       setLocalImages([...localImages, localImg]);
-      Alert.alert(
+
+      // ✅ UPDATED
+      success(
         "Photo Captured",
         pendingPhoto.withGPS
           ? "Photo will be uploaded when you save the draft."
@@ -1064,11 +1081,12 @@ export default function BoundaryVerificationForm() {
           status: "pending",
         });
 
-        Alert.alert(
+        // ✅ UPDATED: Non-blocking toast + navigate back
+        success(
           "Updated Offline",
           "Draft updated locally. Will sync when online.",
-          [{ text: "OK", onPress: () => router.back() }],
         );
+        router.back();
         return offlineDraftId;
       }
 
@@ -1087,16 +1105,18 @@ export default function BoundaryVerificationForm() {
       await saveOfflineDraft(draft);
       setLocalImages([]);
 
-      Alert.alert(
+      // ✅ UPDATED: Non-blocking toast + navigate back
+      success(
         "Saved Offline",
         "Assessment saved locally. Will sync when online.",
-        [{ text: "OK", onPress: () => router.back() }],
       );
+      router.back();
 
       return localUuid;
     } catch (e: any) {
       console.error("Error saving offline:", e);
-      Alert.alert("Error", "Failed to save offline. Please try again.");
+      // ✅ UPDATED
+      showError("Error", "Failed to save offline. Please try again.");
       return null;
     } finally {
       setSavingOffline(false);
@@ -1114,43 +1134,46 @@ export default function BoundaryVerificationForm() {
         populateForm(data.field_assessment_data || {});
         setImages(data.images || []);
       }
-      Alert.alert("Saved", "Draft saved successfully.");
+      // ✅ FIX: Removed redundant success alert. The hook already shows "Saved".
     }
   };
 
+  // ✅ UPDATED: Converted to use confirm() dialog
   const handleSubmit = async () => {
-    Alert.alert(
+    confirm(
       "Submit Assessment",
       "Are you sure? You cannot edit after submission.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Submit",
-          onPress: async () => {
-            const savedId = await handleSave(buildPayload(), true, localImages);
-            if (savedId) {
-              setLocalImages([]);
-              setIsViewMode(true);
-            }
-          },
-        },
-      ],
+      async () => {
+        const savedId = await handleSave(buildPayload(), true, localImages);
+        if (savedId) {
+          setLocalImages([]);
+          setIsViewMode(true);
+        }
+      },
+      {
+        type: "warning",
+        confirmText: "Submit",
+        cancelText: "Cancel",
+      },
     );
   };
 
+  // ✅ UPDATED: Converted to use confirm() dialog
   const handleDeleteImage = async (img: BoundaryImage) => {
-    Alert.alert("Delete Photo", "Remove this photo?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          await deleteImage(img.image_id);
-          const d = await fetchAssessmentData();
-          if (d) setImages(d.images || []);
-        },
+    confirm(
+      "Delete Photo",
+      "Remove this photo?",
+      async () => {
+        await deleteImage(img.image_id);
+        const d = await fetchAssessmentData();
+        if (d) setImages(d.images || []);
       },
-    ]);
+      {
+        type: "error",
+        confirmText: "Delete",
+        cancelText: "Cancel",
+      },
+    );
   };
 
   const getImageUrl = (imgUrl: string) => {
@@ -1711,7 +1734,7 @@ export default function BoundaryVerificationForm() {
 }
 
 // ─────────────────────────────────────────────
-// CUSTOM MODAL STYLES
+// STYLES (Unchanged)
 // ─────────────────────────────────────────────
 
 const modalStyles = StyleSheet.create({
@@ -1782,10 +1805,6 @@ const modalStyles = StyleSheet.create({
     fontSize: 14,
   },
 });
-
-// ─────────────────────────────────────────────
-// FORM STYLES
-// ─────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F1F5F9" },

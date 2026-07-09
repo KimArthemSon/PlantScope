@@ -9,7 +9,7 @@ import {
   StyleSheet,
   Modal,
   ScrollView,
-  Alert,
+  // ❌ REMOVED: Alert
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -17,6 +17,9 @@ import NetInfo from "@react-native-community/netinfo";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
+
+// ✅ ADDED: Import the useAlert hook
+import { useAlert } from "@/components/AlertContext";
 
 const API_BASE = api;
 const OFFLINE_SITES_KEY = "@plantscope_offline_sites";
@@ -33,6 +36,9 @@ export default function SelectSite() {
 
   const router = useRouter();
   const isOnline = useNetworkStatus();
+
+  // ✅ ADDED: Initialize useAlert. We alias 'error' to 'showError' to avoid conflicting with your 'error' state variable.
+  const { success, error: showError, warning, info, confirm } = useAlert();
 
   const [sites, setSites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,51 +94,51 @@ export default function SelectSite() {
       const sitesArray = Array.from(newMap.values());
       await AsyncStorage.setItem(OFFLINE_SITES_KEY, JSON.stringify(sitesArray));
 
-      Alert.alert("Success", `${site.name} saved for offline use.`);
+      // ✅ UPDATED
+      success("Success", `${site.name} saved for offline use.`);
     } catch (error) {
-      Alert.alert("Error", "Failed to save site for offline use.");
+      // ✅ UPDATED
+      showError("Error", "Failed to save site for offline use.");
     } finally {
       setSavingOffline(null);
     }
   };
 
-  const removeSiteFromOffline = async (site: any) => {
+  // ✅ UPDATED: Converted to use confirm() dialog.
+  const removeSiteFromOffline = (site: any) => {
     const siteId = getSiteId(site);
     if (!siteId) return;
 
-    Alert.alert(
+    confirm(
       "Remove from Offline",
       `Remove "${site.name}" from offline storage?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            setSavingOffline(siteId);
-            try {
-              const newMap = new Map(offlineSites);
-              newMap.delete(siteId);
-              setOfflineSites(newMap);
+      async () => {
+        setSavingOffline(siteId);
+        try {
+          const newMap = new Map(offlineSites);
+          newMap.delete(siteId);
+          setOfflineSites(newMap);
 
-              const sitesArray = Array.from(newMap.values());
-              await AsyncStorage.setItem(
-                OFFLINE_SITES_KEY,
-                JSON.stringify(sitesArray),
-              );
+          const sitesArray = Array.from(newMap.values());
+          await AsyncStorage.setItem(
+            OFFLINE_SITES_KEY,
+            JSON.stringify(sitesArray),
+          );
 
-              Alert.alert(
-                "Removed",
-                `${site.name} removed from offline storage.`,
-              );
-            } catch (error) {
-              Alert.alert("Error", "Failed to remove site.");
-            } finally {
-              setSavingOffline(null);
-            }
-          },
-        },
-      ],
+          // ✅ UPDATED
+          success("Removed", `${site.name} removed from offline storage.`);
+        } catch (error) {
+          // ✅ UPDATED
+          showError("Error", "Failed to remove site.");
+        } finally {
+          setSavingOffline(null);
+        }
+      },
+      {
+        type: "error",
+        confirmText: "Remove",
+        cancelText: "Cancel",
+      },
     );
   };
 
@@ -217,7 +223,8 @@ export default function SelectSite() {
     // ✅ Check network status directly
     const networkState = await NetInfo.fetch();
     if (!networkState.isConnected) {
-      Alert.alert("Offline Mode", "Site details are not available offline.");
+      // ✅ UPDATED
+      warning("Offline Mode", "Site details are not available offline.");
       return;
     }
 
@@ -233,11 +240,13 @@ export default function SelectSite() {
         const data = await res.json();
         setSelectedSiteInfo(data);
       } else {
-        Alert.alert("Error", "Failed to load site information.");
+        // ✅ UPDATED
+        showError("Error", "Failed to load site information.");
         setInfoModalVisible(false);
       }
     } catch (e) {
-      Alert.alert("Error", "Network error.");
+      // ✅ UPDATED
+      showError("Error", "Network error.");
       setInfoModalVisible(false);
     } finally {
       setLoadingInfo(false);

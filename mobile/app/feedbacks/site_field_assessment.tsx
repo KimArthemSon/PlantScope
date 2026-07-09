@@ -6,7 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
+  // ❌ REMOVED: Alert (was imported but not used in this file)
   ActivityIndicator,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
@@ -17,6 +17,9 @@ import { api } from "@/constants/url_fixed";
 import { HardHat, Scale, Sprout, Database } from "lucide-react-native";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { getOfflineDraftsForContext } from "@/hooks/useOfflineFieldAssessment";
+
+// ✅ ADDED: Import the useAlert hook
+import { useAlert } from "@/components/AlertContext";
 
 const API = api + "/api";
 
@@ -61,8 +64,11 @@ export default function SiteFieldAssessment() {
     siteName?: string;
   }>();
 
+  // ✅ ADDED: Initialize useAlert so it's ready to use anywhere in this component
+  const { success, error, warning, info, confirm } = useAlert();
+
   const [assessments, setAssessments] = useState<any[]>([]);
-  const [offlineDrafts, setOfflineDrafts] = useState<any[]>([]); // ✅ NEW
+  const [offlineDrafts, setOfflineDrafts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
@@ -111,6 +117,8 @@ export default function SiteFieldAssessment() {
             } else {
               setAssessments([]);
               setIsOfflineMode(true);
+              // ✅ EXAMPLE: You can now easily add alerts here if needed!
+              // error("Sync Failed", "Could not fetch latest assessments from server.");
             }
           } catch (fetchError) {
             console.error("API fetch failed:", fetchError);
@@ -118,8 +126,8 @@ export default function SiteFieldAssessment() {
             setIsOfflineMode(true);
           }
         }
-      } catch (error) {
-        console.error("Error fetching assessments:", error);
+      } catch (err) {
+        console.error("Error fetching assessments:", err);
         setAssessments([]);
         setIsOfflineMode(true);
       } finally {

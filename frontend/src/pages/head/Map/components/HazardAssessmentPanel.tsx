@@ -26,6 +26,15 @@ interface HazardAssessmentPanelProps {
   onFetchFirmsData: () => void;
   onToggleFirms: () => void;
   onUpdateFirmsTimeRange: (range: "today" | "24hrs" | "7days") => void;
+
+  // NEW: Custom Date Range Props
+  firmsStartDate: string;
+  setFirmsStartDate: (val: string) => void;
+  firmsEndDate: string;
+  setFirmsEndDate: (val: string) => void;
+  useCustomDateRange: boolean;
+  setUseCustomDateRange: (val: boolean) => void;
+  onApplyCustomDateRange: () => void;
 }
 
 // 🏛️ Official MGB & PHIVOLCS Guide Data
@@ -125,6 +134,13 @@ export default function HazardAssessmentPanel({
   onFetchFirmsData,
   onToggleFirms,
   onUpdateFirmsTimeRange,
+  firmsStartDate,
+  setFirmsStartDate,
+  firmsEndDate,
+  setFirmsEndDate,
+  useCustomDateRange,
+  setUseCustomDateRange,
+  onApplyCustomDateRange,
 }: HazardAssessmentPanelProps) {
   const [activeInfo, setActiveInfo] = useState<
     "mgbFlood" | "mgbLandslide" | "eil" | "firms" | null
@@ -322,7 +338,7 @@ export default function HazardAssessmentPanel({
       </div>
 
       {/* ================= NASA FIRMS SECTION ================= */}
-      <div className="border-b border-gray-200 pb-3">
+      <div className="border-t border-gray-200 pt-3">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
             <Map size={12} className="text-red-600" />
@@ -356,14 +372,17 @@ export default function HazardAssessmentPanel({
 
         {showFirms && (
           <div className="mt-2 space-y-2">
-            {/* Time Range Selector */}
+            {/* Preset Time Range Buttons */}
             <div className="flex gap-1">
               {(["today", "24hrs", "7days"] as const).map((range) => (
                 <button
                   key={range}
-                  onClick={() => onUpdateFirmsTimeRange(range)}
+                  onClick={() => {
+                    setUseCustomDateRange(false);
+                    onUpdateFirmsTimeRange(range);
+                  }}
                   className={`flex-1 text-[.6rem] py-1 px-1 rounded transition-all ${
-                    firmsTimeRange === range
+                    firmsTimeRange === range && !useCustomDateRange
                       ? "bg-red-600 text-white"
                       : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                   }`}
@@ -377,6 +396,67 @@ export default function HazardAssessmentPanel({
               ))}
             </div>
 
+            {/* Custom Date Range Toggle */}
+            <button
+              onClick={() => setUseCustomDateRange(!useCustomDateRange)}
+              className={`w-full text-[.6rem] py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1 ${
+                useCustomDateRange
+                  ? "bg-red-100 text-red-700 border border-red-300"
+                  : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
+              }`}
+            >
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              {useCustomDateRange ? "Hide Date Range" : "Custom Date Range"}
+            </button>
+
+            {/* Custom Date Range Inputs */}
+            {useCustomDateRange && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-2 space-y-2">
+                <div>
+                  <label className="text-[.55rem] text-gray-600 block mb-1">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={firmsStartDate}
+                    onChange={(e) => setFirmsStartDate(e.target.value)}
+                    className="w-full text-[.6rem] p-1 border border-red-200 rounded bg-white"
+                    max={new Date().toISOString().split("T")[0]}
+                  />
+                </div>
+                <div>
+                  <label className="text-[.55rem] text-gray-600 block mb-1">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={firmsEndDate}
+                    onChange={(e) => setFirmsEndDate(e.target.value)}
+                    className="w-full text-[.6rem] p-1 border border-red-200 rounded bg-white"
+                    max={new Date().toISOString().split("T")[0]}
+                  />
+                </div>
+                <button
+                  onClick={onApplyCustomDateRange}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white text-[.6rem] font-medium py-1.5 px-2 rounded-md transition-colors"
+                >
+                  Apply Date Range
+                </button>
+              </div>
+            )}
+
             {/* Fire Info */}
             <div className="bg-red-50 border border-red-200 rounded p-2 text-[.6rem]">
               <div className="flex items-center justify-between mb-1">
@@ -386,7 +466,12 @@ export default function HazardAssessmentPanel({
               <div className="text-gray-500 text-[.55rem]">
                 Source: NASA VIIRS/MODIS
               </div>
-              <div className="mt-2 text-[.55rem] text-gray-600 italic">
+              {useCustomDateRange && (
+                <div className="mt-1 text-[.55rem] text-red-700 font-medium">
+                  📅 {firmsStartDate} to {firmsEndDate}
+                </div>
+              )}
+              <div className="mt-1 text-[.55rem] text-gray-600 italic">
                 ⚠️ Fire hotspots detected by satellite
               </div>
             </div>

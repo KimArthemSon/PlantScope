@@ -7,7 +7,7 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Alert,
+  // ❌ REMOVED: Alert
   ActivityIndicator,
   Image,
   FlatList,
@@ -22,13 +22,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 import {
   saveOfflineDraft,
-  updateOfflineDraft, // ✅ NEW
-  getOfflineDraft, // ✅ NEW
+  updateOfflineDraft,
+  getOfflineDraft,
   generateLocalUUID,
-  OfflineDraft, // ✅ NEW
+  OfflineDraft,
   OfflineImage,
 } from "@/hooks/useOfflineFieldAssessment";
 import { useNetworkStatus } from "@/utils/networkStatus";
+
+// ✅ ADDED: Import the useAlert hook
+import { useAlert } from "@/components/AlertContext";
 
 const API_BASE = api;
 
@@ -71,17 +74,20 @@ interface AnimalOption {
 
 /* ---------- SCREEN ---------- */
 export default function MetaDataForm() {
-  // ✅ NEW: Added offlineDraftId to params
   const { id, areaId, siteId, offlineDraftId } = useLocalSearchParams<{
     id?: string;
     areaId: string;
     siteId?: string;
-    offlineDraftId?: string; // ✅ NEW
+    offlineDraftId?: string;
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // ✅ ADDED: Initialize useAlert. We alias 'error' to 'showError' to avoid conflicts with catch blocks.
+  const { success, error: showError, warning, info, confirm } = useAlert();
+
   const isEditMode = !!id;
-  const isEditingOfflineDraft = !!offlineDraftId; // ✅ NEW
+  const isEditingOfflineDraft = !!offlineDraftId;
 
   const [loading, setLoading] = useState(isEditMode || isEditingOfflineDraft);
   const [saving, setSaving] = useState(false);
@@ -145,8 +151,8 @@ export default function MetaDataForm() {
       try {
         const networkState = await NetInfo.fetch();
         console.log("Network state on mount:", networkState.isConnected);
-      } catch (error) {
-        console.error("Error checking network:", error);
+      } catch (err) {
+        console.error("Error checking network:", err);
       } finally {
         setNetworkChecked(true);
       }
@@ -209,7 +215,8 @@ export default function MetaDataForm() {
     try {
       const draft = await getOfflineDraft(offlineDraftId);
       if (!draft) {
-        Alert.alert("Error", "Draft not found.");
+        // ✅ UPDATED
+        showError("Error", "Draft not found.");
         router.back();
         return;
       }
@@ -282,7 +289,8 @@ export default function MetaDataForm() {
       }
     } catch (e: any) {
       console.error("Error loading offline draft:", e);
-      Alert.alert("Error", "Failed to load draft.");
+      // ✅ UPDATED
+      showError("Error", "Failed to load draft.");
       router.back();
     } finally {
       setLoading(false);
@@ -347,7 +355,8 @@ export default function MetaDataForm() {
 
       if (Array.isArray(data.images)) setExistingImages(data.images);
     } catch (e: any) {
-      Alert.alert("Error", e.message ?? "Failed to load assessment.");
+      // ✅ UPDATED
+      showError("Error", e.message ?? "Failed to load assessment.");
       router.back();
     } finally {
       setLoading(false);
@@ -360,7 +369,8 @@ export default function MetaDataForm() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission Denied", "Please enable location access.");
+        // ✅ UPDATED
+        warning("Permission Denied", "Please enable location access.");
         return;
       }
       const loc = await Location.getCurrentPositionAsync({
@@ -374,9 +384,11 @@ export default function MetaDataForm() {
         longitude: loc.coords.longitude,
         gps_accuracy_meters: loc.coords.accuracy,
       });
-      Alert.alert("Location Captured", "GPS coordinates updated.");
-    } catch (error) {
-      Alert.alert("Error", "Could not get current location.");
+      // ✅ UPDATED
+      success("Location Captured", "GPS coordinates updated.");
+    } catch (err) {
+      // ✅ UPDATED
+      showError("Error", "Could not get current location.");
     } finally {
       setGettingLocation(false);
     }
@@ -405,33 +417,40 @@ export default function MetaDataForm() {
     }
   };
 
+  // ✅ UPDATED: Converted to use confirm() dialog
   const deleteExistingImage = (imageId: number) => {
-    Alert.alert("Delete Photo", "Remove this photo?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const token = await SecureStore.getItemAsync("token");
-            const res = await fetch(
-              `${API_BASE}/api/field_assessments/images/${imageId}/delete/`,
-              {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
-              },
+    confirm(
+      "Delete Photo",
+      "Remove this photo?",
+      async () => {
+        try {
+          const token = await SecureStore.getItemAsync("token");
+          const res = await fetch(
+            `${API_BASE}/api/field_assessments/images/${imageId}/delete/`,
+            {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          );
+          if (res.ok) {
+            setExistingImages(
+              existingImages.filter((i) => i.image_id !== imageId),
             );
-            if (res.ok)
-              setExistingImages(
-                existingImages.filter((i) => i.image_id !== imageId),
-              );
-            else Alert.alert("Error", "Failed to delete.");
-          } catch {
-            Alert.alert("Error", "Network error.");
+            // ✅ Added success feedback for better UX
+            success("Deleted", "Photo removed successfully.");
+          } else {
+            showError("Error", "Failed to delete.");
           }
-        },
+        } catch {
+          showError("Error", "Network error.");
+        }
       },
-    ]);
+      {
+        type: "error",
+        confirmText: "Delete",
+        cancelText: "Cancel",
+      },
+    );
   };
 
   const removeLocalImage = (id: string) => {
@@ -513,7 +532,8 @@ export default function MetaDataForm() {
   /* ---------- ✅ UPDATED: Save Offline (handles edit mode) ---------- */
   const handleSaveOffline = async (): Promise<string | null> => {
     if (!assessmentDate) {
-      Alert.alert("Missing Info", "Assessment date is required.");
+      // ✅ UPDATED
+      warning("Missing Info", "Assessment date is required.");
       return null;
     }
 
@@ -538,11 +558,12 @@ export default function MetaDataForm() {
           status: "pending",
         });
 
-        Alert.alert(
+        // ✅ UPDATED: Non-blocking success toast + navigate back
+        success(
           "Updated Offline",
           "Draft updated locally. Will sync when online.",
-          [{ text: "OK", onPress: () => router.back() }],
         );
+        router.back();
         return offlineDraftId;
       }
 
@@ -562,16 +583,18 @@ export default function MetaDataForm() {
       await saveOfflineDraft(draft);
       setLocalImages([]);
 
-      Alert.alert(
+      // ✅ UPDATED: Non-blocking success toast + navigate back
+      success(
         "Saved Offline",
         "Assessment saved locally. Will sync when online.",
-        [{ text: "OK", onPress: () => router.back() }],
       );
+      router.back();
 
       return localUuid;
     } catch (e: any) {
       console.error("Error saving offline:", e);
-      Alert.alert("Error", "Failed to save offline. Please try again.");
+      // ✅ UPDATED
+      showError("Error", "Failed to save offline. Please try again.");
       return null;
     } finally {
       setSavingOffline(false);
@@ -581,7 +604,8 @@ export default function MetaDataForm() {
   /* ---------- Save Draft (Online) ---------- */
   const handleSaveDraft = async (): Promise<number | null> => {
     if (!assessmentDate) {
-      Alert.alert("Missing Info", "Assessment date is required.");
+      // ✅ UPDATED
+      warning("Missing Info", "Assessment date is required.");
       return null;
     }
     setSaving(true);
@@ -655,56 +679,56 @@ export default function MetaDataForm() {
         : responseData.field_assessment_id;
 
       setLocalImages([]);
-      Alert.alert("Saved", isEditMode ? "Draft updated." : "Draft saved.");
+      // ✅ UPDATED
+      success("Saved", isEditMode ? "Draft updated." : "Draft saved.");
       return faid;
     } catch (e: any) {
-      Alert.alert("Error", e.message);
+      // ✅ UPDATED
+      showError("Error", e.message);
       return null;
     } finally {
       setSaving(false);
     }
   };
 
-  /* ---------- Submit (Online Only) ---------- */
+  // ✅ UPDATED: Converted to use confirm() dialog
   const handleSubmit = async () => {
     const savedId = await handleSaveDraft();
     if (!savedId) return;
 
-    Alert.alert(
+    confirm(
       "Finalize Meta Data",
       "Once submitted, this cannot be edited. Proceed?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Yes, Submit",
-          onPress: async () => {
-            setSubmitting(true);
-            try {
-              const token = await SecureStore.getItemAsync("token");
-              const res = await fetch(
-                `${API_BASE}/api/field_assessments/${savedId}/submit/`,
-                {
-                  method: "POST",
-                  headers: { Authorization: `Bearer ${token}` },
-                },
-              );
-              if (!res.ok) {
-                const e = await res.json();
-                throw new Error(e.error ?? "Failed to submit.");
-              }
-              Alert.alert(
-                "Submitted",
-                "Meta Data submitted to GIS Specialist!",
-                [{ text: "OK", onPress: () => router.back() }],
-              );
-            } catch (e: any) {
-              Alert.alert("Error", e.message);
-            } finally {
-              setSubmitting(false);
-            }
-          },
-        },
-      ],
+      async () => {
+        setSubmitting(true);
+        try {
+          const token = await SecureStore.getItemAsync("token");
+          const res = await fetch(
+            `${API_BASE}/api/field_assessments/${savedId}/submit/`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          );
+          if (!res.ok) {
+            const e = await res.json();
+            throw new Error(e.error ?? "Failed to submit.");
+          }
+          // ✅ UPDATED: Non-blocking success toast + navigate back
+          success("Submitted", "Meta Data submitted to GIS Specialist!");
+          router.back();
+        } catch (e: any) {
+          // ✅ UPDATED
+          showError("Error", e.message);
+        } finally {
+          setSubmitting(false);
+        }
+      },
+      {
+        type: "warning",
+        confirmText: "Yes, Submit",
+        cancelText: "Cancel",
+      },
     );
   };
 
@@ -1359,12 +1383,11 @@ export default function MetaDataForm() {
           </View>
         </View>
       </Modal>
-        
     </View>
   );
 }
 
-/* ---------- SUB-COMPONENTS ---------- */
+/* ---------- SUB-COMPONENTS (Unchanged) ---------- */
 const SectionCard: React.FC<{
   icon: string;
   title: string;
@@ -1460,7 +1483,7 @@ const SecurityChip: React.FC<{
   </TouchableOpacity>
 );
 
-/* ---------- STYLES ---------- */
+/* ---------- STYLES (Unchanged) ---------- */
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#F4F7F5" },
   loadingScreen: {

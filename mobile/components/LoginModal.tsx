@@ -20,8 +20,9 @@ import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 import { useAlert } from "@/components/AlertContext";
 
-// ✅ Cross-platform Storage
+// ✅ Cross-platform Storage Keys
 const TOKEN_KEY = "token";
+const USER_ROLE_KEY = "user_role";
 
 const getToken = async () => {
   if (Platform.OS === "web") return localStorage.getItem(TOKEN_KEY);
@@ -38,6 +39,22 @@ const deleteToken = async () => {
   else await SecureStore.deleteItemAsync(TOKEN_KEY);
 };
 
+// ✅ NEW: User Role Storage Functions
+const setUserRole = async (value: string) => {
+  if (Platform.OS === "web") localStorage.setItem(USER_ROLE_KEY, value);
+  else await SecureStore.setItemAsync(USER_ROLE_KEY, value);
+};
+
+const getUserRole = async () => {
+  if (Platform.OS === "web") return localStorage.getItem(USER_ROLE_KEY);
+  return await SecureStore.getItemAsync(USER_ROLE_KEY);
+};
+
+const deleteUserRole = async () => {
+  if (Platform.OS === "web") localStorage.removeItem(USER_ROLE_KEY);
+  else await SecureStore.deleteItemAsync(USER_ROLE_KEY);
+};
+
 type LoginModalProps = {
   visible: boolean;
   onClose: () => void;
@@ -45,7 +62,7 @@ type LoginModalProps = {
 
 export default function LoginModal({ visible, onClose }: LoginModalProps) {
   const router = useRouter();
-  const alert = useAlert(); // 🎯 Custom alert hook
+  const alert = useAlert();
 
   const [showPassword, setShowPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
@@ -158,7 +175,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
 
   const handleLogin = async () => {
     if (!formData.email || !formData.password) {
-      // 🎨 Custom Error Alert
       alert.error(
         "Missing Fields",
         "Please enter your email and password to continue."
@@ -184,7 +200,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         const secs = data.remaining_seconds ?? 120;
         setAttemptsLeft(0);
         setLockoutSeconds(secs);
-        // 🎨 Custom Warning Alert with longer duration
         alert.warning(
           "Account Temporarily Locked",
           `Too many failed attempts. Please try again in ${secs} seconds.`,
@@ -195,7 +210,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
 
       if (!res.ok) {
         setAttemptsLeft(data.attempts_left ?? null);
-        // 🎨 Custom Error Alert
         alert.error(
           "Login Failed",
           data.error || "Invalid email or password. Please try again."
@@ -206,8 +220,10 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
       setAttemptsLeft(null);
 
       if (data.user_role === "OnsiteInspector") {
+        // ✅ Store both token AND user_role
         await setToken(data.token);
-        // 🎨 Custom Success Alert
+        await setUserRole(data.user_role);
+        
         alert.success(
           "Welcome Back!",
           `Signed in as ${data.email}`,
@@ -216,8 +232,10 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         handleClose();
         router.replace("/home");
       } else if (data.user_role === "treeGrowers") {
+        // ✅ Store both token AND user_role
         await setToken(data.token);
-        // 🎨 Custom Success Alert
+        await setUserRole(data.user_role);
+        
         alert.success(
           "Welcome Back!",
           `Signed in as ${data.email}`,
@@ -226,14 +244,12 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         handleClose();
         router.replace("/tree_growers/application");
       } else {
-        // 🎨 Custom Error Alert
         alert.error(
           "Access Denied",
           "You don't have permission to access this application."
         );
       }
     } catch (error) {
-      // 🎨 Custom Error Alert with longer duration
       alert.error(
         "Connection Error",
         "Cannot reach the server. Please check your internet connection and try again.",
@@ -428,6 +444,31 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
                 <Text style={styles.registerLink}>Sign Up</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Privacy Policy & Terms Links */}
+            <View style={styles.legalLinksContainer}>
+              <TouchableOpacity 
+                onPress={() => {
+                  handleClose();
+                  router.push("/privacy_policy");
+                }}
+                style={styles.legalLink}
+              >
+                <Text style={styles.legalLinkText}>Privacy Policy</Text>
+              </TouchableOpacity>
+              
+              <Text style={styles.legalSeparator}>•</Text>
+              
+              <TouchableOpacity 
+                onPress={() => {
+                  handleClose();
+                  router.push("/terms_and_conditions");
+                }}
+                style={styles.legalLink}
+              >
+                <Text style={styles.legalLinkText}>Terms & Conditions</Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
@@ -508,7 +549,7 @@ const styles = StyleSheet.create({
   logo: { width: 52, height: 52, borderRadius: 26 },
   scrollContent: {
     paddingHorizontal: 28,
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
   formGroup: { marginBottom: 18 },
   label: {
@@ -599,4 +640,27 @@ const styles = StyleSheet.create({
   attemptsText: { color: "#FCD34D", fontSize: 13, fontWeight: "500", flex: 1 },
   attemptsBold: { fontWeight: "700", color: "#FBBF24" },
   bannerIcon: { fontSize: 16 },
+  legalLinksContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 20,
+    marginBottom: 10,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  legalLink: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  legalLinkText: {
+    color: "#4ADE80",
+    fontSize: 12,
+    fontWeight: "500",
+    textDecorationLine: "underline",
+  },
+  legalSeparator: {
+    color: "#6B8F7B",
+    fontSize: 12,
+  },
 });
