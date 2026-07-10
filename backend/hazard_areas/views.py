@@ -311,3 +311,48 @@ def get_hazard_areas_by_barangay(request, barangay_id):
     areas = HazardArea.objects.filter(barangay_id=barangay_id).order_by('-created_at').values()
     
     return JsonResponse({'data': list(areas)}, status=200)
+
+
+# Add this new endpoint to hazard_areas/views.py
+
+@csrf_exempt
+def get_all_hazard_polygons(request):
+    """
+    Returns ALL hazard polygons for offline download.
+    This endpoint has NO pagination - it returns everything.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    try:
+        # Get all hazard areas without pagination
+        all_hazards = HazardArea.objects.all().order_by('name')
+        
+        data = []
+        for h in all_hazards:
+            data.append({
+                'id': h.hazard_area_id,
+                'name': h.name,
+                'hazard_type': h.hazard_type,
+                'barangay_id': h.barangay_id,
+                'severity': 'MEDIUM',  # Default if not in model - adjust as needed
+                'coordinates': h.polygon,  # Already in GeoJSON format
+                'color': '#ef4444' if h.hazard_type.upper() == 'LANDSLIDE' 
+                         else '#3b82f6' if h.hazard_type.upper() == 'FLOOD'
+                         else '#8b5cf6',
+                'downloadedAt': None,  # Will be set on client side
+            })
+            
+        return JsonResponse({
+            'success': True,
+            'count': len(data),
+            'data': data
+        }, status=200)
+        
+    except Exception as e:
+        import logging
+        logging.error(f"Error fetching all hazard polygons: {str(e)}")
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)

@@ -22,4 +22,5 @@ urlpatterns = [
     path('get_classified_areas_by_reforestation_area/<int:reforestation_area_id>/', 
      classified_areaView.get_classified_areas_by_reforestation_area, 
      name='get_classified_areas_by_reforestation_area'),
+       path('get_all_classified_polygons/', classified_areaView.get_all_classified_polygons, name='get_all_classified_polygons'),
  ]

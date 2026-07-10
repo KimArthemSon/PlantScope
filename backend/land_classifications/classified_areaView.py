@@ -416,3 +416,60 @@ def delete_classified_area(request, classified_area_id):
     return JsonResponse({'message': 'Successfully deleted!'}, status=200)
 
 
+# Add this new endpoint to classified_areas/views.py
+
+@csrf_exempt
+def get_all_classified_polygons(request):
+    """
+    Returns ALL classified polygons for offline download.
+    This endpoint has NO pagination - it returns everything.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    try:
+        # Get all classified areas without pagination
+        all_areas = Classified_areas.objects.select_related(
+            'land_classification', 'barangay'
+        ).all().order_by('name')
+        
+        data = []
+        for area in all_areas:
+            # Determine color based on classification
+            cls_name = area.land_classification.name.lower() if area.land_classification else ''
+            color = '#dc2626'  # default red
+            if 'forest' in cls_name:
+                color = '#16a34a'
+            elif 'agricultural' in cls_name or 'agriculture' in cls_name:
+                color = '#eab308'
+            elif 'residential' in cls_name:
+                color = '#2563eb'
+            elif 'protected' in cls_name:
+                color = '#8b5cf6'
+            elif 'commercial' in cls_name:
+                color = '#f97316'
+            
+            data.append({
+                'id': area.classified_area_id,
+                'name': area.name,
+                'classification': area.land_classification.name if area.land_classification else 'Unknown',
+                'barangay_id': area.barangay_id,
+                'coordinates': area.polygon,  # Already in GeoJSON format
+                'color': color,
+                'description': area.description or '',
+                'downloadedAt': None,  # Will be set on client side
+            })
+            
+        return JsonResponse({
+            'success': True,
+            'count': len(data),
+            'data': data
+        }, status=200)
+        
+    except Exception as e:
+        import logging
+        logging.error(f"Error fetching all classified polygons: {str(e)}")
+        return JsonResponse({
+            'error': str(e),
+            'success': False
+        }, status=500)

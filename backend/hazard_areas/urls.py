@@ -15,4 +15,6 @@ urlpatterns = [
         views.get_hazard_areas_by_barangay, 
         name='get_hazard_areas_by_barangay'
     ),
+
+     path('get_all_hazard_polygons/', views.get_all_hazard_polygons, name='get_all_hazard_polygons'),
 ]

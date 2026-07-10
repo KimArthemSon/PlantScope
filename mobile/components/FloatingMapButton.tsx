@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   Dimensions,
   Pressable,
+  ScrollView,
+  Alert,
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,6 +18,10 @@ import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useAlert } from "@/components/AlertContext";
+import { usePolygonAlerts } from "@/hooks/usePolygonAlerts";
+import PolygonAlertModal from "@/components/map/PolygonAlertModal";
+import PolygonDownloadService from "@/services/PolygonDownloadService";
+import PolygonStorageService from "@/services/PolygonStorageService";
 
 const { height: screenHeight } = Dimensions.get("window");
 const API_BASE_URL = api + "/api";
@@ -65,6 +71,14 @@ export default function FloatingMapButton({
     lng: number;
   } | null>(userLat && userLng ? { lat: userLat, lng: userLng } : null);
 
+  // ✅ User coordinates with accuracy
+  const [userCoordinates, setUserCoordinates] = useState<{
+    lat: number;
+    lng: number;
+    accuracy: number | null;
+  } | null>(null);
+  const [locationSubscription, setLocationSubscription] = useState<any>(null);
+
   // ✅ Barangay sheet state
   const [selectedBarangay, setSelectedBarangay] = useState<Barangay | null>(
     null,
@@ -73,22 +87,340 @@ export default function FloatingMapButton({
   const [loadingClassified, setLoadingClassified] = useState(false);
   const [loadingHazards, setLoadingHazards] = useState(false);
 
-  // Layer toggles (only MGB tiles remain as global toggles)
+  // Layer toggles
   const [showFlood, setShowFlood] = useState(false);
   const [showLandslide, setShowLandslide] = useState(false);
   const [showLayerPanel, setShowLayerPanel] = useState(false);
+
+  // ✅ Polygon Alert State
+  const [selectedAlert, setSelectedAlert] = useState<any>(null);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [hasDownloadedPolygons, setHasDownloadedPolygons] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadStatus, setDownloadStatus] = useState("");
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+
+  // ✅ Download Options State
+  const [showDownloadOptions, setShowDownloadOptions] = useState(false);
+  const [selectedBarangays, setSelectedBarangays] = useState<number[]>([]);
+  const [downloadOption, setDownloadOption] = useState<
+    "all" | "barangay" | "high_priority"
+  >("all");
+  const [availableBarangays, setAvailableBarangays] = useState<any[]>([]);
+
+  // ✅ Offline warning state
+  const [showOfflineWarning, setShowOfflineWarning] = useState(false);
+
+  // ✅ Track downloaded polygon stats for display
+  const [downloadedStats, setDownloadedStats] = useState<{
+    classified: number;
+    hazards: number;
+    size: string;
+  }>({ classified: 0, hazards: 0, size: "0 KB" });
+
+  // ✅ Loading polygons state for button feedback
+  const [isLoadingPolygons, setIsLoadingPolygons] = useState(false);
+
+  // ✅ NEW: Control when to show alert indicator
+  const [shouldShowAlertIndicator, setShouldShowAlertIndicator] =
+    useState(false);
+
+  // ✅ Ref to prevent auto-recenter after first fit
+  const hasFitted = useRef(false);
 
   const webViewRef = useRef<any>(null);
   const isOnline = useNetworkStatus();
   const alertContext = useAlert();
   const alert = alertContext;
 
-  // Update current location when userLat/userLng changes
+  // ✅ Polygon Alerts Hook
+  const {
+    isRunning: geofencingActive,
+    alerts,
+    hasActiveAlerts,
+    start: startGeofencing,
+    stop: stopGeofencing,
+    refreshPolygonStatus,
+  } = usePolygonAlerts();
+
+  // ✅ Start location tracking
+  useEffect(() => {
+    if (showMap) {
+      startLocationTracking();
+    } else {
+      stopLocationTracking();
+      setShouldShowAlertIndicator(false); // Reset when closing map
+    }
+    return () => stopLocationTracking();
+  }, [showMap]);
+
+  const startLocationTracking = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        alert?.error("Permission Denied", "Location permission is required.");
+        return;
+      }
+
+      // Get initial location
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      updateLocation(loc, false);
+
+      // Start watching position
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 2000,
+          distanceInterval: 5,
+        },
+        (newLoc) => {
+          updateLocation(newLoc, true);
+        },
+      );
+      setLocationSubscription(subscription);
+    } catch (error) {
+      console.error("Location tracking error:", error);
+    }
+  };
+
+  const stopLocationTracking = () => {
+    if (locationSubscription) {
+      locationSubscription.remove();
+      setLocationSubscription(null);
+    }
+  };
+
+  const updateLocation = (loc: Location.LocationObject, flyTo: boolean) => {
+    const { latitude, longitude, accuracy } = loc.coords;
+    const coords = {
+      lat: latitude,
+      lng: longitude,
+      accuracy: accuracy || null,
+    };
+    setUserCoordinates(coords);
+    setCurrentLocation({ lat: latitude, lng: longitude });
+
+    // Update map - only update marker, don't force zoom
+    injectToWebView(
+      `window.updateMap('addUserLocation', { lat: ${latitude}, lng: ${longitude} })`,
+    );
+  };
+
+  // Update current location when userLat/userLng changes from props
   useEffect(() => {
     if (userLat && userLng) {
       setCurrentLocation({ lat: userLat, lng: userLng });
+      setUserCoordinates({ lat: userLat, lng: userLng, accuracy: null });
     }
   }, [userLat, userLng]);
+
+  // ✅ Check for downloaded polygons when map opens
+  useEffect(() => {
+    if (showMap) {
+      checkPolygons();
+      updateDownloadedStats();
+    }
+  }, [showMap]);
+
+  // ✅ Show offline warning when offline and map is open
+  useEffect(() => {
+    if (!isOnline && showMap) {
+      setShowOfflineWarning(true);
+      const timer = setTimeout(() => setShowOfflineWarning(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isOnline, showMap]);
+
+  // ✅ Fetch barangays for download options
+  useEffect(() => {
+    if (showDownloadOptions) {
+      setAvailableBarangays(
+        barangays.map((b) => ({
+          id: b.barangay_id,
+          name: b.name,
+        })),
+      );
+      setSelectedBarangays([]);
+    }
+  }, [showDownloadOptions, barangays]);
+
+  // ✅ Update downloaded stats
+  const updateDownloadedStats = async () => {
+    try {
+      const [classified, hazards] = await Promise.all([
+        PolygonStorageService.loadClassifiedPolygons(),
+        PolygonStorageService.loadHazardPolygons(),
+      ]);
+      const info = await PolygonStorageService.getStorageInfo();
+      setDownloadedStats({
+        classified: classified.length,
+        hazards: hazards.length,
+        size: PolygonStorageService.formatSize(info.totalSize || 0),
+      });
+    } catch (error) {
+      console.error("Failed to update stats:", error);
+    }
+  };
+
+  // ✅ Load downloaded polygons from local storage and display on map
+  const loadDownloadedPolygons = async () => {
+    setIsLoadingPolygons(true);
+    setShouldShowAlertIndicator(true); // ✅ Show indicator after load
+
+    try {
+      const [classified, hazards] = await Promise.all([
+        PolygonStorageService.loadClassifiedPolygons(),
+        PolygonStorageService.loadHazardPolygons(),
+      ]);
+
+      // ✅ Process classified polygons
+      if (classified.length > 0) {
+        const classifiedPolygons = classified.map((p: any) => {
+          let coords = p.coordinates;
+
+          // 1. Extract from GeoJSON object if needed
+          if (coords && typeof coords === "object" && !Array.isArray(coords)) {
+            if (coords.coordinates) coords = coords.coordinates;
+          }
+
+          // 2. Handle nested array (Strict GeoJSON format: [[[lng, lat], ...]] or [[[lat, lng], ...]])
+          if (
+            Array.isArray(coords) &&
+            coords.length > 0 &&
+            Array.isArray(coords[0]) &&
+            Array.isArray(coords[0][0])
+          ) {
+            coords = coords[0]; // Extract the first ring
+          }
+
+          // 3. Ensure coordinates are in [lat, lng] order for Leaflet
+          const leafletCoords = coords.map((point: any) => {
+            if (Array.isArray(point) && point.length === 2) {
+              // If the first value is > 100, it's Longitude [lng, lat]. Swap to [lat, lng].
+              if (
+                point[0] > 100 &&
+                point[0] < 150 &&
+                point[1] > 0 &&
+                point[1] < 30
+              ) {
+                return [point[1], point[0]];
+              }
+              // Otherwise, assume it's already [lat, lng] which Leaflet expects. DO NOT SWAP.
+              return point;
+            }
+            return point;
+          });
+
+          return {
+            coordinates: leafletCoords,
+            color: p.color || "#16a34a",
+            name: p.name || "Classified Area",
+            classification: p.classification || "Unknown",
+          };
+        });
+
+        injectToWebView(
+          `window.updateMap('drawClassifiedPolygons', ${JSON.stringify(classifiedPolygons)})`,
+        );
+      }
+
+      // ✅ Process hazard polygons
+      if (hazards.length > 0) {
+        const hazardPolygons = hazards.map((p: any) => {
+          let coords = p.coordinates;
+
+          if (coords && typeof coords === "object" && !Array.isArray(coords)) {
+            if (coords.coordinates) coords = coords.coordinates;
+          }
+
+          if (
+            Array.isArray(coords) &&
+            coords.length > 0 &&
+            Array.isArray(coords[0]) &&
+            Array.isArray(coords[0][0])
+          ) {
+            coords = coords[0];
+          }
+
+          const leafletCoords = coords.map((point: any) => {
+            if (Array.isArray(point) && point.length === 2) {
+              // If the first value is > 100, it's Longitude [lng, lat]. Swap to [lat, lng].
+              if (
+                point[0] > 100 &&
+                point[0] < 150 &&
+                point[1] > 0 &&
+                point[1] < 30
+              ) {
+                return [point[1], point[0]];
+              }
+              return point;
+            }
+            return point;
+          });
+
+          return {
+            coordinates: leafletCoords,
+            color: p.color || "#ef4444",
+            name: p.name || "Hazard Area",
+            type: p.hazard_type || "Unknown",
+          };
+        });
+
+        injectToWebView(
+          `window.updateMap('drawHazardPolygons', ${JSON.stringify(hazardPolygons)})`,
+        );
+      }
+
+      // ✅ Show success/error message
+      const totalClassified = classified?.length || 0;
+      const totalHazards = hazards?.length || 0;
+      const total = totalClassified + totalHazards;
+
+      if (total === 0) {
+        alert?.info(
+          "No Polygons",
+          "No downloaded polygons found. Please download some first.",
+        );
+      } else {
+        alert?.success(
+          "Polygons Loaded",
+          `Loaded ${total} polygons (${totalClassified} classified, ${totalHazards} hazards)`,
+        );
+      }
+    } catch (error) {
+      console.error("Failed to load downloaded polygons:", error);
+      alert?.error("Error", "Failed to load polygons from storage.");
+    } finally {
+      setIsLoadingPolygons(false);
+    }
+  };
+
+  const checkPolygons = async () => {
+    try {
+      const has = await PolygonDownloadService.hasPolygons();
+      setHasDownloadedPolygons(has);
+      await refreshPolygonStatus();
+      await updateDownloadedStats();
+    } catch (error) {
+      console.error("Failed to check polygons:", error);
+      setHasDownloadedPolygons(false);
+    }
+  };
+
+  // ✅ Auto-start/stop geofencing
+  useEffect(() => {
+    if (showMap && hasDownloadedPolygons && !geofencingActive) {
+      startGeofencing();
+    }
+    return () => {
+      if (geofencingActive) {
+        stopGeofencing();
+      }
+    };
+  }, [showMap, hasDownloadedPolygons, geofencingActive]);
 
   // Fetch basic map data when modal opens
   useEffect(() => {
@@ -97,7 +429,7 @@ export default function FloatingMapButton({
     }
   }, [showMap]);
 
-  // ✅ FIXED: Only fetch barangays, areas, and site (NOT classified/hazard)
+  // ✅ Fetch map data
   const fetchMapData = async () => {
     setLoading(true);
     try {
@@ -196,38 +528,39 @@ export default function FloatingMapButton({
           setSelectedBarangay(barangay);
           setShowBarangaySheet(true);
         }
+      } else if (data.type === "polygon_count") {
+        if (data.count === 0 && hasDownloadedPolygons) {
+          console.warn("⚠️ Polygons downloaded but not visible on map");
+        }
       }
     } catch (e) {
       console.error("Error parsing WebView message", e);
     }
   };
 
-  // Update map when data loads
+  // Update map when data loads - separated: add markers and fit bounds once
   useEffect(() => {
     if (!showMap || loading) return;
 
-    // Add area marker
+    // Add markers
     if (areaCoords) {
       injectToWebView(
         `window.updateMap('addArea', { id: ${areaId}, lat: ${areaCoords.lat}, lng: ${areaCoords.lng}, name: '${(areaName || "Area").replace(/'/g, "\\'")}' })`,
       );
     }
 
-    // Add site marker
     if (siteCoords) {
       injectToWebView(
         `window.updateMap('addSite', { id: ${siteId}, lat: ${siteCoords.lat}, lng: ${siteCoords.lng}, name: '${(siteName || "Site").replace(/'/g, "\\'")}' })`,
       );
     }
 
-    // Add user location
     if (currentLocation) {
       injectToWebView(
         `window.updateMap('addUserLocation', { lat: ${currentLocation.lat}, lng: ${currentLocation.lng} })`,
       );
     }
 
-    // Add barangays
     if (barangays.length > 0) {
       const data = barangays.map((b) => ({
         id: b.barangay_id,
@@ -240,20 +573,26 @@ export default function FloatingMapButton({
       );
     }
 
-    // Fit bounds
-    const points: string[] = [];
-    if (areaCoords) points.push(`[${areaCoords.lat}, ${areaCoords.lng}]`);
-    if (siteCoords) points.push(`[${siteCoords.lat}, ${siteCoords.lng}]`);
-    if (currentLocation)
-      points.push(`[${currentLocation.lat}, ${currentLocation.lng}]`);
+    // ✅ Fit bounds only once when all data is ready and map is shown
+    if (!hasFitted.current) {
+      const points: [number, number][] = [];
+      if (areaCoords) points.push([areaCoords.lat, areaCoords.lng]);
+      if (siteCoords) points.push([siteCoords.lat, siteCoords.lng]);
+      if (currentLocation)
+        points.push([currentLocation.lat, currentLocation.lng]);
 
-    if (points.length > 1) {
-      injectToWebView(`window.updateMap('fitBounds', [${points.join(",")}])`);
-    } else if (points.length === 1) {
-      const [lat, lng] = points[0].replace("[", "").replace("]", "").split(",");
-      injectToWebView(
-        `window.updateMap('flyTo', { lat: ${lat}, lng: ${lng}, zoom: 16 })`,
-      );
+      if (points.length > 1) {
+        injectToWebView(
+          `window.updateMap('fitBounds', ${JSON.stringify(points)})`,
+        );
+        hasFitted.current = true;
+      } else if (points.length === 1) {
+        const [lat, lng] = points[0];
+        injectToWebView(
+          `window.updateMap('flyTo', { lat: ${lat}, lng: ${lng} })`,
+        );
+        hasFitted.current = true;
+      }
     }
   }, [areaCoords, siteCoords, currentLocation, barangays, loading, showMap]);
 
@@ -404,8 +743,13 @@ export default function FloatingMapButton({
       });
       const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
       setCurrentLocation(coords);
+      setUserCoordinates({
+        lat: coords.lat,
+        lng: coords.lng,
+        accuracy: loc.coords.accuracy || null,
+      });
       injectToWebView(
-        `window.updateMap('flyTo', { lat: ${coords.lat}, lng: ${coords.lng}, zoom: 17 })`,
+        `window.updateMap('flyTo', { lat: ${coords.lat}, lng: ${coords.lng} })`,
       );
     } catch (e) {
       console.error("Failed to get location", e);
@@ -413,10 +757,133 @@ export default function FloatingMapButton({
     }
   };
 
-  // ✅ DON'T RENDER IF OFFLINE
-  if (!isOnline) {
-    return null;
-  }
+  // ✅ Handle alert press
+  const handleAlertPress = (alert: any) => {
+    setSelectedAlert(alert);
+    setShowAlertModal(true);
+  };
+
+  // ✅ Toggle barangay selection
+  const toggleBarangay = (id: number) => {
+    setSelectedBarangays((prev) =>
+      prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id],
+    );
+  };
+
+  // ✅ Handle download with options
+  const handleDownloadWithOptions = async () => {
+    if (!isOnline) {
+      alert?.error("Offline", "You need to be online to download polygons.");
+      return;
+    }
+
+    setShowDownloadOptions(false);
+    setShowDownloadModal(true);
+    setDownloadProgress(0);
+    setDownloadStatus("Starting download...");
+    setIsDownloading(true);
+
+    try {
+      let result;
+
+      if (downloadOption === "barangay" && selectedBarangays.length > 0) {
+        result = await PolygonDownloadService.downloadForBarangay(
+          selectedBarangays,
+          (progress) => {
+            setDownloadProgress(progress.current);
+            setDownloadStatus(progress.status);
+          },
+        );
+      } else if (downloadOption === "high_priority") {
+        result = await PolygonDownloadService.downloadHighPriority(
+          selectedBarangays.length > 0 ? selectedBarangays : undefined,
+          (progress) => {
+            setDownloadProgress(progress.current);
+            setDownloadStatus(progress.status);
+          },
+        );
+      } else {
+        result = await PolygonDownloadService.downloadPolygonsFiltered(
+          {
+            maxPolygons: 200,
+            maxSizeMB: 5,
+          },
+          (progress) => {
+            setDownloadProgress(progress.current);
+            setDownloadStatus(progress.status);
+          },
+        );
+      }
+
+      await checkPolygons();
+      await updateDownloadedStats();
+      setHasDownloadedPolygons(true);
+
+      if (showMap) {
+        setTimeout(() => loadDownloadedPolygons(), 1500);
+      }
+
+      alert?.success(
+        "Download Complete",
+        `${result.classified} classified areas, ${result.hazard} hazard zones (${PolygonDownloadService.formatSize(result.totalSize)})`,
+      );
+
+      setTimeout(() => {
+        setShowDownloadModal(false);
+        setIsDownloading(false);
+      }, 1500);
+    } catch (error: any) {
+      console.error("Download error:", error);
+      alert?.error(
+        "Download Failed",
+        error.message || "Failed to download polygons.",
+      );
+      setShowDownloadModal(false);
+      setIsDownloading(false);
+    }
+  };
+
+  // ✅ Handle simple download
+  const handleSimpleDownload = async () => {
+    await updateDownloadedStats();
+    setShowDownloadOptions(true);
+  };
+
+  // ✅ Handle delete polygons
+  const handleDeletePolygons = async () => {
+    Alert.alert(
+      "Delete Downloaded Polygons",
+      "This will remove all downloaded polygon data. Geofencing will stop working offline. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete All",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await PolygonDownloadService.deleteAllPolygons();
+              setHasDownloadedPolygons(false);
+              setShouldShowAlertIndicator(false); // ✅ Hide indicator
+              await refreshPolygonStatus();
+              await updateDownloadedStats();
+
+              if (geofencingActive) {
+                await stopGeofencing();
+              }
+
+              // Clear polygons from map
+              injectToWebView(`window.updateMap('clearPolygons')`);
+
+              alert?.success("Deleted", "All polygon data has been removed.");
+            } catch (error) {
+              console.error("Failed to delete polygons:", error);
+              alert?.error("Error", "Failed to delete polygons.");
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const title = siteName
     ? `${siteName} (${areaName || "Area"})`
@@ -433,7 +900,7 @@ export default function FloatingMapButton({
         <Ionicons name="map" size={24} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* 🗺️ FULL SCREEN MAP MODAL */}
+      {/* ️ FULL SCREEN MAP MODAL */}
       <Modal
         visible={showMap}
         animationType="slide"
@@ -450,18 +917,125 @@ export default function FloatingMapButton({
                 {title}
               </Text>
             </View>
-            <TouchableOpacity
-              onPress={() => setShowLayerPanel(!showLayerPanel)}
-            >
-              <Ionicons
-                name={showLayerPanel ? "close-circle" : "layers-outline"}
-                size={24}
-                color="#0F4A2F"
-              />
-            </TouchableOpacity>
+            <View style={styles.headerRight}>
+              {hasDownloadedPolygons && geofencingActive && (
+                <View style={styles.polygonStatusBadge}>
+                  <Ionicons name="shield-checkmark" size={14} color="#16a34a" />
+                  <Text style={styles.polygonStatusText}>Active</Text>
+                </View>
+              )}
+              <TouchableOpacity
+                onPress={() => setShowLayerPanel(!showLayerPanel)}
+                style={styles.layerToggleBtn}
+              >
+                <Ionicons
+                  name={showLayerPanel ? "close-circle" : "layers-outline"}
+                  size={24}
+                  color="#0F4A2F"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Layer Panel (Only MGB tiles) */}
+          {/* ✅ Offline Warning Banner */}
+          {!isOnline && showOfflineWarning && (
+            <View style={styles.offlineWarningBanner}>
+              <Ionicons
+                name="cloud-offline-outline"
+                size={16}
+                color="#f59e0b"
+              />
+              <Text style={styles.offlineWarningText}>
+                Offline Mode - Map tiles may be limited
+              </Text>
+              <TouchableOpacity onPress={() => setShowOfflineWarning(false)}>
+                <Ionicons name="close" size={16} color="#f59e0b" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Polygon Status Bar */}
+          <View style={styles.polygonStatusBar}>
+            <View style={styles.polygonStatusLeft}>
+              <Ionicons
+                name={
+                  hasDownloadedPolygons
+                    ? "checkmark-circle"
+                    : "download-outline"
+                }
+                size={14}
+                color={hasDownloadedPolygons ? "#16a34a" : "#f59e0b"}
+              />
+              <Text style={styles.polygonStatusBarText}>
+                {hasDownloadedPolygons
+                  ? `${downloadedStats.classified + downloadedStats.hazards} polygons ready`
+                  : "No polygons downloaded"}
+              </Text>
+            </View>
+            <View style={styles.polygonStatusRight}>
+              {/* ✅ Load Polygons Button */}
+              {hasDownloadedPolygons && (
+                <TouchableOpacity
+                  style={styles.loadPolygonBtn}
+                  onPress={loadDownloadedPolygons}
+                  disabled={isLoadingPolygons}
+                >
+                  {isLoadingPolygons ? (
+                    <ActivityIndicator size="small" color="#0F4A2F" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="folder-open-outline"
+                        size={12}
+                        color="#0F4A2F"
+                      />
+                      <Text style={styles.loadPolygonBtnText}>Load</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              {!hasDownloadedPolygons && (
+                <TouchableOpacity
+                  style={styles.downloadPolygonBtn}
+                  onPress={handleSimpleDownload}
+                  disabled={isDownloading}
+                >
+                  <Ionicons
+                    name="cloud-download-outline"
+                    size={12}
+                    color="#fff"
+                  />
+                  <Text style={styles.downloadPolygonBtnText}>Download</Text>
+                </TouchableOpacity>
+              )}
+              {hasDownloadedPolygons && (
+                <>
+                  <TouchableOpacity
+                    style={styles.redownloadBtn}
+                    onPress={handleSimpleDownload}
+                    disabled={isDownloading}
+                  >
+                    <Ionicons
+                      name="refresh-outline"
+                      size={12}
+                      color="#0F4A2F"
+                    />
+                    <Text style={styles.redownloadBtnText}>Update</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deletePolygonBtn}
+                    onPress={handleDeletePolygons}
+                  >
+                    <Ionicons name="trash-outline" size={12} color="#ef4444" />
+                    <Text style={styles.deletePolygonBtnText}>Delete</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+
+          {/* Layer Panel */}
           {showLayerPanel && (
             <View style={styles.layerPanel}>
               <Text style={styles.layerPanelTitle}>Hazard Layers (MGB)</Text>
@@ -533,21 +1107,56 @@ export default function FloatingMapButton({
                 <Text style={styles.loadingText}>Loading map data...</Text>
               </View>
             ) : (
-              <WebView
-                ref={webViewRef}
-                source={{ html: mapHtml }}
-                style={styles.map}
-                javaScriptEnabled={true}
-                domStorageEnabled={true}
-                originWhitelist={["*"]}
-                startInLoadingState={true}
-                onMessage={onWebViewMessage}
-                renderLoading={() => (
-                  <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color="#0F4A2F" />
+              <>
+                <WebView
+                  ref={webViewRef}
+                  source={{ html: mapHtml }}
+                  style={styles.map}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  originWhitelist={["*"]}
+                  startInLoadingState={true}
+                  onMessage={onWebViewMessage}
+                  renderLoading={() => (
+                    <View style={styles.loadingOverlay}>
+                      <ActivityIndicator size="large" color="#0F4A2F" />
+                    </View>
+                  )}
+                />
+
+                {/* ✅ Simplified Alert Indicator - Bottom Right - Only shows after Load */}
+                {shouldShowAlertIndicator && (
+                  <View style={styles.alertIndicatorContainer}>
+                    <View
+                      style={[
+                        styles.alertIndicatorBall,
+                        {
+                          backgroundColor:
+                            alerts.length > 0 ? "#ef4444" : "#10b981",
+                        },
+                      ]}
+                    >
+                      {alerts.length > 0 && (
+                        <Ionicons name="warning" size={12} color="#fff" />
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        styles.alertIndicatorText,
+                        {
+                          color: alerts.length > 0 ? "#ef4444" : "#10b981",
+                        },
+                      ]}
+                    >
+                      {alerts.length > 0
+                        ? alerts.length === 1
+                          ? "Inside Hazard Zone"
+                          : `${alerts.length} Zones`
+                        : "Safe"}
+                    </Text>
                   </View>
                 )}
-              />
+              </>
             )}
           </View>
 
@@ -577,6 +1186,25 @@ export default function FloatingMapButton({
               />
               <Text style={styles.legendText}>Barangay</Text>
             </View>
+
+            {/* ✅ Coordinates + Accuracy Display */}
+            {userCoordinates && (
+              <View style={styles.coordDisplay}>
+                <Ionicons name="location" size={12} color="#0F4A2F" />
+                <Text style={styles.coordDisplayText} numberOfLines={1}>
+                  {userCoordinates.lat.toFixed(5)},{" "}
+                  {userCoordinates.lng.toFixed(5)}
+                </Text>
+                {userCoordinates.accuracy !== null && (
+                  <View style={styles.accuracyBadge}>
+                    <Text style={styles.accuracyText}>
+                      ±{Math.round(userCoordinates.accuracy)}m
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             <TouchableOpacity
               style={styles.recenterBtn}
               onPress={recenterToUser}
@@ -680,6 +1308,274 @@ export default function FloatingMapButton({
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* ✅ Polygon Alert Modal */}
+      <PolygonAlertModal
+        visible={showAlertModal}
+        alert={selectedAlert}
+        onClose={() => {
+          setShowAlertModal(false);
+          setSelectedAlert(null);
+        }}
+      />
+
+      {/* ✅ Download Options Modal - Updated with downloaded stats */}
+      <Modal
+        visible={showDownloadOptions}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDownloadOptions(false)}
+      >
+        <Pressable
+          style={styles.downloadOptionsOverlay}
+          onPress={() => setShowDownloadOptions(false)}
+        >
+          <Pressable
+            style={styles.downloadOptionsContent}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.dragHandle} />
+
+            <Text style={styles.downloadOptionsTitle}>
+              📥 Download Polygons
+            </Text>
+            <Text style={styles.downloadOptionsSubtitle}>
+              Choose what polygons to download for offline detection
+            </Text>
+
+            {/* ✅ Show currently downloaded stats */}
+            {hasDownloadedPolygons && (
+              <View style={styles.downloadedStats}>
+                <Ionicons name="checkmark-circle" size={16} color="#16a34a" />
+                <Text style={styles.downloadedStatsText}>
+                  Already downloaded: {downloadedStats.classified} classified,{" "}
+                  {downloadedStats.hazards} hazards ({downloadedStats.size})
+                </Text>
+              </View>
+            )}
+
+            {/* Option 1: All Polygons */}
+            <TouchableOpacity
+              style={[
+                styles.downloadOption,
+                downloadOption === "all" && styles.downloadOptionActive,
+              ]}
+              onPress={() => setDownloadOption("all")}
+            >
+              <View style={styles.downloadOptionLeft}>
+                <Ionicons
+                  name={
+                    downloadOption === "all"
+                      ? "radio-button-on"
+                      : "radio-button-off"
+                  }
+                  size={20}
+                  color={downloadOption === "all" ? "#0F4A2F" : "#9CA3AF"}
+                />
+                <View>
+                  <Text style={styles.downloadOptionTitle}>All Polygons</Text>
+                  <Text style={styles.downloadOptionDesc}>
+                    Download all classified and hazard areas (up to 200
+                    polygons)
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.downloadOptionBadge}>
+                <Text style={styles.downloadOptionBadgeText}>~5MB</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Option 2: Specific Barangay */}
+            <TouchableOpacity
+              style={[
+                styles.downloadOption,
+                downloadOption === "barangay" && styles.downloadOptionActive,
+              ]}
+              onPress={() => setDownloadOption("barangay")}
+            >
+              <View style={styles.downloadOptionLeft}>
+                <Ionicons
+                  name={
+                    downloadOption === "barangay"
+                      ? "radio-button-on"
+                      : "radio-button-off"
+                  }
+                  size={20}
+                  color={downloadOption === "barangay" ? "#0F4A2F" : "#9CA3AF"}
+                />
+                <View>
+                  <Text style={styles.downloadOptionTitle}>By Barangay</Text>
+                  <Text style={styles.downloadOptionDesc}>
+                    Download polygons for selected barangays only
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.downloadOptionBadge}>
+                <Text style={styles.downloadOptionBadgeText}>~1-3MB</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Show barangay selection if option is 'barangay' */}
+            {downloadOption === "barangay" && (
+              <View style={styles.barangaySelection}>
+                <Text style={styles.barangaySelectionTitle}>
+                  Select Barangays ({selectedBarangays.length})
+                </Text>
+                <ScrollView style={styles.barangayList} nestedScrollEnabled>
+                  {availableBarangays.map((b) => (
+                    <TouchableOpacity
+                      key={b.id}
+                      style={[
+                        styles.barangayItem,
+                        selectedBarangays.includes(b.id) &&
+                          styles.barangayItemSelected,
+                      ]}
+                      onPress={() => toggleBarangay(b.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.barangayItemText,
+                          selectedBarangays.includes(b.id) &&
+                            styles.barangayItemTextSelected,
+                        ]}
+                      >
+                        {b.name}
+                      </Text>
+                      {selectedBarangays.includes(b.id) && (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={18}
+                          color="#0F4A2F"
+                        />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Option 3: High Priority Only
+            <TouchableOpacity
+              style={[
+                styles.downloadOption,
+                downloadOption === "high_priority" &&
+                  styles.downloadOptionActive,
+              ]}
+              onPress={() => setDownloadOption("high_priority")}
+            >
+              <View style={styles.downloadOptionLeft}>
+                <Ionicons
+                  name={
+                    downloadOption === "high_priority"
+                      ? "radio-button-on"
+                      : "radio-button-off"
+                  }
+                  size={20}
+                  color={
+                    downloadOption === "high_priority" ? "#ef4444" : "#9CA3AF"
+                  }
+                />
+                <View>
+                  <Text
+                    style={[
+                      styles.downloadOptionTitle,
+                      {
+                        color:
+                          downloadOption === "high_priority"
+                            ? "#ef4444"
+                            : "#111",
+                      },
+                    ]}
+                  >
+                    🔴 High Priority Only
+                  </Text>
+                  <Text style={styles.downloadOptionDesc}>
+                    Only HIGH severity hazards (flood & landslide)
+                  </Text>
+                </View>
+              </View>
+              <View
+                style={[
+                  styles.downloadOptionBadge,
+                  { backgroundColor: "#fee2e2" },
+                ]}
+              >
+                <Text
+                  style={[styles.downloadOptionBadgeText, { color: "#ef4444" }]}
+                >
+                  ~1MB
+                </Text>
+              </View>
+            </TouchableOpacity> */}
+
+            {/* Actions */}
+            <View style={styles.downloadActions}>
+              <TouchableOpacity
+                style={styles.downloadCancelBtn}
+                onPress={() => setShowDownloadOptions(false)}
+              >
+                <Text style={styles.downloadCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.downloadConfirmBtn,
+                  downloadOption === "barangay" &&
+                    selectedBarangays.length === 0 &&
+                    styles.downloadConfirmBtnDisabled,
+                ]}
+                onPress={handleDownloadWithOptions}
+                disabled={
+                  downloadOption === "barangay" &&
+                  selectedBarangays.length === 0
+                }
+              >
+                <Ionicons
+                  name="cloud-download-outline"
+                  size={18}
+                  color="#fff"
+                />
+                <Text style={styles.downloadConfirmText}>Download</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ✅ Download Progress Modal */}
+      <Modal
+        transparent
+        visible={showDownloadModal}
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isDownloading) setShowDownloadModal(false);
+        }}
+      >
+        <View style={styles.downloadModalOverlay}>
+          <View style={styles.downloadModalContent}>
+            <Text style={styles.downloadModalTitle}>
+              {isDownloading ? "Downloading Polygons" : "Download Complete"}
+            </Text>
+            <View style={styles.downloadProgressBar}>
+              <View
+                style={[
+                  styles.downloadProgressFill,
+                  { width: `${downloadProgress}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.downloadProgressText}>{downloadProgress}%</Text>
+            <Text style={styles.downloadStatusText}>{downloadStatus}</Text>
+            {!isDownloading && downloadProgress === 100 && (
+              <TouchableOpacity
+                style={styles.downloadModalCloseBtn}
+                onPress={() => setShowDownloadModal(false)}
+              >
+                <Text style={styles.downloadModalCloseText}>Close</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -718,19 +1614,36 @@ const mapHtml = `
       display: flex; align-items: center; justify-content: center;
       transform: rotate(45deg); font-weight: bold; font-size: 12px; color: #000;
     }
+    .pulse-ring {
+      animation: pulse 1.5s ease-out infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 0.8; transform: scale(1); }
+      100% { opacity: 0; transform: scale(2.5); }
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    var map = L.map('map').setView([11.02, 124.61], 13);
+    var map = L.map('map', {
+      center: [11.02, 124.61],
+      zoom: 13,
+      zoomControl: true,
+      fadeAnimation: true,
+      zoomAnimation: true,
+    });
+    
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '© OSM'
+      maxZoom: 19,
+      attribution: '© OSM'
     }).addTo(map);
 
     var markers = { barangay: {}, area: null, site: null, user: null };
     var polygonLayers = { classified: null, hazards: null };
     var hazardTiles = { flood: null, landslide: null };
+    var userMarker = null;
+    var userPulse = null;
 
     function createIcon(colorClass, label) {
       return L.divIcon({
@@ -779,36 +1692,82 @@ const mapHtml = `
           }).addTo(map).bindPopup('<b>Site:</b> ' + payload.name);
         }
         else if (action === 'addUserLocation') {
-          if (markers.user) map.removeLayer(markers.user);
-          markers.user = L.circleMarker([payload.lat, payload.lng], {
-            radius: 10, color: '#ffffff', fillColor: '#3b82f6',
-            fillOpacity: 1, weight: 3
+          // Remove old user marker and pulse
+          if (userMarker) map.removeLayer(userMarker);
+          if (userPulse) map.removeLayer(userPulse);
+          
+          // Add user marker
+          userMarker = L.circleMarker([payload.lat, payload.lng], {
+            radius: 12,
+            color: '#ffffff',
+            fillColor: '#3b82f6',
+            fillOpacity: 0.9,
+            weight: 3
           }).addTo(map).bindPopup('<b>You are here</b>');
+          
+          // Add pulse animation
+          userPulse = L.circleMarker([payload.lat, payload.lng], {
+            radius: 20,
+            color: '#3b82f6',
+            fillColor: '#3b82f6',
+            fillOpacity: 0.15,
+            weight: 2,
+            className: 'pulse-ring'
+          }).addTo(map);
+          
+          // Remove pulse after animation
+          setTimeout(function() {
+            if (userPulse) map.removeLayer(userPulse);
+            userPulse = null;
+          }, 1500);
         }
         else if (action === 'flyTo') {
-          map.flyTo([payload.lat, payload.lng], payload.zoom || 16);
+          // Don't force zoom - preserve current zoom
+          var zoomLevel = map.getZoom();
+          if (payload.zoom) zoomLevel = payload.zoom;
+          map.flyTo([payload.lat, payload.lng], zoomLevel);
         }
         else if (action === 'fitBounds') {
-          map.fitBounds(payload, { padding: [50, 50], maxZoom: 17 });
+          map.fitBounds(payload, { padding: [50, 50] });
         }
         else if (action === 'drawClassifiedPolygons') {
-          if (polygonLayers.classified) map.removeLayer(polygonLayers.classified);
+          if (polygonLayers.classified) {
+            map.removeLayer(polygonLayers.classified);
+            polygonLayers.classified = null;
+          }
           var group = L.layerGroup();
           payload.forEach(p => {
-            L.polygon(p.coordinates, {
-              color: p.color, fillColor: p.color, fillOpacity: 0.35, weight: 2
-            }).bindPopup('<b>' + p.name + '</b><br>Class: ' + p.classification).addTo(group);
+            try {
+              L.polygon(p.coordinates, {
+                color: p.color,
+                fillColor: p.color,
+                fillOpacity: 0.4,
+                weight: 2
+              }).bindPopup('<b>' + p.name + '</b><br>Class: ' + p.classification).addTo(group);
+            } catch(e) {
+              console.warn('Error drawing classified polygon:', e);
+            }
           });
           group.addTo(map);
           polygonLayers.classified = group;
         }
         else if (action === 'drawHazardPolygons') {
-          if (polygonLayers.hazards) map.removeLayer(polygonLayers.hazards);
+          if (polygonLayers.hazards) {
+            map.removeLayer(polygonLayers.hazards);
+            polygonLayers.hazards = null;
+          }
           var group = L.layerGroup();
           payload.forEach(p => {
-            L.polygon(p.coordinates, {
-              color: p.color, fillColor: p.color, fillOpacity: 0.35, weight: 2
-            }).bindPopup('<b>' + p.name + '</b><br>Type: ' + p.type).addTo(group);
+            try {
+              L.polygon(p.coordinates, {
+                color: p.color,
+                fillColor: p.color,
+                fillOpacity: 0.4,
+                weight: 2
+              }).bindPopup('<b>' + p.name + '</b><br>Type: ' + p.type).addTo(group);
+            } catch(e) {
+              console.warn('Error drawing hazard polygon:', e);
+            }
           });
           group.addTo(map);
           polygonLayers.hazards = group;
@@ -830,12 +1789,18 @@ const mapHtml = `
       
       if (config.flood && config.flood.enabled) {
         hazardTiles.flood = L.tileLayer(config.flood.url, {
-          opacity: 0.7, maxZoom: 19, maxNativeZoom: 17, errorTileUrl: transparentPixel
+          opacity: 0.7,
+          maxZoom: 19,
+          maxNativeZoom: 17,
+          errorTileUrl: transparentPixel
         }).addTo(map);
       }
       if (config.landslide && config.landslide.enabled) {
         hazardTiles.landslide = L.tileLayer(config.landslide.url, {
-          opacity: 0.7, maxZoom: 19, maxNativeZoom: 17, errorTileUrl: transparentPixel
+          opacity: 0.7,
+          maxZoom: 19,
+          maxNativeZoom: 17,
+          errorTileUrl: transparentPixel
         }).addTo(map);
       }
     };
@@ -845,10 +1810,28 @@ const mapHtml = `
 `;
 
 const styles = StyleSheet.create({
+  downloadedStats: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#dcfce7",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+  },
+  downloadedStatsText: {
+    fontSize: 12,
+    color: "#166534",
+    fontWeight: "500",
+    flex: 1,
+  },
   fab: {
     position: "absolute",
     right: 20,
-    bottom: 100,
+    bottom: 120,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -886,6 +1869,123 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#0F4A2F",
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  polygonStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#dcfce7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 4,
+  },
+  polygonStatusText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#16a34a",
+  },
+  layerToggleBtn: {
+    padding: 4,
+  },
+  polygonStatusBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+    flexWrap: "wrap",
+    minHeight: 50,
+  },
+  polygonStatusLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 1,
+  },
+  polygonStatusBarText: {
+    fontSize: 12,
+    color: "#475569",
+    fontWeight: "500",
+    flexShrink: 1,
+  },
+  polygonStatusRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexWrap: "wrap",
+    flexShrink: 1,
+  },
+  loadPolygonBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e0f2fe",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: "#7dd3fc",
+    minHeight: 28,
+  },
+  loadPolygonBtnText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#0F4A2F",
+  },
+  downloadPolygonBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#0F4A2F",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    gap: 3,
+    minHeight: 28,
+  },
+  downloadPolygonBtnText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  redownloadBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e5e7eb",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    gap: 3,
+    minHeight: 28,
+  },
+  redownloadBtnText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#0F4A2F",
+  },
+  deletePolygonBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 14,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    minHeight: 28,
+  },
+  deletePolygonBtnText: {
+    fontSize: 9,
+    fontWeight: "600",
+    color: "#ef4444",
   },
   layerPanel: {
     backgroundColor: "#F9FAFB",
@@ -963,13 +2063,14 @@ const styles = StyleSheet.create({
   infoBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
-    gap: 12,
-    paddingBottom: 32,
+    gap: 8,
+    paddingBottom: 28,
+    flexWrap: "wrap",
   },
   legendItem: {
     flexDirection: "row",
@@ -982,26 +2083,53 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   legendText: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#4B5563",
     fontWeight: "600",
+  },
+  coordDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#f0fdf4",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+  },
+  coordDisplayText: {
+    fontSize: 10,
+    color: "#0F4A2F",
+    fontWeight: "600",
+    maxWidth: 100,
+  },
+  accuracyBadge: {
+    backgroundColor: "#dcfce7",
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  accuracyText: {
+    fontSize: 8,
+    color: "#16a34a",
+    fontWeight: "700",
   },
   recenterBtn: {
     marginLeft: "auto",
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 4,
     backgroundColor: "#0F4A2F",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   recenterText: {
     color: "#fff",
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "700",
   },
-  // Sheet styles
   sheetOverlay: {
     flex: 1,
     justifyContent: "flex-end",
@@ -1072,5 +2200,257 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#6b7280",
     marginTop: 2,
+  },
+  downloadOptionsOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  downloadOptionsContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 40,
+    maxHeight: "85%",
+  },
+  downloadOptionsTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111",
+    textAlign: "center",
+  },
+  downloadOptionsSubtitle: {
+    fontSize: 13,
+    color: "#6b7280",
+    textAlign: "center",
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  downloadOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#e5e7eb",
+    marginBottom: 10,
+    backgroundColor: "#f9fafb",
+  },
+  downloadOptionActive: {
+    borderColor: "#0F4A2F",
+    backgroundColor: "#f0fdf4",
+  },
+  downloadOptionLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  downloadOptionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111",
+  },
+  downloadOptionDesc: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginTop: 1,
+  },
+  downloadOptionBadge: {
+    backgroundColor: "#e5e7eb",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  downloadOptionBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#6b7280",
+  },
+  barangaySelection: {
+    marginTop: 8,
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 12,
+    maxHeight: 200,
+  },
+  barangaySelectionTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6b7280",
+    marginBottom: 8,
+  },
+  barangayList: {
+    maxHeight: 150,
+  },
+  barangayItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    marginBottom: 4,
+  },
+  barangayItemSelected: {
+    backgroundColor: "#dcfce7",
+  },
+  barangayItemText: {
+    fontSize: 13,
+    color: "#111",
+  },
+  barangayItemTextSelected: {
+    color: "#0F4A2F",
+    fontWeight: "600",
+  },
+  downloadActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
+  downloadCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: "#f3f4f6",
+  },
+  downloadCancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6b7280",
+  },
+  downloadConfirmBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#0F4A2F",
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  downloadConfirmBtnDisabled: {
+    backgroundColor: "#d1d5db",
+  },
+  downloadConfirmText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  downloadModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  downloadModalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 28,
+    width: "100%",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  downloadModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111",
+    marginBottom: 16,
+  },
+  downloadProgressBar: {
+    width: "100%",
+    height: 8,
+    backgroundColor: "#e5e7eb",
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  downloadProgressFill: {
+    height: "100%",
+    backgroundColor: "#0F4A2F",
+    borderRadius: 4,
+  },
+  downloadProgressText: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#0F4A2F",
+    marginTop: 12,
+  },
+  downloadStatusText: {
+    fontSize: 13,
+    color: "#6b7280",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  downloadModalCloseBtn: {
+    marginTop: 16,
+    backgroundColor: "#0F4A2F",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  downloadModalCloseText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  offlineWarningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#fef3c7",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f59e0b",
+    gap: 8,
+  },
+  offlineWarningText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#92400e",
+    fontWeight: "600",
+  },
+  // ✅ NEW: Simplified Alert Indicator Styles
+  alertIndicatorContainer: {
+    position: "absolute",
+    bottom: 80,
+    right: 20,
+    alignItems: "center",
+    zIndex: 1000,
+    elevation: 10,
+  },
+  alertIndicatorBall: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    borderWidth: 3,
+    borderColor: "#fff",
+  },
+  alertIndicatorText: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: "700",
+    backgroundColor: "#fff",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    overflow: "hidden",
   },
 });
