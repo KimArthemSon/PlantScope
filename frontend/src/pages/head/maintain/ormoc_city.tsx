@@ -26,6 +26,20 @@ import "leaflet/dist/leaflet.css";
 import { api } from "@/constant/api";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
+import "leaflet/dist/leaflet.css";
+import icon from "leaflet/dist/images/marker-icon.png";
+import iconShadow from "leaflet/dist/images/marker-shadow.png";
+
+let DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
 
 // 📍 Mapbox Token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -207,17 +221,17 @@ export default function Ormoc_City() {
     saveStatus === "saving"
       ? "Saving…"
       : saveStatus === "saved"
-      ? "Saved!"
-      : saveStatus === "error"
-      ? "Error"
-      : "Save Coordinates";
+        ? "Saved!"
+        : saveStatus === "error"
+          ? "Error"
+          : "Save Coordinates";
 
   const saveBg =
     saveStatus === "saved"
       ? "bg-green-600 hover:bg-green-700"
       : saveStatus === "error"
-      ? "bg-red-600 hover:bg-red-700"
-      : "bg-blue-600 hover:bg-blue-700";
+        ? "bg-red-600 hover:bg-red-700"
+        : "bg-blue-600 hover:bg-blue-700";
 
   /* ---------------- RENDER ---------------- */
   return (
@@ -489,10 +503,23 @@ export default function Ormoc_City() {
               attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             />
             <MapClickHandler />
-
+            // Replace your existing Marker with this:
             {marker && (
               <Marker
                 position={marker}
+                icon={L.divIcon({
+                  className: "custom-marker",
+                  html: `<div style="
+        background-color: #15803d;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      "></div>`,
+                  iconSize: [20, 20],
+                  iconAnchor: [10, 10],
+                })}
                 draggable
                 eventHandlers={{
                   dragend: (e) => {
@@ -508,7 +535,6 @@ export default function Ormoc_City() {
                 <Popup>Selected Location</Popup>
               </Marker>
             )}
-
             {/* Conditionally render polygon vertices and shape based on showPolygon state */}
             {showPolygon &&
               polygon.map((coord, i) => (
@@ -543,7 +569,6 @@ export default function Ormoc_City() {
                   }}
                 />
               ))}
-
             {showPolygon && polygon.length > 2 && (
               <Polygon
                 positions={polygon}

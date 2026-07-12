@@ -8,7 +8,7 @@ from security.views import log_activity
 import json
 import math
 import jwt
-
+from django.db import IntegrityError
 
 # -------------------- Helper Functions --------------------
 
@@ -181,13 +181,20 @@ def create_hazard_area(request):
     if barangay_id:
         barangay = get_object_or_404(Barangay, pk=barangay_id)
 
-    area = HazardArea.objects.create(
-        name=name,
-        hazard_type=hazard_type,
-        description=description,
-        barangay=barangay,
-        polygon=polygon
-    )
+    # ✅ Try to create, and catch the database duplicate error
+    try:
+        area = HazardArea.objects.create(
+            name=name,
+            hazard_type=hazard_type,
+            description=description,
+            barangay=barangay,
+            polygon=polygon
+        )
+    except IntegrityError:
+        # This runs if the name is a duplicate!
+        return JsonResponse({
+            'error': f'A hazard area with the name "{name}" already exists.'
+        }, status=400)
 
     record_activity(
         request,
@@ -205,7 +212,7 @@ def create_hazard_area(request):
         },
     )
 
-    return JsonResponse({'data': area.hazard_area_id}, status=200)
+    return JsonResponse({'data': area.hazard_area_id, 'message': 'Successfully created!'}, status=201)
 
 
 @csrf_exempt
@@ -243,8 +250,16 @@ def update_hazard_area(request, hazard_area_id):
     area.description = description
     area.barangay = barangay
     area.polygon = polygon
-    area.save()
+    
+    # ✅ Wrap save() in try/except to catch duplicate names
+    try:
+        area.save()
+    except IntegrityError:
+        return JsonResponse({
+            'error': f'A hazard area with the name "{name}" already exists.'
+        }, status=400)
 
+    # Only calculate changes and log activity if the save was successful
     _new = {
         'name': area.name,
         'hazard_type': area.hazard_type,
@@ -278,6 +293,18 @@ def delete_hazard_area(request, hazard_area_id):
     area = get_object_or_404(HazardArea, pk=hazard_area_id)
     deleted_name = area.name
     deleted_type = area.get_hazard_type_display()
+
+    # ✅ CHECK FOR DEPENDENT FOREIGN KEY RECORDS
+    for related in HazardArea._meta.related_objects:
+        accessor = related.get_accessor_name()
+        related_manager = getattr(area, accessor)
+        
+        # If any related table has records pointing to this area, block deletion
+        if related_manager.exists():
+            related_model_name = related.related_model._meta.verbose_name_plural.title()
+            return JsonResponse({
+                'error': f'Cannot delete "{deleted_name}". It is currently linked to {related_model_name}.'
+            }, status=400)
 
     record_activity(
         request,

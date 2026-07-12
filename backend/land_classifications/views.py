@@ -8,7 +8,7 @@ from security.views import log_activity
 import json
 import math
 import jwt
-
+from django.db import IntegrityError
 
 def _get_request_user(request):
     try:
@@ -163,12 +163,22 @@ def create_land_classification(request):
     try:
         data = json.loads(request.body)
         name = data['name']
-        for_reforestation = data.get('for_reforestation', False)  # default to False if not provided
+        for_reforestation = data.get('for_reforestation', False)
         description = data['description']
     except KeyError:
         return JsonResponse({'error': 'Missing fields'}, status=400)
 
-    classification = LandClassification.objects.create(name=name, description=description, for_reforestation=for_reforestation)
+    # ✅ Try to create, catch duplicate error
+    try:
+        classification = LandClassification.objects.create(
+            name=name, 
+            description=description, 
+            for_reforestation=for_reforestation
+        )
+    except IntegrityError:
+        return JsonResponse({
+            'error': f'A land classification with the name "{name}" already exists.'
+        }, status=400)
 
     record_activity(
         request,
@@ -190,7 +200,7 @@ def update_land_classification(request, classification_id):
     try:
         data = json.loads(request.body)
         name = data['name']
-        for_reforestation = data.get('for_reforestation', False)  # default to False if not provided
+        for_reforestation = data.get('for_reforestation', False)
         description = data['description']
     except KeyError:
         return JsonResponse({'error': 'Missing fields'}, status=400)
@@ -206,7 +216,14 @@ def update_land_classification(request, classification_id):
     classification.name = name
     classification.description = description
     classification.for_reforestation = for_reforestation
-    classification.save()
+    
+    # ✅ Try to save, catch duplicate error
+    try:
+        classification.save()
+    except IntegrityError:
+        return JsonResponse({
+            'error': f'A land classification with the name "{name}" already exists.'
+        }, status=400)
 
     _new = {'name': name, 'description': description, 'for_reforestation': for_reforestation}
     _changed = [k for k in _old if _old[k] != _new[k]]
@@ -233,6 +250,17 @@ def delete_land_classification(request, classification_id):
 
     classification = get_object_or_404(LandClassification, pk=classification_id)
     deleted_name = classification.name
+
+    # ✅ CHECK FOR DEPENDENT FOREIGN KEY RECORDS (e.g., Classified_areas)
+    for related in LandClassification._meta.related_objects:
+        accessor = related.get_accessor_name()
+        related_manager = getattr(classification, accessor)
+        
+        if related_manager.exists():
+            related_model_name = related.related_model._meta.verbose_name_plural.title()
+            return JsonResponse({
+                'error': f'Cannot delete "{deleted_name}". It is currently linked to {related_model_name}.'
+            }, status=400)
 
     record_activity(
         request,

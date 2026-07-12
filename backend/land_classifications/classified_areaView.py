@@ -10,7 +10,7 @@ from security.views import log_activity
 import json
 import math
 import jwt
-
+from django.db import IntegrityError
 
 def _get_request_user(request):
     try:
@@ -267,7 +267,7 @@ def create_classified_area(request):
         data = json.loads(request.body)
         name = data['name']
         land_classification_id = data['land_classification_id']
-        barangay_id = data['barangay_id']  # ✅ Added
+        barangay_id = data['barangay_id']
         polygon = data['polygon']
         description = data['description']
     except KeyError as e:
@@ -280,18 +280,24 @@ def create_classified_area(request):
         land_classification_id=land_classification_id
     )
 
-    barangay = get_object_or_404(  # ✅ Added
+    barangay = get_object_or_404(
         Barangay,
         barangay_id=barangay_id
     )
 
-    classified_area = Classified_areas.objects.create(
-        name=name,
-        land_classification=classification,
-        barangay=barangay,  # ✅ Added
-        polygon=polygon,
-        description=description
-    )
+    # ✅ Try to create, catch duplicate error
+    try:
+        classified_area = Classified_areas.objects.create(
+            name=name,
+            land_classification=classification,
+            barangay=barangay,
+            polygon=polygon,
+            description=description
+        )
+    except IntegrityError:
+        return JsonResponse({
+            'error': f'A classified area with the name "{name}" already exists.'
+        }, status=400)
 
     record_activity(
         request,
@@ -323,7 +329,7 @@ def update_classified_area(request, classified_area_id):
         data = json.loads(request.body)
         name = data['name']
         land_classification_id = data['land_classification_id']
-        barangay_id = data['barangay_id']  # ✅ Added
+        barangay_id = data['barangay_id']
         polygon = data['polygon']
         description = data['description']
     except KeyError as e:
@@ -341,7 +347,7 @@ def update_classified_area(request, classified_area_id):
         land_classification_id=land_classification_id
     )
 
-    barangay = get_object_or_404(  # ✅ Added
+    barangay = get_object_or_404(
         Barangay,
         barangay_id=barangay_id
     )
@@ -356,10 +362,17 @@ def update_classified_area(request, classified_area_id):
 
     classified_area.name = name
     classified_area.land_classification = classification
-    classified_area.barangay = barangay  # ✅ Added
+    classified_area.barangay = barangay
     classified_area.polygon = polygon
     classified_area.description = description
-    classified_area.save()
+    
+    # ✅ Try to save, catch duplicate error
+    try:
+        classified_area.save()
+    except IntegrityError:
+        return JsonResponse({
+            'error': f'A classified area with the name "{name}" already exists.'
+        }, status=400)
 
     _new = {
         'name': name,
@@ -383,7 +396,6 @@ def update_classified_area(request, classified_area_id):
     )
 
     return JsonResponse({'message': 'Successfully updated!'}, status=200)
-
 
 @csrf_exempt
 def delete_classified_area(request, classified_area_id):

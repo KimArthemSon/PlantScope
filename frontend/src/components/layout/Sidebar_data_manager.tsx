@@ -355,7 +355,7 @@ interface ProfileDropdownProps {
 function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
   return (
     <div
-      className="absolute right-0 top-full mt-3 w-[280px] z-9999
+      className="absolute right-0 top-full mt-3 w-[280px] z-19999
       bg-[#0a3320]/95 backdrop-blur-xl border border-white/10
       rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
       animate-slideDown"

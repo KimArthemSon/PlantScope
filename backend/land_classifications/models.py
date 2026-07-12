@@ -3,7 +3,7 @@ from barangay.models import Barangay
 
 class LandClassification(models.Model):
     land_classification_id = models.BigAutoField(primary_key=True)
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, unique=True)
     description = models.CharField(max_length=255)
     for_reforestation = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -11,7 +11,7 @@ class LandClassification(models.Model):
    
 class Classified_areas(models.Model):
     classified_area_id = models.BigAutoField(primary_key=True)
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, unique=True)
     land_classification = models.ForeignKey(
         LandClassification,
         on_delete=models.CASCADE,
