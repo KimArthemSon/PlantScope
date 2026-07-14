@@ -31,7 +31,6 @@ def record_activity(request, action_type, entity_type, entity_id=None,
                     old_data=None, new_data=None, changed_fields=None):
     performer, email = _get_request_user(request)
     
-    # FIXED: Extract only the first IP from the comma-separated list
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
     if x_forwarded_for:
         ip = x_forwarded_for.split(',')[0].strip()
@@ -52,30 +51,30 @@ def record_activity(request, action_type, entity_type, entity_id=None,
         ip_address=ip,
     )
 
+
 # -------------------- LandClassification Views --------------------
 
 @csrf_exempt
 def get_land_classifications_list(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
-    if request.GET.get('for_reforestation', '').strip().lower() == 'true':
-        classifications = (
-            LandClassification.objects
-            .filter(for_reforestation=True)
-            .order_by('created_at')
-            .values('land_classification_id', 'name')  # only these fields
-        )
-    else:
-        classifications = (
-            LandClassification.objects
-            .filter(for_reforestation=False)
-            .order_by('created_at')
-            .values('land_classification_id', 'name')  # only these fields
-        )
-
+    
+    # ✅ UPDATED: Filter by ownership_type instead of for_reforestation
+    ownership_type = request.GET.get('ownership_type', '').strip().lower()
+    
+    classifications = LandClassification.objects.all().order_by('created_at')
+    
+    # If 'public' or 'private' is specified, filter. Otherwise, return ALL.
+    if ownership_type in ['public', 'private']:
+        classifications = classifications.filter(ownership_type=ownership_type)
+    
     data = [
-         {'land_classification_id': c['land_classification_id'], 'name': c['name']}
-         for c in classifications
+        {
+            'land_classification_id': c['land_classification_id'], 
+            'name': c['name'],
+            'ownership_type': c['ownership_type']
+        }
+        for c in classifications.values('land_classification_id', 'name', 'ownership_type')
     ]
 
     return JsonResponse({'data': data}, status=200)
@@ -86,10 +85,10 @@ def get_land_classifications(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
-    # Get parameters with defaults
     search = request.GET.get('search', '').strip()
-    for_reforestation = request.GET.get('for_reforestation', '').strip().lower()
-    # Safe integer conversion
+    # ✅ UPDATED: Filter by ownership_type (supports 'public', 'private', or 'all'/omitted)
+    ownership_type = request.GET.get('ownership_type', '').strip().lower()
+    
     try:
         entries = int(request.GET.get('entries', 10))
         page = int(request.GET.get('page', 1))
@@ -97,7 +96,6 @@ def get_land_classifications(request):
         entries = 10
         page = 1
 
-    # Validate pagination values
     if entries <= 0:
         entries = 10
     if page <= 0:
@@ -105,30 +103,25 @@ def get_land_classifications(request):
 
     offset = (page - 1) * entries
 
-    # Queryset with sorting
-    # Using '-created_at' for Descending (Newest first) to match get_classified_areas
-    # Use 'created_at' without '-' for Ascending (Oldest first)
     classifications = LandClassification.objects.all().order_by('-created_at')
 
-    # Apply search filter
     if search:
         classifications = classifications.filter(name__icontains=search)
-    # Apply for_reforestation filter    if for_reforestation in ['true', 'false']:
-    if for_reforestation in ['true', 'false']:
-        classifications = classifications.filter(for_reforestation=(for_reforestation == 'true'))
-    # Get total count before slicing
+    
+    # ✅ UPDATED: Apply ownership_type filter if valid
+    if ownership_type in ['public', 'private']:
+        classifications = classifications.filter(ownership_type=ownership_type)
+        
     total = classifications.count()
     total_page = math.ceil(total / entries) if total > 0 else 1
 
-    # Slice and convert to list of dictionaries
-    # .values() fetches all fields as dictionaries
     data = []
     for lc in classifications[offset: offset + entries]:
         data.append({
             "land_classification_id": lc.land_classification_id,
             "name": lc.name,
             "description": lc.description,
-            "for_reforestation": lc.for_reforestation,
+            "ownership_type": lc.ownership_type,  # ✅ UPDATED
             "created_at": lc.created_at.strftime("%Y-%m-%d") if lc.created_at else None,
         })
 
@@ -149,7 +142,7 @@ def get_land_classification(request, classification_id):
     data = {
         'land_classification_id': classification.land_classification_id,
         'name': classification.name,
-        'for_reforestation': classification.for_reforestation,
+        'ownership_type': classification.ownership_type,  # ✅ UPDATED
         'description': classification.description,
         'created_at': classification.created_at
     }
@@ -163,17 +156,17 @@ def create_land_classification(request):
     try:
         data = json.loads(request.body)
         name = data['name']
-        for_reforestation = data.get('for_reforestation', False)
-        description = data['description']
+        # ✅ UPDATED: Expect ownership_type instead of for_reforestation
+        ownership_type = data.get('ownership_type', 'private') 
+        description = data.get('description', '')
     except KeyError:
-        return JsonResponse({'error': 'Missing fields'}, status=400)
+        return JsonResponse({'error': 'Missing required fields (name)'}, status=400)
 
-    # ✅ Try to create, catch duplicate error
     try:
         classification = LandClassification.objects.create(
             name=name, 
             description=description, 
-            for_reforestation=for_reforestation
+            ownership_type=ownership_type  # ✅ UPDATED
         )
     except IntegrityError:
         return JsonResponse({
@@ -187,7 +180,7 @@ def create_land_classification(request):
         entity_id=classification.land_classification_id,
         entity_label=name,
         description=f'Land classification "{name}" created.',
-        new_data={'name': name, 'description': description, 'for_reforestation': for_reforestation},
+        new_data={'name': name, 'description': description, 'ownership_type': ownership_type},  # ✅ UPDATED
     )
 
     return JsonResponse({'data': classification.land_classification_id}, status=200)
@@ -200,24 +193,24 @@ def update_land_classification(request, classification_id):
     try:
         data = json.loads(request.body)
         name = data['name']
-        for_reforestation = data.get('for_reforestation', False)
-        description = data['description']
+        # ✅ UPDATED: Expect ownership_type instead of for_reforestation
+        ownership_type = data.get('ownership_type', 'private')
+        description = data.get('description', '')
     except KeyError:
-        return JsonResponse({'error': 'Missing fields'}, status=400)
+        return JsonResponse({'error': 'Missing required fields (name)'}, status=400)
 
     classification = get_object_or_404(LandClassification, pk=classification_id)
 
     _old = {
         'name': classification.name,
         'description': classification.description,
-        'for_reforestation': classification.for_reforestation,
+        'ownership_type': classification.ownership_type,  # ✅ UPDATED
     }
 
     classification.name = name
     classification.description = description
-    classification.for_reforestation = for_reforestation
+    classification.ownership_type = ownership_type  # ✅ UPDATED
     
-    # ✅ Try to save, catch duplicate error
     try:
         classification.save()
     except IntegrityError:
@@ -225,7 +218,7 @@ def update_land_classification(request, classification_id):
             'error': f'A land classification with the name "{name}" already exists.'
         }, status=400)
 
-    _new = {'name': name, 'description': description, 'for_reforestation': for_reforestation}
+    _new = {'name': name, 'description': description, 'ownership_type': ownership_type}  # ✅ UPDATED
     _changed = [k for k in _old if _old[k] != _new[k]]
 
     record_activity(
@@ -251,7 +244,6 @@ def delete_land_classification(request, classification_id):
     classification = get_object_or_404(LandClassification, pk=classification_id)
     deleted_name = classification.name
 
-    # ✅ CHECK FOR DEPENDENT FOREIGN KEY RECORDS (e.g., Classified_areas)
     for related in LandClassification._meta.related_objects:
         accessor = related.get_accessor_name()
         related_manager = getattr(classification, accessor)
@@ -269,11 +261,13 @@ def delete_land_classification(request, classification_id):
         entity_id=classification_id,
         entity_label=deleted_name,
         description=f'Land classification "{deleted_name}" deleted.',
-        old_data={'name': deleted_name, 'description': classification.description, 'for_reforestation': classification.for_reforestation},
+        old_data={
+            'name': deleted_name, 
+            'description': classification.description, 
+            'ownership_type': classification.ownership_type  # ✅ UPDATED
+        },
     )
 
     classification.delete()
     return JsonResponse({'message': 'Successfully deleted!'}, status=200)
-
-# -------------------- Classified_area Views --------------------
 

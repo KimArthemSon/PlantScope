@@ -7,7 +7,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  // ❌ REMOVED: Alert
   ActivityIndicator,
   Image,
   FlatList,
@@ -29,8 +28,6 @@ import {
   OfflineImage,
 } from "@/hooks/useOfflineFieldAssessment";
 import { useNetworkStatus } from "@/utils/networkStatus";
-
-// ✅ ADDED: Import the useAlert hook
 import { useAlert } from "@/components/AlertContext";
 
 const API_BASE = api;
@@ -60,9 +57,11 @@ interface LocalDocImage {
   note: string;
 }
 
+// ✅ UPDATED: Added ownership_type
 interface LandClassificationOption {
   land_classification_id: number;
   name: string;
+  ownership_type: "public" | "private";
 }
 
 interface AnimalOption {
@@ -83,7 +82,6 @@ export default function MetaDataForm() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // ✅ ADDED: Initialize useAlert. We alias 'error' to 'showError' to avoid conflicts with catch blocks.
   const { success, error: showError, warning, info, confirm } = useAlert();
 
   const isEditMode = !!id;
@@ -106,16 +104,14 @@ export default function MetaDataForm() {
   const [locationAccuracy, setLocationAccuracy] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
 
-  // Legal Documents
+  // ✅ UPDATED: Removed photo states, kept only notes
   const [landTitleNote, setLandTitleNote] = useState("");
-  const [landTitlePhoto, setLandTitlePhoto] = useState<string | null>(null);
   const [taxDeclNote, setTaxDeclNote] = useState("");
-  const [taxDeclPhoto, setTaxDeclPhoto] = useState<string | null>(null);
   const [landClassId, setLandClassId] = useState<number | null>(null);
   const [landClassNote, setLandClassNote] = useState("");
-  const [otherDocs, setOtherDocs] = useState<
-    { photo_url: string | null; note: string }[]
-  >([]);
+
+  // ✅ UPDATED: Removed photo_url from otherDocs
+  const [otherDocs, setOtherDocs] = useState<{ note: string }[]>([]);
 
   const isOnline = useNetworkStatus();
   const isOfflineMode = !isOnline;
@@ -129,7 +125,7 @@ export default function MetaDataForm() {
   );
   const [securityNote, setSecurityNote] = useState("");
 
-  // Accessibility (NOW MULTIPLE)
+  // Accessibility
   const [vehicleAccess, setVehicleAccess] = useState<AccessibilityType[]>([]);
   const [accessNotes, setAccessNotes] = useState("");
 
@@ -141,7 +137,7 @@ export default function MetaDataForm() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showAnimalModal, setShowAnimalModal] = useState(false);
 
-  // Image tracking for upload
+  // Image tracking for upload (General photos only now)
   const [localImages, setLocalImages] = useState<LocalDocImage[]>([]);
   const [existingImages, setExistingImages] = useState<any[]>([]);
 
@@ -157,7 +153,6 @@ export default function MetaDataForm() {
         setNetworkChecked(true);
       }
     };
-
     checkNetworkOnMount();
   }, []);
 
@@ -173,7 +168,7 @@ export default function MetaDataForm() {
     try {
       const token = await SecureStore.getItemAsync("token");
       const res = await fetch(
-        `${API_BASE}/api/get_land_classifications_list/?for_reforestation=true`,
+        `${API_BASE}/api/get_land_classifications_list/`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -211,11 +206,9 @@ export default function MetaDataForm() {
 
   const loadOfflineDraftData = async () => {
     if (!offlineDraftId) return;
-
     try {
       const draft = await getOfflineDraft(offlineDraftId);
       if (!draft) {
-        // ✅ UPDATED
         showError("Error", "Draft not found.");
         router.back();
         return;
@@ -224,12 +217,10 @@ export default function MetaDataForm() {
       const payload = draft.payload;
       const meta = payload.field_assessment_data?.meta_data || {};
 
-      // Populate form with draft data
       setAssessmentDate(
         payload.assessment_date || new Date().toISOString().split("T")[0],
       );
       setLocation(payload.location || null);
-
       if (payload.location) {
         setLocationLat(payload.location.latitude?.toString() || "");
         setLocationLng(payload.location.longitude?.toString() || "");
@@ -238,27 +229,21 @@ export default function MetaDataForm() {
         );
       }
 
-      // Legal Docs
+      // ✅ UPDATED: Only load notes, no photos
       setLandTitleNote(meta.legal_documents?.land_title?.note || "");
-      setLandTitlePhoto(meta.legal_documents?.land_title?.photo_url || null);
       setTaxDeclNote(meta.legal_documents?.tax_declaration?.note || "");
-      setTaxDeclPhoto(meta.legal_documents?.tax_declaration?.photo_url || null);
       setLandClassId(payload.land_classification_id || null);
       setLandClassNote(
         meta.legal_documents?.land_classification?.inspector_notes || "",
       );
       setOtherDocs(meta.legal_documents?.other_documents || []);
 
-      // Animals
       if (Array.isArray(payload.animal_ids)) {
         setSelectedAnimalIds(payload.animal_ids);
       }
-
-      // Security
       setSecuritySelected(meta.security_concerns?.selected || []);
       setSecurityNote(meta.security_concerns?.note || "");
 
-      // Accessibility
       const accessData = meta.accessibility?.vehicle_access;
       if (Array.isArray(accessData)) {
         setVehicleAccess(accessData);
@@ -267,10 +252,8 @@ export default function MetaDataForm() {
       }
       setAccessNotes(meta.accessibility?.notes || "");
 
-      // ✅ Load images from draft
       if (Array.isArray(draft.images)) {
         const loadedImages: LocalDocImage[] = draft.images.map((img) => {
-          // Map layerCode back to docType
           let docType: keyof typeof DOC_LAYER_CODES = "other_doc";
           for (const [key, value] of Object.entries(DOC_LAYER_CODES)) {
             if (value === img.layerCode) {
@@ -289,7 +272,6 @@ export default function MetaDataForm() {
       }
     } catch (e: any) {
       console.error("Error loading offline draft:", e);
-      // ✅ UPDATED
       showError("Error", "Failed to load draft.");
       router.back();
     } finally {
@@ -319,7 +301,6 @@ export default function MetaDataForm() {
           new Date().toISOString().split("T")[0],
       );
       setLocation(data.location || null);
-
       if (data.location) {
         setLocationLat(data.location.latitude?.toString() || "");
         setLocationLng(data.location.longitude?.toString() || "");
@@ -328,11 +309,12 @@ export default function MetaDataForm() {
         );
       }
 
+      // ✅ UPDATED: Only load notes, no photos
       setLandTitleNote(meta.legal_documents?.land_title?.note || "");
-      setLandTitlePhoto(meta.legal_documents?.land_title?.photo_url || null);
       setTaxDeclNote(meta.legal_documents?.tax_declaration?.note || "");
-      setTaxDeclPhoto(meta.legal_documents?.tax_declaration?.photo_url || null);
-      setLandClassId(data.land_classification?.id || null);
+      setLandClassId(
+        data.land_classification_id || data.land_classification?.id || null,
+      );
       setLandClassNote(
         meta.legal_documents?.land_classification?.inspector_notes || "",
       );
@@ -355,7 +337,6 @@ export default function MetaDataForm() {
 
       if (Array.isArray(data.images)) setExistingImages(data.images);
     } catch (e: any) {
-      // ✅ UPDATED
       showError("Error", e.message ?? "Failed to load assessment.");
       router.back();
     } finally {
@@ -369,7 +350,6 @@ export default function MetaDataForm() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        // ✅ UPDATED
         warning("Permission Denied", "Please enable location access.");
         return;
       }
@@ -384,21 +364,16 @@ export default function MetaDataForm() {
         longitude: loc.coords.longitude,
         gps_accuracy_meters: loc.coords.accuracy,
       });
-      // ✅ UPDATED
       success("Location Captured", "GPS coordinates updated.");
     } catch (err) {
-      // ✅ UPDATED
       showError("Error", "Could not get current location.");
     } finally {
       setGettingLocation(false);
     }
   };
 
-  /* ---------- Image Helpers ---------- */
-  const pickDocumentImage = async (
-    docType: keyof typeof DOC_LAYER_CODES,
-    existingNote?: string,
-  ) => {
+  /* ---------- Image Helpers (General Photos Only) ---------- */
+  const pickGeneralPhoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: "images",
       allowsEditing: false,
@@ -409,15 +384,14 @@ export default function MetaDataForm() {
         ...localImages,
         {
           id: `local-${Date.now()}`,
-          type: docType,
+          type: "other_doc", // Generic layer for general photos
           uri: result.assets[0].uri,
-          note: existingNote || "",
+          note: "General field photo",
         },
       ]);
     }
   };
 
-  // ✅ UPDATED: Converted to use confirm() dialog
   const deleteExistingImage = (imageId: number) => {
     confirm(
       "Delete Photo",
@@ -436,7 +410,6 @@ export default function MetaDataForm() {
             setExistingImages(
               existingImages.filter((i) => i.image_id !== imageId),
             );
-            // ✅ Added success feedback for better UX
             success("Deleted", "Photo removed successfully.");
           } else {
             showError("Error", "Failed to delete.");
@@ -445,11 +418,7 @@ export default function MetaDataForm() {
           showError("Error", "Network error.");
         }
       },
-      {
-        type: "error",
-        confirmText: "Delete",
-        cancelText: "Cancel",
-      },
+      { type: "error", confirmText: "Delete", cancelText: "Cancel" },
     );
   };
 
@@ -510,9 +479,10 @@ export default function MetaDataForm() {
       animal_ids: selectedAnimalIds,
       field_assessment_data: {
         meta_data: {
+          // ✅ UPDATED: Only send notes, no photo_url
           legal_documents: {
-            land_title: { photo_url: landTitlePhoto, note: landTitleNote },
-            tax_declaration: { photo_url: taxDeclPhoto, note: taxDeclNote },
+            land_title: { note: landTitleNote },
+            tax_declaration: { note: taxDeclNote },
             land_classification: { inspector_notes: landClassNote },
             other_documents: otherDocs,
           },
@@ -529,10 +499,9 @@ export default function MetaDataForm() {
     };
   };
 
-  /* ---------- ✅ UPDATED: Save Offline (handles edit mode) ---------- */
+  /* ---------- ✅ UPDATED: Save Offline ---------- */
   const handleSaveOffline = async (): Promise<string | null> => {
     if (!assessmentDate) {
-      // ✅ UPDATED
       warning("Missing Info", "Assessment date is required.");
       return null;
     }
@@ -540,25 +509,21 @@ export default function MetaDataForm() {
     setSavingOffline(true);
     try {
       const payload = buildPayload();
-
       const offlineImages: OfflineImage[] = localImages.map((img) => ({
         id: img.id,
         uri: img.uri,
         layerCode: DOC_LAYER_CODES[img.type],
-        description: img.note || `${img.type.replace("_", " ")} photo`,
+        description: img.note || "General field photo",
         latitude: payload.location?.latitude,
         longitude: payload.location?.longitude,
       }));
 
-      // ✅ If editing existing offline draft, update it
       if (isEditingOfflineDraft && offlineDraftId) {
         await updateOfflineDraft(offlineDraftId, {
           payload,
           images: offlineImages,
           status: "pending",
         });
-
-        // ✅ UPDATED: Non-blocking success toast + navigate back
         success(
           "Updated Offline",
           "Draft updated locally. Will sync when online.",
@@ -567,7 +532,6 @@ export default function MetaDataForm() {
         return offlineDraftId;
       }
 
-      // Otherwise create new draft
       const localUuid = generateLocalUUID();
       const draft: OfflineDraft = {
         local_uuid: localUuid,
@@ -582,18 +546,14 @@ export default function MetaDataForm() {
 
       await saveOfflineDraft(draft);
       setLocalImages([]);
-
-      // ✅ UPDATED: Non-blocking success toast + navigate back
       success(
         "Saved Offline",
         "Assessment saved locally. Will sync when online.",
       );
       router.back();
-
       return localUuid;
     } catch (e: any) {
       console.error("Error saving offline:", e);
-      // ✅ UPDATED
       showError("Error", "Failed to save offline. Please try again.");
       return null;
     } finally {
@@ -604,7 +564,6 @@ export default function MetaDataForm() {
   /* ---------- Save Draft (Online) ---------- */
   const handleSaveDraft = async (): Promise<number | null> => {
     if (!assessmentDate) {
-      // ✅ UPDATED
       warning("Missing Info", "Assessment date is required.");
       return null;
     }
@@ -647,7 +606,7 @@ export default function MetaDataForm() {
 
         const imageMetadata = localImages.map((img) => ({
           layer: DOC_LAYER_CODES[img.type],
-          description: img.note || `${img.type.replace("_", " ")} photo`,
+          description: img.note || "General field photo",
           latitude: payload.location?.latitude || 11.0,
           longitude: payload.location?.longitude || 124.6,
         }));
@@ -679,11 +638,9 @@ export default function MetaDataForm() {
         : responseData.field_assessment_id;
 
       setLocalImages([]);
-      // ✅ UPDATED
       success("Saved", isEditMode ? "Draft updated." : "Draft saved.");
       return faid;
     } catch (e: any) {
-      // ✅ UPDATED
       showError("Error", e.message);
       return null;
     } finally {
@@ -691,7 +648,6 @@ export default function MetaDataForm() {
     }
   };
 
-  // ✅ UPDATED: Converted to use confirm() dialog
   const handleSubmit = async () => {
     const savedId = await handleSaveDraft();
     if (!savedId) return;
@@ -714,21 +670,15 @@ export default function MetaDataForm() {
             const e = await res.json();
             throw new Error(e.error ?? "Failed to submit.");
           }
-          // ✅ UPDATED: Non-blocking success toast + navigate back
           success("Submitted", "Meta Data submitted to GIS Specialist!");
           router.back();
         } catch (e: any) {
-          // ✅ UPDATED
           showError("Error", e.message);
         } finally {
           setSubmitting(false);
         }
       },
-      {
-        type: "warning",
-        confirmText: "Yes, Submit",
-        cancelText: "Cancel",
-      },
+      { type: "warning", confirmText: "Yes, Submit", cancelText: "Cancel" },
     );
   };
 
@@ -759,7 +709,6 @@ export default function MetaDataForm() {
     })),
   ];
 
-  // ✅ Updated header title logic
   const getBaseTitle = () => {
     if (isEditingOfflineDraft) return "Edit Offline Draft";
     if (isEditMode) return "Edit Meta Data";
@@ -769,9 +718,13 @@ export default function MetaDataForm() {
   const baseTitle = getBaseTitle();
   const headerTitle = siteId ? `${baseTitle} (Site)` : `${baseTitle} (Area)`;
 
+  // ✅ UPDATED: Derive ownership type from selected classification
+  const selectedLandClass = landClassifications.find(
+    (lc) => lc.land_classification_id === landClassId,
+  );
   const selectedLandClassName =
-    landClassifications.find((lc) => lc.land_classification_id === landClassId)
-      ?.name || "Select classification";
+    selectedLandClass?.name || "Select classification";
+  const selectedLandClassOwnership = selectedLandClass?.ownership_type || null;
 
   /* ---------- UI ---------- */
   return (
@@ -819,26 +772,8 @@ export default function MetaDataForm() {
         <SectionCard
           icon="file-document-outline"
           title="Legal Documents"
-          sub="Upload photos & add notes"
+          sub="Record document details and notes"
         >
-          <DocRow
-            label="Land Title"
-            note={landTitleNote}
-            setNote={setLandTitleNote}
-            photo={landTitlePhoto}
-            onPick={() => pickDocumentImage("land_title")}
-            isReadOnly={isReadOnly}
-          />
-
-          <DocRow
-            label="Tax Declaration"
-            note={taxDeclNote}
-            setNote={setTaxDeclNote}
-            photo={taxDeclPhoto}
-            onPick={() => pickDocumentImage("tax_decl")}
-            isReadOnly={isReadOnly}
-          />
-
           <FieldLabel
             label="Land Classification"
             hint="Official designation per DENR/CENRO records"
@@ -872,10 +807,11 @@ export default function MetaDataForm() {
           ) : (
             <Text style={styles.readonlyText}>{selectedLandClassName}</Text>
           )}
+
           {!isReadOnly && (
             <TextInput
               style={styles.textArea}
-              placeholder="Inspector Notes"
+              placeholder="Inspector Notes (e.g., specific classification details)"
               placeholderTextColor="#9CA3AF"
               value={landClassNote}
               onChangeText={setLandClassNote}
@@ -886,43 +822,112 @@ export default function MetaDataForm() {
             <Text style={styles.readonlyNote}>{landClassNote}</Text>
           ) : null}
 
-          <FieldLabel label="Other Documents" />
-          {otherDocs.map((doc, idx) => (
-            <View key={idx} style={styles.otherDocRow}>
-              <View style={{ flex: 1 }}>
-                <TextInput
-                  style={styles.miniInput}
-                  placeholder="Document Name / Type"
-                  placeholderTextColor="#9CA3AF"
-                  value={doc.note}
-                  onChangeText={(val) => {
-                    const updated = [...otherDocs];
-                    updated[idx].note = val;
-                    setOtherDocs(updated);
-                  }}
-                  editable={!isReadOnly}
-                />
+          {/* ✅ UPDATED: Conditional Legal Docs based on Ownership Type */}
+          {landClassId ? (
+            selectedLandClassOwnership === "private" ? (
+              <View style={styles.privateDocsContainer}>
+                <FieldLabel label="Land Title Note" optional />
+                {!isReadOnly && (
+                  <TextInput
+                    style={styles.textArea}
+                    placeholder="e.g., TCT No. 12345, Registered under Juan Dela Cruz"
+                    placeholderTextColor="#9CA3AF"
+                    value={landTitleNote}
+                    onChangeText={setLandTitleNote}
+                    multiline
+                  />
+                )}
+                {isReadOnly && landTitleNote ? (
+                  <Text style={styles.readonlyNote}>{landTitleNote}</Text>
+                ) : null}
+
+                <FieldLabel label="Tax Declaration Note" optional />
+                {!isReadOnly && (
+                  <TextInput
+                    style={styles.textArea}
+                    placeholder="e.g., TD No. 67890, Current Year"
+                    placeholderTextColor="#9CA3AF"
+                    value={taxDeclNote}
+                    onChangeText={setTaxDeclNote}
+                    multiline
+                  />
+                )}
+                {isReadOnly && taxDeclNote ? (
+                  <Text style={styles.readonlyNote}>{taxDeclNote}</Text>
+                ) : null}
+
+                <FieldLabel label="Other Documents" optional />
+                {otherDocs.map((doc, idx) => (
+                  <View key={idx} style={styles.otherDocRow}>
+                    <View style={{ flex: 1 }}>
+                      <TextInput
+                        style={styles.miniInput}
+                        placeholder="Document Name / Note"
+                        placeholderTextColor="#9CA3AF"
+                        value={doc.note}
+                        onChangeText={(val) => {
+                          const updated = [...otherDocs];
+                          updated[idx].note = val;
+                          setOtherDocs(updated);
+                        }}
+                        editable={!isReadOnly}
+                      />
+                    </View>
+                    {!isReadOnly && (
+                      <TouchableOpacity
+                        style={styles.miniPickBtn}
+                        onPress={() => {
+                          const updated = [...otherDocs];
+                          updated.splice(idx, 1);
+                          setOtherDocs(updated);
+                        }}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={16}
+                          color="#EF4444"
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+                {!isReadOnly && (
+                  <TouchableOpacity
+                    style={styles.addBtn}
+                    onPress={() => setOtherDocs([...otherDocs, { note: "" }])}
+                  >
+                    <Ionicons name="add" size={16} color="#0F4A2F" />
+                    <Text style={styles.addBtnText}>
+                      Add Other Document Note
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
-              {!isReadOnly && (
-                <TouchableOpacity
-                  style={styles.miniPickBtn}
-                  onPress={() => pickDocumentImage("other_doc", doc.note)}
-                >
-                  <Ionicons name="camera-outline" size={16} color="#0F4A2F" />
-                </TouchableOpacity>
-              )}
+            ) : (
+              <View style={styles.publicDocsNotice}>
+                <MaterialCommunityIcons
+                  name="land-rows"
+                  size={20}
+                  color="#0F4A2F"
+                />
+                <Text style={styles.publicDocsNoticeText}>
+                  Legal documents are not required for public/government-owned
+                  land.
+                </Text>
+              </View>
+            )
+          ) : (
+            <View style={styles.selectFirstNotice}>
+              <Ionicons
+                name="information-circle-outline"
+                size={16}
+                color="#6B7280"
+              />
+              <Text style={styles.selectFirstText}>
+                Please select a land classification first to determine document
+                requirements.
+              </Text>
             </View>
-          ))}
-          {!isReadOnly && (
-            <TouchableOpacity
-              style={styles.addBtn}
-              onPress={() =>
-                setOtherDocs([...otherDocs, { photo_url: null, note: "" }])
-              }
-            >
-              <Ionicons name="add" size={16} color="#0F4A2F" />
-              <Text style={styles.addBtnText}>Add Other Document</Text>
-            </TouchableOpacity>
           )}
         </SectionCard>
 
@@ -1165,7 +1170,7 @@ export default function MetaDataForm() {
           )}
         </SectionCard>
 
-        {/* 6. Photos & Attachments */}
+        {/* 6. Photos & Attachments (General Photos Only) */}
         <SectionCard
           icon="image-multiple-outline"
           title="Field Photos"
@@ -1204,7 +1209,7 @@ export default function MetaDataForm() {
           {!isReadOnly && (
             <TouchableOpacity
               style={styles.addPhotoBtn}
-              onPress={() => pickDocumentImage("other_doc")}
+              onPress={pickGeneralPhoto}
             >
               <Ionicons name="camera-outline" size={18} color="#0F4A2F" />
               <Text style={styles.addPhotoBtnText}>Add General Photo</Text>
@@ -1313,7 +1318,8 @@ export default function MetaDataForm() {
                         modalStyles.listItemTextActive,
                     ]}
                   >
-                    {lc.name}
+                    {lc.name}{" "}
+                    {lc.ownership_type === "public" ? "(Public)" : "(Private)"}
                   </Text>
                   {landClassId === lc.land_classification_id && (
                     <Ionicons name="checkmark" size={18} color="#0F4A2F" />
@@ -1387,7 +1393,7 @@ export default function MetaDataForm() {
   );
 }
 
-/* ---------- SUB-COMPONENTS (Unchanged) ---------- */
+/* ---------- SUB-COMPONENTS ---------- */
 const SectionCard: React.FC<{
   icon: string;
   title: string;
@@ -1422,44 +1428,6 @@ const FieldLabel: React.FC<{
   </View>
 );
 
-const DocRow: React.FC<{
-  label: string;
-  note: string;
-  setNote: (v: string) => void;
-  photo: string | null;
-  onPick: () => void;
-  isReadOnly: boolean;
-}> = ({ label, note, setNote, photo, onPick, isReadOnly }) => (
-  <View style={styles.docRow}>
-    <View style={styles.docHeader}>
-      <MaterialCommunityIcons name="file-document" size={16} color="#0F4A2F" />
-      <Text style={styles.docLabel}>{label}</Text>
-    </View>
-    <View style={styles.docActions}>
-      {!isReadOnly && (
-        <TouchableOpacity style={styles.pickBtn} onPress={onPick}>
-          <Ionicons name="camera-outline" size={16} color="#0F4A2F" />
-          <Text style={styles.pickText}>Take Photo</Text>
-        </TouchableOpacity>
-      )}
-      {photo && <Image source={{ uri: photo }} style={styles.docThumb} />}
-    </View>
-    {!isReadOnly && (
-      <TextInput
-        style={styles.textArea}
-        placeholder="Comment / Note"
-        placeholderTextColor="#9CA3AF"
-        value={note}
-        onChangeText={setNote}
-        multiline
-      />
-    )}
-    {isReadOnly && note ? (
-      <Text style={styles.readonlyNote}>{note}</Text>
-    ) : null}
-  </View>
-);
-
 const SecurityChip: React.FC<{
   label: string;
   active: boolean;
@@ -1483,7 +1451,7 @@ const SecurityChip: React.FC<{
   </TouchableOpacity>
 );
 
-/* ---------- STYLES (Unchanged) ---------- */
+/* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#F4F7F5" },
   loadingScreen: {
@@ -1512,7 +1480,6 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: "center" },
   headerTitle: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
   headerSub: { fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 1 },
-
   offlineBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1523,7 +1490,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   offlineBannerText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
-
   submittedBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1629,7 +1595,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   dropdownText: { flex: 1, fontSize: 13, color: "#0F2D1C" },
-
   offlineFieldNotice: {
     flexDirection: "row",
     alignItems: "center",
@@ -1645,7 +1610,6 @@ const styles = StyleSheet.create({
     color: "#92400E",
     fontWeight: "500",
   },
-
   animalSelectorBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1679,41 +1643,40 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   selectedAnimalText: { fontSize: 11, color: "#0F4A2F", fontWeight: "600" },
-  docRow: {
-    marginBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
-    paddingBottom: 12,
-  },
-  docHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-  },
-  docLabel: { fontSize: 13, fontWeight: "700", color: "#0F2D1C" },
-  docActions: {
+
+  // ✅ NEW: Conditional Legal Doc Styles
+  privateDocsContainer: { marginTop: 16 },
+  publicDocsNotice: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 8,
+    backgroundColor: "#F0FDF4",
+    padding: 14,
+    borderRadius: 10,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
   },
-  pickBtn: {
+  publicDocsNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#15803D",
+    fontWeight: "500",
+  },
+  selectFirstNotice: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 8,
+    backgroundColor: "#F9FAFB",
+    padding: 12,
     borderRadius: 8,
-    backgroundColor: "#E6F4EC",
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderStyle: "dashed",
   },
-  pickText: { fontSize: 12, fontWeight: "600", color: "#0F4A2F" },
-  docThumb: {
-    width: 50,
-    height: 50,
-    borderRadius: 8,
-    backgroundColor: "#E5E7EB",
-  },
+  selectFirstText: { flex: 1, fontSize: 12, color: "#6B7280" },
+
   otherDocRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1730,7 +1693,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 12,
   },
-  miniPickBtn: { padding: 8, backgroundColor: "#E6F4EC", borderRadius: 8 },
+  miniPickBtn: { padding: 8, backgroundColor: "#FEF2F2", borderRadius: 8 },
   addBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1851,7 +1814,6 @@ const styles = StyleSheet.create({
   },
   addPhotoBtnText: { fontSize: 13, fontWeight: "600", color: "#0F4A2F" },
   actions: { gap: 10, marginTop: 4 },
-
   offlineBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1863,12 +1825,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     backgroundColor: "#FFFBEB",
   },
-  offlineBtnText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#F59E0B",
-  },
-
+  offlineBtnText: { fontSize: 14, fontWeight: "700", color: "#F59E0B" },
   draftBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1897,7 +1854,6 @@ const styles = StyleSheet.create({
   },
   submitBtnText: { fontSize: 14, fontWeight: "700", color: "#FFFFFF" },
   btnDisabled: { opacity: 0.55 },
-
   offlineNotice: {
     flexDirection: "row",
     alignItems: "center",

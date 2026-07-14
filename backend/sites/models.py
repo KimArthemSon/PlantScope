@@ -177,25 +177,25 @@ class SiteVerifiedAnimal(models.Model):
 # ─────────────────────────────────────────────
 # PERMIT DOCUMENTS (Site-Specific)
 # ─────────────────────────────────────────────
+
 class PermitDocument(models.Model):
+    # ✅ UPDATED: Only 3 document types now
     DOCUMENT_TYPES = (
-        ('land_title', 'Land Title'), ('tax_declaration', 'Tax Declaration'),
-        ('barangay_clearance', 'Barangay Clearance'), ('lgu_endorsement', 'LGU Endorsement'),
-        ('denr_permit', 'DENR Permit'), ('landowner_consent', 'Landowner Consent'), ('other', 'Other'),
+        ('land_title', 'Land Title'), 
+        ('tax_declaration', 'Tax Declaration'), 
+        ('other', 'Other'),
     )
 
     permit_id = models.BigAutoField(primary_key=True)
     site = models.ForeignKey(Sites, on_delete=models.CASCADE, related_name='permit_documents')
     source_assessment_id = models.BigIntegerField(null=True, blank=True)
     document_type = models.CharField(max_length=30, choices=DOCUMENT_TYPES)
-    permit_number = models.CharField(max_length=100, blank=True, null=True)
     
-    # ✅ CHANGED: Use CloudinaryField (resource_type='auto' allows PDFs and Images)
-    file = CloudinaryField(
-        'file', 
-        folder='permits', 
-        resource_type='auto', 
-        validators=[FileExtensionValidator(['pdf', 'docx', 'doc'])]
+    # ✅ UPDATED: Removed 'permit_number' and 'file', added 'notes' for text-based tracking
+    notes = models.TextField(
+        blank=True, 
+        null=True, 
+        help_text="Details, reference numbers, or notes regarding this document/permit."
     )
     
     verification_notes = models.TextField(blank=True, null=True)
@@ -212,7 +212,6 @@ class PermitDocument(models.Model):
 
     def __str__(self):
         return f"{self.get_document_type_display()} - Site: {self.site.name}"
-
 
 # ─────────────────────────────────────────────
 # SITE DATA, SPECIES & IMAGES

@@ -89,7 +89,7 @@ export default function Classified_areas() {
       try {
         const [lcRes, brRes] = await Promise.all([
           fetch(
-            api+"api/get_land_classifications_list/?for_reforestation=false",
+            api+"api/get_land_classifications_list/",
             {
               headers: { Authorization: `Bearer ${token}` },
             },

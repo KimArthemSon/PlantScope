@@ -91,11 +91,11 @@ interface MetaVerification {
   verified_animals?: VerifiedAnimal[] | null;
 }
 
+// ✅ UPDATED: Removed file_url and permit_number, added notes
 interface PermitItem {
   permit_id: number;
   document_type: string;
-  file_url: string | null;
-  permit_number?: string | null;
+  notes: string | null;
   verification_notes?: string | null;
   uploaded_at?: string;
   uploaded_by?: string | null;
@@ -1414,45 +1414,38 @@ const PermitsCard: React.FC<{ permits: PermitItem[] }> = ({ permits }) => {
           {permits.map((permit) => (
             <div
               key={permit.permit_id}
-              className="flex items-center justify-between p-3 bg-gray-50 rounded-md border border-gray-200 hover:bg-gray-100 transition-colors"
+              className="flex flex-col p-3 bg-gray-50 rounded-md border border-gray-200 hover:bg-gray-100 transition-colors"
             >
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                <div className="p-1.5 bg-blue-100 rounded-md flex-shrink-0">
+              <div className="flex items-start gap-2.5 w-full">
+                <div className="p-1.5 bg-blue-100 rounded-md flex-shrink-0 mt-0.5">
                   <FileText className="w-4 h-4 text-blue-600" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-gray-800 capitalize block truncate">
+                  <span className="text-sm font-medium text-gray-800 capitalize block">
                     {permit.document_type.replace(/_/g, " ")}
                   </span>
-                  <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                    {permit.permit_number && (
-                      <span>No. {permit.permit_number}</span>
-                    )}
+                  {/* ✅ UPDATED: Display notes instead of permit_number */}
+                  {permit.notes && (
+                    <p className="text-xs text-gray-600 mt-1 italic break-words">
+                      "{permit.notes}"
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 text-[10px] text-gray-500 mt-1.5">
                     {permit.uploaded_at && (
                       <span>
-                        {new Date(permit.uploaded_at).toLocaleDateString()}
+                        Added: {new Date(permit.uploaded_at).toLocaleDateString()}
                       </span>
                     )}
                   </div>
                 </div>
               </div>
-              {permit.file_url && (
-                <a
-                  href={`${permit.file_url}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium px-2 py-1 hover:bg-blue-50 rounded-md transition-colors flex-shrink-0"
-                >
-                  <ExternalLink size={12} /> View
-                </a>
-              )}
             </div>
           ))}
         </div>
       ) : (
         <div className="text-center py-6 text-gray-400">
           <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">No documents uploaded</p>
+          <p className="text-sm">No documents recorded</p>
         </div>
       )}
     </BentoCard>
@@ -1721,7 +1714,7 @@ export default function SiteInformation(): JSX.Element {
         } else {
           try {
             const lcRes = await fetch(
-              `${API}get_land_classifications_list/?for_reforestation=true`,
+              `${API}get_land_classifications_list/`,
               {
                 headers: { Authorization: `Bearer ${token}` },
               },
@@ -1975,7 +1968,7 @@ export default function SiteInformation(): JSX.Element {
                 icon={FileText}
                 label="Documents"
                 value={siteData.permits.length}
-                subtext="uploaded"
+                subtext="recorded"
                 accent="blue"
               />
               <StatCard

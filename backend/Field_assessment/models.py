@@ -7,8 +7,7 @@ from land_classifications.models import LandClassification
 from cloudinary.models import CloudinaryField
 
 IMAGE_LAYER_CHOICES = [
-    ('meta_land_title', 'Meta: Land Title'),
-    ('meta_tax_decl', 'Meta: Tax Declaration'),
+    
     ('meta_other_doc', 'Meta: Other Document'),
     ('safety_flood', 'Safety: Flood'),
     ('safety_landslide', 'Safety: Landslide'),

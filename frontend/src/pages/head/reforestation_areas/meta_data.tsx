@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ShieldCheck,
@@ -9,7 +9,6 @@ import {
   X,
   FileText,
   Users,
-  Upload,
   Trash2,
   CheckCircle,
   XCircle,
@@ -34,6 +33,7 @@ import {
   Edit3,
   Map as MapIcon,
   PawPrint,
+  Landmark,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
@@ -48,12 +48,10 @@ import {
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useUserRole } from "@/hooks/authorization";
-// 📍 Mapbox Token
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 const API = api + "api/";
 
-// Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -62,19 +60,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-// Custom colored icons
 const greenIcon = new L.Icon({
   iconUrl:
     "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-});
-
-const blueIcon = new L.Icon({
-  iconUrl:
-    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   iconSize: [25, 41],
   iconAnchor: [12, 41],
@@ -164,8 +152,7 @@ interface AssessmentCounts {
 interface PermitItem {
   permit_id: number;
   document_type: string;
-  permit_number: string | null;
-  file_url: string;
+  notes: string | null;
   verification_notes: string | null;
   uploaded_at: string;
   uploaded_by: string | null;
@@ -174,6 +161,7 @@ interface PermitItem {
 interface LandClassificationOption {
   land_classification_id: number;
   name: string;
+  ownership_type: "public" | "private";
 }
 
 interface AnimalOption {
@@ -357,17 +345,13 @@ function AssessmentDataViewer({
     animals: true,
   });
 
-  if (!data || !data.meta_data) {
+  if (!data || !data.meta_data)
     return (
       <p className="text-xs text-gray-400 italic">No meta data available</p>
     );
-  }
-
   const metaData = data.meta_data;
-
-  const toggleSection = (section: string) => {
+  const toggleSection = (section: string) =>
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
-  };
 
   return (
     <div className="space-y-3">
@@ -409,7 +393,6 @@ function AssessmentDataViewer({
           )}
         </div>
       )}
-
       {animalsPresent && animalsPresent.length > 0 && (
         <div className="border border-emerald-200 rounded-lg overflow-hidden">
           <button
@@ -451,7 +434,6 @@ function AssessmentDataViewer({
           )}
         </div>
       )}
-
       {metaData.accessibility && (
         <div className="border border-blue-200 rounded-lg overflow-hidden">
           <button
@@ -522,6 +504,7 @@ function AssessmentDataViewer({
         </div>
       )}
 
+      {/* ✅ UPDATED: STRICTLY TEXT ONLY for Legal Documents. No photo_url rendering. */}
       {metaData.legal_documents && (
         <div className="border border-green-200 rounded-lg overflow-hidden">
           <button
@@ -550,14 +533,14 @@ function AssessmentDataViewer({
                       Land Title
                     </p>
                   </div>
+                  {/* ✅ Only renders the text note, ignoring any legacy photo_url */}
                   {metaData.legal_documents.land_title.note && (
-                    <p className="text-xs text-gray-600">
-                      {metaData.legal_documents.land_title.note}
+                    <p className="text-xs text-gray-600 italic">
+                      "{metaData.legal_documents.land_title.note}"
                     </p>
                   )}
                 </div>
               )}
-
               {metaData.legal_documents.tax_declaration && (
                 <div className="p-2 bg-gray-50 rounded border border-gray-200">
                   <div className="flex items-center gap-1 mb-1">
@@ -566,14 +549,14 @@ function AssessmentDataViewer({
                       Tax Declaration
                     </p>
                   </div>
+                  {/* ✅ Only renders the text note, ignoring any legacy photo_url */}
                   {metaData.legal_documents.tax_declaration.note && (
-                    <p className="text-xs text-gray-600">
-                      {metaData.legal_documents.tax_declaration.note}
+                    <p className="text-xs text-gray-600 italic">
+                      "{metaData.legal_documents.tax_declaration.note}"
                     </p>
                   )}
                 </div>
               )}
-
               {metaData.legal_documents.other_documents &&
                 Array.isArray(metaData.legal_documents.other_documents) && (
                   <div>
@@ -586,8 +569,11 @@ function AssessmentDataViewer({
                           key={idx}
                           className="p-2 bg-gray-50 rounded border border-gray-200 mb-2"
                         >
+                          {/* ✅ Only renders the text note, ignoring any legacy photo_url */}
                           {doc.note && (
-                            <p className="text-xs text-gray-600">{doc.note}</p>
+                            <p className="text-xs text-gray-600 italic">
+                              "{doc.note}"
+                            </p>
                           )}
                         </div>
                       ),
@@ -660,9 +646,7 @@ export default function MetaDataVerification() {
   const { id } = useParams<{ id: string }>();
   const token = localStorage.getItem("token");
   const navigate = useNavigate();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ✅ UPDATED: Use useUserRole hook instead of localStorage
   const { userRole } = useUserRole();
   const canManageAssessments =
     userRole === "DataManager" || userRole === "CityENROHead";
@@ -696,8 +680,6 @@ export default function MetaDataVerification() {
   );
   const [assessmentFilter, setAssessmentFilter] =
     useState<AssessmentFilter>("all");
-
-  // ✅ NEW: Date Filter States
   const [filterDateFrom, setFilterDateFrom] = useState<string>("");
   const [filterDateTo, setFilterDateTo] = useState<string>("");
 
@@ -725,10 +707,10 @@ export default function MetaDataVerification() {
 
   const [newPermit, setNewPermit] = useState({
     document_type: "land_title",
-    permit_number: "",
+    notes: "",
     verification_notes: "",
-    file: null as File | null,
   });
+
   const [newAccessibility, setNewAccessibility] = useState<AccessibilityEntry>({
     id: "",
     type: "",
@@ -737,7 +719,6 @@ export default function MetaDataVerification() {
   const [newAnimalId, setNewAnimalId] = useState<number | "">("");
   const [newAnimalNotes, setNewAnimalNotes] = useState("");
 
-  // Map Modal States
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [selectedAssessment, setSelectedAssessment] =
     useState<FieldAssessment | null>(null);
@@ -750,15 +731,18 @@ export default function MetaDataVerification() {
   >(null);
   const [savingLocation, setSavingLocation] = useState(false);
 
-  // ✅ UPDATED: Filter Logic with Date Range
+  // ✅ NEW: Automatically derive ownership type from the selected Land Classification
+  const selectedLC = landClassifications.find(
+    (lc) => lc.land_classification_id === verifiedLandClassificationId,
+  );
+  const derivedOwnershipType = selectedLC?.ownership_type || null;
+
   const filteredAssessments = fieldAssessments.filter((a) => {
     if (assessmentFilter !== "all" && a.type !== assessmentFilter) return false;
-
     if (filterDateFrom || filterDateTo) {
       if (!a.assessment_date) return false;
       const assessmentDate = new Date(a.assessment_date);
       assessmentDate.setHours(0, 0, 0, 0);
-
       if (filterDateFrom) {
         const fromDate = new Date(filterDateFrom);
         fromDate.setHours(0, 0, 0, 0);
@@ -773,9 +757,6 @@ export default function MetaDataVerification() {
     return true;
   });
 
-  // ─────────────────────────────────────────────
-  // ✅ NEW: Management Action Handlers
-  // ─────────────────────────────────────────────
   async function handleUnsendAssessment(assessmentId: number) {
     setConfirmDialog({
       title: "Unsend Assessment",
@@ -788,10 +769,7 @@ export default function MetaDataVerification() {
         try {
           const res = await fetch(
             `${API}field_assessments/${assessmentId}/unsent/`,
-            {
-              method: "POST",
-              headers: { Authorization: `Bearer ${token}` },
-            },
+            { method: "POST", headers: { Authorization: `Bearer ${token}` } },
           );
           const data = await res.json();
           if (res.ok) {
@@ -800,7 +778,7 @@ export default function MetaDataVerification() {
               title: "Success",
               message: data.message || "Assessment marked as unsent.",
             });
-            await fetchSiteVerification(); // Refresh list
+            await fetchSiteVerification();
           } else {
             setPSAlert({
               type: "error",
@@ -808,7 +786,7 @@ export default function MetaDataVerification() {
               message: data.error || "Failed to unsend assessment.",
             });
           }
-        } catch (err) {
+        } catch {
           setPSAlert({
             type: "error",
             title: "Error",
@@ -823,7 +801,7 @@ export default function MetaDataVerification() {
     setConfirmDialog({
       title: "Delete Assessment",
       message:
-        "Permanently delete this field assessment? This will also remove all associated images from the server. This action cannot be undone.",
+        "Permanently delete this field assessment? This action cannot be undone.",
       variant: "danger",
       confirmLabel: "Delete",
       onConfirm: async () => {
@@ -831,10 +809,7 @@ export default function MetaDataVerification() {
         try {
           const res = await fetch(
             `${API}field_assessments/${assessmentId}/head_delete/`,
-            {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${token}` },
-            },
+            { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
           );
           const data = await res.json();
           if (res.ok) {
@@ -843,7 +818,7 @@ export default function MetaDataVerification() {
               title: "Deleted",
               message: data.message || "Assessment deleted successfully.",
             });
-            await fetchSiteVerification(); // Refresh list
+            await fetchSiteVerification();
           } else {
             setPSAlert({
               type: "error",
@@ -851,7 +826,7 @@ export default function MetaDataVerification() {
               message: data.error || "Failed to delete assessment.",
             });
           }
-        } catch (err) {
+        } catch {
           setPSAlert({
             type: "error",
             title: "Error",
@@ -868,11 +843,9 @@ export default function MetaDataVerification() {
       const verificationRes = await fetch(`${API}site/${id}/verification/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
       if (verificationRes.ok) {
         const verificationData = await verificationRes.json();
         const ver = verificationData.verification;
-
         setSiteInfo(verificationData.site_info);
         setAssessmentCounts(
           verificationData.assessment_counts || {
@@ -923,8 +896,7 @@ export default function MetaDataVerification() {
           message: "Failed to load verification data.",
         });
       }
-    } catch (err) {
-      console.error("Failed to fetch verification:", err);
+    } catch {
       setPSAlert({
         type: "error",
         title: "Error",
@@ -949,12 +921,9 @@ export default function MetaDataVerification() {
   async function fetchLandClassifications() {
     if (!token) return;
     try {
-      const res = await fetch(
-        `${API}get_land_classifications_list/?for_reforestation=true`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const res = await fetch(`${API}get_land_classifications_list/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       if (res.ok && data.data) setLandClassifications(data.data);
     } catch (err) {
@@ -979,7 +948,6 @@ export default function MetaDataVerification() {
 
   async function saveVerification(status: "draft" | "verified" | "rejected") {
     if (!id || !token) return;
-
     if (!decisionNote.trim()) {
       setPSAlert({
         type: "failed",
@@ -988,7 +956,6 @@ export default function MetaDataVerification() {
       });
       return;
     }
-
     if (status === "verified" && !verifiedLandClassificationId) {
       setPSAlert({
         type: "failed",
@@ -1045,22 +1012,29 @@ export default function MetaDataVerification() {
           message: data.error || "Failed to save verification.",
         });
       }
-    } catch (err) {
+    } catch {
       setPSAlert({ type: "error", title: "Error", message: "Network error." });
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleUploadPermit() {
-    if (!newPermit.file || !id || !token) return;
+  async function handleAddPermitRecord() {
+    if (!id || !token) return;
+    if (!newPermit.notes.trim()) {
+      setPSAlert({
+        type: "failed",
+        title: "Required",
+        message: "Notes/details are required.",
+      });
+      return;
+    }
     setUploadingPermit(true);
     try {
       const formData = new FormData();
       formData.append("document_type", newPermit.document_type);
-      formData.append("permit_number", newPermit.permit_number);
+      formData.append("notes", newPermit.notes);
       formData.append("verification_notes", newPermit.verification_notes);
-      formData.append("file", newPermit.file);
 
       const res = await fetch(`${API}site/${id}/permits/upload/`, {
         method: "POST",
@@ -1072,25 +1046,24 @@ export default function MetaDataVerification() {
       if (res.ok) {
         setPSAlert({
           type: "success",
-          title: "Uploaded",
-          message: "Permit verified & saved.",
+          title: "Added",
+          message: "Document record saved.",
         });
         setNewPermit({
           document_type: "land_title",
-          permit_number: "",
+          notes: "",
           verification_notes: "",
-          file: null,
         });
         fetchPermits();
       } else {
         setPSAlert({
           type: "error",
           title: "Failed",
-          message: data.error || "Upload failed.",
+          message: data.error || "Failed to add record.",
         });
       }
-    } catch (err) {
-      setPSAlert({ type: "error", title: "Error", message: "Upload failed." });
+    } catch {
+      setPSAlert({ type: "error", title: "Error", message: "Network error." });
     } finally {
       setUploadingPermit(false);
     }
@@ -1098,8 +1071,8 @@ export default function MetaDataVerification() {
 
   async function handleDeletePermit(permitId: number) {
     setConfirmDialog({
-      title: "Delete Permit",
-      message: "Delete this permit document?",
+      title: "Delete Permit Record",
+      message: "Delete this document record?",
       variant: "danger",
       confirmLabel: "Delete",
       onConfirm: async () => {
@@ -1113,7 +1086,7 @@ export default function MetaDataVerification() {
             setPSAlert({
               type: "success",
               title: "Deleted",
-              message: "Permit deleted.",
+              message: "Record deleted.",
             });
             fetchPermits();
           } else {
@@ -1184,7 +1157,6 @@ export default function MetaDataVerification() {
       });
       return;
     }
-
     if (verifiedAnimals.some((a) => a.animal_id === newAnimalId)) {
       setPSAlert({
         type: "failed",
@@ -1193,18 +1165,18 @@ export default function MetaDataVerification() {
       });
       return;
     }
-
     const animal = animals.find((a) => a.animal_id === newAnimalId);
     if (!animal) return;
 
-    const verifiedAnimal: VerifiedAnimal = {
-      animal_id: animal.animal_id,
-      name: animal.name,
-      scientific_name: animal.scientific_name,
-      admin_notes: newAnimalNotes,
-    };
-
-    setVerifiedAnimals((prev) => [...prev, verifiedAnimal]);
+    setVerifiedAnimals((prev) => [
+      ...prev,
+      {
+        animal_id: animal.animal_id,
+        name: animal.name,
+        scientific_name: animal.scientific_name,
+        admin_notes: newAnimalNotes,
+      },
+    ]);
     setNewAnimalId("");
     setNewAnimalNotes("");
   }
@@ -1221,13 +1193,11 @@ export default function MetaDataVerification() {
     );
   }
 
-  // Map Modal Functions
   function openMapModal(assessment: FieldAssessment) {
     setSelectedAssessment(assessment);
     setIsMapModalOpen(true);
     setIsEditMode(false);
     setIsPickingLocation(false);
-
     if (
       assessment.location &&
       assessment.location.latitude &&
@@ -1271,34 +1241,22 @@ export default function MetaDataVerification() {
   function handleManualCoordinateSubmit() {
     const lat = parseFloat(manualLat);
     const lng = parseFloat(manualLng);
-
-    if (isNaN(lat) || isNaN(lng)) {
+    if (
+      isNaN(lat) ||
+      isNaN(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
       setPSAlert({
         type: "failed",
         title: "Invalid Coordinates",
-        message: "Please enter valid latitude and longitude values.",
+        message:
+          "Please enter valid latitude (-90 to 90) and longitude (-180 to 180).",
       });
       return;
     }
-
-    if (lat < -90 || lat > 90) {
-      setPSAlert({
-        type: "failed",
-        title: "Invalid Latitude",
-        message: "Latitude must be between -90 and 90.",
-      });
-      return;
-    }
-
-    if (lng < -180 || lng > 180) {
-      setPSAlert({
-        type: "failed",
-        title: "Invalid Longitude",
-        message: "Longitude must be between -180 and 180.",
-      });
-      return;
-    }
-
     setMapMarkerPosition([lat, lng]);
     setPSAlert({
       type: "success",
@@ -1309,18 +1267,7 @@ export default function MetaDataVerification() {
 
   async function saveLocation() {
     if (!selectedAssessment || !mapMarkerPosition || !token) return;
-
     const [lat, lng] = mapMarkerPosition;
-
-    if (isNaN(lat) || isNaN(lng)) {
-      setPSAlert({
-        type: "failed",
-        title: "Invalid Location",
-        message: "Please set a valid location first.",
-      });
-      return;
-    }
-
     setSavingLocation(true);
     try {
       const payload = {
@@ -1332,7 +1279,6 @@ export default function MetaDataVerification() {
             selectedAssessment.location?.gps_accuracy_meters || 20,
         },
       };
-
       const res = await fetch(`${API}update_field_assessment_coordinate/`, {
         method: "POST",
         headers: {
@@ -1341,18 +1287,13 @@ export default function MetaDataVerification() {
         },
         body: JSON.stringify(payload),
       });
-
       const data = await res.json();
-
       if (res.ok) {
         setPSAlert({
           type: "success",
           title: "Location Saved",
-          message:
-            data.message ||
-            "Assessment location has been updated successfully.",
+          message: data.message || "Assessment location updated.",
         });
-
         setFieldAssessments((prev) =>
           prev.map((a) =>
             a.id === selectedAssessment.id
@@ -1367,7 +1308,6 @@ export default function MetaDataVerification() {
               : a,
           ),
         );
-
         setSelectedAssessment({
           ...selectedAssessment,
           location: {
@@ -1376,7 +1316,6 @@ export default function MetaDataVerification() {
             gps_accuracy_meters: payload.coordinate.gps_accuracy_meters,
           },
         });
-
         setIsEditMode(false);
       } else {
         setPSAlert({
@@ -1385,8 +1324,7 @@ export default function MetaDataVerification() {
           message: data.message || data.error || "Failed to save location.",
         });
       }
-    } catch (err) {
-      console.error("Failed to save location:", err);
+    } catch {
       setPSAlert({
         type: "error",
         title: "Error",
@@ -1465,40 +1403,24 @@ export default function MetaDataVerification() {
           <div className="mt-3 flex gap-1 bg-gray-100 p-1 rounded-lg">
             <button
               onClick={() => setAssessmentFilter("all")}
-              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                assessmentFilter === "all"
-                  ? "bg-white text-green-700 shadow-sm"
-                  : "text-gray-600 hover:text-gray-800"
-              }`}
+              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${assessmentFilter === "all" ? "bg-white text-green-700 shadow-sm" : "text-gray-600 hover:text-gray-800"}`}
             >
-              <Filter size={12} />
-              All ({assessmentCounts.total})
+              <Filter size={12} /> All ({assessmentCounts.total})
             </button>
             <button
               onClick={() => setAssessmentFilter("specific")}
-              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                assessmentFilter === "specific"
-                  ? "bg-white text-green-700 shadow-sm"
-                  : "text-gray-600 hover:text-gray-800"
-              }`}
+              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${assessmentFilter === "specific" ? "bg-white text-green-700 shadow-sm" : "text-gray-600 hover:text-gray-800"}`}
             >
-              <Target size={12} />
-              Specific ({assessmentCounts.specific})
+              <Target size={12} /> Specific ({assessmentCounts.specific})
             </button>
             <button
               onClick={() => setAssessmentFilter("general")}
-              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                assessmentFilter === "general"
-                  ? "bg-white text-blue-700 shadow-sm"
-                  : "text-gray-600 hover:text-gray-800"
-              }`}
+              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${assessmentFilter === "general" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-800"}`}
             >
-              <Building2 size={12} />
-              General ({assessmentCounts.general})
+              <Building2 size={12} /> General ({assessmentCounts.general})
             </button>
           </div>
 
-          {/* ✅ NEW: Date Range Filter */}
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div>
               <label className="text-[10px] font-semibold text-gray-500 mb-1 block">
@@ -1555,18 +1477,14 @@ export default function MetaDataVerification() {
                 item.location &&
                 item.location.latitude &&
                 item.location.longitude;
-
               return (
                 <div
                   key={item.id}
-                  className={`bg-white rounded-xl p-4 border shadow-sm transition-all ${
-                    isSelected
-                      ? "border-green-400 ring-2 ring-green-100"
-                      : "border-gray-200 hover:border-green-300"
-                  }`}
+                  className={`bg-white rounded-xl p-4 border shadow-sm transition-all ${isSelected ? "border-green-400 ring-2 ring-green-100" : "border-gray-200 hover:border-green-300"}`}
                 >
                   <div className="flex items-start gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-sm overflow-hidden">
+                    {/* ✅ UPDATED: Added border-2 border-green-600 to highlight the profile image */}
+                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-sm overflow-hidden border-2 border-green-600">
                       {item.inspector_profile_img ? (
                         <img
                           src={
@@ -1663,7 +1581,7 @@ export default function MetaDataVerification() {
                               img.url
                                 ? img.url.startsWith("http")
                                   ? img.url
-                                  : `{img.url}`
+                                  : `${img.url}`
                                 : "#"
                             }
                             target="_blank"
@@ -1719,9 +1637,7 @@ export default function MetaDataVerification() {
                         <span>No location recorded</span>
                       </div>
                     )}
-
                     <div className="flex items-center gap-1">
-                      {/* ✅ NEW: Management Actions (Unsend & Delete) */}
                       {canManageAssessments && (
                         <>
                           <button
@@ -1744,7 +1660,7 @@ export default function MetaDataVerification() {
                         onClick={() => openMapModal(item)}
                         className="flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[10px] font-semibold transition-colors border border-blue-200"
                       >
-                        <MapIcon size={10} />
+                        <MapIcon size={10} />{" "}
                         {hasLocation ? "View Map" : "Set Location"}
                       </button>
                     </div>
@@ -1785,137 +1701,203 @@ export default function MetaDataVerification() {
           )}
         </div>
 
-        {/* Legal Documents Upload */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2">
-              <FileText size={18} className="text-green-600" /> Legal Documents
-            </h3>
-            <span className="text-xs text-gray-500">
-              {permits.length} uploaded
-            </span>
-          </div>
-          {permits.length > 0 && (
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {permits.map((permit) => (
-                <div
-                  key={permit.permit_id}
-                  className="p-3 bg-gray-50 rounded-lg border border-gray-200"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-gray-800 capitalize">
-                        {permit.document_type.replace(/_/g, " ")}
-                      </p>
-                      {permit.permit_number && (
-                        <p className="text-xs text-gray-500">
-                          No. {permit.permit_number}
-                        </p>
-                      )}
-                      {permit.file_url && (
-                        <a
-                          href={`${permit.file_url}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1"
-                        >
-                          <ImageIcon size={12} /> View
-                        </a>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleDeletePermit(permit.permit_id)}
-                      className="text-red-500 hover:text-red-700 p-1"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+        {/* ✅ STEP 1: Verified Land Classification (Now includes ownership type inline) */}
+        <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+          <h3 className="font-bold text-purple-800 flex items-center gap-2 mb-3">
+            <Layers size={16} /> Verified Land Classification
+          </h3>
+          <select
+            value={verifiedLandClassificationId}
+            onChange={(e) =>
+              setVerifiedLandClassificationId(parseInt(e.target.value) || "")
+            }
+            className="w-full border rounded-lg p-3 text-sm bg-white"
+            disabled={landClassifications.length === 0}
+          >
+            <option value="">-- Select Classification --</option>
+            {landClassifications.map((lc) => (
+              <option
+                key={lc.land_classification_id}
+                value={lc.land_classification_id}
+              >
+                {lc.name}{" "}
+                {lc.ownership_type === "public" ? "(Public)" : "(Private)"}
+              </option>
+            ))}
+          </select>
+
+          {/* ✅ Visual Badge showing derived ownership type */}
+          {selectedLC && (
+            <div className="mt-3 flex items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
+                  selectedLC.ownership_type === "public"
+                    ? "bg-blue-100 text-blue-700 border-blue-200"
+                    : "bg-amber-100 text-amber-700 border-amber-200"
+                }`}
+              >
+                {selectedLC.ownership_type === "public"
+                  ? "🔵 Public / Government"
+                  : "🟠 Private"}
+              </span>
             </div>
           )}
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <h4 className="text-sm font-bold text-green-800 mb-3 flex items-center gap-2">
-              <Upload size={14} /> Upload Document
-            </h4>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">
-                  Document Type *
-                </label>
-                <select
-                  value={newPermit.document_type}
-                  onChange={(e) =>
-                    setNewPermit({
-                      ...newPermit,
-                      document_type: e.target.value,
-                    })
-                  }
-                  className="w-full border rounded-lg p-2 text-sm bg-white"
-                >
-                  <option value="land_title">Land Title</option>
-                  <option value="tax_declaration">Tax Declaration</option>
-                  <option value="barangay_clearance">Barangay Clearance</option>
-                  <option value="lgu_endorsement">LGU Endorsement</option>
-                  <option value="denr_permit">DENR Permit</option>
-                  <option value="landowner_consent">Landowner Consent</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">
-                  Permit Number (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={newPermit.permit_number}
-                  onChange={(e) =>
-                    setNewPermit({
-                      ...newPermit,
-                      permit_number: e.target.value,
-                    })
-                  }
-                  className="w-full border rounded-lg p-2 text-sm bg-white"
-                  placeholder="Ex: LT-2024-001"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1 block">
-                  Upload File *
-                </label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) =>
-                    setNewPermit({
-                      ...newPermit,
-                      file: e.target.files?.[0] || null,
-                    })
-                  }
-                  className="w-full text-sm"
-                />
-              </div>
-              <button
-                onClick={handleUploadPermit}
-                disabled={uploadingPermit || !newPermit.file}
-                className="w-full bg-green-700 text-white rounded-lg p-2 flex items-center justify-center gap-2 hover:bg-green-800 font-semibold text-sm disabled:opacity-50"
-              >
-                {uploadingPermit ? (
-                  <>
-                    <Loader2 className="animate-spin" size={16} /> Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Upload size={16} /> Upload
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
         </div>
 
-        {/* Verification Form */}
+        {/* ✅ STEP 2: Conditional Legal Documents Section based on derived ownership */}
+        {!verifiedLandClassificationId ? (
+          <div className="p-4 bg-gray-100 rounded-lg border border-gray-200 flex items-center gap-3">
+            <AlertCircle size={20} className="text-gray-400" />
+            <div>
+              <h3 className="font-bold text-gray-600">
+                Select Land Classification First
+              </h3>
+              <p className="text-xs text-gray-500">
+                Please select a land classification above to determine if legal
+                documents are required.
+              </p>
+            </div>
+          </div>
+        ) : derivedOwnershipType === "private" ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <FileText size={18} className="text-green-600" /> Legal
+                Documents
+              </h3>
+              <span className="text-xs text-gray-500">
+                {permits.length} records
+              </span>
+            </div>
+
+            {permits.length > 0 && (
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {permits.map((permit) => (
+                  <div
+                    key={permit.permit_id}
+                    className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-gray-800 capitalize">
+                          {permit.document_type.replace(/_/g, " ")}
+                        </p>
+                        {permit.notes && (
+                          <p className="text-xs text-gray-600 mt-1 italic">
+                            "{permit.notes}"
+                          </p>
+                        )}
+                        {permit.verification_notes && (
+                          <p className="text-[10px] text-gray-500 mt-1">
+                            Admin: {permit.verification_notes}
+                          </p>
+                        )}
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Added:{" "}
+                          {new Date(permit.uploaded_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeletePermit(permit.permit_id)}
+                        className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+              <h4 className="text-sm font-bold text-green-800 mb-3 flex items-center gap-2">
+                <Plus size={14} /> Add Document Record
+              </h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                    Document Type *
+                  </label>
+                  <select
+                    value={newPermit.document_type}
+                    onChange={(e) =>
+                      setNewPermit({
+                        ...newPermit,
+                        document_type: e.target.value,
+                      })
+                    }
+                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                  >
+                    <option value="land_title">Land Title</option>
+                    <option value="tax_declaration">Tax Declaration</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                    Notes / Reference Details *
+                  </label>
+                  <textarea
+                    value={newPermit.notes}
+                    onChange={(e) =>
+                      setNewPermit({ ...newPermit, notes: e.target.value })
+                    }
+                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                    placeholder="Ex: TCT No. 12345, Registered under Juan Dela Cruz"
+                    rows={2}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                    Verification Notes (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newPermit.verification_notes}
+                    onChange={(e) =>
+                      setNewPermit({
+                        ...newPermit,
+                        verification_notes: e.target.value,
+                      })
+                    }
+                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                    placeholder="Ex: Verified against municipal records"
+                  />
+                </div>
+                <button
+                  onClick={handleAddPermitRecord}
+                  disabled={uploadingPermit || !newPermit.notes.trim()}
+                  className="w-full bg-green-700 text-white rounded-lg p-2 flex items-center justify-center gap-2 hover:bg-green-800 font-semibold text-sm disabled:opacity-50 transition-colors"
+                >
+                  {uploadingPermit ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} /> Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={16} /> Add Record
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 bg-gray-100 rounded-lg border border-gray-200 flex items-center gap-3">
+            <Landmark size={20} className="text-gray-400" />
+            <div>
+              <h3 className="font-bold text-gray-600">
+                Legal Documents Not Required
+              </h3>
+              <p className="text-xs text-gray-500">
+                Public or government-owned land does not require legal document
+                verification.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ STEP 3: Remaining Meta Data */}
         <div className="space-y-6">
           {/* Security */}
           <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
@@ -1933,11 +1915,7 @@ export default function MetaDataVerification() {
               ].map((concern) => (
                 <label
                   key={concern}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer ${
-                    verifiedSecurityConcerns.includes(concern)
-                      ? "bg-orange-100 border-orange-400"
-                      : "bg-white"
-                  }`}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${verifiedSecurityConcerns.includes(concern) ? "bg-orange-100 border-orange-400" : "bg-white hover:bg-orange-50"}`}
                 >
                   <input
                     type="checkbox"
@@ -1985,7 +1963,7 @@ export default function MetaDataVerification() {
                     </div>
                     <button
                       onClick={() => removeAccessibilityEntry(entry.id)}
-                      className="text-red-500 p-1"
+                      className="text-red-500 p-1 hover:bg-red-50 rounded"
                     >
                       <X size={14} />
                     </button>
@@ -2048,37 +2026,11 @@ export default function MetaDataVerification() {
             </div>
           </div>
 
-          {/* Land Classification */}
-          <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-            <h3 className="font-bold text-purple-800 flex items-center gap-2 mb-3">
-              <Layers size={16} /> Verified Land Classification
-            </h3>
-            <select
-              value={verifiedLandClassificationId}
-              onChange={(e) =>
-                setVerifiedLandClassificationId(parseInt(e.target.value) || "")
-              }
-              className="w-full border rounded-lg p-3 text-sm bg-white"
-              disabled={landClassifications.length === 0}
-            >
-              <option value="">-- Select --</option>
-              {landClassifications.map((lc) => (
-                <option
-                  key={lc.land_classification_id}
-                  value={lc.land_classification_id}
-                >
-                  {lc.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* Verified Animals */}
           <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
             <h3 className="font-bold text-emerald-800 flex items-center gap-2 mb-3">
               <PawPrint size={16} /> Verified Animals ({verifiedAnimals.length})
             </h3>
-
             {verifiedAnimals.length > 0 && (
               <div className="space-y-2 mb-4">
                 {verifiedAnimals.map((animal) => (
@@ -2120,7 +2072,6 @@ export default function MetaDataVerification() {
                 ))}
               </div>
             )}
-
             <div className="p-3 bg-emerald-100/50 rounded-lg border border-emerald-200">
               <div className="space-y-3">
                 <div>
@@ -2196,11 +2147,7 @@ export default function MetaDataVerification() {
                   return (
                     <span
                       key={refId}
-                      className={`text-[10px] px-2 py-1 rounded-full border ${
-                        a?.type === "specific"
-                          ? "bg-green-100 text-green-700 border-green-200"
-                          : "bg-blue-100 text-blue-700 border-blue-200"
-                      }`}
+                      className={`text-[10px] px-2 py-1 rounded-full border ${a?.type === "specific" ? "bg-green-100 text-green-700 border-green-200" : "bg-blue-100 text-blue-700 border-blue-200"}`}
                     >
                       #{refId} - {a?.inspector_name || "Unknown"} (
                       {a?.type || "unknown"})
@@ -2244,9 +2191,7 @@ export default function MetaDataVerification() {
             <button
               onClick={() => saveVerification("verified")}
               className="px-6 py-3 bg-green-700 text-white rounded-lg flex items-center gap-2 hover:bg-green-800 font-bold shadow-md disabled:opacity-50"
-              disabled={
-                saving || !decisionNote.trim() || !verifiedLandClassificationId
-              }
+              disabled={saving || !decisionNote.trim()}
             >
               <CheckCircle size={18} /> Accept
             </button>
@@ -2254,15 +2199,15 @@ export default function MetaDataVerification() {
         </div>
       </div>
 
-      {/* Map Modal */}
+      {/* Map Modal (Unchanged) */}
       {isMapModalOpen && selectedAssessment && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-green-50 to-blue-50">
               <div>
                 <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                  <MapIcon size={20} className="text-green-700" />
-                  Assessment Location
+                  <MapIcon size={20} className="text-green-700" /> Assessment
+                  Location
                 </h3>
                 <p className="text-xs text-gray-500 mt-1">
                   {selectedAssessment.inspector_name} •{" "}
@@ -2279,8 +2224,7 @@ export default function MetaDataVerification() {
                     onClick={() => setIsEditMode(true)}
                     className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors"
                   >
-                    <Edit3 size={14} />
-                    Edit Location
+                    <Edit3 size={14} /> Edit Location
                   </button>
                 )}
                 <button
@@ -2291,7 +2235,6 @@ export default function MetaDataVerification() {
                 </button>
               </div>
             </div>
-
             <div className="flex-1 flex overflow-hidden">
               <div className="flex-1 relative">
                 <MapContainer
@@ -2304,14 +2247,12 @@ export default function MetaDataVerification() {
                     url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
                     tileSize={512}
                     zoomOffset={-1}
-                    attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a>'
                   />
-
                   <MapClickHandler
                     isPickingLocation={isPickingLocation}
                     onLocationPick={handleLocationPick}
                   />
-
                   {mapMarkerPosition && (
                     <Marker
                       position={mapMarkerPosition}
@@ -2330,22 +2271,18 @@ export default function MetaDataVerification() {
                     </Marker>
                   )}
                 </MapContainer>
-
                 {isPickingLocation && (
                   <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-orange-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-sm font-semibold z-[1000]">
-                    <Navigation size={16} className="animate-pulse" />
-                    Click on map to set location
+                    <Navigation size={16} className="animate-pulse" /> Click on
+                    map to set location
                   </div>
                 )}
               </div>
-
               {isEditMode && (
                 <div className="w-80 border-l bg-gray-50 p-4 overflow-y-auto">
                   <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                    <MapPin size={16} className="text-green-700" />
-                    Set Location
+                    <MapPin size={16} className="text-green-700" /> Set Location
                   </h4>
-
                   <div className="space-y-3 mb-4">
                     <div>
                       <label className="text-xs font-semibold text-gray-600 mb-1 block">
@@ -2380,7 +2317,6 @@ export default function MetaDataVerification() {
                       Apply Coordinates
                     </button>
                   </div>
-
                   <div className="border-t border-gray-200 pt-4 mb-4">
                     <p className="text-xs text-gray-500 mb-3">
                       Or click on map:
@@ -2390,11 +2326,10 @@ export default function MetaDataVerification() {
                       disabled={isPickingLocation}
                       className="w-full bg-green-600 hover:bg-green-700 text-white rounded-lg p-2 text-sm font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                     >
-                      <Navigation size={14} />
+                      <Navigation size={14} />{" "}
                       {isPickingLocation ? "Picking..." : "Pick from Map"}
                     </button>
                   </div>
-
                   {mapMarkerPosition && (
                     <div className="p-3 bg-green-50 rounded-lg border border-green-200 mb-4">
                       <p className="text-xs font-semibold text-green-800 mb-1">
@@ -2406,7 +2341,6 @@ export default function MetaDataVerification() {
                       </p>
                     </div>
                   )}
-
                   <div className="space-y-2">
                     <button
                       onClick={saveLocation}
@@ -2415,13 +2349,12 @@ export default function MetaDataVerification() {
                     >
                       {savingLocation ? (
                         <>
-                          <Loader2 className="animate-spin" size={16} />
+                          <Loader2 className="animate-spin" size={16} />{" "}
                           Saving...
                         </>
                       ) : (
                         <>
-                          <CheckCircle size={16} />
-                          Save Location
+                          <CheckCircle size={16} /> Save Location
                         </>
                       )}
                     </button>
@@ -2434,15 +2367,16 @@ export default function MetaDataVerification() {
                           selectedAssessment.location.latitude &&
                           selectedAssessment.location.longitude
                         ) {
-                          const lat = Number(
-                            selectedAssessment.location.latitude,
+                          setMapMarkerPosition([
+                            Number(selectedAssessment.location.latitude),
+                            Number(selectedAssessment.location.longitude),
+                          ]);
+                          setManualLat(
+                            selectedAssessment.location.latitude.toString(),
                           );
-                          const lng = Number(
-                            selectedAssessment.location.longitude,
+                          setManualLng(
+                            selectedAssessment.location.longitude.toString(),
                           );
-                          setMapMarkerPosition([lat, lng]);
-                          setManualLat(lat.toString());
-                          setManualLng(lng.toString());
                         }
                       }}
                       className="w-full border border-gray-300 rounded-lg p-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
@@ -2453,16 +2387,15 @@ export default function MetaDataVerification() {
                 </div>
               )}
             </div>
-
             <div className="border-t p-4 bg-gray-50">
               <div className="flex items-center justify-between text-xs text-gray-600">
                 <div className="flex items-center gap-4">
                   <span className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-green-500"></div>{" "}
                     Existing Location
                   </span>
                   <span className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-red-500"></div>{" "}
                     New/Edited Location
                   </span>
                 </div>

@@ -133,7 +133,7 @@ export default function SitesForArea() {
   useEffect(() => {
     const fetchLandClassifications = async () => {
       try {
-        const res = await fetch(`${api}api/get_land_classifications_list/?for_reforestation=true`, {
+        const res = await fetch(`${api}api/get_land_classifications_list/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {

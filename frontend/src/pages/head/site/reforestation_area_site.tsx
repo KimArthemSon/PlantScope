@@ -96,7 +96,7 @@ interface Site {
   created_at: string;
   validation: ValidationStatus;
   verification: VerificationInfo;
-  permit_count: number;
+
   metrics: SiteMetrics;
 }
 
@@ -110,7 +110,7 @@ interface ReforestationArea {
     name: string;
   } | null;
   land_classification?: { land_classification_id: number; name: string } | null;
-  permit_count?: number;
+
   verification_status?: "pending" | "draft" | "verified" | "rejected";
   verification_decision_note?: string | null;
   created_at: string;
@@ -271,7 +271,7 @@ export default function ReforestationAreaSiteCombined() {
   useEffect(() => {
     const fetchLandClassifications = async () => {
       try {
-        const res = await fetch(`${api}api/get_land_classifications_list/?for_reforestation=true`, {
+        const res = await fetch(`${api}api/get_land_classifications_list/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
