@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-# ✅ UPDATED IMPORT: Added get_cloudinary_url
+# ✅ KEPT: get_cloudinary_url and delete_cloudinary_resource are still needed for Site Images and Field Assessments
 from accounts.helper import get_user_from_token, get_cloudinary_url, delete_cloudinary_resource
 
 from .models import (
@@ -19,6 +19,49 @@ from tree_species.models import Tree_species
 from animals.models import Animal
 from Field_assessment.models import Field_assessment
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────
+# ✅ NEW: Sanitization Helper for Meta Data
+# ─────────────────────────────────────────────
+def _sanitize_legal_documents(legal_docs):
+    """Removes any 'photo_url' or 'photo' keys from legal documents data."""
+    if not isinstance(legal_docs, dict):
+        return legal_docs
+    
+    sanitized = {}
+    for key, value in legal_docs.items():
+        if key in ('land_title', 'tax_declaration', 'land_classification') and isinstance(value, dict):
+            # Keep all keys except photo-related ones
+            sanitized[key] = {k: v for k, v in value.items() if k not in ('photo_url', 'photo')}
+        elif key == 'other_documents' and isinstance(value, list):
+            sanitized[key] = [
+                {k: v for k, v in doc.items() if k not in ('photo_url', 'photo')} if isinstance(doc, dict) else doc
+                for doc in value
+            ]
+        else:
+            sanitized[key] = value
+            
+    return sanitized
+
+
+def _sanitize_field_assessment_data(data):
+    """
+    Recursively removes 'photo_url' or 'photo' from legal_documents 
+    in field assessment data to ensure frontend only receives text notes.
+    """
+    if not isinstance(data, dict):
+        return data
+    
+    sanitized = data.copy()
+    if 'meta_data' in sanitized and isinstance(sanitized['meta_data'], dict):
+        meta_data = sanitized['meta_data'].copy()
+        if 'legal_documents' in meta_data:
+            meta_data['legal_documents'] = _sanitize_legal_documents(meta_data['legal_documents'])
+        sanitized['meta_data'] = meta_data
+        
+    return sanitized
+
 
 # ─────────────────────────────────────────────
 # ⚠️  IMPORTANT: Endpoints marked with [KEEP] are used by other modules
@@ -231,7 +274,6 @@ def get_sites(request, reforestation_area_id):
 # ─────────────────────────────────────────────
 # [KEEP] GET SINGLE SITE
 # ─────────────────────────────────────────────
-
 @csrf_exempt
 def get_site(request, site_id):
     if request.method != "GET": 
@@ -274,7 +316,6 @@ def get_site(request, site_id):
         images_data.append({
             'site_image_id': img.site_image_id,
             'layer_tag': img.layer_tag,
-            # ✅ UPDATED: Use Cloudinary helper
             'img_url': get_cloudinary_url(str(img.img)) if img.img else None,
             'caption': img.caption,
             'created_at': img.created_at.isoformat() if img.created_at else None,
@@ -285,8 +326,9 @@ def get_site(request, site_id):
     if current_site_data:
         validation_data = {
             'version': current_site_data.version,
-            'site_data': current_site_data.site_data,
-            'field_assessment_snapshot': current_site_data.field_assessment_snapshot,
+            # ✅ Sanitize to ensure no legacy photo data leaks into validation data
+            'site_data': _sanitize_field_assessment_data(current_site_data.site_data),
+            'field_assessment_snapshot': _sanitize_field_assessment_data(current_site_data.field_assessment_snapshot),
             'validated_by': current_site_data.validated_by,
             'validated_at': current_site_data.validated_at.isoformat() if current_site_data.validated_at else None,
         }
@@ -302,19 +344,18 @@ def get_site(request, site_id):
         "area_hectares": site.total_area_hectares,
         "potential_sites": [p.to_dict() for p in site.potential_sites.all()],
         "meta_verification": verification_data,
+        # ✅ UPDATED: Removed file_url and permit_number, added notes
         "permits": [{
             "permit_id": p.permit_id,
             "document_type": p.document_type,
-            # ✅ UPDATED: Use Cloudinary helper for permit files (PDFs/Docs)
-            "file_url": get_cloudinary_url(str(p.file)) if p.file else None,
-            "permit_number": p.permit_number,
+            "notes": p.notes,
             "verification_notes": p.verification_notes,
             "uploaded_at": p.uploaded_at.isoformat() if p.uploaded_at else None,
             "uploaded_by": p.uploaded_by.email if p.uploaded_by else None,
         } for p in site.permit_documents.all()],
         "site_images": images_data,
         "validation_data": validation_data, 
-        "created_at": site.created_at,
+        "created_at": site.created_at.isoformat() if site.created_at else None,
     })
 
 
@@ -609,33 +650,14 @@ def delete_site(request, site_id):
                 if delete_cloudinary_resource(img.img, resource_type='image'):
                     deleted_images += 1
         
-        # ✅ Delete all associated permit documents from Cloudinary
-        deleted_permits = 0
-        for permit in site.permit_documents.all():
-            if permit.file:
-                print(f"📄 Deleting permit {permit.permit_id} from Cloudinary...")
-                # Try 'raw' first (for PDFs), then 'image'
-                if delete_cloudinary_resource(permit.file, resource_type='raw'):
-                    deleted_permits += 1
-                elif delete_cloudinary_resource(permit.file, resource_type='image'):
-                    deleted_permits += 1
+        # ✅ REMOVED: Permit file deletion loop (no longer storing files)
         
         # ✅ Hard delete the site (CASCADE will delete all related records)
-        # This will automatically delete:
-        # - site_images (CASCADE)
-        # - permit_documents (CASCADE)
-        # - meta_verification (CASCADE)
-        # - site_data_versions (CASCADE)
-        # - species_recommendations (CASCADE)
-        # And will SET NULL:
-        # - potential_sites
-        # - field_assessments
         site.delete()
         
         return JsonResponse({
             "message": "Site permanently deleted",
-            "images_deleted": deleted_images,
-            "permits_deleted": deleted_permits
+            "images_deleted": deleted_images
         })
         
     except Exception as e:
@@ -645,12 +667,14 @@ def delete_site(request, site_id):
 
 # ─────────────────────────────────────────────
 # ✅ UPDATED: Helper function to serialize assessment
-# Now includes land_classification and animals_present
 # ─────────────────────────────────────────────
+
 def _serialize_assessment(assessment, assessment_type):
     """
     Helper to serialize a Field_assessment with full details.
-    ✅ UPDATED: Now includes land_classification, animals_present, and Cloudinary URLs.
+    ✅ UPDATED: 
+    1. Sanitizes field_assessment_data to strip out any legacy 'photo_url' or 'photo' keys.
+    2. Explicitly excludes obsolete legal document image layers from the image query.
     """
     inspector = assessment.assigned_onsite_inspector
     user = inspector.user if inspector else None
@@ -663,7 +687,6 @@ def _serialize_assessment(assessment, assessment_type):
         if not inspector_name:
             inspector_name = getattr(user, 'email', 'Unknown') or getattr(user, 'username', 'Unknown')
 
-    # ✅ FIXED: Get profile_img from the related 'profile' model, not directly from User
     inspector_profile_img = None
     if user:
         profile = getattr(user, 'profile', None)
@@ -674,10 +697,12 @@ def _serialize_assessment(assessment, assessment_type):
                 pass
     
     images_data = []
-    for img in assessment.images.all():
+    
+    # ✅ UPDATED: Explicitly exclude obsolete legal document image layers from the database query
+    obsolete_layers = ['meta_land_title', 'meta_tax_decl']
+    for img in assessment.images.exclude(layer__in=obsolete_layers):
         images_data.append({
             'image_id': img.field_assessment_images_id,
-            # ✅ UPDATED: Use Cloudinary helper
             'url': get_cloudinary_url(str(img.img)) if img.img else None,
             'layer': img.layer,
             'latitude': float(img.latitude) if img.latitude else None,
@@ -713,7 +738,8 @@ def _serialize_assessment(assessment, assessment_type):
         'inspector_profile_img': inspector_profile_img,
         'assessment_date': assessment.assessment_date.isoformat() if assessment.assessment_date else None,
         'location': assessment.location,
-        'field_assessment_data': assessment.field_assessment_data,
+        # ✅ SANITIZED: Removes any photo data from legal documents in the payload
+        'field_assessment_data': _sanitize_field_assessment_data(assessment.field_assessment_data),
         'is_submitted': assessment.is_submitted,
         'image_count': len(images_data),
         'images': images_data,
@@ -728,7 +754,6 @@ def _serialize_assessment(assessment, assessment_type):
 def get_site_verification(request, site_id):
     """
     GET: Return the saved verification record for a SPECIFIC SITE.
-    ✅ UPDATED: Now includes verified animals from the through table.
     """
     if request.method != 'GET': 
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -912,17 +937,17 @@ def list_site_permits(request, site_id):
     site = get_object_or_404(Sites, site_id=site_id, is_active=True)
     permits = site.permit_documents.select_related('uploaded_by').order_by('-uploaded_at')
 
+    # ✅ UPDATED: Removed file_url and permit_number, added notes
     data = [{
         'permit_id': p.permit_id, 
         'document_type': p.document_type,
-        'permit_number': p.permit_number,
-        # ✅ UPDATED: Use Cloudinary helper for permit files
-        'file_url': get_cloudinary_url(str(p.file)) if p.file else None, 
+        'notes': p.notes,
         'verification_notes': p.verification_notes,
         'uploaded_at': p.uploaded_at.isoformat(),
         'uploaded_by': p.uploaded_by.email if p.uploaded_by else None,
     } for p in permits]
     return JsonResponse({'data': data}, status=200)
+
 
 @csrf_exempt
 def upload_site_permit(request, site_id):
@@ -931,13 +956,13 @@ def upload_site_permit(request, site_id):
     site = get_object_or_404(Sites, site_id=site_id, is_active=True)
     user = get_user_from_token(request)
     
+    # ✅ UPDATED: Removed permit_file and permit_number, added notes
     document_type = request.POST.get('document_type')
-    permit_number = request.POST.get('permit_number', '').strip()
+    notes = request.POST.get('notes', '').strip()
     verification_notes = request.POST.get('verification_notes', '').strip()
-    permit_file = request.FILES.get('file')
     
-    if not document_type or not permit_file:
-        return JsonResponse({'error': 'document_type and file are required'}, status=400)
+    if not document_type:
+        return JsonResponse({'error': 'document_type is required'}, status=400)
 
     valid_types = [t[0] for t in PermitDocument.DOCUMENT_TYPES]
     if document_type not in valid_types:
@@ -947,20 +972,18 @@ def upload_site_permit(request, site_id):
         permit = PermitDocument.objects.create(
             site=site, 
             document_type=document_type,
-            permit_number=permit_number or None,
-            file=permit_file, 
+            notes=notes or None,
             verification_notes=verification_notes or None,
             uploaded_by=user
         )
         return JsonResponse({
-            'message': 'Permit uploaded', 
+            'message': 'Permit record created', 
             'permit_id': permit.permit_id,
-            # ✅ UPDATED: Use Cloudinary helper
-            'file_url': get_cloudinary_url(str(permit.file))
         }, status=201)
     except Exception as e:
         logger.error(f"Upload site permit error: {e}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
+
 
 @csrf_exempt
 def delete_site_permit(request, permit_id):
@@ -971,24 +994,13 @@ def delete_site_permit(request, permit_id):
         user = get_user_from_token(request)
         permit = get_object_or_404(PermitDocument, permit_id=permit_id)
         
-        # ✅ UPDATED: Use the helper function to properly delete from Cloudinary
-        if permit.file:
-            print(f"📄 Deleting permit document {permit_id} from Cloudinary...")
-            # PermitDocument uses resource_type='auto', so we try 'raw' first (for PDFs)
-            if delete_cloudinary_resource(permit.file, resource_type='raw'):
-                print(f"✅ Successfully deleted from Cloudinary")
-            else:
-                # Try as 'image' in case it was an image file
-                if delete_cloudinary_resource(permit.file, resource_type='image'):
-                    print(f"✅ Successfully deleted from Cloudinary (as image)")
-                else:
-                    print(f"⚠️ File not found in Cloudinary (may have been already deleted)")
-        
+        # ✅ UPDATED: Removed Cloudinary deletion logic (no files to delete)
         permit.delete()
-        return JsonResponse({'message': 'Permit deleted'}, status=200)
+        return JsonResponse({'message': 'Permit record deleted'}, status=200)
     except Exception as e:
         logger.error(f"Delete site permit error: {e}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
+
 
 # ─────────────────────────────────────────────
 # GET ALL SITES (For Map Initialization)

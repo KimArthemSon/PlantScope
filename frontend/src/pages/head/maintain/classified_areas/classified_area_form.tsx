@@ -268,7 +268,7 @@ export default function Classified_area_form() {
     setLoading(true);
     try {
       const res = await fetch(
-        api + "api/get_land_classifications_list/?for_reforestation=false",
+        api + "api/get_land_classifications_list/",
         { headers: { Authorization: "Bearer " + token } },
       );
       const data = await res.json();

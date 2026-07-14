@@ -6,25 +6,25 @@ import {
   ChevronRight,
   ChevronLeft,
   Info,
-  Leaf,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { api } from "@/constant/api";
 
+// ✅ UPDATED: Replaced for_reforestation with ownership_type
 interface Land_classifications {
   land_classification_id: number;
   name: string;
   description: string;
-  for_reforestation: boolean;
+  ownership_type: "public" | "private";
   created_at: string;
 }
 
 interface Land_classification {
   name: string;
   description: string;
-  for_reforestation: boolean;
+  ownership_type: "public" | "private";
 }
 
 interface Filter {
@@ -32,25 +32,28 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
-  for_reforestation: string; // '', 'true', or 'false'
+  ownership_type: string; // '', 'public', or 'private'
 }
 
 export default function Land_classifications() {
   const [Land_classifications, setLand_classifications] = useState<
     Land_classifications[]
   >([]);
+  
+  // ✅ UPDATED: Default ownership_type to "private"
   const [Land_classification, setLand_classification] =
     useState<Land_classification>({
       name: "",
       description: "",
-      for_reforestation: false,
+      ownership_type: "private",
     });
+    
   const [filter, setFilter] = useState<Filter>({
     search: "",
     entries: 10,
     page: 1,
     total_page: 1,
-    for_reforestation: "",
+    ownership_type: "", // ✅ UPDATED
   });
 
   const [isOpenAddEditModal, setIsOpenAddEditModal] = useState(false);
@@ -88,22 +91,21 @@ export default function Land_classifications() {
         entries: filter.entries.toString(),
       });
 
-      // Only append for_reforestation if a filter is selected
-      if (filter.for_reforestation !== "") {
-        params.append("for_reforestation", filter.for_reforestation);
+      // ✅ UPDATED: Append ownership_type instead of for_reforestation
+      if (filter.ownership_type !== "") {
+        params.append("ownership_type", filter.ownership_type);
       }
 
       const response = await fetch(
-        api+`api/get_land_classifications/?${params.toString()}`,
+        api + `api/get_land_classifications/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        },
+        }
       );
       if (!response.ok)
         throw new Error("Failed to fetch Land_classifications.");
 
       const data = await response.json();
-      console.log(data);
       setLand_classifications(data.data);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch (err) {
@@ -117,9 +119,10 @@ export default function Land_classifications() {
     }
   };
 
+  // ✅ UPDATED: Dependency array uses ownership_type
   useEffect(() => {
     fetchLand_classifications();
-  }, [filter.page, filter.entries, filter.for_reforestation]);
+  }, [filter.page, filter.entries, filter.ownership_type]);
 
   const setDelete = (Land_classification_id: number) => {
     setLand_classification_idDelete(Land_classification_id);
@@ -129,11 +132,11 @@ export default function Land_classifications() {
   const handleDelete = async () => {
     if (!Land_classification_idDelete) return;
     const response = await fetch(
-      api+`api/delete_land_classification/${Land_classification_idDelete}`,
+      api + `api/delete_land_classification/${Land_classification_idDelete}`,
       {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
-      },
+      }
     );
     const data = await response.json();
     if (response.ok) {
@@ -154,7 +157,7 @@ export default function Land_classifications() {
     }
   };
 
-  function handleSubmit(e: any) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (action === "Add") {
       handleAdd();
@@ -166,19 +169,18 @@ export default function Land_classifications() {
   async function handleAdd() {
     try {
       setForm_loading(true);
-
       if (form_loading) return;
 
-      const res = await fetch(
-        api+"api/create_land_classification/",
-        {
-          method: "POST",
-          headers: { Authorization: "Bearer " + token },
-          body: JSON.stringify(Land_classification),
+      const res = await fetch(api + "api/create_land_classification/", {
+        method: "POST",
+        headers: { 
+          Authorization: "Bearer " + token,
+          "Content-Type": "application/json"
         },
-      );
+        body: JSON.stringify(Land_classification),
+      });
       const data = await res.json();
-      console.log(data);
+      
       if (!res.ok) {
         setPSAlert({
           type: "error",
@@ -200,7 +202,7 @@ export default function Land_classifications() {
       setPSAlert({
         type: "error",
         title: "Error",
-        message: e.error,
+        message: e.message || "An unexpected error occurred",
       });
       setForm_loading(false);
     }
@@ -209,17 +211,18 @@ export default function Land_classifications() {
   async function handleEdit() {
     try {
       setForm_loading(true);
-
       if (form_loading) return;
 
       const res = await fetch(
-        api+"api/update_land_classification/" +
-          editLand_classification_id,
+        api + "api/update_land_classification/" + editLand_classification_id,
         {
           method: "PUT",
-          headers: { Authorization: "Bearer " + token },
+          headers: { 
+            Authorization: "Bearer " + token,
+            "Content-Type": "application/json"
+          },
           body: JSON.stringify(Land_classification),
-        },
+        }
       );
       const data = await res.json();
 
@@ -244,7 +247,7 @@ export default function Land_classifications() {
       setPSAlert({
         type: "error",
         title: "Error",
-        message: e.error,
+        message: e.message || "An unexpected error occurred",
       });
       setForm_loading(false);
     }
@@ -265,7 +268,7 @@ export default function Land_classifications() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <main className="flex-1 p-8 w-full max-w-609">
+      <main className="flex-1 p-8 w-full max-w-6xl">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label>Show entries: </label>
@@ -286,26 +289,26 @@ export default function Land_classifications() {
             <option value={100}>100</option>
           </select>
 
-          {/* For Reforestation Filter */}
+          {/* ✅ UPDATED: Ownership Type Filter */}
           <select
-            value={filter.for_reforestation}
+            value={filter.ownership_type}
             onChange={(e) =>
               setFilter((prev) => ({
                 ...prev,
-                for_reforestation: e.target.value,
+                ownership_type: e.target.value,
                 page: 1,
               }))
             }
             className="border border-black p-2 rounded-md text-[.8rem]"
           >
-            <option value="">All Classifications</option>
-            <option value="true">For Reforestation</option>
-            <option value="false">Not For Reforestation</option>
+            <option value="">All Types</option>
+            <option value="public">Public</option>
+            <option value="private">Private</option>
           </select>
 
           <input
             type="text"
-            placeholder="Search Land_classifications..."
+            placeholder="Search Land classifications..."
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -328,7 +331,7 @@ export default function Land_classifications() {
               setLand_classification({
                 name: "",
                 description: "",
-                for_reforestation: false,
+                ownership_type: "private", // ✅ UPDATED
               });
             }}
             className="flex items-center justify-center gap-2 bg-[#1a6b44] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer"
@@ -345,73 +348,61 @@ export default function Land_classifications() {
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Name</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Description
-                </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  For Reforestation
-                </th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Description</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Ownership Type</th> {/* ✅ UPDATED */}
                 <th className="py-3 px-5 text-left text-[.9rem]">Created At</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
             <tbody>
               {Land_classifications.length > 0 ? (
-                Land_classifications.map((Land_classification, index) => (
+                Land_classifications.map((item, index) => (
                   <tr
-                    key={Land_classification.land_classification_id}
+                    key={item.land_classification_id}
                     className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition`}
                   >
                     <td className="py-3 px-5 text-[.9rem]">
                       {index + 1 + (filter.page - 1) * filter.entries}
                     </td>
-                    <td className="py-3 px-5">{Land_classification.name}</td>
-                    <td className="py-3 px-5 text-[.9rem] wrap-break-word max-w-75">
-                      {Land_classification.description}
+                    <td className="py-3 px-5">{item.name}</td>
+                    <td className="py-3 px-5 text-[.9rem] break-words max-w-xs">
+                      {item.description}
                     </td>
+                    {/* ✅ UPDATED: Ownership Type Badge */}
                     <td className="py-3 px-5 text-[.9rem]">
-                      {Land_classification.for_reforestation ? (
-                        <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 border border-green-300 text-xs font-semibold px-2.5 py-1 rounded-full">
-                          <Leaf size={12} />
-                          Yes
+                      {item.ownership_type === "public" ? (
+                        <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 border border-blue-300 text-xs font-semibold px-2.5 py-1 rounded-full">
+                          Public
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 border border-gray-300 text-xs font-semibold px-2.5 py-1 rounded-full">
-                          No
+                        <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 border border-amber-300 text-xs font-semibold px-2.5 py-1 rounded-full">
+                          Private
                         </span>
                       )}
                     </td>
                     <td className="py-3 px-5 text-[.9rem]">
-                      {Land_classification.created_at}
+                      {item.created_at}
                     </td>
                     <td className="py-3 px-5">
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
                             setIsOpenAddEditModal(true);
-                            setEditLand_classification_id(
-                              Land_classification.land_classification_id,
-                            );
+                            setEditLand_classification_id(item.land_classification_id);
                             setAction("Edit");
                             setLand_classification({
-                              name: Land_classifications[index].name,
-                              description:
-                                Land_classifications[index].description,
-                              for_reforestation:
-                                Land_classifications[index].for_reforestation,
+                              name: item.name,
+                              description: item.description,
+                              ownership_type: item.ownership_type, // ✅ UPDATED
                             });
                           }}
-                          className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
+                          className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer hover:bg-gray-100"
                         >
                           <Edit size={18} />
                         </button>
                         <button
-                          onClick={() =>
-                            setDelete(
-                              Land_classification.land_classification_id,
-                            )
-                          }
-                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
+                          onClick={() => setDelete(item.land_classification_id)}
+                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer hover:bg-red-50"
                         >
                           <Trash2 size={18} />
                         </button>
@@ -421,11 +412,8 @@ export default function Land_classifications() {
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="text-center py-5 text-gray-500 italic"
-                  >
-                    No Land_classifications found.
+                  <td colSpan={6} className="text-center py-5 text-gray-500 italic">
+                    No Land classifications found.
                   </td>
                 </tr>
               )}
@@ -437,66 +425,55 @@ export default function Land_classifications() {
         <div className="flex items-center gap-1 mt-5 w-full">
           <button
             disabled={filter.page <= 1}
-            onClick={() =>
-              setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
-            }
-            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer"
+            onClick={() => setFilter((prev) => ({ ...prev, page: prev.page - 1 }))}
+            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer disabled:opacity-50"
           >
             <ChevronLeft size={19} />
           </button>
 
-          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map(
-            (p) => (
-              <button
-                key={p}
-                onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
-                className={`px-2 py-1 border rounded-md cursor-pointer text-[.8rem] ${p === filter.page ? "bg-green-600 text-white" : "text-gray-700 hover:bg-gray-100"}`}
-              >
-                {p}
-              </button>
-            ),
-          )}
+          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map((p) => (
+            <button
+              key={p}
+              onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
+              className={`px-3 py-1 border rounded-md cursor-pointer text-[.8rem] ${
+                p === filter.page
+                  ? "bg-green-600 text-white"
+                  : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              {p}
+            </button>
+          ))}
 
           <button
             disabled={filter.page >= filter.total_page}
-            onClick={() =>
-              setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
-            }
-            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 cursor-pointer"
+            onClick={() => setFilter((prev) => ({ ...prev, page: prev.page + 1 }))}
+            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50"
           >
             <ChevronRight size={19} />
           </button>
         </div>
       </main>
 
+      {/* Add/Edit Modal */}
       <form
         className={`fixed inset-0 z-10 flex items-center justify-center bg-black/50 transition-opacity duration-300
-        ${
-          isOpenAddEditModal
-            ? "opacity-100 pointer-events-auto"
-            : "opacity-0 pointer-events-none"
-        }
-      `}
+          ${isOpenAddEditModal ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}
+        `}
         onSubmit={handleSubmit}
       >
         {form_loading && <LoaderPending />}
         <div
-          className={`flex flex-col h-auto max-h-[90vh] overflow-y-auto items-center gap-2 bg-white rounded-lg p-0 w-100 text-center shadow-lg
-          transform transition-all duration-300
-          ${isOpenAddEditModal ? "scale-100 opacity-100" : "scale-95 opacity-0"}
-        `}
+          className={`flex flex-col h-auto max-h-[90vh] overflow-y-auto items-center gap-2 bg-white rounded-lg p-0 w-full max-w-md text-center shadow-lg
+            transform transition-all duration-300
+            ${isOpenAddEditModal ? "scale-100 opacity-100" : "scale-95 opacity-0"}
+          `}
         >
-          <div className="flex justify-items-start items-center gap-10 w-full bg-green-600 rounded-t-lg p-2">
+          <div className="flex justify-items-start items-center gap-4 w-full bg-green-600 rounded-t-lg p-4">
             {action === "Add" ? (
-              <Plus
-                size={66}
-                className="text-white bg-green-500 p-3 rounded-full mb-2"
-              />
+              <Plus size={40} className="text-white bg-green-500 p-2 rounded-full" />
             ) : (
-              <Edit
-                size={66}
-                className="text-white bg-green-500 p-3 rounded-full mb-2"
-              />
+              <Edit size={40} className="text-white bg-green-500 p-2 rounded-full" />
             )}
             <h2 className="text-lg font-semibold text-white">
               {action} Land Classification
@@ -512,7 +489,7 @@ export default function Land_classifications() {
                   required
                   type="text"
                   className={inputField}
-                  placeholder="Ex: Land_classification1"
+                  placeholder="Ex: Private Agricultural Land"
                   value={Land_classification.name}
                   onChange={(e) => {
                     setLand_classification((prev) => ({
@@ -525,13 +502,11 @@ export default function Land_classifications() {
             </div>
 
             <div className="flex flex-col">
-              <label className="font-bold text-[1rem] mr-auto">
-                Description:
-              </label>
+              <label className="font-bold text-[1rem] mr-auto">Description:</label>
               <div className={inputWrapper}>
                 <textarea
-                  className="w-full min-h-50 outline-0 p-2"
-                  placeholder="Descriptions"
+                  className="w-full min-h-[100px] outline-0 p-2 bg-transparent"
+                  placeholder="Enter description..."
                   required
                   value={Land_classification.description}
                   onChange={(e) => {
@@ -544,49 +519,43 @@ export default function Land_classifications() {
               </div>
             </div>
 
-            {/* For Reforestation Toggle */}
-            <div className="flex items-center justify-between border border-black rounded-md p-3">
-              <div className="flex items-center gap-2">
-                <Leaf size={20} className="text-green-700" />
-                <label className="font-bold text-[1rem]">
-                  For Reforestation:
-                </label>
+            {/* ✅ UPDATED: Ownership Type Dropdown */}
+            <div className="flex flex-col">
+              <label className="font-bold text-[1rem] mr-auto">Ownership Type:</label>
+              <div className={inputWrapper}>
+                <Info size={20} className="ml-4 text-green-700" />
+                <select
+                  required
+                  className={inputField}
+                  value={Land_classification.ownership_type}
+                  onChange={(e) => {
+                    setLand_classification((prev) => ({
+                      ...prev,
+                      ownership_type: e.target.value as "public" | "private",
+                    }));
+                  }}
+                >
+                  <option value="private">Private</option>
+                  <option value="public">Public</option>
+                </select>
               </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setLand_classification((prev) => ({
-                    ...prev,
-                    for_reforestation: !prev.for_reforestation,
-                  }))
-                }
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 focus:outline-none ${
-                  Land_classification.for_reforestation
-                    ? "bg-green-500"
-                    : "bg-gray-300"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-300 ${
-                    Land_classification.for_reforestation
-                      ? "translate-x-6"
-                      : "translate-x-1"
-                  }`}
-                />
-              </button>
             </div>
 
-            <div className="flex flex-cols items-center w-full gap-2">
-              <button className="bg-green-500 text-white px-4 py-2 w-[50%] rounded-md border border-green-600 hover:bg-white hover:text-green-600 transition cursor-pointer">
+            <div className="flex items-center w-full gap-3 mt-2">
+              <button 
+                type="submit"
+                className="bg-green-500 text-white px-4 py-2 w-[50%] rounded-md border border-green-600 hover:bg-white hover:text-green-600 transition cursor-pointer font-semibold"
+              >
                 Save
               </button>
 
               <button
+                type="button"
                 onClick={(e) => {
                   e.preventDefault();
                   setIsOpenAddEditModal(false);
                 }}
-                className="bg-white text-black px-4 py-2 rounded-md border w-[50%] border-black hover:border-green-600 hover:text-green-600 transition cursor-pointer"
+                className="bg-white text-black px-4 py-2 rounded-md border w-[50%] border-black hover:border-green-600 hover:text-green-600 transition cursor-pointer font-semibold"
               >
                 Cancel
               </button>

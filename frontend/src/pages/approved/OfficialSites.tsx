@@ -132,7 +132,7 @@ export default function OfficialSites() {
     const fetchLandClassifications = async () => {
       try {
         const res = await fetch(
-          `${api}api/get_land_classifications_list/?for_reforestation=true`,
+          `${api}api/get_land_classifications_list/`,
           {
             headers: { Authorization: `Bearer ${token}` },
           },
