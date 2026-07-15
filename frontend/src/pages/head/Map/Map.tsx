@@ -33,6 +33,12 @@ import {
   Target,
   AlertTriangle,
   CheckCircle,
+  BarChart3,
+  Ruler,
+  Leaf,
+  Globe,
+  Move,
+  Plus,
 } from "lucide-react";
 
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
@@ -46,7 +52,7 @@ import SiteInfoPanel from "@/components/map/SiteInfoPanel";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/constant/api.ts";
 
-// 📍 Mapbox Token
+//  Mapbox Token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -94,7 +100,6 @@ export interface ReforestationArea {
   created_at: string;
 }
 
-// ✅ NEW: Site Interface
 export interface Site {
   site_id: number;
   name: string;
@@ -102,8 +107,8 @@ export interface Site {
   center_coordinate: [number, number] | null;
   polygon_coordinates?: any;
   status: string;
-  total_area_hectares?: number; // ✅ ADDED
-  ndvi_value?: number; // ✅ ADDED
+  total_area_hectares?: number;
+  ndvi_value?: number;
   created_at: string;
 }
 
@@ -132,6 +137,23 @@ interface HazardArea {
   created_at: string;
 }
 
+const decimalToDMS = (value: number, type: "lat" | "lng") => {
+  const absolute = Math.abs(value);
+  const degrees = Math.floor(absolute);
+  const minutesNotTruncated = (absolute - degrees) * 60;
+  const minutes = Math.floor(minutesNotTruncated);
+  const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(2);
+
+  let direction = "";
+  if (type === "lat") {
+    direction = value >= 0 ? "N" : "S";
+  } else {
+    direction = value >= 0 ? "E" : "W";
+  }
+
+  return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
+};
+
 export default function Map() {
   const token = localStorage.getItem("token");
   const ORMOCCITY: [number, number] = [11.02, 124.61];
@@ -151,14 +173,14 @@ export default function Map() {
 
   const getHazardColor = (hazardType: string) => {
     const colors: { [key: string]: { stroke: string; fill: string } } = {
-      LANDSLIDE: { stroke: "#dc2626", fill: "#ef4444" }, // Red
-      FLOOD: { stroke: "#2563eb", fill: "#3b82f6" }, // Blue
-      EARTHQUAKE: { stroke: "#7c3aed", fill: "#8b5cf6" }, // Purple
-      VOLCANIC: { stroke: "#ea580c", fill: "#f97316" }, // Orange
-      STORM_SURGE: { stroke: "#0891b2", fill: "#06b6d4" }, // Cyan
-      LIQUEFACTION: { stroke: "#ca8a04", fill: "#eab308" }, // Yellow
-      COASTAL_EROSION: { stroke: "#0d9488", fill: "#14b8a6" }, // Teal
-      OTHER: { stroke: "#6b7280", fill: "#9ca3af" }, // Gray
+      LANDSLIDE: { stroke: "#dc2626", fill: "#ef4444" },
+      FLOOD: { stroke: "#2563eb", fill: "#3b82f6" },
+      EARTHQUAKE: { stroke: "#7c3aed", fill: "#8b5cf6" },
+      VOLCANIC: { stroke: "#ea580c", fill: "#f97316" },
+      STORM_SURGE: { stroke: "#0891b2", fill: "#06b6d4" },
+      LIQUEFACTION: { stroke: "#ca8a04", fill: "#eab308" },
+      COASTAL_EROSION: { stroke: "#0d9488", fill: "#14b8a6" },
+      OTHER: { stroke: "#6b7280", fill: "#9ca3af" },
     };
     return colors[hazardType] || colors.OTHER;
   };
@@ -184,7 +206,6 @@ export default function Map() {
     coordinate: null as [number, number] | null,
   });
 
-  // ✅ UPDATED: Official Site Form State (uses marker instead of polygon)
   const [siteForm, setSiteForm] = useState({
     reforestation_area_id: 0,
     name: "",
@@ -198,15 +219,11 @@ export default function Map() {
   const [reforestation_areas, setReforestation_areas] = useState<
     ReforestationArea[]
   >([]);
-
-  // ✅ NEW: Sites state
   const [sites, setSites] = useState<Site[]>([]);
 
   const [markerPosition, setMarkerPosition] = useState<[number, number] | null>(
     null,
   );
-
-  // ✅ NEW: Site marker position
   const [siteMarkerPosition, setSiteMarkerPosition] = useState<
     [number, number] | null
   >(null);
@@ -216,7 +233,6 @@ export default function Map() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   const [selectedSiteName, setSelectedSiteName] = useState<string>("");
 
-  const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(false);
   const [searchLat, setSearchLat] = useState("");
   const [searchLng, setSearchLng] = useState("");
   const [searchMarkerPosition, setSearchMarkerPosition] = useState<
@@ -245,11 +261,9 @@ export default function Map() {
     totalArea: 0,
     avgNDVI: 0,
   });
-
+  const [isFirmsLoading, setIsFirmsLoading] = useState(false);
   const [isSitePanelOpen, setIsSitePanelOpen] = useState(false);
   const navigate = useNavigate();
-
-  // ✅ NEW: Site marker placement
   const [isPickingSiteMarker, setIsPickingSiteMarker] = useState(false);
 
   const [showMgbFlood, setShowMgbFlood] = useState(false);
@@ -270,7 +284,6 @@ export default function Map() {
   >("today");
   const [firmsGeoJsonLayer, setFirmsGeoJsonLayer] = useState<any>(null);
 
-  // ✅ Helper function to format date to YYYY-MM-DD
   const formatDate = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -278,7 +291,6 @@ export default function Map() {
     return `${year}-${month}-${day}`;
   };
 
-  // ✅ Calculate today and exactly 5 months ago
   const today = new Date();
   const fiveMonthsAgo = new Date(
     today.getFullYear(),
@@ -301,15 +313,13 @@ export default function Map() {
 
   const [showBarangayAnalysis, setShowBarangayAnalysis] = useState(false);
   const [selectedBarangayForAnalysis, setSelectedBarangayForAnalysis] =
-    useState<{
-      id: number;
-      name: string;
-    } | null>(null);
+    useState<{ id: number; name: string } | null>(null);
 
   const [mouseCoords, setMouseCoords] = useState<{
     lat: number;
     lng: number;
   } | null>(null);
+  const [showDMS, setShowDMS] = useState(false);
 
   const greenIcon = new L.Icon({
     iconUrl:
@@ -333,8 +343,6 @@ export default function Map() {
     iconAnchor: [12, 41],
     popupAnchor: [1, -34],
   });
-
-  // ✅ NEW: Blue icon for sites
   const blueIcon = new L.Icon({
     iconUrl:
       "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
@@ -345,15 +353,12 @@ export default function Map() {
 
   const { userRole } = useUserRole();
 
-  // Add these new state variables
-  const [firmsStartDate, setFirmsStartDate] = useState<string>(() => {
-    const today = new Date();
-    return formatDate(today);
-  });
-  const [firmsEndDate, setFirmsEndDate] = useState<string>(() => {
-    const today = new Date();
-    return formatDate(today);
-  });
+  const [firmsStartDate, setFirmsStartDate] = useState<string>(() =>
+    formatDate(new Date()),
+  );
+  const [firmsEndDate, setFirmsEndDate] = useState<string>(() =>
+    formatDate(new Date()),
+  );
   const [useCustomDateRange, setUseCustomDateRange] = useState(false);
 
   useEffect(() => {
@@ -375,104 +380,83 @@ export default function Map() {
         headers: { Authorization: "Bearer " + token },
       });
       const data = await res.json();
-      if (res.ok && data.data) {
-        setHazard_areas(data.data);
-      }
+      if (res.ok && data.data) setHazard_areas(data.data);
     } catch (error) {
       console.error("Failed to fetch hazard areas:", error);
     }
   }
 
-  // ✅ FIXED: Map Drawing Events - More robust implementation
+  // ✅ FIXED: Map Drawing Events - Enforce ONE rectangle only
   useEffect(() => {
     if (!mapRef.current) return;
     const map = mapRef.current;
 
-    // ✅ Ensure Geoman is ready
     if (!map.pm) {
       console.error("❌ Leaflet-Geoman not initialized");
       return;
     }
 
-    // Remove any existing listeners first
+    // Remove ALL existing listeners first
     map.off("pm:create");
 
     const handleCreate = (e: any) => {
-      console.log("📐 pm:create event fired!");
-      console.log("Event object:", e);
+      const newLayer = e.layer;
+      if (!newLayer) return;
 
-      const layer = e.layer;
+      console.log("✏️ New rectangle created, removing old ones...");
 
-      if (!layer) {
-        console.error("❌ No layer in event");
-        return;
-      }
-
-      console.log("✏️ Capturing analysis rectangle");
-      console.log("Layer type:", layer.constructor.name);
-
-      // Remove old layer if exists
-      if (drawnLayerRef.current) {
-        try {
-          map.removeLayer(drawnLayerRef.current);
-        } catch (err) {
-          console.warn("Could not remove old layer:", err);
+      // ✅ CRITICAL: Remove ALL existing rectangles from the map
+      map.eachLayer((layer: any) => {
+        if (
+          layer instanceof L.Rectangle ||
+          (layer instanceof L.Polygon && !layer.options.fill)
+        ) {
+          console.log("🗑️ Removing old rectangle");
+          map.removeLayer(layer);
         }
-      }
+      });
 
-      drawnLayerRef.current = layer;
+      // Clear the ref
+      drawnLayerRef.current = null;
 
-      // Style the rectangle
-      layer.setStyle({
+      // Set style for new layer
+      newLayer.setStyle({
         color: "#3b82f6",
         weight: 2,
         fill: false,
       });
 
-      // ✅ Add to map if not already added
-      if (!map.hasLayer(layer)) {
-        layer.addTo(map);
+      // Add to map if not already added
+      if (!map.hasLayer(newLayer)) {
+        newLayer.addTo(map);
       }
 
-      // ✅ Extract geometry with better error handling
-      try {
-        // Wait a tick to ensure layer is fully initialized
-        setTimeout(() => {
-          try {
-            const geoJson = layer.toGeoJSON();
-            console.log("✅ GeoJSON extracted:", geoJson);
+      // Store reference to the new layer
+      drawnLayerRef.current = newLayer;
 
-            if (geoJson && geoJson.geometry) {
-              console.log("✅ Setting drawnGeometry:", geoJson.geometry);
-              setDrawnGeometry(geoJson.geometry);
+      // ✅ Disable drawing mode immediately to prevent multiple draws
+      map.pm.disableDraw();
 
-              // ✅ Verify it was set
-              setTimeout(() => {
-                console.log("🔍 Verifying drawnGeometry state...");
-              }, 100);
-            } else {
-              console.error("❌ GeoJSON has no geometry:", geoJson);
-            }
-          } catch (innerErr) {
-            console.error(
-              "❌ Error in setTimeout GeoJSON extraction:",
-              innerErr,
-            );
+      // Extract geometry after a short delay
+      setTimeout(() => {
+        try {
+          const geoJson = newLayer.toGeoJSON();
+          if (geoJson && geoJson.geometry) {
+            setDrawnGeometry(geoJson.geometry);
+            console.log("✅ Geometry saved:", geoJson.geometry);
           }
-        }, 50);
-      } catch (err) {
-        console.error("❌ Error getting analysis GeoJSON:", err);
-        console.error("Layer object:", layer);
-      }
+        } catch (err) {
+          console.error("Error extracting GeoJSON:", err);
+        }
+      }, 50);
     };
 
-    // ✅ Attach the listener
+    // Attach the listener
     map.on("pm:create", handleCreate);
-    console.log("✅ pm:create listener attached to map");
+    console.log("✅ pm:create listener attached");
 
-    // ✅ Also listen to pm:edit and pm:cut in case user modifies the shape
+    // Handle edit events
     map.on("pm:edit", (e: any) => {
-      console.log("✏️ pm:edit event - updating geometry");
       const layer = e.layer;
       if (layer === drawnLayerRef.current) {
         try {
@@ -481,19 +465,19 @@ export default function Map() {
             setDrawnGeometry(geoJson.geometry);
           }
         } catch (err) {
-          console.error("❌ Error updating geometry on edit:", err);
+          console.error("Error updating geometry on edit:", err);
         }
       }
     });
 
+    // Cleanup
     return () => {
       console.log("🧹 Cleaning up drawing listeners");
       map.off("pm:create", handleCreate);
       map.off("pm:edit");
     };
-  }, []); // Empty dependency array - attach once on mount
+  }, []);
 
-  // ✅ UPDATED: Map click handler for area marker, site marker
   useEffect(() => {
     if (!mapRef.current) return;
     const map = mapRef.current;
@@ -584,58 +568,46 @@ export default function Map() {
     }
   };
 
+  // ✅ FIXED: Analyze Area - With fallback logic
   const analyzeArea = async () => {
-    console.log("🔍 Analyzing area...");
-    console.log("drawnGeometry:", drawnGeometry);
-    console.log("drawnLayerRef.current:", drawnLayerRef.current);
-
-    // ✅ Get geometry from state or ref
     let geometryToUse = drawnGeometry;
 
-    // Fallback 1: Get from layer ref
+    // Try to get from ref
     if (!geometryToUse && drawnLayerRef.current) {
-      console.log("⚠️ drawnGeometry is null, trying to get from layer ref...");
       try {
         const geoJson = drawnLayerRef.current.toGeoJSON();
         if (geoJson && geoJson.geometry) {
           geometryToUse = geoJson.geometry;
-          console.log("✅ Got geometry from layer ref");
-          // Update state for next time
           setDrawnGeometry(geometryToUse);
         }
       } catch (err) {
-        console.error("❌ Failed to get geometry from layer ref:", err);
+        console.error("Failed to get geometry from layer ref:", err);
       }
     }
 
-    // Fallback 2: Search map for rectangle layers
+    // ✅ Fallback: Search map for rectangle if both are null
     if (!geometryToUse && mapRef.current) {
-      console.log("⚠️ Still no geometry, searching map for rectangles...");
       mapRef.current.eachLayer((layer: any) => {
-        if (!geometryToUse) {
-          // Check if it's a rectangle or polygon (but not other layers)
-          if (
-            layer instanceof L.Rectangle ||
-            (layer instanceof L.Polygon && layer !== drawnLayerRef.current)
-          ) {
-            try {
-              const geoJson = layer.toGeoJSON();
-              if (geoJson && geoJson.geometry) {
-                geometryToUse = geoJson.geometry;
-                console.log("✅ Found geometry from map layer");
-                drawnLayerRef.current = layer;
-                setDrawnGeometry(geometryToUse);
-              }
-            } catch (err) {
-              console.error("❌ Failed to get geometry from found layer:", err);
+        if (
+          !geometryToUse &&
+          (layer instanceof L.Rectangle ||
+            (layer instanceof L.Polygon && !layer.options.fill))
+        ) {
+          try {
+            const geoJson = layer.toGeoJSON();
+            if (geoJson && geoJson.geometry) {
+              geometryToUse = geoJson.geometry;
+              drawnLayerRef.current = layer;
+              setDrawnGeometry(geometryToUse);
             }
+          } catch (err) {
+            console.error("Failed to get geometry from found layer:", err);
           }
         }
       });
     }
 
     if (!geometryToUse) {
-      console.error("❌ No geometry found from any source");
       setPSAlert({
         type: "failed",
         title: "No Area Drawn",
@@ -645,12 +617,14 @@ export default function Map() {
       return;
     }
 
-    console.log("✅ Using geometry for analysis:", geometryToUse);
+    // ✅ Rule: Analyze removes OLD analysis results immediately
+    setSuitablePolygons(null);
+    setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
+    setSelectedPotentialSiteIds([]);
+
     setIsProcessing(true);
 
     try {
-      console.log("📡 Sending analysis request to backend...");
-
       const res = await fetch(api + `api/suitable-sites/`, {
         method: "POST",
         headers: {
@@ -661,7 +635,6 @@ export default function Map() {
       });
 
       const data = await res.json();
-      console.log("📊 Analysis response:", data);
 
       if (!res.ok) throw new Error(data.error || "Failed to analyze");
 
@@ -686,8 +659,6 @@ export default function Map() {
           message: `Found ${data.features.length} potential site(s).`,
         });
       } else {
-        setSuitablePolygons(null);
-        setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
         setPSAlert({
           type: "failed",
           title: "No Sites Found",
@@ -696,7 +667,6 @@ export default function Map() {
         });
       }
     } catch (err: any) {
-      console.error("❌ Analysis error:", err);
       setPSAlert({
         type: "error",
         title: "Analysis Failed",
@@ -707,12 +677,34 @@ export default function Map() {
     }
   };
 
+  // ✅ FIXED: Cancel Drawing - With fallback logic
   const cancelDrawing = () => {
+    // Try to remove from ref first
     if (mapRef.current && drawnLayerRef.current) {
-      mapRef.current.removeLayer(drawnLayerRef.current);
+      if (mapRef.current.hasLayer(drawnLayerRef.current)) {
+        mapRef.current.removeLayer(drawnLayerRef.current);
+      }
       drawnLayerRef.current = null;
     }
+
+    // ✅ Fallback: Search map for any rectangle layers if ref is null
+    if (mapRef.current && !drawnLayerRef.current) {
+      mapRef.current.eachLayer((layer: any) => {
+        if (
+          layer instanceof L.Rectangle ||
+          (layer instanceof L.Polygon && !layer.options.fill)
+        ) {
+          mapRef.current!.removeLayer(layer);
+        }
+      });
+    }
+
     setDrawnGeometry(null);
+    setPSAlert({
+      type: "success",
+      title: "Drawing Cancelled",
+      message: "Analysis area removed.",
+    });
   };
 
   const handleHome = () => {
@@ -720,20 +712,42 @@ export default function Map() {
     setTimeout(() => setGoHome(false), 100);
   };
 
+  // ✅ FIXED: Clear Analysis - With fallback logic
   const clearAnalysis = () => {
     setSuitablePolygons(null);
     setDrawnGeometry(null);
     setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
     setSelectedPotentialSiteIds([]);
+
+    // Try to remove from ref
     if (mapRef.current && drawnLayerRef.current) {
-      mapRef.current.removeLayer(drawnLayerRef.current);
+      if (mapRef.current.hasLayer(drawnLayerRef.current)) {
+        mapRef.current.removeLayer(drawnLayerRef.current);
+      }
       drawnLayerRef.current = null;
     }
+
+    // ✅ Fallback: Search map for any rectangle layers
+    if (mapRef.current) {
+      mapRef.current.eachLayer((layer: any) => {
+        if (
+          layer instanceof L.Rectangle ||
+          (layer instanceof L.Polygon && !layer.options.fill)
+        ) {
+          mapRef.current!.removeLayer(layer);
+        }
+      });
+    }
+
+    setPSAlert({
+      type: "success",
+      title: "Cleared",
+      message: "All analysis data and drawings removed.",
+    });
   };
 
   const startDrawingAnalysis = () => {
     if (!mapRef.current) {
-      console.error("❌ Map not initialized");
       setPSAlert({
         type: "error",
         title: "Map Error",
@@ -742,19 +756,24 @@ export default function Map() {
       return;
     }
 
-    console.log("📐 Starting analysis drawing mode");
+    // ✅ CRITICAL FIX: Remove ALL existing rectangles from the map
+    console.log("🔍 Searching for existing rectangles to remove...");
 
-    // Clean up any existing drawings
-    if (drawnLayerRef.current) {
-      console.log("🗑️ Removing existing drawing");
-      mapRef.current.removeLayer(drawnLayerRef.current);
-      drawnLayerRef.current = null;
-    }
+    mapRef.current.eachLayer((layer: any) => {
+      if (
+        layer instanceof L.Rectangle ||
+        (layer instanceof L.Polygon && !layer.options.fill)
+      ) {
+        console.log("🗑️ Removing existing rectangle");
+        mapRef.current!.removeLayer(layer);
+      }
+    });
+
+    // Clear ref and state
+    drawnLayerRef.current = null;
     setDrawnGeometry(null);
 
-    // ✅ Ensure Geoman is available
     if (!mapRef.current.pm) {
-      console.error("❌ Leaflet-Geoman not available");
       setPSAlert({
         type: "error",
         title: "Drawing Error",
@@ -763,28 +782,18 @@ export default function Map() {
       return;
     }
 
-    // ✅ Disable any active drawing first
+    // Disable any active drawing first
     mapRef.current.pm.disableDraw();
 
-    // ✅ Small delay to ensure disable completes
     setTimeout(() => {
       if (mapRef.current && mapRef.current.pm) {
         try {
-          console.log("🎨 Enabling Rectangle drawing...");
           mapRef.current.pm.enableDraw("Rectangle", {
             snappable: false,
             cursorMarker: true,
             allowSelfIntersection: false,
-            templineStyle: {
-              color: "#3b82f6",
-              dashArray: "5,5",
-              weight: 2,
-            },
-            hintlineStyle: {
-              color: "#3b82f6",
-              dashArray: "5,5",
-              weight: 2,
-            },
+            templineStyle: { color: "#3b82f6", dashArray: "5,5", weight: 2 },
+            hintlineStyle: { color: "#3b82f6", dashArray: "5,5", weight: 2 },
             pathOptions: {
               color: "#3b82f6",
               fillColor: "#3b82f6",
@@ -793,8 +802,6 @@ export default function Map() {
             },
           });
 
-          console.log("✅ Rectangle drawing enabled successfully");
-
           setPSAlert({
             type: "success",
             title: "Draw Mode Active",
@@ -802,7 +809,6 @@ export default function Map() {
               "Click and drag on the map to draw a rectangle, then click Analyze.",
           });
         } catch (err) {
-          console.error("❌ Error enabling draw:", err);
           setPSAlert({
             type: "error",
             title: "Drawing Error",
@@ -826,7 +832,7 @@ export default function Map() {
     getBarangays();
     get_all_reforestation_areas();
     get_all_sites();
-    get_hazard_areas(); // ✅ NEW: Fetch hazard areas
+    get_hazard_areas();
   }, []);
 
   async function get_classified_area() {
@@ -859,7 +865,6 @@ export default function Map() {
     } catch (err) {}
   }
 
-  // ✅ NEW: Fetch all sites
   async function get_all_sites() {
     try {
       const res = await fetch(api + "api/get_all_sites/", {
@@ -880,7 +885,6 @@ export default function Map() {
     setIsSiteFormPenelOpen(false);
     setIsDrawPenelOpen(false);
     setIsFilterPenelOpen(false);
-    setIsSearchPanelOpen(false);
     setIsHazardPanelOpen(false);
   }
 
@@ -938,7 +942,6 @@ export default function Map() {
         title: "Success",
         message: "Reforestation Area created!",
       });
-
       setAreaForm({
         name: "",
         description: "",
@@ -953,7 +956,6 @@ export default function Map() {
     }
   }
 
-  // ✅ UPDATED: Submit Site - uses center_coordinate
   async function onSubmitSite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!siteForm.name.trim() || !siteForm.reforestation_area_id) {
@@ -998,7 +1000,6 @@ export default function Map() {
         title: "Site Created",
         message: `Site "${siteForm.name}" created successfully!${selectedPotentialSiteIds.length > 0 ? ` ${selectedPotentialSiteIds.length} potential sites assigned.` : ""}`,
       });
-
       setSiteForm({
         reforestation_area_id: 0,
         name: "",
@@ -1007,7 +1008,7 @@ export default function Map() {
       setSiteMarkerPosition(null);
       setSelectedPotentialSiteIds([]);
       setIsSiteFormPenelOpen(false);
-      get_all_sites(); // ✅ Refresh sites list
+      get_all_sites();
     } catch (error: any) {
       setPSAlert({ type: "error", title: "Error", message: error.message });
     }
@@ -1031,33 +1032,30 @@ export default function Map() {
     [],
   );
 
-  // Update fetchFirmsData function
   const fetchFirmsData = async (
     timeRange?: "today" | "24hrs" | "7days",
     startDate?: string,
     endDate?: string,
   ) => {
-    if (!mapRef.current) {
-      console.error("❌ Map reference not available");
-      return;
-    }
+    if (!mapRef.current) return;
 
     const effectiveTimeRange = timeRange || firmsTimeRange;
-    const useCustom = startDate && endDate;
-    const payloadStartDate = useCustom ? startDate : firmsStartDate;
-    const payloadEndDate = useCustom ? endDate : firmsEndDate;
+
+    // ✅ FIX: Explicitly check if dates are provided (not undefined).
+    // This prevents stale `useCustomDateRange` state from overriding preset ranges.
+    const isExplicitCustom = startDate !== undefined && endDate !== undefined;
+
+    const payloadStartDate = isExplicitCustom ? startDate : firmsStartDate;
+    const payloadEndDate = isExplicitCustom ? endDate : firmsEndDate;
 
     try {
       const bounds = mapRef.current.getBounds();
       const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
 
-      const requestBody: any = {
-        bbox: bbox,
-        time_range: effectiveTimeRange,
-      };
+      const requestBody: any = { bbox: bbox, time_range: effectiveTimeRange };
 
-      // Add custom date range if using it
-      if (useCustom || useCustomDateRange) {
+      // ✅ FIX: Only add start_date/end_date if explicitly provided in this function call
+      if (isExplicitCustom) {
         requestBody.start_date = payloadStartDate;
         requestBody.end_date = payloadEndDate;
       }
@@ -1073,9 +1071,8 @@ export default function Map() {
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok)
         throw new Error(data.error || `HTTP ${response.status}`);
-      }
 
       if (data.success) {
         setFireCount(data.fire_count);
@@ -1125,22 +1122,24 @@ export default function Map() {
               const p = feature.properties;
               const confidenceLabel =
                 p.confidence === "h" || p.confidence === "high"
-                  ? "🔴 High"
+                  ? "High"
                   : p.confidence === "l" || p.confidence === "low"
-                    ? "🟡 Low"
-                    : "🟠 Nominal";
+                    ? "Low"
+                    : "Nominal";
 
               layer.bindPopup(`
               <div style="font-size: 12px; min-width: 200px;">
-                <strong style="color: #dc2626; font-size: 14px;">🔥 Fire Hotspot</strong>
-                <hr style="margin: 6px 0; border-color: #ddd;"/>
-                <div><strong>📍 Location:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>
-                <div><strong>🌡️ Brightness:</strong> ${p.brightness ? p.brightness.toFixed(1) : "N/A"} K</div>
-                <div><strong>🔥 FRP:</strong> ${p.frp || "N/A"} GW</div>
-                <div><strong>📊 Confidence:</strong> ${confidenceLabel}</div>
-                <div><strong> Date:</strong> ${p.acq_date || "N/A"}</div>
-                <div><strong>⏰ Time:</strong> ${p.acq_time || "N/A"}</div>
-                <div><strong>🛰️ Satellite:</strong> ${p.satellite} (${p.instrument})</div>
+                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+                  <strong style="color: #dc2626; font-size: 14px;">Fire Hotspot</strong>
+                </div>
+                <div style="margin-bottom: 4px;"><strong>Location:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>
+                <div style="margin-bottom: 4px;"><strong>Brightness:</strong> ${p.brightness ? p.brightness.toFixed(1) : "N/A"} K</div>
+                <div style="margin-bottom: 4px;"><strong>FRP:</strong> ${p.frp || "N/A"} GW</div>
+                <div style="margin-bottom: 4px;"><strong>Confidence:</strong> <span style="color: ${confidenceLabel === "High" ? "#dc2626" : confidenceLabel === "Low" ? "#fbbf24" : "#ff6600"}; font-weight: bold;">${confidenceLabel}</span></div>
+                <div style="margin-bottom: 4px;"><strong>Date:</strong> ${p.acq_date || "N/A"}</div>
+                <div style="margin-bottom: 4px;"><strong>Time:</strong> ${p.acq_time || "N/A"}</div>
+                <div><strong>Satellite:</strong> ${p.satellite} (${p.instrument})</div>
               </div>
             `);
             },
@@ -1148,10 +1147,10 @@ export default function Map() {
 
           setFirmsGeoJsonLayer(geoJsonLayer);
 
-          const dateInfo =
-            useCustom || useCustomDateRange
-              ? `${payloadStartDate} to ${payloadEndDate}`
-              : effectiveTimeRange;
+          // ✅ FIX: Update dateInfo to use isExplicitCustom
+          const dateInfo = isExplicitCustom
+            ? `${payloadStartDate} to ${payloadEndDate}`
+            : effectiveTimeRange;
 
           setPSAlert({
             type: "success",
@@ -1159,10 +1158,10 @@ export default function Map() {
             message: `Found ${data.fires.length} active fire hotspot${data.fires.length > 1 ? "s" : ""} (${dateInfo})`,
           });
         } else {
-          const dateInfo =
-            useCustom || useCustomDateRange
-              ? `${payloadStartDate} to ${payloadEndDate}`
-              : effectiveTimeRange;
+          // ✅ FIX: Update dateInfo to use isExplicitCustom
+          const dateInfo = isExplicitCustom
+            ? `${payloadStartDate} to ${payloadEndDate}`
+            : effectiveTimeRange;
 
           setPSAlert({
             type: "success",
@@ -1185,10 +1184,12 @@ export default function Map() {
         message:
           (error as Error).message || "Failed to connect to fire data service",
       });
+    } finally {
+      // ✅ CRITICAL: Always stop loading when request finishes (success or error)
+      setIsFirmsLoading(false);
     }
   };
 
-  // Update toggleFirms function
   const toggleFirms = () => {
     const newState = !showFirms;
     setShowFirms(newState);
@@ -1199,38 +1200,44 @@ export default function Map() {
         setFirmsGeoJsonLayer(null);
       }
       setFireCount(0);
+      setIsFirmsLoading(false); // ✅ Turn off loading when hiding
     } else {
+      setIsFirmsLoading(true); // ✅ Turn on loading when showing
       setTimeout(() => {
-        if (useCustomDateRange) {
+        if (useCustomDateRange)
           fetchFirmsData(firmsTimeRange, firmsStartDate, firmsEndDate);
-        } else {
-          fetchFirmsData();
-        }
+        else fetchFirmsData();
       }, 500);
     }
   };
 
-  // Update updateFirmsTimeRange function
   const updateFirmsTimeRange = (range: "today" | "24hrs" | "7days") => {
     setFirmsTimeRange(range);
-    setUseCustomDateRange(false);
+    setUseCustomDateRange(false); // This is async, so we can't rely on it immediately
+
     if (showFirms) {
       if (firmsGeoJsonLayer && mapRef.current) {
         mapRef.current.removeLayer(firmsGeoJsonLayer);
         setFirmsGeoJsonLayer(null);
       }
-      setTimeout(() => fetchFirmsData(range), 300);
+      setIsFirmsLoading(true);
+
+      // ✅ Pass undefined for dates to force using preset range
+      setTimeout(() => fetchFirmsData(range, undefined, undefined), 300);
     }
   };
 
-  // Add new function for custom date range
   const applyCustomDateRange = () => {
     setUseCustomDateRange(true);
+
     if (showFirms) {
       if (firmsGeoJsonLayer && mapRef.current) {
         mapRef.current.removeLayer(firmsGeoJsonLayer);
         setFirmsGeoJsonLayer(null);
       }
+      setIsFirmsLoading(true);
+
+      // ✅ Pass the actual dates to force using custom range
       setTimeout(
         () => fetchFirmsData(firmsTimeRange, firmsStartDate, firmsEndDate),
         300,
@@ -1247,12 +1254,8 @@ export default function Map() {
 
     useEffect(() => {
       const handleMouseMove = (e: L.LeafletMouseEvent) => {
-        onCoordsChange({
-          lat: e.latlng.lat,
-          lng: e.latlng.lng,
-        });
+        onCoordsChange({ lat: e.latlng.lat, lng: e.latlng.lng });
       };
-
       const handleMouseOut = () => {
         onCoordsChange(null);
       };
@@ -1278,11 +1281,8 @@ export default function Map() {
         fill: false,
         dashArray: "5, 5",
       }).addTo(mapRef.current);
-
       setTimeout(() => {
-        if (mapRef.current) {
-          mapRef.current.removeLayer(rectangle);
-        }
+        if (mapRef.current) mapRef.current.removeLayer(rectangle);
       }, 5000);
     }
   }, [showFirms, firmsTimeRange]);
@@ -1298,16 +1298,35 @@ export default function Map() {
         />
       )}
 
-      {/* Mouse Coordinate Display */}
+      {/* Mouse Coordinate Display with DMS Toggle */}
       <div className="absolute top-4 right-4 z-[1001] bg-white px-3 py-2 rounded-lg shadow-lg border border-gray-300 text-xs font-mono">
         <div className="flex items-center gap-2">
-          <MapPin size={14} className="text-[#0f4a2f]" />
-          <span className="text-gray-600">
-            <strong>Lat:</strong> {mouseCoords?.lat.toFixed(6) || "0.000000"}
-          </span>
-          <span className="text-gray-600 ml-2">
-            <strong>Lng:</strong> {mouseCoords?.lng.toFixed(6) || "0.000000"}
-          </span>
+          <Globe size={14} className="text-[#0f4a2f]" />
+          {mouseCoords ? (
+            <>
+              <span className="text-gray-600">
+                <strong>Lat:</strong>{" "}
+                {showDMS
+                  ? decimalToDMS(mouseCoords.lat, "lat")
+                  : mouseCoords.lat.toFixed(6)}
+              </span>
+              <span className="text-gray-600 ml-2">
+                <strong>Lng:</strong>{" "}
+                {showDMS
+                  ? decimalToDMS(mouseCoords.lng, "lng")
+                  : mouseCoords.lng.toFixed(6)}
+              </span>
+            </>
+          ) : (
+            <span className="text-gray-400">Move mouse to see coordinates</span>
+          )}
+          <button
+            onClick={() => setShowDMS(!showDMS)}
+            className="ml-2 px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-[10px] font-semibold text-gray-600 transition-colors"
+            title="Toggle DD/DMS format"
+          >
+            {showDMS ? "DMS" : "DD"}
+          </button>
         </div>
       </div>
 
@@ -1400,28 +1419,36 @@ export default function Map() {
       {/* Statistics Panel */}
       {suitablePolygons && siteStats.total > 0 && (
         <div className="absolute top-4 right-4 bg-white p-4 rounded-lg shadow-lg z-[1000] min-w-[250px]">
-          <h3 className="font-bold text-sm mb-3 text-[#0f4a2f] border-b pb-2">
-            📊 Analysis Results
+          <h3 className="font-bold text-sm mb-3 text-[#0f4a2f] border-b pb-2 flex items-center gap-2">
+            <BarChart3 size={16} /> Analysis Results
           </h3>
           <div className="text-xs space-y-2">
-            <div className="flex justify-between">
-              <span>📍 Total Potential Sites:</span>
+            <div className="flex justify-between items-center">
+              <span className="flex items-center gap-1">
+                <MapPin size={12} className="text-gray-500" /> Total Sites:
+              </span>
               <strong className="text-[#0f4a2f]">{siteStats.total}</strong>
             </div>
-            <div className="flex justify-between">
-              <span>📏 Total Area:</span>
+            <div className="flex justify-between items-center">
+              <span className="flex items-center gap-1">
+                <Ruler size={12} className="text-gray-500" /> Total Area:
+              </span>
               <strong className="text-[#0f4a2f]">
                 {siteStats.totalArea.toFixed(2)} ha
               </strong>
             </div>
-            <div className="flex justify-between">
-              <span>🌱 Avg NDVI:</span>
+            <div className="flex justify-between items-center">
+              <span className="flex items-center gap-1">
+                <Leaf size={12} className="text-gray-500" /> Avg NDVI:
+              </span>
               <strong className="text-[#0f4a2f]">
                 {siteStats.avgNDVI.toFixed(3)}
               </strong>
             </div>
-            <div className="flex justify-between pt-2 border-t mt-2">
-              <span>✅ Selected for Site:</span>
+            <div className="flex justify-between items-center pt-2 border-t mt-2">
+              <span className="flex items-center gap-1">
+                <CheckCircle size={12} className="text-green-600" /> Selected:
+              </span>
               <strong className="text-green-600">
                 {selectedPotentialSiteIds.length}
               </strong>
@@ -1430,9 +1457,9 @@ export default function Map() {
           <div className="flex gap-2 mt-3">
             <button
               onClick={clearAnalysis}
-              className="flex-1 text-xs bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded border border-red-200 transition-colors"
+              className="flex-1 text-xs bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded border border-red-200 transition-colors flex items-center justify-center gap-1"
             >
-              Clear
+              <Trash size={12} /> Clear
             </button>
             <button
               onClick={() => {
@@ -1473,7 +1500,9 @@ export default function Map() {
               {isNdviPenelOpen && (
                 <div className="absolute top-[-240px] w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md">
                   <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-                    <h1 className="text-white">NDVI</h1>
+                    <h1 className="text-white flex items-center justify-center gap-2">
+                      <Activity size={16} /> NDVI
+                    </h1>
                   </div>
                   <div>
                     <label className="text-[.7rem] text-gray-600">
@@ -1536,7 +1565,7 @@ export default function Map() {
                   closeAll();
                   setIsNdviPenelOpen(!isNdviPenelOpen);
                 }}
-                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
+                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] transition-all ${isNdviPenelOpen ? "bg-green-600 text-white shadow-lg ring-2 ring-green-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
               >
                 <Activity size={16} /> NDVI
               </button>
@@ -1550,7 +1579,9 @@ export default function Map() {
                 className={`absolute top-[-255px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isDrawPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
               >
                 <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-                  <h2 className="text-white text-[.8rem]">Analysis Tools</h2>
+                  <h2 className="text-white text-[.8rem] flex items-center justify-center gap-2">
+                    <Pen size={16} /> Analysis Tools
+                  </h2>
                 </div>
                 <button
                   onClick={startDrawingAnalysis}
@@ -1592,96 +1623,93 @@ export default function Map() {
                   closeAll();
                   setIsDrawPenelOpen(!isDrawPenelOpen);
                 }}
-                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
+                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] transition-all ${isDrawPenelOpen ? "bg-green-600 text-white shadow-lg ring-2 ring-green-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
               >
                 <Pen size={16} /> Analyze
               </button>
             </div>
           )}
 
+          {/* FILTER PANEL - Now includes Coordinate Search */}
           <div className="relative">
             <div
-              className={`absolute top-[-120px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isFilterPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+              className={`absolute top-[-320px] w-[16rem] flex flex-col gap-3 p-3 bg-white border border-[#0f4a2fe0] rounded-md ${isFilterPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
             >
               <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-                <h2 className="text-white text-[.8rem]">Filters</h2>
+                <h2 className="text-white text-[.8rem] flex items-center justify-center gap-2">
+                  <Filter size={16} /> Filters & Search
+                </h2>
               </div>
-              <select
-                onChange={(e) => {
-                  const id = parseInt(e.target.value, 10);
-                  const b = barangays.find((x) => x.barangay_id === id);
-                  if (b && mapRef.current)
-                    mapRef.current.flyTo(b.coordinate as [number, number], 16);
-                }}
-                className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
-              >
-                <option value={0}>--Select Baranagay--</option>
-                {barangays.map((b) => (
-                  <option key={b.barangay_id} value={b.barangay_id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+              <div className="border-b border-gray-200 pb-2">
+                <label className="text-[.7rem] text-gray-600 font-semibold flex items-center gap-1">
+                  <MapPin size={12} /> Filter by Barangay
+                </label>
+                <select
+                  onChange={(e) => {
+                    const id = parseInt(e.target.value, 10);
+                    const b = barangays.find((x) => x.barangay_id === id);
+                    if (b && mapRef.current)
+                      mapRef.current.flyTo(
+                        b.coordinate as [number, number],
+                        16,
+                      );
+                  }}
+                  className="w-full text-[.7rem] mt-1 p-1.5 border rounded-md bg-gray-50"
+                >
+                  <option value={0}>-- Select Barangay --</option>
+                  {barangays.map((b) => (
+                    <option key={b.barangay_id} value={b.barangay_id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[.7rem] text-gray-600 font-semibold flex items-center gap-1">
+                  <Globe size={12} /> Search by Coordinates
+                </label>
+                <div className="space-y-2 mt-1">
+                  <div>
+                    <input
+                      type="number"
+                      placeholder="Latitude"
+                      value={searchLat}
+                      onChange={(e) => setSearchLat(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
+                      className="w-full text-[.7rem] p-1.5 border rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="number"
+                      placeholder="Longitude"
+                      value={searchLng}
+                      onChange={(e) => setSearchLng(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
+                      className="w-full text-[.7rem] p-1.5 border rounded-md"
+                    />
+                  </div>
+                  <button
+                    onClick={goToCoordinate}
+                    className="w-full flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] mt-1"
+                  >
+                    <Move size={14} /> Go to Location
+                  </button>
+                </div>
+              </div>
             </div>
             <button
               onClick={() => {
                 closeAll();
                 setIsFilterPenelOpen(!isFilterPenelOpen);
               }}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
+              className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] transition-all ${isFilterPenelOpen ? "bg-green-600 text-white shadow-lg ring-2 ring-green-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
             >
               <Filter size={16} /> Filter
             </button>
           </div>
 
-          {/* Search Coordinate PANEL */}
-          <div className="relative">
-            <div
-              className={`absolute top-[-230px] right-0 w-[16rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isSearchPanelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
-            >
-              <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-                <h2 className="text-white text-[.8rem]">Search</h2>
-              </div>
-              <div>
-                <label className="text-[.7rem] text-gray-600">Latitude</label>
-                <input
-                  type="number"
-                  value={searchLat}
-                  onChange={(e) => setSearchLat(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
-                />
-              </div>
-              <div>
-                <label className="text-[.7rem] text-gray-600">Longitude</label>
-                <input
-                  type="number"
-                  value={searchLng}
-                  onChange={(e) => setSearchLng(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
-                  className="w-full text-[.7rem] mt-1 p-1 border rounded-md"
-                />
-              </div>
-              <button
-                onClick={goToCoordinate}
-                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] mt-1"
-              >
-                <MapPin size={14} /> Go
-              </button>
-            </div>
-            <button
-              onClick={() => {
-                closeAll();
-                setIsSearchPanelOpen(!isSearchPanelOpen);
-              }}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
-            >
-              <MapPin size={16} /> Search
-            </button>
-          </div>
-
           {/* HAZARD PANEL */}
-
           <div className="relative">
             <HazardAssessmentPanel
               isOpen={isHazardPanelOpen}
@@ -1703,7 +1731,6 @@ export default function Map() {
               onFetchFirmsData={fetchFirmsData}
               onToggleFirms={toggleFirms}
               onUpdateFirmsTimeRange={updateFirmsTimeRange}
-              // NEW PROPS
               firmsStartDate={firmsStartDate}
               setFirmsStartDate={setFirmsStartDate}
               firmsEndDate={firmsEndDate}
@@ -1711,13 +1738,14 @@ export default function Map() {
               useCustomDateRange={useCustomDateRange}
               setUseCustomDateRange={setUseCustomDateRange}
               onApplyCustomDateRange={applyCustomDateRange}
+              isFirmsLoading={isFirmsLoading}
             />
             <button
               onClick={() => {
                 closeAll();
                 setIsHazardPanelOpen(!isHazardPanelOpen);
               }}
-              className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem]"
+              className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] transition-all ${isHazardPanelOpen ? "bg-green-600 text-white shadow-lg ring-2 ring-green-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
             >
               <Shield size={16} /> Hazards
             </button>
@@ -1731,8 +1759,8 @@ export default function Map() {
                 className={`absolute top-[-360px] w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isAreaFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
               >
                 <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
-                  <h2 className="text-white text-[.8rem]">
-                    Create Reforestation Area
+                  <h2 className="text-white text-[.8rem] flex items-center justify-center gap-2">
+                    <File size={16} /> Create Reforestation Area
                   </h2>
                 </div>
                 <div>
@@ -1812,7 +1840,7 @@ export default function Map() {
                     type="submit"
                     className="flex items-center justify-center gap-1 ml-auto bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] cursor-pointer"
                   >
-                    <File size={16} /> Submit Area
+                    <CheckCircle size={16} /> Submit Area
                   </button>
                 </div>
               </form>
@@ -1825,34 +1853,25 @@ export default function Map() {
                     setIsAreaFormPenelOpen(!isAreaFormPenelOpen);
                   }
                 }}
-                className="flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer transition-all ${isAreaFormPenelOpen ? "bg-green-600 text-white shadow-lg ring-2 ring-green-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
               >
-                <Cross size={16} /> Create Area
+                <Plus size={16} /> Create Area
               </button>
             </div>
           )}
 
-          {/* ✅ CREATE SITE PANEL - Uses marker like Area form */}
+          {/* CREATE SITE PANEL */}
           {userRole != "DataManager" && userRole != "CityENROHead" && (
             <div className="relative">
               <form
                 onSubmit={onSubmitSite}
-                className={`absolute ${
-                  suitablePolygons?.features?.length
-                    ? "top-[-400px]"
-                    : "top-[-295px]"
-                } w-[14rem] flex flex-col gap-2 p-2 bg-white border border-green-600 rounded-md shadow-xl transition-all duration-200 ${
-                  isSiteFormPenelOpen
-                    ? "opacity-100 pointer-events-auto"
-                    : "opacity-0 pointer-events-none"
-                }`}
+                className={`absolute ${suitablePolygons?.features?.length ? "top-[-400px]" : "top-[-295px]"} w-[14rem] flex flex-col gap-2 p-2 bg-white border border-green-600 rounded-md shadow-xl transition-all duration-200 ${isSiteFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
               >
                 <div className="text-center font-bold w-full p-1 bg-green-700 rounded-md">
-                  <h2 className="text-white text-[.8rem]">
-                    Create Official Site
+                  <h2 className="text-white text-[.8rem] flex items-center justify-center gap-2">
+                    <Target size={16} /> Create Official Site
                   </h2>
                 </div>
-
                 <div>
                   <label className="text-[.7rem] text-gray-600">
                     Parent Reforestation Area
@@ -1879,7 +1898,6 @@ export default function Map() {
                     ))}
                   </select>
                 </div>
-
                 <div>
                   <label className="text-[.7rem] text-gray-600">
                     Site Name
@@ -1895,7 +1913,6 @@ export default function Map() {
                     required
                   />
                 </div>
-
                 <div>
                   <label className="text-[.7rem] text-gray-600">
                     Center Coordinate
@@ -1920,8 +1937,6 @@ export default function Map() {
                     </button>
                   </div>
                 </div>
-
-                {/* ✅ OPTIONAL: Potential Sites Selection */}
                 {suitablePolygons && suitablePolygons.features && (
                   <div className="border-t border-gray-200 pt-2 mt-1">
                     <label className="text-[.7rem] text-gray-600 block mb-1">
@@ -1937,7 +1952,6 @@ export default function Map() {
                     </div>
                   </div>
                 )}
-
                 <div className="flex flex-row gap-1 mt-2">
                   <button
                     type="button"
@@ -1968,7 +1982,7 @@ export default function Map() {
                   closeAll();
                   setIsSiteFormPenelOpen(!isSiteFormPenelOpen);
                 }}
-                className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer"
+                className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] cursor-pointer transition-all ${isSiteFormPenelOpen ? "bg-green-600 text-white shadow-lg ring-2 ring-green-400" : "bg-green-600 hover:bg-green-700 text-white"}`}
               >
                 <Target size={16} /> Create Site
               </button>
@@ -1984,10 +1998,8 @@ export default function Map() {
         style={{ minHeight: "100vh" }}
       >
         <MapInitializer setMapRef={(map) => (mapRef.current = map)} />
-
         <MouseTracker onCoordsChange={setMouseCoords} />
 
-        {/* ✅ NEW: Mapbox Satellite Hybrid */}
         <TileLayer
           url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
           tileSize={512}
@@ -2003,7 +2015,6 @@ export default function Map() {
           />
         )}
 
-        {/* Suitable Polygons (Clickable for Selection) */}
         {suitablePolygons && suitablePolygons.features && (
           <GeoJSON
             data={{
@@ -2029,14 +2040,17 @@ export default function Map() {
 
               const popupContent = `
                 <div style="font-size: 12px; min-width: 180px;">
-                  <strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Site"}</strong>
-                  <div>📏 Area: ${props.area_hectares?.toFixed(2)} ha</div>
-                  <div>🌱 NDVI: ${props.avg_ndvi?.toFixed(3)}</div>
+                  <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                    <strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Site"}</strong>
+                  </div>
+                  <div style="margin-bottom: 4px;"><strong>Area:</strong> ${props.area_hectares?.toFixed(2)} ha</div>
+                  <div style="margin-bottom: 4px;"><strong>NDVI:</strong> ${props.avg_ndvi?.toFixed(3)}</div>
                   <hr style="margin: 6px 0;"/>
-                  <button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">
-                    ${isSelected ? "❌ Deselect" : "✅ Select for Site"}
+                  <button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:4px;">
+                    ${isSelected ? "Deselect" : "Select for Site"}
                   </button>
-                  <button id="view-trends-btn-${props.site_id}" style="margin-top:4px; width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer;">📈 View Trends</button>
+                  <button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer;">View Trends</button>
                 </div>
               `;
               layer.bindPopup(popupContent);
@@ -2065,7 +2079,6 @@ export default function Map() {
           />
         )}
 
-        {/* Reforestation Areas Markers */}
         {reforestation_areas.length > 0 &&
           reforestation_areas.map((area) => {
             if (!area.coordinate || area.coordinate.length !== 2) return null;
@@ -2091,8 +2104,6 @@ export default function Map() {
                         <MapPin size={10} /> {area.barangay.name}
                       </span>
                     )}
-                    {/* ✅ UPDATED: Button to view and zoom to sites for this area */}
-
                     <button
                       onClick={() => {
                         const areaSites = sites.filter(
@@ -2100,9 +2111,7 @@ export default function Map() {
                             s.reforestation_area_id ===
                             area.reforestation_area_id,
                         );
-
                         if (areaSites.length > 0) {
-                          // ✅ Create bounds to fit ALL sites in the view
                           const validCoords = areaSites
                             .filter(
                               (s) =>
@@ -2115,16 +2124,13 @@ export default function Map() {
                                 s.center_coordinate![1],
                               ),
                             );
-
                           if (validCoords.length > 0) {
                             const bounds = L.latLngBounds(validCoords);
-                            // Fly to the bounds with some padding so all markers are visible
                             mapRef.current?.flyToBounds(bounds, {
                               padding: [50, 50],
                               maxZoom: 17,
                             });
                           }
-
                           setPSAlert({
                             type: "success",
                             title: "Sites Loaded",
@@ -2155,7 +2161,6 @@ export default function Map() {
             const lat = Number(site.center_coordinate[0]);
             const lng = Number(site.center_coordinate[1]);
             if (isNaN(lat) || isNaN(lng)) return null;
-
             return (
               <Marker
                 key={site.site_id}
@@ -2171,7 +2176,6 @@ export default function Map() {
             );
           })}
 
-        {/* Barangay Markers */}
         {barangays.length > 0 &&
           barangays.map((area) => {
             if (!area.coordinate || area.coordinate.length !== 2) return null;
@@ -2186,32 +2190,25 @@ export default function Map() {
               >
                 <Popup>
                   <div className="text-sm flex flex-col gap-2 min-w-[220px]">
-                    {/* Header */}
                     <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
                       <div className="w-3 h-3 rounded-full bg-yellow-500 flex-shrink-0"></div>
                       <strong className="text-[#0f4a2f] text-base flex-1">
                         {area.name}
                       </strong>
                     </div>
-
-                    {/* View Classified Areas - RED (matches red polygons) */}
                     <button
                       onClick={() => setSelectedBarangayId(area.barangay_id)}
                       className="flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 text-white h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm"
                     >
                       <AreaChart size={14} /> View Classified Areas
                     </button>
-
-                    {/* View Hazard Areas - YELLOW (matches yellow polygons) */}
                     <button
                       onClick={() => {
                         const barangayHazards = hazard_areas.filter(
                           (h) => h.barangay_id === area.barangay_id,
                         );
-
                         if (barangayHazards.length > 0) {
                           setVisibleHazardBarangayId(area.barangay_id);
-
                           const allCoords: [number, number][] = [];
                           barangayHazards.forEach((h) => {
                             if (h.polygon && h.polygon.coordinates) {
@@ -2220,7 +2217,6 @@ export default function Map() {
                               });
                             }
                           });
-
                           if (allCoords.length > 0) {
                             const bounds = L.latLngBounds(
                               allCoords.map((c) => L.latLng(c[0], c[1])),
@@ -2230,7 +2226,6 @@ export default function Map() {
                               maxZoom: 16,
                             });
                           }
-
                           setPSAlert({
                             type: "success",
                             title: "Hazard Areas Loaded",
@@ -2288,7 +2283,6 @@ export default function Map() {
             errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
           />
         )}
-
         {showMgbLandslide && (
           <TileLayer
             url={MGB_LANDSLIDE_TILE_URL}
@@ -2299,7 +2293,6 @@ export default function Map() {
             errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
           />
         )}
-
         {showEil && (
           <WMSTileLayer
             url={PHIVOLCS_EIL_WMS_URL}
@@ -2320,12 +2313,10 @@ export default function Map() {
             .filter((h) => h.barangay_id === visibleHazardBarangayId)
             .map((hazard) => {
               if (!hazard.polygon || !hazard.polygon.coordinates) return null;
-
               const colors = getHazardColor(hazard.hazard_type);
               const barangay = barangays.find(
                 (b) => b.barangay_id === hazard.barangay_id,
               );
-
               return (
                 <Polygon
                   key={hazard.hazard_area_id}
@@ -2348,7 +2339,6 @@ export default function Map() {
                           {hazard.name}
                         </strong>
                       </div>
-
                       <div className="space-y-1.5 text-xs">
                         <div className="flex items-start gap-2">
                           <AlertTriangle
@@ -2365,7 +2355,6 @@ export default function Map() {
                             </span>
                           </div>
                         </div>
-
                         {barangay && (
                           <div className="flex items-start gap-2">
                             <MapPin
@@ -2380,7 +2369,6 @@ export default function Map() {
                             </div>
                           </div>
                         )}
-
                         {hazard.description && (
                           <div className="flex items-start gap-2">
                             <Info
@@ -2397,7 +2385,6 @@ export default function Map() {
                             </div>
                           </div>
                         )}
-
                         <div className="flex items-start gap-2 pt-1 border-t border-gray-100 mt-2">
                           <span className="text-gray-400 text-[10px]">
                             Created:{" "}
@@ -2405,8 +2392,6 @@ export default function Map() {
                           </span>
                         </div>
                       </div>
-
-                      {/* ✅ HIDE BUTTON - YELLOW to match hazard polygons */}
                       <button
                         onClick={() => {
                           setVisibleHazardBarangayId(null);
@@ -2452,7 +2437,6 @@ export default function Map() {
         siteName={selectedSiteName}
         token={token}
       />
-
       <SiteInfoPanel
         siteId={selectedSiteId}
         token={token}
@@ -2460,8 +2444,6 @@ export default function Map() {
         onClose={() => setIsSitePanelOpen(false)}
         onViewDetails={(siteId) => {
           setIsSitePanelOpen(false);
-          // Navigate to site information page - adjust route as needed
-          navigate(`/areas/${id}/site/${siteId}`);
         }}
       />
     </div>
