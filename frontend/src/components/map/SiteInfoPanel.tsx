@@ -13,11 +13,11 @@ import {
   MapPin,
   Calendar,
   FileText,
-  Leaf,   // ✅ NEW
-  Users,  // ✅ NEW
+  Leaf, // ✅ NEW
+  Users, // ✅ NEW
 } from "lucide-react";
 import { api } from "@/constant/api";
-const API = api+"api/";
+const API = api + "api/";
 
 interface SiteImage {
   site_image_id: number;
@@ -125,7 +125,7 @@ export default function SiteInfoPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  
+
   // ✅ NEW: State for applications
   const [applications, setApplications] = useState<SiteApplication[]>([]);
 
@@ -137,7 +137,7 @@ export default function SiteInfoPanel({
   }, [siteId, isOpen]);
 
   const fetchSiteData = async (id: number) => {
-    console.log(`${API}get_site/${id}/`)
+    console.log(`${API}get_site/${id}/`);
     setLoading(true);
     setError(null);
     try {
@@ -421,28 +421,59 @@ export default function SiteInfoPanel({
 
                 {applications.length === 0 ? (
                   <div className="bg-gray-50 rounded-xl p-4 border border-dashed border-gray-200 text-center">
-                    <p className="text-sm text-gray-500 font-medium">No programs assigned yet</p>
+                    <p className="text-sm text-gray-500 font-medium">
+                      No programs assigned yet
+                    </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      Tree grower applications will appear here once assigned to this site.
+                      Tree grower applications will appear here once assigned to
+                      this site.
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {applications.map((app) => {
                       // Map status to colors
-                      const statusColors: Record<string, { bg: string; text: string; border: string }> = {
-                        for_evaluation: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
-                        for_head: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
-                        accepted: { bg: "bg-green-50", text: "text-green-700", border: "border-green-200" },
-                        rejected: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
-                        completed: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200" },
-                        cancelled: { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-200" },
+                      const statusColors: Record<
+                        string,
+                        { bg: string; text: string; border: string }
+                      > = {
+                        for_evaluation: {
+                          bg: "bg-blue-50",
+                          text: "text-blue-700",
+                          border: "border-blue-200",
+                        },
+                        for_head: {
+                          bg: "bg-purple-50",
+                          text: "text-purple-700",
+                          border: "border-purple-200",
+                        },
+                        accepted: {
+                          bg: "bg-green-50",
+                          text: "text-green-700",
+                          border: "border-green-200",
+                        },
+                        rejected: {
+                          bg: "bg-red-50",
+                          text: "text-red-700",
+                          border: "border-red-200",
+                        },
+                        completed: {
+                          bg: "bg-teal-50",
+                          text: "text-teal-700",
+                          border: "border-teal-200",
+                        },
+                        cancelled: {
+                          bg: "bg-gray-50",
+                          text: "text-gray-700",
+                          border: "border-gray-200",
+                        },
                       };
-                      const colors = statusColors[app.status] || statusColors.for_evaluation;
+                      const colors =
+                        statusColors[app.status] || statusColors.for_evaluation;
 
                       return (
-                        <div 
-                          key={app.application_id} 
+                        <div
+                          key={app.application_id}
                           className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
                         >
                           {/* Header: Title & Status */}
@@ -450,11 +481,13 @@ export default function SiteInfoPanel({
                             <h4 className="text-sm font-bold text-gray-800 flex-1 leading-tight">
                               {app.title}
                             </h4>
-                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full border capitalize whitespace-nowrap ${colors.bg} ${colors.text} ${colors.border}`}>
-                              {app.status.replace('_', ' ')}
+                            <span
+                              className={`text-[10px] font-bold px-2 py-1 rounded-full border capitalize whitespace-nowrap ${colors.bg} ${colors.text} ${colors.border}`}
+                            >
+                              {app.status.replace("_", " ")}
                             </span>
                           </div>
-                          
+
                           {/* Body: Organization & Details */}
                           <div className="space-y-2 text-xs">
                             <div className="flex items-center gap-2">
@@ -462,20 +495,32 @@ export default function SiteInfoPanel({
                                 <Users size={12} className="text-gray-500" />
                               </div>
                               <div>
-                                <p className="text-gray-400 text-[10px] uppercase font-semibold">Tree Grower</p>
-                                <p className="text-gray-800 font-semibold">{app.organization_name}</p>
+                                <p className="text-gray-400 text-[10px] uppercase font-semibold">
+                                  Tree Grower
+                                </p>
+                                <p className="text-gray-800 font-semibold">
+                                  {app.organization_name}
+                                </p>
                               </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
                               <div>
-                                <p className="text-gray-400 text-[10px] uppercase font-semibold">Type</p>
-                                <p className="text-gray-700 font-medium capitalize">{app.classification}</p>
+                                <p className="text-gray-400 text-[10px] uppercase font-semibold">
+                                  Type
+                                </p>
+                                <p className="text-gray-700 font-medium capitalize">
+                                  {app.classification}
+                                </p>
                               </div>
                               {app.total_members && (
                                 <div>
-                                  <p className="text-gray-400 text-[10px] uppercase font-semibold">Members</p>
-                                  <p className="text-gray-700 font-medium">{app.total_members}</p>
+                                  <p className="text-gray-400 text-[10px] uppercase font-semibold">
+                                    Members
+                                  </p>
+                                  <p className="text-gray-700 font-medium">
+                                    {app.total_members}
+                                  </p>
                                 </div>
                               )}
                             </div>
@@ -484,14 +529,23 @@ export default function SiteInfoPanel({
                               <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100 text-gray-600">
                                 <Calendar size={12} className="text-gray-400" />
                                 <span className="font-medium">
-                                  Orientation: {new Date(app.orientation_date).toLocaleDateString("en-US", { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  Orientation:{" "}
+                                  {new Date(
+                                    app.orientation_date,
+                                  ).toLocaleDateString("en-US", {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  })}
                                 </span>
                               </div>
                             )}
-                            
+
                             <div className="flex items-center gap-1.5 text-gray-400 pt-1">
                               <Clock size={10} />
-                              <span className="text-[10px]">Applied on {app.created_at}</span>
+                              <span className="text-[10px]">
+                                Applied on {app.created_at}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -500,15 +554,6 @@ export default function SiteInfoPanel({
                   </div>
                 )}
               </div>
-
-              {/* Action Button */}
-              <button
-                onClick={handleViewFullDetails}
-                className="w-full flex items-center justify-center gap-2 bg-[#0F4A2F] hover:bg-[#0a3522] text-white px-6 py-3.5 rounded-xl text-sm font-semibold transition-all shadow-lg hover:shadow-xl"
-              >
-                <ExternalLink size={16} />
-                View Full Site Details
-              </button>
             </div>
           )}
         </div>

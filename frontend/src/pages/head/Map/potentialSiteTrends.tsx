@@ -256,7 +256,7 @@ export default function PotentialSiteTrends({
         {/* Header */}
         <div className="bg-[#0f4a2f] text-white px-6 py-4 flex items-center justify-between">
           <div>
-            <h2 className="font-bold text-lg">📈 NDVI Trend Analysis</h2>
+            <h2 className="font-bold text-lg">NDVI Trend Analysis</h2>
             <p className="text-sm text-gray-200">
               {siteName || siteId} •{" "}
               {interval === "month" ? "Monthly" : "Weekly"} View

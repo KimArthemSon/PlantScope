@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404
 import json
 
 # Import local models/helpers
-from ormoc_city.models import Ormoc_City # Assuming this model exists in ormoc_city
+from ormoc_city.models import Ormoc_City 
 from . import gee_helpers
 
 logger = logging.getLogger(__name__)
@@ -28,22 +28,12 @@ def get_sentinel2_median(roi, start_date, end_date, cloud_threshold=20):
         .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_threshold))
         .map(mask_s2_harmonized)
     )
-    try:
-        if collection.size().getInfo() == 0:
-            # Fallback: expand date range by 30 days
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            collection = (
-                ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-                .filterBounds(roi)
-                .filterDate((start_dt - timedelta(days=30)).strftime("%Y-%m-%d"),
-                            (end_dt + timedelta(days=30)).strftime("%Y-%m-%d"))
-                .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 30))
-                .map(mask_s2_harmonized)
-            )
-        return collection.median()
-    except:
+    
+    # Check if collection is empty to prevent "No band named 'B8'" error.
+    if collection.size().getInfo() == 0:
         return None
+        
+    return collection.median()
 
 def classify_canopy(ndvi_image):
     """Classify NDVI into canopy classes"""
@@ -69,28 +59,22 @@ def ndvi_canopy(request):
         if not ormoc:
             return JsonResponse({"error": "Ormoc City config not found"}, status=500)
         
-        # Convert polygon coordinates [lat,lng] -> [lng,lat]
         poly_coords = [[c[1], c[0]] for c in ormoc.polygon]
         roi = ee.Geometry.Polygon(poly_coords)
         
         s2 = get_sentinel2_median(roi, start, end)
-        if not s2:
-            return JsonResponse({"error": "No Sentinel-2 data found"}, status=404)
+        
+        if s2 is None:
+            return JsonResponse({"error": "No Sentinel-2 data found for the selected date range"}, status=404)
         
         ndvi = s2.normalizedDifference(["B8", "B4"]).rename("NDVI")
         canopy = classify_canopy(ndvi)
-        
-        # ✅ NEW: Clip canopy to Ormoc City boundary
-        # This masks out everything outside the polygon
         canopy_clipped = canopy.clip(roi)
         
-        # ✅ Create a mask image for visualization
-        # Areas inside Ormoc City will show NDVI colors
-        # Areas outside will be gray (no data/transparent)
         map_id = canopy_clipped.getMapId({
             "min": 0, 
             "max": 3, 
-            "palette": ["#cccccc", "#f1c40f", "#e67e22", "#27ae60"]  # Gray, Yellow, Orange, Green
+            "palette": ["#cccccc", "#f1c40f", "#e67e22", "#27ae60"]
         })
         
         return JsonResponse({
@@ -114,12 +98,12 @@ def suitable_sites(request):
         start, end = data['start'], data['end']
         
         s2 = get_sentinel2_median(roi, start, end)
-        if not s2:
-            return JsonResponse({"error": "No imagery found"}, status=404)
+        
+        if s2 is None:
+            return JsonResponse({"error": "No imagery found for the selected date range"}, status=404)
         
         ndvi = s2.normalizedDifference(["B8", "B4"]).rename("NDVI")
         
-        # Find areas with NDVI < 0.41
         suitable = ndvi.lt(0.41).selfMask().rename("suitable")
         vectors = suitable.reduceToVectors(
             geometry=roi, scale=20, maxPixels=1e10,
@@ -127,10 +111,14 @@ def suitable_sites(request):
         )
         
         features = vectors.getInfo().get("features", [])
-        # Enrich with stats
         for i, feat in enumerate(features):
             geom = ee.Geometry(feat['geometry'])
-            stats = ndvi.reduceRegion(reducer=ee.Reducer.mean(), geometry=geom, scale=20).getInfo()
+            stats = ndvi.reduceRegion(reducer=ee.Reducer.mean(), geometry=geom, scale=20, bestEffort=True).getInfo()
+            
+            # Safely extract NDVI to prevent NoneType error
+            ndvi_val = stats.get('NDVI')
+            avg_ndvi = round(ndvi_val, 3) if ndvi_val is not None else 0.0
+            
             try:
                 area_ha = geom.area().divide(10000).getInfo()
             except:
@@ -139,8 +127,8 @@ def suitable_sites(request):
             feat['properties'].update({
                 'site_id': f'SITE-{str(i+1).zfill(3)}',
                 'area_hectares': round(area_ha, 2),
-                'avg_ndvi': round(stats.get('NDVI', 0), 3),
-                'suitability_score': round((1 - stats.get('NDVI', 0)) * 100, 1)
+                'avg_ndvi': avg_ndvi,
+                'suitability_score': round((1 - avg_ndvi) * 100, 1)
             })
         
         return JsonResponse({
@@ -165,32 +153,74 @@ def ndvi_trend(request):
         start, end = data['start'], data['end']
         interval = data.get('interval', 'month')
         
-        time_series = []
         current = datetime.strptime(start, "%Y-%m-%d")
         end_dt = datetime.strptime(end, "%Y-%m-%d")
-        step = timedelta(days=30 if interval == 'month' else 7)
+        step_days = 30 if interval == 'month' else 7
         
-        while current + step <= end_dt:
-            period_end = current + step
+        images = []
+        
+        while current + timedelta(days=step_days) <= end_dt:
+            period_end = current + timedelta(days=step_days)
             s2 = get_sentinel2_median(roi, current.strftime("%Y-%m-%d"), period_end.strftime("%Y-%m-%d"), cloud_threshold=30)
-            if s2:
-                ndvi = s2.normalizedDifference(["B8", "B4"]).rename("NDVI")
-                mean = ndvi.reduceRegion(reducer=ee.Reducer.mean(), geometry=roi, scale=20).getInfo()
-                time_series.append({
-                    'date': current.strftime("%Y-%m"),
-                    'ndvi': round(mean.get('NDVI', 0), 3)
-                })
+            
+            # Skip time steps with no valid imagery
+            if s2 is not None:
+                img = s2.set('system:time_start', ee.Date(current).millis())
+                images.append(img)
+                
             current = period_end
+            
+        if not images:
+            return JsonResponse({
+                "success": True,
+                "data": {"dates": [], "values": [], "trend": "insufficient_data", "change": 0}
+            })
+            
+        ic = ee.ImageCollection(images)
         
+        # ✅ FIX: Map the reduction and set properties directly on the image
+        def reduce_ndvi(img):
+            ndvi = img.normalizedDifference(["B8", "B4"]).rename("NDVI")
+            mean = ndvi.reduceRegion(reducer=ee.Reducer.mean(), geometry=roi, scale=20, bestEffort=True)
+            return img.set({
+                'date': img.date().format('YYYY-MM'),
+                'mean_ndvi': mean.get('NDVI')
+            })
+            
+        reduced_ic = ic.map(reduce_ndvi)
+        
+        # ✅ FIX: Convert to FeatureCollection to extract properties safely.
+        # This prevents the "list index out of range" error caused by aggregate_array dropping nulls.
+        fc = ee.FeatureCollection(reduced_ic)
+        features = fc.getInfo().get('features', [])
+        
+        time_series = []
+        for feat in features:
+            props = feat.get('properties', {})
+            val = props.get('mean_ndvi')
+            date = props.get('date')
+            
+            # Safely handle None values from GEE (cloudy months)
+            if val is not None:
+                time_series.append({
+                    'date': date,
+                    'ndvi': round(val, 3)
+                })
+                
         if len(time_series) >= 2:
             change = time_series[-1]['ndvi'] - time_series[0]['ndvi']
             trend = "declining" if change < -0.1 else "stable" if change < 0.1 else "increasing"
         else:
             change, trend = 0, "insufficient_data"
-        
+            
         return JsonResponse({
             "success": True,
-            "data": {"dates": [t['date'] for t in time_series], "values": [t['ndvi'] for t in time_series], "trend": trend, "change": round(change, 3)}
+            "data": {
+                "dates": [t['date'] for t in time_series], 
+                "values": [t['ndvi'] for t in time_series], 
+                "trend": trend, 
+                "change": round(change, 3)
+            }
         })
     except Exception as e:
         logger.error(f"❌ NDVI trend error: {e}")

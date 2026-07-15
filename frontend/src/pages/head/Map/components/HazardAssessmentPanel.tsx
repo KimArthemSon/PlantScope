@@ -35,6 +35,9 @@ interface HazardAssessmentPanelProps {
   useCustomDateRange: boolean;
   setUseCustomDateRange: (val: boolean) => void;
   onApplyCustomDateRange: () => void;
+
+  // ✅ NEW: Loading State Prop
+  isFirmsLoading: boolean;
 }
 
 // 🏛️ Official MGB & PHIVOLCS Guide Data
@@ -141,6 +144,7 @@ export default function HazardAssessmentPanel({
   useCustomDateRange,
   setUseCustomDateRange,
   onApplyCustomDateRange,
+  isFirmsLoading, // ✅ NEW
 }: HazardAssessmentPanelProps) {
   const [activeInfo, setActiveInfo] = useState<
     "mgbFlood" | "mgbLandslide" | "eil" | "firms" | null
@@ -351,26 +355,53 @@ export default function HazardAssessmentPanel({
           </div>
         </div>
 
+        {/* ✅ UPDATED: Button with Loading State */}
         <button
           onClick={() => onToggleFirms()}
+          disabled={isFirmsLoading}
           className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
             showFirms
               ? "bg-red-600 text-white shadow-md"
               : "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
-          }`}
+          } ${isFirmsLoading ? "opacity-70 cursor-not-allowed" : ""}`}
         >
           <span className="flex items-center gap-1.5">
-            {showFirms ? <Eye size={12} /> : <EyeOff size={12} />}
-            🔥 Active Fire Hotspots
+            {isFirmsLoading ? (
+              <svg
+                className="animate-spin h-3 w-3 text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                ></circle>
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+            ) : showFirms ? (
+              <Eye size={12} />
+            ) : (
+              <EyeOff size={12} />
+            )}
+            {isFirmsLoading ? "Loading Fires..." : "🔥 Active Fire Hotspots"}
           </span>
-          {showFirms && (
+          {showFirms && !isFirmsLoading && (
             <span className="text-[.5rem] bg-white/20 px-1.5 py-0.5 rounded">
               {fireCount} fires
             </span>
           )}
         </button>
 
-        {showFirms && (
+        {showFirms && !isFirmsLoading && (
           <div className="mt-2 space-y-2">
             {/* Preset Time Range Buttons */}
             <div className="flex gap-1">
@@ -432,7 +463,8 @@ export default function HazardAssessmentPanel({
                     type="date"
                     value={firmsStartDate}
                     onChange={(e) => setFirmsStartDate(e.target.value)}
-                    className="w-full text-[.6rem] p-1 border border-red-200 rounded bg-white"
+                    disabled={isFirmsLoading} // ✅ Disable while loading
+                    className="w-full text-[.6rem] p-1 border border-red-200 rounded bg-white disabled:opacity-50 disabled:cursor-not-allowed"
                     max={new Date().toISOString().split("T")[0]}
                   />
                 </div>
@@ -444,15 +476,70 @@ export default function HazardAssessmentPanel({
                     type="date"
                     value={firmsEndDate}
                     onChange={(e) => setFirmsEndDate(e.target.value)}
-                    className="w-full text-[.6rem] p-1 border border-red-200 rounded bg-white"
+                    disabled={isFirmsLoading} // ✅ Disable while loading
+                    className="w-full text-[.6rem] p-1 border border-red-200 rounded bg-white disabled:opacity-50 disabled:cursor-not-allowed"
                     max={new Date().toISOString().split("T")[0]}
                   />
                 </div>
+                {/* ✅ UPDATED: Apply Date Range Button with Loading Animation */}
                 <button
                   onClick={onApplyCustomDateRange}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white text-[.6rem] font-medium py-1.5 px-2 rounded-md transition-colors"
+                  disabled={isFirmsLoading}
+                  className={`w-full text-[.6rem] font-medium py-1.5 px-2 rounded-md transition-colors flex items-center justify-center gap-1.5 ${
+                    isFirmsLoading
+                      ? "bg-red-300 text-white cursor-not-allowed"
+                      : "bg-red-600 hover:bg-red-700 text-white"
+                  }`}
                 >
-                  Apply Date Range
+                  {isFirmsLoading ? (
+                    <>
+                      <svg
+                        className="animate-spin h-3 w-3 text-white"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      <span>Applying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <rect
+                          x="3"
+                          y="4"
+                          width="18"
+                          height="18"
+                          rx="2"
+                          ry="2"
+                        ></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                      </svg>
+                      <span>Apply Date Range</span>
+                    </>
+                  )}
                 </button>
               </div>
             )}
