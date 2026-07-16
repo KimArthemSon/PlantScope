@@ -39,6 +39,11 @@ const DOC_LAYER_CODES = {
   other_doc: "meta_other_doc",
 };
 
+/* ---------- ✅ GPS-REFACTOR: Constants ---------- */
+const GPS_READY_HOURS = 2; // < 2h = warm cache
+const GPS_AGING_HOURS = 6; // 2–6h = aging cache
+const GPS_LIVE_TIMEOUT_MS = 30000; // 30s timeout for live GPS (Optimal for tree canopy)
+
 /* ---------- TYPES ---------- */
 type SecurityConcern =
   | "Armed Threat / Violence"
@@ -50,6 +55,8 @@ type SecurityConcern =
 
 type AccessibilityType = "Road" | "Trail" | "None" | "Other";
 
+type GPSReadiness = "ready" | "aging" | "cold" | "checking";
+
 interface LocalDocImage {
   id: string;
   type: keyof typeof DOC_LAYER_CODES;
@@ -57,7 +64,6 @@ interface LocalDocImage {
   note: string;
 }
 
-// ✅ UPDATED: Added ownership_type
 interface LandClassificationOption {
   land_classification_id: number;
   name: string;
@@ -104,32 +110,33 @@ export default function MetaDataForm() {
   const [locationAccuracy, setLocationAccuracy] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
 
-  // ✅ UPDATED: Removed photo states, kept only notes
+  // ✅ GPS-REFACTOR: New state for GPS readiness indicator
+  const [gpsReadiness, setGpsReadiness] = useState<GPSReadiness>("checking");
+  const [gpsReadinessAge, setGpsReadinessAge] = useState<number | null>(null);
+
+  // ✅ GPS-REFACTOR: Countdown state for UI
+  const [gpsCountdown, setGpsCountdown] = useState(30);
+
   const [landTitleNote, setLandTitleNote] = useState("");
   const [taxDeclNote, setTaxDeclNote] = useState("");
   const [landClassId, setLandClassId] = useState<number | null>(null);
   const [landClassNote, setLandClassNote] = useState("");
 
-  // ✅ UPDATED: Removed photo_url from otherDocs
   const [otherDocs, setOtherDocs] = useState<{ note: string }[]>([]);
 
   const isOnline = useNetworkStatus();
   const isOfflineMode = !isOnline;
 
-  // Animals
   const [selectedAnimalIds, setSelectedAnimalIds] = useState<number[]>([]);
 
-  // Security Concerns
   const [securitySelected, setSecuritySelected] = useState<SecurityConcern[]>(
     [],
   );
   const [securityNote, setSecurityNote] = useState("");
 
-  // Accessibility
   const [vehicleAccess, setVehicleAccess] = useState<AccessibilityType[]>([]);
   const [accessNotes, setAccessNotes] = useState("");
 
-  // Dropdown options
   const [landClassifications, setLandClassifications] = useState<
     LandClassificationOption[]
   >([]);
@@ -137,11 +144,10 @@ export default function MetaDataForm() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showAnimalModal, setShowAnimalModal] = useState(false);
 
-  // Image tracking for upload (General photos only now)
   const [localImages, setLocalImages] = useState<LocalDocImage[]>([]);
   const [existingImages, setExistingImages] = useState<any[]>([]);
 
-  /* ---------- ✅ Direct Network Check on Mount ---------- */
+  /* ---------- Direct Network Check on Mount ---------- */
   useEffect(() => {
     const checkNetworkOnMount = async () => {
       try {
@@ -155,6 +161,47 @@ export default function MetaDataForm() {
     };
     checkNetworkOnMount();
   }, []);
+
+  /* ---------- ✅ GPS-REFACTOR: Check GPS readiness on mount ---------- */
+  useEffect(() => {
+    if (networkChecked) {
+      checkGPSReadiness();
+    }
+  }, [networkChecked]);
+
+  /* ---------- ✅ GPS-REFACTOR: GPS Readiness Checker ---------- */
+  const checkGPSReadiness = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setGpsReadiness("cold");
+        setGpsReadinessAge(null);
+        return;
+      }
+
+      const lastKnown = await Location.getLastKnownPositionAsync();
+      if (!lastKnown) {
+        setGpsReadiness("cold");
+        setGpsReadinessAge(null);
+        return;
+      }
+
+      const ageHours = (Date.now() - lastKnown.timestamp) / (1000 * 60 * 60);
+      setGpsReadinessAge(ageHours);
+
+      if (ageHours < GPS_READY_HOURS) {
+        setGpsReadiness("ready");
+      } else if (ageHours < GPS_AGING_HOURS) {
+        setGpsReadiness("aging");
+      } else {
+        setGpsReadiness("cold");
+      }
+    } catch (err) {
+      console.error("Error checking GPS readiness:", err);
+      setGpsReadiness("cold");
+      setGpsReadinessAge(null);
+    }
+  };
 
   /* ---------- Load Dropdown Options ---------- */
   useEffect(() => {
@@ -197,7 +244,7 @@ export default function MetaDataForm() {
     }
   };
 
-  /* ---------- ✅ NEW: Load Offline Draft (Edit Offline Draft Mode) ---------- */
+  /* ---------- Load Offline Draft ---------- */
   useEffect(() => {
     if (isEditingOfflineDraft) {
       loadOfflineDraftData();
@@ -229,7 +276,6 @@ export default function MetaDataForm() {
         );
       }
 
-      // ✅ UPDATED: Only load notes, no photos
       setLandTitleNote(meta.legal_documents?.land_title?.note || "");
       setTaxDeclNote(meta.legal_documents?.tax_declaration?.note || "");
       setLandClassId(payload.land_classification_id || null);
@@ -309,7 +355,6 @@ export default function MetaDataForm() {
         );
       }
 
-      // ✅ UPDATED: Only load notes, no photos
       setLandTitleNote(meta.legal_documents?.land_title?.note || "");
       setTaxDeclNote(meta.legal_documents?.tax_declaration?.note || "");
       setLandClassId(
@@ -344,18 +389,85 @@ export default function MetaDataForm() {
     }
   };
 
-  /* ---------- GPS Location ---------- */
+  /* ---------- ✅ GPS-REFACTOR: Robust Location Handler with 30s Timeout, Countdown + Fallback ---------- */
   const handleGetCurrentLocation = async () => {
     setGettingLocation(true);
+    setGpsCountdown(30);
+
+    // Start countdown timer
+    const interval = setInterval(() => {
+      setGpsCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
     try {
+      // 1. Check permission first
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        warning("Permission Denied", "Please enable location access.");
+        clearInterval(interval);
+        warning(
+          "Permission Required",
+          "Location access is disabled. Please enable it in your device Settings to capture GPS coordinates.",
+        );
+        setGettingLocation(false);
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+
+      let loc: Location.LocationObject;
+      let usedFallback = false;
+
+      // 2. Try live GPS with strict timeout
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(
+            () => reject(new Error("GPS_TIMEOUT")),
+            GPS_LIVE_TIMEOUT_MS,
+          );
+        });
+
+        loc = await Promise.race([
+          Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            mayShowUserSettingsDialog: true,
+          }),
+          timeoutPromise,
+        ]);
+      } catch (liveErr: any) {
+        // 3. Live GPS failed — try last known position as fallback
+        console.warn("Live GPS failed, trying fallback:", liveErr.message);
+        const lastKnown = await Location.getLastKnownPositionAsync();
+
+        if (!lastKnown) {
+          clearInterval(interval);
+          // No fallback available — give actionable error
+          if (liveErr.message === "GPS_TIMEOUT") {
+            showError(
+              "GPS Signal Not Found",
+              `Could not lock onto GPS after ${GPS_LIVE_TIMEOUT_MS / 1000} seconds. This is common when offline and indoors/under tree canopy. Please:\n\n• Step outside near a window or open area\n• Or enter coordinates manually from your handheld GPS`,
+            );
+          } else {
+            showError(
+              "GPS Error",
+              "Unable to retrieve location. Please enter coordinates manually.",
+            );
+          }
+          setGettingLocation(false);
+          return;
+        }
+
+        // Fallback succeeded
+        loc = lastKnown;
+        usedFallback = true;
+      }
+
+      clearInterval(interval);
+
+      // 4. Apply location to state
       setLocationLat(loc.coords.latitude.toFixed(6));
       setLocationLng(loc.coords.longitude.toFixed(6));
       setLocationAccuracy(loc.coords.accuracy?.toFixed(1) || "");
@@ -364,9 +476,26 @@ export default function MetaDataForm() {
         longitude: loc.coords.longitude,
         gps_accuracy_meters: loc.coords.accuracy,
       });
-      success("Location Captured", "GPS coordinates updated.");
-    } catch (err) {
-      showError("Error", "Could not get current location.");
+
+      // 5. Show appropriate success/warning message
+      if (usedFallback) {
+        warning(
+          "Using Last Known Location",
+          "Live GPS signal unavailable. We've filled in your last known position. Please verify the coordinates or edit them manually for accuracy.",
+        );
+      } else {
+        success("Location Captured", "GPS coordinates updated successfully.");
+      }
+
+      // 6. Re-check GPS readiness after successful fix (cache is now warm!)
+      checkGPSReadiness();
+    } catch (err: any) {
+      clearInterval(interval);
+      console.error("Unexpected location error:", err);
+      showError(
+        "Error",
+        "Unexpected error getting location. Please try again.",
+      );
     } finally {
       setGettingLocation(false);
     }
@@ -384,7 +513,7 @@ export default function MetaDataForm() {
         ...localImages,
         {
           id: `local-${Date.now()}`,
-          type: "other_doc", // Generic layer for general photos
+          type: "other_doc",
           uri: result.assets[0].uri,
           note: "General field photo",
         },
@@ -479,7 +608,6 @@ export default function MetaDataForm() {
       animal_ids: selectedAnimalIds,
       field_assessment_data: {
         meta_data: {
-          // ✅ UPDATED: Only send notes, no photo_url
           legal_documents: {
             land_title: { note: landTitleNote },
             tax_declaration: { note: taxDeclNote },
@@ -499,7 +627,7 @@ export default function MetaDataForm() {
     };
   };
 
-  /* ---------- ✅ UPDATED: Save Offline ---------- */
+  /* ---------- Save Offline ---------- */
   const handleSaveOffline = async (): Promise<string | null> => {
     if (!assessmentDate) {
       warning("Missing Info", "Assessment date is required.");
@@ -718,13 +846,22 @@ export default function MetaDataForm() {
   const baseTitle = getBaseTitle();
   const headerTitle = siteId ? `${baseTitle} (Site)` : `${baseTitle} (Area)`;
 
-  // ✅ UPDATED: Derive ownership type from selected classification
   const selectedLandClass = landClassifications.find(
     (lc) => lc.land_classification_id === landClassId,
   );
   const selectedLandClassName =
     selectedLandClass?.name || "Select classification";
   const selectedLandClassOwnership = selectedLandClass?.ownership_type || null;
+
+  /* ---------- ✅ GPS-REFACTOR: Helper to format readiness age ---------- */
+  const formatReadinessAge = () => {
+    if (gpsReadinessAge === null) return "never";
+    if (gpsReadinessAge < 1 / 60) return "just now";
+    if (gpsReadinessAge < 1)
+      return `${Math.round(gpsReadinessAge * 60)} min ago`;
+    if (gpsReadinessAge < 24) return `${gpsReadinessAge.toFixed(1)}h ago`;
+    return `${Math.round(gpsReadinessAge / 24)}d ago`;
+  };
 
   /* ---------- UI ---------- */
   return (
@@ -749,6 +886,15 @@ export default function MetaDataForm() {
             Offline Mode - Save Offline to sync later
           </Text>
         </View>
+      )}
+
+      {/* ✅ GPS-REFACTOR: GPS Readiness Banner */}
+      {!isReadOnly && gpsReadiness !== "checking" && (
+        <GPSReadinessBanner
+          readiness={gpsReadiness}
+          ageText={formatReadinessAge()}
+          onRefresh={checkGPSReadiness}
+        />
       )}
 
       {isReadOnly && (
@@ -822,7 +968,6 @@ export default function MetaDataForm() {
             <Text style={styles.readonlyNote}>{landClassNote}</Text>
           ) : null}
 
-          {/* ✅ UPDATED: Conditional Legal Docs based on Ownership Type */}
           {landClassId ? (
             selectedLandClassOwnership === "private" ? (
               <View style={styles.privateDocsContainer}>
@@ -1145,7 +1290,9 @@ export default function MetaDataForm() {
               {gettingLocation ? (
                 <>
                   <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.gpsBtnText}>Acquiring GPS…</Text>
+                  <Text style={styles.gpsBtnText}>
+                    Acquiring GPS ({gpsCountdown}s)…
+                  </Text>
                 </>
               ) : (
                 <>
@@ -1170,7 +1317,7 @@ export default function MetaDataForm() {
           )}
         </SectionCard>
 
-        {/* 6. Photos & Attachments (General Photos Only) */}
+        {/* 6. Photos & Attachments */}
         <SectionCard
           icon="image-multiple-outline"
           title="Field Photos"
@@ -1393,6 +1540,67 @@ export default function MetaDataForm() {
   );
 }
 
+/* ---------- ✅ GPS-REFACTOR: GPS Readiness Banner Component ---------- */
+const GPSReadinessBanner: React.FC<{
+  readiness: GPSReadiness;
+  ageText: string;
+  onRefresh: () => void;
+}> = ({ readiness, ageText, onRefresh }) => {
+  const config = {
+    ready: {
+      bg: "#DCFCE7",
+      border: "#86EFAC",
+      icon: "checkmark-circle" as const,
+      iconColor: "#15803D",
+      title: "GPS Ready",
+      titleColor: "#15803D",
+      message: `Last fix: ${ageText}. Safe to go offline.`,
+    },
+    aging: {
+      bg: "#FEF3C7",
+      border: "#FCD34D",
+      icon: "time-outline" as const,
+      iconColor: "#92400E",
+      title: "GPS Cache Aging",
+      titleColor: "#92400E",
+      message: `Last fix: ${ageText}. Consider brief internet to warm up.`,
+    },
+    cold: {
+      bg: "#FEE2E2",
+      border: "#FCA5A5",
+      icon: "snow-outline" as const,
+      iconColor: "#991B1B",
+      title: "GPS Cold",
+      titleColor: "#991B1B",
+      message: "No recent fix. Connect to internet briefly before field work.",
+    },
+  };
+
+  const c = config[readiness];
+
+  return (
+    <View
+      style={[
+        styles.gpsBanner,
+        { backgroundColor: c.bg, borderColor: c.border },
+      ]}
+    >
+      <Ionicons name={c.icon} size={18} color={c.iconColor} />
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.gpsBannerTitle, { color: c.titleColor }]}>
+          {c.title}
+        </Text>
+        <Text style={[styles.gpsBannerMessage, { color: c.titleColor }]}>
+          {c.message}
+        </Text>
+      </View>
+      <TouchableOpacity onPress={onRefresh} style={styles.gpsBannerRefresh}>
+        <Ionicons name="refresh-outline" size={18} color={c.iconColor} />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 /* ---------- SUB-COMPONENTS ---------- */
 const SectionCard: React.FC<{
   icon: string;
@@ -1505,6 +1713,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#15803D",
     fontWeight: "600",
+  },
+  // ✅ GPS-REFACTOR: GPS Readiness Banner styles
+  gpsBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  gpsBannerTitle: { fontSize: 12, fontWeight: "700" },
+  gpsBannerMessage: { fontSize: 11, marginTop: 1, opacity: 0.85 },
+  gpsBannerRefresh: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(0,0,0,0.05)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 0 },
@@ -1644,7 +1871,6 @@ const styles = StyleSheet.create({
   },
   selectedAnimalText: { fontSize: 11, color: "#0F4A2F", fontWeight: "600" },
 
-  // ✅ NEW: Conditional Legal Doc Styles
   privateDocsContainer: { marginTop: 16 },
   publicDocsNotice: {
     flexDirection: "row",
