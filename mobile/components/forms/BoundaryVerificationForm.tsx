@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
-  Dimensions,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -27,9 +26,14 @@ import {
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import FloatingMapButton from "@/components/FloatingMapButton";
-
-// ✅ Import Alert Context
 import { useAlert } from "@/components/AlertContext";
+
+// ─────────────────────────────────────────────
+// ✅ GPS-REFACTOR: Constants
+// ─────────────────────────────────────────────
+const GPS_READY_HOURS = 2;
+const GPS_AGING_HOURS = 6;
+const GPS_LIVE_TIMEOUT_MS = 30000; // 30 seconds (Optimal for tree canopy)
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -43,6 +47,7 @@ interface LocationData {
   barangay?: string;
   timestamp: string;
   accuracy?: number;
+  isFallback?: boolean; // ✅ GPS-REFACTOR: Track if this is a cached fallback
 }
 
 interface BoundaryImage {
@@ -55,8 +60,10 @@ interface BoundaryImage {
   created_at: string;
 }
 
+type GPSReadiness = "ready" | "aging" | "cold" | "checking";
+
 // ─────────────────────────────────────────────
-// GPS CAMERA COMPONENT (SimpleGeocam) - Two Button Version
+// GPS CAMERA COMPONENT (SimpleGeocam)
 // ─────────────────────────────────────────────
 
 function SimpleGeocam({
@@ -81,35 +88,43 @@ function SimpleGeocam({
 
   const { warning, error: showError } = useAlert();
 
+  // ✅ GPS-REFACTOR: Robust location fetch with 30s timeout and fallback
   const getCurrentLocation = async (): Promise<LocationData | null> => {
     try {
       if (!locationPermission?.granted) {
         const s = await requestLocationPermission();
-        if (!s?.granted) {
-          return null;
-        }
+        if (!s?.granted) return null;
       }
 
       const servicesEnabled = await Location.hasServicesEnabledAsync();
-      if (!servicesEnabled) {
-        return null;
-      }
+      if (!servicesEnabled) return null;
 
-      let loc;
+      let loc: Location.LocationObject | null = null;
+      let isFallback = false;
+
       try {
-        loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
+        // 1. Try live GPS with strict 30s timeout
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(
+            () => reject(new Error("GPS_TIMEOUT")),
+            GPS_LIVE_TIMEOUT_MS,
+          );
         });
-      } catch (highAccError) {
-        try {
-          loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-        } catch (balancedAccError) {
-          loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Lowest,
-          });
-        }
+
+        loc = await Promise.race([
+          Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          }),
+          timeoutPromise,
+        ]);
+      } catch (liveErr: any) {
+        // 2. Live GPS failed or timed out — try last known position
+        console.warn(
+          "Live GPS failed/timed out, trying fallback:",
+          liveErr.message,
+        );
+        loc = await Location.getLastKnownPositionAsync();
+        if (loc) isFallback = true;
       }
 
       if (!loc || !loc.coords) {
@@ -141,6 +156,7 @@ function SimpleGeocam({
           second: "2-digit",
         }),
         accuracy: loc.coords.accuracy ?? undefined,
+        isFallback,
       };
 
       setCurrentLocation(data);
@@ -163,7 +179,7 @@ function SimpleGeocam({
     if (!locData) {
       warning(
         "GPS Required",
-        "GPS coordinates are not available. Please use 'Photo Only' button or move to an area with better GPS signal.",
+        "No GPS coordinates available (live or cached). Please use the 'Photo Only' button or move to an area with better signal.",
       );
       return;
     }
@@ -178,6 +194,14 @@ function SimpleGeocam({
         showError("Error", "Failed to capture photo.");
         return;
       }
+
+      if (locData.isFallback) {
+        warning(
+          "Using Cached Location",
+          "Live GPS unavailable. Using last known coordinates.",
+        );
+      }
+
       onCapture(photo.uri, locData, true);
     } catch (error) {
       showError(
@@ -319,7 +343,11 @@ function SimpleGeocam({
               ]}
             />
             <Text style={cam.gpsCardLabel}>
-              {hasGPS ? "GPS Active" : "No GPS Signal"}
+              {hasGPS
+                ? currentLocation?.isFallback
+                  ? "GPS (Cached)"
+                  : "GPS Active"
+                : "No GPS Signal"}
             </Text>
           </View>
           <View style={cam.signalBars}>
@@ -364,7 +392,6 @@ function SimpleGeocam({
       {/* Two Capture Buttons */}
       <View style={cam.captureArea}>
         <View style={cam.captureButtonsRow}>
-          {/* GPS Photo Button */}
           <View style={cam.captureButtonColumn}>
             <TouchableOpacity
               style={[cam.gpsCaptureRing, !hasGPS && cam.captureRingDisabled]}
@@ -385,7 +412,6 @@ function SimpleGeocam({
             </Text>
           </View>
 
-          {/* Photo Only Button */}
           <View style={cam.captureButtonColumn}>
             <TouchableOpacity
               style={cam.photoOnlyRing}
@@ -608,10 +634,7 @@ const cam = StyleSheet.create({
     justifyContent: "center",
     gap: 32,
   },
-  captureButtonColumn: {
-    alignItems: "center",
-    gap: 8,
-  },
+  captureButtonColumn: { alignItems: "center", gap: 8 },
   gpsCaptureRing: {
     width: 80,
     height: 80,
@@ -734,6 +757,66 @@ const FieldLabel = ({
   </View>
 );
 
+// ✅ GPS-REFACTOR: GPS Readiness Banner Component
+const GPSReadinessBanner: React.FC<{
+  readiness: GPSReadiness;
+  ageText: string;
+  onRefresh: () => void;
+}> = ({ readiness, ageText, onRefresh }) => {
+  const config = {
+    ready: {
+      bg: "#DCFCE7",
+      border: "#86EFAC",
+      icon: "checkmark-circle" as const,
+      iconColor: "#15803D",
+      title: "GPS Ready",
+      titleColor: "#15803D",
+      message: `Last fix: ${ageText}. Safe to go offline.`,
+    },
+    aging: {
+      bg: "#FEF3C7",
+      border: "#FCD34D",
+      icon: "time-outline" as const,
+      iconColor: "#92400E",
+      title: "GPS Cache Aging",
+      titleColor: "#92400E",
+      message: `Last fix: ${ageText}. Consider brief internet to warm up.`,
+    },
+    cold: {
+      bg: "#FEE2E2",
+      border: "#FCA5A5",
+      icon: "snow-outline" as const,
+      iconColor: "#991B1B",
+      title: "GPS Cold",
+      titleColor: "#991B1B",
+      message: "No recent fix. Connect to internet briefly before field work.",
+    },
+  };
+  const c = config[readiness];
+
+  return (
+    <View
+      style={[
+        styles.gpsBanner,
+        { backgroundColor: c.bg, borderColor: c.border },
+      ]}
+    >
+      <Ionicons name={c.icon} size={18} color={c.iconColor} />
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.gpsBannerTitle, { color: c.titleColor }]}>
+          {c.title}
+        </Text>
+        <Text style={[styles.gpsBannerMessage, { color: c.titleColor }]}>
+          {c.message}
+        </Text>
+      </View>
+      <TouchableOpacity onPress={onRefresh} style={styles.gpsBannerRefresh}>
+        <Ionicons name="refresh-outline" size={18} color={c.iconColor} />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 // ─────────────────────────────────────────────
 // MAIN FORM COMPONENT
 // ─────────────────────────────────────────────
@@ -748,22 +831,21 @@ export default function BoundaryVerificationForm() {
   const siteId = params.siteId as string | undefined;
   const isEditingOfflineDraft = !!offlineDraftId;
 
-  // Alert Context
   const { success, error: showError, warning, confirm } = useAlert();
-
   const { saving, handleSave, uploadImage, deleteImage, fetchAssessmentData } =
     useFieldAssessment(areaId, layerId, assessmentId);
-
   const isOnline = useNetworkStatus();
   const isOfflineMode = !isOnline;
 
   const [overallNote, setOverallNote] = useState("");
   const [locationContext, setLocationContext] = useState("");
-
   const [locationLat, setLocationLat] = useState("");
   const [locationLng, setLocationLng] = useState("");
   const [locationAccuracy, setLocationAccuracy] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
+  
+  // ✅ GPS-REFACTOR: Countdown state for UI
+  const [gpsCountdown, setGpsCountdown] = useState(30);
 
   const [images, setImages] = useState<BoundaryImage[]>([]);
   const [localImages, setLocalImages] = useState<LocalImage[]>([]);
@@ -783,11 +865,23 @@ export default function BoundaryVerificationForm() {
   const [pendingNote, setPendingNote] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // Load existing data
+  // ✅ GPS-REFACTOR: Readiness state
+  const [gpsReadiness, setGpsReadiness] = useState<GPSReadiness>("checking");
+  const [gpsReadinessAge, setGpsReadinessAge] = useState<number | null>(null);
+
+  // ✅ OFFLINE-SAFETY: Prevent API calls on mount if offline and not editing a draft
   useEffect(() => {
     if (isEditingOfflineDraft) {
       loadOfflineDraftData();
     } else if (assessmentId) {
+      if (!isOnline) {
+        warning(
+          "Offline",
+          "Cannot load live assessment data without an internet connection.",
+        );
+        setLoading(false);
+        return;
+      }
       (async () => {
         const data = await fetchAssessmentData();
         if (data) {
@@ -807,22 +901,59 @@ export default function BoundaryVerificationForm() {
     } else {
       setLoading(false);
     }
-  }, [assessmentId, offlineDraftId]);
+  }, [assessmentId, offlineDraftId, isOnline]);
+
+  // ✅ GPS-REFACTOR: Check readiness on mount
+  useEffect(() => {
+    if (!loading) {
+      checkGPSReadiness();
+    }
+  }, [loading]);
+
+  // ✅ GPS-REFACTOR: Readiness checker logic
+  const checkGPSReadiness = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setGpsReadiness("cold");
+        setGpsReadinessAge(null);
+        return;
+      }
+
+      const lastKnown = await Location.getLastKnownPositionAsync();
+      if (!lastKnown) {
+        setGpsReadiness("cold");
+        setGpsReadinessAge(null);
+        return;
+      }
+
+      const ageHours = (Date.now() - lastKnown.timestamp) / (1000 * 60 * 60);
+      setGpsReadinessAge(ageHours);
+
+      if (ageHours < GPS_READY_HOURS) {
+        setGpsReadiness("ready");
+      } else if (ageHours < GPS_AGING_HOURS) {
+        setGpsReadiness("aging");
+      } else {
+        setGpsReadiness("cold");
+      }
+    } catch (err) {
+      console.error("Error checking GPS readiness:", err);
+      setGpsReadiness("cold");
+      setGpsReadinessAge(null);
+    }
+  };
 
   const loadOfflineDraftData = async () => {
     if (!offlineDraftId) return;
-
     try {
       const draft = await getOfflineDraft(offlineDraftId);
       if (!draft) {
         showError("Error", "Draft not found.");
         return;
       }
-
       const payload = draft.payload;
-
       populateForm(payload.field_assessment_data || {});
-
       if (payload.location) {
         setLocationLat(payload.location.latitude?.toString() || "");
         setLocationLng(payload.location.longitude?.toString() || "");
@@ -830,7 +961,6 @@ export default function BoundaryVerificationForm() {
           payload.location.gps_accuracy_meters?.toString() || "",
         );
       }
-
       if (Array.isArray(draft.images)) {
         const loadedImages: LocalImage[] = draft.images.map((img) => ({
           id: img.id,
@@ -863,14 +993,29 @@ export default function BoundaryVerificationForm() {
     }
   };
 
+  // ✅ GPS-REFACTOR: Robust location handler with 30s timeout, countdown, and fallback
   const handleGetCurrentLocation = async () => {
     setGettingLocation(true);
+    setGpsCountdown(30);
+    
+    // Start countdown timer
+    const interval = setInterval(() => {
+      setGpsCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
+        clearInterval(interval);
         warning(
-          "Permission Denied",
-          "Please enable location access in your device settings.",
+          "Permission Required",
+          "Location access is disabled. Please enable it in your device Settings.",
         );
         setGettingLocation(false);
         return;
@@ -878,6 +1023,7 @@ export default function BoundaryVerificationForm() {
 
       const servicesEnabled = await Location.hasServicesEnabledAsync();
       if (!servicesEnabled) {
+        clearInterval(interval);
         warning(
           "Location Services Disabled",
           "Please enable GPS/Location in your device settings.",
@@ -886,41 +1032,70 @@ export default function BoundaryVerificationForm() {
         return;
       }
 
-      let loc;
+      let loc: Location.LocationObject;
+      let usedFallback = false;
+
       try {
-        loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(
+            () => reject(new Error("GPS_TIMEOUT")),
+            GPS_LIVE_TIMEOUT_MS,
+          );
         });
-      } catch (highAccError) {
-        console.log("High accuracy failed, trying balanced...");
-        try {
-          loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-        } catch (balancedAccError) {
-          console.log("Balanced failed, trying lowest...");
-          loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Lowest,
-          });
+
+        loc = await Promise.race([
+          Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          }),
+          timeoutPromise,
+        ]);
+      } catch (liveErr: any) {
+        console.warn("Live GPS failed, trying fallback:", liveErr.message);
+        const lastKnown = await Location.getLastKnownPositionAsync();
+
+        if (!lastKnown) {
+          clearInterval(interval);
+          if (liveErr.message === "GPS_TIMEOUT") {
+            showError(
+              "GPS Signal Not Found",
+              `Could not lock onto GPS after ${GPS_LIVE_TIMEOUT_MS / 1000} seconds. This is common when offline and indoors/under tree canopy. Please step outside or enter coordinates manually.`,
+            );
+          } else {
+            showError(
+              "GPS Error",
+              "Unable to retrieve location. Please enter coordinates manually.",
+            );
+          }
+          setGettingLocation(false);
+          return;
         }
+
+        loc = lastKnown;
+        usedFallback = true;
       }
 
-      if (!loc || !loc.coords) {
-        showError("Error", "Could not retrieve location data.");
-        setGettingLocation(false);
-        return;
-      }
-
+      clearInterval(interval);
       setLocationLat(loc.coords.latitude.toFixed(6));
       setLocationLng(loc.coords.longitude.toFixed(6));
       setLocationAccuracy(loc.coords.accuracy?.toFixed(1) || "");
 
-      success("Location Captured", "GPS coordinates updated.");
+      if (usedFallback) {
+        warning(
+          "Using Last Known Location",
+          "Live GPS signal unavailable. We've filled in your last known position. Please verify or edit manually.",
+        );
+      } else {
+        success("Location Captured", "GPS coordinates updated successfully.");
+      }
+
+      // Re-check readiness after successful fix
+      checkGPSReadiness();
     } catch (error) {
+      clearInterval(interval);
       console.error("Location error:", error);
       showError(
         "GPS Error",
-        "Could not get current location. Make sure GPS is enabled and you're outdoors or near a window.",
+        "Unexpected error getting location. Please try again.",
       );
     } finally {
       setGettingLocation(false);
@@ -934,7 +1109,11 @@ export default function BoundaryVerificationForm() {
   ) => {
     setShowGPSCamera(false);
     setPendingPhoto({ uri, location, withGPS });
-    setPendingNote("");
+    setPendingNote(
+      location?.isFallback
+        ? "Note: Live GPS unavailable, using cached coordinates."
+        : "",
+    );
     setShowNoteModal(true);
   };
 
@@ -948,6 +1127,7 @@ export default function BoundaryVerificationForm() {
       timestamp: new Date().toISOString(),
     };
 
+    // ✅ OFFLINE-SAFETY: Prevent API upload if offline
     if (numericAssessmentId && !isNaN(numericAssessmentId) && isOnline) {
       setUploading(true);
       try {
@@ -971,9 +1151,7 @@ export default function BoundaryVerificationForm() {
 
         if (ok) {
           const data = await fetchAssessmentData();
-          if (data) {
-            setImages(data.images || []);
-          }
+          if (data) setImages(data.images || []);
         }
       } catch (error) {
         // Error handled by hook
@@ -995,7 +1173,6 @@ export default function BoundaryVerificationForm() {
             : `Boundary marker photo (no GPS)`),
       };
       setLocalImages([...localImages, localImg]);
-
       success(
         "Photo Captured",
         pendingPhoto.withGPS
@@ -1045,7 +1222,6 @@ export default function BoundaryVerificationForm() {
     setSavingOffline(true);
     try {
       const payload = buildPayload();
-
       const offlineImages: OfflineImage[] = localImages.map((img) => ({
         id: img.id,
         uri: img.uri,
@@ -1061,7 +1237,6 @@ export default function BoundaryVerificationForm() {
           images: offlineImages,
           status: "pending",
         });
-
         success(
           "Updated Offline",
           "Draft updated locally. Will sync when online.",
@@ -1084,13 +1259,11 @@ export default function BoundaryVerificationForm() {
 
       await saveOfflineDraft(draft);
       setLocalImages([]);
-
       success(
         "Saved Offline",
         "Assessment saved locally. Will sync when online.",
       );
       router.back();
-
       return localUuid;
     } catch (e: any) {
       console.error("Error saving offline:", e);
@@ -1101,10 +1274,17 @@ export default function BoundaryVerificationForm() {
     }
   };
 
+  // ✅ OFFLINE-SAFETY: Guard against accidental API calls
   const handleDraft = async () => {
+    if (!isOnline) {
+      warning(
+        "Offline",
+        "Cannot save draft to server while offline. Please use 'Save Offline'.",
+      );
+      return;
+    }
     const payload = buildPayload();
     const savedId = await handleSave(payload, false, localImages);
-
     if (savedId) {
       setLocalImages([]);
       const data = await fetchAssessmentData();
@@ -1115,7 +1295,15 @@ export default function BoundaryVerificationForm() {
     }
   };
 
+  // ✅ OFFLINE-SAFETY: Guard against accidental API calls
   const handleSubmit = async () => {
+    if (!isOnline) {
+      warning(
+        "Offline",
+        "Cannot submit to server while offline. Please use 'Save Offline'.",
+      );
+      return;
+    }
     confirm(
       "Submit Assessment",
       "Are you sure? You cannot edit after submission.",
@@ -1126,15 +1314,16 @@ export default function BoundaryVerificationForm() {
           setIsViewMode(true);
         }
       },
-      {
-        type: "warning",
-        confirmText: "Submit",
-        cancelText: "Cancel",
-      },
+      { type: "warning", confirmText: "Submit", cancelText: "Cancel" },
     );
   };
 
+  // ✅ OFFLINE-SAFETY: Prevent deleting from server while offline
   const handleDeleteImage = async (img: BoundaryImage) => {
+    if (!isOnline) {
+      warning("Offline", "Cannot delete images from the server while offline.");
+      return;
+    }
     confirm(
       "Delete Photo",
       "Remove this photo?",
@@ -1143,25 +1332,19 @@ export default function BoundaryVerificationForm() {
         const d = await fetchAssessmentData();
         if (d) setImages(d.images || []);
       },
-      {
-        type: "error",
-        confirmText: "Delete",
-        cancelText: "Cancel",
-      },
+      { type: "error", confirmText: "Delete", cancelText: "Cancel" },
     );
   };
 
   const getImageUrl = (imgUrl: string) => {
     if (!imgUrl) return "";
-    if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://")) {
+    if (imgUrl.startsWith("http://") || imgUrl.startsWith("https://"))
       return imgUrl;
-    }
     return `${api}${imgUrl}`;
   };
 
   const renderLocalImages = () => {
     if (localImages.length === 0) return null;
-
     return (
       <View style={styles.localImagesSection}>
         <Text style={styles.localImagesLabel}>
@@ -1229,6 +1412,16 @@ export default function BoundaryVerificationForm() {
     );
   };
 
+  // ✅ GPS-REFACTOR: Helper to format readiness age
+  const formatReadinessAge = () => {
+    if (gpsReadinessAge === null) return "never";
+    if (gpsReadinessAge < 1 / 60) return "just now";
+    if (gpsReadinessAge < 1)
+      return `${Math.round(gpsReadinessAge * 60)} min ago`;
+    if (gpsReadinessAge < 24) return `${gpsReadinessAge.toFixed(1)}h ago`;
+    return `${Math.round(gpsReadinessAge / 24)}d ago`;
+  };
+
   if (loading) {
     return (
       <View style={styles.centerContent}>
@@ -1253,6 +1446,15 @@ export default function BoundaryVerificationForm() {
               Offline Mode - Save Offline to sync later
             </Text>
           </View>
+        )}
+
+        {/* ✅ GPS-REFACTOR: Readiness Banner */}
+        {!isViewMode && gpsReadiness !== "checking" && (
+          <GPSReadinessBanner
+            readiness={gpsReadiness}
+            ageText={formatReadinessAge()}
+            onRefresh={checkGPSReadiness}
+          />
         )}
 
         {isViewMode && (
@@ -1365,7 +1567,9 @@ export default function BoundaryVerificationForm() {
               {gettingLocation ? (
                 <>
                   <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.gpsBtnText}>Acquiring GPS…</Text>
+                  <Text style={styles.gpsBtnText}>
+                    Acquiring GPS ({gpsCountdown}s)…
+                  </Text>
                 </>
               ) : (
                 <>
@@ -1427,7 +1631,6 @@ export default function BoundaryVerificationForm() {
                   <View style={styles.thumbOverlay}>
                     <Ionicons name="eye-outline" size={14} color="#fff" />
                   </View>
-
                   {img.latitude != null &&
                     img.longitude != null &&
                     img.latitude !== 0 && (
@@ -1444,7 +1647,6 @@ export default function BoundaryVerificationForm() {
                       </View>
                     )}
                 </TouchableOpacity>
-
                 {img.description ? (
                   <Text style={styles.thumbNote} numberOfLines={1}>
                     {img.description}
@@ -1459,7 +1661,6 @@ export default function BoundaryVerificationForm() {
                     No note
                   </Text>
                 )}
-
                 {!isViewMode && (
                   <TouchableOpacity
                     style={styles.deletePhotoBtn}
@@ -1732,17 +1933,8 @@ const modalStyles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  title: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0F2D1C",
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginBottom: 16,
-  },
+  title: { fontSize: 16, fontWeight: "700", color: "#0F2D1C", marginBottom: 4 },
+  subtitle: { fontSize: 12, color: "#6B7280", marginBottom: 16 },
   input: {
     backgroundColor: "#F8FAFC",
     borderRadius: 10,
@@ -1754,31 +1946,16 @@ const modalStyles = StyleSheet.create({
     minHeight: 80,
     marginBottom: 20,
   },
-  buttons: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 12,
-  },
-  cancelBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  cancelBtnText: {
-    color: "#6B7280",
-    fontWeight: "600",
-    fontSize: 14,
-  },
+  buttons: { flexDirection: "row", justifyContent: "flex-end", gap: 12 },
+  cancelBtn: { paddingVertical: 10, paddingHorizontal: 16 },
+  cancelBtnText: { color: "#6B7280", fontWeight: "600", fontSize: 14 },
   saveBtn: {
     backgroundColor: "#0F4A2F",
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
   },
-  saveBtnText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 14,
-  },
+  saveBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 });
 
 const styles = StyleSheet.create({
@@ -1803,7 +1980,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   loadingText: { fontSize: 14, color: "#475569", fontWeight: "500" },
-
   offlineBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1815,7 +1991,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   offlineBannerText: { color: "#fff", fontWeight: "600", fontSize: 13 },
-
   viewModeBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1827,6 +2002,29 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   viewModeBannerText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+
+  // ✅ GPS-REFACTOR: Banner styles
+  gpsBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  gpsBannerTitle: { fontSize: 12, fontWeight: "700" },
+  gpsBannerMessage: { fontSize: 11, marginTop: 1, opacity: 0.85 },
+  gpsBannerRefresh: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(0,0,0,0.05)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
   card: {
     backgroundColor: "#fff",
     borderRadius: 14,
