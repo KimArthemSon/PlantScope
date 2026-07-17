@@ -87,6 +87,20 @@ class Potential_sites(models.Model):
     @property
     def reforestation_area(self):
         return self.site.reforestation_area if self.site else None
+    
+    # ✅ ADD THIS METHOD
+    def to_dict(self):
+        return {
+            "potential_sites_id": self.potential_sites_id,
+            "site_id": self.site.site_id if self.site else None,
+            "polygon_coordinates": self.polygon_coordinates,  # Already in [lng, lat] GeoJSON format
+            "area_hectares": self.area_hectares,
+            "avg_ndvi": self.avg_ndvi,
+            "suitability_score": self.suitability_score,
+            "ndvi_threshold": self.ndvi_threshold,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+    
 
     class Meta:
         ordering = ['-created_at']

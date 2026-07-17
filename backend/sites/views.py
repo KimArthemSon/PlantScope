@@ -326,12 +326,29 @@ def get_site(request, site_id):
     if current_site_data:
         validation_data = {
             'version': current_site_data.version,
-            # ✅ Sanitize to ensure no legacy photo data leaks into validation data
             'site_data': _sanitize_field_assessment_data(current_site_data.site_data),
             'field_assessment_snapshot': _sanitize_field_assessment_data(current_site_data.field_assessment_snapshot),
             'validated_by': current_site_data.validated_by,
             'validated_at': current_site_data.validated_at.isoformat() if current_site_data.validated_at else None,
         }
+
+    # ✅ SAFE: Use hasattr to check if to_dict exists, fallback to manual dict
+    potential_sites_data = []
+    for p in site.potential_sites.all():
+        if hasattr(p, 'to_dict'):
+            potential_sites_data.append(p.to_dict())
+        else:
+            # Fallback for safety - won't break other modules
+            potential_sites_data.append({
+                "potential_sites_id": p.potential_sites_id,
+                "site_id": p.site.site_id if p.site else None,
+                "polygon_coordinates": p.polygon_coordinates,
+                "area_hectares": p.area_hectares,
+                "avg_ndvi": p.avg_ndvi,
+                "suitability_score": p.suitability_score,
+                "ndvi_threshold": p.ndvi_threshold,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            })
 
     return JsonResponse({
         "site_id": site.site_id,
@@ -342,9 +359,8 @@ def get_site(request, site_id):
         "center_coordinate": site.center_coordinate,
         "ndvi_value": site.ndvi_value,
         "area_hectares": site.total_area_hectares,
-        "potential_sites": [p.to_dict() for p in site.potential_sites.all()],
+        "potential_sites": potential_sites_data,  # ✅ Now safe
         "meta_verification": verification_data,
-        # ✅ UPDATED: Removed file_url and permit_number, added notes
         "permits": [{
             "permit_id": p.permit_id,
             "document_type": p.document_type,
@@ -357,7 +373,6 @@ def get_site(request, site_id):
         "validation_data": validation_data, 
         "created_at": site.created_at.isoformat() if site.created_at else None,
     })
-
 
 # ─────────────────────────────────────────────
 # [KEEP] TOGGLE PIN

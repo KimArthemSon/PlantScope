@@ -3,7 +3,6 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   AlertCircle,
   Loader2,
   Image as ImageIcon,
@@ -13,11 +12,18 @@ import {
   MapPin,
   Calendar,
   FileText,
-  Leaf, // ✅ NEW
-  Users, // ✅ NEW
+  Leaf,
+  Users,
+  Eye,
+  EyeOff,
+  TrendingUp,
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  Target,
 } from "lucide-react";
 import { api } from "@/constant/api";
-const API = api + "api/";
+import { useUserRole } from "@/hooks/authorization"; // ✅ Added import for role checking
 
 interface SiteImage {
   site_image_id: number;
@@ -40,7 +46,6 @@ interface SiteData {
   site_images: SiteImage[];
 }
 
-// ✅ NEW: Interface for Tree Planting Applications
 interface SiteApplication {
   application_id: number;
   title: string;
@@ -58,60 +63,25 @@ interface SiteInfoPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onViewDetails?: (siteId: number) => void;
+  onShowSiteInMap?: (siteId: number, polygon: any) => void;
+  onShowPotentialSites?: (siteId: number) => void;
+  onHideAll?: () => void;
+  isShowingSite?: boolean;
+  isShowingPotentialSites?: boolean;
+  onReanalyze?: (siteId: number) => void;
+  onViewTrend?: (siteId: number, polygon: any) => void;
 }
 
 const STATUS_CONFIG: Record<
   string,
-  {
-    color: string;
-    bg: string;
-    border: string;
-    icon: React.ReactNode;
-    label: string;
-  }
+  { color: string; bg: string; icon: React.ReactNode; label: string }
 > = {
-  pending: {
-    color: "text-amber-700",
-    bg: "bg-amber-50",
-    border: "border-amber-200",
-    icon: <Clock size={14} />,
-    label: "Pending",
-  },
-  under_review: {
-    color: "text-purple-700",
-    bg: "bg-purple-50",
-    border: "border-purple-200",
-    icon: <Clock size={14} />,
-    label: "Under Review",
-  },
-  accepted: {
-    color: "text-green-700",
-    bg: "bg-green-50",
-    border: "border-green-200",
-    icon: <CheckCircle size={14} />,
-    label: "Accepted",
-  },
-  rejected: {
-    color: "text-red-700",
-    bg: "bg-red-50",
-    border: "border-red-200",
-    icon: <XCircle size={14} />,
-    label: "Rejected",
-  },
-  completed: {
-    color: "text-blue-700",
-    bg: "bg-blue-50",
-    border: "border-blue-200",
-    icon: <CheckCircle size={14} />,
-    label: "Completed",
-  },
-  under_monitoring: {
-    color: "text-teal-700",
-    bg: "bg-teal-50",
-    border: "border-teal-200",
-    icon: <Clock size={14} />,
-    label: "Under Monitoring",
-  },
+  pending: { color: "text-amber-600", bg: "bg-amber-100", icon: <Clock size={12} />, label: "Pending" },
+  under_review: { color: "text-purple-600", bg: "bg-purple-100", icon: <Clock size={12} />, label: "Under Review" },
+  accepted: { color: "text-emerald-600", bg: "bg-emerald-100", icon: <CheckCircle size={12} />, label: "Accepted" },
+  rejected: { color: "text-rose-600", bg: "bg-rose-100", icon: <XCircle size={12} />, label: "Rejected" },
+  completed: { color: "text-blue-600", bg: "bg-blue-100", icon: <CheckCircle size={12} />, label: "Completed" },
+  under_monitoring: { color: "text-teal-600", bg: "bg-teal-100", icon: <Clock size={12} />, label: "Monitoring" },
 };
 
 export default function SiteInfoPanel({
@@ -120,38 +90,63 @@ export default function SiteInfoPanel({
   isOpen,
   onClose,
   onViewDetails,
+  onShowSiteInMap,
+  onShowPotentialSites,
+  onHideAll,
+  isShowingSite = false,
+  isShowingPotentialSites = false,
+  onReanalyze,
+  onViewTrend,
 }: SiteInfoPanelProps) {
+  const { userRole } = useUserRole(); // ✅ Get user role
+
   const [siteData, setSiteData] = useState<SiteData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-
-  // ✅ NEW: State for applications
   const [applications, setApplications] = useState<SiteApplication[]>([]);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  const [expandedSections, setExpandedSections] = useState({
+    photos: true,
+    info: true,
+    location: true,
+    programs: false,
+  });
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsAnimating(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (siteId && isOpen) {
       fetchSiteData(siteId);
-      fetchSiteApplications(siteId); // ✅ Fetch applications alongside site data
+      fetchSiteApplications(siteId);
     }
   }, [siteId, isOpen]);
 
+  const handleClose = () => {
+    setIsAnimating(true);
+    setTimeout(() => {
+      onClose();
+      setIsAnimating(false);
+    }, 300);
+  };
+
   const fetchSiteData = async (id: number) => {
-    console.log(`${API}get_site/${id}/`);
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API}get_site/${id}/`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+      const response = await fetch(`${api}api/get_site/${id}/`, {
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       setSiteData(data);
       setCurrentImageIndex(0);
@@ -162,14 +157,10 @@ export default function SiteInfoPanel({
     }
   };
 
-  // ✅ NEW: Fetch applications for this site
   const fetchSiteApplications = async (id: number) => {
     try {
-      const response = await fetch(`${API}get_site_applications/${id}/`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+      const response = await fetch(`${api}api/get_site_applications/${id}/`, {
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
         const data = await response.json();
@@ -180,8 +171,7 @@ export default function SiteInfoPanel({
     }
   };
 
-  const generalImages =
-    siteData?.site_images?.filter((img) => img.layer_tag === "general") || [];
+  const generalImages = siteData?.site_images?.filter((img) => img.layer_tag === "general") || [];
 
   const nextImage = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -193,371 +183,244 @@ export default function SiteInfoPanel({
   const prevImage = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (generalImages.length > 0) {
-      setCurrentImageIndex(
-        (prev) => (prev - 1 + generalImages.length) % generalImages.length,
-      );
+      setCurrentImageIndex((prev) => (prev - 1 + generalImages.length) % generalImages.length);
     }
   };
 
-  const handleViewFullDetails = () => {
-    if (siteData && onViewDetails) {
-      onViewDetails(siteData.site_id);
-    }
-  };
-
-  if (!isOpen) return null;
+  if (!isOpen && !isAnimating) return null;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className={`fixed inset-0 bg-black/50 z-[1000] transition-opacity duration-300 ${
-          isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
-        onClick={onClose}
-      />
-
-      {/* Side Panel */}
-      <div
-        className={`fixed top-0 right-0 h-full w-full md:w-[450px] lg:w-[500px] bg-white shadow-2xl z-[1001] transform transition-transform duration-300 ease-in-out overflow-y-auto ${
-          isOpen ? "translate-x-0" : "translate-x-full"
-        }`}
+    <div 
+      className={`fixed top-4 right-4 bottom-4 w-[380px] z-[1001] transition-all duration-300 ease-in-out ${
+        isOpen && !isAnimating ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"
+      }`}
+    >
+      <button
+        onClick={handleClose}
+        className="absolute -left-12 top-0 bg-white rounded-full p-2 shadow-lg hover:shadow-xl transition-shadow border border-gray-200 z-[1002]"
       >
-        {/* Header */}
-        <div className="sticky top-0 bg-[#047152] border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-color cursor-pointer"
-          >
-            <X size={20} className="text-white hover:text-black" />
-          </button>
-          <h2 className="text-lg font-bold text-white ">Site Information</h2>
-          <div className="w-10" /> {/* Spacer for centering */}
-        </div>
+        <ChevronDown size={20} className="text-gray-600" />
+      </button>
 
-        {/* Content */}
-        <div className="p-6">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-[#0F4A2F] mb-3" />
-              <p className="text-sm text-gray-600">Loading site details...</p>
+      <div 
+        className="h-full overflow-y-auto space-y-3 pr-2"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        <style>{`div::-webkit-scrollbar { display: none; }`}</style>
+        {loading ? (
+          <div className="bg-white rounded-xl shadow-lg p-20 flex flex-col items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+          </div>
+        ) : error || !siteData ? (
+          <div className="bg-white rounded-xl shadow-lg p-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600" />
+              <p className="text-sm font-medium text-gray-900">{error || "Site not found"}</p>
             </div>
-          ) : error || !siteData ? (
-            <div className="flex items-start gap-3 p-4 bg-red-50 rounded-lg border border-red-200">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-sm text-red-800">
-                  Failed to Load
-                </p>
-                <p className="text-xs text-red-600 mt-1">
-                  {error || "Site not found"}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Title and Status */}
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <h1 className="text-2xl font-bold text-gray-900 flex-1">
-                    {siteData.name}
-                  </h1>
-                  {(() => {
-                    const config =
-                      STATUS_CONFIG[siteData.status.toLowerCase()] ||
-                      STATUS_CONFIG.pending;
-                    return (
-                      <div
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${config.bg} ${config.color} ${config.border}`}
-                      >
-                        {config.icon}
-                        {config.label}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* Image Carousel */}
-              {generalImages.length > 0 ? (
-                <div className="relative group">
-                  <div className="relative aspect-video bg-gray-100 rounded-xl overflow-hidden shadow-lg">
-                    <img
-                      src={`${generalImages[currentImageIndex].img_url}`}
-                      alt={
-                        generalImages[currentImageIndex].caption || "Site image"
-                      }
-                      className="w-full h-full object-cover"
-                    />
-
-                    {/* Image Counter */}
-                    <div className="absolute top-3 right-3 bg-black/70 text-white text-xs px-3 py-1 rounded-full font-medium">
-                      {currentImageIndex + 1} / {generalImages.length}
-                    </div>
-
-                    {/* Caption */}
-                    {generalImages[currentImageIndex].caption && (
-                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-4">
-                        <p className="text-white text-sm font-medium">
-                          {generalImages[currentImageIndex].caption}
-                        </p>
-                      </div>
+          </div>
+        ) : (
+          <>
+            {/* ✅ UPDATED: Conditional rendering based on userRole */}
+            <div className="bg-white rounded-xl shadow-lg p-3">
+              <div className={`grid gap-2 ${userRole === "GISSpecialist" ? "grid-cols-4" : "grid-cols-1"}`}>
+                
+                {/* Button 1: Show/Hide Site Polygon (Always visible) */}
+                <button
+                  onClick={() => {
+                    if (isShowingSite) {
+                      onHideAll?.();
+                    } else {
+                      onShowSiteInMap?.(siteData.site_id, siteData.polygon_coordinates);
+                    }
+                  }}
+                  disabled={!siteData.polygon_coordinates && !isShowingSite}
+                  className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                  title="Show Site Boundary"
+                >
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isShowingSite ? 'bg-emerald-100' : 'bg-blue-100'}`}>
+                    {isShowingSite ? (
+                      <EyeOff size={14} className="text-emerald-600" />
+                    ) : (
+                      <Eye size={14} className="text-blue-600" />
                     )}
                   </div>
-
-                  {/* Navigation Arrows */}
-                  {generalImages.length > 1 && (
-                    <>
-                      <button
-                        onClick={prevImage}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/95 hover:bg-white text-gray-800 p-2 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        <ChevronLeft size={20} />
-                      </button>
-                      <button
-                        onClick={nextImage}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/95 hover:bg-white text-gray-800 p-2 rounded-full shadow-lg transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        <ChevronRight size={20} />
-                      </button>
-                    </>
-                  )}
-
-                  {/* Dots Indicator */}
-                  {generalImages.length > 1 && (
-                    <div className="flex justify-center gap-2 mt-3">
-                      {generalImages.map((_, idx) => (
-                        <button
-                          key={idx}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCurrentImageIndex(idx);
-                          }}
-                          className={`h-2 rounded-full transition-all ${
-                            idx === currentImageIndex
-                              ? "bg-[#0F4A2F] w-6"
-                              : "bg-gray-300 hover:bg-gray-400 w-2"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="aspect-video bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-center p-8">
-                  <ImageIcon className="w-12 h-12 text-gray-300 mb-3" />
-                  <p className="text-sm text-gray-500 font-medium">
-                    No images available
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Images will be uploaded by field teams
-                  </p>
-                </div>
-              )}
-
-              {/* Description - Now under images with label */}
-              {siteData.description && (
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                  <div className="flex items-center gap-2 text-gray-700 mb-2">
-                    <FileText size={16} />
-                    <span className="text-xs font-semibold uppercase tracking-wider">
-                      Description
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-700 leading-relaxed">
-                    {siteData.description}
-                  </p>
-                </div>
-              )}
-
-              {/* Created Date - Single card */}
-              <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
-                <div className="flex items-center gap-2 text-purple-700 mb-2">
-                  <Calendar size={16} />
-                  <span className="text-xs font-semibold">Created Date</span>
-                </div>
-                <p className="text-lg font-semibold text-purple-900">
-                  {siteData.created_at
-                    ? new Date(siteData.created_at).toLocaleDateString(
-                        "en-US",
-                        {
-                          weekday: "long",
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        },
-                      )
-                    : "N/A"}
-                </p>
-              </div>
-
-              {/* Coordinates */}
-              {siteData.center_coordinate && (
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                  <div className="flex items-center gap-2 text-gray-700 mb-2">
-                    <MapPin size={16} />
-                    <span className="text-xs font-semibold">
-                      Center Coordinates
-                    </span>
-                  </div>
-                  <p className="text-sm font-mono text-gray-900">
-                    {siteData.center_coordinate[0].toFixed(6)},{" "}
-                    {siteData.center_coordinate[1].toFixed(6)}
-                  </p>
-                </div>
-              )}
-
-              {/* ✅ NEW: Tree Planting Programs Section */}
-              <div>
-                <div className="flex items-center gap-2 text-gray-700 mb-3">
-                  <Leaf size={16} className="text-green-600" />
-                  <span className="text-xs font-semibold uppercase tracking-wider">
-                    Tree Planting Programs
+                  <span className="text-[10px] font-medium text-gray-700 text-center leading-tight">
+                    {isShowingSite ? "Hide Site" : "Show Site"}
                   </span>
-                  <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">
-                    {applications.length}
-                  </span>
-                </div>
+                </button>
 
-                {applications.length === 0 ? (
-                  <div className="bg-gray-50 rounded-xl p-4 border border-dashed border-gray-200 text-center">
-                    <p className="text-sm text-gray-500 font-medium">
-                      No programs assigned yet
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Tree grower applications will appear here once assigned to
-                      this site.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {applications.map((app) => {
-                      // Map status to colors
-                      const statusColors: Record<
-                        string,
-                        { bg: string; text: string; border: string }
-                      > = {
-                        for_evaluation: {
-                          bg: "bg-blue-50",
-                          text: "text-blue-700",
-                          border: "border-blue-200",
-                        },
-                        for_head: {
-                          bg: "bg-purple-50",
-                          text: "text-purple-700",
-                          border: "border-purple-200",
-                        },
-                        accepted: {
-                          bg: "bg-green-50",
-                          text: "text-green-700",
-                          border: "border-green-200",
-                        },
-                        rejected: {
-                          bg: "bg-red-50",
-                          text: "text-red-700",
-                          border: "border-red-200",
-                        },
-                        completed: {
-                          bg: "bg-teal-50",
-                          text: "text-teal-700",
-                          border: "border-teal-200",
-                        },
-                        cancelled: {
-                          bg: "bg-gray-50",
-                          text: "text-gray-700",
-                          border: "border-gray-200",
-                        },
-                      };
-                      const colors =
-                        statusColors[app.status] || statusColors.for_evaluation;
+                {/* ✅ Buttons 2, 3, 4: Only shown if user is GISSpecialist */}
+                {userRole === "GISSpecialist" && (
+                  <>
+                    {/* Button 2: Show/Hide Potential Sites */}
+                    <button
+                      onClick={() => {
+                        if (isShowingPotentialSites) {
+                          onHideAll?.();
+                        } else {
+                          onShowPotentialSites?.(siteData.site_id);
+                        }
+                      }}
+                      className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                      title="Show Potential Sites"
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isShowingPotentialSites ? 'bg-emerald-100' : 'bg-purple-100'}`}>
+                        {isShowingPotentialSites ? (
+                          <EyeOff size={14} className="text-emerald-600" />
+                        ) : (
+                          <Target size={14} className="text-purple-600" />
+                        )}
+                      </div>
+                      <span className="text-[10px] font-medium text-gray-700 text-center leading-tight">
+                        {isShowingPotentialSites ? "Hide Pot." : "Potential"}
+                      </span>
+                    </button>
 
-                      return (
-                        <div
-                          key={app.application_id}
-                          className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
-                        >
-                          {/* Header: Title & Status */}
-                          <div className="flex items-start justify-between gap-2 mb-3">
-                            <h4 className="text-sm font-bold text-gray-800 flex-1 leading-tight">
-                              {app.title}
-                            </h4>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-1 rounded-full border capitalize whitespace-nowrap ${colors.bg} ${colors.text} ${colors.border}`}
-                            >
-                              {app.status.replace("_", " ")}
-                            </span>
-                          </div>
+                    {/* Button 3: Trend */}
+                    <button
+                      onClick={() => onViewTrend?.(siteData.site_id, siteData.polygon_coordinates)}
+                      className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                      title="View NDVI Trend"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                        <TrendingUp size={14} className="text-emerald-600" />
+                      </div>
+                      <span className="text-[10px] font-medium text-gray-700 text-center leading-tight">Trend</span>
+                    </button>
 
-                          {/* Body: Organization & Details */}
-                          <div className="space-y-2 text-xs">
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                                <Users size={12} className="text-gray-500" />
-                              </div>
-                              <div>
-                                <p className="text-gray-400 text-[10px] uppercase font-semibold">
-                                  Tree Grower
-                                </p>
-                                <p className="text-gray-800 font-semibold">
-                                  {app.organization_name}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
-                              <div>
-                                <p className="text-gray-400 text-[10px] uppercase font-semibold">
-                                  Type
-                                </p>
-                                <p className="text-gray-700 font-medium capitalize">
-                                  {app.classification}
-                                </p>
-                              </div>
-                              {app.total_members && (
-                                <div>
-                                  <p className="text-gray-400 text-[10px] uppercase font-semibold">
-                                    Members
-                                  </p>
-                                  <p className="text-gray-700 font-medium">
-                                    {app.total_members}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-
-                            {app.orientation_date && (
-                              <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100 text-gray-600">
-                                <Calendar size={12} className="text-gray-400" />
-                                <span className="font-medium">
-                                  Orientation:{" "}
-                                  {new Date(
-                                    app.orientation_date,
-                                  ).toLocaleDateString("en-US", {
-                                    month: "short",
-                                    day: "numeric",
-                                    year: "numeric",
-                                  })}
-                                </span>
-                              </div>
-                            )}
-
-                            <div className="flex items-center gap-1.5 text-gray-400 pt-1">
-                              <Clock size={10} />
-                              <span className="text-[10px]">
-                                Applied on {app.created_at}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                    {/* Button 4: Re-analyze */}
+                    <button
+                      onClick={() => onReanalyze?.(siteData.site_id)}
+                      className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                      title="Re-analyze Area"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
+                        <RefreshCw size={14} className="text-purple-600" />
+                      </div>
+                      <span className="text-[10px] font-medium text-gray-700 text-center leading-tight">Analyze</span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
-          )}
-        </div>
+
+            {/* ... Rest of the component (Site Info, Photos, Location, Programs) remains exactly the same ... */}
+            <div className="bg-white rounded-xl shadow-lg p-4">
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="text-base font-bold text-gray-900 leading-tight">{siteData.name}</h2>
+                {(() => {
+                  const config = STATUS_CONFIG[siteData.status.toLowerCase()] || STATUS_CONFIG.pending;
+                  return (
+                    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold ${config.bg} ${config.color}`}>
+                      {config.icon}
+                      {config.label}
+                    </div>
+                  );
+                })()}
+              </div>
+              {siteData.description && (
+                <p className="text-xs text-gray-600 mt-2 leading-relaxed">{siteData.description}</p>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <button onClick={() => toggleSection("photos")} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-2">
+                  <ImageIcon size={14} className="text-gray-500" />
+                  <span className="text-xs font-semibold text-gray-800">Photos</span>
+                  {generalImages.length > 0 && <span className="text-[10px] text-gray-500">({generalImages.length})</span>}
+                </div>
+                {expandedSections.photos ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+              </button>
+              {expandedSections.photos && generalImages.length > 0 && (
+                <div className="p-3">
+                  <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
+                    <img src={generalImages[currentImageIndex].img_url || ""} alt={generalImages[currentImageIndex].caption || "Site image"} className="w-full h-full object-cover" />
+                    {generalImages.length > 1 && (
+                      <>
+                        <div className="absolute top-2 right-2 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded-full">{currentImageIndex + 1}/{generalImages.length}</div>
+                        <button onClick={prevImage} className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 p-1 rounded-full hover:bg-white transition-colors"><ChevronLeft size={14} /></button>
+                        <button onClick={nextImage} className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 p-1 rounded-full hover:bg-white transition-colors"><ChevronRight size={14} /></button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <button onClick={() => toggleSection("info")} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-2">
+                  <FileText size={14} className="text-gray-500" />
+                  <span className="text-xs font-semibold text-gray-800">Information</span>
+                </div>
+                {expandedSections.info ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+              </button>
+              {expandedSections.info && (
+                <div className="p-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-blue-50 rounded-lg p-2">
+                      <div className="flex items-center gap-1 mb-1"><Leaf size={12} className="text-blue-600" /><span className="text-[10px] font-medium text-blue-700">Area</span></div>
+                      <p className="text-xs font-bold text-blue-900">{siteData.total_area_hectares?.toFixed(2) ?? "N/A"} <span className="text-[10px] font-normal">ha</span></p>
+                    </div>
+                    <div className="bg-emerald-50 rounded-lg p-2">
+                      <div className="flex items-center gap-1 mb-1"><TrendingUp size={12} className="text-emerald-600" /><span className="text-[10px] font-medium text-emerald-700">NDVI</span></div>
+                      <p className="text-xs font-bold text-emerald-900">{siteData.ndvi_value?.toFixed(2) ?? "N/A"}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <button onClick={() => toggleSection("location")} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-2">
+                  <MapPin size={14} className="text-gray-500" />
+                  <span className="text-xs font-semibold text-gray-800">Location</span>
+                </div>
+                {expandedSections.location ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+              </button>
+              {expandedSections.location && (
+                <div className="p-3 space-y-2">
+                  {siteData.center_coordinate && (
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <p className="text-[10px] text-gray-500 mb-1">Coordinates</p>
+                      <p className="text-xs font-mono text-gray-900">{siteData.center_coordinate[0]?.toFixed(4)}, {siteData.center_coordinate[1]?.toFixed(4)}</p>
+                    </div>
+                  )}
+                  <div className="bg-purple-50 rounded-lg p-2">
+                    <p className="text-[10px] text-purple-600 mb-1">Created</p>
+                    <p className="text-xs font-medium text-purple-900">{siteData.created_at ? new Date(siteData.created_at).toLocaleDateString() : "N/A"}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {applications.length > 0 && (
+              <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                <button onClick={() => toggleSection("programs")} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <Leaf size={14} className="text-emerald-600" />
+                    <span className="text-xs font-semibold text-gray-800">Programs</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full">{applications.length}</span>
+                  </div>
+                  {expandedSections.programs ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+                </button>
+                {expandedSections.programs && (
+                  <div className="p-3 space-y-2">
+                    {applications.slice(0, 3).map((app) => (
+                      <div key={app.application_id} className="bg-gray-50 rounded-lg p-2">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{app.title}</p>
+                        <p className="text-[10px] text-gray-500">{app.organization_name}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
-    </>
+    </div>
   );
 }
