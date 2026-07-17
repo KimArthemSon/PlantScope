@@ -1,9 +1,7 @@
 from django.urls import path
-from . import views
-from . import extended_views
-from . import views_matrix
-from . import update_views
-from . import treeGrowers_sties_views
+from . import views, extended_views, views_matrix, update_views, treeGrowers_sties_views, potentialsite_views
+
+
 urlpatterns = [
     # ─────────────────────────────────────────
     # SITE MANAGEMENT (Core)
@@ -49,6 +47,16 @@ urlpatterns = [
     path('upload_site_image/<int:site_id>/', update_views.upload_site_image, name='upload_site_image'),
     path('delete_site_image/<int:site_image_id>/', update_views.delete_site_image, name='delete_site_image'),
      path('get_site_details_for_tree_grower/<int:site_id>/', treeGrowers_sties_views.get_site_details_for_tree_grower, name='get_site_details_for_tree_grower'),
+
+
+      # ═══════════════════════════════════════════════════════════
+    # 🎯 POTENTIAL SITES (NDVI Analytical Markers)
+    # ═══════════════════════════════════════════════════════════
+    path('get_potential_sites/', potentialsite_views.get_potential_sites, name="get_potential_sites"),
+ 
+    path('delete_potential_site/<int:potential_sites_id>/', potentialsite_views.delete_potential_site, name="delete_potential_site"),
+    path('potential-sites/bulk-create/', potentialsite_views.bulk_create_potential_sites, name='bulk_create_potential_sites'),
+    path('potential-sites/update/<int:potential_sites_id>/', potentialsite_views.update_potential_site, name='update_potential_site'),
     
 
 ]

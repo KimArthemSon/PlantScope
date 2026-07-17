@@ -15,13 +15,7 @@ urlpatterns = [
     path('update_reforestation_areas/<int:reforestation_area_id>/', views.update_reforestation_areas, name="update_reforestation_areas"),
     path('delete_reforestation_areas/<int:reforestation_area_id>/', views.delete_reforestation_areas, name="delete_reforestation_areas"),
 
-    # ═══════════════════════════════════════════════════════════
-    # 🎯 POTENTIAL SITES (NDVI Analytical Markers)
-    # ═══════════════════════════════════════════════════════════
-    path('get_potential_sites/', views.get_potential_sites, name="get_potential_sites"),
-    path('get_potential_site/<int:potential_sites_id>/', views.get_potential_site, name="get_potential_site"),
-    path('delete_potential_site/<int:potential_sites_id>/', views.delete_potential_site, name="delete_potential_site"),
-    path('potential-sites/bulk-create/', views.bulk_create_potential_sites, name='bulk_create_potential_sites'),
+   
 
     # ═══════════════════════════════════════════════════════════
     # 🌐 NDVI & FIRE DATA ENDPOINTS

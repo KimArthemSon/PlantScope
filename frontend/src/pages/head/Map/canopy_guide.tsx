@@ -18,7 +18,7 @@ export default function CanopyGuideModal({
       {/* ✅ FIXED: Reduced backdrop opacity to prevent black screen */}
 
       {/* ✅ Floating Panel - Left Middle Position */}
-      <div className="fixed right-4 top-1/2 -translate-y-1/2 z-[2000] w-72 bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
+      <div className="fixed right-10 top-1/2 -translate-y-1/2 z-[2000] w-72 bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
         {/* Header */}
         <div className="bg-[#0f4a2f] text-white px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
