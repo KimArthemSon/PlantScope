@@ -199,7 +199,7 @@ export default function SiteInfoPanel({
         onClick={handleClose}
         className="absolute -left-12 top-0 bg-white rounded-full p-2 shadow-lg hover:shadow-xl transition-shadow border border-gray-200 z-[1002]"
       >
-        <ChevronDown size={20} className="text-gray-600" />
+        <ChevronRight size={20} className="text-gray-600" />
       </button>
 
       <div 

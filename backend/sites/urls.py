@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, extended_views, views_matrix, update_views, treeGrowers_sties_views, potentialsite_views
+from . import views, extended_views, views_matrix, update_views, treeGrowers_sties_views, potentialsite_views,hazardreports_views
 
 
 urlpatterns = [
@@ -57,6 +57,6 @@ urlpatterns = [
     path('delete_potential_site/<int:potential_sites_id>/', potentialsite_views.delete_potential_site, name="delete_potential_site"),
     path('potential-sites/bulk-create/', potentialsite_views.bulk_create_potential_sites, name='bulk_create_potential_sites'),
     path('potential-sites/update/<int:potential_sites_id>/', potentialsite_views.update_potential_site, name='update_potential_site'),
-    
+     path('analyze-hazard/', hazardreports_views.analyze_hazard_area, name='analyze_hazard_area'),
 
 ]
