@@ -41,13 +41,7 @@ import {
   Plus,
   Loader2,
   Layers,
-  EyeOff,
-  ChevronRight,
-  ChevronLeft,
-  ChevronUp,
-  ChevronDown,
-  TrendingUp,
-  RefreshCw,
+
 } from "lucide-react";
 
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
@@ -60,6 +54,7 @@ import BarangayHazardAnalysis from "./components/BarangayHazardAnalysis";
 import SiteInfoPanel from "@/components/map/SiteInfoPanel";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/constant/api.ts";
+import HazardReportModal from "./components/HazardReportModal";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -288,6 +283,11 @@ export default function Map() {
     "https://controlmap.mgb.gov.ph/arcgis/rest/services/GeospatialDataInventory/GDI_Detailed_Rain_induced_Landslide_Susceptibility/MapServer/tile/{z}/{y}/{x}";
   const PHIVOLCS_EIL_WMS_URL =
     "https://gisweb.phivolcs.dost.gov.ph/arcgis/services/PHIVOLCSPublic/EarthquakeInducedLandslide/MapServer/WMSServer";
+
+  const [isHazardReportOpen, setIsHazardReportOpen] = useState(false);
+  const [hazardReportData, setHazardReportData] = useState<any>(null);
+  const [isHazardAnalyzing, setIsHazardAnalyzing] = useState(false);
+  const [hazardReportTargetName, setHazardReportTargetName] = useState<string>("");
   const [showFirms, setShowFirms] = useState(false);
   const [fireCount, setFireCount] = useState(0);
   const [firmsTimeRange, setFirmsTimeRange] = useState<
@@ -496,6 +496,46 @@ export default function Map() {
         title: "Error",
         message: "Failed to display site on map.",
       });
+    }
+  };
+
+    // ✅ NEW: Generate Hazard Report Function
+  const generateHazardReport = async (geometry: any, targetName: string) => {
+    if (!geometry) {
+      setPSAlert({ type: "failed", title: "No Geometry", message: "No valid polygon found for analysis." });
+      return;
+    }
+    
+    setIsHazardAnalyzing(true);
+    setHazardReportTargetName(targetName);
+    
+    try {
+      const res = await fetch(`${api}api/analyze-hazard/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ geometry }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setHazardReportData(data);
+        setIsHazardReportOpen(true);
+      } else {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to analyze hazard data");
+      }
+    } catch (error: any) {
+      console.error("Hazard Analysis Error:", error);
+      setPSAlert({ 
+        type: "error", 
+        title: "Analysis Failed", 
+        message: error.message || "Could not connect to hazard data servers." 
+      });
+    } finally {
+      setIsHazardAnalyzing(false);
     }
   };
 
@@ -2517,7 +2557,7 @@ export default function Map() {
         )}
 
         {/* ✅ RENDER SITE POLYGON */}
-        {showSitePolygon && currentSitePolygon && (
+      {showSitePolygon && currentSitePolygon && (
           <GeoJSON
             key={`site-polygon-${activeShownSiteId}`}
             data={currentSitePolygon}
@@ -2528,9 +2568,32 @@ export default function Map() {
               fillOpacity: 0.25,
             }}
             onEachFeature={(feature, layer) => {
-              layer.bindPopup(
-                `<div style="font-weight: bold; color: #10B981; font-size: 14px;">Site Polygon</div>`,
-              );
+              const popupContent = `
+                <div style="min-width: 220px; font-family: system-ui;">
+                  <h3 style="margin-bottom: 8px; font-weight: bold; color: #10B981; font-size: 14px; border-bottom: 1px solid #eee; padding-bottom: 4px;">
+                    Site Boundary
+                  </h3>
+                  <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+                    ${selectedSiteName || "Unnamed Site"}
+                  </p>
+                  <button id="hazard-report-btn" style="width: 100%; padding: 8px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Generate Hazard Report
+                  </button>
+                </div>
+              `;
+              layer.bindPopup(popupContent);
+              
+              // Attach click event when popup opens
+              layer.on('popupopen', () => {
+                const btn = document.getElementById('hazard-report-btn');
+                if (btn) {
+                  btn.onclick = () => {
+                    layer.closePopup();
+                    generateHazardReport(currentSitePolygon, selectedSiteName || "Selected Site");
+                  };
+                }
+              });
             }}
           />
         )}
@@ -2738,6 +2801,12 @@ export default function Map() {
         }
         onViewTrend={handleViewTrend}
         onReanalyze={handleReanalyze}
+      />
+       <HazardReportModal
+        isOpen={isHazardReportOpen}
+        onClose={() => setIsHazardReportOpen(false)}
+        data={hazardReportData}
+        siteName={hazardReportTargetName}
       />
     </div>
   );

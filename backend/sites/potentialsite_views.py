@@ -4,8 +4,8 @@ import logging
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
-from .models import Reforestation_areas
 from sites.models import Potential_sites, Sites
+
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,6 @@ def get_potential_sites(request):
     # Ensure to_dict() in your model returns 'polygon_coordinates'
     return JsonResponse({'data': [s.to_dict() for s in qs]}, status=200)
 
-
-# ✅ REMOVED: get_potential_site (as requested, handled in bulk/group)
 
 
 @csrf_exempt
@@ -156,3 +154,4 @@ def update_potential_site(request, potential_sites_id):
     except Exception as e:
         logger.error(f"❌ Update potential site error: {e}", exc_info=True)
         return JsonResponse({"error": str(e)}, status=500)
+
