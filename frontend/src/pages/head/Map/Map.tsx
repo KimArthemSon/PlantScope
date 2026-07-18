@@ -41,7 +41,6 @@ import {
   Plus,
   Loader2,
   Layers,
-
 } from "lucide-react";
 
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
@@ -284,10 +283,11 @@ export default function Map() {
   const PHIVOLCS_EIL_WMS_URL =
     "https://gisweb.phivolcs.dost.gov.ph/arcgis/services/PHIVOLCSPublic/EarthquakeInducedLandslide/MapServer/WMSServer";
 
+  // ✅ UPDATED: States for Hazard Report Modal (Passes geometry to modal)
   const [isHazardReportOpen, setIsHazardReportOpen] = useState(false);
-  const [hazardReportData, setHazardReportData] = useState<any>(null);
-  const [isHazardAnalyzing, setIsHazardAnalyzing] = useState(false);
-  const [hazardReportTargetName, setHazardReportTargetName] = useState<string>("");
+  const [reportGeometry, setReportGeometry] = useState<any>(null);
+  const [reportSiteName, setReportSiteName] = useState<string>("");
+
   const [showFirms, setShowFirms] = useState(false);
   const [fireCount, setFireCount] = useState(0);
   const [firmsTimeRange, setFirmsTimeRange] = useState<
@@ -499,44 +499,20 @@ export default function Map() {
     }
   };
 
-    // ✅ NEW: Generate Hazard Report Function
-  const generateHazardReport = async (geometry: any, targetName: string) => {
+  // ✅ UPDATED: Function to open the modal with geometry.
+  // The modal handles all fetching, loading states, and network errors internally.
+  const handleGenerateHazardReport = (geometry: any, siteName: string) => {
     if (!geometry) {
-      setPSAlert({ type: "failed", title: "No Geometry", message: "No valid polygon found for analysis." });
+      setPSAlert({
+        type: "failed",
+        title: "Error",
+        message: "No valid polygon found for analysis.",
+      });
       return;
     }
-    
-    setIsHazardAnalyzing(true);
-    setHazardReportTargetName(targetName);
-    
-    try {
-      const res = await fetch(`${api}api/analyze-hazard/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ geometry }),
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setHazardReportData(data);
-        setIsHazardReportOpen(true);
-      } else {
-        const errData = await res.json();
-        throw new Error(errData.error || "Failed to analyze hazard data");
-      }
-    } catch (error: any) {
-      console.error("Hazard Analysis Error:", error);
-      setPSAlert({ 
-        type: "error", 
-        title: "Analysis Failed", 
-        message: error.message || "Could not connect to hazard data servers." 
-      });
-    } finally {
-      setIsHazardAnalyzing(false);
-    }
+    setReportGeometry(geometry);
+    setReportSiteName(siteName);
+    setIsHazardReportOpen(true);
   };
 
   const handleShowPotentialSites = async (siteId: number) => {
@@ -2557,7 +2533,7 @@ export default function Map() {
         )}
 
         {/* ✅ RENDER SITE POLYGON */}
-      {showSitePolygon && currentSitePolygon && (
+        {showSitePolygon && currentSitePolygon && (
           <GeoJSON
             key={`site-polygon-${activeShownSiteId}`}
             data={currentSitePolygon}
@@ -2583,14 +2559,18 @@ export default function Map() {
                 </div>
               `;
               layer.bindPopup(popupContent);
-              
+
               // Attach click event when popup opens
-              layer.on('popupopen', () => {
-                const btn = document.getElementById('hazard-report-btn');
+              layer.on("popupopen", () => {
+                const btn = document.getElementById("hazard-report-btn");
                 if (btn) {
                   btn.onclick = () => {
                     layer.closePopup();
-                    generateHazardReport(currentSitePolygon, selectedSiteName || "Selected Site");
+                    // ✅ UPDATED: Pass the currentSitePolygon geometry to the modal
+                    handleGenerateHazardReport(
+                      currentSitePolygon,
+                      selectedSiteName || "Selected Site",
+                    );
                   };
                 }
               });
@@ -2802,11 +2782,13 @@ export default function Map() {
         onViewTrend={handleViewTrend}
         onReanalyze={handleReanalyze}
       />
-       <HazardReportModal
+
+      {/* ✅ UPDATED: HazardReportModal now receives geometry and handles its own fetching, loading, and network errors */}
+      <HazardReportModal
         isOpen={isHazardReportOpen}
         onClose={() => setIsHazardReportOpen(false)}
-        data={hazardReportData}
-        siteName={hazardReportTargetName}
+        geometry={reportGeometry}
+        siteName={reportSiteName}
       />
     </div>
   );

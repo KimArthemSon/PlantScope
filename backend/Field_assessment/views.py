@@ -16,6 +16,14 @@ from .models import (
 )
 
 
+from accounts.helper import (
+    create_notification,
+    delete_cloudinary_resource,
+    get_cloudinary_url,
+    get_user_from_token,
+)
+
+
 def _get_request_user(request):
     try:
         header = request.headers.get('Authorization', '')
@@ -178,26 +186,54 @@ def assign_inspector(request):
     current_assignments = Assigned_onsite_inspector.objects.filter(reforestation_area=area)
     current_user_ids = set(current_assignments.values_list('user_id', flat=True))
 
-    created = []
-
-    # Only add new assignments that are NOT already assigned
     to_add = new_user_ids - current_user_ids
+    to_remove = current_user_ids - new_user_ids
+
+    # ─────────────────────────────────────────────
+    # 1. PROCESS ADDITIONS & NOTIFY NEWLY ASSIGNED
+    # ─────────────────────────────────────────────
     for user_id in to_add:
         try:
             user = User.objects.get(id=user_id)
             Assigned_onsite_inspector.objects.create(user=user, reforestation_area=area)
-            created.append(user.id)
+            
+            # ✅ Notify the newly assigned inspector
+            create_notification(
+                user=user,
+                type='info',
+                title='New Inspector Assignment',
+                description=f'You have been assigned as an Onsite Inspector for Reforestation Area #{reforestation_area_id}.',
+                link=f'/reforestation-areas/{reforestation_area_id}' # ⚠️ Adjust this route to match your exact frontend path (e.g., '/DataManager/reforestation-areas/...')
+            )
         except User.DoesNotExist:
             continue
 
-    # Do NOT remove existing assignments
-    to_remove = current_user_ids - new_user_ids
+    # ─────────────────────────────────────────────
+    # 2. PROCESS REMOVALS & NOTIFY UNASSIGNED
+    # ─────────────────────────────────────────────
+    if to_remove:
+        # Fetch user objects first so we can notify them before deleting the assignment record
+        removed_users = User.objects.filter(id__in=to_remove)
+        
+        # Delete the assignments
+        Assigned_onsite_inspector.objects.filter(
+            reforestation_area=area,
+            user_id__in=to_remove
+        ).delete()
+        
+        # ✅ Notify the unassigned inspectors
+        for user in removed_users:
+            create_notification(
+                user=user,
+                type='warning',
+                title='Assignment Removed',
+                description=f'Your assignment as an Onsite Inspector for Reforestation Area #{reforestation_area_id} has been removed.',
+                link=None
+            )
 
-    Assigned_onsite_inspector.objects.filter(
-    reforestation_area=area,
-    user_id__in=to_remove
-    ).delete()
-
+    # ─────────────────────────────────────────────
+    # 3. LOG ACTIVITY
+    # ─────────────────────────────────────────────
     record_activity(
         request,
         action_type='UPDATE',
@@ -208,10 +244,11 @@ def assign_inspector(request):
         new_data={'assigned_added': list(to_add), 'assigned_removed': list(to_remove)},
     )
 
-    # Existing users will remain assigned automatically
     return JsonResponse({
-    "status": "success",
-    "assigned_users_added": list(to_add),
-    "assigned_users_removed": list(to_remove),
-    "total_assigned": list(new_user_ids)
-})
+        "status": "success",
+        "assigned_users_added": list(to_add),
+        "assigned_users_removed": list(to_remove),
+        "total_assigned": list(new_user_ids)
+    })
+
+    
