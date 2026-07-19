@@ -2264,27 +2264,63 @@ export default function Map() {
               const isSelected = selectedPotentialSiteIds.includes(
                 props.potential_sites_id,
               );
-              const popupContent = `<div style="font-size: 12px; min-width: 180px;"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg><strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Site"}</strong></div><div style="margin-bottom: 4px;"><strong>Area:</strong> ${props.area_hectares?.toFixed(2)} ha</div><div style="margin-bottom: 4px;"><strong>NDVI:</strong> ${props.avg_ndvi?.toFixed(3)}</div><hr style="margin: 6px 0;"/><button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:4px;">${isSelected ? "Deselect" : "Select for Site"}</button><button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer;">View Trends</button></div>`;
+              const popupContent = `
+                <div style="font-size: 12px; min-width: 180px;">
+                  <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                    <strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Site"}</strong>
+                  </div>
+                  <div style="margin-bottom: 4px;"><strong>Area:</strong> ${props.area_hectares?.toFixed(2) || "N/A"} ha</div>
+                  <div style="margin-bottom: 4px;"><strong>NDVI:</strong> ${props.avg_ndvi?.toFixed(3) || "N/A"}</div>
+                  <div style="margin-bottom: 4px;"><strong>Suitability:</strong> ${props.suitability_score?.toFixed(2) || "N/A"}</div>
+                  <hr style="margin: 6px 0;"/>
+                  
+                  <button id="hazard-report-btn-analyze-${props.potential_sites_id}" style="width: 100%; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; transition: background 0.2s;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Generate Hazard Report
+                  </button>
+
+                  <button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:4px;">${isSelected ? "Deselect" : "Select for Site"}</button>
+                  <button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer;">View Trends</button>
+                </div>`;
+
               layer.bindPopup(popupContent);
+
               layer.on("popupopen", () => {
+                // ✅ NEW: Hazard Report Button Handler
+                const hazardBtn = document.getElementById(
+                  `hazard-report-btn-analyze-${props.potential_sites_id}`,
+                );
+                if (hazardBtn) {
+                  hazardBtn.onclick = () => {
+                    layer.closePopup();
+                    handleGenerateHazardReport(
+                      feature.geometry,
+                      props.site_id || "Potential Site",
+                    );
+                  };
+                }
+
                 const selectBtn = document.getElementById(
                   `select-site-btn-${props.potential_sites_id}`,
                 );
-                if (selectBtn)
+                if (selectBtn) {
                   selectBtn.onclick = () => {
                     togglePotentialSiteSelection(props.potential_sites_id);
                     layer.closePopup();
                   };
+                }
                 const trendBtn = document.getElementById(
                   `view-trends-btn-${props.site_id}`,
                 );
-                if (trendBtn)
+                if (trendBtn) {
                   trendBtn.onclick = () => {
                     layer.closePopup();
                     setSelectedSiteGeometry(feature.geometry);
                     setSelectedSiteId(props.site_id);
                     setShowSiteTrends(true);
                   };
+                }
               });
             }}
           />
@@ -2578,7 +2614,7 @@ export default function Map() {
           />
         )}
 
-        {/* ✅ RENDER POTENTIAL SITES (No Re-analyze button here) */}
+        {/* ✅ RENDER POTENTIAL SITES (With Generate Hazard Report added) */}
         {showPotentialSites && activePotentialSites.length > 0 && (
           <GeoJSON
             key={`potential-sites-${activeShownSiteId}`}
@@ -2604,10 +2640,33 @@ export default function Map() {
                   <h3 style="margin-bottom: 8px; font-weight: bold; color: #dc2626; font-size: 14px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Potential Site</h3>
                   <div style="font-size: 12px; margin-bottom: 4px;"><strong>Area:</strong> ${p.area_hectares?.toFixed(2) || "N/A"} ha</div>
                   <div style="font-size: 12px; margin-bottom: 8px;"><strong>Avg NDVI:</strong> ${p.avg_ndvi?.toFixed(3) || "N/A"}</div>
+                  
+                  <button id="hazard-report-btn-${p.potential_sites_id}" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Generate Hazard Report
+                  </button>
+
                   <button onclick="window.handleViewTrend(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #3B82F6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">View NDVI Trend</button>
                   <button onclick="window.handleDeletePotentialSite(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #EF4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">Delete Potential Site</button>
                 </div>`;
+
               layer.bindPopup(popupContent);
+
+              // ✅ Attach click event safely when popup opens
+              layer.on("popupopen", () => {
+                const btn = document.getElementById(
+                  `hazard-report-btn-${p.potential_sites_id}`,
+                );
+                if (btn) {
+                  btn.onclick = () => {
+                    layer.closePopup();
+                    handleGenerateHazardReport(
+                      feature.geometry,
+                      p.name || `Potential Site ${p.potential_sites_id}`,
+                    );
+                  };
+                }
+              });
             }}
           />
         )}
