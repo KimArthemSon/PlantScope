@@ -6,12 +6,12 @@ from datetime import timedelta
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-
+from django.db.models.functions import TruncMonth, TruncDay, TruncWeek
 from accounts.helper import get_user_from_token
 from .models import (
     Assigned_onsite_inspector, Field_assessment
 )
-
+from dateutil.relativedelta import relativedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -252,6 +252,7 @@ def get_recent_assessments(request):
 def get_assessments_over_time(request):
     """
     📈 GET Assessments Over Time (Chart Data)
+    Supports: period='daily' (7 days), 'weekly' (4 weeks), 'monthly' (6 months)
     """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
@@ -261,62 +262,93 @@ def get_assessments_over_time(request):
         if not user or user.user_role != "OnsiteInspector":
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-        months = int(request.GET.get('months', 6))
+        # 1. Determine period and configure dates/truncation
+        period = request.GET.get('period', 'monthly').lower()
         end_date = timezone.now().date()
-        start_date = end_date - timedelta(days=months*30)
+        
+        if period == 'daily':
+            start_date = end_date - timedelta(days=6) # 7 days total
+            trunc_func = TruncDay
+            date_format = "%b %d" # e.g., "Jul 14"
+        elif period == 'weekly':
+            # Start from the Monday of 4 weeks ago
+            raw_start = end_date - timedelta(days=27)
+            start_date = raw_start - timedelta(days=raw_start.weekday()) 
+            trunc_func = TruncWeek
+            date_format = "%b %d" # e.g., "Jul 14" (Monday of the week)
+        else: # monthly (default)
+            # Start from the 1st of the month, 6 months ago
+            start_date = (end_date - relativedelta(months=5)).replace(day=1)
+            trunc_func = TruncMonth
+            date_format = "%b" # e.g., "Jul"
 
+        # 2. Fetch and group assessments
         assessments = Field_assessment.objects.filter(
             assigned_onsite_inspector__user=user,
             created_at__date__gte=start_date,
             created_at__date__lte=end_date
         )
 
-        monthly_data = assessments.annotate(
-            month=TruncMonth('created_at')
-        ).values('month').annotate(
+        grouped_data = assessments.annotate(
+            period_date=trunc_func('created_at')
+        ).values('period_date').annotate(
             submitted=Count(Case(When(is_submitted=True, then=1), output_field=IntegerField())),
             draft=Count(Case(When(is_submitted=False, then=1), output_field=IntegerField())),
-            total=Count('field_assessment_id')
-        ).order_by('month')
+        ).order_by('period_date')
 
+        # 3. Create a fast O(1) lookup dictionary keyed by the truncated date
+        data_lookup = {
+            item['period_date'].date(): {
+                'submitted': item['submitted'],
+                'draft': item['draft']
+            }
+            for item in grouped_data
+        }
+
+        # 4. Generate consistent labels and data arrays for the chart
         labels = []
         submitted_data = []
         draft_data = []
-        
-        from dateutil.relativedelta import relativedelta
-        current = start_date.replace(day=1)
-        
-        while current <= end_date:
-            month_label = current.strftime("%b")
-            labels.append(month_label)
-            
-            month_data = next(
-                (m for m in monthly_data if m['month'].month == current.month and m['month'].year == current.year),
-                None
-            )
-            
-            if month_data:
-                submitted_data.append(month_data['submitted'])
-                draft_data.append(month_data['draft'])
-            else:
-                submitted_data.append(0)
-                draft_data.append(0)
-            
-            current += relativedelta(months=1)
 
+        if period == 'monthly':
+            current = start_date
+            for _ in range(6):
+                labels.append(current.strftime(date_format))
+                lookup = data_lookup.get(current, {'submitted': 0, 'draft': 0})
+                submitted_data.append(lookup['submitted'])
+                draft_data.append(lookup['draft'])
+                current += relativedelta(months=1)
+        else:
+            current = start_date
+            num_periods = 7 if period == 'daily' else 4
+            
+            for _ in range(num_periods):
+                labels.append(current.strftime(date_format))
+                lookup = data_lookup.get(current, {'submitted': 0, 'draft': 0})
+                submitted_data.append(lookup['submitted'])
+                draft_data.append(lookup['draft'])
+                
+                # Step forward
+                current += timedelta(days=1) if period == 'daily' else timedelta(weeks=1)
+
+        # 5. Return response with BOTH datasets
         return JsonResponse({
             'success': True,
             'data': {
                 'labels': labels,
                 'datasets': [
-                    {'label': 'Submitted', 'data': submitted_data, 'color': '#22C55E'},
-                    {'label': 'Draft', 'data': draft_data, 'color': '#F59E0B'}
+                    {
+                        'label': 'Submitted', 
+                        'data': submitted_data, 
+                        'color': '#22C55E' # Green
+                    },
+                    {
+                        'label': 'Draft', 
+                        'data': draft_data, 
+                        'color': '#F59E0B' # Amber/Yellow
+                    }
                 ],
-                'period': {
-                    'start': start_date.isoformat(),
-                    'end': end_date.isoformat(),
-                    'months': months
-                }
+                'period': period
             }
         }, encoder=DjangoJSONEncoder, status=200)
         

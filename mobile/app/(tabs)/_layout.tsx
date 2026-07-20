@@ -178,6 +178,7 @@ export default function TabLayout() {
         />
         <Tabs.Screen name="notifications" options={{ href: null }} />
          <Tabs.Screen name="map" options={{ href: null }} />
+           <Tabs.Screen name="reports" options={{ href: null }} />
       </Tabs>
     </>
   );
