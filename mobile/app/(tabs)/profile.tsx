@@ -8,9 +8,11 @@ import {
   Image,
   ScrollView,
   ActivityIndicator,
+  StatusBar,
 } from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 import { useAlert } from "@/components/AlertContext";
 
@@ -58,6 +60,16 @@ const MENU: {
     ],
   },
   {
+    section: "Reports & Analytics",
+    items: [
+      {
+        icon: "file-document-multiple-outline",
+        label: "Reports",
+        path: "/(tabs)/reports",
+      },
+    ],
+  },
+  {
     section: "Support",
     items: [
       { icon: "help-circle-outline", label: "Help & Support", path: "/" },
@@ -79,6 +91,7 @@ const roleDisplayMap: Record<string, string> = {
 export default function ProfilePage() {
   const router = useRouter();
   const alert = useAlert();
+  const insets = useSafeAreaInsets();
 
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -134,7 +147,7 @@ export default function ProfilePage() {
     }
   };
 
-  // ✅ Custom alert for logout confirmation
+  // Custom alert for logout confirmation
   const handleLogout = () => {
     alert.confirm(
       "Log Out",
@@ -143,7 +156,6 @@ export default function ProfilePage() {
         try {
           const token = await SecureStore.getItemAsync("token");
 
-          // 1. Call the backend logout API to log the security event
           if (token) {
             try {
               await fetch(`${API}/logout/`, {
@@ -154,12 +166,10 @@ export default function ProfilePage() {
                 },
               });
             } catch (apiError) {
-              // Log the error but proceed with local logout so the user isn't stuck
               console.warn("Logout API call failed:", apiError);
             }
           }
 
-          // 2. Clear the local token and redirect
           await SecureStore.deleteItemAsync("token");
           alert.success("Logged Out", "You have been successfully logged out.");
           setTimeout(() => router.replace("/homepage"), 800);
@@ -175,24 +185,24 @@ export default function ProfilePage() {
     );
   };
 
-  // ✅ Loading state
+  // Loading state
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { paddingTop: insets.top + 20 }]}>
         <ActivityIndicator size="large" color="#0F4A2F" />
         <Text style={styles.loadingText}>Loading profile…</Text>
       </View>
     );
   }
 
-  // ✅ Fallback values
+  // Fallback values
   const displayName = userData?.full_name || "Inspector";
   const displayEmail = userData?.email || "inspector@plantscope.ph";
   const profileImage = userData?.profile_img;
   const userRole = userData?.user_role || "OnsiteInspector";
   const roleLabel = roleDisplayMap[userRole] || "On-Site Inspector";
 
-  // ✅ Get initials for fallback avatar
+  // Get initials for fallback avatar
   const getInitials = (name: string) => {
     return (
       name
@@ -204,123 +214,131 @@ export default function ProfilePage() {
     );
   };
 
-  // ✅ Update menu with unread count
+  // Update menu with unread count
   const menuWithBadges = MENU.map((group) => ({
     ...group,
     items: group.items.map((item) => ({
       ...item,
-      badge:
-        item.path === "/onsite_inspector/notifications"
-          ? unreadCount
-          : undefined,
+      badge: item.path === "/(tabs)/notifications" ? unreadCount : undefined,
     })),
   }));
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Hero Card */}
-      <View style={styles.heroCard}>
-        {/* Avatar */}
-        <View style={styles.avatarRing}>
-          {profileImage ? (
-            <Image
-              source={{ uri: profileImage }}
-              style={styles.avatar}
-              defaultSource={require("../../assets/images/logo.jpg")}
-            />
-          ) : (
-            <View style={styles.avatarFallback}>
-              <Text style={styles.avatarInitials}>
-                {getInitials(displayName)}
-              </Text>
+    <View style={styles.root}>
+     
+
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + 36 },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero Card - Dark tone */}
+        <View style={[styles.heroCard, { paddingTop: insets.top + 32 }]}>
+          {/* Avatar */}
+          <View style={styles.avatarRing}>
+            {profileImage ? (
+              <Image
+                source={{ uri: profileImage }}
+                style={styles.avatar}
+                defaultSource={require("../../assets/images/logo.jpg")}
+              />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Text style={styles.avatarInitials}>
+                  {getInitials(displayName)}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.heroName}>{displayName}</Text>
+          <Text style={styles.heroEmail}>{displayEmail}</Text>
+
+          <View style={styles.roleBadge}>
+            <Ionicons name="shield-checkmark" size={13} color="#0F4A2F" />
+            <Text style={styles.roleText}>{roleLabel}</Text>
+          </View>
+        </View>
+
+        {/* Stats Row */}
+        <View style={styles.statsRow}>
+          {STATS.map((s) => (
+            <View key={s.label} style={styles.statCard}>
+              <MaterialCommunityIcons
+                name={s.icon as any}
+                size={22}
+                color="#0F4A2F"
+              />
+              <Text style={styles.statValue}>{s.value}</Text>
+              <Text style={styles.statLabel}>{s.label}</Text>
             </View>
-          )}
+          ))}
         </View>
 
-        <Text style={styles.heroName}>{displayName}</Text>
-        <Text style={styles.heroEmail}>{displayEmail}</Text>
-
-        <View style={styles.roleBadge}>
-          <Ionicons name="shield-checkmark" size={13} color="#0F4A2F" />
-          <Text style={styles.roleText}>{roleLabel}</Text>
-        </View>
-      </View>
-
-      {/* Stats Row */}
-      <View style={styles.statsRow}>
-        {STATS.map((s) => (
-          <View key={s.label} style={styles.statCard}>
-            <MaterialCommunityIcons
-              name={s.icon as any}
-              size={22}
-              color="#0F4A2F"
-            />
-            <Text style={styles.statValue}>{s.value}</Text>
-            <Text style={styles.statLabel}>{s.label}</Text>
+        {/* Menu Sections */}
+        {menuWithBadges.map((group) => (
+          <View key={group.section} style={styles.menuGroup}>
+            <Text style={styles.menuSection}>{group.section}</Text>
+            <View style={styles.menuCard}>
+              {group.items.map((item, idx) => (
+                <TouchableOpacity
+                  key={item.label}
+                  style={[
+                    styles.menuItem,
+                    idx < group.items.length - 1 && styles.menuItemBorder,
+                  ]}
+                  onPress={() => router.push({ pathname: item.path as any })}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.menuIconWrap}>
+                    <MaterialCommunityIcons
+                      name={item.icon as any}
+                      size={18}
+                      color="#0F4A2F"
+                    />
+                  </View>
+                  <View style={styles.menuLabelContainer}>
+                    <Text style={styles.menuLabel}>{item.label}</Text>
+                    {item.badge !== undefined && item.badge > 0 && (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>
+                          {item.badge > 99 ? "99+" : String(item.badge)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         ))}
-      </View>
 
-      {/* Menu Sections */}
-      {menuWithBadges.map((group) => (
-        <View key={group.section} style={styles.menuGroup}>
-          <Text style={styles.menuSection}>{group.section}</Text>
-          <View style={styles.menuCard}>
-            {group.items.map((item, idx) => (
-              <TouchableOpacity
-                key={item.label}
-                style={[
-                  styles.menuItem,
-                  idx < group.items.length - 1 && styles.menuItemBorder,
-                ]}
-                onPress={() => router.push({ pathname: item.path as any })}
-                activeOpacity={0.7}
-              >
-                <View style={styles.menuIconWrap}>
-                  <MaterialCommunityIcons
-                    name={item.icon as any}
-                    size={18}
-                    color="#0F4A2F"
-                  />
-                </View>
-                <View style={styles.menuLabelContainer}>
-                  <Text style={styles.menuLabel}>{item.label}</Text>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>
-                        {item.badge > 99 ? "99+" : String(item.badge)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      ))}
+        {/* Logout */}
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={handleLogout}
+          activeOpacity={0.85}
+        >
+          <MaterialCommunityIcons name="logout" size={18} color="#EF4444" />
+          <Text style={styles.logoutText}>Log Out</Text>
+        </TouchableOpacity>
 
-      {/* Logout */}
-      <TouchableOpacity
-        style={styles.logoutBtn}
-        onPress={handleLogout}
-        activeOpacity={0.85}
-      >
-        <MaterialCommunityIcons name="logout" size={18} color="#EF4444" />
-        <Text style={styles.logoutText}>Log Out</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.version}>PlantScope v2.0 · On-Site Module</Text>
-    </ScrollView>
+        <Text style={styles.version}>PlantScope v2.0 · On-Site Module</Text>
+      </ScrollView>
+    </View>
   );
 }
 
 /* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#F4F7F5",
+  },
   container: {
     flex: 1,
     backgroundColor: "#F4F7F5",
@@ -340,11 +358,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  /* Hero */
+  /* Hero - Dark tone */
   heroCard: {
     backgroundColor: "#0F4A2F",
     alignItems: "center",
-    paddingTop: 32,
     paddingBottom: 28,
     paddingHorizontal: 20,
     marginBottom: 20,

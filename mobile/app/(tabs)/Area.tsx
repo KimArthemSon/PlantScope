@@ -15,7 +15,7 @@ import {
   Platform,
   StatusBar,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ ADDED FOR SAFE AREA
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { WebView } from "react-native-webview";
@@ -30,7 +30,7 @@ const OFFLINE_AREAS_KEY = "@plantscope_offline_areas";
 
 /* ──────────────────────────────────────────────────────────────────
    DESIGN TOKENS
-   ──────────────────────────────────────────────────────────────── */
+   ─────────────────────────────────────────────────────────────── */
 const BG = "#F5F6F8";
 const PRIMARY = "#0F4A2F";
 const INK = "#111827";
@@ -43,81 +43,6 @@ const cardShadow = {
   shadowOpacity: 0.03,
   shadowRadius: 8,
   elevation: 1,
-};
-
-/* ──────────────────────────────────────────────────────────────────
-   SEMI-CIRCLE PROGRESS COMPONENT (FIXED)
-   ─────────────────────────────────────────────────────────────── */
-const SemiCircleProgress: React.FC<{
-  percentage: number;
-  size?: number;
-  strokeWidth?: number;
-  color?: string;
-  trackColor?: string;
-  subtitle?: string;
-}> = ({
-  percentage,
-  size = 260,
-  strokeWidth = 12,
-  color = PRIMARY,
-  trackColor = "#E9ECEF",
-  subtitle,
-}) => {
-  const clamped = Math.max(0, Math.min(100, percentage));
-  const half = size / 2;
-
-  return (
-    <View style={{ width: size, height: half, alignItems: "center" }}>
-      <View style={{ width: size, height: half, overflow: "hidden" }}>
-        {/* Background Track */}
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: size,
-            height: size,
-            borderRadius: half,
-            borderWidth: strokeWidth,
-            borderColor: trackColor,
-          }}
-        />
-
-        {/* Progress Arc */}
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: size,
-            height: size,
-            borderRadius: half,
-            borderWidth: strokeWidth,
-            borderColor: "transparent",
-            borderLeftColor: clamped > 0 ? color : "transparent",
-            borderBottomColor: clamped > 50 ? color : "transparent",
-            transform: [{ rotate: "-135deg" }],
-          }}
-        />
-
-        {/* TEXT POSITIONING: Centered inside the half-circle */}
-        <View
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            alignItems: "center",
-            justifyContent: "flex-end",
-            paddingBottom: 12,
-          }}
-        >
-          <Text style={styles.progressValue}>{clamped}%</Text>
-          {subtitle && <Text style={styles.progressSubtitle}>{subtitle}</Text>}
-        </View>
-      </View>
-    </View>
-  );
 };
 
 type ReforestationArea = {
@@ -133,7 +58,7 @@ type ReforestationArea = {
 };
 
 const ReforestationAreas: React.FC = () => {
-  const insets = useSafeAreaInsets(); // ✅ GET SAFE AREA INSETS
+  const insets = useSafeAreaInsets();
   const {
     success,
     error: showError,
@@ -155,7 +80,9 @@ const ReforestationAreas: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+
   const [offlineAreaIds, setOfflineAreaIds] = useState<Set<string>>(new Set());
+  const [offlineCount, setOfflineCount] = useState(0);
   const [savingOffline, setSavingOffline] = useState<string | null>(null);
 
   const router = useRouter();
@@ -172,6 +99,9 @@ const ReforestationAreas: React.FC = () => {
         const savedAreas: ReforestationArea[] = JSON.parse(saved);
         const ids = new Set(savedAreas.map((a) => a.reforestation_area_id));
         setOfflineAreaIds(ids);
+        setOfflineCount(savedAreas.length);
+      } else {
+        setOfflineCount(0);
       }
     } catch (error) {
       console.error("Error loading offline areas:", error);
@@ -198,9 +128,10 @@ const ReforestationAreas: React.FC = () => {
         JSON.stringify(updatedAreas),
       );
 
-      const newSet = new Set(offlineAreaIds);
-      newSet.add(area.reforestation_area_id);
-      setOfflineAreaIds(newSet);
+      setOfflineAreaIds(
+        new Set(updatedAreas.map((a) => a.reforestation_area_id)),
+      );
+      setOfflineCount(updatedAreas.length);
 
       success("Success", `${area.name} saved for offline use.`);
     } catch (error) {
@@ -230,9 +161,10 @@ const ReforestationAreas: React.FC = () => {
             JSON.stringify(updatedAreas),
           );
 
-          const newSet = new Set(offlineAreaIds);
-          newSet.delete(area.reforestation_area_id);
-          setOfflineAreaIds(newSet);
+          setOfflineAreaIds(
+            new Set(updatedAreas.map((a) => a.reforestation_area_id)),
+          );
+          setOfflineCount(updatedAreas.length);
 
           success("Removed", `${area.name} removed from offline storage.`);
         } catch (error) {
@@ -425,13 +357,10 @@ const ReforestationAreas: React.FC = () => {
   });
 
   const percentage =
-    areas.length > 0
-      ? Math.round((offlineAreaIds.size / areas.length) * 100)
-      : 0;
+    areas.length > 0 ? Math.round((offlineCount / areas.length) * 100) : 0;
 
   return (
     <View style={styles.container}>
-      {/* ✅ STATUS BAR CONFIGURATION */}
       <StatusBar
         barStyle="dark-content"
         backgroundColor={BG}
@@ -452,29 +381,12 @@ const ReforestationAreas: React.FC = () => {
           />
         }
       >
-        {/* ✅ HEADER WITH DYNAMIC SAFE AREA PADDING */}
         <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <View style={styles.topRow}>
             <View>
               <Text style={styles.eyebrow}>Field Inspections</Text>
               <Text style={styles.title}>Assigned Areas</Text>
             </View>
-            <TouchableOpacity
-              style={styles.iconBtn}
-              onPress={onRefresh}
-              disabled={refreshing || !isOnline}
-              activeOpacity={0.7}
-            >
-              {refreshing ? (
-                <ActivityIndicator size="small" color={PRIMARY} />
-              ) : (
-                <Ionicons
-                  name="refresh"
-                  size={19}
-                  color={!isOnline ? FAINT : MUTED}
-                />
-              )}
-            </TouchableOpacity>
           </View>
 
           {!isOnline && (
@@ -500,7 +412,6 @@ const ReforestationAreas: React.FC = () => {
             </Text>
           )}
 
-          {/* Search Bar with Map Button */}
           <View style={styles.searchContainer}>
             <View style={styles.searchBar}>
               <Ionicons name="search-outline" size={18} color={FAINT} />
@@ -527,16 +438,37 @@ const ReforestationAreas: React.FC = () => {
           </View>
         </View>
 
-        {/* PROGRESS CARD */}
+        {/* ✅ REPLACED: Semi-circle with linear progress bar */}
         {areas.length > 0 && (
           <View style={styles.progressCard}>
-            <Text style={styles.progressTitle}>OFFLINE READINESS</Text>
-            <SemiCircleProgress
-              percentage={percentage}
-              size={260}
-              strokeWidth={12}
-              subtitle={`${offlineAreaIds.size} of ${areas.length} areas`}
-            />
+            <View style={styles.progressRow}>
+              <View>
+                <Text style={styles.progressLabel}>OFFLINE READINESS</Text>
+                <Text style={styles.progressSub}>
+                  {offlineCount} of {areas.length} areas saved
+                </Text>
+              </View>
+              <Text style={styles.progressPct}>{percentage}%</Text>
+            </View>
+            <View style={styles.progressBg}>
+              <View
+                style={[styles.progressFill, { width: `${percentage}%` }]}
+              />
+            </View>
+            <View style={styles.progressStatusRow}>
+              <View style={styles.statusItem}>
+                <View style={[styles.statusDot, { backgroundColor: "#5FD08A" }]} />
+                <Text style={styles.statusText}>
+                  {offlineCount} Saved
+                </Text>
+              </View>
+              <View style={styles.statusItem}>
+                <View style={[styles.statusDot, { backgroundColor: "#E5E7EB" }]} />
+                <Text style={styles.statusText}>
+                  {areas.length - offlineCount} Pending
+                </Text>
+              </View>
+            </View>
           </View>
         )}
 
@@ -599,7 +531,6 @@ const ReforestationAreas: React.FC = () => {
                         )}
                       </View>
 
-                      {/* Action Buttons in Row */}
                       <View style={styles.cardActions}>
                         <TouchableOpacity
                           style={styles.actionIcon}
@@ -714,15 +645,12 @@ const ReforestationAreas: React.FC = () => {
                   onMessage={(event) => {
                     try {
                       const data = JSON.parse(event.nativeEvent.data);
-                      if (data.type === "error") {
-                        console.error("Map JS Error:", data.message);
+                      if (data.type === "error")
                         showError("Map Error", data.message);
-                      }
                     } catch (e) {}
                   }}
                   onError={(syntheticEvent) => {
                     const { nativeEvent } = syntheticEvent;
-                    console.error("WebView Native Error: ", nativeEvent);
                     showError(
                       "WebView Error",
                       nativeEvent.description || "Failed to load map",
@@ -847,14 +775,7 @@ const ReforestationAreas: React.FC = () => {
         <style>
           html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
           #map { width: 100%; height: 100vh; }
-          .custom-marker {
-            background-color: #0F4A2F;
-            border: 3px solid #fff;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-          }
+          .custom-marker { background-color: #0F4A2F; border: 3px solid #fff; border-radius: 50%; width: 20px; height: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
           .leaflet-div-icon { background: transparent; border: none; }
         </style>
       </head>
@@ -863,23 +784,11 @@ const ReforestationAreas: React.FC = () => {
         <script>
           try {
             var map = L.map('map', { zoomControl: true, attributionControl: true }).setView([${safeLat}, ${safeLng}], 15);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              attribution: '© OpenStreetMap contributors',
-              maxZoom: 19,
-              crossOrigin: true,
-              errorTileUrl: ''
-            }).addTo(map);
-            var customIcon = L.divIcon({
-              className: 'custom-marker-wrapper',
-              html: '<div class="custom-marker"></div>',
-              iconSize: [20, 20],
-              iconAnchor: [10, 10]
-            });
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors', maxZoom: 19, crossOrigin: true, errorTileUrl: '' }).addTo(map);
+            var customIcon = L.divIcon({ className: 'custom-marker-wrapper', html: '<div class="custom-marker"></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
             L.marker([${safeLat}, ${safeLng}], {icon: customIcon}).addTo(map).bindPopup('${safeTitle}').openPopup();
             window.ReactNativeWebView.postMessage(JSON.stringify({type: 'info', message: 'Map loaded successfully'}));
-          } catch(e) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({type: 'error', message: e.message}));
-          }
+          } catch(e) { window.ReactNativeWebView.postMessage(JSON.stringify({type: 'error', message: e.message})); }
         </script>
       </body>
       </html>
@@ -889,21 +798,16 @@ const ReforestationAreas: React.FC = () => {
 
 /* ──────────────────────────────────────────────────────────────────
    STYLES
-   ──────────────────────────────────────────────────────────────── */
+   ─────────────────────────────────────────────────────────────── */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG,
-    // ✅ Ensures Android status bar doesn't overlap content
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   scrollView: { flex: 1 },
   content: { paddingBottom: 24 },
-
-  // ✅ paddingTop is now handled dynamically via inline style
-  header: {
-    paddingHorizontal: 20,
-  },
+  header: { paddingHorizontal: 20 },
   topRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -927,7 +831,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     ...cardShadow,
   },
-
   offlineBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -940,19 +843,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   offlineBannerText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
-
   lastRefreshed: {
     fontSize: 11.5,
     color: FAINT,
     marginBottom: 10,
     fontWeight: "500",
   },
-
-  searchContainer: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "center",
-  },
+  searchContainer: { flexDirection: "row", gap: 10, alignItems: "center" },
   searchBar: {
     flex: 1,
     flexDirection: "row",
@@ -974,40 +871,67 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     ...cardShadow,
   },
-
   progressCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: PRIMARY,
     marginHorizontal: 20,
     marginTop: 24,
-    paddingVertical: 32,
-    paddingHorizontal: 24,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
+    padding: 20,
+    borderRadius: 18,
     ...cardShadow,
   },
-  progressTitle: {
+  progressRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  progressLabel: {
     fontSize: 13,
-    color: MUTED,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 16,
-  },
-  progressValue: {
-    fontSize: 56,
-    fontWeight: "800",
-    color: INK,
-    letterSpacing: -2,
-    lineHeight: 60,
-  },
-  progressSubtitle: {
-    fontSize: 15,
-    color: MUTED,
+    color: "#B7D3C6",
     fontWeight: "600",
-    marginTop: 4,
+    letterSpacing: 0.5,
   },
-
+  progressSub: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.45)",
+    marginTop: 2,
+  },
+  progressPct: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  progressBg: {
+    height: 6,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 3,
+    overflow: "hidden",
+    marginBottom: 14,
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: "#5FD08A",
+    borderRadius: 3,
+  },
+  progressStatusRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  statusItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.6)",
+    fontWeight: "500",
+  },
   centerContent: {
     flex: 1,
     justifyContent: "center",
@@ -1023,7 +947,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   refreshHint: { color: FAINT, fontSize: 12, marginTop: 4 },
-
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1038,7 +961,6 @@ const styles = StyleSheet.create({
     color: INK,
     letterSpacing: -0.2,
   },
-
   list: { paddingHorizontal: 20, gap: 12 },
   card: {
     backgroundColor: "#FFFFFF",
@@ -1065,7 +987,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   savedBadgeText: { fontSize: 10, fontWeight: "600", color: PRIMARY },
-
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1073,12 +994,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   metaText: { fontSize: 12, color: MUTED },
-
-  cardActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
+  cardActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   actionIcon: {
     width: 42,
     height: 42,
@@ -1089,10 +1005,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DCFCE7",
   },
-  actionIconDanger: {
-    backgroundColor: "#FEF2F2",
-    borderColor: "#FECACA",
-  },
+  actionIconDanger: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
   actionIconPrimary: {
     width: 42,
     height: 42,
@@ -1101,7 +1014,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   emptyState: {
     alignItems: "center",
     paddingTop: 60,
@@ -1110,7 +1022,6 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 16, fontWeight: "700", color: FAINT },
   emptySubtitle: { fontSize: 13, color: FAINT, textAlign: "center" },
-
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
@@ -1180,7 +1091,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   startBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
-
   actionSheet: {
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 24,
