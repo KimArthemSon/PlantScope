@@ -1,6 +1,5 @@
 from django.urls import path
-from . import onsite_views
-from . import views
+from . import onsite_views, dashboard_views, views
 
 urlpatterns = [
     # ── Web/Admin: Inspector Assignment Management ──────────────────────
@@ -88,4 +87,11 @@ urlpatterns = [
     # ── Web/GIS: Area-Level Assessment Retrieval ───────────────────────
    # ✅ GIS/ENRO Review endpoint (THIS IS WHAT YOU NEED):
     path('area/<int:reforestation_area_id>/meta-data/', onsite_views.get_area_meta_data, name='get_area_meta_data'),
+
+    path('inspector/dashboard-stats/', dashboard_views.get_dashboard_stats, name='dashboard-stats'),
+    path('inspector/recent-assessments/', dashboard_views.get_recent_assessments, name='recent-assessments'),
+    path('inspector/assessments-over-time/', dashboard_views.get_assessments_over_time, name='assessments-over-time'),
+    path('inspector/assigned-areas-summary/', dashboard_views.get_assigned_areas_summary, name='assigned-areas-summary'),
+    path('inspector/layer-completion/', dashboard_views.get_layer_completion_detail, name='layer-completion'),
+
 ]

@@ -11,7 +11,6 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
-  // ❌ REMOVED: Alert
   RefreshControl,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
@@ -20,13 +19,103 @@ import { WebView } from "react-native-webview";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
-
-// ✅ ADDED: Import the useAlert hook
 import { useAlert } from "@/components/AlertContext";
 
 const screenHeight = Dimensions.get("window").height;
 const API_BASE_URL = api + "/api";
 const OFFLINE_AREAS_KEY = "@plantscope_offline_areas";
+
+/* ──────────────────────────────────────────────────────────────────
+   DESIGN TOKENS
+   ──────────────────────────────────────────────────────────────── */
+const BG = "#F5F6F8";
+const PRIMARY = "#0F4A2F";
+const INK = "#111827";
+const MUTED = "#6B7280";
+const FAINT = "#9CA3AF";
+
+const cardShadow = {
+  shadowColor: "#0F172A",
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.03,
+  shadowRadius: 8,
+  elevation: 1,
+};
+
+/* ──────────────────────────────────────────────────────────────────
+   SEMI-CIRCLE PROGRESS COMPONENT (FIXED)
+   ─────────────────────────────────────────────────────────────── */
+const SemiCircleProgress: React.FC<{
+  percentage: number;
+  size?: number;
+  strokeWidth?: number;
+  color?: string;
+  trackColor?: string;
+  subtitle?: string;
+}> = ({
+  percentage,
+  size = 260,
+  strokeWidth = 12,
+  color = PRIMARY,
+  trackColor = "#E9ECEF",
+  subtitle,
+}) => {
+  const clamped = Math.max(0, Math.min(100, percentage));
+  const half = size / 2;
+
+  return (
+    <View style={{ width: size, height: half, alignItems: "center" }}>
+      <View style={{ width: size, height: half, overflow: "hidden" }}>
+        {/* Background Track */}
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: size,
+            height: size,
+            borderRadius: half,
+            borderWidth: strokeWidth,
+            borderColor: trackColor,
+          }}
+        />
+
+        {/* Progress Arc */}
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: size,
+            height: size,
+            borderRadius: half,
+            borderWidth: strokeWidth,
+            borderColor: "transparent",
+            borderLeftColor: clamped > 0 ? color : "transparent",
+            borderBottomColor: clamped > 50 ? color : "transparent",
+            transform: [{ rotate: "-135deg" }],
+          }}
+        />
+
+        {/* TEXT POSITIONING: Centered inside the half-circle */}
+        <View
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            alignItems: "center",
+            justifyContent: "flex-end",
+            paddingBottom: 12,
+          }}
+        >
+          <Text style={styles.progressValue}>{clamped}%</Text>
+          {subtitle && <Text style={styles.progressSubtitle}>{subtitle}</Text>}
+        </View>
+      </View>
+    </View>
+  );
+};
 
 type ReforestationArea = {
   reforestation_area_id: string;
@@ -41,32 +130,33 @@ type ReforestationArea = {
 };
 
 const ReforestationAreas: React.FC = () => {
-  // ✅ ADDED: Initialize useAlert. We alias 'error' to 'showError' to avoid conflicting with your 'error' state variable.
-  const { success, error: showError, warning, info, confirm } = useAlert();
+  const {
+    success,
+    error: showError,
+    warning,
+    info: showInfo,
+    confirm,
+  } = useAlert();
 
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedArea, setSelectedArea] = useState<ReforestationArea | null>(
     null,
   );
-
   const [actionSheetVisible, setActionSheetVisible] = useState(false);
   const [actionSheetArea, setActionSheetArea] =
     useState<ReforestationArea | null>(null);
-
   const [searchText, setSearchText] = useState("");
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-
   const [offlineAreaIds, setOfflineAreaIds] = useState<Set<string>>(new Set());
   const [savingOffline, setSavingOffline] = useState<string | null>(null);
 
   const router = useRouter();
   const isOnline = useNetworkStatus();
 
-  // ✅ Load saved offline area IDs on mount
   useEffect(() => {
     loadOfflineAreaIds();
   }, []);
@@ -87,43 +177,35 @@ const ReforestationAreas: React.FC = () => {
   const saveAreaForOffline = async (area: ReforestationArea) => {
     setSavingOffline(area.reforestation_area_id);
     try {
-      // Get existing saved areas
       const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
       const savedAreas: ReforestationArea[] = saved ? JSON.parse(saved) : [];
 
-      // Check if already saved
       const alreadySaved = savedAreas.some(
         (a) => a.reforestation_area_id === area.reforestation_area_id,
       );
       if (alreadySaved) {
-        // ✅ UPDATED
-        info("Info", `${area.name} is already saved for offline use.`);
+        showInfo("Info", `${area.name} is already saved for offline use.`);
         return;
       }
 
-      // Add new area
       const updatedAreas = [...savedAreas, area];
       await AsyncStorage.setItem(
         OFFLINE_AREAS_KEY,
         JSON.stringify(updatedAreas),
       );
 
-      // Update state
       const newSet = new Set(offlineAreaIds);
       newSet.add(area.reforestation_area_id);
       setOfflineAreaIds(newSet);
 
-      // ✅ UPDATED
       success("Success", `${area.name} saved for offline use.`);
     } catch (error) {
-      // ✅ UPDATED
       showError("Error", "Failed to save area for offline use.");
     } finally {
       setSavingOffline(null);
     }
   };
 
-  // ✅ UPDATED: Converted to use confirm() dialog.
   const removeAreaFromOffline = (area: ReforestationArea) => {
     confirm(
       "Remove from Offline",
@@ -131,13 +213,11 @@ const ReforestationAreas: React.FC = () => {
       async () => {
         setSavingOffline(area.reforestation_area_id);
         try {
-          // Get existing saved areas
           const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
           const savedAreas: ReforestationArea[] = saved
             ? JSON.parse(saved)
             : [];
 
-          // Remove the area
           const updatedAreas = savedAreas.filter(
             (a) => a.reforestation_area_id !== area.reforestation_area_id,
           );
@@ -146,25 +226,18 @@ const ReforestationAreas: React.FC = () => {
             JSON.stringify(updatedAreas),
           );
 
-          // Update state
           const newSet = new Set(offlineAreaIds);
           newSet.delete(area.reforestation_area_id);
           setOfflineAreaIds(newSet);
 
-          // ✅ UPDATED
           success("Removed", `${area.name} removed from offline storage.`);
         } catch (error) {
-          // ✅ UPDATED
           showError("Error", "Failed to remove area from offline storage.");
         } finally {
           setSavingOffline(null);
         }
       },
-      {
-        type: "error",
-        confirmText: "Remove",
-        cancelText: "Cancel",
-      },
+      { type: "error", confirmText: "Remove", cancelText: "Cancel" },
     );
   };
 
@@ -175,16 +248,13 @@ const ReforestationAreas: React.FC = () => {
       setError(null);
 
       try {
-        // ✅ Always load offline saved areas first
         await loadOfflineAreaIds();
 
         if (!isOnline) {
-          // Load from offline storage only
           await loadOfflineAreas();
           return;
         }
 
-        // ✅ ONLINE: Fetch from API
         const token = await SecureStore.getItemAsync("token");
         if (!token) throw new Error("No authentication token found.");
 
@@ -225,16 +295,11 @@ const ReforestationAreas: React.FC = () => {
       } catch (err: any) {
         setError(err.message);
         if (err.message.includes("token")) {
-          // ✅ UPDATED: Replaced with confirm(). cancelText: "" hides the cancel button to act like a standard blocking alert.
           confirm(
             "Authentication Error",
             "Please log in again.",
             () => router.replace("/"),
-            {
-              type: "error",
-              confirmText: "OK",
-              cancelText: "",
-            },
+            { type: "error", confirmText: "OK", cancelText: "" },
           );
         }
       } finally {
@@ -251,7 +316,6 @@ const ReforestationAreas: React.FC = () => {
       const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
       if (saved) {
         const savedAreas: ReforestationArea[] = JSON.parse(saved);
-        // Filter out invalid areas
         const validAreas = savedAreas.filter(
           (area) => area && area.reforestation_area_id && area.name,
         );
@@ -305,7 +369,6 @@ const ReforestationAreas: React.FC = () => {
 
   const openModal = (area: ReforestationArea) => {
     if (!isOnline) {
-      // ✅ UPDATED
       warning("Offline Mode", "Map is not available offline.");
       return;
     }
@@ -357,242 +420,259 @@ const ReforestationAreas: React.FC = () => {
     return areaName.toLowerCase().includes(searchText.toLowerCase());
   });
 
+  const percentage =
+    areas.length > 0
+      ? Math.round((offlineAreaIds.size / areas.length) * 100)
+      : 0;
+
   return (
     <View style={styles.container}>
-      {/* Offline Mode Banner */}
-      {!isOnline && (
-        <View style={styles.offlineBanner}>
-          <Ionicons name="cloud-offline-outline" size={16} color="#FFFFFF" />
-          <Text style={styles.offlineBannerText}>
-            Offline Mode - Saved Areas Only
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Assigned Areas</Text>
-        <TouchableOpacity
-          style={styles.refreshBtn}
-          onPress={onRefresh}
-          disabled={refreshing || !isOnline}
-        >
-          <Ionicons
-            name={refreshing ? "refresh-outline" : "refresh"}
-            size={20}
-            color={refreshing || !isOnline ? "#9CA3AF" : "#0F4A2F"}
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[PRIMARY]}
+            tintColor={PRIMARY}
+            enabled={isOnline}
           />
-        </TouchableOpacity>
-      </View>
-
-      {lastRefreshed && !refreshing && isOnline && (
-        <Text style={styles.lastRefreshed}>
-          Updated:{" "}
-          {lastRefreshed.toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </Text>
-      )}
-
-      <View style={styles.searchWrap}>
-        <Ionicons
-          name="search-outline"
-          size={18}
-          color="#9CA3AF"
-          style={styles.searchIcon}
-        />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by name…"
-          placeholderTextColor="#9CA3AF"
-          value={searchText}
-          onChangeText={setSearchText}
-        />
-        {searchText.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchText("")}>
-            <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {loading && !refreshing ? (
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color="#0F4A2F" />
-          <Text style={styles.loadingText}>Loading…</Text>
-        </View>
-      ) : error && areas.length === 0 ? (
-        <View style={styles.centerContent}>
-          <MaterialCommunityIcons
-            name={isOnline ? "alert-circle-outline" : "cloud-offline"}
-            size={48}
-            color={isOnline ? "#EF4444" : "#F59E0B"}
-          />
-          <Text style={styles.errorText}>{error}</Text>
-          {isOnline && (
+        }
+      >
+        {/* HEADER */}
+        <View style={styles.header}>
+          <View style={styles.topRow}>
+            <View>
+              <Text style={styles.eyebrow}>Field Inspections</Text>
+              <Text style={styles.title}>Assigned Areas</Text>
+            </View>
             <TouchableOpacity
-              style={styles.retryBtn}
-              onPress={() => fetchAssignedAreas()}
+              style={styles.iconBtn}
+              onPress={onRefresh}
+              disabled={refreshing || !isOnline}
+              activeOpacity={0.7}
             >
-              <Text style={styles.retryText}>Try Again</Text>
+              {refreshing ? (
+                <ActivityIndicator size="small" color={PRIMARY} />
+              ) : (
+                <Ionicons
+                  name="refresh"
+                  size={19}
+                  color={!isOnline ? FAINT : MUTED}
+                />
+              )}
             </TouchableOpacity>
-          )}
-        </View>
-      ) : (
-        <ScrollView
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={["#0F4A2F"]}
-              tintColor="#0F4A2F"
-              enabled={isOnline}
-            />
-          }
-        >
-          <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>
-              {isOnline
-                ? `Areas (${filteredAreas.length})`
-                : `Saved Areas (${filteredAreas.length})`}
-            </Text>
-            {refreshing && <ActivityIndicator size="small" color="#0F4A2F" />}
           </View>
 
-          {filteredAreas.map((area) => {
-            const isSaved = offlineAreaIds.has(area.reforestation_area_id);
-            const isSaving = savingOffline === area.reforestation_area_id;
-
-            return (
-              <View key={area.reforestation_area_id} style={styles.card}>
-                <View
-                  style={[styles.cardAccent, { backgroundColor: "#22C55E" }]}
-                />
-                <View style={styles.cardBody}>
-                  <View style={styles.cardTopRow}>
-                    <Text style={styles.cardName} numberOfLines={1}>
-                      {area.name}
-                    </Text>
-                    {isSaved && (
-                      <View style={styles.savedBadge}>
-                        <Ionicons name="download" size={10} color="#0F4A2F" />
-                        <Text style={styles.savedBadgeText}>Saved</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.metaRow}>
-                    <Ionicons
-                      name="navigate-outline"
-                      size={13}
-                      color="#9CA3AF"
-                    />
-                    <Text style={styles.metaText}>{area.coord_display}</Text>
-                  </View>
-
-                  <View style={styles.cardActions}>
-                    {isOnline && (
-                      <TouchableOpacity
-                        style={styles.viewBtn}
-                        onPress={() => openModal(area)}
-                        activeOpacity={0.75}
-                      >
-                        <Ionicons
-                          name="map-outline"
-                          size={14}
-                          color="#0F4A2F"
-                        />
-                        <Text style={styles.viewBtnText}>View Map</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity
-                      style={styles.assessBtn}
-                      onPress={() => openActionSheet(area)}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={styles.assessBtnText}>Start Assessment</Text>
-                      <Ionicons
-                        name="arrow-forward"
-                        size={14}
-                        color="#FFFFFF"
-                      />
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* ✅ UPDATED: Show Remove button when offline AND saved, OR when online */}
-                  {(!isOnline && isSaved) || isOnline ? (
-                    <TouchableOpacity
-                      style={[
-                        styles.offlineBtn,
-                        isSaved
-                          ? styles.removeOfflineBtn
-                          : styles.saveOfflineBtn,
-                        isSaving && { opacity: 0.6 },
-                      ]}
-                      onPress={() =>
-                        isSaved
-                          ? removeAreaFromOffline(area)
-                          : saveAreaForOffline(area)
-                      }
-                      disabled={isSaving}
-                    >
-                      {isSaving ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={isSaved ? "#EF4444" : "#0F4A2F"}
-                        />
-                      ) : (
-                        <>
-                          <Ionicons
-                            name={
-                              isSaved ? "trash-outline" : "download-outline"
-                            }
-                            size={14}
-                            color={isSaved ? "#EF4444" : "#0F4A2F"}
-                          />
-                          <Text
-                            style={[
-                              styles.offlineBtnText,
-                              { color: isSaved ? "#EF4444" : "#0F4A2F" },
-                            ]}
-                          >
-                            {isSaved
-                              ? "Remove from Offline"
-                              : "Save for Offline"}
-                          </Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              </View>
-            );
-          })}
-
-          {filteredAreas.length === 0 && (
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons
-                name={isOnline ? "tree-outline" : "cloud-offline"}
-                size={52}
-                color="#D1D5DB"
+          {!isOnline && (
+            <View style={styles.offlineBanner}>
+              <Ionicons
+                name="cloud-offline-outline"
+                size={14}
+                color="#FFFFFF"
               />
-              <Text style={styles.emptyTitle}>
-                {isOnline ? "No Areas Found" : "No Saved Areas"}
-              </Text>
-              <Text style={styles.emptySubtitle}>
-                {isOnline
-                  ? searchText
-                    ? `No results for "${searchText}"`
-                    : "No assigned areas yet"
-                  : "Go online and save areas for offline use"}
+              <Text style={styles.offlineBannerText}>
+                Offline Mode — Saved Areas Only
               </Text>
             </View>
           )}
-        </ScrollView>
-      )}
+
+          {lastRefreshed && !refreshing && isOnline && (
+            <Text style={styles.lastRefreshed}>
+              Updated{" "}
+              {lastRefreshed.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </Text>
+          )}
+
+          {/* Search Bar with Map Button */}
+          <View style={styles.searchContainer}>
+            <View style={styles.searchBar}>
+              <Ionicons name="search-outline" size={18} color={FAINT} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search by name…"
+                placeholderTextColor={FAINT}
+                value={searchText}
+                onChangeText={setSearchText}
+              />
+              {searchText.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchText("")}>
+                  <Ionicons name="close-circle" size={18} color={FAINT} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity
+              style={styles.mapButton}
+              onPress={() => router.push("/(tabs)/map")}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="map" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* PROGRESS CARD */}
+        {areas.length > 0 && (
+          <View style={styles.progressCard}>
+            <Text style={styles.progressTitle}>OFFLINE READINESS</Text>
+            <SemiCircleProgress
+              percentage={percentage}
+              size={260}
+              strokeWidth={12}
+              subtitle={`${offlineAreaIds.size} of ${areas.length} areas`}
+            />
+          </View>
+        )}
+
+        {loading && !refreshing ? (
+          <View style={styles.centerContent}>
+            <ActivityIndicator size="large" color={PRIMARY} />
+            <Text style={styles.loadingText}>Loading…</Text>
+          </View>
+        ) : error && areas.length === 0 ? (
+          <View style={styles.centerContent}>
+            <MaterialCommunityIcons
+              name={isOnline ? "alert-circle-outline" : "cloud-offline"}
+              size={48}
+              color={isOnline ? "#EF4444" : "#F59E0B"}
+            />
+            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.refreshHint}>Pull down to refresh</Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>
+                Areas ({filteredAreas.length})
+              </Text>
+            </View>
+
+            <View style={styles.list}>
+              {filteredAreas.map((area) => {
+                const isSaved = offlineAreaIds.has(area.reforestation_area_id);
+                const isSaving = savingOffline === area.reforestation_area_id;
+
+                return (
+                  <View key={area.reforestation_area_id} style={styles.card}>
+                    <View style={styles.cardContent}>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardName} numberOfLines={1}>
+                          {area.name}
+                        </Text>
+                        <View style={styles.metaRow}>
+                          <Ionicons
+                            name="navigate-outline"
+                            size={13}
+                            color={FAINT}
+                          />
+                          <Text style={styles.metaText}>
+                            {area.coord_display}
+                          </Text>
+                        </View>
+                        {isSaved && (
+                          <View style={styles.savedBadge}>
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={12}
+                              color={PRIMARY}
+                            />
+                            <Text style={styles.savedBadgeText}>
+                              Saved Offline
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Action Buttons in Row */}
+                      <View style={styles.cardActions}>
+                        <TouchableOpacity
+                          style={styles.actionIcon}
+                          onPress={() => openModal(area)}
+                          activeOpacity={0.7}
+                          disabled={!isOnline}
+                        >
+                          <Ionicons
+                            name="map-outline"
+                            size={18}
+                            color={!isOnline ? FAINT : PRIMARY}
+                          />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.actionIcon,
+                            isSaved && styles.actionIconDanger,
+                          ]}
+                          onPress={() =>
+                            isSaved
+                              ? removeAreaFromOffline(area)
+                              : saveAreaForOffline(area)
+                          }
+                          disabled={isSaving}
+                          activeOpacity={0.7}
+                        >
+                          {isSaving ? (
+                            <ActivityIndicator size="small" color={PRIMARY} />
+                          ) : (
+                            <Ionicons
+                              name={
+                                isSaved
+                                  ? "trash-outline"
+                                  : "cloud-download-outline"
+                              }
+                              size={18}
+                              color={isSaved ? "#EF4444" : PRIMARY}
+                            />
+                          )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.actionIconPrimary}
+                          onPress={() => openActionSheet(area)}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons
+                            name="clipboard-outline"
+                            size={18}
+                            color="#FFFFFF"
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {filteredAreas.length === 0 && (
+              <View style={styles.emptyState}>
+                <MaterialCommunityIcons
+                  name={isOnline ? "tree-outline" : "cloud-offline"}
+                  size={52}
+                  color="#D1D5DB"
+                />
+                <Text style={styles.emptyTitle}>
+                  {isOnline ? "No Areas Found" : "No Saved Areas"}
+                </Text>
+                <Text style={styles.emptySubtitle}>
+                  {isOnline
+                    ? searchText
+                      ? `No results for "${searchText}"`
+                      : "No assigned areas yet"
+                    : "Go online and save areas for offline use"}
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        <View style={{ height: 24 }} />
+      </ScrollView>
 
       {/* Map Modal */}
       <Modal
@@ -606,7 +686,6 @@ const ReforestationAreas: React.FC = () => {
             {selectedArea && (
               <>
                 <View style={styles.dragHandle} />
-
                 <WebView
                   source={{
                     html: generateMapHtml(
@@ -626,7 +705,6 @@ const ReforestationAreas: React.FC = () => {
                       const data = JSON.parse(event.nativeEvent.data);
                       if (data.type === "error") {
                         console.error("Map JS Error:", data.message);
-                        // ✅ UPDATED
                         showError("Map Error", data.message);
                       }
                     } catch (e) {}
@@ -634,14 +712,12 @@ const ReforestationAreas: React.FC = () => {
                   onError={(syntheticEvent) => {
                     const { nativeEvent } = syntheticEvent;
                     console.error("WebView Native Error: ", nativeEvent);
-                    // ✅ UPDATED
                     showError(
                       "WebView Error",
                       nativeEvent.description || "Failed to load map",
                     );
                   }}
                 />
-
                 <ScrollView
                   style={styles.modalInfo}
                   showsVerticalScrollIndicator={false}
@@ -649,7 +725,7 @@ const ReforestationAreas: React.FC = () => {
                   <Text style={styles.modalTitle}>{selectedArea.name}</Text>
                   <View style={styles.infoRow}>
                     <View style={styles.infoIconWrap}>
-                      <Ionicons name="navigate" size={16} color="#0F4A2F" />
+                      <Ionicons name="navigate" size={16} color={PRIMARY} />
                     </View>
                     <View>
                       <Text style={styles.infoLabel}>Coordinates</Text>
@@ -659,7 +735,6 @@ const ReforestationAreas: React.FC = () => {
                     </View>
                   </View>
                 </ScrollView>
-
                 <View style={styles.modalBtnRow}>
                   <Pressable style={styles.closeBtn} onPress={closeModal}>
                     <Text style={styles.closeBtnText}>Close</Text>
@@ -701,9 +776,10 @@ const ReforestationAreas: React.FC = () => {
             <TouchableOpacity
               style={styles.actionOption}
               onPress={handleGeneralAssessment}
+              activeOpacity={0.7}
             >
               <View style={styles.actionIconWrap}>
-                <Ionicons name="globe-outline" size={24} color="#0F4A2F" />
+                <Ionicons name="globe-outline" size={22} color={PRIMARY} />
               </View>
               <View style={styles.actionTextWrap}>
                 <Text style={styles.actionTitle}>General Assessment</Text>
@@ -711,15 +787,16 @@ const ReforestationAreas: React.FC = () => {
                   For the whole reforestation area (along the way observations).
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              <Ionicons name="chevron-forward" size={20} color={FAINT} />
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.actionOption}
               onPress={handleSpecificAssessment}
+              activeOpacity={0.7}
             >
               <View style={styles.actionIconWrap}>
-                <Ionicons name="location-outline" size={24} color="#0F4A2F" />
+                <Ionicons name="location-outline" size={22} color={PRIMARY} />
               </View>
               <View style={styles.actionTextWrap}>
                 <Text style={styles.actionTitle}>Specific Site Assessment</Text>
@@ -727,7 +804,7 @@ const ReforestationAreas: React.FC = () => {
                   For a specific marked site (requires site selection).
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              <Ionicons name="chevron-forward" size={20} color={FAINT} />
             </TouchableOpacity>
 
             <Pressable
@@ -742,7 +819,6 @@ const ReforestationAreas: React.FC = () => {
     </View>
   );
 
-  // Generate Map HTML (only used when online)
   function generateMapHtml(lat: number, lng: number, title: string) {
     const safeLat = lat || 11.0;
     const safeLng = lng || 124.6;
@@ -768,40 +844,27 @@ const ReforestationAreas: React.FC = () => {
             height: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
           }
-          .leaflet-div-icon {
-            background: transparent;
-            border: none;
-          }
+          .leaflet-div-icon { background: transparent; border: none; }
         </style>
       </head>
       <body>
         <div id="map"></div>
         <script>
           try {
-            var map = L.map('map', {
-              zoomControl: true,
-              attributionControl: true
-            }).setView([${safeLat}, ${safeLng}], 15);
-            
+            var map = L.map('map', { zoomControl: true, attributionControl: true }).setView([${safeLat}, ${safeLng}], 15);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
               attribution: '© OpenStreetMap contributors',
               maxZoom: 19,
               crossOrigin: true,
               errorTileUrl: ''
             }).addTo(map);
-            
             var customIcon = L.divIcon({
               className: 'custom-marker-wrapper',
               html: '<div class="custom-marker"></div>',
               iconSize: [20, 20],
               iconAnchor: [10, 10]
             });
-            
-            L.marker([${safeLat}, ${safeLng}], {icon: customIcon})
-              .addTo(map)
-              .bindPopup('${safeTitle}')
-              .openPopup();
-              
+            L.marker([${safeLat}, ${safeLng}], {icon: customIcon}).addTo(map).bindPopup('${safeTitle}').openPopup();
             window.ReactNativeWebView.postMessage(JSON.stringify({type: 'info', message: 'Map loaded successfully'}));
           } catch(e) {
             window.ReactNativeWebView.postMessage(JSON.stringify({type: 'error', message: e.message}));
@@ -813,124 +876,164 @@ const ReforestationAreas: React.FC = () => {
   }
 };
 
-/* ---------- STYLES ---------- */
+/* ──────────────────────────────────────────────────────────────────
+   STYLES
+   ──────────────────────────────────────────────────────────────── */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F4F7F5",
-    paddingHorizontal: 16,
-    paddingTop: 14,
+  container: { flex: 1, backgroundColor: BG },
+  scrollView: { flex: 1 },
+  content: { paddingBottom: 24 },
+
+  header: { paddingHorizontal: 20, paddingTop: 20 },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 16,
   },
+  eyebrow: {
+    fontSize: 12,
+    color: MUTED,
+    fontWeight: "600",
+    marginBottom: 3,
+    letterSpacing: 0.2,
+  },
+  title: { fontSize: 32, fontWeight: "800", color: INK, letterSpacing: -0.5 },
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    ...cardShadow,
+  },
+
   offlineBanner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#0F4A2F",
-    paddingVertical: 8,
+    backgroundColor: PRIMARY,
+    paddingVertical: 9,
     paddingHorizontal: 12,
     gap: 8,
-    marginBottom: 8,
-    borderRadius: 8,
+    marginBottom: 12,
+    borderRadius: 12,
   },
-  offlineBannerText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
-    paddingHorizontal: 4,
-  },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: "#0F2D1C" },
-  refreshBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+  offlineBannerText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
+
   lastRefreshed: {
-    fontSize: 11,
-    color: "#9CA3AF",
-    marginBottom: 8,
-    paddingHorizontal: 4,
-    fontStyle: "italic",
+    fontSize: 11.5,
+    color: FAINT,
+    marginBottom: 10,
+    fontWeight: "500",
   },
-  searchWrap: {
+
+  searchContainer: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  searchBar: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    paddingHorizontal: 14,
+    height: 46,
+    ...cardShadow,
   },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: "#0F2D1C" },
+  searchInput: { flex: 1, fontSize: 14, color: INK, fontWeight: "500" },
+  mapButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
+    ...cardShadow,
+  },
+
+  progressCard: {
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 20,
+    marginTop: 24,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    ...cardShadow,
+  },
+  progressTitle: {
+    fontSize: 13,
+    color: MUTED,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 16,
+  },
+  progressValue: {
+    fontSize: 56,
+    fontWeight: "800",
+    color: INK,
+    letterSpacing: -2,
+    lineHeight: 60,
+  },
+  progressSubtitle: {
+    fontSize: 15,
+    color: MUTED,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+
   centerContent: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     gap: 12,
+    paddingTop: 80,
   },
-  loadingText: { color: "#6B7280", fontSize: 14, marginTop: 4 },
-  errorText: { color: "#EF4444", textAlign: "center", fontSize: 14 },
-  retryBtn: {
-    backgroundColor: "#0F4A2F",
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 10,
+  loadingText: { color: MUTED, fontSize: 14, marginTop: 4 },
+  errorText: {
+    color: "#EF4444",
+    textAlign: "center",
+    fontSize: 14,
+    paddingHorizontal: 20,
   },
-  retryText: { color: "#FFF", fontWeight: "700" },
-  sectionRow: {
+  refreshHint: { color: FAINT, fontSize: 12, marginTop: 4 },
+
+  sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
-    gap: 8,
-    paddingHorizontal: 4,
-  },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#0F2D1C" },
-  card: {
-    flexDirection: "row",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    marginBottom: 12,
-    overflow: "hidden",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  cardAccent: { width: 4 },
-  cardBody: { flex: 1, padding: 14 },
-  cardTopRow: {
-    flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 6,
+    paddingHorizontal: 20,
+    marginTop: 32,
+    marginBottom: 12,
   },
-  cardName: {
-    fontSize: 15,
+  sectionTitle: {
+    fontSize: 17,
     fontWeight: "700",
-    color: "#0F2D1C",
-    flex: 1,
-    marginRight: 8,
+    color: INK,
+    letterSpacing: -0.2,
   },
+
+  list: { paddingHorizontal: 20, gap: 12 },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+    ...cardShadow,
+  },
+  cardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  cardInfo: { flex: 1, marginRight: 12 },
+  cardName: { fontSize: 15, fontWeight: "700", color: INK, marginBottom: 6 },
   savedBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -939,76 +1042,60 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+    alignSelf: "flex-start",
+    marginTop: 6,
   },
-  savedBadgeText: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#0F4A2F",
-  },
+  savedBadgeText: { fontSize: 10, fontWeight: "600", color: PRIMARY },
+
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginBottom: 3,
+    marginBottom: 4,
   },
-  metaText: { fontSize: 12, color: "#6B7280" },
-  cardActions: { flexDirection: "row", gap: 8, marginTop: 12 },
-  viewBtn: {
+  metaText: { fontSize: 12, color: MUTED },
+
+  cardActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    borderWidth: 1.5,
-    borderColor: "#0F4A2F",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    gap: 8,
   },
-  viewBtnText: { color: "#0F4A2F", fontSize: 12, fontWeight: "600" },
-  assessBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: "#0F4A2F",
-    borderRadius: 8,
-    paddingVertical: 8,
-  },
-  assessBtnText: { color: "#FFF", fontSize: 12, fontWeight: "700" },
-  offlineBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    marginTop: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  saveOfflineBtn: {
-    borderColor: "#0F4A2F",
+  actionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     backgroundColor: "#F0FDF4",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#DCFCE7",
   },
-  removeOfflineBtn: {
-    borderColor: "#EF4444",
+  actionIconDanger: {
     backgroundColor: "#FEF2F2",
+    borderColor: "#FECACA",
   },
-  offlineBtnText: {
-    fontSize: 12,
-    fontWeight: "600",
+  actionIconPrimary: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: PRIMARY,
+    alignItems: "center",
+    justifyContent: "center",
   },
+
   emptyState: {
     alignItems: "center",
     paddingTop: 60,
     gap: 8,
     paddingHorizontal: 20,
   },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: "#9CA3AF" },
-  emptySubtitle: { fontSize: 13, color: "#9CA3AF", textAlign: "center" },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: FAINT },
+  emptySubtitle: { fontSize: 13, color: FAINT, textAlign: "center" },
+
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(15,23,42,0.45)",
   },
   modalSheet: {
     height: screenHeight * 0.6,
@@ -1032,12 +1119,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
   },
   modalInfo: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0F2D1C",
-    marginBottom: 16,
-  },
+  modalTitle: { fontSize: 18, fontWeight: "700", color: INK, marginBottom: 16 },
   infoRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1045,20 +1127,15 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   infoIconWrap: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: 10,
-    backgroundColor: "#E6F4EC",
+    backgroundColor: PRIMARY + "12",
     justifyContent: "center",
     alignItems: "center",
   },
-  infoLabel: {
-    fontSize: 11,
-    color: "#9CA3AF",
-    fontWeight: "500",
-    marginBottom: 2,
-  },
-  infoValue: { fontSize: 14, color: "#0F2D1C", fontWeight: "600" },
+  infoLabel: { fontSize: 11, color: FAINT, fontWeight: "500", marginBottom: 2 },
+  infoValue: { fontSize: 14, color: INK, fontWeight: "600" },
   modalBtnRow: {
     flexDirection: "row",
     paddingHorizontal: 20,
@@ -1070,68 +1147,61 @@ const styles = StyleSheet.create({
   closeBtn: {
     flex: 1,
     borderWidth: 1.5,
-    borderColor: "#0F4A2F",
-    borderRadius: 12,
+    borderColor: PRIMARY,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
   },
-  closeBtnText: { color: "#0F4A2F", fontWeight: "700", fontSize: 14 },
+  closeBtnText: { color: PRIMARY, fontWeight: "700", fontSize: 14 },
   startBtn: {
     flex: 2,
-    backgroundColor: "#0F4A2F",
-    borderRadius: 12,
+    backgroundColor: PRIMARY,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
-    shadowColor: "#0F4A2F",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
   },
   startBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
-  scrollView: { flex: 1 },
+
   actionSheet: {
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
     paddingBottom: 40,
-    gap: 16,
+    gap: 14,
   },
   actionSheetTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0F2D1C",
+    color: INK,
     textAlign: "center",
   },
   actionSheetSubtitle: {
     fontSize: 13,
-    color: "#6B7280",
+    color: MUTED,
     textAlign: "center",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   actionOption: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F9FAFB",
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     gap: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
   },
   actionIconWrap: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: "#E6F4EC",
+    borderRadius: 12,
+    backgroundColor: PRIMARY + "12",
     justifyContent: "center",
     alignItems: "center",
   },
   actionTextWrap: { flex: 1 },
-  actionTitle: { fontSize: 14, fontWeight: "700", color: "#0F2D1C" },
-  actionDesc: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-  cancelBtn: { marginTop: 8, paddingVertical: 12, alignItems: "center" },
+  actionTitle: { fontSize: 14, fontWeight: "700", color: INK },
+  actionDesc: { fontSize: 12, color: MUTED, marginTop: 2 },
+  cancelBtn: { marginTop: 4, paddingVertical: 12, alignItems: "center" },
   cancelBtnText: { color: "#EF4444", fontWeight: "600", fontSize: 14 },
 });
 
