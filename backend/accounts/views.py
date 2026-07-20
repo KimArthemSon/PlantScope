@@ -177,8 +177,8 @@ def login_user(request):
     # 1. FIXED: Catch JSON errors and handle Render's Proxy IP format
     try:
         data = json.loads(request.body)
-        email = data.get('email')
-        password = data.get('password')
+        email = str(data.get('email', '')).strip()
+        password = data.get('password', '')
         
         # Render uses a proxy, so HTTP_X_FORWARDED_FOR is a comma-separated list.
         # We must split it to get the actual user IP, otherwise the DB will crash.
