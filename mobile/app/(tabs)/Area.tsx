@@ -12,7 +12,10 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  Platform,
+  StatusBar,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ ADDED FOR SAFE AREA
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { WebView } from "react-native-webview";
@@ -130,6 +133,7 @@ type ReforestationArea = {
 };
 
 const ReforestationAreas: React.FC = () => {
+  const insets = useSafeAreaInsets(); // ✅ GET SAFE AREA INSETS
   const {
     success,
     error: showError,
@@ -427,6 +431,13 @@ const ReforestationAreas: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      {/* ✅ STATUS BAR CONFIGURATION */}
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor={BG}
+        translucent={false}
+      />
+
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -441,8 +452,8 @@ const ReforestationAreas: React.FC = () => {
           />
         }
       >
-        {/* HEADER */}
-        <View style={styles.header}>
+        {/* ✅ HEADER WITH DYNAMIC SAFE AREA PADDING */}
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <View style={styles.topRow}>
             <View>
               <Text style={styles.eyebrow}>Field Inspections</Text>
@@ -880,11 +891,19 @@ const ReforestationAreas: React.FC = () => {
    STYLES
    ──────────────────────────────────────────────────────────────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: {
+    flex: 1,
+    backgroundColor: BG,
+    // ✅ Ensures Android status bar doesn't overlap content
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
+  },
   scrollView: { flex: 1 },
   content: { paddingBottom: 24 },
 
-  header: { paddingHorizontal: 20, paddingTop: 20 },
+  // ✅ paddingTop is now handled dynamically via inline style
+  header: {
+    paddingHorizontal: 20,
+  },
   topRow: {
     flexDirection: "row",
     alignItems: "flex-start",
