@@ -9,12 +9,12 @@ import {
   Image,
   ActivityIndicator,
   Dimensions,
-  SafeAreaView,
   Alert,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/constants/url_fixed";
 
@@ -145,6 +145,7 @@ export default function SiteDetails() {
   const params = useLocalSearchParams();
   const siteId = params.site_id as string;
   const hasOngoing = params.has_ongoing === "true";
+  const insets = useSafeAreaInsets();
 
   const [details, setDetails] = useState<SiteDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -194,18 +195,18 @@ export default function SiteDetails() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#0F4A2F" />
           <Text style={styles.loadingText}>Loading site details...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (!details) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.center}>
           <Text style={styles.errorText}>Failed to load site details</Text>
           <TouchableOpacity
@@ -215,15 +216,18 @@ export default function SiteDetails() {
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* ✅ FLOATING MODERN BACK BUTTON */}
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* ✅ FIXED: Back button now properly positioned below status bar */}
       <TouchableOpacity
-        style={styles.floatingBackBtn}
+        style={[
+          styles.floatingBackBtn,
+          { top: insets.top + 16 } // Critical: Position below status bar + 16px
+        ]}
         onPress={() => router.replace("/tree_growers/sites")}
         activeOpacity={0.8}
       >
@@ -472,30 +476,32 @@ export default function SiteDetails() {
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 // ─── Modern Aesthetic Styles ───────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8FAFC" },
+  container: { 
+    flex: 1, 
+    backgroundColor: "#F8FAFC" 
+  },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 12, color: "#64748B", fontSize: 14 },
   errorText: { fontSize: 16, color: "#EF4444", marginBottom: 16 },
-  textBackButton: { padding: 8 }, // Used for error state
+  textBackButton: { padding: 8 },
   backButtonText: { color: "#0F4A2F", fontWeight: "700", fontSize: 15 },
   scrollContent: { paddingBottom: 32 },
 
-  // ✅ Floating Back Button
+  // ✅ FIXED: Back button position now dynamically calculated
   floatingBackBtn: {
     position: "absolute",
-    top: 16,
     left: 16,
     zIndex: 100,
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "rgba(255, 255, 255, 0.95)", // Glassmorphic white
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
@@ -503,6 +509,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 5,
+    // Top is now set dynamically in JSX, not here
   },
 
   // Carousel

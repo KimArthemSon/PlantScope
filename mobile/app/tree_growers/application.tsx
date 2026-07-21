@@ -18,12 +18,10 @@ import {
   FlatList,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
-
 import { WebView } from "react-native-webview";
-
 import { Ionicons } from "@expo/vector-icons";
-
-import { api, MAPBOX_TOKEN } from "@/constants/url_fixed";
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ Added for safe area spacing
+import { api } from "@/constants/url_fixed";
 
 // ─── FIXED OSM / Leaflet Map Component ─────────────────────────────────────
 const OSMMap = ({
@@ -374,6 +372,8 @@ const StatusBadge = ({ status }: { status: string }) => {
 // ─── Main Component ───────────────────────────────────────────────────────
 const ApplicationPage: React.FC = () => {
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // ✅ Get dynamic safe area insets
+  
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -617,7 +617,8 @@ const ApplicationPage: React.FC = () => {
   if (isTerminalState) {
     return (
       <View style={styles.container}>
-        <View style={styles.banner}>
+        {/* ✅ Dynamically adjust top padding based on device notch/status bar */}
+        <View style={[styles.banner, { paddingTop: insets.top + 16 }]}>
           <View style={styles.bannerInner}>
             <View style={styles.bannerLeft}>
               <View style={styles.bannerIconWrap}>
@@ -659,12 +660,12 @@ const ApplicationPage: React.FC = () => {
 
   const { application, group, profile, assigned_site } =
     detail as ApplicationDetail & { application: ApplicationData };
-  const appStatusConf = getStatusConf(application.status);
 
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.banner}>
+      {/* ✅ Dynamically adjust top padding based on device notch/status bar */}
+      <View style={[styles.banner, { paddingTop: insets.top + 16 }]}>
         <View style={styles.bannerInner}>
           <View style={styles.bannerLeft}>
             <View style={styles.bannerIconWrap}>
@@ -1428,7 +1429,8 @@ const ApplicationPage: React.FC = () => {
             style={{ flex: 1 }}
           />
 
-          <View style={styles.mapModalBar}>
+          {/* ✅ Dynamically adjust top position based on device notch/status bar */}
+          <View style={[styles.mapModalBar, { top: insets.top + 16 }]}>
             <TouchableOpacity
               style={styles.mapCloseBtn}
               onPress={() => setShowMap(false)}
@@ -1910,7 +1912,7 @@ const styles = StyleSheet.create({
   banner: {
     backgroundColor: "#0F4A2F",
     paddingHorizontal: 16,
-    paddingTop: 16,
+    // ✅ Removed hardcoded paddingTop: 16 to prevent double spacing
     paddingBottom: 14,
   },
   bannerInner: {
@@ -2172,7 +2174,7 @@ const styles = StyleSheet.create({
   fabText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   mapModalBar: {
     position: "absolute",
-    top: Platform.OS === "ios" ? 52 : 16,
+    // ✅ Removed hardcoded top to prevent notch overlap, handled inline
     left: 16,
     right: 16,
     flexDirection: "row",
@@ -2425,4 +2427,5 @@ const form_ = StyleSheet.create({
   submitDisabled: { opacity: 0.6 },
   submitTxt: { color: "#fff", fontWeight: "800", fontSize: 14 },
 });
+
 export default ApplicationPage;

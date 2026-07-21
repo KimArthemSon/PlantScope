@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ Added for safe area spacing
 import { api } from "@/constants/url_fixed";
 import { useAlert } from "@/components/AlertContext";
 
@@ -84,6 +85,7 @@ const roleDisplayMap: Record<string, string> = {
 export default function ProfilePage() {
   const router = useRouter();
   const alert = useAlert();
+  const insets = useSafeAreaInsets(); // ✅ Get dynamic safe area insets
 
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,7 +141,7 @@ export default function ProfilePage() {
     }
   };
 
-   // ✅ Custom alert for logout confirmation
+  // ✅ Custom alert for logout confirmation
   const handleLogout = () => {
     alert.confirm(
       "Log Out",
@@ -226,7 +228,8 @@ export default function ProfilePage() {
       showsVerticalScrollIndicator={false}
     >
       {/* Hero Card */}
-      <View style={styles.heroCard}>
+      {/* ✅ Dynamically adjust top padding based on device notch/status bar (matches Home page logic) */}
+      <View style={[styles.heroCard, { paddingTop: insets.top + 20 }]}>
         <View style={styles.avatarRing}>
           {profileImage ? (
             <Image
@@ -346,7 +349,7 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: "#0F4A2F",
     alignItems: "center",
-    paddingTop: 32,
+    // ✅ Removed hardcoded paddingTop: 32 to prevent double spacing
     paddingBottom: 28,
     paddingHorizontal: 20,
     marginBottom: 20,

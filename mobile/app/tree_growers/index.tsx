@@ -323,7 +323,7 @@ function CarouselCard({ item }: { item: (typeof carouselItems)[0] }) {
 
 // ─── MAIN DASHBOARD ──────────────────────────────────────────────────────────
 
-export default function Dashboard() {
+export default function Home() {
   const router = useRouter();
   const [carouselIndex, setCarouselIndex] = useState(0);
   const floatingAnim = useRef(new Animated.Value(0)).current;
