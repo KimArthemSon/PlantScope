@@ -749,7 +749,11 @@ const sitesHdr = StyleSheet.create({
     paddingVertical: 11,
     borderRadius: 12,
     gap: 8,
-    ...cardShadow,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   searchInput: {
     flex: 1,
@@ -928,7 +932,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   resultsText: {
-    paddingHorizontal: 20,
+   
     marginTop: 8,
     marginBottom: 16,
     fontSize: 12,
@@ -1029,7 +1033,7 @@ const styles = StyleSheet.create({
   viewButton: {
     position: "absolute",
     bottom: 16,
-    right: 16,
+    left: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
