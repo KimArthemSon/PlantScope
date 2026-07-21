@@ -82,7 +82,7 @@ export default function HomePage() {
         if (data.user_role === "OnsiteInspector") {
           router.replace("/home");
         } else if (data.user_role === "treeGrowers") {
-          router.replace("/tree_growers/application");
+          router.replace("/tree_growers/home");
         } else {
           // Invalid role, clear storage
           await clearAuthData();
@@ -115,7 +115,7 @@ export default function HomePage() {
           router.replace("/home");
           return;
         } else if (cachedRole === "treeGrowers") {
-          router.replace("/tree_growers/application");
+          router.replace("/tree_growers/home");
           return;
         }
       }

@@ -539,6 +539,7 @@ def get_tree_grower_application(request):
         assigned_site_data = {
             "site_id": site.site_id,
             "name": site.name,
+            "description": site.description,
             "total_area_hectares": site.total_area_hectares,
             "ndvi_value": site.ndvi_value,
             "polygon_coordinates": site.polygon_coordinates,

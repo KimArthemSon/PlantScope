@@ -27,10 +27,11 @@ import { useNetworkStatus } from "@/utils/networkStatus";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import FloatingMapButton from "@/components/FloatingMapButton";
 import { useAlert } from "@/components/AlertContext";
+import FloodGuide from "@/components/guides/flood";
 
 // ─────────────────────────────────────────────
 // ✅ GPS-REFACTOR: Constants
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────
 const GPS_READY_HOURS = 2;
 const GPS_AGING_HOURS = 6;
 const GPS_LIVE_TIMEOUT_MS = 30000; // 30 seconds (Optimal for tree canopy)
@@ -693,6 +694,8 @@ type SectionCardProps = {
   iconLib?: "ion" | "mci";
   accentColor: string;
   step: number;
+  onGuidePress?: () => void;
+  showGuide?: boolean;
   children: React.ReactNode;
 };
 const SectionCard = ({
@@ -702,6 +705,8 @@ const SectionCard = ({
   iconLib = "ion",
   accentColor,
   step,
+  onGuidePress,
+  showGuide = false,
   children,
 }: SectionCardProps) => (
   <View style={styles.card}>
@@ -725,8 +730,19 @@ const SectionCard = ({
             <Text style={styles.cardSubtitle}>{subtitle}</Text>
           ) : null}
         </View>
-        <View style={[styles.stepBadge, { borderColor: accentColor }]}>
-          <Text style={[styles.stepText, { color: accentColor }]}>{step}</Text>
+        <View style={styles.cardHeaderActions}>
+          {showGuide && onGuidePress && (
+            <TouchableOpacity
+              style={[styles.guideButton, { backgroundColor: accentColor }]}
+              onPress={onGuidePress}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="book-outline" size={16} color="#fff" />
+            </TouchableOpacity>
+          )}
+          <View style={[styles.stepBadge, { borderColor: accentColor }]}>
+            <Text style={[styles.stepText, { color: accentColor }]}>{step}</Text>
+          </View>
         </View>
       </View>
       <View style={styles.cardBody}>{children}</View>
@@ -808,7 +824,7 @@ const GPSReadinessBanner: React.FC<{
 
 // ─────────────────────────────────────────────
 // MAIN FORM COMPONENT
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────
 
 export default function SafetyForm() {
   const params = useLocalSearchParams();
@@ -868,6 +884,9 @@ export default function SafetyForm() {
   // ✅ GPS-REFACTOR: Readiness state
   const [gpsReadiness, setGpsReadiness] = useState<GPSReadiness>("checking");
   const [gpsReadinessAge, setGpsReadinessAge] = useState<number | null>(null);
+
+  // ✅ FLOOD GUIDE: State for showing flood guide modal
+  const [showFloodGuide, setShowFloodGuide] = useState(false);
 
   // ✅ OFFLINE-SAFETY: Prevent API calls on mount if offline and not editing a draft
   useEffect(() => {
@@ -1552,6 +1571,8 @@ export default function SafetyForm() {
           iconLib="ion"
           accentColor="#1D4ED8"
           step={1}
+          showGuide={true}
+          onGuidePress={() => setShowFloodGuide(true)}
         >
           <FieldLabel label="Overall Note" />
           <TextInput
@@ -2224,6 +2245,12 @@ export default function SafetyForm() {
         </View>
       </Modal>
 
+      {/* ✅ FLOOD GUIDE MODAL */}
+      <FloodGuide
+        visible={showFloodGuide}
+        onClose={() => setShowFloodGuide(false)}
+      />
+
       <FloatingMapButton
         areaId={parseInt(areaId)}
         areaName={params.areaName as string}
@@ -2371,6 +2398,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     marginBottom: 16,
+  },
+  cardHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  guideButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
   },
   iconBadge: {
     width: 36,
