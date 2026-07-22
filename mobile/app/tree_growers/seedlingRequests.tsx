@@ -6,27 +6,29 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  RefreshControl, // Added RefreshControl
-  Dimensions, // Added Dimensions
+  RefreshControl,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 
-// Extract screenHeight
-const { height: screenHeight } = Dimensions.get("window");
-
 const PRIMARY = "#0F4A2F";
 const INK = "#111827";
 const MUTED = "#6B7280";
 const WHITE = "#FFFFFF";
-const BG = "#F4F7F5";
+const BG = "#F5F6F8";
+
+const cardShadow = {
+  shadowColor: "#0F172A",
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.03,
+  shadowRadius: 8,
+  elevation: 1,
+};
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface SeedlingSpeciesItem {
   species_id: number;
@@ -37,37 +39,23 @@ interface SeedlingSpeciesItem {
 
 interface SeedlingRequest {
   request_id: number;
-  no_request_seedling: number;
-  species: SeedlingSpeciesItem[];
-  status: "pending" | "accepted" | "rejected";
-  reason_accepted: string | null;
-  submitted_at: string | null;
-}
-
-interface TreeSpeciesOption {
-  tree_specie_id: number;
-  name: string;
-  description: string;
-}
-
-interface ApplicationData {
   application_id: number;
+  application_title: string;
+  status: "pending" | "accepted" | "rejected" | "confirmed" | "cancelled";
+  fulfillment_type: "pickup" | "deliver" | null;
+  no_request_seedling: number;
+  submitted_at: string | null;
+  species: SeedlingSpeciesItem[];
 }
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 const statusConfig = {
-  pending: { label: "Pending", bg: "#FFF8E1", text: "#F57F17", dot: "#F9A825" },
-  accepted: {
-    label: "Accepted",
-    bg: "#E8F5E9",
-    text: "#2E7D32",
-    dot: "#388E3C",
-  },
-  rejected: {
-    label: "Rejected",
-    bg: "#FFEBEE",
-    text: "#C62828",
-    dot: "#D32F2F",
-  },
+  pending: { label: "Pending Review", bg: "#FFF8E1", text: "#F59E0B", dot: "#F59E0B" },
+  accepted: { label: "Approved", bg: "#F0FDF4", text: "#16A34A", dot: "#16A34A" },
+  confirmed: { label: "Confirmed", bg: "#EFF6FF", text: "#2563EB", dot: "#2563EB" },
+  rejected: { label: "Rejected", bg: "#FEF2F2", text: "#DC2626", dot: "#DC2626" },
+  cancelled: { label: "Cancelled", bg: "#F3F4F6", text: "#4B5563", dot: "#9CA3AF" },
 };
 
 const formatDate = (iso: string) =>
@@ -82,24 +70,15 @@ const formatDate = (iso: string) =>
 const getTotalSeedlings = (species: SeedlingSpeciesItem[]) =>
   species.reduce((sum, item) => sum + (item.quantity || 0), 0);
 
+// ─── Main Component ─────────────────────────────────────────────────────────
+
 export default function SeedlingRequestsPage() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [requests, setRequests] = useState<SeedlingRequest[]>([]);
-  const [application, setApplication] = useState<ApplicationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-
-  const [allTreeSpecies, setAllTreeSpecies] = useState<TreeSpeciesOption[]>([]);
-  const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>("");
-  const [selectedQuantity, setSelectedQuantity] = useState<string>("");
-  const [activeSeedlingList, setActiveSeedlingList] = useState<
-    SeedlingSpeciesItem[]
-  >([]);
-  const [requestDescription, setRequestDescription] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   const fetchData = async (isRefresh = false) => {
     try {
@@ -107,13 +86,12 @@ export default function SeedlingRequestsPage() {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
 
-      const res = await fetch(`${api}/api/get_tree_grower_application/`, {
+      const res = await fetch(`${api}/api/requests/my-requests/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error("Failed to load");
+      if (!res.ok) throw new Error("Failed to load requests");
       const data = await res.json();
-      setRequests(data.seedling_requests || []);
-      setApplication(data.application);
+      setRequests(data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -122,119 +100,28 @@ export default function SeedlingRequestsPage() {
     }
   };
 
-  const fetchTreeSpecies = async () => {
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${api}/api/get_tree_species_list/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAllTreeSpecies(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch species:", err);
-    }
-  };
-
   useEffect(() => {
     fetchData();
-    fetchTreeSpecies();
   }, []);
 
-  const handleAddSpecies = () => {
-    if (!selectedSpeciesId || !selectedQuantity) {
-      Alert.alert(
-        "Missing Info",
-        "Please select a species and enter a quantity.",
-      );
-      return;
-    }
-    const found = allTreeSpecies.find(
-      (s) => s.tree_specie_id === Number(selectedSpeciesId),
-    );
-    if (!found) return;
-    if (activeSeedlingList.find((s) => s.species_id === found.tree_specie_id)) {
-      Alert.alert(
-        "Already Added",
-        "This species is already in your request list.",
-      );
-      return;
-    }
-    setActiveSeedlingList([
-      ...activeSeedlingList,
-      {
-        species_id: found.tree_specie_id,
-        species_name: found.name,
-        quantity: parseInt(selectedQuantity),
-        provided_by: "TBD",
-      },
-    ]);
-    setSelectedSpeciesId("");
-    setSelectedQuantity("");
-  };
-
-  const handleRemoveSpecies = (speciesId: number) => {
-    setActiveSeedlingList(
-      activeSeedlingList.filter((s) => s.species_id !== speciesId),
-    );
-  };
-
-  const handleSubmit = async () => {
-    if (!application) return;
-    if (activeSeedlingList.length === 0) {
-      Alert.alert("Missing Species", "Please add at least one tree species.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const fd = new FormData();
-      fd.append("application_id", String(application.application_id));
-      fd.append(
-        "seedling_species",
-        JSON.stringify(
-          activeSeedlingList.map((s) => ({
-            tree_species_id: s.species_id,
-            quantity: s.quantity,
-            provided_by: s.provided_by,
-          })),
-        ),
-      );
-      fd.append("description", requestDescription);
-
-      const res = await fetch(`${api}/api/create_seedling_request/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Request failed.");
-
-      Alert.alert(
-        "✓ Request Submitted",
-        "Your seedling request is pending review.",
-      );
-      setShowForm(false);
-      resetForm();
-      fetchData(true);
-    } catch (err: any) {
-      Alert.alert("Error", err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const resetForm = () => {
-    setActiveSeedlingList([]);
-    setSelectedSpeciesId("");
-    setSelectedQuantity("");
-    setRequestDescription("");
-  };
-
-  const acceptedRequests = requests.filter((r) => r.status === "accepted");
+  const acceptedRequests = requests.filter((r) => r.status === "accepted" || r.status === "confirmed");
   const pendingRequests = requests.filter((r) => r.status === "pending");
-  const rejectedRequests = requests.filter((r) => r.status === "rejected");
+  const rejectedRequests = requests.filter((r) => r.status === "rejected" || r.status === "cancelled");
+
+  const totalApprovedSeedlings = acceptedRequests.reduce(
+    (sum, r) => sum + getTotalSeedlings(r.species),
+    0
+  );
+
+  // ✅ Object-based routing pattern matching Sites.tsx
+  const handleViewDetails = (requestId: number) => {
+    router.push({
+      pathname: "/tree_growers/SeedlingRequestDetail",
+      params: {
+        id: requestId.toString(),
+      },
+    });
+  };
 
   if (loading) {
     return (
@@ -248,8 +135,8 @@ export default function SeedlingRequestsPage() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+      <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.replace("/tree_growers/application")}>
           <Ionicons name="chevron-back" size={24} color={INK} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Seedling Requests</Text>
@@ -272,22 +159,20 @@ export default function SeedlingRequestsPage() {
       >
         {/* Summary Cards */}
         <View style={styles.summaryRow}>
-          <View style={[styles.summaryCard, { backgroundColor: "#E8F5E9" }]}>
-            <Text style={[styles.summaryValue, { color: "#2E7D32" }]}>
-              {acceptedRequests
-                .reduce((sum, r) => sum + getTotalSeedlings(r.species), 0)
-                .toLocaleString()}
+          <View style={[styles.summaryCard, { backgroundColor: "#F0FDF4" }]}>
+            <Text style={[styles.summaryValue, { color: "#16A34A" }]}>
+              {totalApprovedSeedlings.toLocaleString()}
             </Text>
             <Text style={styles.summaryLabel}>Approved</Text>
           </View>
           <View style={[styles.summaryCard, { backgroundColor: "#FFF8E1" }]}>
-            <Text style={[styles.summaryValue, { color: "#F57F17" }]}>
+            <Text style={[styles.summaryValue, { color: "#F59E0B" }]}>
               {pendingRequests.length}
             </Text>
             <Text style={styles.summaryLabel}>Pending</Text>
           </View>
-          <View style={[styles.summaryCard, { backgroundColor: "#FFEBEE" }]}>
-            <Text style={[styles.summaryValue, { color: "#C62828" }]}>
+          <View style={[styles.summaryCard, { backgroundColor: "#FEF2F2" }]}>
+            <Text style={[styles.summaryValue, { color: "#DC2626" }]}>
               {rejectedRequests.length}
             </Text>
             <Text style={styles.summaryLabel}>Rejected</Text>
@@ -297,358 +182,88 @@ export default function SeedlingRequestsPage() {
         {/* New Request Button */}
         <TouchableOpacity
           style={styles.newRequestBtn}
-          onPress={() => setShowForm(true)}
+          onPress={() => router.push("/tree_growers/CreateSeedlingRequest")}
           activeOpacity={0.8}
         >
           <Ionicons name="add-circle" size={20} color="#fff" />
           <Text style={styles.newRequestText}>New Seedling Request</Text>
         </TouchableOpacity>
 
-        {/* Accepted Requests */}
-        {acceptedRequests.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Approved Requests</Text>
-            {acceptedRequests.map((req) => (
-              <View key={req.request_id} style={styles.requestCard}>
-                <View style={styles.requestHeader}>
-                  <View
-                    style={[
-                      styles.statusDot,
-                      { backgroundColor: statusConfig.accepted.dot },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.statusText,
-                      { color: statusConfig.accepted.text },
-                    ]}
-                  >
-                    Accepted
-                  </Text>
-                  <Text style={styles.requestDate}>
-                    {formatDate(req.submitted_at || "")}
-                  </Text>
-                </View>
-                <Text style={styles.requestTotal}>
-                  {getTotalSeedlings(req.species).toLocaleString()} seedlings
-                </Text>
-                {req.species.map((sp, i) => (
-                  <View key={i} style={styles.speciesRow}>
-                    <Ionicons name="leaf-outline" size={14} color={PRIMARY} />
-                    <Text style={styles.speciesName}>{sp.species_name}</Text>
-                    <Text style={styles.speciesQty}>
-                      {sp.quantity.toLocaleString()}
-                    </Text>
-                  </View>
-                ))}
-                {req.reason_accepted && (
-                  <View style={styles.reasonBox}>
-                    <Ionicons
-                      name="chatbubble-outline"
-                      size={12}
-                      color="#2E7D32"
-                    />
-                    <Text style={styles.reasonText}>{req.reason_accepted}</Text>
-                  </View>
-                )}
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Pending Requests */}
-        {pendingRequests.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pending Requests</Text>
-            {pendingRequests.map((req) => (
-              <View
-                key={req.request_id}
-                style={[
-                  styles.requestCard,
-                  { borderLeftColor: "#F9A825", borderLeftWidth: 3 },
-                ]}
-              >
-                <View style={styles.requestHeader}>
-                  <View
-                    style={[
-                      styles.statusDot,
-                      { backgroundColor: statusConfig.pending.dot },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.statusText,
-                      { color: statusConfig.pending.text },
-                    ]}
-                  >
-                    Pending Review
-                  </Text>
-                  <Text style={styles.requestDate}>
-                    {formatDate(req.submitted_at || "")}
-                  </Text>
-                </View>
-                <Text style={styles.requestTotal}>
-                  {getTotalSeedlings(req.species).toLocaleString()} seedlings
-                </Text>
-                {req.species.map((sp, i) => (
-                  <View key={i} style={styles.speciesRow}>
-                    <Ionicons name="leaf-outline" size={14} color={PRIMARY} />
-                    <Text style={styles.speciesName}>{sp.species_name}</Text>
-                    <Text style={styles.speciesQty}>
-                      {sp.quantity.toLocaleString()}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Rejected Requests */}
-        {rejectedRequests.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Rejected Requests</Text>
-            {rejectedRequests.map((req) => (
-              <View
-                key={req.request_id}
-                style={[
-                  styles.requestCard,
-                  { borderLeftColor: "#D32F2F", borderLeftWidth: 3 },
-                ]}
-              >
-                <View style={styles.requestHeader}>
-                  <View
-                    style={[
-                      styles.statusDot,
-                      { backgroundColor: statusConfig.rejected.dot },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.statusText,
-                      { color: statusConfig.rejected.text },
-                    ]}
-                  >
-                    Rejected
-                  </Text>
-                  <Text style={styles.requestDate}>
-                    {formatDate(req.submitted_at || "")}
-                  </Text>
-                </View>
-                <Text style={styles.requestTotal}>
-                  {getTotalSeedlings(req.species).toLocaleString()} seedlings
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {requests.length === 0 && (
-          <View style={styles.emptyState}>
-            <Ionicons name="leaf-outline" size={48} color="#CBD5E1" />
-            <Text style={styles.emptyTitle}>No Requests Yet</Text>
-            <Text style={styles.emptyMsg}>
-              Tap "New Seedling Request" to get started.
-            </Text>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* New Request Form Modal */}
-      {showForm && (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalOverlay}
-        >
-          <View style={styles.modalPanel}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Seedling Request</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowForm(false);
-                  resetForm();
-                }}
-              >
-                <Ionicons name="close-circle" size={24} color="#9CA3AF" />
-              </TouchableOpacity>
+        {/* Requests List */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Your Requests</Text>
+          
+          {requests.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="leaf-outline" size={48} color="#D1D5DB" />
+              <Text style={styles.emptyTitle}>No Requests Yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Tap "New Seedling Request" to get started.
+              </Text>
             </View>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {/* Species Selector */}
-              <Text style={styles.formLabel}>Select Species</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 12 }}
-              >
-                <View style={{ flexDirection: "row", gap: 8 }}>
-                  {allTreeSpecies.map((sp) => (
-                    <TouchableOpacity
-                      key={sp.tree_specie_id}
-                      onPress={() =>
-                        setSelectedSpeciesId(String(sp.tree_specie_id))
-                      }
-                      style={{
-                        paddingHorizontal: 14,
-                        paddingVertical: 8,
-                        borderRadius: 20,
-                        backgroundColor:
-                          selectedSpeciesId === String(sp.tree_specie_id)
-                            ? PRIMARY
-                            : "#fff",
-                        borderWidth: 1,
-                        borderColor:
-                          selectedSpeciesId === String(sp.tree_specie_id)
-                            ? PRIMARY
-                            : "#E5E7EB",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color:
-                            selectedSpeciesId === String(sp.tree_specie_id)
-                              ? "#fff"
-                              : INK,
-                          fontWeight: "600",
-                          fontSize: 13,
-                        }}
-                      >
-                        {sp.name}
+          ) : (
+            requests.map((req) => {
+              const conf = statusConfig[req.status] || statusConfig.pending;
+              return (
+                <View key={req.request_id} style={styles.card}>
+                  {/* Card Header: Status & Date */}
+                  <View style={styles.cardHeader}>
+                    <View style={[styles.statusBadge, { backgroundColor: conf.bg }]}>
+                      <View style={[styles.statusDot, { backgroundColor: conf.dot }]} />
+                      <Text style={[styles.statusText, { color: conf.text }]}>
+                        {conf.label}
                       </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-
-              {/* Quantity */}
-              <Text style={styles.formLabel}>Quantity</Text>
-              <View style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
-                <TextInput
-                  style={[styles.formInput, { flex: 1, marginBottom: 0 }]}
-                  placeholder="e.g. 50"
-                  keyboardType="numeric"
-                  value={selectedQuantity}
-                  onChangeText={setSelectedQuantity}
-                  placeholderTextColor="#B0BAC4"
-                />
-                <TouchableOpacity
-                  style={[
-                    styles.addBtn,
-                    {
-                      opacity:
-                        !selectedSpeciesId || !selectedQuantity ? 0.5 : 1,
-                    },
-                  ]}
-                  onPress={handleAddSpecies}
-                  disabled={!selectedSpeciesId || !selectedQuantity}
-                >
-                  <Ionicons name="add" size={18} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Active List */}
-              {activeSeedlingList.length > 0 && (
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={styles.formLabel}>
-                    Request List ({activeSeedlingList.length})
-                  </Text>
-                  {activeSeedlingList.map((item) => (
-                    <View key={item.species_id} style={styles.listItem}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 10,
-                        }}
-                      >
-                        <View style={styles.listItemIcon}>
-                          <Ionicons name="leaf" size={16} color="#2E7D32" />
-                        </View>
-                        <View>
-                          <Text
-                            style={{
-                              fontSize: 14,
-                              fontWeight: "700",
-                              color: INK,
-                            }}
-                          >
-                            {item.species_name}
-                          </Text>
-                          <Text
-                            style={{
-                              fontSize: 12,
-                              color: PRIMARY,
-                              fontWeight: "600",
-                            }}
-                          >
-                            {item.quantity} seedlings
-                          </Text>
-                        </View>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => handleRemoveSpecies(item.species_id)}
-                        style={{ padding: 4 }}
-                      >
-                        <Ionicons
-                          name="trash-outline"
-                          size={18}
-                          color="#EF4444"
-                        />
-                      </TouchableOpacity>
                     </View>
-                  ))}
-                </View>
-              )}
+                    <Text style={styles.requestDate}>{formatDate(req.submitted_at || "")}</Text>
+                  </View>
+                  
+                  {/* Application Title */}
+                  <Text style={styles.appTitle} numberOfLines={1}>
+                    {req.application_title}
+                  </Text>
+                  
+                  {/* Seedling Summary */}
+                  <View style={styles.speciesSummary}>
+                    <Ionicons name="leaf-outline" size={16} color={PRIMARY} />
+                    <Text style={styles.speciesSummaryText}>
+                      {getTotalSeedlings(req.species).toLocaleString()} seedlings requested
+                    </Text>
+                  </View>
 
-              {/* Description */}
-              <Text style={styles.formLabel}>Description (Optional)</Text>
-              <TextInput
-                style={[
-                  styles.formInput,
-                  { height: 80, textAlignVertical: "top" },
-                ]}
-                placeholder="Reason for request…"
-                value={requestDescription}
-                onChangeText={setRequestDescription}
-                multiline
-                placeholderTextColor="#B0BAC4"
-              />
-
-              {/* Actions */}
-              <View style={styles.formActions}>
-                <TouchableOpacity
-                  style={styles.cancelBtn}
-                  onPress={() => {
-                    setShowForm(false);
-                    resetForm();
-                  }}
-                >
-                  <Text style={styles.cancelBtnText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
-                  onPress={handleSubmit}
-                  disabled={submitting || activeSeedlingList.length === 0}
-                >
-                  {submitting ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.submitBtnText}>Submit Request</Text>
+                  {/* Sneak peek of fulfillment method if approved */}
+                  {req.status === "accepted" && req.fulfillment_type && (
+                    <View style={styles.fulfillmentBadge}>
+                      <Ionicons 
+                        name={req.fulfillment_type === "deliver" ? "car-outline" : "home-outline"} 
+                        size={14} 
+                        color={PRIMARY} 
+                      />
+                      <Text style={styles.fulfillmentText}>
+                        {req.fulfillment_type === "deliver" ? "Deliver to Site" : "Grower Pickup"}
+                      </Text>
+                    </View>
                   )}
-                </TouchableOpacity>
-              </View>
-              <View style={{ height: 30 }} />
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      )}
+
+                  {/* ✅ Dedicated View Details Button (Matching Sites.tsx pattern) */}
+                  <TouchableOpacity
+                    style={styles.viewButton}
+                    onPress={() => handleViewDetails(req.request_id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.viewButtonText}>View Details</Text>
+                    <Ionicons name="arrow-forward" size={16} color={PRIMARY} />
+                  </TouchableOpacity>
+                </View>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
     </View>
   );
 }
+
+// ─── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
@@ -659,11 +274,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: WHITE,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: BG,
   },
   backBtn: {
     width: 40,
@@ -671,15 +284,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  headerTitle: { fontSize: 18, fontWeight: "800", color: INK },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: INK, letterSpacing: -0.5 },
 
   summaryRow: {
     flexDirection: "row",
     gap: 10,
-    paddingHorizontal: 16,
-    marginTop: 16,
+    paddingHorizontal: 20,
+    marginTop: 8,
   },
-  summaryCard: { flex: 1, borderRadius: 16, padding: 14, alignItems: "center" },
+  summaryCard: { flex: 1, borderRadius: 16, padding: 14, alignItems: "center", borderWidth: 1, borderColor: "rgba(0,0,0,0.03)" },
   summaryValue: { fontSize: 20, fontWeight: "800", marginBottom: 2 },
   summaryLabel: { fontSize: 11, color: MUTED, fontWeight: "600" },
 
@@ -688,177 +301,113 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: PRIMARY,
-    marginHorizontal: 16,
-    marginTop: 16,
+    marginHorizontal: 20,
+    marginTop: 20,
     paddingVertical: 14,
     borderRadius: 14,
     gap: 8,
     shadowColor: PRIMARY,
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    elevation: 4,
   },
   newRequestText: { color: "#fff", fontWeight: "700", fontSize: 15 },
 
-  section: { marginTop: 24, paddingHorizontal: 16 },
+  section: { marginTop: 24, paddingHorizontal: 20 },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: "800",
+    fontWeight: "700",
     color: INK,
     marginBottom: 12,
   },
 
-  requestCard: {
+  card: {
     backgroundColor: WHITE,
     borderRadius: 16,
     padding: 16,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    marginBottom: 16,
+    ...cardShadow,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.03)",
   },
-  requestHeader: {
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 10,
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    gap: 5,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 12, fontWeight: "700", flex: 1 },
-  requestDate: { fontSize: 11, color: MUTED },
-  requestTotal: {
-    fontSize: 18,
-    fontWeight: "800",
+  statusText: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
+  requestDate: { fontSize: 12, color: MUTED, fontWeight: "500" },
+  
+  appTitle: {
+    fontSize: 16,
+    fontWeight: "700",
     color: INK,
     marginBottom: 8,
   },
-  speciesRow: {
+  
+  speciesSummary: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
-  },
-  speciesName: { flex: 1, fontSize: 14, color: INK, fontWeight: "500" },
-  speciesQty: { fontSize: 14, fontWeight: "700", color: PRIMARY },
-  reasonBox: {
-    flexDirection: "row",
     gap: 6,
-    alignItems: "flex-start",
-    backgroundColor: "#E8F5E9",
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 10,
+    marginBottom: 12,
   },
-  reasonText: {
+  speciesSummaryText: {
+    fontSize: 13,
+    color: MUTED,
+    fontWeight: "500",
+  },
+
+  fulfillmentBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#F0FDF4",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+  },
+  fulfillmentText: {
     fontSize: 12,
-    color: "#2E7D32",
-    flex: 1,
-    lineHeight: 16,
-    fontStyle: "italic",
+    fontWeight: "600",
+    color: PRIMARY,
+  },
+
+  // ✅ Matching Sites.tsx View Button Style
+  viewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginTop: 4,
+  },
+  viewButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: PRIMARY,
   },
 
   emptyState: { alignItems: "center", marginTop: 60, gap: 8 },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: INK },
-  emptyMsg: { fontSize: 13, color: MUTED, textAlign: "center" },
-
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  modalPanel: {
-    backgroundColor: WHITE,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingBottom: 32,
-    maxHeight: screenHeight * 0.9,
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: "#E5E7EB",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 20,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitle: { fontSize: 18, fontWeight: "800", color: INK, flex: 1 },
-
-  formLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 8,
-  },
-  formInput: {
-    borderWidth: 1.5,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: INK,
-    backgroundColor: "#FAFAFA",
-    marginBottom: 12,
-  },
-  addBtn: {
-    backgroundColor: PRIMARY,
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  listItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  listItemIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#E8F5E9",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  formActions: { flexDirection: "row", gap: 12, marginTop: 10 },
-  cancelBtn: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: "#E5E7EB",
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  cancelBtnText: { color: MUTED, fontWeight: "600", fontSize: 14 },
-  submitBtn: {
-    flex: 2,
-    backgroundColor: PRIMARY,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  submitBtnText: { color: "#fff", fontWeight: "800", fontSize: 14 },
+  emptyTitle: { fontSize: 16, fontWeight: "600", color: "#374151" },
+  emptySubtitle: { fontSize: 13, color: MUTED, textAlign: "center", paddingHorizontal: 32 },
 });

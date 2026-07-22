@@ -42,6 +42,7 @@ from .models import (
 )
 from django.db.models.functions import TruncDate
 from django.db.models import DateField
+
 # Define the logger at the module level (outside any function)
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,6 @@ def get_applications(request):
     today = timezone.now().date()
     
     if days_since_filter == 'no_report':
-        # No ProgressReport exists at all
         qs = qs.filter(total_reports=0)
     elif days_since_filter == '30_plus':
         cutoff_30 = today - timedelta(days=30)
@@ -148,7 +148,6 @@ def get_applications(request):
 
     data = []
     for app in qs[offset:offset + entries]:
-        # ✅ FIX: Use the annotated effective_date which is already cast to a DateField
         effective_date = app.effective_date 
         
         days_since = None
@@ -230,7 +229,6 @@ def get_application(request, application_id):
             "site_id": site.site_id,
             "name": site.name,
             "total_area_hectares": site.total_area_hectares,
-            "ndvi_value": site.ndvi_value,
             "polygon_coordinates": site.polygon_coordinates,
             "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
             "barangay_name": (site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else None),
@@ -279,14 +277,24 @@ def get_application(request, application_id):
         } if hasattr(app.user, 'profile') and app.user.profile else None,
         "assigned_site": assigned_site_data,
         "proposed_site": proposed_site_data,
+        
+        # ✅ UPDATED: Seedling Requests Serialization with new fields
         "seedling_requests": [{
             "request_id": sr.seedling_request_id,
             "no_request_seedling": sr.no_request_seedling,
             "species": serialize_seedling_request_species(sr),
             "status": sr.status,
+            "fulfillment_type": sr.fulfillment_type,
+            "reason": sr.reason,
             "reason_accepted": sr.reason_accepted,
+            "proof_of_delivery": get_cloudinary_url(str(sr.proof_of_delivery)) if sr.proof_of_delivery else None,
+            "assigned_inspector": {
+                "name": f"{sr.assigned_inspector.profile.first_name} {sr.assigned_inspector.profile.last_name}".strip() if hasattr(sr.assigned_inspector, 'profile') and sr.assigned_inspector.profile else (sr.assigned_inspector.email if sr.assigned_inspector else "Unassigned"),
+                "contact": sr.assigned_inspector.profile.contact if hasattr(sr.assigned_inspector, 'profile') and sr.assigned_inspector.profile else "",
+            } if sr.assigned_inspector else None,
             "submitted_at": sr.submitted_at.isoformat() if sr.submitted_at else None
         } for sr in seedling_requests],
+        
         "progress_reports": [{
             "report_id": pr.progress_report_id,
             "total_survived": pr.total_survived,
@@ -359,7 +367,6 @@ def get_ongoing_applications(request):
     
     if urgency_filter != 'all':
         if urgency_filter == 'no_report':
-            # No ProgressReport exists at all
             qs = qs.filter(total_reports=0)
         elif urgency_filter == '90_plus':
             cutoff_date = today - timedelta(days=90)
@@ -377,7 +384,6 @@ def get_ongoing_applications(request):
                 Q(effective_date__gte=cutoff_60, effective_date__lt=cutoff_30)
             )
     
-    # Sorting
     if sort_by == 'newest':
         qs = qs.order_by('-created_at')
     elif sort_by == 'oldest':
@@ -387,18 +393,15 @@ def get_ongoing_applications(request):
     
     data = []
     for app in qs:
-        # ✅ FIX: Use the annotated effective_date which is already cast to a DateField
         effective_date = app.effective_date
         
         days_since = None
         if effective_date:
             days_since = (today - effective_date).days
         
-        # Calculate survival rate
         total_plants = app.total_survived + app.total_dead
         survival_rate = round((app.total_survived / total_plants * 100), 1) if total_plants > 0 else 0
         
-        # Get site details
         site_data = None
         recommended_species = []
         if app.site:
@@ -418,7 +421,6 @@ def get_ongoing_applications(request):
                 "site_id": app.site.site_id,
                 "name": app.site.name,
                 "total_area_hectares": app.site.total_area_hectares,
-                "ndvi_value": app.site.ndvi_value,
                 "accessibility": meta.verified_accessibility if meta else None,
                 "land_classification": (
                     meta.verified_land_classification.name 
@@ -427,7 +429,6 @@ def get_ongoing_applications(request):
                 "recommended_species": recommended_species,
             }
         
-        # Get group contact
         group_contact = None
         if hasattr(app.user, 'profile') and app.user.profile:
             group_contact = {
@@ -541,7 +542,7 @@ def get_tree_grower_application(request):
             "name": site.name,
             "description": site.description,
             "total_area_hectares": site.total_area_hectares,
-            "ndvi_value": site.ndvi_value,
+           
             "polygon_coordinates": site.polygon_coordinates,
             "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
             "barangay_name": (
@@ -590,14 +591,24 @@ def get_tree_grower_application(request):
         "profile": profile_data,
         "assigned_site": assigned_site_data,
         "proposed_site": proposed_site_data,
+        
+        # ✅ UPDATED: Seedling Requests Serialization with new fields
         "seedling_requests": [{
             "request_id": sr.seedling_request_id,
             "no_request_seedling": sr.no_request_seedling,
             "species": serialize_seedling_request_species(sr),
             "status": sr.status,
+            "fulfillment_type": sr.fulfillment_type,
+            "reason": sr.reason,
             "reason_accepted": sr.reason_accepted,
+            "proof_of_delivery": get_cloudinary_url(str(sr.proof_of_delivery)) if sr.proof_of_delivery else None,
+            "assigned_inspector": {
+                "name": f"{sr.assigned_inspector.profile.first_name} {sr.assigned_inspector.profile.last_name}".strip() if hasattr(sr.assigned_inspector, 'profile') and sr.assigned_inspector.profile else (sr.assigned_inspector.email if sr.assigned_inspector else "Unassigned"),
+                "contact": sr.assigned_inspector.profile.contact if hasattr(sr.assigned_inspector, 'profile') and sr.assigned_inspector.profile else "",
+            } if sr.assigned_inspector else None,
             "submitted_at": sr.submitted_at.isoformat() if sr.submitted_at else None
         } for sr in seedling_requests],
+        
         "progress_reports": [{
             "report_id": pr.progress_report_id,
             "total_survived": pr.total_survived,
@@ -622,9 +633,7 @@ def get_tree_grower_application(request):
 
 @csrf_exempt
 def evaluate_application(request, application_id):
-    """
-    DataManager: Assign site and orientation date, add reason → forward to Head
-    """
+    """DataManager: Assign site and orientation date, add reason → forward to Head"""
     if request.method not in ('PUT', 'POST'):
         return JsonResponse({'error': 'Only PUT/POST allowed'}, status=405)
 
@@ -671,15 +680,9 @@ def evaluate_application(request, application_id):
                 status=status
             )
 
-        # ✅ CREATE NOTIFICATION FOR TREE GROWER
         try:
-            site_info = ""
-            if site:
-                site_info = f" at {site.name}"
-            
-            orientation_info = ""
-            if orientation_date:
-                orientation_info = f" Orientation scheduled for {orientation_date.strftime('%B %d, %Y')}."
+            site_info = f" at {site.name}" if site else ""
+            orientation_info = f" Orientation scheduled for {orientation_date.strftime('%B %d, %Y')}." if orientation_date else ""
             
             create_notification(
                 user=app.user,
@@ -691,7 +694,6 @@ def evaluate_application(request, application_id):
         except Exception as notif_err:
             logger.error(f"Failed to create evaluation notification: {str(notif_err)}")
 
-        # ✅ SEND EMAIL NOTIFICATION (non-blocking)
         try:
             send_application_evaluated_email(app.user, app)
         except Exception as email_err:
@@ -756,13 +758,12 @@ def confirm_application(request, application_id):
                 status=status
             )
 
-        # ✅ CREATE NOTIFICATION FOR TREE GROWER
         try:
             if status == 'accepted':
                 create_notification(
                     user=app.user,
                     type='success',
-                    title='🎉 Application Approved!',
+                    title=' Application Approved!',
                     description=f'Congratulations! Your application "{app.title}" has been approved by the City ENRO Head. Please prepare for the orientation and coordinate with the ENRO office for next steps.',
                     link='/tree-growers/applications'
                 )
@@ -778,7 +779,6 @@ def confirm_application(request, application_id):
         except Exception as notif_err:
             logger.error(f"Failed to create confirmation notification: {str(notif_err)}")
 
-        # ✅ SEND EMAIL NOTIFICATION (non-blocking)
         try:
             if status == 'accepted':
                 send_application_accepted_email(app.user, app)
@@ -839,7 +839,6 @@ def complete_application(request, application_id):
                 app.site.status = 'completed'
                 app.site.save()
 
-        # ✅ CREATE NOTIFICATION FOR TREE GROWER
         try:
             if new_status == 'completed':
                 create_notification(
@@ -854,14 +853,13 @@ def complete_application(request, application_id):
                 create_notification(
                     user=app.user,
                     type='alert',
-                    title='⚠️ Program Failed',
+                    title='️ Program Failed',
                     description=f'Your tree planting program "{app.title}" has been marked as failed.{reason_display} Please coordinate with the ENRO office to discuss next steps.',
                     link='/tree-growers/applications'
                 )
         except Exception as notif_err:
             logger.error(f"Failed to create completion notification: {str(notif_err)}")
 
-        # ✅ SEND EMAIL NOTIFICATION (non-blocking)
         try:
             if new_status == 'completed':
                 send_program_completed_email(app.user, app)
@@ -880,7 +878,7 @@ def complete_application(request, application_id):
     
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SEEDLING REQUESTS (Assistance Requests)
+# SEEDLING REQUESTS (Only Creation remains here, Management moved to request_views.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @csrf_exempt
@@ -949,180 +947,6 @@ def create_seedling_request(request):
         return JsonResponse({'error': f'Tree species not found: {str(e)}'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-def update_seedling_request(request, request_id):
-    """
-    DataManager: Approve/Reject additional seedling request.
-    """
-    if request.method != 'PUT':
-        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
-
-    user = get_user_from_token(request)
-    if not user or user.user_role != 'DataManager':
-        return JsonResponse({'error': 'Unauthorized'}, status=403)
-
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    status = data.get('status')
-    reason_text = data.get('reason', '').strip()
-    seedling_provision = data.get('seedling_provision')
-    
-    if status not in ['accepted', 'rejected']:
-        return JsonResponse({'error': 'Status must be accepted or rejected'}, status=400)
-
-    req = get_object_or_404(SeedlingRequest, seedling_request_id=request_id)
-    if req.status != 'pending':
-        return JsonResponse({'error': 'Request already processed'}, status=400)
-
-    try:
-        with transaction.atomic():
-            if status == 'accepted' and seedling_provision:
-                if not isinstance(seedling_provision, list):
-                    return JsonResponse({'error': 'seedling_provision must be a JSON array'}, status=400)
-
-                req.seedling_species.all().delete()
-
-                total_seedlings = 0
-                for item in seedling_provision:
-                    if not isinstance(item, dict):
-                        raise ValueError("Each seedling provision must be an object")
-                    
-                    tree_species_id = item.get('tree_species_id')
-                    quantity = item.get('quantity', 0)
-                    provided_by = item.get('provided_by', 'ENRO Nursery')
-
-                    if not tree_species_id or quantity < 1:
-                        raise ValueError(f"Invalid species data: {item}")
-
-                    tree_species = get_object_or_404(Tree_species, tree_specie_id=tree_species_id)
-
-                    SeedlingRequestSpecies.objects.create(
-                        seedling_request=req,
-                        tree_species=tree_species,
-                        quantity=int(quantity),
-                        provided_by=provided_by,
-                    )
-                    total_seedlings += int(quantity)
-
-                req.no_request_seedling = total_seedlings
-            
-            req.status = status
-            req.reason_accepted = reason_text
-            req.save()
-            
-            Reason.objects.create(
-                user=user,
-                application=req.application,
-                status_layer='seedling_request',
-                reason=reason_text,
-                status=status
-            )
-
-        # ✅ CREATE NOTIFICATION FOR TREE GROWER
-        try:
-            tree_grower_user = req.application.user
-            if status == 'accepted':
-                create_notification(
-                    user=tree_grower_user,
-                    type='success',
-                    title='🌱 Seedling Request Approved!',
-                    description=f'Your seedling request for "{req.application.title}" has been approved. Total seedlings: {req.no_request_seedling:,}. Please coordinate with the ENRO Nursery for pickup/distribution.',
-                    link='/tree-growers/requests'
-                )
-            else:
-                reason_display = f" Reason: {reason_text}" if reason_text else ""
-                create_notification(
-                    user=tree_grower_user,
-                    type='alert',
-                    title='❌ Seedling Request Rejected',
-                    description=f'Your seedling request for "{req.application.title}" was not approved.{reason_display}',
-                    link='/tree-growers/requests'
-                )
-        except Exception as notif_err:
-            logger.error(f"Failed to create seedling request notification: {str(notif_err)}")
-
-        # ✅ SEND EMAIL NOTIFICATION (non-blocking)
-        try:
-            tree_grower_user = req.application.user
-            if status == 'accepted':
-                send_seedling_request_accepted_email(tree_grower_user, req.application, req)
-            else:
-                send_seedling_request_rejected_email(tree_grower_user, req.application, req, reason_text)
-        except Exception as email_err:
-            logger.error(f"Failed to send seedling request email: {str(email_err)}")
-
-        return JsonResponse({'message': f'Request {status}'}, status=200)
-    except Tree_species.DoesNotExist as e:
-        return JsonResponse({'error': f'Tree species not found: {str(e)}'}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-def delete_seedling_request(request, request_id):
-    if request.method != 'DELETE':
-        return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
-
-    user = get_user_from_token(request)
-    if not user:
-        return JsonResponse({'error': 'Unauthorized'}, status=403)
-
-    req = get_object_or_404(SeedlingRequest, seedling_request_id=request_id)
-    
-    if req.status != 'pending':
-        return JsonResponse({'error': 'Cannot delete processed request'}, status=400)
-    if user.user_role != 'DataManager' and req.application.user != user:
-        return JsonResponse({'error': 'Unauthorized'}, status=403)
-
-    req.delete()
-    return JsonResponse({'message': 'Request deleted'}, status=200)
-
-
-@csrf_exempt
-def get_seedling_requests(request):
-    """List seedling requests with optional status filter"""
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
-
-    user = get_user_from_token(request)
-    if not user:
-        return JsonResponse({'error': 'Unauthorized'}, status=403)
-
-    status_filter = request.GET.get('status')
-    app_id = request.GET.get('application_id')
-    
-    qs = SeedlingRequest.objects.select_related(
-        'application__user__tree_grower_group', 
-        'application__site'
-    ).order_by('-created_at')
-    
-    if user.user_role == 'treeGrowers':
-        qs = qs.filter(application__user=user)
-    if status_filter:
-        qs = qs.filter(status=status_filter)
-    if app_id:
-        qs = qs.filter(application_id=app_id)
-
-    data = [{
-        "request_id": r.seedling_request_id,
-        "application_id": r.application.application_id,
-        "application_title": r.application.title,
-        "group_name": r.application.user.tree_grower_group.group_name if hasattr(r.application.user, 'tree_grower_group') else "N/A",
-        "site_name": r.application.site.name if r.application.site else None,
-        "no_request_seedling": r.no_request_seedling,
-        "species": serialize_seedling_request_species(r),
-        "status": r.status,
-        "reason_accepted": r.reason_accepted,
-        "description": r.description,
-        "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None
-    } for r in qs]
-
-    return JsonResponse(data, safe=False, status=200)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1276,9 +1100,7 @@ def get_progress_reports(request):
 
 @csrf_exempt
 def create_reapplication(request):
-    """
-    TreeGrower: Apply for a NEW tree planting program.
-    """
+    """TreeGrower: Apply for a NEW tree planting program."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
 
@@ -1337,9 +1159,7 @@ def create_reapplication(request):
 
 @csrf_exempt
 def get_tree_grower_application_history(request):
-    """
-    TreeGrower: Fetch ALL their applications with progress reports
-    """
+    """TreeGrower: Fetch ALL their applications with progress reports"""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -1403,9 +1223,7 @@ def get_tree_grower_application_history(request):
 
 @csrf_exempt
 def get_orientation_dates(request):
-    """
-    Fetch all applications with scheduled orientation dates for the Calendar.
-    """
+    """Fetch all applications with scheduled orientation dates for the Calendar."""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -1459,9 +1277,7 @@ def get_site_applications(request, site_id):
 
 @csrf_exempt
 def get_general_report_data(request):
-    """
-    Aggregates all data needed for the General Program Report Dashboard.
-    """
+    """Aggregates all data needed for the General Program Report Dashboard."""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -1619,10 +1435,7 @@ def get_program_history(request):
 
 @csrf_exempt
 def delete_application(request, application_id):
-    """
-    Delete an application and all related data.
-    Also deletes all associated files from Cloudinary.
-    """
+    """Delete an application and all related data. Also deletes all associated files from Cloudinary."""
     if request.method != 'DELETE':
         return JsonResponse({'error': 'Only DELETE allowed'}, status=405)
 
@@ -1694,9 +1507,7 @@ def delete_application(request, application_id):
 
 @csrf_exempt
 def get_available_sites_for_tree_grower(request):
-    """
-    GET: Fetch sites available for tree grower application with pagination.
-    """
+    """GET: Fetch sites available for tree grower application with pagination."""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -1765,7 +1576,6 @@ def get_available_sites_for_tree_grower(request):
             'reforestation_area': site.reforestation_area.name,
             'barangay': site.reforestation_area.barangay.name if site.reforestation_area.barangay else 'N/A',
             'total_area_hectares': site.total_area_hectares,
-            'ndvi_value': site.ndvi_value,
             'images': images_data,
             'is_pinned': site.is_pinned,
             'created_at': site.created_at.strftime('%Y-%m-%d')
@@ -1881,9 +1691,7 @@ def get_geographic_analytics(request):
 
 @csrf_exempt
 def get_monitoring_compliance(request):
-    """
-    Aggregates monitoring compliance data for tree planting programs.
-    """
+    """Aggregates monitoring compliance data for tree planting programs."""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -1934,8 +1742,6 @@ def get_monitoring_compliance(request):
         last_report_date = None
         if latest_report:
             last_report_date = latest_report.created_at
-            # ✅ FIX: Use timezone.now() and convert both to .date() to safely subtract
-            # This prevents "can't subtract offset-naive and offset-aware datetimes"
             days_since = (timezone.now().date() - last_report_date.date()).days
         
         total_survived = 0
@@ -1969,9 +1775,7 @@ def get_monitoring_compliance(request):
 
 @csrf_exempt
 def update_application_orientation(request, application_id):
-    """
-    Update orientation date for an application (called from calendar scheduling).
-    """
+    """Update orientation date for an application (called from calendar scheduling)."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
 
@@ -1993,7 +1797,6 @@ def update_application_orientation(request, application_id):
     try:
         with transaction.atomic():
             app.orientation_date = orientation_date
-            # Only update if not already set or if user has permission
             if user.user_role in ['DataManager', 'CityENROHead']:
                 app.save()
             else:
@@ -2038,22 +1841,17 @@ def get_monitoring_stats(request):
     today = timezone.now().date()
     
     total = apps_with_dates.count()
-    
-    # No ProgressReport exists at all
     no_report = apps_with_dates.filter(total_reports=0).count()
     
-    # 90+ days since effective date
     days_90_plus = apps_with_dates.filter(
         effective_date__lt=today - timedelta(days=90)
     ).count()
     
-    # 60-89 days since effective date
     days_60_plus = apps_with_dates.filter(
         effective_date__gte=today - timedelta(days=90),
         effective_date__lt=today - timedelta(days=60)
     ).count()
     
-    # 30-59 days since effective date
     days_30_plus = apps_with_dates.filter(
         effective_date__gte=today - timedelta(days=60),
         effective_date__lt=today - timedelta(days=30)

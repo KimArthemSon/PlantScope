@@ -114,6 +114,8 @@ export default function TabLayout() {
         <Tabs.Screen name="reports" options={{ href: null }} />
         <Tabs.Screen name="progressReports" options={{ href: null }} />
         <Tabs.Screen name="seedlingRequests" options={{ href: null }} />
+        <Tabs.Screen name="CreateSeedlingRequest" options={{ href: null }} />
+        <Tabs.Screen name="SeedlingRequestDetail" options={{ href: null }} />
       </Tabs>
     </>
   );
