@@ -464,7 +464,10 @@ export default function DeliveryDetailScreen() {
     >
       {/* Compact Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.replace("/(tabs)/delivery")}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.replace("/(tabs)/delivery")}
+        >
           <Ionicons name="chevron-back" size={22} color={INK} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Delivery Details</Text>
@@ -1218,7 +1221,12 @@ const floatTimelineStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  scroll: { paddingRight: 4 },
+  scroll: {
+    flexGrow: 1,
+    justifyContent: "center", // or "space-between" for edge-to-edge spread
+    alignItems: "center",
+    paddingRight: 4,
+  },
   stepContainer: {
     flexDirection: "column",
     alignItems: "center",

@@ -177,15 +177,6 @@ export default function TabLayout() {
             tabBarLabel: "Assess",
           }}
         />
-        {/* <Tabs.Screen 
-          name="map" 
-          options={{ 
-            tabBarIcon: ({ color, focused }) => (
-              <MaterialCommunityIcons name={focused ? "map" : "map-outline"} size={24} color={color} />
-            ), 
-            tabBarLabel: "Map" 
-          }} 
-        /> */}
 
         <Tabs.Screen
           name="delivery"
@@ -228,10 +219,16 @@ export default function TabLayout() {
             tabBarLabel: "Profile",
           }}
         />
+
+        {/* ─── HIDDEN ROUTES (Detail screens that should not appear in tab bar) ─── */}
         <Tabs.Screen name="notifications" options={{ href: null }} />
         <Tabs.Screen name="map" options={{ href: null }} />
         <Tabs.Screen name="reports" options={{ href: null }} />
         <Tabs.Screen name="deliverydetail" options={{ href: null }} />
+
+        {/* ✅ NEW: Hide the Monitoring Detail Screen from the tab bar */}
+        <Tabs.Screen name="monitoring/[id]" options={{ href: null }} />
+        <Tabs.Screen name="monitoringdetail" options={{ href: null }} />
       </Tabs>
     </>
   );

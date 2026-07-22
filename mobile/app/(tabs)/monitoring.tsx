@@ -1,647 +1,902 @@
 import React, { useState, useEffect } from "react";
+import { useRouter } from "expo-router";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Modal,
-  TextInput, ActivityIndicator, Alert, Pressable, ScrollView, Image,
-  RefreshControl, KeyboardAvoidingView, Platform, StatusBar,
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  TextInput,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
-import * as ImagePicker from "expo-image-picker";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const API_BASE_URL = api + "/api";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
-
-type GroupContact = { contact: string; full_name: string; };
-type SiteDetails = {
-  site_id: number; name: string; total_area_hectares: number;
-  ndvi_value: number | null; accessibility: string | null;
-  land_classification: string | null;
-  recommended_species: Array<{ species_id: number; species_name: string; priority_rank: number; notes: string | null; }>;
-};
 type Application = {
-  application_id: number; title: string; group_name: string;
-  group_contact: GroupContact | null; status: string;
-  classification: "new" | "old"; site_name: string | null; barangay: string | null;
-  orientation_date: string | null; created_at: string;
-  last_report_date: string | null; days_since_last_report: number | null;
-  total_survived: number; total_dead: number; survival_rate: number;
-  total_reports: number; site_details: SiteDetails | null;
+  application_id: number;
+  title: string;
+  group_name: string;
+  status: string;
+  classification: "new" | "old";
+  site_name: string | null;
+  barangay: string | null;
+  orientation_date: string | null;
+  last_report_date: string | null;
+  days_since_last_report: number | null;
+  total_survived: number;
+  total_dead: number;
+  survival_rate: number;
+  visit_type_hint?: string;
+  created_at?: string;
 };
-type ProgressReportSpecies = { species_id: number; species_name: string; no_survived: number; no_dead: number; total: number; survival_rate: number; };
-type ProgressReport = {
-  report_id: number; total_survived: number; total_dead: number;
-  species: ProgressReportSpecies[]; description: string | null;
-  status: "pending" | "accepted" | "rejected"; proof_image: string | null; submitted_at: string | null;
-};
-type ApplicationDetail = { application: Application; progress_reports: ProgressReport[]; assigned_site: { name: string; barangay: string | null } | null; };
-type TreeSpeciesOption = { tree_specie_id: number; name: string; description: string; };
-type ReportSpeciesItem = { tree_species_id: number; species_name: string; no_survived: number; no_dead: number; };
+
+type StatusFilter = "accepted" | "under_monitoring" | "all";
 
 // ─── Status Config ─────────────────────────────────────────────────────────
-
-const APP_STATUS_CONFIG = {
-  accepted: { label: "Active", bg: "#E6F4EC", text: "#0F4A2F", dot: "#0F4A2F" },
-  under_monitoring: { label: "Monitoring", bg: "#E6F4EC", text: "#0F4A2F", dot: "#0F4A2F" },
+const STATUS_CONFIG = {
+  accepted: {
+    label: "Needs Orientation",
+    color: "#3B82F6",
+    bgColor: "#EFF6FF",
+    borderColor: "#3B82F6",
+    icon: "calendar-outline",
+  },
+  under_monitoring: {
+    label: "Under Monitoring",
+    color: "#10B981",
+    bgColor: "#ECFDF5",
+    borderColor: "#10B981",
+    icon: "leaf-outline",
+  },
 };
 
-const REPORT_STATUS_CONFIG = {
-  pending: { label: "Pending", bg: "#FEF9C3", text: "#A16207", dot: "#F59E0B" },
-  accepted: { label: "Verified", bg: "#DCFCE7", text: "#15803D", dot: "#22C55E" },
-  rejected: { label: "Rejected", bg: "#FEE2E2", text: "#DC2626", dot: "#EF4444" },
-};
+// ─── Components ────────────────────────────────────────────────────────────
 
-// ─── Urgency Badge Component ───────────────────────────────────────────────
+function StatusBadge({ status }: { status: string }) {
+  const config =
+    STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ||
+    STATUS_CONFIG.accepted;
+  return (
+    <View
+      style={[
+        styles.statusBadge,
+        { backgroundColor: config.bgColor, borderColor: config.borderColor },
+      ]}
+    >
+      <Ionicons name={config.icon} size={12} color={config.color} />
+      <Text style={[styles.statusText, { color: config.color }]}>
+        {config.label}
+      </Text>
+    </View>
+  );
+}
 
-function UrgencyBadge({ days, compact = false }: { days: number | null; compact?: boolean }) {
-  let bg = "#DCFCE7", text = "#16A34A", label = `${days}d`;
-  
-  if (days === null) { bg = "#FEE2E2"; text = "#DC2626"; label = "No Report"; }
-  else if (days >= 90) { bg = "#FEE2E2"; text = "#DC2626"; label = `${days}d URGENT`; }
-  else if (days >= 60) { bg = "#FED7AA"; text = "#EA580C"; label = `${days}d`; }
-  else if (days >= 30) { bg = "#FEF3C7"; text = "#D97706"; label = `${days}d`; }
+function UrgencyChip({
+  days,
+  status,
+}: {
+  days: number | null;
+  status: string;
+}) {
+  let bgColor = "#F3F4F6";
+  let textColor = "#4B5563";
+  let label = `${days}d`;
+  let iconName = "checkmark-circle";
+
+  if (status === "accepted" && (days === null || days === 0)) {
+    bgColor = "#F3F4F6";
+    textColor = "#4B5563";
+    label = "Awaiting Initial";
+    iconName = "time-outline";
+  } else if (days === null) {
+    bgColor = "#FEE2E2";
+    textColor = "#DC2626";
+    label = "Overdue";
+    iconName = "alert-circle";
+  } else if (days >= 90) {
+    bgColor = "#FEE2E2";
+    textColor = "#DC2626";
+    label = `${days}d Critical`;
+    iconName = "alert-circle";
+  } else if (days >= 60) {
+    bgColor = "#FED7AA";
+    textColor = "#EA580C";
+    label = `${days}d Warning`;
+    iconName = "warning";
+  } else if (days >= 30) {
+    bgColor = "#FEF3C7";
+    textColor = "#D97706";
+    label = `${days}d`;
+    iconName = "time-outline";
+  }
 
   return (
-    <View style={[styles.urgencyBadge, { backgroundColor: bg }, compact && styles.urgencyBadgeCompact]}>
-      <View style={[styles.urgencyDot, { backgroundColor: text }]} />
-      <Text style={[styles.urgencyText, { color: text }, compact && styles.urgencyTextCompact]}>{label}</Text>
+    <View style={[styles.urgencyChip, { backgroundColor: bgColor }]}>
+      <Ionicons name={iconName} size={13} color={textColor} />
+      <Text style={[styles.urgencyText, { color: textColor }]}>{label}</Text>
     </View>
   );
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────
-
 const OnsiteInspectorMonitoring: React.FC = () => {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  
+
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   const [searchText, setSearchText] = useState("");
-  const [urgencyFilter, setUrgencyFilter] = useState("all");
-  const [classificationFilter, setClassificationFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("newest");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("accepted");
+  const [classificationFilter, setClassificationFilter] = useState<
+    "all" | "new" | "old"
+  >("all");
+  const [sortBy, setSortBy] = useState<"newest" | "urgent">("urgent");
   const [showFilters, setShowFilters] = useState(false);
   const [filteredApps, setFilteredApps] = useState<Application[]>([]);
 
-  const [detailModalVisible, setDetailModalVisible] = useState(false);
-  const [selectedAppDetail, setSelectedAppDetail] = useState<ApplicationDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-
-  const [allTreeSpecies, setAllTreeSpecies] = useState<TreeSpeciesOption[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [reportSpeciesList, setReportSpeciesList] = useState<ReportSpeciesItem[]>([]);
-  const [selectedSpeciesId, setSelectedSpeciesId] = useState<string>("");
-  const [tempSurvived, setTempSurvived] = useState("");
-  const [tempDead, setTempDead] = useState("");
-  const [description, setDescription] = useState("");
-  const [proofImage, setProofImage] = useState<string | null>(null);
-  const [proofImageName, setProofImageName] = useState("Upload Group Photo");
-
-  // ─── Fetch Data ──────────────────────────────────────────────────────────
-
   const fetchApplications = async (isRefresh = false) => {
     try {
-      if (!isRefresh) setLoading(true); else setRefreshing(true);
+      if (!isRefresh) setLoading(true);
+      else setRefreshing(true);
+
       const token = await SecureStore.getItemAsync("token");
       if (!token) throw new Error("No token found.");
 
       const params = new URLSearchParams();
-      if (urgencyFilter !== "all") params.append("urgency", urgencyFilter);
-      if (classificationFilter !== "all") params.append("classification", classificationFilter);
       params.append("sort", sortBy);
+      if (classificationFilter !== "all")
+        params.append("classification", classificationFilter);
 
-      const res = await fetch(`${API_BASE_URL}/get_ongoing_applications/?${params.toString()}`, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
+      const res = await fetch(
+        `${API_BASE_URL}/get_ongoing_applications/?${params.toString()}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
       if (!res.ok) throw new Error("Failed to load applications.");
-      setApplications(await res.json());
+      const data = await res.json();
+      setApplications(data);
     } catch (err: any) {
-      Alert.alert("Error", err.message);
+      console.error("Error fetching applications:", err);
     } finally {
-      setLoading(false); setRefreshing(false);
+      setLoading(false);
+      setRefreshing(false);
     }
   };
-
-  const fetchTreeSpecies = async () => {
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${API_BASE_URL}/get_tree_species_list/`, { headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) setAllTreeSpecies(await res.json());
-    } catch (err) { console.error("Failed to fetch tree species", err); }
-  };
-
-  useEffect(() => { fetchApplications(); fetchTreeSpecies(); }, [urgencyFilter, classificationFilter, sortBy]);
 
   useEffect(() => {
-    const lowerText = searchText.toLowerCase();
-    setFilteredApps(applications.filter(app => 
-      app.barangay?.toLowerCase().includes(lowerText) ||
-      app.title.toLowerCase().includes(lowerText) ||
-      app.group_name.toLowerCase().includes(lowerText)
-    ));
-  }, [searchText, applications]);
+    fetchApplications();
+  }, [sortBy, classificationFilter]);
 
-  const fetchApplicationDetail = async (appId: number) => {
-    try {
-      setDetailLoading(true);
-      const token = await SecureStore.getItemAsync("token");
-      const res = await fetch(`${API_BASE_URL}/get_application/${appId}/`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error("Failed to load details.");
-      setSelectedAppDetail(await res.json());
-    } catch (err: any) { Alert.alert("Error", err.message); } finally { setDetailLoading(false); }
-  };
+  useEffect(() => {
+    let filtered = [...applications];
 
-  const openDetail = async (app: Application) => {
-    setSelectedAppDetail(null); setDetailModalVisible(true);
-    await fetchApplicationDetail(app.application_id);
-  };
-
-  const closeDetail = () => { setDetailModalVisible(false); setSelectedAppDetail(null); resetForm(); };
-  const resetForm = () => {
-    setReportSpeciesList([]); setSelectedSpeciesId(""); setTempSurvived(""); setTempDead("");
-    setDescription(""); setProofImage(null); setProofImageName("Upload Group Photo");
-  };
-
-  // ─── Form Handlers ───────────────────────────────────────────────────────
-
-  const handleAddSpeciesToReport = () => {
-    if (!selectedSpeciesId) return Alert.alert("Missing Species", "Please select a tree species.");
-    const found = allTreeSpecies.find(s => s.tree_specie_id === Number(selectedSpeciesId));
-    if (!found) return;
-    if (reportSpeciesList.some(s => s.tree_species_id === found.tree_specie_id)) return Alert.alert("Duplicate", "Species already added.");
-
-    setReportSpeciesList([...reportSpeciesList, {
-      tree_species_id: found.tree_specie_id, species_name: found.name,
-      no_survived: parseInt(tempSurvived) || 0, no_dead: parseInt(tempDead) || 0,
-    }]);
-    setSelectedSpeciesId(""); setTempSurvived(""); setTempDead("");
-  };
-
-  const pickImage = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return Alert.alert("Permission Required", "Camera roll access is needed.");
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
-    if (!res.canceled && res.assets[0]) {
-      setProofImage(res.assets[0].uri);
-      setProofImageName(res.assets[0].fileName || "Selected Image");
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((app) => app.status === statusFilter);
     }
-  };
 
-  const handleSubmitReport = async () => {
-    if (!selectedAppDetail || reportSpeciesList.length === 0) return Alert.alert("Missing Data", "Please add at least one species.");
-    setSubmitting(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const formData = new FormData();
-      formData.append("application_id", String(selectedAppDetail.application.application_id));
-      formData.append("report_species", JSON.stringify(reportSpeciesList));
-      formData.append("description", description);
-      if (proofImage) {
-        const filename = proofImage.split("/").pop();
-        const type = /\.(\w+)$/.exec(filename || "") ? `image/${/\.\w+$/.exec(filename)![1]}` : "image/jpeg";
-        formData.append("proof_image", { uri: proofImage, name: filename || "proof.jpg", type } as any);
-      }
-      const res = await fetch(`${API_BASE_URL}/create_progress_report/`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Submission failed.");
-      Alert.alert("Success", "Progress report submitted!");
-      resetForm(); await fetchApplicationDetail(selectedAppDetail.application.application_id);
-    } catch (err: any) { Alert.alert("Error", err.message); } finally { setSubmitting(false); }
-  };
+    if (searchText.trim()) {
+      const lowerText = searchText.toLowerCase();
+      filtered = filtered.filter(
+        (app) =>
+          app.barangay?.toLowerCase().includes(lowerText) ||
+          app.title.toLowerCase().includes(lowerText) ||
+          app.group_name.toLowerCase().includes(lowerText) ||
+          app.site_name?.toLowerCase().includes(lowerText),
+      );
+    }
 
-  // ─── Quick Stats Calculation ─────────────────────────────────────────────
-  const activeCount = applications.filter(a => a.status === 'accepted' || a.status === 'under_monitoring').length;
-  const dueSoonCount = applications.filter(a => a.days_since_last_report !== null && a.days_since_last_report >= 30 && a.days_since_last_report < 60).length;
-  const overdueCount = applications.filter(a => a.days_since_last_report === null || a.days_since_last_report >= 60).length;
-  const avgSurvival = applications.length > 0 ? Math.round(applications.reduce((acc, curr) => acc + curr.survival_rate, 0) / applications.length) : 0;
+    if (sortBy === "urgent") {
+      filtered.sort((a, b) => {
+        const aDays = a.days_since_last_report ?? 999;
+        const bDays = b.days_since_last_report ?? 999;
+        return bDays - aDays;
+      });
+    } else {
+      filtered.sort(
+        (a, b) =>
+          new Date(b.created_at || 0).getTime() -
+          new Date(a.created_at || 0).getTime(),
+      );
+    }
 
-  // ─── Renderers ───────────────────────────────────────────────────────────
+    setFilteredApps(filtered);
+  }, [searchText, statusFilter, applications, sortBy]);
+
+  const needsOrientationCount = applications.filter(
+    (a) => a.status === "accepted",
+  ).length;
+  const underMonitoringCount = applications.filter(
+    (a) => a.status === "under_monitoring",
+  ).length;
 
   const renderAppItem = ({ item }: { item: Application }) => {
-    const statusConf = APP_STATUS_CONFIG[item.status as keyof typeof APP_STATUS_CONFIG] || APP_STATUS_CONFIG.accepted;
+    const statusConfig =
+      STATUS_CONFIG[item.status as keyof typeof STATUS_CONFIG] ||
+      STATUS_CONFIG.accepted;
+
     return (
-      <TouchableOpacity style={styles.card} activeOpacity={0.8} onPress={() => openDetail(item)}>
-        <View style={[styles.cardAccent, { backgroundColor: statusConf.dot }]} />
-        <View style={styles.cardBody}>
+      <TouchableOpacity
+        style={[styles.card, { borderLeftColor: statusConfig.color }]}
+        activeOpacity={0.7}
+        onPress={() => router.push(`/monitoring/${item.application_id}`)}
+      >
+        <View style={styles.cardContent}>
+          {/* Header — single status badge + urgency chip only */}
           <View style={styles.cardHeader}>
-            <UrgencyBadge days={item.days_since_last_report} />
-            <View style={styles.classificationBadge}>
-              <Text style={styles.classificationText}>{item.classification === "new" ? "First-Time" : "Returning"}</Text>
-            </View>
+            <StatusBadge status={item.status} />
+            <UrgencyChip
+              days={item.days_since_last_report}
+              status={item.status}
+            />
           </View>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
-          <Text style={styles.orgName}>{item.group_name}</Text>
-          
-          <View style={styles.metaRow}>
-            <Ionicons name="location-outline" size={14} color="#6B7280" />
-            <Text style={styles.metaText}>{item.barangay || "No Barangay"} • {item.site_name || "No Site"}</Text>
+
+          {/* Title & Group — classification folded in as plain text */}
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {item.title}
+          </Text>
+          <Text style={styles.groupName}>
+            {item.group_name}
+            <Text style={styles.classificationInline}>
+              {"  ·  "}
+              {item.classification === "new" ? "First-Time" : "Returning"}
+            </Text>
+          </Text>
+
+          {/* Location */}
+          <View style={styles.locationRow}>
+            <Ionicons name="location-outline" size={15} color="#9CA3AF" />
+            <Text style={styles.locationText} numberOfLines={1}>
+              {item.barangay || "No Barangay"} • {item.site_name || "No Site"}
+            </Text>
           </View>
-          
+
+          {/* Stats — flattened, no nested card background */}
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Ionicons name="leaf-outline" size={12} color="#16A34A" />
-              <Text style={styles.statText}>
-                <Text style={{ color: "#16A34A", fontWeight: "700" }}>{item.total_survived}</Text>
-                <Text style={{ color: "#9CA3AF" }}> / </Text>
-                <Text style={{ color: "#DC2626", fontWeight: "700" }}>{item.total_dead}</Text>
+            <View style={styles.statBlock}>
+              <Text style={styles.survivalNumbers}>
+                <Text style={styles.survivedText}>{item.total_survived}</Text>
+                <Text style={styles.slashText}> / </Text>
+                <Text style={styles.deadText}>{item.total_dead}</Text>
               </Text>
+              <Text style={styles.statLabel}>Survived / Dead</Text>
             </View>
+
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Ionicons name="analytics-outline" size={12} color="#0F4A2F" />
-              <Text style={styles.statText}>{item.survival_rate}% survival</Text>
+
+            <View style={styles.statBlock}>
+              <Text style={styles.rateValue}>{item.survival_rate}%</Text>
+              <Text style={styles.statLabel}>Survival Rate</Text>
             </View>
           </View>
-          
-          <View style={styles.actionFooter}>
+
+          {/* Footer */}
+          <View style={styles.cardFooter}>
             <Text style={styles.actionText}>View Details & Submit Report</Text>
-            <Ionicons name="chevron-forward" size={18} color="#0F4A2F" />
+            <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
           </View>
         </View>
       </TouchableOpacity>
     );
   };
 
-  const renderReportItem = ({ item }: { item: ProgressReport }) => {
-    const statusConf = REPORT_STATUS_CONFIG[item.status];
-    const dateStr = item.submitted_at ? new Date(item.submitted_at).toLocaleDateString("en-PH", { month: "short", day: "numeric" }) : "No date";
-    return (
-      <View style={styles.reportCard}>
-        <View style={styles.reportHeader}>
-          <Text style={styles.reportDate}>{dateStr}</Text>
-          <View style={[styles.reportBadge, { backgroundColor: statusConf.bg }]}>
-            <View style={[styles.reportDot, { backgroundColor: statusConf.dot }]} />
-            <Text style={[styles.reportBadgeText, { color: statusConf.text }]}>{statusConf.label}</Text>
-          </View>
-        </View>
-        <View style={styles.reportStats}>
-          <View style={styles.reportStat}><Text style={styles.reportStatValue}>{item.total_survived}</Text><Text style={styles.reportStatLabel}>Survived</Text></View>
-          <View style={styles.reportDivider} />
-          <View style={styles.reportStat}><Text style={[styles.reportStatValue, { color: "#DC2626" }]}>{item.total_dead}</Text><Text style={styles.reportStatLabel}>Dead</Text></View>
-        </View>
-        {item.species?.map((sp, idx) => (
-          <View key={idx} style={styles.breakdownRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
-              <Ionicons name="leaf-outline" size={12} color="#0F4A2F" />
-              <Text style={styles.breakdownSpecies}>{sp.species_name}</Text>
-            </View>
-            <Text style={styles.breakdownCounts}>
-              <Text style={{ color: '#15803D', fontWeight: '600' }}>{sp.no_survived}</Text>
-              <Text style={{ color: '#9CA3AF' }}> / </Text>
-              <Text style={{ color: '#DC2626', fontWeight: '600' }}>{sp.no_dead}</Text>
-            </Text>
-          </View>
-        ))}
-        {item.description && <Text style={styles.reportDesc} numberOfLines={2}><Ionicons name="document-text-outline" size={12} color="#6B7280" /> {item.description}</Text>}
-        {item.proof_image && <View style={styles.reportImageTag}><Ionicons name="image" size={12} color="#0F4A2F" /><Text style={styles.reportImageText}>Photo attached</Text></View>}
-      </View>
-    );
-  };
-
-  // ─── Main Render ─────────────────────────────────────────────────────────
-
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0 }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F4F7F5" translucent={false} />
-      
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={styles.header}>
         <Text style={styles.headerEyebrow}>Monitoring</Text>
         <Text style={styles.headerTitle}>Tree Planting Programs</Text>
-        
+
+        {/* Search Bar */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={18} color="#9CA3AF" />
-          <TextInput style={styles.searchInput} placeholder="Search programs, groups..." value={searchText} onChangeText={setSearchText} placeholderTextColor="#9CA3AF" />
-          <TouchableOpacity onPress={() => setShowFilters(!showFilters)} style={styles.filterToggleBtn}>
-            <Ionicons name={showFilters ? "close" : "options"} size={20} color={showFilters ? "#0F4A2F" : "#6B7280"} />
+          <Ionicons
+            name="search"
+            size={20}
+            color="#9CA3AF"
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search programs, groups, sites..."
+            value={searchText}
+            onChangeText={setSearchText}
+            placeholderTextColor="#9CA3AF"
+          />
+          <TouchableOpacity
+            onPress={() => setShowFilters(!showFilters)}
+            style={styles.filterButton}
+          >
+            <Ionicons
+              name={showFilters ? "close" : "options"}
+              size={20}
+              color={showFilters ? "#3B82F6" : "#6B7280"}
+            />
           </TouchableOpacity>
         </View>
 
-        {/* Quick Stats Strip */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickStatsStrip} contentContainerStyle={styles.quickStatsContent}>
-          <View style={[styles.quickStatBadge, { backgroundColor: '#DCFCE7' }]}>
-            <Text style={[styles.quickStatValue, { color: '#16A34A' }]}>{activeCount}</Text>
-            <Text style={styles.quickStatLabel}>Active</Text>
-          </View>
-          <View style={[styles.quickStatBadge, { backgroundColor: '#FEF3C7' }]}>
-            <Text style={[styles.quickStatValue, { color: '#D97706' }]}>{dueSoonCount}</Text>
-            <Text style={styles.quickStatLabel}>Due Soon</Text>
-          </View>
-          <View style={[styles.quickStatBadge, { backgroundColor: '#FEE2E2' }]}>
-            <Text style={[styles.quickStatValue, { color: '#DC2626' }]}>{overdueCount}</Text>
-            <Text style={styles.quickStatLabel}>Overdue</Text>
-          </View>
-          <View style={[styles.quickStatBadge, { backgroundColor: '#E0E7FF' }]}>
-            <Text style={[styles.quickStatValue, { color: '#4338CA' }]}>{avgSurvival}%</Text>
-            <Text style={styles.quickStatLabel}>Avg Survival</Text>
-          </View>
-        </ScrollView>
+        {/* Status Filter Tabs — single source of truth for counts */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              {
+                backgroundColor:
+                  statusFilter === "accepted" ? "#EFF6FF" : "#FFFFFF",
+                borderColor:
+                  statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
+              },
+            ]}
+            onPress={() => setStatusFilter("accepted")}
+          >
+            <Ionicons
+              name="calendar"
+              size={16}
+              color={statusFilter === "accepted" ? "#3B82F6" : "#6B7280"}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                statusFilter === "accepted" && styles.activeTabText,
+              ]}
+            >
+              Needs Orientation
+            </Text>
+            <View
+              style={[
+                styles.tabBadge,
+                {
+                  backgroundColor:
+                    statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tabBadgeText,
+                  {
+                    color: statusFilter === "accepted" ? "#FFFFFF" : "#6B7280",
+                  },
+                ]}
+              >
+                {needsOrientationCount}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
-        {/* Filter Panel */}
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              {
+                backgroundColor:
+                  statusFilter === "under_monitoring" ? "#ECFDF5" : "#FFFFFF",
+                borderColor:
+                  statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
+              },
+            ]}
+            onPress={() => setStatusFilter("under_monitoring")}
+          >
+            <Ionicons
+              name="leaf"
+              size={16}
+              color={
+                statusFilter === "under_monitoring" ? "#10B981" : "#6B7280"
+              }
+            />
+            <Text
+              style={[
+                styles.tabText,
+                statusFilter === "under_monitoring" && styles.activeTabText,
+              ]}
+            >
+              Under Monitoring
+            </Text>
+            <View
+              style={[
+                styles.tabBadge,
+                {
+                  backgroundColor:
+                    statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tabBadgeText,
+                  {
+                    color:
+                      statusFilter === "under_monitoring"
+                        ? "#FFFFFF"
+                        : "#6B7280",
+                  },
+                ]}
+              >
+                {underMonitoringCount}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              {
+                backgroundColor: statusFilter === "all" ? "#F3F4F6" : "#FFFFFF",
+                borderColor: statusFilter === "all" ? "#9CA3AF" : "#E5E7EB",
+              },
+            ]}
+            onPress={() => setStatusFilter("all")}
+          >
+            <Ionicons name="grid" size={16} color="#6B7280" />
+            <Text
+              style={[
+                styles.tabText,
+                statusFilter === "all" && styles.activeTabText,
+              ]}
+            >
+              All
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Expanded Filters */}
         {showFilters && (
           <View style={styles.filterPanel}>
             <View style={styles.filterRow}>
               <Text style={styles.filterLabel}>Sort By:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}><View style={styles.filterOptions}>
-                {[{ value: "newest", label: "Newest" }, { value: "oldest", label: "Oldest" }, { value: "urgent", label: "Most Urgent" }].map(opt => (
-                  <TouchableOpacity key={opt.value} style={[styles.filterChip, sortBy === opt.value && styles.filterChipActive]} onPress={() => setSortBy(opt.value)}>
-                    <Text style={[styles.filterChipText, sortBy === opt.value && styles.filterChipTextActive]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View></ScrollView>
+              <View style={styles.filterChips}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    sortBy === "urgent" && styles.filterChipActive,
+                  ]}
+                  onPress={() => setSortBy("urgent")}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      sortBy === "urgent" && styles.filterChipTextActive,
+                    ]}
+                  >
+                    Most Urgent
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    sortBy === "newest" && styles.filterChipActive,
+                  ]}
+                  onPress={() => setSortBy("newest")}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      sortBy === "newest" && styles.filterChipTextActive,
+                    ]}
+                  >
+                    Newest
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
+
             <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>Urgency:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}><View style={styles.filterOptions}>
-                {[{ value: "all", label: "All" }, { value: "no_report", label: "No Report" }, { value: "30_plus", label: "30+ Days" }, { value: "60_plus", label: "60+ Days" }].map(opt => (
-                  <TouchableOpacity key={opt.value} style={[styles.filterChip, urgencyFilter === opt.value && styles.filterChipActive]} onPress={() => setUrgencyFilter(opt.value)}>
-                    <Text style={[styles.filterChipText, urgencyFilter === opt.value && styles.filterChipTextActive]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View></ScrollView>
-            </View>
-            <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>Type:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}><View style={styles.filterOptions}>
-                {[{ value: "all", label: "All" }, { value: "new", label: "First-Time" }, { value: "old", label: "Returning" }].map(opt => (
-                  <TouchableOpacity key={opt.value} style={[styles.filterChip, classificationFilter === opt.value && styles.filterChipActive]} onPress={() => setClassificationFilter(opt.value)}>
-                    <Text style={[styles.filterChipText, classificationFilter === opt.value && styles.filterChipTextActive]}>{opt.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View></ScrollView>
+              <Text style={styles.filterLabel}>Classification:</Text>
+              <View style={styles.filterChips}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    classificationFilter === "all" && styles.filterChipActive,
+                  ]}
+                  onPress={() => setClassificationFilter("all")}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      classificationFilter === "all" &&
+                        styles.filterChipTextActive,
+                    ]}
+                  >
+                    All
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    classificationFilter === "new" && styles.filterChipActive,
+                  ]}
+                  onPress={() => setClassificationFilter("new")}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      classificationFilter === "new" &&
+                        styles.filterChipTextActive,
+                    ]}
+                  >
+                    First-Time
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    classificationFilter === "old" && styles.filterChipActive,
+                  ]}
+                  onPress={() => setClassificationFilter("old")}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      classificationFilter === "old" &&
+                        styles.filterChipTextActive,
+                    ]}
+                  >
+                    Returning
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         )}
       </View>
 
+      {/* Content */}
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color="#0F4A2F" /><Text style={styles.loadingText}>Loading projects...</Text></View>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>Loading programs...</Text>
+        </View>
       ) : (
         <FlatList
-          data={filteredApps} renderItem={renderAppItem} keyExtractor={(item) => item.application_id.toString()}
+          data={filteredApps}
+          renderItem={renderAppItem}
+          keyExtractor={(item) => item.application_id.toString()}
           contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="clipboard-list-outline" size={64} color="#D1D5DB" />
-              <Text style={styles.emptyTitle}>No Active Projects</Text>
-              <Text style={styles.emptySubtitle}>{searchText ? `No results for "${searchText}"` : "No accepted applications found."}</Text>
+              <View style={styles.emptyIcon}>
+                <Ionicons
+                  name="folder-open-outline"
+                  size={48}
+                  color="#D1D5DB"
+                />
+              </View>
+              <Text style={styles.emptyTitle}>No Programs Found</Text>
+              <Text style={styles.emptySubtitle}>
+                {searchText
+                  ? `No results for "${searchText}"`
+                  : statusFilter === "accepted"
+                    ? "No programs need orientation"
+                    : statusFilter === "under_monitoring"
+                      ? "No programs under monitoring"
+                      : "No active applications found."}
+              </Text>
             </View>
           }
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchApplications(true)} tintColor="#0F4A2F" />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => fetchApplications(true)}
+              tintColor="#3B82F6"
+            />
+          }
         />
       )}
-
-      {/* ─── Detail Modal ─── */}
-      <Modal visible={detailModalVisible} animationType="slide" transparent={true} onRequestClose={closeDetail}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle} numberOfLines={1}>{selectedAppDetail?.application.title || "Loading..."}</Text>
-                <Text style={styles.modalSubtitle}>{selectedAppDetail?.application.group_name}</Text>
-              </View>
-              <Pressable onPress={closeDetail}><Ionicons name="close" size={24} color="#6B7280" /></Pressable>
-            </View>
-
-            {detailLoading ? (
-              <View style={styles.center}><ActivityIndicator size="large" color="#0F4A2F" /></View>
-            ) : selectedAppDetail ? (
-              <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
-                <View style={styles.statsSummary}>
-                  <View style={styles.statsCard}><Text style={styles.statsValue}>{selectedAppDetail.application.total_survived}</Text><Text style={styles.statsLabel}>Survived</Text></View>
-                  <View style={styles.statsCard}><Text style={[styles.statsValue, { color: "#DC2626" }]}>{selectedAppDetail.application.total_dead}</Text><Text style={styles.statsLabel}>Dead</Text></View>
-                  <View style={styles.statsCard}><Text style={styles.statsValue}>{selectedAppDetail.application.survival_rate}%</Text><Text style={styles.statsLabel}>Rate</Text></View>
-                </View>
-
-                {selectedAppDetail.application.site_details && (
-                  <View style={styles.appInfoBox}>
-                    <Text style={styles.appInfoLabel}>Site Details</Text>
-                    <Text style={styles.appInfoValue}>Area: {selectedAppDetail.application.site_details.total_area_hectares.toFixed(2)} ha</Text>
-                    {selectedAppDetail.application.site_details.ndvi_value && <Text style={styles.appInfoValue}>NDVI: {selectedAppDetail.application.site_details.ndvi_value.toFixed(2)}</Text>}
-                    {selectedAppDetail.application.site_details.accessibility && <Text style={styles.appInfoValue}>Access: {selectedAppDetail.application.site_details.accessibility}</Text>}
-                  </View>
-                )}
-
-                {selectedAppDetail.application.group_contact && (
-                  <View style={styles.contactBox}>
-                    <Ionicons name="call-outline" size={16} color="#0F4A2F" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.contactName}>{selectedAppDetail.application.group_contact.full_name}</Text>
-                      <Text style={styles.contactNumber}>{selectedAppDetail.application.group_contact.contact}</Text>
-                    </View>
-                  </View>
-                )}
-
-                <View style={styles.urgencySection}>
-                  <Text style={styles.urgencyLabel}>Monitoring Status:</Text>
-                  <UrgencyBadge days={selectedAppDetail.application.days_since_last_report} />
-                </View>
-
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Progress Reports</Text>
-                  <Text style={styles.sectionCount}>{selectedAppDetail.progress_reports.length} submitted</Text>
-                </View>
-
-                {selectedAppDetail.progress_reports.length === 0 ? (
-                  <View style={styles.noReports}><Ionicons name="clipboard-outline" size={32} color="#9CA3AF" /><Text style={styles.noReportsText}>No reports submitted yet</Text></View>
-                ) : (
-                  <FlatList data={selectedAppDetail.progress_reports} renderItem={renderReportItem} keyExtractor={(item) => item.report_id.toString()} scrollEnabled={false} style={{ marginBottom: 16 }} />
-                )}
-
-                <View style={styles.formSection}>
-                  <Text style={styles.formTitle}>Submit New Report</Text>
-                  <Text style={styles.label}>Report by Species</Text>
-                  <View style={styles.speciesBuilderBox}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        {allTreeSpecies.map(sp => (
-                          <TouchableOpacity key={sp.tree_specie_id} onPress={() => setSelectedSpeciesId(String(sp.tree_specie_id))}
-                            style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: selectedSpeciesId === String(sp.tree_specie_id) ? '#0F4A2F' : '#FFF', borderWidth: 1, borderColor: selectedSpeciesId === String(sp.tree_specie_id) ? '#0F4A2F' : '#E5E7EB' }}>
-                            <Text style={{ color: selectedSpeciesId === String(sp.tree_specie_id) ? '#FFF' : '#374151', fontSize: 12, fontWeight: '600' }}>{sp.name}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </ScrollView>
-                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-                      <View style={{ flex: 1 }}><Text style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>Survived</Text><TextInput style={styles.input} placeholder="0" keyboardType="numeric" value={tempSurvived} onChangeText={setTempSurvived} /></View>
-                      <View style={{ flex: 1 }}><Text style={{ fontSize: 11, color: '#6B7280', marginBottom: 4 }}>Dead</Text><TextInput style={styles.input} placeholder="0" keyboardType="numeric" value={tempDead} onChangeText={setTempDead} /></View>
-                    </View>
-                    <TouchableOpacity style={[styles.addSpeciesBtn, { opacity: selectedSpeciesId ? 1 : 0.5 }]} onPress={handleAddSpeciesToReport} disabled={!selectedSpeciesId}>
-                      <Ionicons name="add-circle" size={16} color="#FFF" /><Text style={styles.addSpeciesBtnText}>Add to Report</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {reportSpeciesList.length > 0 && (
-                    <View style={{ marginBottom: 12 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#374151', marginBottom: 6 }}>Included Species ({reportSpeciesList.length})</Text>
-                      {reportSpeciesList.map((sp, idx) => (
-                        <View key={idx} style={styles.addedSpeciesItem}>
-                          <View><Text style={styles.addedSpeciesName}>{sp.species_name}</Text>
-                            <Text style={styles.addedSpeciesCounts}><Text style={{ color: '#15803D' }}>{sp.no_survived} survived</Text><Text style={{ color: '#9CA3AF' }}> / </Text><Text style={{ color: '#DC2626' }}>{sp.no_dead} dead</Text></Text>
-                          </View>
-                          <TouchableOpacity onPress={() => setReportSpeciesList(reportSpeciesList.filter((_, i) => i !== idx))}><Ionicons name="close-circle" size={22} color="#DC2626" /></TouchableOpacity>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  <Text style={styles.label}>Remarks</Text>
-                  <TextInput style={[styles.input, styles.textArea]} placeholder="Notes about plant condition..." multiline numberOfLines={3} value={description} onChangeText={setDescription} />
-
-                  <Text style={styles.label}>Proof Image</Text>
-                  <TouchableOpacity style={styles.imageUploadBtn} onPress={pickImage}>
-                    <Ionicons name="image-outline" size={24} color="#0F4A2F" />
-                    <Text style={styles.imageBtnText}>{proofImage ? proofImageName : "Tap to upload group photo"}</Text>
-                  </TouchableOpacity>
-                  {proofImage && <Image source={{ uri: proofImage }} style={styles.imagePreview} />}
-
-                  <TouchableOpacity style={[styles.submitBtn, { opacity: (submitting || reportSpeciesList.length === 0) ? 0.6 : 1 }]} onPress={handleSubmitReport} disabled={submitting || reportSpeciesList.length === 0}>
-                    {submitting ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.submitBtnText}>Submit Report</Text>}
-                  </TouchableOpacity>
-                </View>
-                <View style={{ height: 20 }} />
-              </ScrollView>
-            ) : null}
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </View>
   );
 };
 
 // ─── Styles ────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F4F7F5" },
-  header: { paddingHorizontal: 20, paddingBottom: 16, backgroundColor: "#F4F7F5" },
-  headerEyebrow: { fontSize: 12, color: "#6B7280", fontWeight: "600", marginBottom: 4, letterSpacing: 0.2 },
-  headerTitle: { fontSize: 32, fontWeight: "800", color: "#111827", letterSpacing: -0.5, marginBottom: 16 },
-  
-  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 12, paddingHorizontal: 14, height: 46, gap: 8, shadowColor: "#0F172A", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 1 },
-  searchInput: { flex: 1, fontSize: 14, color: "#111827", fontWeight: "500" },
-  filterToggleBtn: { padding: 4 },
-
-  quickStatsStrip: { marginTop: 16, maxHeight: 60 },
-  quickStatsContent: { gap: 10, paddingRight: 20 },
-  quickStatBadge: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, alignItems: "center", minWidth: 70 },
-  quickStatValue: { fontSize: 16, fontWeight: "800" },
-  quickStatLabel: { fontSize: 10, color: "#4B5563", fontWeight: "600", marginTop: 2 },
-
-  filterPanel: { marginTop: 12, padding: 12, backgroundColor: "#F9FAFB", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB" },
-  filterRow: { marginBottom: 12 },
-  filterLabel: { fontSize: 11, fontWeight: "700", color: "#6B7280", marginBottom: 6, textTransform: "uppercase" },
-  filterOptions: { flexDirection: "row", gap: 8 },
-  filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E5E7EB" },
-  filterChipActive: { backgroundColor: "#0F4A2F", borderColor: "#0F4A2F" },
-  filterChipText: { fontSize: 12, color: "#374151", fontWeight: "600" },
-  filterChipTextActive: { color: "#FFF" },
-
-  listContent: { padding: 16, paddingBottom: 32 },
-  card: { flexDirection: "row", backgroundColor: "#FFF", borderRadius: 16, marginBottom: 12, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
-  cardAccent: { width: 6 },
-  cardBody: { flex: 1, padding: 16 },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: "#111827", flex: 1, marginRight: 8, marginBottom: 4 },
-  
-  urgencyBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, gap: 4 },
-  urgencyBadgeCompact: { paddingHorizontal: 6, paddingVertical: 2 },
-  urgencyDot: { width: 6, height: 6, borderRadius: 3 },
-  urgencyText: { fontSize: 10, fontWeight: "700" },
-  urgencyTextCompact: { fontSize: 9 },
-  
-  classificationBadge: { backgroundColor: "#E0E7FF", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  classificationText: { fontSize: 10, fontWeight: "700", color: "#4338CA" },
-  
-  orgName: { fontSize: 14, color: "#6B7280", marginBottom: 8 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 },
-  metaText: { fontSize: 13, color: "#4B5563" },
-  
-  statsRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#F9FAFB", borderRadius: 8, padding: 8, marginBottom: 8 },
-  statItem: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4 },
-  statText: { fontSize: 12, color: "#374151" },
-  statDivider: { width: 1, height: 20, backgroundColor: "#E5E7EB", marginHorizontal: 8 },
-  
-  actionFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#F3F4F6" },
-  actionText: { fontSize: 13, fontWeight: "600", color: "#0F4A2F" },
-
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  loadingText: { marginTop: 10, color: "#6B7280" },
-  emptyState: { alignItems: "center", marginTop: 60, gap: 12 },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#374151" },
-  emptySubtitle: { fontSize: 14, color: "#6B7280", textAlign: "center", maxWidth: 250 },
-
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modalContent: { backgroundColor: "#FFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, height: "90%", padding: 20 },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, paddingRight: 8 },
-  modalTitle: { fontSize: 18, fontWeight: "800", color: "#111827" },
-  modalSubtitle: { fontSize: 13, color: "#6B7280" },
-  modalScroll: { flex: 1 },
-
-  statsSummary: { flexDirection: "row", gap: 10, marginBottom: 16 },
-  statsCard: { flex: 1, backgroundColor: "#F0FDF4", padding: 12, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: "#DCFCE7" },
-  statsValue: { fontSize: 20, fontWeight: "800", color: "#0F4A2F" },
-  statsLabel: { fontSize: 10, color: "#6B7280", marginTop: 4 },
-
-  appInfoBox: { backgroundColor: "#F0FDF4", padding: 12, borderRadius: 12, marginBottom: 16 },
-  appInfoLabel: { fontSize: 12, fontWeight: "600", color: "#15803D", marginBottom: 4 },
-  appInfoValue: { fontSize: 13, color: "#166534", marginBottom: 2 },
-
-  contactBox: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#EFF6FF", padding: 12, borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: "#DBEAFE" },
-  contactName: { fontSize: 13, fontWeight: "700", color: "#1E40AF" },
-  contactNumber: { fontSize: 12, color: "#3B82F6" },
-
-  urgencySection: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16, padding: 12, backgroundColor: "#F9FAFB", borderRadius: 12 },
-  urgencyLabel: { fontSize: 13, fontWeight: "600", color: "#374151" },
-
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#111827" },
-  sectionCount: { fontSize: 12, color: "#6B7280" },
-
-  noReports: { alignItems: "center", padding: 24, backgroundColor: "#F9FAFB", borderRadius: 12, marginBottom: 16 },
-  noReportsText: { marginTop: 8, color: "#6B7280", fontSize: 13 },
-
-  reportCard: { backgroundColor: "#F9FAFB", borderRadius: 12, padding: 12, marginBottom: 10 },
-  reportHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  reportDate: { fontSize: 12, color: "#6B7280" },
-  reportBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, gap: 4 },
-  reportDot: { width: 5, height: 5, borderRadius: 3 },
-  reportBadgeText: { fontSize: 9, fontWeight: "700", textTransform: "uppercase" },
-  reportStats: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  reportStat: { flex: 1, alignItems: "center" },
-  reportStatValue: { fontSize: 16, fontWeight: "800", color: "#0F4A2F" },
-  reportStatLabel: { fontSize: 10, color: "#6B7280", marginTop: 2 },
-  reportDivider: { width: 1, height: 28, backgroundColor: "#E5E7EB" },
-  
-  breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2, marginTop: 4 },
-  breakdownSpecies: { fontSize: 12, color: '#374151', fontWeight: '500' },
-  breakdownCounts: { fontSize: 12, color: '#374151' },
-
-  reportDesc: { fontSize: 12, color: "#4B5563", lineHeight: 16, marginTop: 6 },
-  reportImageTag: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, alignSelf: "flex-start", backgroundColor: "#E6F4EC", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  reportImageText: { fontSize: 10, fontWeight: "600", color: "#0F4A2F" },
-
-  formSection: { marginTop: 8, paddingTop: 16, borderTopWidth: 1, borderTopColor: "#E5E7EB" },
-  formTitle: { fontSize: 16, fontWeight: "700", color: "#111827", marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 6, marginTop: 12 },
-  input: { backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: "#111827" },
-  textArea: { height: 80, textAlignVertical: "top" },
-  
-  speciesBuilderBox: { backgroundColor: '#F9FAFB', padding: 12, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB' },
-  addSpeciesBtn: { flexDirection: 'row', backgroundColor: '#0F4A2F', padding: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 6 },
-  addSpeciesBtnText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
-  
-  addedSpeciesItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F0FDF4', padding: 10, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#DCFCE7' },
-  addedSpeciesName: { fontSize: 13, fontWeight: '600', color: '#111827' },
-  addedSpeciesCounts: { fontSize: 11, color: '#6B7280' },
-
-  imageUploadBtn: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#F9FAFB", borderWidth: 2, borderColor: "#D1D5DB", borderStyle: "dashed", borderRadius: 12, padding: 16, justifyContent: "center" },
-  imageBtnText: { fontSize: 13, color: "#4B5563", fontWeight: "500" },
-  imagePreview: { width: "100%", height: 140, borderRadius: 12, marginTop: 10 },
-  submitBtn: { backgroundColor: "#0F4A2F", borderRadius: 14, padding: 14, alignItems: "center", marginTop: 16, shadowColor: "#0F4A2F", shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
-  submitBtnText: { color: "#FFF", fontSize: 15, fontWeight: "700" },
+  container: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: "#F9FAFB",
+  },
+  headerEyebrow: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "600",
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#111827",
+    letterSpacing: -0.5,
+    marginBottom: 16,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    height: 50,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 16,
+  },
+  searchIcon: {
+    marginRight: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: "#111827",
+    fontWeight: "500",
+  },
+  filterButton: {
+    padding: 4,
+  },
+  tabContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 16,
+  },
+  tab: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 0, // Change from flex: 1 to flex: 0
+    minWidth: 100, // Add minimum width
+  },
+  tabText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  activeTabText: {
+    fontWeight: "700",
+    color: "#111827",
+  },
+  tabBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginLeft: 2,
+  },
+  tabBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  filterPanel: {
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 16,
+  },
+  filterRow: {
+    marginBottom: 16,
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6B7280",
+    marginBottom: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  filterChips: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  filterChipActive: {
+    backgroundColor: "#3B82F6",
+    borderColor: "#3B82F6",
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  filterChipTextActive: {
+    color: "#FFFFFF",
+  },
+  listContent: {
+    padding: 20,
+    paddingBottom: 100,
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    marginBottom: 14,
+    borderLeftWidth: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: "hidden",
+  },
+  cardContent: {
+    padding: 18,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  urgencyChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  urgencyText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 4,
+    lineHeight: 22,
+  },
+  groupName: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginBottom: 10,
+  },
+  classificationInline: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    fontWeight: "500",
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 14,
+  },
+  locationText: {
+    fontSize: 13,
+    color: "#6B7280",
+    flex: 1,
+  },
+  statsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+  },
+  statBlock: {
+    flex: 1,
+  },
+  survivalNumbers: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  survivedText: {
+    color: "#111827",
+    fontWeight: "800",
+  },
+  slashText: {
+    color: "#D1D5DB",
+    fontWeight: "500",
+  },
+  deadText: {
+    color: "#DC2626",
+    fontWeight: "700",
+  },
+  statLabel: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    marginTop: 3,
+  },
+  rateValue: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: "#F3F4F6",
+    marginHorizontal: 16,
+  },
+  cardFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 12,
+  },
+  actionText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#059669",
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 16,
+    color: "#6B7280",
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  emptyState: {
+    alignItems: "center",
+    marginTop: 80,
+    gap: 16,
+    paddingHorizontal: 40,
+  },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#374151",
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 20,
+  },
 });
 
 export default OnsiteInspectorMonitoring;

@@ -66,13 +66,16 @@ def serialize_seedling_request_species(seedling_request):
 def serialize_progress_report_species(progress_report):
     """
     Serialize all species for a progress report.
-    Returns a list of species with survival data.
+    Returns a list of species with survival data including baseline and additions.
     """
     return [{
         "species_id": s.tree_species.tree_specie_id,
         "species_name": s.tree_species.name,
+        "no_planted": s.no_planted,
+        "no_added_by_grower": s.no_added_by_grower,
         "no_survived": s.no_survived,
         "no_dead": s.no_dead,
+        "total_accounted": s.no_planted + s.no_added_by_grower,
         "total": s.no_survived + s.no_dead,
         "survival_rate": s.survival_rate,
     } for s in progress_report.report_species.select_related('tree_species').all()]
@@ -295,14 +298,19 @@ def get_application(request, application_id):
             "submitted_at": sr.submitted_at.isoformat() if sr.submitted_at else None
         } for sr in seedling_requests],
         
+        # ✅ UPDATED: Progress Reports with visit_type and agreement_image
         "progress_reports": [{
             "report_id": pr.progress_report_id,
+            "visit_type": pr.visit_type,
+            "orientation_conducted": pr.orientation_conducted,
             "total_survived": pr.total_survived,
             "total_dead": pr.total_dead,
+            "total_added_by_grower": pr.total_added_by_grower,
             "species": serialize_progress_report_species(pr),
             "description": pr.description,
             "status": pr.status,
             "proof_image": get_cloudinary_url(str(pr.proof_image_monitor_required)) if pr.proof_image_monitor_required else None,
+            "agreement_image": get_cloudinary_url(str(pr.agreement_image)) if pr.agreement_image else None,
             "submitted_at": pr.submitted_at.isoformat() if pr.submitted_at else None
         } for pr in progress_reports],
         "latest_reason": {
@@ -436,6 +444,9 @@ def get_ongoing_applications(request):
                 "full_name": f"{app.user.profile.first_name} {app.user.profile.last_name}",
             }
         
+        # ✅ NEW: Add visit_type_hint for mobile app
+        visit_type_hint = "needs_orientation" if app.status == 'accepted' else "needs_ongoing"
+        
         data.append({
             "application_id": app.application_id,
             "title": app.title,
@@ -443,6 +454,7 @@ def get_ongoing_applications(request):
             "group_contact": group_contact,
             "status": app.status,
             "classification": app.classification,
+            "visit_type_hint": visit_type_hint,  # ✅ NEW
             "site_name": app.site.name if app.site else None,
             "barangay": (
                 app.site.reforestation_area.barangay.name 
@@ -609,14 +621,19 @@ def get_tree_grower_application(request):
             "submitted_at": sr.submitted_at.isoformat() if sr.submitted_at else None
         } for sr in seedling_requests],
         
+        # ✅ UPDATED: Progress Reports with visit_type and agreement_image
         "progress_reports": [{
             "report_id": pr.progress_report_id,
+            "visit_type": pr.visit_type,
+            "orientation_conducted": pr.orientation_conducted,
             "total_survived": pr.total_survived,
             "total_dead": pr.total_dead,
+            "total_added_by_grower": pr.total_added_by_grower,
             "species": serialize_progress_report_species(pr),
             "description": pr.description,
             "status": pr.status,
             "proof_image": get_cloudinary_url(str(pr.proof_image_monitor_required)) if pr.proof_image_monitor_required else None,
+            "agreement_image": get_cloudinary_url(str(pr.agreement_image)) if pr.agreement_image else None,
             "submitted_at": pr.submitted_at.isoformat() if pr.submitted_at else None
         } for pr in progress_reports],
         "latest_reason": {
@@ -668,8 +685,8 @@ def evaluate_application(request, application_id):
             app.orientation_date = orientation_date
             app.status = status
             
-            if 'agreement_image' in request.FILES:
-                app.agreement_image = request.FILES['agreement_image']
+            # ️ DEPRECATED: Agreement image upload removed from evaluation
+            # Agreement is now uploaded during initial visit by inspector
             app.save()
 
             Reason.objects.create(
@@ -844,7 +861,7 @@ def complete_application(request, application_id):
                 create_notification(
                     user=app.user,
                     type='success',
-                    title='🏆 Program Completed!',
+                    title=' Program Completed!',
                     description=f'Congratulations! Your tree planting program "{app.title}" has been successfully completed. Thank you for your valuable contribution to Ormoc City\'s reforestation efforts! You are now eligible to apply for future programs.',
                     link='/tree-growers/applications'
                 )
@@ -950,12 +967,12 @@ def create_seedling_request(request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PROGRESS REPORTS (Onsite Monitoring)
+# PROGRESS REPORTS (Onsite Monitoring) - ✅ UPDATED
 # ─────────────────────────────────────────────────────────────────────────────
 
 @csrf_exempt
 def create_progress_report(request):
-    """OnsiteInspector: Submit monitoring report"""
+    """OnsiteInspector: Submit monitoring report (Initial or Ongoing)"""
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
 
@@ -964,11 +981,16 @@ def create_progress_report(request):
         return JsonResponse({'error': 'Unauthorized: OnsiteInspector only'}, status=403)
 
     app_id = request.POST.get('application_id')
+    visit_type = request.POST.get('visit_type', 'initial')
     description = request.POST.get('description', '').strip()
     report_species_json = request.POST.get('report_species')
     
     if not app_id or not report_species_json:
         return JsonResponse({'error': 'application_id and report_species required'}, status=400)
+
+    # ✅ NEW: ENFORCE PROOF IMAGE FOR ALL VISITS (Initial & Ongoing)
+    if 'proof_image' not in request.FILES:
+        return JsonResponse({'error': 'Proof image is required for all monitoring visits'}, status=400)
 
     try:
         report_species = json.loads(report_species_json)
@@ -981,12 +1003,27 @@ def create_progress_report(request):
     if app.status not in ['accepted', 'under_monitoring']:
         return JsonResponse({'error': 'Application not under monitoring'}, status=400)
 
+    if visit_type not in ['initial', 'ongoing']:
+        return JsonResponse({'error': 'visit_type must be "initial" or "ongoing"'}, status=400)
+
+    # ✅ Initial visit specific validations
+    if visit_type == 'initial':
+        if 'agreement_image' not in request.FILES:
+            return JsonResponse({'error': 'agreement_image is required for initial visit'}, status=400)
+        
+        orientation_conducted = request.POST.get('orientation_conducted', 'false').lower() == 'true'
+        if not orientation_conducted:
+            return JsonResponse({'error': 'orientation_conducted must be true for initial visit'}, status=400)
+
     try:
         with transaction.atomic():
             report = ProgressReport.objects.create(
                 application=app,
+                visit_type=visit_type,
                 description=description,
-                proof_image_monitor_required=request.FILES.get('proof_image'),
+                proof_image_monitor_required=request.FILES['proof_image'],  # ✅ Now strictly required
+                agreement_image=request.FILES.get('agreement_image') if visit_type == 'initial' else None,
+                orientation_conducted=(request.POST.get('orientation_conducted', 'false').lower() == 'true') if visit_type == 'initial' else False,
                 status='pending'
             )
 
@@ -997,6 +1034,8 @@ def create_progress_report(request):
                 tree_species_id = item.get('tree_species_id')
                 no_survived = item.get('no_survived', 0)
                 no_dead = item.get('no_dead', 0)
+                no_planted = item.get('no_planted', 0)
+                no_added_by_grower = item.get('no_added_by_grower', 0)
 
                 if not tree_species_id:
                     raise ValueError(f"Missing tree_species_id: {item}")
@@ -1006,11 +1045,17 @@ def create_progress_report(request):
                 ProgressReportSpecies.objects.create(
                     progress_report=report,
                     tree_species=tree_species,
+                    no_planted=int(no_planted),
+                    no_added_by_grower=int(no_added_by_grower),
                     no_survived=int(no_survived),
                     no_dead=int(no_dead),
                 )
 
-        return JsonResponse({'message': 'Progress report submitted', 'report_id': report.progress_report_id}, status=201)
+        return JsonResponse({
+            'message': 'Progress report submitted', 
+            'report_id': report.progress_report_id,
+            'visit_type': report.visit_type
+        }, status=201)
     except Tree_species.DoesNotExist as e:
         return JsonResponse({'error': f'Tree species not found: {str(e)}'}, status=400)
     except Exception as e:
@@ -1019,7 +1064,7 @@ def create_progress_report(request):
 
 @csrf_exempt
 def update_progress_report(request, report_id):
-    """DataManager: Accept/Reject progress report"""
+    """DataManager: Accept/Reject progress report with auto status transition"""
     if request.method != 'PUT':
         return JsonResponse({'error': 'Only PUT allowed'}, status=405)
 
@@ -1047,6 +1092,13 @@ def update_progress_report(request, report_id):
             report.status = status
             report.save()
             
+            # ✅ NEW: Auto-transition Application status from 'accepted' to 'under_monitoring'
+            # when approving an INITIAL visit report
+            if status == 'accepted' and report.visit_type == 'initial':
+                if report.application.status == 'accepted':
+                    report.application.status = 'under_monitoring'
+                    report.application.save()
+            
             Reason.objects.create(
                 user=user,
                 application=report.application,
@@ -1055,7 +1107,10 @@ def update_progress_report(request, report_id):
                 status=status
             )
 
-        return JsonResponse({'message': f'Report {status}'}, status=200)
+        return JsonResponse({
+            'message': f'Report {status}',
+            'application_status': report.application.status  # ✅ Return updated status
+        }, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -1083,15 +1138,19 @@ def get_progress_reports(request):
 
     data = [{
         "report_id": r.progress_report_id,
+        "visit_type": r.visit_type,
+        "orientation_conducted": r.orientation_conducted,
         "application_id": r.application.application_id,
         "application_title": r.application.title,
         "application_status": r.application.status,
         "total_survived": r.total_survived,
         "total_dead": r.total_dead,
+        "total_added_by_grower": r.total_added_by_grower,
         "species": serialize_progress_report_species(r),
         "description": r.description,
         "status": r.status,
         "proof_image": get_cloudinary_url(str(r.proof_image_monitor_required)) if r.proof_image_monitor_required else None,
+        "agreement_image": get_cloudinary_url(str(r.agreement_image)) if r.agreement_image else None,
         "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None
     } for r in qs]
 
@@ -1204,6 +1263,7 @@ def get_tree_grower_application_history(request):
             "total_seedling_survived": total_survived,
             "reports": [{
                 "report_id": r.progress_report_id,
+                "visit_type": r.visit_type,
                 "description": r.description or "No description provided",
                 "status": r.status,
                 "total_seedling_planted": r.total_plants,
@@ -1488,6 +1548,16 @@ def delete_application(request, application_id):
                         failed_files.append(f'progress_report_{pr.progress_report_id} (not found)')
                 except Exception as e:
                     failed_files.append(f'progress_report_{pr.progress_report_id}: {str(e)}')
+            
+            if pr.agreement_image:
+                try:
+                    success = delete_cloudinary_resource(pr.agreement_image, resource_type='image')
+                    if success:
+                        deleted_files.append(f'progress_report_{pr.progress_report_id}_agreement')
+                    else:
+                        failed_files.append(f'progress_report_{pr.progress_report_id}_agreement (not found)')
+                except Exception as e:
+                    failed_files.append(f'progress_report_{pr.progress_report_id}_agreement: {str(e)}')
         
         app.delete()
         
@@ -1857,10 +1927,64 @@ def get_monitoring_stats(request):
         effective_date__lt=today - timedelta(days=30)
     ).count()
 
+    # ✅ NEW: Counts for the frontend workflow tabs
+    accepted_count = active_apps.filter(status='accepted').count()
+    under_monitoring_count = active_apps.filter(status='under_monitoring').count()
+
     return JsonResponse({
         'total': total,
+        'accepted': accepted_count,               # ✅ ADDED
+        'under_monitoring': under_monitoring_count, # ✅ ADDED
         'no_report': no_report,
         'days_30_plus': days_30_plus,
         'days_60_plus': days_60_plus,
         'days_90_plus': days_90_plus,
+    }, status=200)
+
+@csrf_exempt
+def get_monitoring_baseline(request, application_id):
+    """
+    Fetches the latest accepted progress report for an application.
+    Used by the mobile app to pre-fill the 'Ongoing' monitoring form 
+    with the previous visit's baseline data.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    app = get_object_or_404(Application, application_id=application_id)
+    
+    # Find the latest ACCEPTED report
+    latest_report = ProgressReport.objects.filter(
+        application=app, 
+        status='accepted'
+    ).order_by('-created_at').first()
+
+    if not latest_report:
+        return JsonResponse({
+            'message': 'No baseline found. This is the first visit.',
+            'baseline': None
+        }, status=200)
+
+    # Serialize the species data from the last report
+    baseline_species = []
+    for species_record in latest_report.report_species.select_related('tree_species').all():
+        baseline_species.append({
+            "species_id": species_record.tree_species.tree_specie_id,
+            "species_name": species_record.tree_species.name,
+            "previous_planted": species_record.no_planted,
+            "previous_added": species_record.no_added_by_grower,
+            "previous_survived": species_record.no_survived,
+            "previous_dead": species_record.no_dead,
+        })
+
+    return JsonResponse({
+        'baseline': {
+            "report_id": latest_report.progress_report_id,
+            "visit_date": latest_report.created_at.isoformat(),
+            "species_data": baseline_species
+        }
     }, status=200)
