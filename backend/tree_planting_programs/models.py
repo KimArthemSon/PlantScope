@@ -151,6 +151,7 @@ class Application(models.Model):
 # ─────────────────────────────────────────────
 # SEEDLING REQUEST (Main Request Record)
 # ─────────────────────────────────────────────
+
 class SeedlingRequest(models.Model):
     """
     Seedling request model - submitted WITH application or as additional request.
@@ -159,8 +160,15 @@ class SeedlingRequest(models.Model):
 
     STATUS_CHOICES = [
         ('pending', 'Pending'),
-        ('accepted', 'Accepted'),
-        ('rejected', 'Rejected'),
+        ('accepted', 'Accepted'),       # Approved by DataManager, awaiting handover
+        ('confirmed', 'Confirmed'),     # Verified by Onsite Inspector
+        ('rejected', 'Rejected'),       # Rejected by DataManager
+        ('cancelled', 'Cancelled'),     # Cancelled by Tree Grower or DataManager
+    ]
+
+    FULFILLMENT_CHOICES = [
+        ('pickup', 'Grower Pickup'),
+        ('deliver', 'Delivered to Site'),
     ]
 
     # Primary Key
@@ -168,7 +176,7 @@ class SeedlingRequest(models.Model):
 
     # Foreign Key to Application
     application = models.ForeignKey(
-        Application,
+        'Application', # String reference to avoid circular imports if needed, or just Application
         on_delete=models.CASCADE,
         related_name='seedling_requests'
     )
@@ -179,8 +187,6 @@ class SeedlingRequest(models.Model):
         null=True,
         help_text="Additional details about seedling request"
     )
-    
-   
 
     # ✅ Summary total (calculated from SeedlingRequestSpecies)
     no_request_seedling = models.IntegerField(
@@ -188,21 +194,58 @@ class SeedlingRequest(models.Model):
         help_text="Total number of seedlings requested (summary)"
     )
 
-    # Status
+    # ✅ NEW: Workflow & Assignment Fields
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default='pending'
     )
+    
+    fulfillment_type = models.CharField(
+        max_length=10,
+        choices=FULFILLMENT_CHOICES,
+        null=True,
+        blank=True,
+        help_text="How the seedlings will be received"
+    )
+    
+    assigned_inspector = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_seedling_requests',
+        limit_choices_to={'user_role': 'OnsiteInspector'},
+        help_text="Inspector assigned to verify receipt"
+    )
+
+    # ✅ NEW: Reason & Proof Fields
+    reason = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Reason for rejection or cancellation"
+    )
+    
+    # Keeping reason_accepted for backward compatibility, but 'reason' is now primary for rejections/cancellations
     reason_accepted = models.TextField(
         blank=True,
         null=True,
-        help_text="Reason/notes when accepted"
+        help_text="Notes when accepted (Legacy)"
+    )
+
+    proof_of_delivery = CloudinaryField(
+        'proof_of_delivery',
+        folder='seedling_proofs',
+        resource_type='image',
+        blank=True,
+        null=True,
+        help_text="Photo proof of seedling handover/delivery"
     )
 
     # Timestamps
     submitted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Seedling Request"
@@ -210,6 +253,7 @@ class SeedlingRequest(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['application', 'status']),
+            models.Index(fields=['assigned_inspector', 'status']),
             models.Index(fields=['created_at']),
         ]
 
@@ -219,6 +263,7 @@ class SeedlingRequest(models.Model):
     def save(self, *args, **kwargs):
         """Auto-set submitted_at on first save"""
         if not self.submitted_at:
+            from django.utils import timezone
             self.submitted_at = timezone.now()
         super().save(*args, **kwargs)
 

@@ -1,5 +1,6 @@
 from django.urls import path
-from . import head_views, views, file_views,dashboard_views
+from . import head_views, views, file_views,dashboard_views,request_views
+
 urlpatterns = [
     # ─── APPLICATIONS ───────────────────────────────────────────────
     path('get_applications/', views.get_applications, name='get_applications'),
@@ -12,10 +13,8 @@ urlpatterns = [
     path('complete_application/<int:application_id>/', views.complete_application, name='complete_application'),
 
     # ─── SEEDLING REQUESTS (Assistance / Additional) ────────────────
-    path('get_seedling_requests/', views.get_seedling_requests, name='get_seedling_requests'),
     path('create_seedling_request/', views.create_seedling_request, name='create_seedling_request'),
-    path('update_seedling_request/<int:request_id>/', views.update_seedling_request, name='update_seedling_request'),
-    path('delete_seedling_request/<int:request_id>/', views.delete_seedling_request, name='delete_seedling_request'),
+  
 
     # ─── PROGRESS REPORTS (Onsite Monitoring) ───────────────────────
     path('get_progress_reports/', views.get_progress_reports, name='get_progress_reports'),
@@ -55,4 +54,19 @@ urlpatterns = [
     path('get_monitoring_stats/', views.get_monitoring_stats, name='get_monitoring_stats'),
      # In urls.py
     #   path('application/<int:application_id>/download-maintenance-plan-debug/', file_views.download_maintenance_plan_debug, name="download_maintenance_plan_debug"),
+
+        # Tree Grower Endpoints
+    path('requests/my-requests/', request_views.get_my_seedling_requests, name='get_my_seedling_requests'),
+    path('requests/<int:request_id>/detail/', request_views.get_seedling_request_detail, name='get_seedling_request_detail'),
+    path('requests/<int:request_id>/cancel/', request_views.cancel_seedling_request, name='cancel_seedling_request'),
+
+    # DataManager Endpoints
+    path('requests/manager-list/', request_views.get_manager_seedling_requests, name='get_manager_seedling_requests'),
+    path('requests/inspectors/', request_views.get_available_inspectors, name='get_available_inspectors'), # ✅ ADDED THIS ONE
+    path('requests/<int:request_id>/approve/', request_views.approve_seedling_request, name='approve_seedling_request'),
+    path('requests/<int:request_id>/reject/', request_views.reject_seedling_request, name='reject_seedling_request'),
+
+    # Onsite Inspector Endpoints
+    path('requests/inspector-tasks/', request_views.get_inspector_seedling_tasks, name='get_inspector_seedling_tasks'),
+    path('requests/<int:request_id>/confirm/', request_views.confirm_seedling_delivery, name='confirm_seedling_delivery'),
 ]

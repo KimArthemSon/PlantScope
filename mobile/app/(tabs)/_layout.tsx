@@ -38,13 +38,22 @@ export default function TabLayout() {
 
   useEffect(() => {
     const fetchUserRole = async () => {
-      if (!isOnline) { setLoading(false); return; }
+      if (!isOnline) {
+        setLoading(false);
+        return;
+      }
       try {
         const token = await getToken();
-        if (!token) { setLoading(false); return; }
+        if (!token) {
+          setLoading(false);
+          return;
+        }
         const res = await fetch(`${API}/get_me/`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
         });
         if (res.ok) await res.json();
       } catch (error) {
@@ -54,9 +63,10 @@ export default function TabLayout() {
       }
     };
 
-    if (isOnline) { fetchUserRole(); } 
-    else { 
-      AsyncStorage.getItem(USER_DATA_KEY).then(cached => {
+    if (isOnline) {
+      fetchUserRole();
+    } else {
+      AsyncStorage.getItem(USER_DATA_KEY).then((cached) => {
         if (cached) JSON.parse(cached);
         setLoading(false);
       });
@@ -71,13 +81,23 @@ export default function TabLayout() {
         router.replace("/Area");
       }
       if (!hasShownOfflineAlert) {
-        warning("Offline Mode", "You are currently offline. Only Assessment is available.");
+        warning(
+          "Offline Mode",
+          "You are currently offline. Only Assessment is available.",
+        );
         setHasShownOfflineAlert(true);
       }
     } else if (isOnline) {
       setHasShownOfflineAlert(false);
     }
-  }, [shouldHideAllTabs, loading, pathname, hasShownOfflineAlert, isOnline, warning]);
+  }, [
+    shouldHideAllTabs,
+    loading,
+    pathname,
+    hasShownOfflineAlert,
+    isOnline,
+    warning,
+  ]);
 
   if (loading) {
     return (
@@ -91,12 +111,12 @@ export default function TabLayout() {
   return (
     <>
       {/* ✅ STATUS BAR CONFIGURATION */}
-      <StatusBar 
-        barStyle="dark-content" 
-        backgroundColor="rgba(0,0,0,0.05)" 
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="rgba(0,0,0,0.05)"
         translucent={false}
       />
-      
+
       <Tabs
         screenOptions={{
           headerShown: false,
@@ -120,10 +140,10 @@ export default function TabLayout() {
           },
           tabBarActiveTintColor: "#0F4A2F",
           tabBarInactiveTintColor: "#9CA3AF",
-          tabBarLabelStyle: { 
-            fontSize: 11, 
-            fontWeight: "600", 
-            marginTop: 4 
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: "600",
+            marginTop: 4,
           },
           // ✅ ADD SPACING ABOVE TAB BAR CONTENT
           tabBarContentContainerStyle: {
@@ -131,23 +151,31 @@ export default function TabLayout() {
           },
         }}
       >
-        <Tabs.Screen 
-          name="home" 
-          options={{ 
+        <Tabs.Screen
+          name="home"
+          options={{
             tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? "home" : "home-outline"} size={24} color={color} />
-            ), 
-            tabBarLabel: "Home" 
-          }} 
+              <Ionicons
+                name={focused ? "home" : "home-outline"}
+                size={24}
+                color={color}
+              />
+            ),
+            tabBarLabel: "Home",
+          }}
         />
-        <Tabs.Screen 
-          name="Area" 
-          options={{ 
+        <Tabs.Screen
+          name="Area"
+          options={{
             tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? "layers" : "layers-outline"} size={24} color={color} />
-            ), 
-            tabBarLabel: "Assess" 
-          }} 
+              <Ionicons
+                name={focused ? "layers" : "layers-outline"}
+                size={24}
+                color={color}
+              />
+            ),
+            tabBarLabel: "Assess",
+          }}
         />
         {/* <Tabs.Screen 
           name="map" 
@@ -158,43 +186,68 @@ export default function TabLayout() {
             tabBarLabel: "Map" 
           }} 
         /> */}
-        <Tabs.Screen 
-          name="monitoring" 
-          options={{ 
+
+        <Tabs.Screen
+          name="delivery"
+          options={{
             tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? "clipboard" : "clipboard-outline"} size={24} color={color} />
-            ), 
-            tabBarLabel: "Reports" 
-          }} 
+              <MaterialCommunityIcons
+                name={focused ? "truck-delivery" : "truck-delivery-outline"}
+                size={24}
+                color={color}
+              />
+            ),
+            tabBarLabel: "Deliveries",
+          }}
         />
-        <Tabs.Screen 
-          name="profile" 
-          options={{ 
+
+        <Tabs.Screen
+          name="monitoring"
+          options={{
             tabBarIcon: ({ color, focused }) => (
-              <Ionicons name={focused ? "person" : "person-outline"} size={24} color={color} />
-            ), 
-            tabBarLabel: "Profile" 
-          }} 
+              <Ionicons
+                name={focused ? "clipboard" : "clipboard-outline"}
+                size={24}
+                color={color}
+              />
+            ),
+            tabBarLabel: "Reports",
+          }}
+        />
+
+        <Tabs.Screen
+          name="profile"
+          options={{
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons
+                name={focused ? "person" : "person-outline"}
+                size={24}
+                color={color}
+              />
+            ),
+            tabBarLabel: "Profile",
+          }}
         />
         <Tabs.Screen name="notifications" options={{ href: null }} />
-         <Tabs.Screen name="map" options={{ href: null }} />
-           <Tabs.Screen name="reports" options={{ href: null }} />
+        <Tabs.Screen name="map" options={{ href: null }} />
+        <Tabs.Screen name="reports" options={{ href: null }} />
+        <Tabs.Screen name="deliverydetail" options={{ href: null }} />
       </Tabs>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: { 
-    flex: 1, 
-    justifyContent: "center", 
-    alignItems: "center", 
-    backgroundColor: "#FFFFFF" 
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
   },
-  loadingText: { 
-    marginTop: 12, 
-    fontSize: 14, 
-    color: "#6B7280", 
-    fontWeight: "500" 
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: "#6B7280",
+    fontWeight: "500",
   },
 });

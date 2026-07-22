@@ -99,6 +99,7 @@ const Terms_and_Conditions = lazy(
   () => import("./pages/HomePage/terms_and_Conditions"),
 );
 const Request = lazy(() => import("./pages/dataManager/monitoring/request"));
+const RequestEval = lazy(() => import("./pages/dataManager/monitoring/SeedlingEvaluation"));
 const Animals = lazy(() => import("./pages/head/maintain/animals"));
 const Reports = lazy(() => import("./pages/dataManager/reports/reports"));
 const Hazard_areas = lazy(
@@ -324,6 +325,7 @@ export default function App() {
               element={<Reforestation_areas />}
             />
             <Route path="/DataManager/request" element={<Request />} />
+             <Route path="/DataManager/request-eval/:id" element={<RequestEval />} />
             <Route
               path="/DataManager/official-reforestation"
               element={<OfficailPlantingSites />}

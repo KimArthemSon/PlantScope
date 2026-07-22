@@ -457,7 +457,6 @@ export default function ApplicationPage() {
         throw new Error(`Failed to load application (${res.status})`);
       const data: ApplicationDetail = await res.json();
       setDetail(data);
-      console.log(data);
     } catch (err: any) {
       console.error("Fetch error:", err);
       setError(err.message);
@@ -682,7 +681,6 @@ export default function ApplicationPage() {
 
           {/* Site Name & Status */}
           <View style={styles.siteHeader}>
-            <StatusBadge status={application.status} />
             <Text style={styles.siteName}>
               {assigned_site?.name || application.title}
             </Text>
@@ -787,14 +785,7 @@ export default function ApplicationPage() {
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>Site Details</Text>
                 <View style={styles.detailRow}>
-                  <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>NDVI Value</Text>
-                    <Text style={styles.detailValue}>
-                      {assigned_site?.ndvi_value !== null
-                        ? assigned_site!.ndvi_value!.toFixed(2)
-                        : "N/A"}
-                    </Text>
-                  </View>
+                  <View style={styles.detailItem}></View>
                   <View style={styles.detailItem}>
                     <Text style={styles.detailLabel}>Accessibility</Text>
                     <Text style={styles.detailValue}>
