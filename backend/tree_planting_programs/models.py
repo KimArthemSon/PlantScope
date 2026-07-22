@@ -3,7 +3,7 @@ from django.utils import timezone
 from sites.models import Sites
 from accounts.models import User
 from tree_species.models import Tree_species
-from cloudinary.models import CloudinaryField  # ✅ ADD THIS IMPORT
+from cloudinary.models import CloudinaryField
 
 
 # ─────────────────────────────────────────────
@@ -15,7 +15,7 @@ class Application(models.Model):
     STATUS_CHOICES = [
         ('for_evaluation', 'For Evaluation'),
         ('for_head', 'For Head Approval'),
-        ('accepted', 'Accepted'),
+        ('accepted', 'Accepted - Ready for Orientation'),  # ✅ UPDATED
         ('under_monitoring', 'Under Monitoring'),
         ('rejected', 'Rejected'),
         ('cancelled', 'Cancelled'),
@@ -89,7 +89,6 @@ class Application(models.Model):
         help_text="Final orientation date assigned by DataManager"
     )
 
-   
     proposed_orientation_date = models.DateField(
         null=True,
         blank=True,
@@ -111,12 +110,15 @@ class Application(models.Model):
         null=True,
         help_text="Maintenance plan uploaded by tree grower"
     )
+    
+    # ⚠️ DEPRECATED: Agreement image moved to ProgressReport (Initial Visit)
+    # Keeping for backward compatibility but will be null for new applications
     agreement_image = CloudinaryField(
         'agreement_image',
         folder='agreements',
         blank=True,
         null=True,
-        help_text="Signed agreement image"
+        help_text="[DEPRECATED] Signed agreement image - now stored in ProgressReport"
     )
 
     # Timestamps
@@ -176,7 +178,7 @@ class SeedlingRequest(models.Model):
 
     # Foreign Key to Application
     application = models.ForeignKey(
-        'Application', # String reference to avoid circular imports if needed, or just Application
+        'Application',
         on_delete=models.CASCADE,
         related_name='seedling_requests'
     )
@@ -226,7 +228,7 @@ class SeedlingRequest(models.Model):
         help_text="Reason for rejection or cancellation"
     )
     
-    # Keeping reason_accepted for backward compatibility, but 'reason' is now primary for rejections/cancellations
+    # Keeping reason_accepted for backward compatibility
     reason_accepted = models.TextField(
         blank=True,
         null=True,
@@ -328,11 +330,12 @@ class SeedlingRequestSpecies(models.Model):
 
 
 # ─────────────────────────────────────────────
-# PROGRESS REPORT (Onsite Monitoring)
+# PROGRESS REPORT (Onsite Monitoring) - ✅ UPDATED
 # ─────────────────────────────────────────────
 class ProgressReport(models.Model):
     """
-    Progress report model for ongoing monitoring after application acceptance.
+    Progress report model for monitoring visits.
+    Handles both Initial (Orientation) and Ongoing monitoring visits.
     Specific species survival data stored in ProgressReportSpecies.
     """
 
@@ -340,6 +343,12 @@ class ProgressReport(models.Model):
         ('pending', 'Pending'),
         ('accepted', 'Accepted'),
         ('rejected', 'Rejected'),
+    ]
+
+    # ✅ NEW: Visit Type Classification
+    VISIT_TYPE_CHOICES = [
+        ('initial', 'Initial Visit (Orientation & Baseline)'),
+        ('ongoing', 'Ongoing Monitoring Visit'),
     ]
 
     # Primary Key
@@ -350,6 +359,28 @@ class ProgressReport(models.Model):
         Application,
         on_delete=models.CASCADE,
         related_name='progress_reports'
+    )
+
+    # ✅ NEW: Visit Type (Critical for distinguishing initial vs ongoing)
+    visit_type = models.CharField(
+        max_length=20,
+        choices=VISIT_TYPE_CHOICES,
+        default='initial'
+    )
+
+    # ✅ NEW: Initial Visit Specific Fields
+    orientation_conducted = models.BooleanField(
+        default=False,
+        help_text="Check if orientation was successfully conducted (Initial visit only)"
+    )
+    
+    # ✅ NEW: Agreement Image (MOVED from Application model)
+    agreement_image = CloudinaryField(
+        'agreement_image',
+        folder='agreements',
+        blank=True,
+        null=True,
+        help_text="Signed agreement image uploaded during initial orientation visit"
     )
 
     # ✅ Updated to CloudinaryField
@@ -377,18 +408,20 @@ class ProgressReport(models.Model):
     # Timestamps
     submitted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Progress Report"
-        verbose_name_plural = "Progress Reports"
+        verbose_name = "Progress Report (Monitoring Visit)"
+        verbose_name_plural = "Progress Reports (Monitoring Visits)"
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['application', 'status']),
+            models.Index(fields=['application', 'visit_type']),
             models.Index(fields=['created_at']),
         ]
 
     def __str__(self):
-        return f"Progress Report #{self.progress_report_id} for {self.application.title} - {self.get_status_display()}"
+        return f"{self.get_visit_type_display()} #{self.progress_report_id} for {self.application.title} - {self.get_status_display()}"
 
     def save(self, *args, **kwargs):
         """Auto-set submitted_at on first save"""
@@ -417,14 +450,27 @@ class ProgressReport(models.Model):
         """Calculate total plants (survived + dead)"""
         return self.total_survived + self.total_dead
 
+    @property
+    def total_added_by_grower(self):
+        """Calculate total plants added by grower in this visit"""
+        return sum(
+            species.no_added_by_grower
+            for species in self.report_species.all()
+        )
+
+    @property
+    def is_initial_visit(self):
+        """Check if this is the initial orientation visit"""
+        return self.visit_type == 'initial'
+
 
 # ─────────────────────────────────────────────
-# PROGRESS REPORT SPECIES (Normalized Species Monitoring)
+# PROGRESS REPORT SPECIES (Normalized Species Monitoring) - ✅ UPDATED
 # ─────────────────────────────────────────────
 class ProgressReportSpecies(models.Model):
     """
     Breakdown of progress report by specific tree species.
-    Tracks survival and mortality per species for detailed analytics.
+    Tracks planting baseline, additions, survival and mortality per species.
     """
     report_species_id = models.AutoField(primary_key=True)
 
@@ -440,14 +486,24 @@ class ProgressReportSpecies(models.Model):
         related_name='progress_reports'
     )
 
+    # ✅ NEW: Baseline & Addition Tracking
+    no_planted = models.IntegerField(
+        default=0,
+        help_text="Number of official seedlings planted (baseline, set in initial visit)"
+    )
+    no_added_by_grower = models.IntegerField(
+        default=0,
+        help_text="Extra seedlings added by tree grower from their own source during THIS visit"
+    )
+
     # Monitoring Data per Species
     no_survived = models.IntegerField(
         default=0,
-        help_text="Number of plants of this species that survived"
+        help_text="Current number of plants of this species that survived"
     )
     no_dead = models.IntegerField(
         default=0,
-        help_text="Number of plants of this species that died"
+        help_text="Number of plants of this species that died (cumulative or per visit)"
     )
 
     # Timestamps
@@ -469,8 +525,13 @@ class ProgressReportSpecies(models.Model):
         return f"{species_name} - Survived: {self.no_survived}, Dead: {self.no_dead}"
 
     @property
+    def total_accounted(self):
+        """Total plants accounted for (planted + added)"""
+        return self.no_planted + self.no_added_by_grower
+
+    @property
     def total_plants(self):
-        """Total plants of this species in this report"""
+        """Total plants of this species in this report (survived + dead)"""
         return self.no_survived + self.no_dead
 
     @property
@@ -484,7 +545,7 @@ class ProgressReportSpecies(models.Model):
 
 # ─────────────────────────────────────────────
 # REASON (Audit Trail)
-# ─────────────────────────────────────────────
+# ────────────────────────────────────────────
 class Reason(models.Model):
     """Model for tracking rejection/approval reasons (audit trail)"""
 
