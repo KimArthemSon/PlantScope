@@ -7,6 +7,17 @@ build/**
 .expo/**
 .expo-shared/**
 
++ # CRITICAL: Android build artifacts (biggest culprit!)
++ android/.gradle/**
++ android/app/build/**
++ android/build/**
++ android/gradle/**
++ 
++ # Optional: iOS artifacts (if you have ios/ folder)
++ ios/Pods/**
++ ios/build/**
++ ios/.symlinks/**
+
 # Logs
 *.log
 npm-debug.log*
