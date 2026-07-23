@@ -35,7 +35,11 @@
         "WRITE_EXTERNAL_STORAGE",
         "READ_EXTERNAL_STORAGE",
         "RECORD_AUDIO",
-        "INTERNET"
+        "INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "package": "com.sonkimarthem.plantscope",
       "versionCode": 1
@@ -71,8 +75,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "104a14cf-c725-4ec8-94ee-45ca95e530c8"
+        "projectId": "533eb568-c248-42ac-8366-197e781486b4"
       }
-    }
+    },
+    "owner": "sonkarthem"
   }
 }
