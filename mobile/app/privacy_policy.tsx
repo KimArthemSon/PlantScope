@@ -7,21 +7,30 @@ import {
   View,
 } from "react-native";
 import { ChevronLeft } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function PrivacyPolicy() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ChevronLeft size={20} color="#ffffff" />
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <ChevronLeft size={20} color="#1C1C1E" />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Data Privacy Notice</Text>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView 
+        style={styles.scroll} 
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 30 }]}
+      >
         <Text style={styles.mainTitle}>Data Privacy Notice</Text>
         <Text style={styles.subtitle}>
           Issued pursuant to Republic Act No. 10173 (Data Privacy Act of 2012)
@@ -365,137 +374,141 @@ function RetentionRow({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#0d2a17",
+    backgroundColor: "#FFFFFF",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingTop: 48,
-    paddingBottom: 12,
+    paddingBottom: 16,
     paddingHorizontal: 16,
-    backgroundColor: "#0d2a17",
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.1)",
+    borderBottomColor: "rgba(0, 0, 0, 0.06)",
   },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 6,
-    backgroundColor: "rgba(0,0,0,0.3)",
+    backgroundColor: "#F3F4F6",
     borderRadius: 999,
     marginRight: 12,
   },
   backText: {
-    color: "#ffffff",
+    color: "#1C1C1E",
     fontSize: 14,
+    fontWeight: "600",
     marginLeft: 4,
   },
   headerTitle: {
-    color: "#7CD56A",
+    color: "#1C1C1E",
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "700",
     flex: 1,
   },
   scroll: {
     flex: 1,
   },
   content: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: 20,
   },
   mainTitle: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#7CD56A",
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#1C1C1E",
     textAlign: "center",
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.6)",
+    color: "#6B7280",
     textAlign: "center",
     marginBottom: 24,
   },
   section: {
     marginBottom: 24,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.1)",
+    borderTopColor: "rgba(0, 0, 0, 0.06)",
     paddingTop: 16,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#7CD56A",
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#22C55E",
     marginBottom: 10,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
   subSection: {
     marginTop: 8,
     marginBottom: 4,
   },
   subSectionTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
-    color: "#ffffff",
-    marginBottom: 4,
+    color: "#1C1C1E",
+    marginBottom: 6,
   },
   body: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.75)",
+    color: "#4B5563",
     lineHeight: 20,
     marginBottom: 8,
   },
   bold: {
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontWeight: "700",
+    color: "#1C1C1E",
   },
   highlight: {
-    backgroundColor: "rgba(124,213,106,0.1)",
-    borderLeftWidth: 4,
-    borderLeftColor: "#7CD56A",
+    backgroundColor: "rgba(34, 197, 94, 0.06)",
+    borderLeftWidth: 3,
+    borderLeftColor: "#22C55E",
     paddingLeft: 12,
-    paddingVertical: 8,
-    borderRadius: 4,
-    marginTop: 4,
+    paddingVertical: 10,
+    paddingRight: 12,
+    borderRadius: 6,
+    marginTop: 8,
   },
   highlightText: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.85)",
+    color: "#4B5563",
     fontStyle: "italic",
     lineHeight: 20,
   },
   cardContainer: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "#F9FAFB",
     borderRadius: 8,
-    padding: 10,
-    marginBottom: 6,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.04)",
   },
   cardBody: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.7)",
+    color: "#4B5563",
     lineHeight: 18,
   },
   note: {
     fontSize: 12,
-    color: "#7CD56A",
+    color: "#16A34A",
     fontStyle: "italic",
-    marginTop: 4,
+    marginTop: 8,
   },
   bulletRow: {
     flexDirection: "row",
-    marginBottom: 4,
+    marginBottom: 6,
     paddingLeft: 4,
   },
   bullet: {
-    color: "#7CD56A",
+    color: "#22C55E",
     marginRight: 8,
-    fontSize: 13,
+    fontSize: 14,
     lineHeight: 20,
   },
   bulletText: {
     flex: 1,
     fontSize: 13,
-    color: "rgba(255,255,255,0.75)",
+    color: "#4B5563",
     lineHeight: 20,
   },
   infoRow: {
@@ -503,75 +516,78 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 12,
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontWeight: "700",
+    color: "#1C1C1E",
     marginBottom: 2,
   },
   infoValue: {
     fontSize: 12,
-    color: "rgba(255,255,255,0.7)",
+    color: "#4B5563",
     lineHeight: 18,
   },
   retentionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "rgba(0, 0, 0, 0.06)",
   },
   retentionLabel: {
     flex: 1,
     fontSize: 12,
-    color: "rgba(255,255,255,0.75)",
+    color: "#4B5563",
     paddingRight: 8,
   },
   retentionValue: {
     fontSize: 12,
-    color: "#7CD56A",
+    color: "#22C55E",
     fontWeight: "600",
     textAlign: "right",
     flexShrink: 0,
   },
   contactCard: {
-    backgroundColor: "rgba(124,213,106,0.1)",
+    backgroundColor: "rgba(34, 197, 94, 0.04)",
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.15)",
   },
   contactTitle: {
     fontSize: 13,
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontWeight: "700",
+    color: "#1C1C1E",
     marginBottom: 4,
   },
   contactBody: {
     fontSize: 12,
-    color: "rgba(255,255,255,0.75)",
+    color: "#4B5563",
     lineHeight: 18,
   },
   green: {
-    color: "#7CD56A",
+    color: "#22C55E",
+    fontWeight: "600",
   },
   acknowledgment: {
-    backgroundColor: "rgba(124,213,106,0.1)",
+    backgroundColor: "rgba(34, 197, 94, 0.04)",
     borderWidth: 1,
-    borderColor: "#7CD56A",
-    borderRadius: 8,
-    padding: 14,
+    borderColor: "rgba(34, 197, 94, 0.15)",
+    borderRadius: 10,
+    padding: 16,
     marginTop: 8,
     alignItems: "center",
   },
   acknowledgmentText: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.9)",
+    color: "#1C1C1E",
     textAlign: "center",
     lineHeight: 20,
   },
   acknowledgmentSub: {
     fontSize: 11,
-    color: "rgba(255,255,255,0.5)",
+    color: "#6B7280",
     textAlign: "center",
-    marginTop: 6,
+    marginTop: 8,
   },
 });

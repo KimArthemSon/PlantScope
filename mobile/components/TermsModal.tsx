@@ -52,11 +52,11 @@ export default function TermsModal({
       <View style={styles.overlay}>
         <View style={styles.container}>
           <View style={styles.header}>
-            <FileText size={18} color="#4caf72" />
+            <FileText size={18} color="#22C55E" />
             <Text style={styles.title}>Terms and Conditions</Text>
             {hasViewed && (
               <View style={styles.viewedBadge}>
-                <CheckCircle size={12} color="#4caf72" />
+                <CheckCircle size={12} color="#16A34A" />
                 <Text style={styles.viewedText}>Viewed</Text>
               </View>
             )}
@@ -97,30 +97,20 @@ export default function TermsModal({
                 use and request account deactivation from the Data Manager.
               </Text>
             </View>
+
             <Text style={styles.sectionTitle}>
               SECTION 1: SCOPE AND PURPOSE OF SYSTEM USE
             </Text>
             <Text style={styles.subHeading}>1.1 Scope</Text>
             <Text style={styles.body}>
               These Terms apply to all individuals who access, register, or use
-              PLANTSCOPE, including:
-            </Text>
-            <Text style={styles.body}>
-              {
-                "• City ENRO Head — primary authority for reforestation program oversight\n"
-              }
-              {
-                "• Data Manager (System Administrator) — maintains technical and data integrity\n"
-              }
-              {
-                "• GIS Specialists — perform technical site suitability validation\n"
-              }
-              {
-                "• Onsite Inspectors — collect and submit field assessment data via mobile app\n"
-              }
-              {
-                "• Community Users (Tree Growers) — register for the Public Tree Planting Program"
-              }
+              PLANTSCOPE, including:{"\n"}• City ENRO Head — primary authority
+              for reforestation program oversight{"\n"}• Data Manager (System
+              Administrator) — maintains technical and data integrity{"\n"}• GIS
+              Specialists — perform technical site suitability validation{"\n"}•
+              Onsite Inspectors — collect and submit field assessment data via
+              mobile app{"\n"}• Community Users (Tree Growers) — register for
+              the Public Tree Planting Program
             </Text>
             <Text style={styles.subHeading}>1.2 Purpose</Text>
             <Text style={styles.body}>
@@ -136,6 +126,7 @@ export default function TermsModal({
               private business operations, or activities outside the
               environmental mandate of the Ormoc City LGU.
             </Text>
+
             <Text style={styles.sectionTitle}>
               SECTION 2: USER RESPONSIBILITIES AND ACCEPTABLE USE
             </Text>
@@ -154,67 +145,54 @@ export default function TermsModal({
               <Text style={styles.bold}>Role Compliance: </Text>Users must
               access and use only the features and data authorized for their
               assigned role.{"\n\n"}
-              <Text style={styles.bold}>System Integrity: </Text>Users must
-              not perform any action that compromises the integrity,
-              availability, or security of the PLANTSCOPE system.{"\n\n"}
-              <Text style={styles.bold}>Compliance with Laws: </Text>Users
-              must comply with all applicable Philippine laws, including RA
-              10173, RA 7160, environmental protection laws, and civil service
+              <Text style={styles.bold}>System Integrity: </Text>Users must not
+              perform any action that compromises the integrity, availability,
+              or security of the PLANTSCOPE system.{"\n\n"}
+              <Text style={styles.bold}>Compliance with Laws: </Text>Users must
+              comply with all applicable Philippine laws, including RA 10173, RA
+              7160, environmental protection laws, and civil service
               regulations.
             </Text>
             <Text style={styles.subHeading}>
-              2.2 Community User / Tree Grower Responsibilities
+              2.2 Role-Specific Responsibilities
             </Text>
             <Text style={styles.body}>
-              {
-                "• Provides accurate registration information including full name, contact details, and group affiliation\n"
-              }
-              {
-                "• Submits genuine and timely progress updates for assigned tree planting sites\n"
-              }
-              {
-                "• Complies with the assigned schedule and site allocation provided by the Data Manager\n"
-              }
-              {
-                "• Notifies the Data Manager of any change in contact information or group status\n"
-              }
-              {
-                "• Responsible for ensuring that participants they represent are aware of these Terms"
-              }
+              <Text style={styles.bold}>City ENRO Head: </Text>Primary authority
+              for the reforestation program and system oversight. Authorizes LGU
+              staff accounts.{"\n"}
+              <Text style={styles.bold}>Data Manager: </Text>Maintains technical
+              and data integrity. Oversees Archive Data Management and serves as
+              primary contact for privacy/security concerns.{"\n"}
+              <Text style={styles.bold}>GIS Specialist: </Text>Reviews field
+              assessment data, performs MCDA validation, and ensures finalized
+              site records are complete and correct.{"\n"}
+              <Text style={styles.bold}>Onsite Inspector: </Text>Submits field
+              assessment data based on direct observation. Ensures geotagged
+              photos and GPS coordinates reflect the actual site.{"\n"}
+              <Text style={styles.bold}>Community User / Tree Grower: </Text>
+              Provides accurate registration info, submits genuine progress
+              updates, and complies with assigned schedules.
             </Text>
+
             <Text style={styles.sectionTitle}>
               SECTION 3: PROHIBITED ACTIVITIES
             </Text>
             <Text style={styles.body}>
               The following activities are strictly prohibited on PLANTSCOPE.
               Violation may result in immediate account suspension and legal
-              action under applicable Philippine laws:
-            </Text>
-            <Text style={styles.body}>
-              {
-                "• Unauthorized access to accounts, data records, or system features not authorized for your role\n"
-              }
-              {
-                "• Sharing or transferring login credentials; logging in as another user\n"
-              }
-              {
-                "• Submitting data that is knowingly false, fabricated, or deliberately misleading\n"
-              }
-              {
-                "• Copying, exporting, or transmitting personal data or spatial records to unauthorized individuals\n"
-              }
-              {
-                "• Introducing malicious code, performing denial-of-service attacks, SQL injection, or technical interference\n"
-              }
-              {
-                "• Modifying or deleting any system record without proper authority\n"
-              }
-              {
-                "• Using personal data accessed through PLANTSCOPE for unauthorized purposes\n"
-              }
-              {
-                "• Using PLANTSCOPE for activities beyond its stated environmental management functions"
-              }
+              action under applicable Philippine laws:{"\n"}• Unauthorized
+              access to accounts, data records, or system features not
+              authorized for your role{"\n"}• Sharing or transferring login
+              credentials; logging in as another user{"\n"}• Submitting data
+              that is knowingly false, fabricated, or deliberately misleading
+              {"\n"}• Copying, exporting, or transmitting personal data or
+              spatial records to unauthorized individuals{"\n"}• Introducing
+              malicious code, performing denial-of-service attacks, SQL
+              injection, or technical interference{"\n"}• Modifying or deleting
+              any system record without proper authority{"\n"}• Using personal
+              data accessed through PLANTSCOPE for unauthorized purposes{"\n"}•
+              Using PLANTSCOPE for activities beyond its stated environmental
+              management functions
             </Text>
             <View style={styles.warningBox}>
               <Text style={styles.warningTitle}>⚖️ Legal Warning</Text>
@@ -224,16 +202,15 @@ export default function TermsModal({
                 (Anti-Graft), and other applicable Philippine laws.
               </Text>
             </View>
+
             <Text style={styles.sectionTitle}>
               SECTION 4: DATA OWNERSHIP AND HANDLING
             </Text>
             <Text style={styles.body}>
               All data submitted to, processed by, or generated within
               PLANTSCOPE is the property of the{" "}
-              <Text style={styles.bold}>
-                Ormoc City Local Government Unit
-              </Text>
-              , acting through City ENRO and CPDO. Personal data submitted by
+              <Text style={styles.bold}>Ormoc City Local Government Unit</Text>,
+              acting through City ENRO and CPDO. Personal data submitted by
               individual users remains subject to the rights of the data subject
               under RA 10173.
             </Text>
@@ -244,28 +221,45 @@ export default function TermsModal({
               records shall not be published or commercialized without prior
               written approval of the CPDO and City ENRO.
             </Text>
+
             <Text style={styles.sectionTitle}>
               SECTION 5: ACCOUNT MANAGEMENT AND ACCESS CONTROL
             </Text>
             <Text style={styles.body}>
               Community user accounts require submission of a registration
               request through the community portal, subject to review from the
-              Data Manager with final approval by the Head.{"\n\n"}Providing
-              false registration information is grounds for immediate account
+              Data Manager with final approval by the Head. Providing false
+              registration information is grounds for immediate account
               rejection or termination.
             </Text>
+            <Text style={styles.body}>
+              The Data Manager, upon direction from the Head, reserves the right
+              to suspend or permanently deactivate any user account under
+              circumstances including violation of these Terms, submission of
+              false information, unauthorized access, or separation of LGU
+              personnel from relevant duties.
+            </Text>
+
             <Text style={styles.sectionTitle}>
               SECTION 6: LIMITATION OF LIABILITY
             </Text>
             <Text style={styles.body}>
-              PLANTSCOPE is provided on an "as-is" and "as-available" basis. The
-              development team and Western Leyte College of Ormoc City make no
-              warranty that the system will operate without interruption, error,
-              or defect at all times.{"\n\n"}The system does not automatically
-              verify the accuracy of user-submitted data. The PLANTSCOPE
-              development team shall not be liable for decisions made based on
-              inaccurate, incomplete, or false data submitted by users.
+              <Text style={styles.bold}>6.1 No Warranty: </Text>PLANTSCOPE is
+              provided on an "as-is" and "as-available" basis. The development
+              team and Western Leyte College of Ormoc City make no warranty that
+              the system will operate without interruption, error, or defect at
+              all times.{"\n"}
+              <Text style={styles.bold}>6.2 No Liability for User Data: </Text>
+              The system does not automatically verify the accuracy of
+              user-submitted data. The development team shall not be liable for
+              decisions made based on inaccurate, incomplete, or false data.
+              {"\n"}
+              <Text style={styles.bold}>6.3 Force Majeure: </Text>Neither the
+              system developer nor the LGU shall be held liable for any failure
+              to perform obligations caused by circumstances beyond reasonable
+              control.
             </Text>
+
             <Text style={styles.sectionTitle}>
               SECTION 7: RA 10173 COMPLIANCE
             </Text>
@@ -282,31 +276,31 @@ export default function TermsModal({
               Privacy Notice. In matters of data privacy, the Data Privacy
               Notice shall prevail.
             </Text>
+
             <Text style={styles.sectionTitle}>
               SECTION 8: ACCEPTANCE OF TERMS
             </Text>
             <View style={styles.ackBox}>
               <Text style={styles.body}>
-                {
-                  "1. I have read, understood, and voluntarily agree to comply with all provisions of these Terms and Conditions.\n\n"
-                }
-                {
-                  "2. I have read and understood the PLANTSCOPE Data Privacy Notice and consent to the collection, processing, and use of my personal data as described therein.\n\n"
-                }
-                {
-                  "3. I understand that continued use of PLANTSCOPE after any amendment constitutes my acceptance of the updated Terms.\n\n"
-                }
-                {
-                  "4. I understand that violation of these Terms may result in account suspension, termination, and legal consequences under applicable Philippine law.\n\n"
-                }
-                {
-                  "5. I affirm that all information I provide to the system is accurate, truthful, and complete.\n\n"
-                }
-                {
-                  "6. I acknowledge that PLANTSCOPE is a government-deployed environmental management system and commit to using it exclusively for its stated purposes."
-                }
+                1. I have read, understood, and voluntarily agree to comply with
+                all provisions of these Terms and Conditions.{"\n\n"}
+                2. I have read and understood the PLANTSCOPE Data Privacy Notice
+                and consent to the collection, processing, and use of my
+                personal data as described therein.{"\n\n"}
+                3. I understand that continued use of PLANTSCOPE after any
+                amendment constitutes my acceptance of the updated Terms.
+                {"\n\n"}
+                4. I understand that violation of these Terms may result in
+                account suspension, termination, and legal consequences under
+                applicable Philippine law.{"\n\n"}
+                5. I affirm that all information I provide to the system is
+                accurate, truthful, and complete.{"\n\n"}
+                6. I acknowledge that PLANTSCOPE is a government-deployed
+                environmental management system and commit to using it
+                exclusively for its stated purposes.
               </Text>
             </View>
+
             <Text style={styles.sectionTitle}>
               SECTION 9: GOVERNING LAW AND JURISDICTION
             </Text>
@@ -318,6 +312,7 @@ export default function TermsModal({
               courts, with venue in{" "}
               <Text style={styles.bold}>Ormoc City, Leyte</Text>.
             </Text>
+
             <View style={styles.ackBox}>
               <Text style={styles.ackText}>
                 TERMS AND CONDITIONS – END OF DOCUMENT
@@ -339,7 +334,10 @@ export default function TermsModal({
           )}
 
           <TouchableOpacity
-            style={[styles.closeBtn, (!canConfirm && !hasViewed) && styles.closeBtnDisabled]}
+            style={[
+              styles.closeBtn,
+              !canConfirm && !hasViewed && styles.closeBtnDisabled,
+            ]}
             onPress={handleConfirm}
             disabled={!canConfirm && !hasViewed}
           >
@@ -356,18 +354,23 @@ export default function TermsModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.82)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   container: {
-    backgroundColor: "#183d23",
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    paddingBottom: Platform.OS === "ios" ? 36 : 20,
+    paddingBottom: Platform.OS === "ios" ? 36 : 24,
     maxHeight: "88%",
     borderTopWidth: 1,
-    borderTopColor: "rgba(76,175,114,0.4)",
+    borderTopColor: "rgba(34, 197, 94, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 16,
   },
   header: {
     flexDirection: "row",
@@ -375,24 +378,37 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  title: { fontSize: 16, color: "#ffffff", fontWeight: "700", flex: 1 },
+  title: {
+    fontSize: 16,
+    color: "#1C1C1E",
+    fontWeight: "700",
+    flex: 1,
+  },
   viewedBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(76,175,114,0.15)",
+    backgroundColor: "rgba(34, 197, 94, 0.08)",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.3)",
+    borderColor: "rgba(34, 197, 94, 0.2)",
   },
-  viewedText: { color: "#4caf72", fontSize: 10, fontWeight: "700" },
-  effective: { fontSize: 11, color: "#5a8a6a", marginBottom: 14 },
+  viewedText: {
+    color: "#16A34A",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  effective: {
+    fontSize: 11,
+    color: "#6B7280",
+    marginBottom: 14,
+  },
   scroll: { flexGrow: 0 },
   sectionTitle: {
     fontSize: 11,
-    color: "#4caf72",
+    color: "#22C55E",
     fontWeight: "700",
     marginTop: 16,
     marginBottom: 6,
@@ -401,24 +417,32 @@ const styles = StyleSheet.create({
   },
   subHeading: {
     fontSize: 12,
-    color: "#e0ece4",
+    color: "#374151",
     fontWeight: "700",
     marginTop: 10,
     marginBottom: 4,
   },
-  body: { fontSize: 12, color: "#a8c5b3", lineHeight: 19, marginBottom: 4 },
-  bold: { fontWeight: "700", color: "#e0ece4" },
+  body: {
+    fontSize: 12,
+    color: "#4B5563",
+    lineHeight: 19,
+    marginBottom: 4,
+  },
+  bold: {
+    fontWeight: "700",
+    color: "#1C1C1E",
+  },
   noteText: {
     fontSize: 11,
-    color: "#4caf72",
+    color: "#16A34A",
     fontStyle: "italic",
     marginTop: 6,
     marginBottom: 4,
   },
   warningBox: {
-    backgroundColor: "rgba(239,68,68,0.1)",
+    backgroundColor: "rgba(239, 68, 68, 0.06)",
     borderLeftWidth: 3,
-    borderLeftColor: "#ef4444",
+    borderLeftColor: "#EF4444",
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 6,
@@ -426,15 +450,19 @@ const styles = StyleSheet.create({
   },
   warningTitle: {
     fontSize: 12,
-    color: "#ffffff",
+    color: "#EF4444",
     fontWeight: "700",
     marginBottom: 4,
   },
-  warningText: { fontSize: 11, color: "#a8c5b3", lineHeight: 17 },
+  warningText: {
+    fontSize: 11,
+    color: "#4B5563",
+    lineHeight: 17,
+  },
   ackBox: {
-    backgroundColor: "rgba(76,175,114,0.1)",
+    backgroundColor: "rgba(34, 197, 94, 0.04)",
     borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.35)",
+    borderColor: "rgba(34, 197, 94, 0.15)",
     borderRadius: 10,
     padding: 14,
     marginTop: 16,
@@ -443,14 +471,18 @@ const styles = StyleSheet.create({
   },
   ackText: {
     fontSize: 12,
-    color: "#e0ece4",
+    color: "#1C1C1E",
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 4,
   },
-  ackSub: { fontSize: 10, color: "#5a8a6a", textAlign: "center" },
+  ackSub: {
+    fontSize: 10,
+    color: "#6B7280",
+    textAlign: "center",
+  },
   scrollHint: {
-    backgroundColor: "rgba(245,158,11,0.1)",
+    backgroundColor: "rgba(245,158,11,0.06)",
     borderWidth: 1,
     borderColor: "rgba(245,158,11,0.3)",
     borderRadius: 8,
@@ -459,16 +491,31 @@ const styles = StyleSheet.create({
     marginVertical: 10,
     alignItems: "center",
   },
-  scrollHintText: { color: "#fbbf24", fontSize: 11, fontWeight: "600" },
+  scrollHintText: {
+    color: "#D97706",
+    fontSize: 11,
+    fontWeight: "600",
+  },
   closeBtn: {
     marginTop: 12,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: "#2d5f3c",
+    backgroundColor: "#22C55E",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.3)",
+    shadowColor: "#22C55E",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  closeBtnDisabled: { opacity: 0.4 },
-  closeText: { color: "#ffffff", fontSize: 14, fontWeight: "700" },
+  closeBtnDisabled: {
+    opacity: 0.5,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  closeText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
 });

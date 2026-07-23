@@ -39,7 +39,6 @@ const deleteToken = async () => {
   else await SecureStore.deleteItemAsync(TOKEN_KEY);
 };
 
-// ✅ NEW: User Role Storage Functions
 const setUserRole = async (value: string) => {
   if (Platform.OS === "web") localStorage.setItem(USER_ROLE_KEY, value);
   else await SecureStore.setItemAsync(USER_ROLE_KEY, value);
@@ -71,17 +70,13 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
 
-  // Slide-up animation
   const slideAnim = useState(new Animated.Value(400))[0];
   const fadeAnim = useState(new Animated.Value(0))[0];
-
-  // 🎯 BOUNCE ANIMATION for logo
   const logoScale = useState(new Animated.Value(0))[0];
   const logoRotate = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
     if (visible) {
-      // Modal slide up
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
@@ -95,7 +90,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         }),
       ]).start();
 
-      // 🎯 Logo bounce-in sequence
       Animated.sequence([
         Animated.spring(logoScale, {
           toValue: 1.2,
@@ -117,7 +111,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         }),
       ]).start();
 
-      // Subtle rotation wiggle
       Animated.sequence([
         Animated.timing(logoRotate, {
           toValue: 1,
@@ -143,7 +136,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
       fadeAnim.setValue(0);
       logoScale.setValue(0);
       logoRotate.setValue(0);
-      // Reset form when closing
       setFormData({ email: "", password: "" });
       setShowPassword(false);
       setAttemptsLeft(null);
@@ -220,10 +212,9 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
       setAttemptsLeft(null);
 
       if (data.user_role === "OnsiteInspector") {
-        // ✅ Store both token AND user_role
         await setToken(data.token);
         await setUserRole(data.user_role);
-        
+
         alert.success(
           "Welcome Back!",
           `Signed in as ${data.email}`,
@@ -232,10 +223,9 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         handleClose();
         router.replace("/home");
       } else if (data.user_role === "treeGrowers") {
-        // ✅ Store both token AND user_role
         await setToken(data.token);
         await setUserRole(data.user_role);
-        
+
         alert.success(
           "Welcome Back!",
           `Signed in as ${data.email}`,
@@ -260,7 +250,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
     }
   };
 
-  // Interpolate rotation from -10deg to 10deg
   const rotateInterpolation = logoRotate.interpolate({
     inputRange: [-1, 0, 1],
     outputRange: ["-10deg", "0deg", "10deg"],
@@ -277,7 +266,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.modalContainer}
       >
-        {/* Backdrop */}
         <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
@@ -286,7 +274,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
           />
         </Animated.View>
 
-        {/* Modal Content */}
         <Animated.View
           style={[
             styles.modalContent,
@@ -296,7 +283,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
             },
           ]}
         >
-          {/* Header with close button */}
           <View style={styles.modalHeader}>
             <View style={styles.headerTextContainer}>
               <Text style={styles.modalTitle}>Welcome Back</Text>
@@ -307,7 +293,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
               onPress={handleClose}
               activeOpacity={0.7}
             >
-              <X size={22} color="#A3C4B0" />
+              <X size={22} color="#8B8680" />
             </TouchableOpacity>
           </View>
 
@@ -316,7 +302,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* 🎯 Animated Bouncing Logo */}
             <View style={styles.logoSection}>
               <Animated.View
                 style={[
@@ -336,7 +321,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
               </Animated.View>
             </View>
 
-            {/* Email Field */}
             <View style={styles.formGroup}>
               <Text style={styles.label}>Email Address</Text>
               <View
@@ -345,11 +329,11 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
                   focusedField === "email" && styles.inputContainerFocused,
                 ]}
               >
-                <Mail size={20} color="#6B8F7B" style={styles.inputIcon} />
+                <Mail size={20} color="#8B8680" style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Enter your email"
-                  placeholderTextColor="#5A7D68"
+                  placeholderTextColor="#A8A39D"
                   value={formData.email}
                   onChangeText={(text) =>
                     setFormData({ ...formData, email: text })
@@ -363,7 +347,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
               </View>
             </View>
 
-            {/* Password Field */}
             <View style={styles.formGroup}>
               <Text style={styles.label}>Password</Text>
               <View
@@ -372,11 +355,11 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
                   focusedField === "password" && styles.inputContainerFocused,
                 ]}
               >
-                <Lock size={20} color="#6B8F7B" style={styles.inputIcon} />
+                <Lock size={20} color="#8B8680" style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Enter your password"
-                  placeholderTextColor="#5A7D68"
+                  placeholderTextColor="#A8A39D"
                   value={formData.password}
                   onChangeText={(text) =>
                     setFormData({ ...formData, password: text })
@@ -393,15 +376,14 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   {showPassword ? (
-                    <EyeOff size={20} color="#6B8F7B" />
+                    <EyeOff size={20} color="#8B8680" />
                   ) : (
-                    <Eye size={20} color="#6B8F7B" />
+                    <Eye size={20} color="#8B8680" />
                   )}
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* Lockout / Attempts Banner */}
             {lockoutSeconds > 0 ? (
               <View style={styles.lockoutBanner}>
                 <Text style={styles.bannerIcon}>🔒</Text>
@@ -420,7 +402,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
               </View>
             ) : null}
 
-            {/* Submit Button */}
             <TouchableOpacity
               style={[
                 styles.submitButton,
@@ -428,7 +409,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
               ]}
               onPress={handleLogin}
               disabled={loading || lockoutSeconds > 0}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               {loading ? (
                 <ActivityIndicator color="#ffffff" size="small" />
@@ -437,7 +418,6 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
               )}
             </TouchableOpacity>
 
-            {/* Sign Up Link */}
             <View style={styles.registerContainer}>
               <Text style={styles.registerText}>Don't have an account? </Text>
               <TouchableOpacity onPress={() => router.push("/signup")}>
@@ -445,9 +425,8 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
               </TouchableOpacity>
             </View>
 
-            {/* Privacy Policy & Terms Links */}
             <View style={styles.legalLinksContainer}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => {
                   handleClose();
                   router.push("/privacy_policy");
@@ -456,10 +435,10 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
               >
                 <Text style={styles.legalLinkText}>Privacy Policy</Text>
               </TouchableOpacity>
-              
+
               <Text style={styles.legalSeparator}>•</Text>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 onPress={() => {
                   handleClose();
                   router.push("/terms_and_conditions");
@@ -483,18 +462,18 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: "rgba(11, 15, 13, 0.75)",
   },
   modalContent: {
-    backgroundColor: "#0B1F12",
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     maxHeight: "92%",
     borderWidth: 1,
-    borderColor: "rgba(74, 222, 128, 0.15)",
+    borderColor: "rgba(0, 0, 0, 0.04)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.2,
     shadowRadius: 20,
     elevation: 15,
   },
@@ -506,7 +485,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
+    borderBottomColor: "rgba(0, 0, 0, 0.04)",
   },
   headerTextContainer: {
     flex: 1,
@@ -514,23 +493,23 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#1C1C1E",
     letterSpacing: 0.3,
   },
   modalSubtitle: {
     fontSize: 13,
-    color: "#6B8F7B",
+    color: "#8B8680",
     marginTop: 2,
   },
   closeButton: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(0, 0, 0, 0.04)",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(0, 0, 0, 0.06)",
   },
   logoSection: {
     alignItems: "center",
@@ -544,7 +523,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "rgba(74, 222, 128, 0.2)",
+    borderColor: "rgba(74, 222, 128, 0.25)",
   },
   logo: { width: 52, height: 52, borderRadius: 26 },
   scrollContent: {
@@ -553,7 +532,7 @@ const styles = StyleSheet.create({
   },
   formGroup: { marginBottom: 18 },
   label: {
-    color: "#A3C4B0",
+    color: "#5C5C5E",
     fontSize: 13,
     marginBottom: 8,
     fontWeight: "500",
@@ -562,21 +541,21 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(0, 0, 0, 0.03)",
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(0, 0, 0, 0.06)",
     paddingHorizontal: 16,
     height: 54,
   },
   inputContainerFocused: {
-    borderColor: "#4ADE80",
-    backgroundColor: "rgba(74, 222, 128, 0.08)",
+    borderColor: "#22C55E",
+    backgroundColor: "rgba(74, 222, 128, 0.06)",
   },
   inputIcon: { marginRight: 12 },
   input: {
     flex: 1,
-    color: "#FFFFFF",
+    color: "#1C1C1E",
     fontSize: 15,
     paddingVertical: 16,
     paddingHorizontal: 0,
@@ -593,7 +572,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     shadowColor: "#22C55E",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 12,
     elevation: 6,
   },
@@ -609,36 +588,36 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 24,
   },
-  registerText: { color: "#6B8F7B", fontSize: 14 },
-  registerLink: { color: "#4ADE80", fontSize: 14, fontWeight: "600" },
+  registerText: { color: "#8B8680", fontSize: 14 },
+  registerLink: { color: "#22C55E", fontSize: 14, fontWeight: "600" },
   lockoutBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    backgroundColor: "rgba(239, 68, 68, 0.08)",
     borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.25)",
+    borderColor: "rgba(239, 68, 68, 0.2)",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 16,
     gap: 10,
   },
-  lockoutText: { color: "#FCA5A5", fontSize: 13, fontWeight: "500", flex: 1 },
-  lockoutCountdown: { fontWeight: "700", color: "#F87171" },
+  lockoutText: { color: "#DC2626", fontSize: 13, fontWeight: "500", flex: 1 },
+  lockoutCountdown: { fontWeight: "700", color: "#B91C1C" },
   attemptsBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(245, 158, 11, 0.1)",
+    backgroundColor: "rgba(245, 158, 11, 0.08)",
     borderWidth: 1,
-    borderColor: "rgba(245, 158, 11, 0.25)",
+    borderColor: "rgba(245, 158, 11, 0.2)",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 16,
     gap: 10,
   },
-  attemptsText: { color: "#FCD34D", fontSize: 13, fontWeight: "500", flex: 1 },
-  attemptsBold: { fontWeight: "700", color: "#FBBF24" },
+  attemptsText: { color: "#D97706", fontSize: 13, fontWeight: "500", flex: 1 },
+  attemptsBold: { fontWeight: "700", color: "#B45309" },
   bannerIcon: { fontSize: 16 },
   legalLinksContainer: {
     flexDirection: "row",
@@ -654,13 +633,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   legalLinkText: {
-    color: "#4ADE80",
+    color: "#22C55E",
     fontSize: 12,
     fontWeight: "500",
     textDecorationLine: "underline",
   },
   legalSeparator: {
-    color: "#6B8F7B",
+    color: "#8B8680",
     fontSize: 12,
   },
 });

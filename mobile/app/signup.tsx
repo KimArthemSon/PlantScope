@@ -7,11 +7,13 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Image,
+  ImageBackground,
   Dimensions,
   KeyboardAvoidingView,
   ScrollView,
   Platform,
+  Animated,
+  SafeAreaView,
 } from "react-native";
 import {
   Mail,
@@ -29,22 +31,18 @@ import {
   Calendar,
   Check,
   Users,
-  Shield,
+  Image as LucideImage,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// ✅ Import extracted components
 import DatePickerModal from "@/components/DatePickerModal";
 import PrivacyPolicyModal from "@/components/PrivacyPolicyModal";
 import TermsModal from "@/components/TermsModal";
-
-// ✅ Import custom alert
 import { useAlert } from "@/components/AlertContext";
 
-const { width: windowWidth } = Dimensions.get("window");
-const MAX_CARD_WIDTH = 480;
-const HORIZONTAL_PADDING = 16;
+const { width: windowWidth, height: windowHeight } = Dimensions.get("window");
 
 const inputStyleOverride = {
   outlineStyle: "none",
@@ -53,11 +51,11 @@ const inputStyleOverride = {
 } as any;
 
 const STEPS = [
-  { label: "Account", icon: "🔐", Icon: Lock },
-  { label: "Verify", icon: "📧", Icon: Mail },
-  { label: "Personal", icon: "👤", Icon: User },
-  { label: "Group", icon: "🌿", Icon: Building2 },
-  { label: "Review", icon: "✅", Icon: CheckCircle },
+  { label: "Account Information", title: "Create your\naccount." },
+  { label: "Email Verification", title: "Verify your\nemail." },
+  { label: "Personal Details", title: "Tell us about\nyourself." },
+  { label: "Group & Project", title: "Your group\n& project." },
+  { label: "Review & Submit", title: "Review your\napplication." },
 ];
 
 const GROUP_TYPES = [
@@ -66,9 +64,7 @@ const GROUP_TYPES = [
   { value: "informal_group", label: "Informal Group" },
 ];
 
-// ─── Sub-components (Field, FileButton, GenderPicker, GroupTypePicker, ReviewSection, ReviewRow) ───
-// [Keep these exactly as they were in your original file - no changes needed]
-
+// ─── Sub-components ───
 type FieldProps = {
   label: string;
   icon?: React.ReactNode;
@@ -82,9 +78,16 @@ type FieldProps = {
   required?: boolean;
 };
 function Field({
-  label, icon, value, onChangeText, placeholder,
-  keyboardType = "default", autoCapitalize = "words",
-  secureTextEntry = false, multiline = false, required = false,
+  label,
+  icon,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType = "default",
+  autoCapitalize = "words",
+  secureTextEntry = false,
+  multiline = false,
+  required = false,
 }: FieldProps) {
   return (
     <View style={styles.formGroup}>
@@ -109,7 +112,7 @@ function Field({
             multiline && { textAlignVertical: "top", paddingTop: 4 },
           ]}
           placeholder={placeholder ?? `Enter ${label.toLowerCase()}`}
-          placeholderTextColor="#5a8a6a"
+          placeholderTextColor="#9CA3AF"
           value={value}
           onChangeText={onChangeText}
           keyboardType={keyboardType}
@@ -130,37 +133,44 @@ type FileButtonProps = {
   isImage?: boolean;
   required?: boolean;
 };
-function FileButton({ label, value, onPress, isImage = false, required = false }: FileButtonProps) {
+function FileButton({
+  label,
+  value,
+  onPress,
+  isImage = false,
+  required = false,
+}: FileButtonProps) {
   return (
     <View style={styles.formGroup}>
       <Text style={styles.label}>
         {label} {required && <Text style={{ color: "#ef4444" }}>*</Text>}
       </Text>
-      {isImage && value?.uri ? (
-        <TouchableOpacity
-          style={styles.imagePreviewBtn}
-          onPress={onPress}
-          activeOpacity={0.8}
-        >
-          <Image source={{ uri: value.uri }} style={styles.imagePreview} resizeMode="cover" />
-          <View style={styles.imagePreviewOverlay}>
-            <Text style={styles.imagePreviewText}>Tap to change</Text>
-          </View>
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity style={styles.fileButton} onPress={onPress} activeOpacity={0.7}>
-          <FileText size={18} color="#a8c5b3" />
-          <Text style={styles.fileButtonText} numberOfLines={1}>
-            {value ? value.name : `Tap to upload ${label}`}
-          </Text>
-          {value && <CheckCircle size={16} color="#4caf72" />}
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity
+        style={styles.fileButton}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        {isImage && value ? (
+          <LucideImage size={18} color="#6B7280" />
+        ) : (
+          <FileText size={18} color="#6B7280" />
+        )}
+        <Text style={styles.fileButtonText} numberOfLines={1}>
+          {value ? value.name : `Tap to upload ${label}`}
+        </Text>
+        {value && <CheckCircle size={16} color="#22C55E" />}
+      </TouchableOpacity>
     </View>
   );
 }
 
-function GenderPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function GenderPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
     <View style={styles.formGroup}>
       <Text style={styles.label}>Gender</Text>
@@ -168,11 +178,19 @@ function GenderPicker({ value, onChange }: { value: string; onChange: (v: string
         {["Male", "Female", "Other"].map((g) => (
           <TouchableOpacity
             key={g}
-            style={[styles.genderChip, value === g.toLowerCase() && styles.genderChipActive]}
+            style={[
+              styles.genderChip,
+              value === g.toLowerCase() && styles.genderChipActive,
+            ]}
             onPress={() => onChange(g.toLowerCase())}
             activeOpacity={0.7}
           >
-            <Text style={[styles.genderChipText, value === g.toLowerCase() && styles.genderChipTextActive]}>
+            <Text
+              style={[
+                styles.genderChipText,
+                value === g.toLowerCase() && styles.genderChipTextActive,
+              ]}
+            >
               {g}
             </Text>
           </TouchableOpacity>
@@ -182,7 +200,13 @@ function GenderPicker({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
-function GroupTypePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function GroupTypePicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
     <View style={styles.formGroup}>
       <Text style={styles.label}>
@@ -192,11 +216,19 @@ function GroupTypePicker({ value, onChange }: { value: string; onChange: (v: str
         {GROUP_TYPES.map((type) => (
           <TouchableOpacity
             key={type.value}
-            style={[styles.groupTypeChip, value === type.value && styles.groupTypeChipActive]}
+            style={[
+              styles.groupTypeChip,
+              value === type.value && styles.groupTypeChipActive,
+            ]}
             onPress={() => onChange(type.value)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.groupTypeChipText, value === type.value && styles.groupTypeChipTextActive]}>
+            <Text
+              style={[
+                styles.groupTypeChipText,
+                value === type.value && styles.groupTypeChipTextActive,
+              ]}
+            >
               {type.label}
             </Text>
           </TouchableOpacity>
@@ -206,7 +238,13 @@ function GroupTypePicker({ value, onChange }: { value: string; onChange: (v: str
   );
 }
 
-function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) {
+function ReviewSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <View style={styles.reviewSection}>
       <Text style={styles.reviewSectionTitle}>{title}</Text>
@@ -229,8 +267,9 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
 // ─── Main Component ────────────────────────────────────────────────────────
 export default function Signup() {
   const router = useRouter();
-  const alert = useAlert(); // ✅ Custom alert hook
-  
+  const alert = useAlert();
+  const insets = useSafeAreaInsets();
+
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -243,7 +282,6 @@ export default function Signup() {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
 
-  // ✅ Track whether user has actually viewed the documents
   const [hasViewedPrivacy, setHasViewedPrivacy] = useState(false);
   const [hasViewedTerms, setHasViewedTerms] = useState(false);
 
@@ -251,12 +289,74 @@ export default function Signup() {
   const [sendingOtp, setSendingOtp] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const otpInputRef = useRef<TextInput>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  const cardSlideAnim = useRef(new Animated.Value(300)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const headlineFade = useRef(new Animated.Value(0)).current;
+
+  // Dynamic card height based on step (PRESERVED)
+  const getCardMaxHeight = () => {
+    switch (step) {
+      case 0:
+        return windowHeight * 0.52;
+      case 1:
+        return windowHeight * 0.42;
+      case 2:
+        return windowHeight * 0.72;
+      case 3:
+        return windowHeight * 0.72;
+      case 4:
+        return windowHeight * 0.72;
+      default:
+        return windowHeight * 0.55;
+    }
+  };
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
     return () => clearTimeout(t);
   }, [resendCooldown]);
+
+  useEffect(() => {
+    Animated.timing(headlineFade, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+      delay: 100,
+    }).start();
+
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+      delay: 200,
+    }).start();
+
+    Animated.spring(cardSlideAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 8,
+      delay: 300,
+    }).start();
+  }, []);
+
+  useEffect(() => {
+    cardSlideAnim.setValue(30);
+    Animated.spring(cardSlideAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 60,
+      friction: 8,
+    }).start();
+
+    // FIX: Reset scroll position to top when step changes
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    }, 100);
+  }, [step]);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -299,20 +399,23 @@ export default function Signup() {
     }
   };
 
-  const pickDocument = async (field: string) => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ["application/pdf", "image/*"],
-      copyToCacheDirectory: true,
+ const pickDocument = async (field: string) => {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: [
+      "application/pdf", 
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ],
+    copyToCacheDirectory: true,
+  });
+  if (!result.canceled && result.assets.length > 0) {
+    const asset = result.assets[0];
+    update(field, {
+      uri: asset.uri,
+      name: asset.name,
+      type: asset.mimeType ?? "application/octet-stream",
     });
-    if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
-      update(field, {
-        uri: asset.uri,
-        name: asset.name,
-        type: asset.mimeType ?? "application/octet-stream",
-      });
-    }
-  };
+  }
+};
 
   const validateStep = (): string | null => {
     if (step === 0) {
@@ -320,7 +423,11 @@ export default function Signup() {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
         return "Enter a valid email.";
       if (!formData.password) return "Password is required.";
-      if (!/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(formData.password))
+      if (
+        !/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(
+          formData.password,
+        )
+      )
         return "Password needs uppercase, lowercase, number, special char and 8+ characters.";
       if (formData.password !== formData.confirmPassword)
         return "Passwords do not match.";
@@ -340,12 +447,12 @@ export default function Signup() {
       if (!formData.title) return "Project title is required.";
       if (!formData.total_treegrowers_will_participate)
         return "Total tree growers is required.";
-
-      const totalGrowers = parseInt(formData.total_treegrowers_will_participate);
+      const totalGrowers = parseInt(
+        formData.total_treegrowers_will_participate,
+      );
       if (isNaN(totalGrowers) || totalGrowers < 2) {
         return "Minimum of 2 tree growers required per group.";
       }
-
       if (!formData.maintenance_plan)
         return "Maintenance plan document is required.";
     }
@@ -362,13 +469,20 @@ export default function Signup() {
       });
       const json = await res.json();
       if (!res.ok) {
-        alert.error("OTP Failed", json.error ?? "Failed to send verification code.");
+        alert.error(
+          "OTP Failed",
+          json.error ?? "Failed to send verification code.",
+        );
         return;
       }
       setOtp("");
       setResendCooldown(60);
       setStep(1);
-      alert.info("Code Sent", `Verification code sent to ${formData.email}`, 3000);
+      alert.info(
+        "Code Sent",
+        `Verification code sent to ${formData.email}`,
+        3000,
+      );
     } catch (e: any) {
       alert.error("Network Error", e.message ?? "Unable to connect to server.");
     } finally {
@@ -378,7 +492,10 @@ export default function Signup() {
 
   const verifyOtp = async () => {
     if (otp.length !== 6) {
-      alert.warning("Invalid Code", "Please enter the 6-digit code sent to your email.");
+      alert.warning(
+        "Invalid Code",
+        "Please enter the 6-digit code sent to your email.",
+      );
       return;
     }
     setLoading(true);
@@ -393,7 +510,10 @@ export default function Signup() {
         alert.error("Verification Failed", json.error ?? "Incorrect code.");
         return;
       }
-      alert.success("Email Verified", "Your email has been successfully verified!");
+      alert.success(
+        "Email Verified",
+        "Your email has been successfully verified!",
+      );
       setStep(2);
     } catch (e: any) {
       alert.error("Network Error", e.message ?? "Unable to connect to server.");
@@ -425,36 +545,30 @@ export default function Signup() {
   };
 
   const goBack = () => {
-    if (step === 1) {
-      setOtp("");
-    }
+    if (step === 1) setOtp("");
     setStep((s) => s - 1);
   };
 
-  // ✅ Handle agreement checkbox - must have viewed both documents
   const handleAgreementToggle = () => {
     if (!hasViewedPrivacy || !hasViewedTerms) {
       alert.warning(
         "Documents Required",
         "Please read both the Privacy Policy and Terms & Conditions before agreeing.",
-        4000
+        4000,
       );
       return;
     }
     setAgreedToPrivacy(!agreedToPrivacy);
   };
 
-  // ✅ Submit with confirmation dialog
   const handleSubmit = () => {
     if (!agreedToPrivacy) {
       alert.warning(
         "Agreement Required",
-        "Please agree to the Privacy Policy and Terms & Conditions before submitting."
+        "Please agree to the Privacy Policy and Terms & Conditions before submitting.",
       );
       return;
     }
-
-    // Show confirmation dialog before submitting
     alert.confirm(
       "Submit Application?",
       "Are you sure you want to submit your tree grower application? Please ensure all information is accurate. Once submitted, your application will be reviewed by the administrator.",
@@ -463,16 +577,14 @@ export default function Signup() {
         confirmText: "Yes, Submit",
         cancelText: "Review Again",
         type: "warning",
-      }
+      },
     );
   };
 
-  // ✅ Actual submission logic
   const performSubmit = async () => {
     setLoading(true);
     try {
       const fd = new FormData();
-
       fd.append("email", formData.email);
       fd.append("password", formData.password);
       fd.append("user_role", "treeGrowers");
@@ -481,17 +593,12 @@ export default function Signup() {
       fd.append("middle_name", formData.middle_name);
       fd.append("contact", formData.contact);
       fd.append("address", formData.address);
-
-      if (formData.birthday) {
-        fd.append("birthday", formData.birthday);
-      }
-
+      if (formData.birthday) fd.append("birthday", formData.birthday);
       let g = "O";
       if (formData.gender === "male") g = "M";
       else if (formData.gender === "female") g = "F";
       fd.append("gender", g);
       fd.append("is_active", "false");
-
       if (formData.profile_img) {
         fd.append("profile_img", {
           uri: formData.profile_img.uri,
@@ -499,12 +606,10 @@ export default function Signup() {
           type: formData.profile_img.type,
         } as any);
       }
-
       fd.append("group_name", formData.group_name);
       fd.append("group_type", formData.group_type);
       fd.append("group_address", formData.group_address);
       fd.append("group_contact", formData.group_contact);
-
       if (formData.group_profile) {
         fd.append("group_profile", {
           uri: formData.group_profile.uri,
@@ -512,14 +617,17 @@ export default function Signup() {
           type: formData.group_profile.type,
         } as any);
       }
-
       fd.append("title", formData.title);
-      fd.append("total_treegrowers_will_participate", formData.total_treegrowers_will_participate);
-
+      fd.append(
+        "total_treegrowers_will_participate",
+        formData.total_treegrowers_will_participate,
+      );
       if (formData.proposed_orientation_date) {
-        fd.append("proposed_orientation_date", formData.proposed_orientation_date);
+        fd.append(
+          "proposed_orientation_date",
+          formData.proposed_orientation_date,
+        );
       }
-
       if (formData.maintenance_plan) {
         fd.append("maintenance_plan", {
           uri: formData.maintenance_plan.uri,
@@ -527,38 +635,33 @@ export default function Signup() {
           type: formData.maintenance_plan.type,
         } as any);
       }
-
       const res = await fetch(api + "/api/register_tree_grower/", {
         method: "POST",
         body: fd,
       });
       const json = await res.json();
-
       if (!res.ok) {
         alert.error(
           "Registration Failed",
           json.error ?? "Something went wrong. Please try again.",
-          5000
+          5000,
         );
         return;
       }
-
-      // ✅ Success - show informative alert with button to go to homepage
       alert.success(
         "Application Submitted! 🌱",
         "Your application has been successfully sent and is now under evaluation. You will be notified via email once your application is accepted or rejected. Please check your email regularly for updates.",
-        8000
+        8000,
       );
-
-      // Navigate to homepage after a short delay
       setTimeout(() => {
         router.push("/homepage");
       }, 2500);
     } catch (e: any) {
       alert.error(
         "Connection Error",
-        e.message ?? "Unable to reach the server. Please check your internet connection.",
-        5000
+        e.message ??
+          "Unable to reach the server. Please check your internet connection.",
+        5000,
       );
     } finally {
       setLoading(false);
@@ -570,11 +673,9 @@ export default function Signup() {
       case 0:
         return (
           <>
-            <Text style={styles.stepTitle}>Account Information</Text>
-            <Text style={styles.stepSubtitle}>Set up your login credentials</Text>
             <Field
               label="Email Address"
-              icon={<Mail size={18} color="#5a8a6a" />}
+              icon={<Mail size={18} color="#9CA3AF" />}
               value={formData.email}
               onChangeText={(v) => update("email", v)}
               keyboardType="email-address"
@@ -587,12 +688,12 @@ export default function Signup() {
               </Text>
               <View style={styles.inputContainer}>
                 <View style={styles.inputIcon}>
-                  <Lock size={18} color="#5a8a6a" />
+                  <Lock size={18} color="#9CA3AF" />
                 </View>
                 <TextInput
                   style={[styles.input, inputStyleOverride]}
                   placeholder="Enter password"
-                  placeholderTextColor="#5a8a6a"
+                  placeholderTextColor="#9CA3AF"
                   value={formData.password}
                   onChangeText={(v) => update("password", v)}
                   secureTextEntry={!showPassword}
@@ -602,7 +703,11 @@ export default function Signup() {
                   onPress={() => setShowPassword(!showPassword)}
                   style={styles.eyeButton}
                 >
-                  {showPassword ? <EyeOff size={18} color="#5a8a6a" /> : <Eye size={18} color="#5a8a6a" />}
+                  {showPassword ? (
+                    <EyeOff size={18} color="#9CA3AF" />
+                  ) : (
+                    <Eye size={18} color="#9CA3AF" />
+                  )}
                 </TouchableOpacity>
               </View>
               <Text style={styles.hint}>
@@ -615,12 +720,12 @@ export default function Signup() {
               </Text>
               <View style={styles.inputContainer}>
                 <View style={styles.inputIcon}>
-                  <Lock size={18} color="#5a8a6a" />
+                  <Lock size={18} color="#9CA3AF" />
                 </View>
                 <TextInput
                   style={[styles.input, inputStyleOverride]}
                   placeholder="Confirm password"
-                  placeholderTextColor="#5a8a6a"
+                  placeholderTextColor="#9CA3AF"
                   value={formData.confirmPassword}
                   onChangeText={(v) => update("confirmPassword", v)}
                   secureTextEntry={!showConfirmPassword}
@@ -630,7 +735,11 @@ export default function Signup() {
                   onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                   style={styles.eyeButton}
                 >
-                  {showConfirmPassword ? <EyeOff size={18} color="#5a8a6a" /> : <Eye size={18} color="#5a8a6a" />}
+                  {showConfirmPassword ? (
+                    <EyeOff size={18} color="#9CA3AF" />
+                  ) : (
+                    <Eye size={18} color="#9CA3AF" />
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -639,12 +748,8 @@ export default function Signup() {
       case 1:
         return (
           <>
-            <Text style={styles.stepTitle}>Verify Your Email</Text>
-            <Text style={styles.stepSubtitle}>
-              Enter the 6-digit code sent to your email
-            </Text>
             <View style={styles.otpEmailBadge}>
-              <Mail size={14} color="#4caf72" />
+              <Mail size={14} color="#22C55E" />
               <Text style={styles.otpEmailText} numberOfLines={1}>
                 {formData.email}
               </Text>
@@ -654,7 +759,9 @@ export default function Signup() {
                 ref={otpInputRef}
                 style={[styles.otpHiddenInput, inputStyleOverride]}
                 value={otp}
-                onChangeText={(v) => setOtp(v.replace(/[^0-9]/g, "").slice(0, 6))}
+                onChangeText={(v) =>
+                  setOtp(v.replace(/[^0-9]/g, "").slice(0, 6))
+                }
                 keyboardType="number-pad"
                 maxLength={6}
                 autoFocus
@@ -691,7 +798,8 @@ export default function Signup() {
               <Text
                 style={[
                   styles.otpResend,
-                  (resendCooldown > 0 || sendingOtp) && styles.otpResendDisabled,
+                  (resendCooldown > 0 || sendingOtp) &&
+                    styles.otpResendDisabled,
                 ]}
               >
                 {sendingOtp
@@ -706,24 +814,22 @@ export default function Signup() {
       case 2:
         return (
           <>
-            <Text style={styles.stepTitle}>Personal Information</Text>
-            <Text style={styles.stepSubtitle}>Tell us a little about yourself</Text>
             <Field
               label="First Name"
-              icon={<User size={18} color="#5a8a6a" />}
+              icon={<User size={18} color="#9CA3AF" />}
               value={formData.first_name}
               onChangeText={(v) => update("first_name", v)}
               required
             />
             <Field
               label="Middle Name"
-              icon={<User size={18} color="#5a8a6a" />}
+              icon={<User size={18} color="#9CA3AF" />}
               value={formData.middle_name}
               onChangeText={(v) => update("middle_name", v)}
             />
             <Field
               label="Last Name"
-              icon={<User size={18} color="#5a8a6a" />}
+              icon={<User size={18} color="#9CA3AF" />}
               value={formData.last_name}
               onChangeText={(v) => update("last_name", v)}
               required
@@ -731,7 +837,9 @@ export default function Signup() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>
                 Birthday{" "}
-                <Text style={{ color: "#5a8a6a", fontSize: 10 }}>(optional)</Text>
+                <Text style={{ color: "#9CA3AF", fontSize: 10 }}>
+                  (optional)
+                </Text>
               </Text>
               <TouchableOpacity
                 style={styles.inputContainer}
@@ -739,7 +847,7 @@ export default function Signup() {
                 activeOpacity={0.7}
               >
                 <View style={styles.inputIcon}>
-                  <Calendar size={18} color="#5a8a6a" />
+                  <Calendar size={18} color="#9CA3AF" />
                 </View>
                 <Text
                   style={[
@@ -749,12 +857,12 @@ export default function Signup() {
                 >
                   {formData.birthday || "Select your birthday"}
                 </Text>
-                <Calendar size={16} color="#2d5f3c" />
+                <Calendar size={16} color="#22C55E" />
               </TouchableOpacity>
             </View>
             <Field
               label="Contact Number"
-              icon={<Phone size={18} color="#5a8a6a" />}
+              icon={<Phone size={18} color="#9CA3AF" />}
               value={formData.contact}
               onChangeText={(v) => update("contact", v)}
               keyboardType="phone-pad"
@@ -763,12 +871,15 @@ export default function Signup() {
             />
             <Field
               label="Address"
-              icon={<MapPin size={18} color="#5a8a6a" />}
+              icon={<MapPin size={18} color="#9CA3AF" />}
               value={formData.address}
               onChangeText={(v) => update("address", v)}
               required
             />
-            <GenderPicker value={formData.gender} onChange={(v) => update("gender", v)} />
+            <GenderPicker
+              value={formData.gender}
+              onChange={(v) => update("gender", v)}
+            />
             <FileButton
               label="Profile Image"
               value={formData.profile_img}
@@ -780,30 +891,28 @@ export default function Signup() {
       case 3:
         return (
           <>
-            <Text style={styles.stepTitle}>Group & Project</Text>
-            <Text style={styles.stepSubtitle}>
-              Details about your group and maintenance plan
-            </Text>
-
             <Text style={styles.sectionHeading}>Group Details</Text>
             <Field
               label="Group Name"
-              icon={<Building2 size={18} color="#5a8a6a" />}
+              icon={<Building2 size={18} color="#9CA3AF" />}
               value={formData.group_name}
               onChangeText={(v) => update("group_name", v)}
               required
             />
-            <GroupTypePicker value={formData.group_type} onChange={(v) => update("group_type", v)} />
+            <GroupTypePicker
+              value={formData.group_type}
+              onChange={(v) => update("group_type", v)}
+            />
             <Field
               label="Group Address"
-              icon={<MapPin size={18} color="#5a8a6a" />}
+              icon={<MapPin size={18} color="#9CA3AF" />}
               value={formData.group_address}
               onChangeText={(v) => update("group_address", v)}
               required
             />
             <Field
               label="Group Contact"
-              icon={<Phone size={18} color="#5a8a6a" />}
+              icon={<Phone size={18} color="#9CA3AF" />}
               value={formData.group_contact}
               onChangeText={(v) => update("group_contact", v)}
               keyboardType="phone-pad"
@@ -822,26 +931,32 @@ export default function Signup() {
             </Text>
             <Field
               label="Project Title"
-              icon={<FileText size={18} color="#5a8a6a" />}
+              icon={<FileText size={18} color="#9CA3AF" />}
               value={formData.title}
               onChangeText={(v) => update("title", v)}
               required
             />
             <Field
               label="Total Tree Growers"
-              icon={<Users size={18} color="#5a8a6a" />}
+              icon={<Users size={18} color="#9CA3AF" />}
               value={formData.total_treegrowers_will_participate}
-              onChangeText={(v) => update("total_treegrowers_will_participate", v)}
+              onChangeText={(v) =>
+                update("total_treegrowers_will_participate", v)
+              }
               keyboardType="numeric"
               autoCapitalize="none"
               required
             />
-            <Text style={styles.hint}>Minimum 2 tree growers required per group</Text>
+            <Text style={styles.hint}>
+              Minimum 2 tree growers required per group
+            </Text>
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>
                 Proposed Orientation Date{" "}
-                <Text style={{ color: "#5a8a6a", fontSize: 10 }}>(optional)</Text>
+                <Text style={{ color: "#9CA3AF", fontSize: 10 }}>
+                  (optional)
+                </Text>
               </Text>
               <TouchableOpacity
                 style={styles.inputContainer}
@@ -849,17 +964,19 @@ export default function Signup() {
                 activeOpacity={0.7}
               >
                 <View style={styles.inputIcon}>
-                  <Calendar size={18} color="#5a8a6a" />
+                  <Calendar size={18} color="#9CA3AF" />
                 </View>
                 <Text
                   style={[
                     styles.dateDisplay,
-                    !formData.proposed_orientation_date && styles.dateDisplayPlaceholder,
+                    !formData.proposed_orientation_date &&
+                      styles.dateDisplayPlaceholder,
                   ]}
                 >
-                  {formData.proposed_orientation_date || "Select preferred date (optional)"}
+                  {formData.proposed_orientation_date ||
+                    "Select preferred date (optional)"}
                 </Text>
-                <Calendar size={16} color="#2d5f3c" />
+                <Calendar size={16} color="#22C55E" />
               </TouchableOpacity>
             </View>
 
@@ -882,52 +999,67 @@ export default function Signup() {
       case 4:
         return (
           <>
-            <Text style={styles.stepTitle}>Review Your Application</Text>
-            <Text style={styles.stepSubtitle}>
-              Please confirm your details before submitting
-            </Text>
-
-            <ReviewSection title="🔐 Account">
+            <ReviewSection title="Account">
               <ReviewRow label="Email" value={formData.email} />
               <ReviewRow label="Password" value="••••••••" />
             </ReviewSection>
 
-            <ReviewSection title="👤 Personal">
+            <ReviewSection title="Personal">
               <ReviewRow
                 label="Name"
                 value={`${formData.first_name} ${formData.middle_name} ${formData.last_name}`.trim()}
               />
-              <ReviewRow label="Birthday" value={formData.birthday || "Not provided"} />
+              <ReviewRow
+                label="Birthday"
+                value={formData.birthday || "Not provided"}
+              />
               <ReviewRow label="Contact" value={formData.contact} />
               <ReviewRow label="Address" value={formData.address} />
               <ReviewRow label="Gender" value={formData.gender} />
-              <ReviewRow label="Profile Image" value={formData.profile_img?.name ?? "Not provided"} />
+              <ReviewRow
+                label="Profile Image"
+                value={formData.profile_img?.name ?? "Not provided"}
+              />
             </ReviewSection>
 
-            <ReviewSection title="🌿 Group">
+            <ReviewSection title="Group">
               <ReviewRow label="Group Name" value={formData.group_name} />
               <ReviewRow
                 label="Group Type"
-                value={GROUP_TYPES.find((t) => t.value === formData.group_type)?.label || "—"}
+                value={
+                  GROUP_TYPES.find((t) => t.value === formData.group_type)
+                    ?.label || "—"
+                }
               />
               <ReviewRow label="Group Address" value={formData.group_address} />
               <ReviewRow label="Group Contact" value={formData.group_contact} />
-              <ReviewRow label="Group Logo" value={formData.group_profile?.name ?? "Not provided"} />
+              <ReviewRow
+                label="Group Logo"
+                value={formData.group_profile?.name ?? "Not provided"}
+              />
             </ReviewSection>
 
-            <ReviewSection title="📋 Project">
+            <ReviewSection title="Project">
               <ReviewRow label="Title" value={formData.title} />
-              <ReviewRow label="Tree Growers" value={formData.total_treegrowers_will_participate} />
-              <ReviewRow label="Proposed Orientation" value={formData.proposed_orientation_date || "Not specified"} />
-              <ReviewRow label="Maintenance Plan" value={formData.maintenance_plan?.name ?? "—"} />
+              <ReviewRow
+                label="Tree Growers"
+                value={formData.total_treegrowers_will_participate}
+              />
+              <ReviewRow
+                label="Proposed Orientation"
+                value={formData.proposed_orientation_date || "Not specified"}
+              />
+              <ReviewRow
+                label="Maintenance Plan"
+                value={formData.maintenance_plan?.name ?? "—"}
+              />
             </ReviewSection>
 
             <View style={styles.noteBox}>
               <Text style={styles.noteText}>
                 ⚠️ Your account will be set as{" "}
                 <Text style={styles.noteBold}>For Evaluation</Text> until
-                approved by an administrator. Seedling requests can be made
-                after acceptance.
+                approved by an administrator.
               </Text>
             </View>
 
@@ -954,20 +1086,18 @@ export default function Signup() {
                   >
                     {hasViewedTerms ? "✓ " : ""}Terms & Conditions
                   </Text>
-                  . Your field data, GPS coordinates, and photos are collected
-                  as part of the reforestation monitoring program.
+                  .
                 </Text>
               </View>
 
-              {/* ✅ Show status if not yet viewed */}
               {(!hasViewedPrivacy || !hasViewedTerms) && (
                 <View style={styles.viewStatusBox}>
                   <Text style={styles.viewStatusText}>
                     {!hasViewedPrivacy && !hasViewedTerms
                       ? "📖 Please read both documents before agreeing"
                       : !hasViewedPrivacy
-                      ? "📖 Please read the Privacy Policy first"
-                      : "📖 Please read the Terms & Conditions first"}
+                        ? " Please read the Privacy Policy first"
+                        : "📖 Please read the Terms & Conditions first"}
                   </Text>
                 </View>
               )}
@@ -975,7 +1105,8 @@ export default function Signup() {
               <TouchableOpacity
                 style={[
                   styles.checkRow,
-                  (!hasViewedPrivacy || !hasViewedTerms) && styles.checkRowDisabled,
+                  (!hasViewedPrivacy || !hasViewedTerms) &&
+                    styles.checkRowDisabled,
                 ]}
                 onPress={handleAgreementToggle}
                 activeOpacity={0.7}
@@ -984,15 +1115,21 @@ export default function Signup() {
                   style={[
                     styles.checkbox,
                     agreedToPrivacy && styles.checkboxChecked,
-                    (!hasViewedPrivacy || !hasViewedTerms) && styles.checkboxDisabled,
+                    (!hasViewedPrivacy || !hasViewedTerms) &&
+                      styles.checkboxDisabled,
                   ]}
                 >
-                  {agreedToPrivacy && <Check size={11} color="#ffffff" strokeWidth={3} />}
+                  {agreedToPrivacy && (
+                    <Check size={11} color="#ffffff" strokeWidth={3} />
+                  )}
                 </View>
-                <Text style={[
-                  styles.privacyText,
-                  (!hasViewedPrivacy || !hasViewedTerms) && styles.privacyTextDisabled,
-                ]}>
+                <Text
+                  style={[
+                    styles.privacyText,
+                    (!hasViewedPrivacy || !hasViewedTerms) &&
+                      styles.privacyTextDisabled,
+                  ]}
+                >
                   I agree to the Privacy Notice and Terms & Conditions
                 </Text>
               </TouchableOpacity>
@@ -1004,75 +1141,79 @@ export default function Signup() {
     }
   };
 
+  const cardMaxHeight = getCardMaxHeight();
+
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.root}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
-        <View
-          style={[
-            styles.container,
-            {
-              maxWidth: Math.min(MAX_CARD_WIDTH, windowWidth - HORIZONTAL_PADDING * 2),
-            },
-          ]}
+        <ImageBackground
+          source={{
+            uri: "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=800&h=1200&fit=crop",
+          }}
+          style={styles.background}
+          resizeMode="cover"
         >
-          <View style={styles.authContainer}>
-            <View style={styles.logoContainer}>
-              <View style={styles.logoCircle}>
-                <Image
-                  source={require("../assets/images/logo.jpg")}
-                  style={styles.logo}
-                />
-              </View>
-              <Text style={styles.brandTitle}>PlantScope</Text>
-              <Text style={styles.brandSubtitle}>
-                Nature's Digital System for TreeGrowers
+          <View style={styles.overlay} />
+
+          {/* Top Brand & Headline - Safe Area Aware */}
+          <Animated.View
+            style={[
+              styles.topWrapper,
+              { opacity: headlineFade, paddingTop: insets.top },
+            ]}
+          >
+            <Text style={styles.brandText}>PlantScope</Text>
+
+            <View style={{ marginTop: windowHeight * 0.12 }}>
+              <Text style={styles.headline}>{STEPS[step].title}</Text>
+              <Text style={styles.stepIndicator}>
+                Step {step + 1} of {STEPS.length} · {STEPS[step].label}
               </Text>
             </View>
 
-            <View style={styles.stepsRow}>
-              {STEPS.flatMap((s, i) => {
-                const IconComponent = s.Icon;
-                const items: React.ReactElement[] = [
-                  <View key={`step-${i}`} style={styles.stepItem}>
-                    <View
-                      style={[
-                        styles.stepDot,
-                        i <= step && styles.stepDotActive,
-                        i < step && styles.stepDotDone,
-                      ]}
-                    >
-                      {i < step ? (
-                        <Check size={14} color="#ffffff" strokeWidth={2.5} />
-                      ) : (
-                        <IconComponent size={16} color={i === step ? "#4caf72" : "#5a8a6a"} />
-                      )}
-                    </View>
-                    <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]}>
-                      {s.label}
-                    </Text>
-                  </View>,
-                ];
-                if (i < STEPS.length - 1) {
-                  items.push(
-                    <View
-                      key={`line-${i}`}
-                      style={[styles.stepConnector, i < step && styles.stepConnectorDone]}
-                    />,
-                  );
-                }
-                return items;
-              })}
+            <View style={[styles.dotsContainer, { marginTop: 24 }]}>
+              {STEPS.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.dot,
+                    i === step && styles.dotActive,
+                    i < step && styles.dotDone,
+                  ]}
+                />
+              ))}
             </View>
+          </Animated.View>
 
-            <View style={styles.authCard}>
+          {/* Bottom Card - Dynamic Height */}
+          <Animated.View
+            style={[
+              styles.card,
+              {
+                transform: [{ translateY: cardSlideAnim }],
+                maxHeight: cardMaxHeight,
+              },
+            ]}
+          >
+            <ScrollView
+              ref={scrollViewRef}
+              contentContainerStyle={[
+                styles.cardScrollContent,
+                { paddingBottom: 16 + insets.bottom }, // FIX: Prevents nav bar overlap
+              ]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+              indicatorStyle="black"
+              bounces={true}
+              overScrollMode="always"
+            >
               {renderStep()}
 
+              {/* Navigation */}
               <View style={styles.navRow}>
                 {step > 0 && (
                   <TouchableOpacity
@@ -1080,7 +1221,7 @@ export default function Signup() {
                     onPress={goBack}
                     activeOpacity={0.7}
                   >
-                    <ChevronLeft size={18} color="#a8c5b3" />
+                    <ChevronLeft size={18} color="#6B7280" />
                     <Text style={styles.backButtonText}>Back</Text>
                   </TouchableOpacity>
                 )}
@@ -1094,7 +1235,7 @@ export default function Signup() {
                     ]}
                     onPress={goNext}
                     disabled={sendingOtp || loading}
-                    activeOpacity={0.8}
+                    activeOpacity={0.85}
                   >
                     <Text style={styles.nextButtonText}>
                       {step === 0 && sendingOtp
@@ -1105,14 +1246,19 @@ export default function Signup() {
                             ? "Verify Email"
                             : "Continue"}
                     </Text>
-                    {!(sendingOtp || loading) && <ChevronRight size={18} color="#fff" />}
+                    {!(sendingOtp || loading) && (
+                      <ChevronRight size={18} color="#fff" />
+                    )}
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={[styles.nextButton, loading && styles.nextButtonDisabled]}
+                    style={[
+                      styles.nextButton,
+                      loading && styles.nextButtonDisabled,
+                    ]}
                     onPress={handleSubmit}
                     disabled={loading}
-                    activeOpacity={0.8}
+                    activeOpacity={0.85}
                   >
                     <Text style={styles.nextButtonText}>
                       {loading ? "Submitting…" : "Submit Application"}
@@ -1121,232 +1267,224 @@ export default function Signup() {
                   </TouchableOpacity>
                 )}
               </View>
-            </View>
 
-            <View style={styles.bottomText}>
-              <Text style={styles.registerText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => router.push("/homepage")}>
-                <Text style={styles.registerLink}>Sign In</Text>
-              </TouchableOpacity>
-            </View>
+              {/* Bottom link */}
+              {step === 0 && (
+                <View style={styles.bottomText}>
+                  <Text style={styles.registerText}>
+                    Already have an account?{" "}
+                  </Text>
+                  <TouchableOpacity onPress={() => router.push("/homepage")}>
+                    <Text style={styles.registerLink}>Sign In</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+          </Animated.View>
+        </ImageBackground>
 
-            <Text style={styles.footer}>Protected by nature's encryption</Text>
-          </View>
-        </View>
-      </ScrollView>
+        <DatePickerModal
+          visible={showDatePicker}
+          value={formData.birthday}
+          onConfirm={(d) => update("birthday", d)}
+          onClose={() => setShowDatePicker(false)}
+        />
+        <DatePickerModal
+          visible={showProposedDatePicker}
+          value={formData.proposed_orientation_date}
+          onConfirm={(d) => update("proposed_orientation_date", d)}
+          onClose={() => setShowProposedDatePicker(false)}
+        />
 
-      {/* ✅ Extracted Modals */}
-      <DatePickerModal
-        visible={showDatePicker}
-        value={formData.birthday}
-        onConfirm={(d) => update("birthday", d)}
-        onClose={() => setShowDatePicker(false)}
-      />
-      <DatePickerModal
-        visible={showProposedDatePicker}
-        value={formData.proposed_orientation_date}
-        onConfirm={(d) => update("proposed_orientation_date", d)}
-        onClose={() => setShowProposedDatePicker(false)}
-      />
-
-      <PrivacyPolicyModal
-        visible={showPrivacyPolicy}
-        onClose={() => setShowPrivacyPolicy(false)}
-        onViewed={() => setHasViewedPrivacy(true)}
-        hasViewed={hasViewedPrivacy}
-      />
-      <TermsModal
-        visible={showTerms}
-        onClose={() => setShowTerms(false)}
-        onViewed={() => setHasViewedTerms(true)}
-        hasViewed={hasViewedTerms}
-      />
-    </KeyboardAvoidingView>
+        <PrivacyPolicyModal
+          visible={showPrivacyPolicy}
+          onClose={() => setShowPrivacyPolicy(false)}
+          onViewed={() => setHasViewedPrivacy(true)}
+          hasViewed={hasViewedPrivacy}
+        />
+        <TermsModal
+          visible={showTerms}
+          onClose={() => setShowTerms(false)}
+          onViewed={() => setHasViewedTerms(true)}
+          hasViewed={hasViewedTerms}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 // ─── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#0d2a17" },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 24,
-    paddingHorizontal: HORIZONTAL_PADDING,
-  },
-  container: { width: "100%" },
-  authContainer: { width: "100%", alignItems: "center" },
-  logoContainer: { alignItems: "center", marginBottom: 22 },
-  logoCircle: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: "rgba(76,175,114,0.35)",
-  },
-  logo: { width: 66, height: 66, borderRadius: 33 },
-  brandTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#ffffff",
-    letterSpacing: 0.6,
-  },
-  brandSubtitle: {
-    fontSize: 12,
-    color: "#a8c5b3",
-    marginTop: 4,
-    textAlign: "center",
-  },
-  stepsRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 20,
-    width: "100%",
-  },
-  stepItem: { alignItems: "center", width: 46 },
-  stepConnector: {
+  safeArea: {
     flex: 1,
-    height: 2,
-    backgroundColor: "#2d5f3c",
-    marginTop: 19,
+    backgroundColor: "#0B0F0D",
   },
-  stepConnectorDone: { backgroundColor: "#4caf72" },
-  stepDot: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#122b1a",
-    borderWidth: 2,
-    borderColor: "#2d5f3c",
-    justifyContent: "center",
+  root: {
+    flex: 1,
+    backgroundColor: "#0B0F0D",
+  },
+  background: {
+    flex: 1,
+    width: "100%",
+    height: "100%",
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(11, 15, 13, 0.78)",
+  },
+  topWrapper: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    paddingLeft: 24,
+    paddingRight: 24,
+  },
+  brandText: {
+    color: "rgba(255, 255, 255, 0.55)",
+    fontSize: 15,
+    fontWeight: "500",
+    letterSpacing: 0.3,
+  },
+  headline: {
+    fontSize: 30,
+    fontWeight: "700",
+    color: "#ffffff",
+    lineHeight: 38,
+    letterSpacing: -0.3,
+  },
+  stepIndicator: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.5)",
+    marginTop: 8,
+    fontWeight: "500",
+  },
+  dotsContainer: {
+    flexDirection: "row",
+    gap: 6,
     alignItems: "center",
   },
-  stepDotActive: { borderColor: "#4caf72", backgroundColor: "#1a4228" },
-  stepDotDone: { backgroundColor: "#2d5f3c", borderColor: "#4caf72" },
-  stepLabel: {
-    fontSize: 10,
-    color: "#5a8a6a",
-    marginTop: 4,
-    textAlign: "center",
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
   },
-  stepLabelActive: { color: "#a8c5b3", fontWeight: "700" },
-  authCard: {
-    width: "100%",
-    backgroundColor: "#183d23",
-    borderRadius: 18,
-    padding: 22,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    borderTopColor: "rgba(76,175,114,0.45)",
-    borderTopWidth: 2,
+  dotActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    width: 18,
+    borderRadius: 3,
+  },
+  dotDone: {
+    backgroundColor: "#22C55E",
+  },
+  card: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    zIndex: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 18,
-    elevation: 14,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 20,
   },
-  stepTitle: {
-    fontSize: 20,
-    color: "#ffffff",
-    fontWeight: "700",
-    marginBottom: 4,
+  cardScrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 16, // Base padding, overridden inline with insets.bottom
+    flexGrow: 1,
   },
-  stepSubtitle: { fontSize: 12, color: "#5a8a6a", marginBottom: 18 },
+  formGroup: { marginBottom: 12 },
+  label: {
+    color: "#374151",
+    fontSize: 12,
+    marginBottom: 5,
+    fontWeight: "600",
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    minHeight: 46,
+  },
+  inputIcon: { marginRight: 10 },
+  input: {
+    flex: 1,
+    color: "#1C1C1E",
+    fontSize: 15,
+    paddingVertical: 6,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+  },
+  dateDisplay: {
+    flex: 1,
+    color: "#1C1C1E",
+    fontSize: 15,
+    paddingVertical: 6,
+  },
+  dateDisplayPlaceholder: { color: "#9CA3AF" },
+  eyeButton: { padding: 6 },
+  hint: { fontSize: 10, color: "#9CA3AF", marginTop: 3 },
+  genderRow: { flexDirection: "row", gap: 8 },
+  genderChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+  },
+  genderChipActive: {
+    borderColor: "#22C55E",
+    backgroundColor: "#F0FDF4",
+  },
+  genderChipText: { color: "#6B7280", fontSize: 13, fontWeight: "600" },
+  genderChipTextActive: { color: "#1C1C1E" },
+  fileButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderStyle: "dashed",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  fileButtonText: { flex: 1, color: "#6B7280", fontSize: 13 },
   sectionHeading: {
     fontSize: 11,
-    color: "#4caf72",
+    color: "#22C55E",
     fontWeight: "700",
     letterSpacing: 1,
     textTransform: "uppercase",
     marginBottom: 10,
     marginTop: 4,
   },
-  formGroup: { marginBottom: 12 },
-  label: { color: "#a8c5b3", fontSize: 12, marginBottom: 6, fontWeight: "600" },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#0b2211",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    minHeight: 46,
-  },
-  inputIcon: { marginRight: 8 },
-  input: {
-    flex: 1,
-    color: "#ffffff",
-    fontSize: 15,
-    paddingVertical: 6,
-    backgroundColor: "transparent",
-    borderWidth: 0,
-  },
-  dateDisplay: { flex: 1, color: "#ffffff", fontSize: 15, paddingVertical: 6 },
-  dateDisplayPlaceholder: { color: "#5a8a6a" },
-  eyeButton: { padding: 6 },
-  hint: { fontSize: 10, color: "#5a8a6a", marginTop: 4 },
-  genderRow: { flexDirection: "row", gap: 8 },
-  genderChip: {
-    flex: 1,
-    paddingVertical: 11,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    backgroundColor: "#0b2211",
-    alignItems: "center",
-  },
-  genderChipActive: { borderColor: "#4caf72", backgroundColor: "#1a4228" },
-  genderChipText: { color: "#5a8a6a", fontSize: 13, fontWeight: "600" },
-  genderChipTextActive: { color: "#ffffff" },
-  fileButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#0b2211",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    borderStyle: "dashed",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  fileButtonText: { flex: 1, color: "#a8c5b3", fontSize: 13 },
-  imagePreviewBtn: {
-    borderRadius: 10,
-    overflow: "hidden",
-    height: 110,
-    borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.3)",
-  },
-  imagePreview: { width: "100%", height: "100%" },
-  imagePreviewOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    paddingVertical: 6,
-    alignItems: "center",
-  },
-  imagePreviewText: { color: "#ffffff", fontSize: 12, fontWeight: "600" },
   reviewSection: {
-    backgroundColor: "#0b2211",
+    backgroundColor: "#F9FAFB",
     borderRadius: 10,
     padding: 14,
-    marginBottom: 12,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(0,0,0,0.04)",
   },
   reviewSectionTitle: {
     fontSize: 11,
-    color: "#4caf72",
+    color: "#22C55E",
     fontWeight: "700",
     marginBottom: 10,
     letterSpacing: 0.6,
@@ -1357,46 +1495,45 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 5,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.04)",
+    borderBottomColor: "rgba(0,0,0,0.04)",
   },
-  reviewLabel: { color: "#5a8a6a", fontSize: 12, flex: 1 },
+  reviewLabel: { color: "#6B7280", fontSize: 12, flex: 1 },
   reviewValue: {
-    color: "#e0ece4",
+    color: "#1C1C1E",
     fontSize: 12,
     flex: 2,
     textAlign: "right",
     fontWeight: "600",
   },
   noteBox: {
-    backgroundColor: "rgba(76,175,114,0.08)",
+    backgroundColor: "rgba(34, 197, 94, 0.06)",
     borderRadius: 8,
     padding: 12,
     marginTop: 4,
     borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.2)",
+    borderColor: "rgba(34, 197, 94, 0.15)",
   },
-  noteText: { color: "#a8c5b3", fontSize: 12, lineHeight: 18 },
-  noteBold: { color: "#4caf72", fontWeight: "700" },
+  noteText: { color: "#374151", fontSize: 12, lineHeight: 18 },
+  noteBold: { color: "#22C55E", fontWeight: "700" },
   privacyAgreementBox: {
     marginTop: 12,
     padding: 14,
-    backgroundColor: "rgba(76,175,114,0.06)",
+    backgroundColor: "rgba(34, 197, 94, 0.04)",
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.2)",
+    borderColor: "rgba(34, 197, 94, 0.15)",
   },
   legalInfoBox: {
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: "rgba(0,0,0,0.02)",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(0,0,0,0.04)",
   },
-  legalInfoText: { color: "#a8c5b3", fontSize: 12, lineHeight: 19 },
-  // ✅ New styles for document viewing status
+  legalInfoText: { color: "#6B7280", fontSize: 12, lineHeight: 19 },
   viewStatusBox: {
-    backgroundColor: "rgba(245,158,11,0.08)",
+    backgroundColor: "rgba(245,158,11,0.06)",
     borderLeftWidth: 3,
     borderLeftColor: "#f59e0b",
     borderRadius: 6,
@@ -1404,7 +1541,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   viewStatusText: {
-    color: "#fbbf24",
+    color: "#D97706",
     fontSize: 11,
     fontWeight: "600",
     lineHeight: 16,
@@ -1416,31 +1553,31 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 5,
     borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.22)",
-    backgroundColor: "#0b2211",
+    borderColor: "#D1D5DB",
+    backgroundColor: "#F9FAFB",
     justifyContent: "center",
     alignItems: "center",
     marginTop: 1,
   },
-  checkboxChecked: { backgroundColor: "#4caf72", borderColor: "#4caf72" },
+  checkboxChecked: { backgroundColor: "#22C55E", borderColor: "#22C55E" },
   checkboxDisabled: { opacity: 0.5 },
-  privacyText: { flex: 1, color: "#a8c5b3", fontSize: 12, lineHeight: 18 },
-  privacyTextDisabled: { color: "#5a8a6a" },
-  privacyLink: { color: "#4caf72", fontWeight: "700" },
-  privacyLinkViewed: { color: "#10b981", textDecorationLine: "underline" },
+  privacyText: { flex: 1, color: "#374151", fontSize: 12, lineHeight: 18 },
+  privacyTextDisabled: { color: "#9CA3AF" },
+  privacyLink: { color: "#22C55E", fontWeight: "700" },
+  privacyLinkViewed: { color: "#16A34A", textDecorationLine: "underline" },
   otpEmailBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(76,175,114,0.1)",
+    backgroundColor: "rgba(34, 197, 94, 0.08)",
     borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.25)",
+    borderColor: "rgba(34, 197, 94, 0.2)",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginBottom: 22,
   },
-  otpEmailText: { color: "#a8c5b3", fontSize: 13, flex: 1 },
+  otpEmailText: { color: "#374151", fontSize: 13, flex: 1 },
   otpWrapper: { alignItems: "center", marginBottom: 20, height: 54 },
   otpHiddenInput: {
     position: "absolute",
@@ -1455,93 +1592,91 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "#0b2211",
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
     justifyContent: "center",
     alignItems: "center",
   },
-  otpBoxFilled: { borderColor: "#4caf72", backgroundColor: "#122b1a" },
-  otpBoxCursor: { borderColor: "#4caf72", borderWidth: 2 },
-  otpBoxText: { color: "#ffffff", fontSize: 22, fontWeight: "700" },
+  otpBoxFilled: { borderColor: "#22C55E", backgroundColor: "#F0FDF4" },
+  otpBoxCursor: { borderColor: "#22C55E", borderWidth: 2 },
+  otpBoxText: { color: "#1C1C1E", fontSize: 22, fontWeight: "700" },
   otpNote: {
-    color: "#5a8a6a",
+    color: "#9CA3AF",
     fontSize: 12,
     textAlign: "center",
     marginBottom: 4,
   },
   otpResend: {
-    color: "#4caf72",
+    color: "#22C55E",
     fontSize: 13,
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 8,
   },
-  otpResendDisabled: { color: "#5a8a6a" },
-  navRow: { flexDirection: "row", marginTop: 20, gap: 10 },
+  otpResendDisabled: { color: "#9CA3AF" },
+  navRow: { flexDirection: "row", marginTop: 16, gap: 10 },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 13,
+    paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
+    borderColor: "#E5E7EB",
     gap: 4,
+    backgroundColor: "#F9FAFB",
   },
-  backButtonText: { color: "#a8c5b3", fontSize: 14, fontWeight: "600" },
+  backButtonText: { color: "#6B7280", fontSize: 14, fontWeight: "600" },
   nextButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#2d5f3c",
-    borderRadius: 10,
+    backgroundColor: "#22C55E",
+    borderRadius: 12,
     paddingVertical: 14,
     gap: 6,
-    borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.3)",
+    shadowColor: "#22C55E",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
   },
   nextButtonFull: { flex: 1 },
-  nextButtonDisabled: { opacity: 0.5 },
+  nextButtonDisabled: { opacity: 0.5, shadowOpacity: 0, elevation: 0 },
   nextButtonText: { color: "#ffffff", fontSize: 15, fontWeight: "700" },
   bottomText: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
-    marginTop: 18,
-  },
-  registerText: { color: "#a8c5b3", fontSize: 14 },
-  registerLink: { color: "#4caf72", fontWeight: "700", fontSize: 14 },
-  footer: {
-    color: "#5a8a6a",
-    fontSize: 11,
     marginTop: 16,
-    textAlign: "center",
   },
+  registerText: { color: "#6B7280", fontSize: 13 },
+  registerLink: { color: "#22C55E", fontWeight: "700", fontSize: 13 },
   groupTypeRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   groupTypeChip: {
     flex: 1,
     minWidth: 100,
     paddingVertical: 11,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    backgroundColor: "#0b2211",
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
     alignItems: "center",
     marginBottom: 8,
   },
   groupTypeChipActive: {
-    borderColor: "#4caf72",
-    backgroundColor: "#1a4228",
+    borderColor: "#22C55E",
+    backgroundColor: "#F0FDF4",
   },
   groupTypeChipText: {
-    color: "#5a8a6a",
+    color: "#6B7280",
     fontSize: 11,
     fontWeight: "600",
     textAlign: "center",
   },
   groupTypeChipTextActive: {
-    color: "#ffffff",
+    color: "#1C1C1E",
   },
 });
