@@ -12,8 +12,18 @@ import { ChevronLeft, ChevronRight } from "lucide-react-native";
 const { width: windowWidth } = Dimensions.get("window");
 
 const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 type DatePickerModalProps = {
@@ -98,7 +108,7 @@ export default function DatePickerModal({
               }}
               style={styles.navBtn}
             >
-              <ChevronLeft size={15} color="#4caf72" />
+              <ChevronLeft size={15} color="#22C55E" />
             </TouchableOpacity>
             <Text style={styles.yearLabel}>{year}</Text>
             <TouchableOpacity
@@ -108,15 +118,15 @@ export default function DatePickerModal({
               }}
               style={styles.navBtn}
             >
-              <ChevronRight size={15} color="#4caf72" />
+              <ChevronRight size={15} color="#22C55E" />
             </TouchableOpacity>
             <View style={styles.divider} />
             <TouchableOpacity onPress={prevMonth} style={styles.navBtn}>
-              <ChevronLeft size={15} color="#4caf72" />
+              <ChevronLeft size={15} color="#22C55E" />
             </TouchableOpacity>
             <Text style={styles.monthLabel}>{MONTHS[month]}</Text>
             <TouchableOpacity onPress={nextMonth} style={styles.navBtn}>
-              <ChevronRight size={15} color="#4caf72" />
+              <ChevronRight size={15} color="#22C55E" />
             </TouchableOpacity>
           </View>
           <View style={styles.weekRow}>
@@ -171,26 +181,26 @@ export default function DatePickerModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
   },
   container: {
-    backgroundColor: "#183d23",
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
     padding: 20,
     width: Math.min(320, windowWidth - 48),
     borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.35)",
+    borderColor: "rgba(34, 197, 94, 0.2)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 16,
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
   },
   title: {
     fontSize: 15,
-    color: "#ffffff",
+    color: "#1C1C1E",
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 16,
@@ -205,17 +215,17 @@ const styles = StyleSheet.create({
   navBtn: {
     padding: 6,
     borderRadius: 8,
-    backgroundColor: "rgba(76,175,114,0.12)",
+    backgroundColor: "rgba(34, 197, 94, 0.08)",
   },
   yearLabel: {
-    color: "#ffffff",
+    color: "#1C1C1E",
     fontSize: 14,
     fontWeight: "700",
     minWidth: 46,
     textAlign: "center",
   },
   monthLabel: {
-    color: "#ffffff",
+    color: "#1C1C1E",
     fontSize: 14,
     fontWeight: "700",
     minWidth: 82,
@@ -224,7 +234,7 @@ const styles = StyleSheet.create({
   divider: {
     width: 1,
     height: 18,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(0,0,0,0.1)",
     marginHorizontal: 4,
   },
   weekRow: { flexDirection: "row", marginBottom: 6 },
@@ -236,28 +246,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 999,
   },
-  cellSelected: { backgroundColor: "#4caf72" },
-  weekDay: { color: "#4caf72", fontSize: 11, fontWeight: "700" },
-  cellText: { color: "#a8c5b3", fontSize: 13, fontWeight: "500" },
-  cellTextSelected: { color: "#ffffff", fontWeight: "700" },
-  actions: { flexDirection: "row", gap: 10 },
+  cellSelected: { backgroundColor: "#22C55E" },
+  weekDay: {
+    color: "#22C55E",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  cellText: {
+    color: "#1C1C1E",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  cellTextSelected: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  actions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 10,
+  },
   cancelBtn: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
+    borderColor: "rgba(107, 114, 128, 0.2)",
     alignItems: "center",
   },
-  cancelText: { color: "#a8c5b3", fontSize: 14, fontWeight: "600" },
+  cancelText: {
+    color: "#6B7280",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   confirmBtn: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 10,
-    backgroundColor: "#2d5f3c",
+    backgroundColor: "#22C55E",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(76,175,114,0.3)",
+    borderColor: "rgba(34, 197, 94, 0.3)",
   },
-  confirmText: { color: "#ffffff", fontSize: 14, fontWeight: "700" },
+  confirmText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
 });
