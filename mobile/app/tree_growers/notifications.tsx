@@ -13,6 +13,7 @@ import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 import { useAlert } from "@/components/AlertContext";
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ Added for status bar spacing
 
 const API = api + "/api";
 
@@ -76,6 +77,7 @@ const timeAgo = (dateString: string): string => {
 export default function NotificationsPage() {
   const router = useRouter();
   const alert = useAlert();
+  const insets = useSafeAreaInsets(); // ✅ Get safe area insets
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +115,10 @@ export default function NotificationsPage() {
         alert.error("Error", "Failed to load notifications.");
       }
     } catch (e: any) {
-      alert.error("Network Error", e.message ?? "Unable to fetch notifications.");
+      alert.error(
+        "Network Error",
+        e.message ?? "Unable to fetch notifications.",
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -138,8 +143,8 @@ export default function NotificationsPage() {
       if (res.ok) {
         setNotifications((prev) =>
           prev.map((n) =>
-            n.notification_id === id ? { ...n, is_read: true } : n
-          )
+            n.notification_id === id ? { ...n, is_read: true } : n,
+          ),
         );
         setUnreadCount((prev) => Math.max(0, prev - 1));
       }
@@ -170,7 +175,7 @@ export default function NotificationsPage() {
 
   const handleNavigate = (link: string | null) => {
     if (link) {
-      router.push(link);
+      router.push(link as any);
     }
   };
 
@@ -188,7 +193,7 @@ export default function NotificationsPage() {
         ]}
         onPress={() => {
           if (!notif.is_read) handleMarkAsRead(notif.notification_id);
-          // handleNavigate(notif.link);
+          handleNavigate(notif.link);
         }}
         activeOpacity={0.7}
       >
@@ -247,7 +252,8 @@ export default function NotificationsPage() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      {/* ✅ Added dynamic paddingTop to clear the status bar */}
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
@@ -280,10 +286,7 @@ export default function NotificationsPage() {
           {(["all", "unread", "read"] as const).map((f) => (
             <TouchableOpacity
               key={f}
-              style={[
-                styles.filterTab,
-                filter === f && styles.filterTabActive,
-              ]}
+              style={[styles.filterTab, filter === f && styles.filterTabActive]}
               onPress={() => setFilter(f)}
             >
               <Text
@@ -359,7 +362,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingBottom: 16, // ✅ Top padding is now handled dynamically inline
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",

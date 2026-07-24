@@ -357,39 +357,51 @@ export default function MonitoringDetailScreen() {
     fetchTreeSpecies();
   }, [id]);
 
-  // ─── Metrics Calculation ─────────────────────────────────────────────────
+  // ─── ✅ UPDATED: Metrics Calculation ─────────────────────────────────────
   const acceptedSeedlingRequests =
     detail?.seedling_requests.filter((r) => r.status === "accepted") || [];
   const allProgressReports = detail?.progress_reports || [];
 
+  // Filter to only accepted reports for accurate cumulative metrics
+  const acceptedReports = allProgressReports.filter(
+    (r) => r.status === "accepted",
+  );
+
+  // ✅ Seedlings Provided: Sum all accepted seedling requests
   const totalSeedlingsProvided = acceptedSeedlingRequests.reduce((sum, req) => {
     return (
       sum + (req.species?.reduce((sSum, sp) => sSum + sp.quantity, 0) || 0)
     );
   }, 0);
 
-  const totalSurvived = allProgressReports.reduce(
-    (sum, rep) => sum + (rep.total_survived || 0),
-    0,
-  );
-  const totalDead = allProgressReports.reduce(
-    (sum, rep) => sum + (rep.total_dead || 0),
-    0,
+  // ✅ Total Survived & Total Dead: Use LATEST accepted report (cumulative)
+  // Sort by submitted_at to get the most recent report
+  const sortedAcceptedReports = [...acceptedReports].sort(
+    (a, b) =>
+      new Date(b.submitted_at || 0).getTime() -
+      new Date(a.submitted_at || 0).getTime(),
   );
 
-  // ✅ Calculate Total Ever Planted (Initial planted + all additions)
-  const initialReport = allProgressReports.find(
-    (r) => r.visit_type === "initial",
-  );
+  const latestReport = sortedAcceptedReports[0] || null;
+
+  const totalSurvived = latestReport?.total_survived || 0;
+  const totalDead = latestReport?.total_dead || 0;
+
+  // ✅ Total Ever Planted: Initial planted + Total added by grower (cumulative)
+  const initialReport = acceptedReports.find((r) => r.visit_type === "initial");
   const initialPlanted =
     initialReport?.species.reduce((sum, sp) => sum + (sp.no_planted || 0), 0) ||
     0;
-  const totalAddedByGrower = allProgressReports.reduce(
+
+  // Sum all added by grower from all accepted reports
+  const totalAddedByGrower = acceptedReports.reduce(
     (sum, rep) => sum + (rep.total_added_by_grower || 0),
     0,
   );
+
   const totalEverPlanted = initialPlanted + totalAddedByGrower;
 
+  // ✅ Survival Rate: (Total Survived / Total Ever Planted) × 100
   const survivalRate =
     totalEverPlanted > 0
       ? ((totalSurvived / totalEverPlanted) * 100).toFixed(1)
@@ -1190,7 +1202,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   metricCard: {
-    width: "48%", // was: flex: 1, minWidth: "45%"
+    width: "48%",
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
@@ -1419,6 +1431,7 @@ const badgeStyles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 20,
     gap: 5,
+    marginLeft: "auto",
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
   text: {
@@ -1446,7 +1459,7 @@ const floatTimelineStyles = StyleSheet.create({
   },
   scroll: {
     flexGrow: 1,
-    justifyContent: "center", // or "space-between" for edge-to-edge spread
+    justifyContent: "center",
     alignItems: "center",
     paddingRight: 4,
   },

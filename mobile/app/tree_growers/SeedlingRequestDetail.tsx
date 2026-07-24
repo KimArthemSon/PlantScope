@@ -888,6 +888,7 @@ const badgeStyles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 20,
     gap: 5,
+    marginLeft: "auto",
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
   text: {

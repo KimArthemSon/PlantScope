@@ -19,13 +19,14 @@ import {
   Clock,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
-import { api } from "@/constant/api.ts";
+import { api } from "@/constant/api";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface ApplicationDetail {
   application: {
     application_id: number;
+    email: string; // ✅ Added for Account Information display
     title: string;
     classification: "new" | "old";
     status: string;
@@ -44,25 +45,22 @@ interface ApplicationDetail {
     group_address: string;
     group_profile: string | null;
   };
-  profile: {
-    first_name: string;
-    last_name: string;
-    contact: string;
-    gender: string;
-    profile_img: string;
-  } | null;
+  profile: any | null; // Kept for TS compatibility, but removed from UI
   assigned_site: {
     site_id: number;
     name: string;
-    barangay: string | null;
+    description: string | null; // ✅ Added
+    reforestation_area_name: string | null; // ✅ Added
+    barangay_name: string | null; // ✅ Added
     polygon_coordinates: any;
   } | null;
   proposed_site: {
     site_id: number;
     name: string;
+    description: string | null;
+    reforestation_area_name: string | null;
     barangay: string | null;
   } | null;
-  // Seedling requests will likely be empty at this stage since they happen AFTER acceptance
   seedling_requests: Array<{
     request_id: number;
     no_request_seedling: number;
@@ -132,7 +130,6 @@ function InfoRow({
   );
 }
 
-// Summary card for confirmation preview
 function ConfirmationPreview({
   action,
   application,
@@ -163,7 +160,7 @@ function ConfirmationPreview({
           {assignedSite && (
             <li>
               Planting site: <strong>{assignedSite.name}</strong>{" "}
-              {assignedSite.barangay && `(${assignedSite.barangay})`}
+              {assignedSite.barangay_name && `(${assignedSite.barangay_name})`}
             </li>
           )}
           {application.orientation_date && (
@@ -211,7 +208,7 @@ export default function Evaluation_confirmation() {
 
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(true);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState(0); // ✅ 0: Details, 1: Review
 
   const [decisionForm, setDecisionForm] = useState({ reason: "" });
   const [submitting, setSubmitting] = useState(false);
@@ -224,7 +221,6 @@ export default function Evaluation_confirmation() {
     message: string;
   } | null>(null);
 
-  // ─── Fetch application detail ────────────────────────────────────────────
   useEffect(() => {
     const fetchDetail = async () => {
       if (!application_id) return;
@@ -247,7 +243,6 @@ export default function Evaluation_confirmation() {
         const data = await res.json();
         setDetail(data);
 
-        // Redirect if not in 'for_head' status
         const appStatus = data.application?.status;
         if (appStatus !== "for_head") {
           setPSAlert({
@@ -277,7 +272,6 @@ export default function Evaluation_confirmation() {
     fetchDetail();
   }, [application_id, navigate, token]);
 
-  // ─── Submit confirmation decision ────────────────────────────────────────
   const handleSubmit = async (status: "accepted" | "rejected") => {
     if (!application_id) return;
 
@@ -338,9 +332,8 @@ export default function Evaluation_confirmation() {
   };
 
   const TABS = [
-    { label: "Account & Personal", icon: <User size={14} /> },
-    { label: "Group & Project", icon: <Building2 size={14} /> },
-    { label: "DM Evaluation", icon: <FileText size={14} /> },
+    { label: "Application Details", icon: <FileText size={14} /> },
+    { label: "Review & Confirm", icon: <Shield size={14} /> },
   ];
 
   if (loadingDetail) {
@@ -373,7 +366,7 @@ export default function Evaluation_confirmation() {
     );
   }
 
-  const { application, group, profile, assigned_site, latest_reason } = detail;
+  const { application, group, assigned_site, latest_reason } = detail;
 
   return (
     <div
@@ -393,9 +386,7 @@ export default function Evaluation_confirmation() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-100">
             <div
-              className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                confirmAction === "confirm" ? "bg-green-100" : "bg-red-100"
-              }`}
+              className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${confirmAction === "confirm" ? "bg-green-100" : "bg-red-100"}`}
             >
               {confirmAction === "confirm" ? (
                 <CheckCircle2 size={32} className="text-green-600" />
@@ -524,164 +515,110 @@ export default function Evaluation_confirmation() {
       </div>
 
       <main className="max-w-6xl mx-auto p-4 md:p-8">
-        {/* ── TAB 0: Account + Personal ──────────────────────────────────── */}
+        {/* ── TAB 0: Application Details (Merged Account + Group + Project) ── */}
         {tab === 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <SectionHeader
-                icon={<Mail size={18} />}
-                title="Account Information"
-                subtitle="Login credentials registered"
-              />
-              <InfoRow
-                label="Application ID"
-                value={`#${application.application_id}`}
-              />
-              <InfoRow
-                label="Submitted"
-                value={new Date(application.created_at).toLocaleDateString(
-                  "en-PH",
-                  { year: "numeric", month: "long", day: "numeric" },
-                )}
-              />
-              <InfoRow
-                label="Classification"
-                value={
-                  application.classification === "new"
-                    ? "First-Time Applicant"
-                    : "Returning Applicant"
-                }
-              />
-              <InfoRow
-                label="Status"
-                children={
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      application.status === "for_head"
-                        ? "bg-blue-100 text-blue-700"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    {application.status.replace("_", " ").toUpperCase()}
-                  </span>
-                }
-              />
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <SectionHeader
-                icon={<User size={18} />}
-                title="Personal Information"
-                subtitle="Profile details of the applicant"
-              />
-              {profile ? (
-                <>
-                  <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
-                    {profile.profile_img ? (
-                      <img
-                        src={`${api}${profile.profile_img}`}
-                        alt="Profile"
-                        className="w-16 h-16 rounded-xl object-cover border-2 border-green-100"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 rounded-xl bg-green-50 flex items-center justify-center">
-                        <User size={28} className="text-green-300" />
-                      </div>
-                    )}
-                    <div>
-                      <p className="font-bold text-gray-800">
-                        {profile.first_name} {profile.last_name}
-                      </p>
-                      <p className="text-xs text-gray-400 capitalize">
-                        {profile.gender === "M"
-                          ? "Male"
-                          : profile.gender === "F"
-                            ? "Female"
-                            : "Other"}
-                      </p>
-                    </div>
-                  </div>
-                  <InfoRow label="Contact" value={profile.contact} />
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-10 text-gray-300">
-                  <User size={36} />
-                  <p className="text-sm mt-2">No profile data available</p>
-                </div>
-              )}
-            </div>
-
-            <div className="md:col-span-2 flex justify-end">
-              <button
-                onClick={() => setTab(1)}
-                className="flex items-center gap-2 bg-[#0F4A2F] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-[#1a6b44] transition-colors"
-              >
-                Next: Group & Project <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── TAB 1: Group + Project ─────────────────────────────────── */}
-        {tab === 1 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <SectionHeader
-                icon={<Building2 size={18} />}
-                title="Group Information"
-              />
-              <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
-                {group.group_profile ? (
-                  <img
-                    src={`${group.group_profile}`}
-                    alt="Group"
-                    className="w-16 h-16 rounded-xl object-cover border-2 border-green-100"
-                  />
-                ) : (
-                  <div className="w-16 h-16 rounded-xl bg-green-50 flex items-center justify-center">
-                    <Building2 size={28} className="text-green-300" />
-                  </div>
-                )}
-                <div>
-                  <p className="font-bold text-gray-800">{group.group_name}</p>
-                  <p className="text-xs text-gray-400">{group.group_type}</p>
-                </div>
+          <div className="flex flex-col gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Account Information */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <SectionHeader
+                  icon={<Mail size={18} />}
+                  title="Account Information"
+                  subtitle="Login credentials and application status"
+                />
+                <InfoRow label="Email" value={application.email || "—"} />
+                <InfoRow
+                  label="Submitted"
+                  value={new Date(application.created_at).toLocaleDateString(
+                    "en-PH",
+                    { year: "numeric", month: "long", day: "numeric" },
+                  )}
+                />
+                <InfoRow
+                  label="Classification"
+                  value={
+                    application.classification === "new"
+                      ? "First-Time Applicant"
+                      : "Returning Applicant"
+                  }
+                />
+                <InfoRow
+                  label="Status"
+                  children={
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                      {application.status.replace("_", " ").toUpperCase()}
+                    </span>
+                  }
+                />
               </div>
-              <InfoRow label="Address" value={group.group_address} />
-              <InfoRow label="Contact" value={group.group_contact} />
+
+              {/* Group Information */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <SectionHeader
+                  icon={<Building2 size={18} />}
+                  title="Group Information"
+                  subtitle="Details of the tree grower group"
+                />
+                <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
+                  {group.group_profile ? (
+                    <img
+                      src={group.group_profile}
+                      alt="Group"
+                      className="w-16 h-16 rounded-xl object-cover border-2 border-green-100"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl bg-green-50 flex items-center justify-center">
+                      <Building2 size={28} className="text-green-300" />
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-bold text-gray-800">
+                      {group.group_name}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                      {group.group_type.replace("_", " ")}
+                    </p>
+                  </div>
+                </div>
+                <InfoRow label="Address" value={group.group_address} />
+                <InfoRow label="Contact" value={group.group_contact} />
+              </div>
             </div>
 
+            {/* Project Application */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <SectionHeader
                 icon={<Trees size={18} />}
                 title="Project Application"
+                subtitle="Details of the proposed reforestation project"
               />
-              <InfoRow label="Title" value={application.title} />
-              <InfoRow
-                label="Tree Growers"
-                value={application.total_treegrowers_will_participate}
-              />
-
-              {application.proposed_orientation_date && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                <InfoRow label="Project Title" value={application.title} />
                 <InfoRow
-                  label="Proposed Orientation Date"
-                  value={new Date(
-                    application.proposed_orientation_date,
-                  ).toLocaleDateString("en-PH", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}
+                  label="Total Tree Growers"
+                  value={application.total_treegrowers_will_participate}
                 />
-              )}
-              {detail.proposed_site && (
-                <InfoRow
-                  label="Proposed Site"
-                  value={`${detail.proposed_site.name} ${detail.proposed_site.barangay ? `(${detail.proposed_site.barangay})` : ""}`}
-                />
-              )}
+                {application.proposed_orientation_date && (
+                  <InfoRow
+                    label="Proposed Orientation Date"
+                    value={new Date(
+                      application.proposed_orientation_date,
+                    ).toLocaleDateString("en-PH", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  />
+                )}
+                {detail.proposed_site && (
+                  <InfoRow
+                    label="Proposed Site"
+                    value={`${detail.proposed_site.name} ${detail.proposed_site.barangay ? `(${detail.proposed_site.barangay})` : ""}`}
+                  />
+                )}
+              </div>
 
-              <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="mt-6 pt-6 border-t border-gray-100">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
                   Maintenance Plan
                 </p>
@@ -691,14 +628,15 @@ export default function Evaluation_confirmation() {
                     target="_blank"
                     rel="noopener noreferrer"
                     download
-                    className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group"
+                    className="w-full md:w-auto flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group cursor-pointer"
                   >
                     <div className="w-9 h-9 rounded-lg bg-[#0F4A2F] flex items-center justify-center flex-shrink-0">
                       <FileText size={16} className="text-white" />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 text-left">
                       <p className="text-sm font-semibold text-[#0F4A2F] truncate">
-                        {application.maintenance_plan.split("/").pop()}
+                        {application.maintenance_plan.split("/").pop() ||
+                          "Maintenance Plan"}
                       </p>
                       <p className="text-xs text-green-600">
                         Click to download
@@ -718,28 +656,24 @@ export default function Evaluation_confirmation() {
               </div>
             </div>
 
-            <div className="md:col-span-2 flex justify-between">
+            {/* Bottom Navigation */}
+            <div className="flex justify-end">
               <button
-                onClick={() => setTab(0)}
-                className="flex items-center gap-2 border border-gray-200 text-gray-600 px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
-              >
-                <ArrowLeft size={15} /> Back
-              </button>
-              <button
-                onClick={() => setTab(2)}
+                onClick={() => setTab(1)}
                 className="flex items-center gap-2 bg-[#0F4A2F] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-[#1a6b44] transition-colors"
               >
-                Next: Review & Confirm <ChevronRight size={16} />
+                Proceed to Review & Confirm <ChevronRight size={16} />
               </button>
             </div>
           </div>
         )}
 
-        {/* ── TAB 2: DM Evaluation + Head Decision ───────────────────────── */}
-        {tab === 2 && (
+        {/* ── TAB 1: Review & Confirm ─────────────────────────────────────── */}
+        {tab === 1 && (
           <div className="flex flex-col gap-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="flex flex-col gap-5">
+                {/* DM Evaluation */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                   <SectionHeader
                     icon={<Shield size={18} />}
@@ -795,6 +729,7 @@ export default function Evaluation_confirmation() {
                   )}
                 </div>
 
+                {/* Assigned Planting Site (Updated with new fields) */}
                 {assigned_site && (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                     <SectionHeader
@@ -803,10 +738,28 @@ export default function Evaluation_confirmation() {
                       subtitle="Selected by Data Manager"
                     />
                     <InfoRow label="Site Name" value={assigned_site.name} />
-                    <InfoRow
-                      label="Barangay"
-                      value={assigned_site.barangay ?? "—"}
-                    />
+
+                    {assigned_site.reforestation_area_name && (
+                      <InfoRow
+                        label="Reforestation Area"
+                        value={assigned_site.reforestation_area_name}
+                      />
+                    )}
+
+                    {assigned_site.barangay_name && (
+                      <InfoRow
+                        label="Barangay"
+                        value={assigned_site.barangay_name}
+                      />
+                    )}
+
+                    {assigned_site.description && (
+                      <InfoRow
+                        label="Description"
+                        value={assigned_site.description}
+                      />
+                    )}
+
                     {assigned_site.polygon_coordinates && (
                       <InfoRow
                         label="Coordinates"
@@ -826,6 +779,7 @@ export default function Evaluation_confirmation() {
                 )}
               </div>
 
+              {/* Decision Form */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col">
                 <SectionHeader
                   icon={<FileText size={18} />}
@@ -870,18 +824,16 @@ export default function Evaluation_confirmation() {
               </div>
             </div>
 
+            {/* Sticky Action Bar */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sticky bottom-4 z-20">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-2 text-gray-500 text-sm">
                   <Shield size={14} />
-                  <span>
-                    Head Confirmation • Application #
-                    {application.application_id}
-                  </span>
+                  <span>Head Confirmation • {application.title}</span>
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto">
                   <button
-                    onClick={() => setTab(1)}
+                    onClick={() => setTab(0)}
                     className="flex items-center gap-2 border border-gray-200 text-gray-600 px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
                     type="button"
                   >

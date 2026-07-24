@@ -16,11 +16,13 @@ import {
 import * as SecureStore from "expo-secure-store";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ Added
 import { api } from "@/constants/url_fixed";
 
 export default function Reapply() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets(); // ✅ Added
   const siteId = params.site_id as string | undefined;
   const siteName = params.site_name as string | undefined;
 
@@ -30,7 +32,11 @@ export default function Reapply() {
   const [formData, setFormData] = useState({
     title: "",
     total_treegrowers_will_participate: "",
-    maintenance_plan: null as { uri: string; name: string; type: string } | null,
+    maintenance_plan: null as {
+      uri: string;
+      name: string;
+      type: string;
+    } | null,
     proposed_orientation_date: "",
   });
 
@@ -43,15 +49,20 @@ export default function Reapply() {
 
   const pickDocument = async () => {
     const result = await DocumentPicker.getDocumentAsync({
-      type: ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/*"],
+      type: [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "image/*",
+      ],
       copyToCacheDirectory: true,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
-      update("maintenance_plan", { 
-        uri: asset.uri, 
-        name: asset.name, 
-        type: asset.mimeType ?? "application/octet-stream" 
+      update("maintenance_plan", {
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType ?? "application/octet-stream",
       });
     }
   };
@@ -67,7 +78,7 @@ export default function Reapply() {
   };
 
   const confirmDate = () => {
-    const formattedDate = tempDate.toISOString().split('T')[0];
+    const formattedDate = tempDate.toISOString().split("T")[0];
     update("proposed_orientation_date", formattedDate);
     setShowDatePicker(false);
   };
@@ -97,10 +108,10 @@ export default function Reapply() {
   const formatDateDisplay = (dateString: string) => {
     if (!dateString) return "Select date";
     const date = new Date(dateString);
-    return date.toLocaleDateString("en-PH", { 
-      year: "numeric", 
-      month: "long", 
-      day: "numeric" 
+    return date.toLocaleDateString("en-PH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
   };
 
@@ -114,11 +125,16 @@ export default function Reapply() {
 
   const validate = (): string | null => {
     if (!formData.title.trim()) return "Project title is required.";
-    if (!formData.total_treegrowers_will_participate.trim() || isNaN(Number(formData.total_treegrowers_will_participate)) || Number(formData.total_treegrowers_will_participate) < 2) {
+    if (
+      !formData.total_treegrowers_will_participate.trim() ||
+      isNaN(Number(formData.total_treegrowers_will_participate)) ||
+      Number(formData.total_treegrowers_will_participate) < 2
+    ) {
       return "Minimum of 2 tree growers required.";
     }
-    if (!formData.maintenance_plan) return "Maintenance plan document is required.";
-    
+    if (!formData.maintenance_plan)
+      return "Maintenance plan document is required.";
+
     return null;
   };
 
@@ -136,8 +152,11 @@ export default function Reapply() {
 
       const fd = new FormData();
       fd.append("title", formData.title.trim());
-      fd.append("total_treegrowers_will_participate", formData.total_treegrowers_will_participate.trim());
-      
+      fd.append(
+        "total_treegrowers_will_participate",
+        formData.total_treegrowers_will_participate.trim(),
+      );
+
       if (formData.maintenance_plan) {
         fd.append("maintenance_plan", formData.maintenance_plan as any);
       }
@@ -147,7 +166,10 @@ export default function Reapply() {
       }
 
       if (formData.proposed_orientation_date.trim()) {
-        fd.append("proposed_orientation_date", formData.proposed_orientation_date.trim());
+        fd.append(
+          "proposed_orientation_date",
+          formData.proposed_orientation_date.trim(),
+        );
       }
 
       const res = await fetch(`${api}/api/create_reapplication/`, {
@@ -161,7 +183,9 @@ export default function Reapply() {
       const responseData = await res.json();
 
       if (!res.ok) {
-        throw new Error(responseData.error ?? "Failed to submit re-application.");
+        throw new Error(
+          responseData.error ?? "Failed to submit re-application.",
+        );
       }
 
       Alert.alert(
@@ -172,11 +196,14 @@ export default function Reapply() {
             text: "View Application",
             onPress: () => router.replace("/tree_growers/application"),
           },
-        ]
+        ],
       );
     } catch (err: any) {
       console.error("Reapply error:", err);
-      Alert.alert("Submission Failed", err.message || "Network error. Please try again.");
+      Alert.alert(
+        "Submission Failed",
+        err.message || "Network error. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -196,8 +223,14 @@ export default function Reapply() {
     // Days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       const isSelected = tempDate.getDate() === day;
-      const isToday = new Date().toDateString() === new Date(tempDate.getFullYear(), tempDate.getMonth(), day).toDateString();
-      
+      const isToday =
+        new Date().toDateString() ===
+        new Date(
+          tempDate.getFullYear(),
+          tempDate.getMonth(),
+          day,
+        ).toDateString();
+
       days.push(
         <TouchableOpacity
           key={day}
@@ -208,13 +241,15 @@ export default function Reapply() {
           ]}
           onPress={() => selectDay(day)}
         >
-          <Text style={[
-            calendarStyles.dayText,
-            isSelected && calendarStyles.dayTextSelected,
-          ]}>
+          <Text
+            style={[
+              calendarStyles.dayText,
+              isSelected && calendarStyles.dayTextSelected,
+            ]}
+          >
             {day}
           </Text>
-        </TouchableOpacity>
+        </TouchableOpacity>,
       );
     }
 
@@ -222,13 +257,17 @@ export default function Reapply() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.root} 
+    <KeyboardAvoidingView
+      style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+      {/* ✅ Header with Safe Area Insets */}
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
           <Ionicons name="arrow-back" size={22} color="#0F4A2F" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>New Application</Text>
@@ -253,46 +292,61 @@ export default function Reapply() {
 
             {/* Month/Year Navigation */}
             <View style={modalStyles.navigation}>
-              <TouchableOpacity onPress={() => adjustYear(-1)} style={modalStyles.navButton}>
+              <TouchableOpacity
+                onPress={() => adjustYear(-1)}
+                style={modalStyles.navButton}
+              >
                 <Ionicons name="play-skip-back" size={16} color="#0F4A2F" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => adjustMonth(-1)} style={modalStyles.navButton}>
+              <TouchableOpacity
+                onPress={() => adjustMonth(-1)}
+                style={modalStyles.navButton}
+              >
                 <Ionicons name="chevron-back" size={20} color="#0F4A2F" />
               </TouchableOpacity>
-              
+
               <Text style={modalStyles.monthYear}>
-                {tempDate.toLocaleDateString("en-PH", { month: "long", year: "numeric" })}
+                {tempDate.toLocaleDateString("en-PH", {
+                  month: "long",
+                  year: "numeric",
+                })}
               </Text>
-              
-              <TouchableOpacity onPress={() => adjustMonth(1)} style={modalStyles.navButton}>
+
+              <TouchableOpacity
+                onPress={() => adjustMonth(1)}
+                style={modalStyles.navButton}
+              >
                 <Ionicons name="chevron-forward" size={20} color="#0F4A2F" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => adjustYear(1)} style={modalStyles.navButton}>
+              <TouchableOpacity
+                onPress={() => adjustYear(1)}
+                style={modalStyles.navButton}
+              >
                 <Ionicons name="play-skip-forward" size={16} color="#0F4A2F" />
               </TouchableOpacity>
             </View>
 
             {/* Day Labels */}
             <View style={modalStyles.dayLabels}>
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                <Text key={day} style={modalStyles.dayLabel}>{day}</Text>
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                <Text key={day} style={modalStyles.dayLabel}>
+                  {day}
+                </Text>
               ))}
             </View>
 
             {/* Calendar Grid */}
-            <View style={modalStyles.calendarGrid}>
-              {renderCalendar()}
-            </View>
+            <View style={modalStyles.calendarGrid}>{renderCalendar()}</View>
 
             {/* Action Buttons */}
             <View style={modalStyles.actions}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={modalStyles.cancelButton}
                 onPress={() => setShowDatePicker(false)}
               >
                 <Text style={modalStyles.cancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={modalStyles.confirmButton}
                 onPress={confirmDate}
               >
@@ -303,8 +357,8 @@ export default function Reapply() {
         </View>
       </Modal>
 
-      <ScrollView 
-        style={styles.scroll} 
+      <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -321,15 +375,21 @@ export default function Reapply() {
         )}
 
         <View style={styles.infoBox}>
-          <Ionicons name="information-circle-outline" size={20} color="#0F4A2F" />
+          <Ionicons
+            name="information-circle-outline"
+            size={20}
+            color="#0F4A2F"
+          />
           <Text style={styles.infoText}>
-            Your existing account and group details will be reused. Please provide the details for your <Text style={styles.infoBold}>new</Text> tree planting project.
+            Your existing account and group details will be reused. Please
+            provide the details for your{" "}
+            <Text style={styles.infoBold}>new</Text> tree planting project.
           </Text>
         </View>
 
         {/* ─── Project Details Section ─── */}
         <Text style={styles.sectionTitle}>Project Details</Text>
-        
+
         <View style={styles.formGroup}>
           <Text style={styles.label}>Project Title *</Text>
           <TextInput
@@ -348,7 +408,9 @@ export default function Reapply() {
             placeholder="e.g., 25 (Minimum 2)"
             keyboardType="numeric"
             value={formData.total_treegrowers_will_participate}
-            onChangeText={(v) => update("total_treegrowers_will_participate", v)}
+            onChangeText={(v) =>
+              update("total_treegrowers_will_participate", v)
+            }
             placeholderTextColor="#9CA3AF"
           />
         </View>
@@ -356,26 +418,26 @@ export default function Reapply() {
         {/* ✅ Custom Date Picker Field */}
         <View style={styles.formGroup}>
           <Text style={styles.label}>Proposed Orientation Date (Optional)</Text>
-          <TouchableOpacity 
-            style={styles.datePickerBtn} 
+          <TouchableOpacity
+            style={styles.datePickerBtn}
             onPress={openDatePicker}
             activeOpacity={0.7}
           >
-            <View style={[styles.uploadIconWrap, { backgroundColor: "#E0E7FF" }]}>
+            <View
+              style={[styles.uploadIconWrap, { backgroundColor: "#E0E7FF" }]}
+            >
               <Ionicons name="calendar-outline" size={22} color="#3730A3" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.datePickerTitle}>
-                {formData.proposed_orientation_date 
+                {formData.proposed_orientation_date
                   ? formatDateDisplay(formData.proposed_orientation_date)
-                  : "Select a date"
-                }
+                  : "Select a date"}
               </Text>
               <Text style={styles.datePickerSub}>
-                {formData.proposed_orientation_date 
-                  ? "Tap to change date" 
-                  : "Tap to select"
-                }
+                {formData.proposed_orientation_date
+                  ? "Tap to change date"
+                  : "Tap to select"}
               </Text>
             </View>
             {formData.proposed_orientation_date && (
@@ -384,33 +446,45 @@ export default function Reapply() {
               </TouchableOpacity>
             )}
           </TouchableOpacity>
-          <Text style={styles.hintText}>Leave blank if you have no specific date in mind.</Text>
+          <Text style={styles.hintText}>
+            Leave blank if you have no specific date in mind.
+          </Text>
         </View>
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Maintenance Plan Document *</Text>
-          <TouchableOpacity 
-            style={styles.uploadBtn} 
+          <TouchableOpacity
+            style={styles.uploadBtn}
             onPress={pickDocument}
             activeOpacity={0.7}
           >
-            <View style={[styles.uploadIconWrap, { backgroundColor: "#E8F5E9" }]}>
-              <Ionicons name="document-text-outline" size={22} color="#0F4A2F" />
+            <View
+              style={[styles.uploadIconWrap, { backgroundColor: "#E8F5E9" }]}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={22}
+                color="#0F4A2F"
+              />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.uploadTitle}>
-                {formData.maintenance_plan ? formData.maintenance_plan.name : "Tap to upload Maintenance Plan"}
+                {formData.maintenance_plan
+                  ? formData.maintenance_plan.name
+                  : "Tap to upload Maintenance Plan"}
               </Text>
               <Text style={styles.uploadSub}>PDF, Word, or Image</Text>
             </View>
-            {formData.maintenance_plan && <Ionicons name="checkmark-circle" size={22} color="#0F4A2F" />}
+            {formData.maintenance_plan && (
+              <Ionicons name="checkmark-circle" size={22} color="#0F4A2F" />
+            )}
           </TouchableOpacity>
         </View>
 
         {/* Submit Button */}
-        <TouchableOpacity 
-          style={[styles.submitBtn, loading && styles.submitDisabled]} 
-          onPress={handleSubmit} 
+        <TouchableOpacity
+          style={[styles.submitBtn, loading && styles.submitDisabled]}
+          onPress={handleSubmit}
           disabled={loading}
           activeOpacity={0.8}
         >
@@ -438,7 +512,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingBottom: 16, // ✅ Padding bottom remains, top is handled dynamically
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
@@ -447,7 +521,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: "800", color: "#111827" },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
-  
+
   siteInfoBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -459,7 +533,12 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: "#3730A3",
   },
-  siteInfoLabel: { fontSize: 11, color: "#4338CA", fontWeight: "600", textTransform: "uppercase" },
+  siteInfoLabel: {
+    fontSize: 11,
+    color: "#4338CA",
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
   siteInfoName: { fontSize: 15, color: "#1E1B4B", fontWeight: "800" },
 
   infoBox: {
@@ -508,7 +587,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
   },
-  uploadIconWrap: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center" },
+  uploadIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   datePickerTitle: { fontSize: 14, fontWeight: "600", color: "#111827" },
   datePickerSub: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
   clearDateBtn: { padding: 4 },
@@ -551,8 +636,8 @@ const calendarStyles = StyleSheet.create({
   day: {
     width: 40,
     height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 20,
     margin: 2,
   },
@@ -562,19 +647,19 @@ const calendarStyles = StyleSheet.create({
     margin: 2,
   },
   daySelected: {
-    backgroundColor: '#0F4A2F',
+    backgroundColor: "#0F4A2F",
   },
   dayToday: {
     borderWidth: 1,
-    borderColor: '#0F4A2F',
+    borderColor: "#0F4A2F",
   },
   dayText: {
     fontSize: 14,
-    color: '#111827',
+    color: "#111827",
   },
   dayTextSelected: {
-    color: '#fff',
-    fontWeight: '700',
+    color: "#fff",
+    fontWeight: "700",
   },
 });
 
@@ -582,64 +667,64 @@ const calendarStyles = StyleSheet.create({
 const modalStyles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
   },
   container: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    maxHeight: '80%',
+    maxHeight: "80%",
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 20,
   },
   title: {
     fontSize: 20,
-    fontWeight: '800',
-    color: '#111827',
+    fontWeight: "800",
+    color: "#111827",
   },
   navigation: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 20,
     paddingHorizontal: 10,
   },
   navButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: "#F3F4F6",
   },
   monthYear: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#0F4A2F',
+    fontWeight: "700",
+    color: "#0F4A2F",
   },
   dayLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: "row",
+    justifyContent: "space-around",
     marginBottom: 10,
   },
   dayLabel: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
+    fontWeight: "600",
+    color: "#6B7280",
     width: 40,
-    textAlign: 'center',
+    textAlign: "center",
   },
   calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
     marginBottom: 20,
   },
   actions: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
   cancelButton: {
@@ -647,24 +732,24 @@ const modalStyles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    alignItems: 'center',
+    borderColor: "#E5E7EB",
+    alignItems: "center",
   },
   cancelText: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#6B7280',
+    fontWeight: "700",
+    color: "#6B7280",
   },
   confirmButton: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: '#0F4A2F',
-    alignItems: 'center',
+    backgroundColor: "#0F4A2F",
+    alignItems: "center",
   },
   confirmText: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: "700",
+    color: "#fff",
   },
 });

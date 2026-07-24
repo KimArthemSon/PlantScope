@@ -2,7 +2,7 @@ import json
 import logging
 import math
 from datetime import datetime, timedelta
-
+from datetime import date
 import cloudinary.uploader
 from django.db import transaction
 from django.db.models import Case, Count, F, Max, Q, Sum, When, fields
@@ -191,9 +191,10 @@ def get_application(request, application_id):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
+    # ✅ REMOVED 'user__profile' from select_related to optimize query
     app = get_object_or_404(
         Application.objects.select_related(
-            'user__tree_grower_group', 'user__profile',
+            'user__tree_grower_group',
             'site__reforestation_area__barangay',
             'site__meta_verification__verified_land_classification',
             'proposed_site__reforestation_area__barangay'
@@ -231,6 +232,7 @@ def get_application(request, application_id):
         assigned_site_data = {
             "site_id": site.site_id,
             "name": site.name,
+            "description": site.description,
             "total_area_hectares": site.total_area_hectares,
             "polygon_coordinates": site.polygon_coordinates,
             "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
@@ -250,9 +252,13 @@ def get_application(request, application_id):
             "barangay": (prop.reforestation_area.barangay.name if prop.reforestation_area and prop.reforestation_area.barangay else None),
         }
 
+    # ✅ Cleaner variable assignment for group data
+    group = getattr(app.user, 'tree_grower_group', None)
+    
     data = {
         "application": {
             "application_id": app.application_id,
+            "email": app.user.email,  # ✅ ADDED: Email for Account Information display
             "title": app.title,
             "classification": app.classification,
             "status": app.status,
@@ -266,22 +272,17 @@ def get_application(request, application_id):
             "updated_at": app.updated_at.isoformat(),
         },
         "group": {
-            "group_name": app.user.tree_grower_group.group_name if hasattr(app.user, 'tree_grower_group') else "N/A",
-            "group_type": app.user.tree_grower_group.get_group_type_display() if hasattr(app.user, 'tree_grower_group') else "N/A",
-            "group_contact": app.user.tree_grower_group.contact if hasattr(app.user, 'tree_grower_group') else "",
-            "group_address": app.user.tree_grower_group.address if hasattr(app.user, 'tree_grower_group') else "",
-            "group_profile": get_cloudinary_url(str(app.user.tree_grower_group.profile_img)) if hasattr(app.user, 'tree_grower_group') and app.user.tree_grower_group.profile_img else None,
+            "group_name": group.group_name if group else "N/A",
+            "group_type": group.get_group_type_display() if group else "N/A",
+            "group_contact": group.contact if group else "",
+            "group_address": group.address if group else "",
+            "group_profile": get_cloudinary_url(str(group.profile_img)) if group and group.profile_img else None,
         },
-        "profile": {
-            "first_name": app.user.profile.first_name,
-            "last_name": app.user.profile.last_name,
-            "contact": app.user.profile.contact,
-            "gender": app.user.profile.gender,
-        } if hasattr(app.user, 'profile') and app.user.profile else None,
+        # ✅ REMOVED: "profile" dictionary entirely to eliminate personal information
+        
         "assigned_site": assigned_site_data,
         "proposed_site": proposed_site_data,
         
-        # ✅ UPDATED: Seedling Requests Serialization with new fields
         "seedling_requests": [{
             "request_id": sr.seedling_request_id,
             "no_request_seedling": sr.no_request_seedling,
@@ -298,7 +299,6 @@ def get_application(request, application_id):
             "submitted_at": sr.submitted_at.isoformat() if sr.submitted_at else None
         } for sr in seedling_requests],
         
-        # ✅ UPDATED: Progress Reports with visit_type and agreement_image
         "progress_reports": [{
             "report_id": pr.progress_report_id,
             "visit_type": pr.visit_type,
@@ -313,12 +313,14 @@ def get_application(request, application_id):
             "agreement_image": get_cloudinary_url(str(pr.agreement_image)) if pr.agreement_image else None,
             "submitted_at": pr.submitted_at.isoformat() if pr.submitted_at else None
         } for pr in progress_reports],
+        
         "latest_reason": {
             "reason": latest_reason.reason,
             "status": latest_reason.status,
             "created": latest_reason.created.isoformat()
         } if latest_reason else None
     }
+    
     return JsonResponse(data, status=200)
 
 
@@ -1988,3 +1990,92 @@ def get_monitoring_baseline(request, application_id):
             "species_data": baseline_species
         }
     }, status=200)
+
+@csrf_exempt
+def update_orientation_date(request, application_id):
+    """
+    Update the orientation date for an application.
+    Only allowed for applications with status 'accepted' (Needs Orientation).
+    Requires a reason for audit trail purposes.
+    
+    PUT /api/update_orientation_date/<application_id>/
+    Body: { "orientation_date": "2026-08-01", "reason": "Schedule conflict..." }
+    Headers: Authorization: Bearer <token>
+    """
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT method is allowed'}, status=405)
+
+    # ✅ Use your existing authentication helper
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    # Parse JSON body
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON body'}, status=400)
+
+    new_orientation_date = body.get('orientation_date', '').strip()
+    reason_text = body.get('reason', '').strip()
+
+    # ─── Validation ─────────────────────────────────────────────────────────
+    if not new_orientation_date:
+        return JsonResponse({'error': 'orientation_date is required'}, status=400)
+
+    if not reason_text:
+        return JsonResponse({'error': 'reason is required. Please explain why the date is being changed.'}, status=400)
+
+    # Parse and validate the date format (YYYY-MM-DD)
+    try:
+        parsed_date = date.fromisoformat(new_orientation_date)
+    except ValueError:
+        return JsonResponse({
+            'error': 'Invalid date format. Please use YYYY-MM-DD (e.g. 2026-08-01)'
+        }, status=400)
+
+    # Fetch the application
+    app = get_object_or_404(Application, application_id=application_id)
+
+    # ─── Status Check ───────────────────────────────────────────────────────
+    # Only applications in 'accepted' status (Needs Orientation) can have
+    # their orientation date updated at this stage.
+    if app.status != 'accepted':
+        return JsonResponse({
+            'error': f'Cannot update orientation date for applications with status "{app.status}". Only "accepted" applications are eligible.'
+        }, status=400)
+
+    try:
+        with transaction.atomic():
+            # ─── Update the Application ─────────────────────────────────────
+            old_date = app.orientation_date
+            app.orientation_date = parsed_date
+            app.updated_at = timezone.now()
+            app.save(update_fields=['orientation_date', 'updated_at'])
+
+            # ─── Audit Trail: Log the change in the Reason table ────────────
+            Reason.objects.create(
+                application=app,
+                user=user,  # ✅ Now uses the authenticated user from token
+                status='accepted',
+                status_layer='new_program',
+                reason=(
+                    f"Orientation date changed from "
+                    f"{old_date.isoformat() if old_date else 'None'} "
+                    f"to {parsed_date.isoformat()}. "
+                    f"Reason: {reason_text}"
+                ),
+            )
+
+        return JsonResponse({
+            'message': 'Orientation date updated successfully.',
+            'application_id': app.application_id,
+            'old_orientation_date': old_date.isoformat() if old_date else None,
+            'new_orientation_date': parsed_date.isoformat(),
+            'reason': reason_text,
+        }, status=200)
+        
+    except Exception as e:
+        return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
+
+

@@ -541,24 +541,31 @@ def get_me(request):
         user_id = payload.get('user_id')
         user = get_object_or_404(User, id=user_id)
         
-        # ✅ UPDATED: Use get_cloudinary_url helper
-        profile_img_url = None
-        if hasattr(user, 'profile') and user.profile.profile_img:
-            profile_img_url = get_cloudinary_url(str(user.profile.profile_img))  # ← CHANGED
-        
         data = {
             'id': user.id,
             'email': user.email,
-            'profile_img': profile_img_url,  # ← CHANGED
-            'full_name': user.profile.first_name + " " + user.profile.last_name,
             'user_role': getattr(user, "user_role", None),
         }
+
+        # ✅ UPDATED: Check if tree grower and get group details
+        if user.user_role == 'treeGrowers' and hasattr(user, 'tree_grower_group'):
+            group = user.tree_grower_group
+            data['full_name'] = group.group_name  # Maps to frontend's full_name
+            data['profile_img'] = get_cloudinary_url(str(group.profile_img)) if group.profile_img else None
+        else:
+            # Fallback for other roles (DataManager, Inspector, etc.)
+            if hasattr(user, 'profile') and user.profile:
+                data['full_name'] = f"{user.profile.first_name} {user.profile.last_name}"
+                data['profile_img'] = get_cloudinary_url(str(user.profile.profile_img)) if user.profile.profile_img else None
+            else:
+                data['full_name'] = user.email
+                data['profile_img'] = None
 
         return JsonResponse(data)
     
     except Exception as e:
         print("Error:", e)
-        return JsonResponse({'error': 'Invalid JSON input'}, status=400)
+        return JsonResponse({'error': 'Invalid token or server error'}, status=400)
 
 
 @csrf_exempt
