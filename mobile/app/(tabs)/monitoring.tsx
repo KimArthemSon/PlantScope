@@ -10,6 +10,7 @@ import {
   RefreshControl,
   TextInput,
   Dimensions,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
@@ -39,18 +40,19 @@ type Application = {
 };
 
 type StatusFilter = "accepted" | "under_monitoring" | "all";
+type UrgencyFilter = "all" | "30_plus" | "60_plus" | "90_plus";
 
 // ─── Status Config ─────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
   accepted: {
-    label: "Needs Orientation",
+    label: "Orientation",
     color: "#3B82F6",
     bgColor: "#EFF6FF",
     borderColor: "#3B82F6",
     icon: "calendar-outline",
   },
   under_monitoring: {
-    label: "Under Monitoring",
+    label: "Ongoing",
     color: "#10B981",
     bgColor: "#ECFDF5",
     borderColor: "#10B981",
@@ -89,7 +91,7 @@ function UrgencyChip({
   let bgColor = "#F3F4F6";
   let textColor = "#4B5563";
   let label = `${days}d`;
-  let iconName = "checkmark-circle";
+  let iconName: any = "checkmark-circle";
 
   if (status === "accepted" && (days === null || days === 0)) {
     bgColor = "#F3F4F6";
@@ -137,6 +139,7 @@ const OnsiteInspectorMonitoring: React.FC = () => {
 
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("accepted");
+  const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>("all");
   const [classificationFilter, setClassificationFilter] = useState<
     "all" | "new" | "old"
   >("all");
@@ -179,6 +182,13 @@ const OnsiteInspectorMonitoring: React.FC = () => {
     fetchApplications();
   }, [sortBy, classificationFilter]);
 
+  // Reset urgency filter when switching to Orientation tab
+  useEffect(() => {
+    if (statusFilter === "accepted") {
+      setUrgencyFilter("all");
+    }
+  }, [statusFilter]);
+
   useEffect(() => {
     let filtered = [...applications];
 
@@ -197,6 +207,26 @@ const OnsiteInspectorMonitoring: React.FC = () => {
       );
     }
 
+    // ✅ Apply urgency filter (mutually exclusive ranges matching web version)
+    if (statusFilter !== "accepted" && urgencyFilter !== "all") {
+      if (urgencyFilter === "30_plus") {
+        filtered = filtered.filter((app) => {
+          const days = app.days_since_last_report ?? 999;
+          return days >= 30 && days < 60;
+        });
+      } else if (urgencyFilter === "60_plus") {
+        filtered = filtered.filter((app) => {
+          const days = app.days_since_last_report ?? 999;
+          return days >= 60 && days < 90;
+        });
+      } else if (urgencyFilter === "90_plus") {
+        filtered = filtered.filter((app) => {
+          const days = app.days_since_last_report ?? 999;
+          return days >= 90;
+        });
+      }
+    }
+
     if (sortBy === "urgent") {
       filtered.sort((a, b) => {
         const aDays = a.days_since_last_report ?? 999;
@@ -212,12 +242,12 @@ const OnsiteInspectorMonitoring: React.FC = () => {
     }
 
     setFilteredApps(filtered);
-  }, [searchText, statusFilter, applications, sortBy]);
+  }, [searchText, statusFilter, urgencyFilter, applications, sortBy]);
 
-  const needsOrientationCount = applications.filter(
+  const orientationCount = applications.filter(
     (a) => a.status === "accepted",
   ).length;
-  const underMonitoringCount = applications.filter(
+  const ongoingCount = applications.filter(
     (a) => a.status === "under_monitoring",
   ).length;
 
@@ -294,260 +324,319 @@ const OnsiteInspectorMonitoring: React.FC = () => {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerEyebrow}>Monitoring</Text>
-        <Text style={styles.headerTitle}>Tree Planting Programs</Text>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        style={styles.headerScroll}
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerEyebrow}>Monitoring</Text>
+          <Text style={styles.headerTitle}>Tree Planting Programs</Text>
 
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons
-            name="search"
-            size={20}
-            color="#9CA3AF"
-            style={styles.searchIcon}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search programs, groups, sites..."
-            value={searchText}
-            onChangeText={setSearchText}
-            placeholderTextColor="#9CA3AF"
-          />
-          <TouchableOpacity
-            onPress={() => setShowFilters(!showFilters)}
-            style={styles.filterButton}
-          >
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
             <Ionicons
-              name={showFilters ? "close" : "options"}
+              name="search"
               size={20}
-              color={showFilters ? "#3B82F6" : "#6B7280"}
+              color="#9CA3AF"
+              style={styles.searchIcon}
             />
-          </TouchableOpacity>
-        </View>
-
-        {/* Status Filter Tabs — single source of truth for counts */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              {
-                backgroundColor:
-                  statusFilter === "accepted" ? "#EFF6FF" : "#FFFFFF",
-                borderColor:
-                  statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
-              },
-            ]}
-            onPress={() => setStatusFilter("accepted")}
-          >
-            <Ionicons
-              name="calendar"
-              size={16}
-              color={statusFilter === "accepted" ? "#3B82F6" : "#6B7280"}
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search programs, groups, sites..."
+              value={searchText}
+              onChangeText={setSearchText}
+              placeholderTextColor="#9CA3AF"
             />
-            <Text
-              style={[
-                styles.tabText,
-                statusFilter === "accepted" && styles.activeTabText,
-              ]}
+            <TouchableOpacity
+              onPress={() => setShowFilters(!showFilters)}
+              style={styles.filterButton}
             >
-              Needs Orientation
-            </Text>
-            <View
+              <Ionicons
+                name={showFilters ? "close" : "options"}
+                size={20}
+                color={showFilters ? "#3B82F6" : "#6B7280"}
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Status Filter Tabs — horizontal scroll, single line */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabScrollContent}
+            style={styles.tabScroll}
+          >
+            <TouchableOpacity
               style={[
-                styles.tabBadge,
+                styles.tab,
                 {
                   backgroundColor:
+                    statusFilter === "accepted" ? "#EFF6FF" : "#FFFFFF",
+                  borderColor:
                     statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
                 },
               ]}
+              onPress={() => setStatusFilter("accepted")}
             >
+              <Ionicons
+                name="calendar"
+                size={16}
+                color={statusFilter === "accepted" ? "#3B82F6" : "#6B7280"}
+              />
               <Text
                 style={[
-                  styles.tabBadgeText,
+                  styles.tabText,
+                  statusFilter === "accepted" && styles.activeTabText,
+                ]}
+              >
+                Orientation
+              </Text>
+              <View
+                style={[
+                  styles.tabBadge,
                   {
-                    color: statusFilter === "accepted" ? "#FFFFFF" : "#6B7280",
+                    backgroundColor:
+                      statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
                   },
                 ]}
               >
-                {needsOrientationCount}
-              </Text>
-            </View>
-          </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.tabBadgeText,
+                    {
+                      color: statusFilter === "accepted" ? "#FFFFFF" : "#6B7280",
+                    },
+                  ]}
+                >
+                  {orientationCount}
+                </Text>
+              </View>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              {
-                backgroundColor:
-                  statusFilter === "under_monitoring" ? "#ECFDF5" : "#FFFFFF",
-                borderColor:
-                  statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
-              },
-            ]}
-            onPress={() => setStatusFilter("under_monitoring")}
-          >
-            <Ionicons
-              name="leaf"
-              size={16}
-              color={
-                statusFilter === "under_monitoring" ? "#10B981" : "#6B7280"
-              }
-            />
-            <Text
+            <TouchableOpacity
               style={[
-                styles.tabText,
-                statusFilter === "under_monitoring" && styles.activeTabText,
-              ]}
-            >
-              Under Monitoring
-            </Text>
-            <View
-              style={[
-                styles.tabBadge,
+                styles.tab,
                 {
                   backgroundColor:
+                    statusFilter === "under_monitoring" ? "#ECFDF5" : "#FFFFFF",
+                  borderColor:
                     statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
                 },
               ]}
+              onPress={() => setStatusFilter("under_monitoring")}
             >
+              <Ionicons
+                name="leaf"
+                size={16}
+                color={
+                  statusFilter === "under_monitoring" ? "#10B981" : "#6B7280"
+                }
+              />
               <Text
                 style={[
-                  styles.tabBadgeText,
+                  styles.tabText,
+                  statusFilter === "under_monitoring" && styles.activeTabText,
+                ]}
+              >
+                Ongoing
+              </Text>
+              <View
+                style={[
+                  styles.tabBadge,
                   {
-                    color:
-                      statusFilter === "under_monitoring"
-                        ? "#FFFFFF"
-                        : "#6B7280",
+                    backgroundColor:
+                      statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
                   },
                 ]}
               >
-                {underMonitoringCount}
-              </Text>
-            </View>
-          </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.tabBadgeText,
+                    {
+                      color:
+                        statusFilter === "under_monitoring"
+                          ? "#FFFFFF"
+                          : "#6B7280",
+                    },
+                  ]}
+                >
+                  {ongoingCount}
+                </Text>
+              </View>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              {
-                backgroundColor: statusFilter === "all" ? "#F3F4F6" : "#FFFFFF",
-                borderColor: statusFilter === "all" ? "#9CA3AF" : "#E5E7EB",
-              },
-            ]}
-            onPress={() => setStatusFilter("all")}
-          >
-            <Ionicons name="grid" size={16} color="#6B7280" />
-            <Text
+            <TouchableOpacity
               style={[
-                styles.tabText,
-                statusFilter === "all" && styles.activeTabText,
+                styles.tab,
+                {
+                  backgroundColor: statusFilter === "all" ? "#F3F4F6" : "#FFFFFF",
+                  borderColor: statusFilter === "all" ? "#9CA3AF" : "#E5E7EB",
+                },
               ]}
+              onPress={() => setStatusFilter("all")}
             >
-              All
-            </Text>
-          </TouchableOpacity>
+              <Ionicons name="grid" size={16} color="#6B7280" />
+              <Text
+                style={[
+                  styles.tabText,
+                  statusFilter === "all" && styles.activeTabText,
+                ]}
+              >
+                All
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+
+          {/* Expanded Filters */}
+          {showFilters && (
+            <View style={styles.filterPanel}>
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Sort By:</Text>
+                <View style={styles.filterChips}>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterChip,
+                      sortBy === "urgent" && styles.filterChipActive,
+                    ]}
+                    onPress={() => setSortBy("urgent")}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        sortBy === "urgent" && styles.filterChipTextActive,
+                      ]}
+                    >
+                      Most Urgent
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterChip,
+                      sortBy === "newest" && styles.filterChipActive,
+                    ]}
+                    onPress={() => setSortBy("newest")}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        sortBy === "newest" && styles.filterChipTextActive,
+                      ]}
+                    >
+                      Newest
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Classification:</Text>
+                <View style={styles.filterChips}>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterChip,
+                      classificationFilter === "all" && styles.filterChipActive,
+                    ]}
+                    onPress={() => setClassificationFilter("all")}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        classificationFilter === "all" &&
+                          styles.filterChipTextActive,
+                      ]}
+                    >
+                      All
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterChip,
+                      classificationFilter === "new" && styles.filterChipActive,
+                    ]}
+                    onPress={() => setClassificationFilter("new")}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        classificationFilter === "new" &&
+                          styles.filterChipTextActive,
+                      ]}
+                    >
+                      First-Time
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterChip,
+                      classificationFilter === "old" && styles.filterChipActive,
+                    ]}
+                    onPress={() => setClassificationFilter("old")}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        classificationFilter === "old" &&
+                          styles.filterChipTextActive,
+                      ]}
+                    >
+                      Returning
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* ✅ NEW: Urgency Filters (Only for Ongoing or All) */}
+          {(statusFilter === "under_monitoring" || statusFilter === "all") && (
+            <View style={styles.urgencyFilterContainer}>
+              <Text style={styles.filterLabel}>Urgency:</Text>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={styles.urgencyScroll}
+              >
+                <View style={styles.urgencyChips}>
+                  {[
+                    { key: "all", label: "All", icon: "grid", color: "#374151", bg: "#F3F4F6" },
+                    { key: "30_plus", label: "30+ Days", icon: "time-outline", color: "#D97706", bg: "#FEF3C7" },
+                    { key: "60_plus", label: "60+ Days", icon: "warning", color: "#EA580C", bg: "#FED7AA" },
+                    { key: "90_plus", label: "90+ Days", icon: "alert-circle", color: "#DC2626", bg: "#FEE2E2" },
+                  ].map((filter) => {
+                    const isActive = urgencyFilter === filter.key;
+                    return (
+                      <TouchableOpacity
+                        key={filter.key}
+                        style={[
+                          styles.urgencyChipBtn,
+                          isActive
+                            ? { backgroundColor: filter.bg, borderColor: filter.color }
+                            : { backgroundColor: "#FFFFFF", borderColor: "#E5E7EB" },
+                        ]}
+                        onPress={() => setUrgencyFilter(filter.key as UrgencyFilter)}
+                      >
+                        <Ionicons 
+                          name={filter.icon as any} 
+                          size={14} 
+                          color={isActive ? filter.color : "#6B7280"} 
+                        />
+                        <Text 
+                          style={[
+                            styles.urgencyChipText, 
+                            isActive ? { color: filter.color } : { color: "#374151" }
+                          ]}
+                        >
+                          {filter.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </View>
+          )}
         </View>
-
-        {/* Expanded Filters */}
-        {showFilters && (
-          <View style={styles.filterPanel}>
-            <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>Sort By:</Text>
-              <View style={styles.filterChips}>
-                <TouchableOpacity
-                  style={[
-                    styles.filterChip,
-                    sortBy === "urgent" && styles.filterChipActive,
-                  ]}
-                  onPress={() => setSortBy("urgent")}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      sortBy === "urgent" && styles.filterChipTextActive,
-                    ]}
-                  >
-                    Most Urgent
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.filterChip,
-                    sortBy === "newest" && styles.filterChipActive,
-                  ]}
-                  onPress={() => setSortBy("newest")}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      sortBy === "newest" && styles.filterChipTextActive,
-                    ]}
-                  >
-                    Newest
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>Classification:</Text>
-              <View style={styles.filterChips}>
-                <TouchableOpacity
-                  style={[
-                    styles.filterChip,
-                    classificationFilter === "all" && styles.filterChipActive,
-                  ]}
-                  onPress={() => setClassificationFilter("all")}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      classificationFilter === "all" &&
-                        styles.filterChipTextActive,
-                    ]}
-                  >
-                    All
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.filterChip,
-                    classificationFilter === "new" && styles.filterChipActive,
-                  ]}
-                  onPress={() => setClassificationFilter("new")}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      classificationFilter === "new" &&
-                        styles.filterChipTextActive,
-                    ]}
-                  >
-                    First-Time
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.filterChip,
-                    classificationFilter === "old" && styles.filterChipActive,
-                  ]}
-                  onPress={() => setClassificationFilter("old")}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      classificationFilter === "old" &&
-                        styles.filterChipTextActive,
-                    ]}
-                  >
-                    Returning
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        )}
-      </View>
+      </ScrollView>
 
       {/* Content */}
       {loading ? (
@@ -576,9 +665,9 @@ const OnsiteInspectorMonitoring: React.FC = () => {
                 {searchText
                   ? `No results for "${searchText}"`
                   : statusFilter === "accepted"
-                    ? "No programs need orientation"
+                    ? "No programs in orientation"
                     : statusFilter === "under_monitoring"
-                      ? "No programs under monitoring"
+                      ? "No ongoing programs match this urgency"
                       : "No active applications found."}
               </Text>
             </View>
@@ -601,6 +690,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F9FAFB",
+  },
+  headerScroll: {
+    flexGrow: 0,
   },
   header: {
     paddingHorizontal: 20,
@@ -648,26 +740,27 @@ const styles = StyleSheet.create({
   filterButton: {
     padding: 4,
   },
-  tabContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+  tabScroll: {
     marginBottom: 16,
+  },
+  tabScrollContent: {
+    flexDirection: "row",
+    gap: 10,
+    paddingRight: 20,
   },
   tab: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-start",
+    justifyContent: "center",
     gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: 12,
     borderWidth: 1,
-    flex: 0, // Change from flex: 1 to flex: 0
-    minWidth: 100, // Add minimum width
+    flexShrink: 0,
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
     color: "#6B7280",
   },
@@ -728,6 +821,33 @@ const styles = StyleSheet.create({
   filterChipTextActive: {
     color: "#FFFFFF",
   },
+  
+  // ✅ Urgency Filter Styles
+  urgencyFilterContainer: {
+    marginTop: 8,
+  },
+  urgencyScroll: {
+    marginTop: 8,
+  },
+  urgencyChips: {
+    flexDirection: "row",
+    gap: 8,
+    paddingRight: 20,
+  },
+  urgencyChipBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  urgencyChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
   listContent: {
     padding: 20,
     paddingBottom: 100,

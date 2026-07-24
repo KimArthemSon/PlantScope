@@ -355,7 +355,7 @@ def reject_seedling_request(request, request_id):
 
 @csrf_exempt
 def get_inspector_seedling_tasks(request):
-    """OnsiteInspector: Get list of requests assigned to them awaiting confirmation"""
+    """OnsiteInspector: Get list of requests assigned to them (supports status filtering)"""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -363,13 +363,20 @@ def get_inspector_seedling_tasks(request):
     if not user or user.user_role != 'OnsiteInspector':
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
+    # ✅ Get status filter from query params (default: 'accepted' for backwards compatibility)
+    status_filter = request.GET.get('status', 'accepted')
+    
+    # Build base queryset
     qs = SeedlingRequest.objects.filter(
-        assigned_inspector=user,
-        status='accepted'
+        assigned_inspector=user
     ).select_related(
         'application__user__tree_grower_group',
         'application__site__reforestation_area__barangay'
-    ).prefetch_related('seedling_species__tree_species').order_by('-created_at') # ✅ Added prefetch
+    ).prefetch_related('seedling_species__tree_species').order_by('-created_at')
+
+    # ✅ Apply status filter dynamically
+    if status_filter and status_filter != 'all':
+        qs = qs.filter(status=status_filter)
 
     data = []
     for req in qs:
@@ -383,6 +390,8 @@ def get_inspector_seedling_tasks(request):
             "fulfillment_type": req.fulfillment_type,
             "no_request_seedling": req.no_request_seedling,
             "submitted_at": req.submitted_at.isoformat() if req.submitted_at else None,
+            # ✅ ADDED: Status field so frontend can filter/display correctly
+            "status": req.status,
             # ✅ ADDED: Species breakdown so inspector knows what to verify
             "species": [{
                 "species_id": s.tree_species.tree_specie_id,

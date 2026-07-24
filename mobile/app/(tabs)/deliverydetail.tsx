@@ -311,7 +311,7 @@ export default function DeliveryDetailScreen() {
       setDetail(data);
     } catch (err: any) {
       Alert.alert("Error", err.message || "Failed to load delivery details.", [
-        { text: "OK", onPress: () => router.back() },
+        { text: "OK", onPress: () => router.replace("/(tabs)/delivery") },
       ]);
     } finally {
       setLoading(false);
@@ -398,7 +398,7 @@ export default function DeliveryDetailScreen() {
       Alert.alert(
         "✓ Delivery Confirmed",
         "The delivery has been marked as completed.",
-        [{ text: "OK", onPress: () => router.back() }],
+        [{ text: "OK", onPress: () => router.replace("/(tabs)/delivery") }],
       );
     } catch (err: any) {
       Alert.alert("Error", err.message || "Failed to confirm delivery.");
@@ -432,7 +432,7 @@ export default function DeliveryDetailScreen() {
       Alert.alert(
         "Delivery Canceled",
         "This delivery has been marked as canceled.",
-        [{ text: "OK", onPress: () => router.back() }],
+        [{ text: "OK", onPress: () => router.replace("/(tabs)/delivery") }],
       );
     } catch (err: any) {
       Alert.alert("Error", err.message || "Failed to cancel delivery.");

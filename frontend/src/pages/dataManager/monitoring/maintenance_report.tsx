@@ -21,6 +21,9 @@ import {
   ShieldCheck,
   TrendingUp,
   FileCheck,
+  Edit2,
+  Globe,
+  Building2,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { api } from "@/constant/api.ts";
@@ -76,6 +79,7 @@ interface ApplicationDetail {
   assigned_site: {
     site_id: number;
     name: string;
+    description: string | null;
     total_area_hectares: number;
     ndvi_value: number | null;
     polygon_coordinates: any;
@@ -227,7 +231,50 @@ const formatDate = (iso: string | null) =>
       })
     : "—";
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+// ─── Helper Components ─────────────────────────────────────────────────────
+
+function SectionHeader({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <div className="w-10 h-10 rounded-xl bg-[#0F4A2F] flex items-center justify-center text-green-300 flex-shrink-0">
+        {icon}
+      </div>
+      <div>
+        <h2 className="text-lg font-bold text-[#0F4A2F] leading-tight">
+          {title}
+        </h2>
+        {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number | null;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 py-3 border-b border-gray-100 last:border-0">
+      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+        {label}
+      </span>
+      <span className="text-sm text-gray-800 font-medium">{value ?? "—"}</span>
+    </div>
+  );
+}
+
+// ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function Maintenance_report() {
   const { application_id } = useParams<{ application_id: string }>();
@@ -252,6 +299,13 @@ export default function Maintenance_report() {
 
   const [alertModal, setAlertModal] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
+
+  // ✅ NEW: Update Orientation Date Modal State
+  const [updateOrientationModal, setUpdateOrientationModal] = useState<{
+    open: boolean;
+    newDate: string;
+    reason: string;
+  }>({ open: false, newDate: "", reason: "" });
 
   // States
   const [submitting, setSubmitting] = useState(false);
@@ -287,45 +341,102 @@ export default function Maintenance_report() {
     fetchApplication();
   }, [application_id]);
 
-  // ─── Metrics Calculation (✅ STRICTLY counts ONLY ACCEPTED reports) ────────
+  // ─── Update Orientation Date Handler ───────────────────────────────────────
+  const handleUpdateOrientationDate = async () => {
+    if (
+      !updateOrientationModal.newDate ||
+      !updateOrientationModal.reason.trim()
+    ) {
+      setPSAlert({
+        type: "failed",
+        title: "Missing Fields",
+        message: "Please provide both new date and reason for change.",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch(
+        `${API_BASE}api/update_orientation_date/${application_id}/`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            orientation_date: updateOrientationModal.newDate,
+            reason: updateOrientationModal.reason.trim(),
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data.error ?? "Failed to update orientation date");
+
+      setPSAlert({
+        type: "success",
+        title: "Orientation Date Updated",
+        message: `New orientation date: ${formatDate(updateOrientationModal.newDate)}`,
+      });
+
+      setUpdateOrientationModal({ open: false, newDate: "", reason: "" });
+      fetchApplication(); // Refresh to get updated data
+    } catch (err: any) {
+      setPSAlert({ type: "failed", title: "Failed", message: err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ─── ✅ UPDATED: Metrics Calculation ──────────────────────────────────────
   const acceptedSeedlingRequests =
     detail?.seedling_requests.filter((r) => r.status === "accepted") || [];
   const allProgressReports = detail?.progress_reports || [];
 
-  // ✅ Filter to ONLY accepted reports for accurate metrics
   const acceptedReports = allProgressReports.filter(
     (r) => r.status === "accepted",
   );
-  // ✅ Find ANY pending reports to show action buttons
   const pendingReports = allProgressReports.filter(
     (r) => r.status === "pending",
   );
 
+  // ✅ Seedlings Provided: Sum all accepted seedling requests
   const totalSeedlingsProvided = acceptedSeedlingRequests.reduce((sum, req) => {
     return (
       sum + (req.species?.reduce((sSum, sp) => sSum + sp.quantity, 0) || 0)
     );
   }, 0);
 
-  const totalSurvived = acceptedReports.reduce(
-    (sum, rep) => sum + (rep.total_survived || 0),
-    0,
-  );
-  const totalDead = acceptedReports.reduce(
-    (sum, rep) => sum + (rep.total_dead || 0),
-    0,
+  // ✅ Total Survived & Total Dead: Use LATEST accepted report (cumulative)
+  // Sort by submitted_at to get the most recent report
+  const sortedAcceptedReports = [...acceptedReports].sort(
+    (a, b) =>
+      new Date(b.submitted_at || 0).getTime() -
+      new Date(a.submitted_at || 0).getTime(),
   );
 
+  const latestReport = sortedAcceptedReports[0] || null;
+
+  const totalSurvived = latestReport?.total_survived || 0;
+  const totalDead = latestReport?.total_dead || 0;
+
+  // ✅ Total Ever Planted: Initial planted + Total added by grower (cumulative)
   const initialReport = acceptedReports.find((r) => r.visit_type === "initial");
   const initialPlanted =
     initialReport?.species.reduce((sum, sp) => sum + (sp.no_planted || 0), 0) ||
     0;
+
+  // Sum all added by grower from all accepted reports
   const totalAddedByGrower = acceptedReports.reduce(
     (sum, rep) => sum + (rep.total_added_by_grower || 0),
     0,
   );
+
   const totalEverPlanted = initialPlanted + totalAddedByGrower;
 
+  // ✅ Survival Rate: (Total Survived / Total Ever Planted) × 100
   const survivalRate =
     totalEverPlanted > 0
       ? ((totalSurvived / totalEverPlanted) * 100).toFixed(1)
@@ -369,7 +480,7 @@ export default function Maintenance_report() {
       });
 
       setRejectReportModal({ open: false, reportId: null, reason: "" });
-      fetchApplication(); // Refresh to get updated application status and metrics
+      fetchApplication();
     } catch (err: any) {
       setPSAlert({ type: "failed", title: "Failed", message: err.message });
     } finally {
@@ -494,6 +605,7 @@ export default function Maintenance_report() {
 
   const { application, group, assigned_site } = detail;
   const appStatus = application.status;
+  const isNeedsOrientation = appStatus === "accepted";
 
   return (
     <div
@@ -509,7 +621,7 @@ export default function Maintenance_report() {
         />
       )}
 
-      {/* ── Header ── */}
+      {/* ─ Header ── */}
       <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white px-6 py-5 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center gap-4">
           <button
@@ -522,7 +634,9 @@ export default function Maintenance_report() {
             <Leaf size={22} className="text-green-300" />
             <div>
               <h1 className="text-xl font-bold leading-tight">
-                Program Monitoring
+                {isNeedsOrientation
+                  ? "Orientation Details"
+                  : "Program Monitoring"}
               </h1>
               <p className="text-xs text-green-200 mt-0.5 truncate max-w-md">
                 {application.title}
@@ -537,7 +651,7 @@ export default function Maintenance_report() {
 
       <main className="max-w-7xl mx-auto p-6">
         <div className="flex gap-6 flex-col lg:flex-row">
-          {/* ── Left: Application Info + Metrics + Reports ── */}
+          {/* ─ Left: Application Info + Details ── */}
           <div className="flex-1 min-w-0 space-y-6">
             {/* Application Summary */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -576,50 +690,113 @@ export default function Maintenance_report() {
                   </div>
                 )}
               </div>
+
+              {/* ✅ Show Update Orientation Button for 'accepted' status */}
+              {isNeedsOrientation && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button
+                      onClick={() =>
+                        setUpdateOrientationModal({
+                          open: true,
+                          newDate: application.orientation_date || "",
+                          reason: "",
+                        })
+                      }
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors flex-1"
+                    >
+                      <Edit2 size={16} />
+                      Update Orientation Date
+                    </button>
+                    <button
+                      onClick={() =>
+                        navigate(
+                          `/DataManager/calendar?from=evaluation&appId=${application_id}&appTitle=${encodeURIComponent(application.title)}`,
+                        )
+                      }
+                      className="flex items-center gap-2 px-4 py-2 border border-[#0F4A2F] text-[#0F4A2F] rounded-lg text-sm font-semibold hover:bg-[#0F4A2F]/10 transition-colors flex-1"
+                    >
+                      <Globe size={16} />
+                      Open Calendar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* ✅ Program Progress Summary (Accurate based on accepted reports only) */}
+            {/* ✅ NEW: Maintenance Plan Section */}
+            {application.maintenance_plan && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <SectionHeader
+                  icon={<FileText size={18} />}
+                  title="Maintenance Plan"
+                  subtitle="Details of the proposed reforestation project"
+                />
+                <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
+                  <div className="w-12 h-12 rounded-lg bg-[#0F4A2F] flex items-center justify-center flex-shrink-0">
+                    <FileText size={20} className="text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-[#0F4A2F] truncate">
+                      {application.maintenance_plan.split("/").pop() ||
+                        "maintenance_plan.pdf"}
+                    </p>
+                    <p className="text-xs text-green-600">Click to download</p>
+                  </div>
+                  <a
+                    href={application.maintenance_plan}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+                    title="Download maintenance plan"
+                  >
+                    <Download size={18} />
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* Group Information Card */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <h3 className="text-sm font-bold text-[#0F4A2F] mb-4 flex items-center gap-2">
-                <TrendingUp size={16} /> Program Progress Summary
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 text-center">
-                  <Package size={20} className="text-blue-600 mx-auto mb-2" />
-                  <p className="text-2xl font-bold text-blue-800">
-                    {totalSeedlingsProvided.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-blue-600 font-medium">
-                    Seedlings Provided
-                  </p>
-                </div>
-                <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
-                  <Sprout size={20} className="text-emerald-600 mx-auto mb-2" />
-                  <p className="text-2xl font-bold text-emerald-800">
-                    {totalEverPlanted.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-emerald-600 font-medium">
-                    Total Ever Planted
-                  </p>
-                </div>
-                <div className="p-4 bg-green-50 rounded-xl border border-green-100 text-center">
-                  <CheckCircle2
-                    size={20}
-                    className="text-green-600 mx-auto mb-2"
+              <SectionHeader
+                icon={<Building2 size={18} />}
+                title="Group Information"
+                subtitle="Details of the tree grower group"
+              />
+              <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-100">
+                {group.group_profile ? (
+                  <img
+                    src={group.group_profile}
+                    alt="Group"
+                    className="w-16 h-16 rounded-xl object-cover border-2 border-green-100"
                   />
-                  <p className="text-2xl font-bold text-green-800">
-                    {totalSurvived.toLocaleString()}
-                  </p>
-                  <p className="text-xs text-green-600 font-medium">
-                    Total Survived
+                ) : (
+                  <div className="w-16 h-16 rounded-xl bg-green-50 flex items-center justify-center">
+                    <Building2 size={28} className="text-green-300" />
+                  </div>
+                )}
+                <div>
+                  <p className="font-bold text-gray-800">{group.group_name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                    {group.group_type.replace("_", " ")}
                   </p>
                 </div>
-                <div
-                  className={`p-4 rounded-xl border text-center ${survivalColor}`}
-                >
-                  <TrendingUp size={20} className="mx-auto mb-2" />
-                  <p className="text-2xl font-bold">{survivalRate}%</p>
-                  <p className="text-xs font-medium">Survival Rate</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                    Contact
+                  </p>
+                  <p className="text-sm text-gray-800">{group.group_contact}</p>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                    Address
+                  </p>
+                  <p className="text-sm text-gray-800 truncate">
+                    {group.group_address}
+                  </p>
                 </div>
               </div>
             </div>
@@ -632,7 +809,7 @@ export default function Maintenance_report() {
                 </h3>
 
                 <div className="flex justify-between items-start gap-4 mb-4">
-                  <div>
+                  <div className="flex-1">
                     <h4 className="text-lg font-bold text-[#0F4A2F]">
                       {assigned_site.name}
                     </h4>
@@ -642,8 +819,13 @@ export default function Maintenance_report() {
                       {assigned_site.barangay_name &&
                         ` • ${assigned_site.barangay_name}`}
                     </p>
+                    {assigned_site.description && (
+                      <p className="text-xs text-gray-500 mt-2 bg-white/60 p-2 rounded-lg border border-green-100 italic">
+                        {assigned_site.description}
+                      </p>
+                    )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-shrink-0">
                     <div className="text-center px-3 py-2 bg-white rounded-lg shadow-sm border border-green-100">
                       <p className="text-[10px] font-bold text-gray-500 uppercase">
                         Area
@@ -733,254 +915,314 @@ export default function Maintenance_report() {
               </div>
             )}
 
-            {/* Approved Seedling Requests */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-[#0F4A2F] flex items-center gap-2">
-                  <Package size={16} /> Approved Seedling Requests
-                </h3>
-                <span className="text-xs text-gray-400">
-                  {acceptedSeedlingRequests.length} accepted
-                </span>
-              </div>
-
-              {acceptedSeedlingRequests.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">
-                  No accepted seedling requests yet.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {acceptedSeedlingRequests.map((req) => (
-                    <div
-                      key={req.request_id}
-                      className="p-4 bg-gray-50 rounded-xl border border-gray-100"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-semibold text-gray-400">
-                          Submitted: {formatDate(req.submitted_at)}
-                        </span>
-                        <StatusBadge status={req.status} />
-                      </div>
-                      <div className="space-y-2">
-                        {req.species.map((item, i) => (
-                          <div
-                            key={i}
-                            className="flex items-center justify-between text-sm"
-                          >
-                            <div className="flex items-center gap-2">
-                              <Sprout size={14} className="text-[#0F4A2F]" />
-                              <span className="font-medium">
-                                {item.species_name}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="font-semibold text-[#0F4A2F]">
-                                {item.quantity.toLocaleString()}
-                              </span>
-                              <span className="text-xs text-gray-500">
-                                • {item.provided_by}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      {req.reason_accepted && (
-                        <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-gray-200">
-                          <strong>Note:</strong> {req.reason_accepted}
+            {/* ✅ UPDATED: Show metrics, seedlings, and reports for both 'accepted' AND 'under_monitoring' */}
+            {/* This allows Data Managers to approve initial orientation reports */}
+            {(isNeedsOrientation || appStatus === "under_monitoring") && (
+              <>
+                {/* Program Progress Summary - Only for under_monitoring or if there are accepted reports */}
+                {acceptedReports.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <h3 className="text-sm font-bold text-[#0F4A2F] mb-4 flex items-center gap-2">
+                      <TrendingUp size={16} /> Program Progress Summary
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 text-center">
+                        <Package
+                          size={20}
+                          className="text-blue-600 mx-auto mb-2"
+                        />
+                        <p className="text-2xl font-bold text-blue-800">
+                          {totalSeedlingsProvided.toLocaleString()}
                         </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* ✅ ALL Progress Reports (Initial & Ongoing) */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-[#0F4A2F] flex items-center gap-2">
-                  <FileText size={16} /> Progress Reports
-                </h3>
-                <span className="text-xs text-gray-400">
-                  {allProgressReports.length} total
-                </span>
-              </div>
-
-              {allProgressReports.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">
-                  No progress reports submitted yet.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {allProgressReports.map((report) => {
-                    const isInitial = report.visit_type === "initial";
-                    const isPending = report.status === "pending";
-
-                    return (
+                        <p className="text-xs text-blue-600 font-medium">
+                          Seedlings Provided
+                        </p>
+                      </div>
+                      <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
+                        <Sprout
+                          size={20}
+                          className="text-emerald-600 mx-auto mb-2"
+                        />
+                        <p className="text-2xl font-bold text-emerald-800">
+                          {totalEverPlanted.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-emerald-600 font-medium">
+                          Total Ever Planted
+                        </p>
+                      </div>
+                      <div className="p-4 bg-green-50 rounded-xl border border-green-100 text-center">
+                        <CheckCircle2
+                          size={20}
+                          className="text-green-600 mx-auto mb-2"
+                        />
+                        <p className="text-2xl font-bold text-green-800">
+                          {totalSurvived.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-green-600 font-medium">
+                          Total Survived
+                        </p>
+                      </div>
                       <div
-                        key={report.report_id}
-                        className={`p-5 rounded-xl border transition-all ${
-                          isPending && isInitial
-                            ? "bg-blue-50/50 border-blue-200 ring-1 ring-blue-100"
-                            : isPending
-                              ? "bg-amber-50/50 border-amber-200"
-                              : "bg-gray-50 border-gray-100"
-                        }`}
+                        className={`p-4 rounded-xl border text-center ${survivalColor}`}
                       >
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-gray-500">
-                              Submitted: {formatDate(report.submitted_at)}
-                            </span>
-                            <span
-                              className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wide ${isInitial ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}
-                            >
-                              {isInitial
-                                ? "Initial Orientation Visit"
-                                : "Ongoing Monitoring Visit"}
-                            </span>
-                          </div>
-                          <StatusBadge status={report.status} />
-                        </div>
+                        <TrendingUp size={20} className="mx-auto mb-2" />
+                        <p className="text-2xl font-bold">{survivalRate}%</p>
+                        <p className="text-xs font-medium">Survival Rate</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {/* Progress Reports */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-[#0F4A2F] flex items-center gap-2">
+                      <FileText size={16} /> Progress Reports
+                    </h3>
+                    <span className="text-xs text-gray-400">
+                      {allProgressReports.length} total
+                    </span>
+                  </div>
 
-                        {/* Initial Visit Specifics */}
-                        {isInitial && (
-                          <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-white rounded-lg border border-blue-100">
-                            <div className="flex items-center gap-1.5 text-green-700 text-xs font-semibold">
-                              <CheckCircle2 size={14} /> Orientation Conducted
+                  {allProgressReports.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-4">
+                      No progress reports submitted yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {allProgressReports.map((report) => {
+                        const isInitial = report.visit_type === "initial";
+                        const isPending = report.status === "pending";
+
+                        return (
+                          <div
+                            key={report.report_id}
+                            className={`p-5 rounded-xl border transition-all ${
+                              isPending && isInitial
+                                ? "bg-blue-50/50 border-blue-200 ring-1 ring-blue-100"
+                                : isPending
+                                  ? "bg-amber-50/50 border-amber-200"
+                                  : "bg-gray-50 border-gray-100"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-gray-500">
+                                  Submitted: {formatDate(report.submitted_at)}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wide ${isInitial ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"}`}
+                                >
+                                  {isInitial
+                                    ? "Initial Orientation Visit"
+                                    : "Ongoing Monitoring Visit"}
+                                </span>
+                              </div>
+                              <StatusBadge status={report.status} />
                             </div>
-                            {report.agreement_image && (
+
+                            {isInitial && (
+                              <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-white rounded-lg border border-blue-100">
+                                <div className="flex items-center gap-1.5 text-green-700 text-xs font-semibold">
+                                  <CheckCircle2 size={14} /> Orientation
+                                  Conducted
+                                </div>
+                                {report.agreement_image && (
+                                  <a
+                                    href={report.agreement_image}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1.5 text-[#0F4A2F] text-xs font-semibold hover:underline bg-green-50 px-2 py-1 rounded-md border border-green-200"
+                                  >
+                                    <FileCheck size={14} /> View Signed
+                                    Agreement
+                                  </a>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                              {isInitial && (
+                                <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
+                                  <p className="text-lg font-bold text-blue-600">
+                                    {report.species
+                                      .reduce(
+                                        (sum, sp) => sum + sp.no_planted,
+                                        0,
+                                      )
+                                      .toLocaleString()}
+                                  </p>
+                                  <p className="text-[10px] text-gray-500 font-medium uppercase">
+                                    Official Planted
+                                  </p>
+                                </div>
+                              )}
+                              <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
+                                <p className="text-lg font-bold text-emerald-600">
+                                  {report.total_added_by_grower.toLocaleString()}
+                                </p>
+                                <p className="text-[10px] text-gray-500 font-medium uppercase">
+                                  Added by Grower
+                                </p>
+                              </div>
+                              <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
+                                <p className="text-lg font-bold text-green-600">
+                                  {report.total_survived.toLocaleString()}
+                                </p>
+                                <p className="text-[10px] text-gray-500 font-medium uppercase">
+                                  Survived
+                                </p>
+                              </div>
+                              <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
+                                <p className="text-lg font-bold text-red-600">
+                                  {report.total_dead.toLocaleString()}
+                                </p>
+                                <p className="text-[10px] text-gray-500 font-medium uppercase">
+                                  Dead
+                                </p>
+                              </div>
+                            </div>
+
+                            {report.species && report.species.length > 0 && (
+                              <div className="mb-4 pt-4 border-t border-gray-200/60">
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3">
+                                  Species Breakdown
+                                </p>
+                                <div className="space-y-2">
+                                  {report.species.map((sp, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center justify-between text-sm bg-white p-2.5 rounded-lg border border-gray-100"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Sprout
+                                          size={14}
+                                          className="text-[#0F4A2F]"
+                                        />
+                                        <span className="font-medium text-gray-800">
+                                          {sp.species_name}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-xs">
+                                        {isInitial && (
+                                          <span className="text-blue-600 font-semibold">
+                                            Planted: {sp.no_planted}
+                                          </span>
+                                        )}
+                                        {sp.no_added_by_grower > 0 && (
+                                          <span className="text-emerald-600 font-semibold">
+                                            +{sp.no_added_by_grower} Added
+                                          </span>
+                                        )}
+                                        <span className="text-gray-300">|</span>
+                                        <span className="text-green-600 font-semibold">
+                                          {sp.no_survived} Survived
+                                        </span>
+                                        <span className="text-red-600 font-semibold">
+                                          {sp.no_dead} Dead
+                                        </span>
+                                        <span className="text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                                          ({sp.survival_rate}%)
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {report.description && (
+                              <div className="bg-white p-3 rounded-lg border border-gray-100 mb-3">
+                                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">
+                                  Inspector Notes
+                                </p>
+                                <p className="text-sm text-gray-700">
+                                  {report.description}
+                                </p>
+                              </div>
+                            )}
+
+                            {report.proof_image && (
                               <a
-                                href={report.agreement_image}
+                                href={report.proof_image}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 text-[#0F4A2F] text-xs font-semibold hover:underline bg-green-50 px-2 py-1 rounded-md border border-green-200"
+                                className="inline-flex items-center gap-1.5 text-xs text-[#0F4A2F] font-semibold hover:underline bg-green-50 px-3 py-1.5 rounded-lg border border-green-200"
                               >
-                                <FileCheck size={14} /> View Signed Agreement
+                                <Download size={12} /> View Proof Image
                               </a>
                             )}
                           </div>
-                        )}
-
-                        {/* Metrics Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                          {isInitial && (
-                            <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                              <p className="text-lg font-bold text-blue-600">
-                                {report.species
-                                  .reduce((sum, sp) => sum + sp.no_planted, 0)
-                                  .toLocaleString()}
-                              </p>
-                              <p className="text-[10px] text-gray-500 font-medium uppercase">
-                                Official Planted
-                              </p>
-                            </div>
-                          )}
-                          <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                            <p className="text-lg font-bold text-emerald-600">
-                              {report.total_added_by_grower.toLocaleString()}
-                            </p>
-                            <p className="text-[10px] text-gray-500 font-medium uppercase">
-                              Added by Grower
-                            </p>
-                          </div>
-                          <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                            <p className="text-lg font-bold text-green-600">
-                              {report.total_survived.toLocaleString()}
-                            </p>
-                            <p className="text-[10px] text-gray-500 font-medium uppercase">
-                              Survived
-                            </p>
-                          </div>
-                          <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                            <p className="text-lg font-bold text-red-600">
-                              {report.total_dead.toLocaleString()}
-                            </p>
-                            <p className="text-[10px] text-gray-500 font-medium uppercase">
-                              Dead
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Species Breakdown */}
-                        {report.species && report.species.length > 0 && (
-                          <div className="mb-4 pt-4 border-t border-gray-200/60">
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3">
-                              Species Breakdown
-                            </p>
-                            <div className="space-y-2">
-                              {report.species.map((sp, idx) => (
-                                <div
-                                  key={idx}
-                                  className="flex items-center justify-between text-sm bg-white p-2.5 rounded-lg border border-gray-100"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <Sprout
-                                      size={14}
-                                      className="text-[#0F4A2F]"
-                                    />
-                                    <span className="font-medium text-gray-800">
-                                      {sp.species_name}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-3 text-xs">
-                                    {isInitial && (
-                                      <span className="text-blue-600 font-semibold">
-                                        Planted: {sp.no_planted}
-                                      </span>
-                                    )}
-                                    {sp.no_added_by_grower > 0 && (
-                                      <span className="text-emerald-600 font-semibold">
-                                        +{sp.no_added_by_grower} Added
-                                      </span>
-                                    )}
-                                    <span className="text-gray-300">|</span>
-                                    <span className="text-green-600 font-semibold">
-                                      {sp.no_survived} Survived
-                                    </span>
-                                    <span className="text-red-600 font-semibold">
-                                      {sp.no_dead} Dead
-                                    </span>
-                                    <span className="text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                                      ({sp.survival_rate}%)
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {report.description && (
-                          <div className="bg-white p-3 rounded-lg border border-gray-100 mb-3">
-                            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">
-                              Inspector Notes
-                            </p>
-                            <p className="text-sm text-gray-700">
-                              {report.description}
-                            </p>
-                          </div>
-                        )}
-
-                        {report.proof_image && (
-                          <a
-                            href={report.proof_image}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 text-xs text-[#0F4A2F] font-semibold hover:underline bg-green-50 px-3 py-1.5 rounded-lg border border-green-200"
-                          >
-                            <Download size={12} /> View Proof Image
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+
+                {/* Approved Seedling Requests - Only for under_monitoring or if there are accepted requests */}
+                {acceptedSeedlingRequests.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-bold text-[#0F4A2F] flex items-center gap-2">
+                        <Package size={16} /> Approved Seedling Requests
+                      </h3>
+                      <span className="text-xs text-gray-400">
+                        {acceptedSeedlingRequests.length} accepted
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {acceptedSeedlingRequests.map((req) => (
+                        <div
+                          key={req.request_id}
+                          className="p-4 bg-gray-50 rounded-xl border border-gray-100"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-xs font-semibold text-gray-400">
+                              Submitted: {formatDate(req.submitted_at)}
+                            </span>
+                            <StatusBadge status={req.status} />
+                          </div>
+                          <div className="space-y-2">
+                            {req.species.map((item, i) => (
+                              <div
+                                key={i}
+                                className="flex items-center justify-between text-sm"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Sprout
+                                    size={14}
+                                    className="text-[#0F4A2F]"
+                                  />
+                                  <span className="font-medium">
+                                    {item.species_name}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="font-semibold text-[#0F4A2F]">
+                                    {item.quantity.toLocaleString()}
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    • {item.provided_by}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {req.reason_accepted && (
+                            <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-gray-200">
+                              <strong>Note:</strong> {req.reason_accepted}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
-          {/* ── Right: Actions Panel ── */}
+          {/*  Right: Actions Panel ── */}
           <div className="w-full lg:w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm sticky top-6">
               <div className="p-5 border-b border-gray-100">
@@ -991,27 +1233,48 @@ export default function Maintenance_report() {
               </div>
 
               <div className="p-5 space-y-4">
-                {/* ✅ FIXED: Show approve/reject for ANY pending report (Initial or Ongoing) */}
-                {pendingReports.length > 0 ? (
+                {/* ✅ UPDATED: Show approve/reject for pending reports when:
+                    - Status is 'accepted' AND there's a pending INITIAL report (orientation)
+                    - Status is 'under_monitoring' AND there are any pending reports */}
+                {(isNeedsOrientation &&
+                  pendingReports.some((r) => r.visit_type === "initial")) ||
+                (!isNeedsOrientation && pendingReports.length > 0) ? (
                   <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
                     <p className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                       <BellRing size={14} /> Action Required
                     </p>
                     <p className="text-xs text-amber-700 mb-4 leading-relaxed">
-                      The inspector has submitted a{" "}
-                      <span className="font-semibold">
-                        {pendingReports[0].visit_type === "initial"
-                          ? "new initial orientation"
-                          : "new ongoing monitoring"}
-                      </span>{" "}
-                      report. Review and approve it to update the program
-                      metrics.
+                      {isNeedsOrientation ? (
+                        <>
+                          The inspector has submitted an{" "}
+                          <span className="font-semibold">
+                            initial orientation
+                          </span>{" "}
+                          report. Approve it to move the application to Under
+                          Monitoring.
+                        </>
+                      ) : (
+                        <>
+                          The inspector has submitted a{" "}
+                          <span className="font-semibold">
+                            {pendingReports[0].visit_type === "initial"
+                              ? "new initial orientation"
+                              : "new ongoing monitoring"}
+                          </span>{" "}
+                          report. Review and approve it to update the program
+                          metrics.
+                        </>
+                      )}
                     </p>
                     <div className="space-y-2">
                       <button
                         onClick={() =>
                           handleUpdateProgressReport(
-                            pendingReports[0].report_id,
+                            pendingReports.find((r) =>
+                              isNeedsOrientation
+                                ? r.visit_type === "initial"
+                                : true,
+                            )?.report_id || pendingReports[0].report_id,
                             "accepted",
                             "Report approved",
                           )
@@ -1026,7 +1289,12 @@ export default function Maintenance_report() {
                         onClick={() =>
                           setRejectReportModal({
                             open: true,
-                            reportId: pendingReports[0].report_id,
+                            reportId:
+                              pendingReports.find((r) =>
+                                isNeedsOrientation
+                                  ? r.visit_type === "initial"
+                                  : true,
+                              )?.reportId || pendingReports[0].report_id,
                             reason: "",
                           })
                         }
@@ -1037,10 +1305,13 @@ export default function Maintenance_report() {
                       </button>
                     </div>
                   </div>
-                ) : (
-                  // Completion Decision (Only show if NO pending reports)
+                ) : null}
+
+                {/* Completion Decision (Only for under_monitoring, no pending reports) */}
+                {!isNeedsOrientation &&
                   (appStatus === "accepted" ||
-                    appStatus === "under_monitoring") && (
+                    appStatus === "under_monitoring") &&
+                  pendingReports.length === 0 && (
                     <>
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">
                         Final Decision
@@ -1072,8 +1343,7 @@ export default function Maintenance_report() {
                         </button>
                       </div>
                     </>
-                  )
-                )}
+                  )}
 
                 {/* Status Indicators */}
                 {appStatus === "completed" && (
@@ -1118,8 +1388,11 @@ export default function Maintenance_report() {
                   <p className="text-xs text-blue-800 flex items-start gap-2">
                     <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                     <span>
-                      Reports highlighted in amber or blue are pending your
-                      review and approval.
+                      {isNeedsOrientation
+                        ? pendingReports.some((r) => r.visit_type === "initial")
+                          ? "Initial orientation report submitted. Approve it to move to Under Monitoring."
+                          : "This application is awaiting orientation. Update the orientation date if needed."
+                        : "Reports highlighted in amber or blue are pending your review and approval."}
                     </span>
                   </p>
                 </div>
@@ -1129,7 +1402,87 @@ export default function Maintenance_report() {
         </div>
       </main>
 
-      {/* ── Completion Decision Modal ── */}
+      {/* ─ Update Orientation Date Modal ── */}
+      {updateOrientationModal.open && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
+              <Calendar size={28} className="text-blue-600" />
+            </div>
+            <h3 className="text-lg font-bold text-center text-gray-800 mb-1">
+              Update Orientation Date
+            </h3>
+            <p className="text-sm text-center text-gray-500 mb-5">
+              "{application.title}"
+            </p>
+
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              New Orientation Date *
+            </label>
+            <input
+              type="date"
+              value={updateOrientationModal.newDate}
+              onChange={(e) =>
+                setUpdateOrientationModal((p) => ({
+                  ...p,
+                  newDate: e.target.value,
+                }))
+              }
+              className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 mb-4 transition-colors"
+            />
+
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Reason for Change *
+            </label>
+            <textarea
+              rows={4}
+              value={updateOrientationModal.reason}
+              onChange={(e) =>
+                setUpdateOrientationModal((p) => ({
+                  ...p,
+                  reason: e.target.value,
+                }))
+              }
+              placeholder="e.g. Schedule conflict, grower requested change, weather conditions..."
+              className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 mb-5 transition-colors"
+            />
+
+            <div className="flex gap-3">
+              <button
+                onClick={() =>
+                  setUpdateOrientationModal({
+                    open: false,
+                    newDate: "",
+                    reason: "",
+                  })
+                }
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateOrientationDate}
+                disabled={
+                  submitting ||
+                  !updateOrientationModal.newDate ||
+                  !updateOrientationModal.reason.trim()
+                }
+                className={`flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition-all ${
+                  submitting ||
+                  !updateOrientationModal.newDate ||
+                  !updateOrientationModal.reason.trim()
+                    ? "opacity-50 cursor-not-allowed"
+                    : ""
+                }`}
+              >
+                {submitting ? "Updating…" : "Update Date"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─ Completion Decision Modal ── */}
       {completionModal.open && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -1248,7 +1601,7 @@ export default function Maintenance_report() {
         </div>
       )}
 
-      {/* ── Alert Tree Grower Modal ── */}
+      {/* ─ Alert Tree Grower Modal ── */}
       {alertModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">

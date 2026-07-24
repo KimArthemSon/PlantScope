@@ -29,7 +29,7 @@ interface Application {
   total_treegrowers_will_participate: number;
   classification: "new" | "old";
   status: string;
-  orientation_date: string | null; // Added for orientation tracking
+  orientation_date: string | null;
   created_at: string;
   last_report_date: string | null;
   days_since_last_report: number | null;
@@ -47,8 +47,8 @@ interface Filter {
 
 interface MonitoringStats {
   total: number;
-  accepted: number; // NEW: Count of apps awaiting orientation
-  under_monitoring: number; // NEW: Count of apps in ongoing monitoring
+  accepted: number;
+  under_monitoring: number;
   no_report: number;
   days_30_plus: number;
   days_60_plus: number;
@@ -61,11 +61,23 @@ const STATUS_CONFIG: Record<
   string,
   { label: string; bg: string; text: string }
 > = {
-  accepted: { label: "Needs Orientation", bg: "bg-blue-100", text: "text-blue-700" },
-  under_monitoring: { label: "Under Monitoring", bg: "bg-purple-100", text: "text-purple-700" },
+  accepted: {
+    label: "Needs Orientation",
+    bg: "bg-blue-100",
+    text: "text-blue-700",
+  },
+  under_monitoring: {
+    label: "Under Monitoring",
+    bg: "bg-purple-100",
+    text: "text-purple-700",
+  },
   completed: { label: "Completed", bg: "bg-gray-100", text: "text-gray-700" },
   failed: { label: "Failed", bg: "bg-red-100", text: "text-red-700" },
-  for_evaluation: { label: "For Evaluation", bg: "bg-yellow-100", text: "text-yellow-700" },
+  for_evaluation: {
+    label: "For Evaluation",
+    bg: "bg-yellow-100",
+    text: "text-yellow-700",
+  },
   for_head: { label: "For Head", bg: "bg-indigo-100", text: "text-indigo-700" },
   rejected: { label: "Rejected", bg: "bg-red-100", text: "text-red-700" },
 };
@@ -73,7 +85,6 @@ const STATUS_CONFIG: Record<
 // ─── Days Badge Component ───────────────────────────────────────────────────
 
 function DaysBadge({ days, status }: { days: number | null; status: string }) {
-  // Special case: Approved but no initial report yet
   if (status === "accepted" && days === null) {
     return (
       <span className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-semibold flex items-center gap-1">
@@ -137,8 +148,7 @@ export default function Monitoring() {
     days_60_plus: 0,
     days_90_plus: 0,
   });
-  
-  // Default to "accepted" to immediately show what needs orientation first
+
   const [filter, setFilter] = useState<Filter>({
     search: "",
     entries: 10,
@@ -179,8 +189,6 @@ export default function Monitoring() {
     }
   }, [userRole]);
 
-  // ─── Fetch Monitoring Stats ─────────────────────────────────────────────────
-
   const fetchStats = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE}api/get_monitoring_stats/`, {
@@ -194,8 +202,6 @@ export default function Monitoring() {
       console.error("Failed to fetch monitoring stats:", err);
     }
   }, [token, API_BASE]);
-
-  // ─── Fetch Applications ───────────────────────────────────────────────────
 
   const fetchApplications = async () => {
     setLoading(true);
@@ -216,7 +222,7 @@ export default function Monitoring() {
         `${API_BASE}api/get_applications/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       if (!response.ok) throw new Error("Failed to fetch applications.");
 
@@ -237,26 +243,27 @@ export default function Monitoring() {
   useEffect(() => {
     fetchApplications();
     fetchStats();
-  }, [filter.page, filter.entries, filter.classification, filter.days_since, filter.status]);
-
-  // ─── Live Polling for Stats ─────────────────────────────────────────────────
+  }, [
+    filter.page,
+    filter.entries,
+    filter.classification,
+    filter.days_since,
+    filter.status,
+  ]);
 
   useEffect(() => {
     fetchStats();
-    intervalRef.current = setInterval(fetchStats, 60000); // Poll every 60 seconds
+    intervalRef.current = setInterval(fetchStats, 60000);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [fetchStats]);
 
-  // ─── Navigate to Maintenance Report ───────────────────────────────────────
-
+  // ✅ UPDATED: Navigates to the unified details page for both accepted and under_monitoring
   const handleViewReport = (applicationId: number) => {
     navigate(`${userPath}/maintenance_evaluation/${applicationId}`);
   };
-
-  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center flex-col">
@@ -270,18 +277,25 @@ export default function Monitoring() {
       )}
 
       <main className="flex-1 p-8 max-w-7xl mx-auto w-full">
-        {/* Header */}
         <div className="mb-7">
-          <h1 className="text-2xl font-bold text-[#0F4A2F]">Program Monitoring</h1>
+          <h1 className="text-2xl font-bold text-[#0F4A2F]">
+            Program Monitoring
+          </h1>
           <p className="text-sm text-gray-500">
             Monitor and evaluate tree planting applications
           </p>
         </div>
 
-        {/* Primary Workflow Tabs */}
         <div className="flex gap-2 mb-6 border-b border-gray-200 pb-1">
           <button
-            onClick={() => setFilter({ ...filter, status: "accepted", days_since: "all", page: 1 })}
+            onClick={() =>
+              setFilter({
+                ...filter,
+                status: "accepted",
+                days_since: "all",
+                page: 1,
+              })
+            }
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-all flex items-center gap-2 ${
               filter.status === "accepted"
                 ? "border-[#0F4A2F] text-[#0F4A2F]"
@@ -289,15 +303,26 @@ export default function Monitoring() {
             }`}
           >
             Needs Orientation
-            <span className={`px-2 py-0.5 rounded-full text-xs ${
-              filter.status === "accepted" ? "bg-[#0F4A2F] text-white" : "bg-gray-100 text-gray-600"
-            }`}>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs ${
+                filter.status === "accepted"
+                  ? "bg-[#0F4A2F] text-white"
+                  : "bg-gray-100 text-gray-600"
+              }`}
+            >
               {stats.accepted}
             </span>
           </button>
-          
+
           <button
-            onClick={() => setFilter({ ...filter, status: "under_monitoring", days_since: "all", page: 1 })}
+            onClick={() =>
+              setFilter({
+                ...filter,
+                status: "under_monitoring",
+                days_since: "all",
+                page: 1,
+              })
+            }
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-all flex items-center gap-2 ${
               filter.status === "under_monitoring"
                 ? "border-[#0F4A2F] text-[#0F4A2F]"
@@ -305,15 +330,26 @@ export default function Monitoring() {
             }`}
           >
             Under Monitoring
-            <span className={`px-2 py-0.5 rounded-full text-xs ${
-              filter.status === "under_monitoring" ? "bg-[#0F4A2F] text-white" : "bg-gray-100 text-gray-600"
-            }`}>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs ${
+                filter.status === "under_monitoring"
+                  ? "bg-[#0F4A2F] text-white"
+                  : "bg-gray-100 text-gray-600"
+              }`}
+            >
               {stats.under_monitoring}
             </span>
           </button>
 
           <button
-            onClick={() => setFilter({ ...filter, status: "All", days_since: "all", page: 1 })}
+            onClick={() =>
+              setFilter({
+                ...filter,
+                status: "All",
+                days_since: "all",
+                page: 1,
+              })
+            }
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-all flex items-center gap-2 ${
               filter.status === "All"
                 ? "border-[#0F4A2F] text-[#0F4A2F]"
@@ -321,20 +357,27 @@ export default function Monitoring() {
             }`}
           >
             All Applications
-            <span className={`px-2 py-0.5 rounded-full text-xs ${
-              filter.status === "All" ? "bg-[#0F4A2F] text-white" : "bg-gray-100 text-gray-600"
-            }`}>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs ${
+                filter.status === "All"
+                  ? "bg-[#0F4A2F] text-white"
+                  : "bg-gray-100 text-gray-600"
+              }`}
+            >
               {stats.total}
             </span>
           </button>
         </div>
 
-        {/* Urgency Filters (Only show when not on a specific status tab, or keep them for ongoing) */}
         {(filter.status === "All" || filter.status === "under_monitoring") && (
           <div className="flex gap-2 mb-6 flex-wrap">
-            <span className="text-sm font-medium text-gray-600 flex items-center mr-2">Urgency:</span>
+            <span className="text-sm font-medium text-gray-600 flex items-center mr-2">
+              Urgency:
+            </span>
             <button
-              onClick={() => setFilter({ ...filter, days_since: "all", page: 1 })}
+              onClick={() =>
+                setFilter({ ...filter, days_since: "all", page: 1 })
+              }
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 filter.days_since === "all"
                   ? "bg-gray-800 text-white"
@@ -343,8 +386,10 @@ export default function Monitoring() {
             >
               All
             </button>
-            <button
-              onClick={() => setFilter({ ...filter, days_since: "no_report", page: 1 })}
+            {/* <button
+              onClick={() =>
+                setFilter({ ...filter, days_since: "no_report", page: 1 })
+              }
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
                 filter.days_since === "no_report"
                   ? "bg-gray-700 text-white"
@@ -352,9 +397,11 @@ export default function Monitoring() {
               }`}
             >
               <XCircle size={12} /> No Report
-            </button>
+            </button> */}
             <button
-              onClick={() => setFilter({ ...filter, days_since: "30_plus", page: 1 })}
+              onClick={() =>
+                setFilter({ ...filter, days_since: "30_plus", page: 1 })
+              }
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
                 filter.days_since === "30_plus"
                   ? "bg-yellow-500 text-white"
@@ -364,7 +411,9 @@ export default function Monitoring() {
               <Clock size={12} /> 30+ Days
             </button>
             <button
-              onClick={() => setFilter({ ...filter, days_since: "60_plus", page: 1 })}
+              onClick={() =>
+                setFilter({ ...filter, days_since: "60_plus", page: 1 })
+              }
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
                 filter.days_since === "60_plus"
                   ? "bg-orange-500 text-white"
@@ -374,7 +423,9 @@ export default function Monitoring() {
               <AlertTriangle size={12} /> 60+ Days
             </button>
             <button
-              onClick={() => setFilter({ ...filter, days_since: "90_plus", page: 1 })}
+              onClick={() =>
+                setFilter({ ...filter, days_since: "90_plus", page: 1 })
+              }
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
                 filter.days_since === "90_plus"
                   ? "bg-red-600 text-white"
@@ -386,13 +437,16 @@ export default function Monitoring() {
           </div>
         )}
 
-        {/* Additional Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm font-medium text-gray-600">Show:</label>
           <select
             value={filter.entries}
             onChange={(e) =>
-              setFilter((prev) => ({ ...prev, entries: Number(e.target.value), page: 1 }))
+              setFilter((prev) => ({
+                ...prev,
+                entries: Number(e.target.value),
+                page: 1,
+              }))
             }
             className="border border-gray-300 p-2 rounded-md text-sm focus:border-[#0F4A2F] focus:outline-none"
           >
@@ -402,11 +456,17 @@ export default function Monitoring() {
             <option value={100}>100</option>
           </select>
 
-          <label className="text-sm font-medium text-gray-600">Classification:</label>
+          <label className="text-sm font-medium text-gray-600">
+            Classification:
+          </label>
           <select
             value={filter.classification}
             onChange={(e) =>
-              setFilter((prev) => ({ ...prev, classification: e.target.value, page: 1 }))
+              setFilter((prev) => ({
+                ...prev,
+                classification: e.target.value,
+                page: 1,
+              }))
             }
             className="border border-gray-300 p-2 rounded-md text-sm focus:border-[#0F4A2F] focus:outline-none"
           >
@@ -416,13 +476,20 @@ export default function Monitoring() {
           </select>
 
           <div className="relative ml-auto">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
             <input
               type="text"
               placeholder="Search group name..."
               value={filter.search}
               onChange={(e) =>
-                setFilter((prev) => ({ ...prev, search: e.target.value, page: 1 }))
+                setFilter((prev) => ({
+                  ...prev,
+                  search: e.target.value,
+                  page: 1,
+                }))
               }
               onKeyDown={(e) => {
                 if (e.key === "Enter") fetchApplications();
@@ -432,34 +499,58 @@ export default function Monitoring() {
           </div>
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto shadow-lg rounded-sm border border-gray-200 bg-white">
           {loading && <LoaderPending />}
           <table className="min-w-full">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">No</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Group</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Title</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Status</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Classification</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Growers</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Last Report</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Days Since</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Actions</th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  No
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Group
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Title
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Status
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Classification
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Growers
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Last Report
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Days Since
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
               {applications.length > 0 ? (
                 applications.map((app, index) => {
-                  const statusConf = STATUS_CONFIG[app.status] || STATUS_CONFIG.accepted;
-                  const isUrgent = app.days_since_last_report !== null && app.days_since_last_report >= 90;
+                  const statusConf =
+                    STATUS_CONFIG[app.status] || STATUS_CONFIG.accepted;
+                  const isUrgent =
+                    app.days_since_last_report !== null &&
+                    app.days_since_last_report >= 90;
 
                   return (
                     <tr
                       key={app.application_id}
                       className={`${
-                        isUrgent ? "bg-red-50" : index % 2 === 0 ? "bg-white" : "bg-gray-50"
+                        isUrgent
+                          ? "bg-red-50"
+                          : index % 2 === 0
+                            ? "bg-white"
+                            : "bg-gray-50"
                       } transition hover:bg-green-50/30`}
                     >
                       <td className="py-3 px-5 text-[.85rem] text-gray-600">
@@ -469,11 +560,16 @@ export default function Monitoring() {
                         <div className="flex items-center gap-3">
                           {app.group_profile ? (
                             <img
-                              src={app.group_profile.startsWith("http") ? app.group_profile : `${app.group_profile}`}
+                              src={
+                                app.group_profile.startsWith("http")
+                                  ? app.group_profile
+                                  : `${app.group_profile}`
+                              }
                               className="rounded-full h-10 w-10 object-cover border border-gray-200"
                               alt="Group"
                               onError={(e) => {
-                                (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='%230F4A2F' stroke-width='1'/%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M7 7h10M7 11h10M7 15h6'/%3E%3C/svg%3E";
+                                (e.target as HTMLImageElement).src =
+                                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 24 24' fill='none' stroke='%230F4A2F' stroke-width='1'/%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M7 7h10M7 11h10M7 15h6'/%3E%3C/svg%3E";
                               }}
                             />
                           ) : (
@@ -482,24 +578,37 @@ export default function Monitoring() {
                             </div>
                           )}
                           <div>
-                            <h4 className="font-bold text-[.85rem] text-gray-800">{app.group_name}</h4>
-                            <span className="text-[.7rem] text-gray-500">{app.group_type}</span>
+                            <h4 className="font-bold text-[.85rem] text-gray-800">
+                              {app.group_name}
+                            </h4>
+                            <span className="text-[.7rem] text-gray-500">
+                              {app.group_type}
+                            </span>
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-5 text-[.85rem] max-w-xs truncate font-medium text-gray-700" title={app.title}>
+                      <td
+                        className="py-3 px-5 text-[.85rem] max-w-xs truncate font-medium text-gray-700"
+                        title={app.title}
+                      >
                         {app.title}
                       </td>
                       <td className="py-3 px-5">
-                        <span className={`px-2.5 py-1 rounded-full text-[.7rem] font-semibold ${statusConf.bg} ${statusConf.text}`}>
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[.7rem] font-semibold ${statusConf.bg} ${statusConf.text}`}
+                        >
                           {statusConf.label}
                         </span>
                       </td>
                       <td className="py-3 px-5 text-[.85rem]">
                         {app.classification === "new" ? (
-                          <span className="px-2 py-0.5 text-[.7rem] font-semibold rounded-full bg-blue-100 text-blue-800">First-Time</span>
+                          <span className="px-2 py-0.5 text-[.7rem] font-semibold rounded-full bg-blue-100 text-blue-800">
+                            First-Time
+                          </span>
                         ) : (
-                          <span className="px-2 py-0.5 text-[.7rem] font-semibold rounded-full bg-purple-100 text-purple-800">Returning</span>
+                          <span className="px-2 py-0.5 text-[.7rem] font-semibold rounded-full bg-purple-100 text-purple-800">
+                            Returning
+                          </span>
                         )}
                       </td>
                       <td className="py-3 px-5 text-[.85rem] text-gray-700">
@@ -511,42 +620,61 @@ export default function Monitoring() {
                       <td className="py-3 px-5 text-[.85rem]">
                         {app.last_report_date ? (
                           <div className="font-medium text-gray-800">
-                            {new Date(app.last_report_date).toLocaleDateString("en-PH", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            })}
+                            {new Date(app.last_report_date).toLocaleDateString(
+                              "en-PH",
+                              {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              },
+                            )}
                           </div>
                         ) : (
-                          <span className="text-gray-400 italic text-xs">No report yet</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-5">
-                        <DaysBadge days={app.days_since_last_report} status={app.status} />
-                      </td>
-                      <td className="py-3 px-5">
-                        {app.status === "accepted" && !app.last_report_date ? (
-                          <span className="text-xs text-gray-400 italic flex items-center gap-1">
-                            <Clock size={12} /> Awaiting Inspector
+                          <span className="text-gray-400 italic text-xs">
+                            No report yet
                           </span>
-                        ) : (
-                          <button
-                            onClick={() => handleViewReport(app.application_id)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0F4A2F] text-white text-xs font-semibold hover:bg-[#1a6b44] transition-colors shadow-sm"
-                            title="View maintenance reports"
-                          >
-                            <FileCheck2 size={14} />
-                            {app.status === "accepted" ? "Review Initial Report" : "View Monitoring History"}
-                          </button>
                         )}
+                      </td>
+                      <td className="py-3 px-5">
+                        <DaysBadge
+                          days={app.days_since_last_report}
+                          status={app.status}
+                        />
+                      </td>
+
+                      {/* ✅ UPDATED: Unified "View Details" action for all statuses */}
+                      <td className="py-3 px-5">
+                        <button
+                          onClick={() => handleViewReport(app.application_id)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold transition-colors shadow-sm ${
+                            app.status === "accepted"
+                              ? "bg-blue-600 hover:bg-blue-700"
+                              : "bg-[#0F4A2F] hover:bg-[#1a6b44]"
+                          }`}
+                          title={
+                            app.status === "accepted"
+                              ? "View details and manage orientation"
+                              : "View monitoring history"
+                          }
+                        >
+                          <FileCheck2 size={14} />
+                          {app.status === "accepted"
+                            ? "View Details"
+                            : "View Monitoring History"}
+                        </button>
                       </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} className="text-center py-10 text-gray-500 italic bg-gray-50">
-                    {filter.search ? `No results for "${filter.search}"` : "No applications found."}
+                  <td
+                    colSpan={9}
+                    className="text-center py-10 text-gray-500 italic bg-gray-50"
+                  >
+                    {filter.search
+                      ? `No results for "${filter.search}"`
+                      : "No applications found."}
                   </td>
                 </tr>
               )}
@@ -554,12 +682,13 @@ export default function Monitoring() {
           </table>
         </div>
 
-        {/* Pagination */}
         {filter.total_page > 1 && (
           <div className="flex items-center gap-1 mt-5 w-full justify-end">
             <button
               disabled={filter.page <= 1}
-              onClick={() => setFilter((prev) => ({ ...prev, page: prev.page - 1 }))}
+              onClick={() =>
+                setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
+              }
               className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
               <ChevronLeft size={16} /> Prev
@@ -579,7 +708,9 @@ export default function Monitoring() {
               return (
                 <button
                   key={pageNum}
-                  onClick={() => setFilter((prev) => ({ ...prev, page: pageNum }))}
+                  onClick={() =>
+                    setFilter((prev) => ({ ...prev, page: pageNum }))
+                  }
                   className={`px-3 py-1.5 border rounded-lg cursor-pointer text-sm ${
                     pageNum === filter.page
                       ? "bg-[#0F4A2F] text-white border-[#0F4A2F]"
@@ -593,7 +724,9 @@ export default function Monitoring() {
 
             <button
               disabled={filter.page >= filter.total_page}
-              onClick={() => setFilter((prev) => ({ ...prev, page: prev.page + 1 }))}
+              onClick={() =>
+                setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
+              }
               className="px-3 py-1.5 border rounded-lg text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
               Next <ChevronRight size={16} />

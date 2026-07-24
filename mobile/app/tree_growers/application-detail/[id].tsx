@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   View,
   Text,
@@ -28,8 +28,87 @@ const WHITE = "#FFFFFF";
 const BG = "#F4F7F5";
 const BORDER = "#E5E7EB";
 
-// Number of lines to show before truncating the description
 const DESCRIPTION_LINE_LIMIT = 4;
+
+// ─── Types ─────────────────────────────────────────────────────────────────
+interface ApplicationData {
+  application_id: number;
+  title: string;
+  classification: "new" | "old";
+  status: string;
+  total_treegrowers_will_participate: number;
+  orientation_date: string | null;
+  proposed_orientation_date: string | null;
+  confirmed_at: string | null;
+  maintenance_plan: string | null;
+  agreement_image: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface GroupData {
+  group_name: string;
+  group_type: string;
+  group_contact: string;
+  group_address: string;
+  group_profile: string | null;
+}
+
+interface AssignedSite {
+  site_id: number;
+  name: string;
+  description: string | null;
+  total_area_hectares: number;
+  polygon_coordinates: [number, number][] | string | null;
+  reforestation_area_name: string | null;
+  barangay_name: string | null;
+  accessibility: any;
+  land_classification_name: string | null;
+  general_images: { image_url: string | null; caption: string | null }[];
+  recommended_species: {
+    species_id: number;
+    species_name: string;
+    rank: number;
+  }[];
+}
+
+interface SeedlingRequest {
+  request_id: number;
+  no_request_seedling: number;
+  species: { species_name: string; quantity: number; provided_by: string }[];
+  status: "pending" | "accepted" | "rejected";
+  reason_accepted: string | null;
+  submitted_at: string | null;
+}
+
+interface ProgressReport {
+  report_id: number;
+  visit_type: "initial" | "ongoing";
+  total_survived: number;
+  total_dead: number;
+  total_added_by_grower: number;
+  species: {
+    species_id: number;
+    species_name: string;
+    no_planted: number;
+    no_added_by_grower: number;
+    no_survived: number;
+    no_dead: number;
+    survival_rate: number;
+  }[];
+  description: string | null;
+  status: "pending" | "accepted" | "rejected";
+  proof_image: string | null;
+  submitted_at: string | null;
+}
+
+interface ApplicationDetail {
+  application: ApplicationData | null;
+  group: GroupData | null;
+  assigned_site: AssignedSite | null;
+  seedling_requests: SeedlingRequest[];
+  progress_reports: ProgressReport[];
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 const formatDescription = (desc: string | null | undefined) => {
@@ -40,6 +119,44 @@ const formatDescription = (desc: string | null | undefined) => {
     .replace(/<\/p>/gi, "\n")
     .replace(/<[^>]+>/g, "");
 };
+
+const formatDate = (iso: string) =>
+  !iso
+    ? "—"
+    : new Date(iso).toLocaleDateString("en-PH", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+
+const parsePolygonCoordinates = (coords: any): [number, number][] => {
+  if (!coords) return [];
+  if (Array.isArray(coords) && coords.length > 0 && Array.isArray(coords[0]))
+    return coords as [number, number][];
+  if (typeof coords === "string") {
+    try {
+      const p = JSON.parse(coords);
+      if (Array.isArray(p)) return p;
+    } catch {}
+  }
+  return [];
+};
+
+const getAccessibilityText = (accessibility: any) => {
+  if (!accessibility) return "Not specified";
+  if (typeof accessibility === "string") return accessibility;
+  if (typeof accessibility === "object") {
+    if (accessibility.type)
+      return accessibility.type
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (l: string) => l.toUpperCase());
+    if (accessibility.description) return accessibility.description;
+  }
+  return "Specified";
+};
+
+const getTotalSeedlings = (species: { quantity: number }[]) =>
+  species.reduce((sum, item) => sum + (item.quantity || 0), 0);
 
 // ─── OSM Map Component ────────────────────────────────────────────────────
 const OSMMap = ({
@@ -114,64 +231,7 @@ const OSMMap = ({
   );
 };
 
-// ─── Types ─────────────────────────────────────────────────────────────────
-interface ApplicationData {
-  application_id: number;
-  title: string;
-  status: string;
-  total_treegrowers_will_participate: number;
-  orientation_date: string | null;
-  proposed_orientation_date: string | null;
-  created_at: string;
-  maintenance_plan: string | null;
-}
-
-interface GroupData {
-  group_name: string;
-}
-
-interface AssignedSite {
-  site_id: number;
-  name: string;
-  description: string | null;
-  total_area_hectares: number;
-  ndvi_value: number | null;
-  polygon_coordinates: [number, number][] | string | null;
-  reforestation_area_name: string | null;
-  barangay_name: string | null;
-  accessibility: any;
-  land_classification_name: string | null;
-  general_images: { image_url: string | null; caption: string | null }[];
-  recommended_species: {
-    species_id: number;
-    species_name: string;
-    rank: number;
-  }[];
-}
-
-interface SeedlingRequest {
-  request_id: number;
-  status: "pending" | "accepted" | "rejected";
-  species: { species_name: string; quantity: number }[];
-}
-
-interface ProgressReport {
-  report_id: number;
-  status: string;
-  total_survived: number;
-  total_dead: number;
-  submitted_at: string | null;
-}
-
-interface ApplicationDetail {
-  application: ApplicationData | null;
-  group: GroupData | null;
-  assigned_site: AssignedSite | null;
-  seedling_requests: SeedlingRequest[];
-  progress_reports: ProgressReport[];
-}
-
-// ─── Helpers ───────────────────────────────────────────────────────────────
+// ─── Status Badge ─────────────────────────────────────────────────────────
 const statusConfig: Record<
   string,
   { label: string; bg: string; text: string; dot: string }
@@ -228,45 +288,6 @@ const getStatusConf = (status: string) =>
     dot: "#999",
   };
 
-const formatDate = (iso: string) =>
-  !iso
-    ? "—"
-    : new Date(iso).toLocaleDateString("en-PH", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-
-const parsePolygonCoordinates = (coords: any): [number, number][] => {
-  if (!coords) return [];
-  if (Array.isArray(coords) && coords.length > 0 && Array.isArray(coords[0]))
-    return coords as [number, number][];
-  if (typeof coords === "string") {
-    try {
-      const p = JSON.parse(coords);
-      if (Array.isArray(p)) return p;
-    } catch {}
-  }
-  return [];
-};
-
-const getAccessibilityText = (accessibility: any) => {
-  if (!accessibility) return "Not specified";
-  if (typeof accessibility === "string") return accessibility;
-  if (typeof accessibility === "object") {
-    if (accessibility.type)
-      return accessibility.type
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (l: string) => l.toUpperCase());
-    if (accessibility.description) return accessibility.description;
-  }
-  return "Specified";
-};
-
-const getTotalSeedlings = (species: { quantity: number }[]) =>
-  species.reduce((sum, item) => sum + (item.quantity || 0), 0);
-
-// ─── Status Badge ──────────────────────────────────────────────────────────
 const StatusBadge = ({ status }: { status: string }) => {
   const conf = getStatusConf(status);
   return (
@@ -351,7 +372,7 @@ const FloatingProgressTimeline = ({ status }: { status: string }) => {
   );
 };
 
-// ─── Floating Action Button for Quick Links ────────────────────────────────
+// ─── Floating Action Button ────────────────────────────────────────────────
 const FloatingQuickLinks = ({
   totalApprovedSeedlings,
   reportCount,
@@ -429,25 +450,27 @@ const FloatingQuickLinks = ({
 };
 
 // ─── Main Component ────────────────────────────────────────────────────────
-export default function ApplicationPage() {
+export default function ApplicationDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { id } = useLocalSearchParams<{ id: string }>();
 
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<"about" | "gallery">("about");
   const [showMap, setShowMap] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [showGallery, setShowGallery] = useState(false);
 
-  // ✅ NEW: Notification state
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  // ✅ Description "see more" state
   const [descExpanded, setDescExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
+
+  // Inline history expansion states
+  const [showSeedlingHistory, setShowSeedlingHistory] = useState(false);
+  const [showReportHistory, setShowReportHistory] = useState(false);
 
   const fetchData = async (isRefresh = false) => {
     try {
@@ -456,11 +479,15 @@ export default function ApplicationPage() {
       const token = await SecureStore.getItemAsync("token");
       if (!token) throw new Error("No authentication token found.");
 
-      const res = await fetch(`${api}/api/get_tree_grower_application/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(
+        `${api}/api/get_tree_grower_application_detail/${id}/`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       if (!res.ok)
         throw new Error(`Failed to load application (${res.status})`);
+
       const data: ApplicationDetail = await res.json();
       setDetail(data);
     } catch (err: any) {
@@ -472,29 +499,9 @@ export default function ApplicationPage() {
     }
   };
 
-  // ✅ Fetch unread notification count
-  const fetchUnreadCount = async () => {
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      if (!token) return;
-      const res = await fetch(`${api}/api/notifications/unread-count/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setUnreadCount(data.unread_count || 0);
-      }
-    } catch (error) {
-      console.error("Error fetching unread count:", error);
-    }
-  };
-
   useEffect(() => {
-    fetchData();
-    fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 60000); // Poll every 60 seconds
-    return () => clearInterval(interval);
-  }, []);
+    if (id) fetchData();
+  }, [id]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -513,12 +520,14 @@ export default function ApplicationPage() {
         latitudeDelta: 0.02,
         longitudeDelta: 0.02,
       };
+
     const lats = coords.map(([lat]) => lat);
     const lngs = coords.map(([, lng]) => lng);
     const minLat = Math.min(...lats),
       maxLat = Math.max(...lats);
     const minLng = Math.min(...lngs),
       maxLng = Math.max(...lngs);
+
     return {
       latitude: (minLat + maxLat) / 2,
       longitude: (minLng + maxLng) / 2,
@@ -554,19 +563,19 @@ export default function ApplicationPage() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingTop: insets.top + 40 }]}>
         <ActivityIndicator size="large" color={PRIMARY} />
-        <Text style={styles.loadingText}>Loading your program...</Text>
+        <Text style={styles.loadingText}>Loading application details...</Text>
       </View>
     );
   }
 
-  if (error) {
+  if (error || !detail || !detail.application) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingTop: insets.top + 40 }]}>
         <Ionicons name="alert-circle-outline" size={48} color={MUTED} />
         <Text style={styles.errorTitle}>Couldn't Load</Text>
-        <Text style={styles.errorMsg}>{error}</Text>
+        <Text style={styles.errorMsg}>{error || "Application not found"}</Text>
         <TouchableOpacity style={styles.retryBtn} onPress={() => fetchData()}>
           <Ionicons name="refresh" size={16} color="#fff" />
           <Text style={styles.retryText}>Try Again</Text>
@@ -575,67 +584,22 @@ export default function ApplicationPage() {
     );
   }
 
-  const isTerminalState =
-    !detail?.application ||
-    ["completed", "rejected", "cancelled"].includes(detail.application.status);
-
-  if (isTerminalState) {
-    return (
-      <View style={styles.container}>
-        <View style={[styles.terminalBanner, { paddingTop: insets.top + 20 }]}>
-          <Text style={styles.terminalTitle}>Tree Planting Program</Text>
-          <Text style={styles.terminalSub}>Ready for a new project?</Text>
-        </View>
-        <View style={styles.terminalBody}>
-          <Ionicons name="sparkles-outline" size={48} color={PRIMARY} />
-          <Text style={styles.terminalH1}>
-            {detail?.application
-              ? "Program Completed!"
-              : "No Active Application"}
-          </Text>
-          <Text style={styles.terminalDesc}>
-            {detail?.application
-              ? "Thank you for your contribution! You are now eligible to start a new tree planting project."
-              : "You haven't applied for a tree planting program yet. Start your journey today!"}
-          </Text>
-          <TouchableOpacity
-            style={styles.terminalBtn}
-            onPress={() => router.push("/tree_growers/sites")}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add-circle-outline" size={20} color="#fff" />
-            <Text style={styles.terminalBtnText}>Apply for New Program</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  const application = detail!.application;
-  const group = detail!.group;
-  const assigned_site = detail!.assigned_site;
+  const application = detail.application;
+  const group = detail.group;
+  const assigned_site = detail.assigned_site;
   const heroImage = assigned_site?.general_images?.[0];
   const galleryImages = assigned_site?.general_images || [];
 
   return (
-    <View style={styles.container}>
-      {/* ─── Top Bar: Notification with count ─── */}
-      <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity
-          style={styles.notifBtn}
-          onPress={() => router.push("/tree_growers/notifications")}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="notifications-outline" size={22} color={INK} />
-          {unreadCount > 0 && (
-            <View style={styles.notifDot}>
-              <Text style={styles.notifDotText}>
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* ── Floating Back Button ─── */}
+      <TouchableOpacity
+        style={[styles.floatingBackBtn, { top: insets.top + 16 }]}
+        onPress={() => router.replace("/tree_growers/reports")}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="chevron-back" size={24} color={INK} />
+      </TouchableOpacity>
 
       {/* ─── Scrollable Content ─── */}
       <ScrollView
@@ -648,30 +612,44 @@ export default function ApplicationPage() {
           />
         }
       >
-        {/* ─── Site Image (42% of screen) ─── */}
+        {/* ─── Site Image ── */}
         <View style={styles.heroContainer}>
-          <Image
-            source={{
-              uri: heroImage?.image_url?.startsWith("http")
-                ? heroImage.image_url
-                : `${api}${heroImage?.image_url}`,
-            }}
-            style={styles.heroImage}
-            resizeMode="cover"
-          />
+          {heroImage?.image_url ? (
+            <Image
+              source={{
+                uri: heroImage.image_url.startsWith("http")
+                  ? heroImage.image_url
+                  : `${api}${heroImage.image_url}`,
+              }}
+              style={styles.heroImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View
+              style={[
+                styles.heroImage,
+                {
+                  backgroundColor: "#E5E7EB",
+                  justifyContent: "center",
+                  alignItems: "center",
+                },
+              ]}
+            >
+              <Ionicons name="image-outline" size={48} color={MUTED} />
+            </View>
+          )}
         </View>
 
         {/* ─── Floating Progress Timeline ─── */}
         <View style={styles.floatingTimelinePosition}>
-          <FloatingProgressTimeline status={application?.status} />
+          <FloatingProgressTimeline status={application.status} />
         </View>
 
-        {/* ─── Application Info Card ── */}
+        {/* ─── Content Sheet ─── */}
         <View style={styles.contentSheet}>
-          {/* Spacer for floating timeline */}
           <View style={{ height: 28 }} />
 
-          {/* ─── Compact Stats Row ─── */}
+          {/* ─── Compact Stats Row ── */}
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
@@ -700,9 +678,9 @@ export default function ApplicationPage() {
             </View>
           </View>
 
-          {/* ✅ UPDATED: Orientation Date - Only show if status is 'accepted' */}
-          {application?.status === "accepted" &&
-            application?.orientation_date && (
+          {/* ─── Orientation Date ── */}
+          {application.status === "accepted" &&
+            application.orientation_date && (
               <View style={styles.orientationBanner}>
                 <Ionicons name="calendar" size={16} color={PRIMARY} />
                 <View style={{ flex: 1, marginLeft: 10 }}>
@@ -715,7 +693,7 @@ export default function ApplicationPage() {
               </View>
             )}
 
-          {/* Site Name & Status */}
+          {/* ─── Site Header ─── */}
           <View style={styles.siteHeader}>
             <Text style={styles.siteName}>
               {assigned_site?.name || application.title}
@@ -734,7 +712,7 @@ export default function ApplicationPage() {
             </Text>
           </View>
 
-          {/* ✅ NEW: Project Application Details Card */}
+          {/* ─── Project Application Details Card ─── */}
           <View style={styles.projectApplicationCard}>
             <View style={styles.projectHeader}>
               <View style={styles.projectIconWrap}>
@@ -747,7 +725,6 @@ export default function ApplicationPage() {
                 </Text>
               </View>
             </View>
-
             <View style={styles.projectGrid}>
               <View style={styles.projectField}>
                 <Text style={styles.projectLabel}>PROJECT TITLE</Text>
@@ -760,9 +737,7 @@ export default function ApplicationPage() {
                 </Text>
               </View>
             </View>
-
-            {/* Proposed Orientation Date */}
-            {application?.proposed_orientation_date && (
+            {application.proposed_orientation_date && (
               <View style={styles.projectField}>
                 <Text style={styles.projectLabel}>
                   PROPOSED ORIENTATION DATE
@@ -772,10 +747,154 @@ export default function ApplicationPage() {
                 </Text>
               </View>
             )}
-
-            {/* Maintenance Plan */}
-           
+            {application.maintenance_plan && (
+              <View style={styles.maintenancePlanSection}>
+                <Text style={styles.projectLabel}>MAINTENANCE PLAN</Text>
+                <TouchableOpacity
+                  style={styles.maintenancePlanLink}
+                  onPress={() => {
+                    /* Handle download/view logic here */
+                  }}
+                >
+                  <View style={styles.maintenancePlanIcon}>
+                    <Ionicons name="document-text" size={20} color={WHITE} />
+                  </View>
+                  <View style={styles.maintenancePlanInfo}>
+                    <Text style={styles.maintenancePlanFilename}>
+                      {application.maintenance_plan.split("/").pop() ||
+                        "Maintenance Plan"}
+                    </Text>
+                    <Text style={styles.maintenancePlanHint}>
+                      Tap to view/download
+                    </Text>
+                  </View>
+                  <Ionicons name="download-outline" size={18} color={PRIMARY} />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
+
+          {/* ─── Inline Seedling History ─── */}
+          {detail.seedling_requests.length > 0 && (
+            <View style={styles.inlineHistoryCard}>
+              <TouchableOpacity
+                style={styles.inlineHistoryHeader}
+                onPress={() => setShowSeedlingHistory(!showSeedlingHistory)}
+              >
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                >
+                  <Ionicons name="leaf-outline" size={18} color={PRIMARY} />
+                  <Text style={styles.inlineHistoryTitle}>
+                    Seedling Requests ({detail.seedling_requests.length})
+                  </Text>
+                </View>
+                <Ionicons
+                  name={showSeedlingHistory ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color={MUTED}
+                />
+              </TouchableOpacity>
+
+              {showSeedlingHistory && (
+                <View style={styles.inlineHistoryContent}>
+                  {detail.seedling_requests.map((req) => (
+                    <View key={req.request_id} style={styles.historyItem}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          marginBottom: 6,
+                        }}
+                      >
+                        <Text style={styles.historyItemDate}>
+                          {formatDate(req.submitted_at)}
+                        </Text>
+                        <StatusBadge status={req.status} />
+                      </View>
+                      <Text style={styles.historyItemValue}>
+                        Total Requested:{" "}
+                        <Text style={{ fontWeight: "700" }}>
+                          {req.no_request_seedling.toLocaleString()}
+                        </Text>
+                      </Text>
+                      {req.reason_accepted && (
+                        <Text style={styles.historyItemNote}>
+                          Note: {req.reason_accepted}
+                        </Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* ─── Inline Progress Report History ─── */}
+          {detail.progress_reports.length > 0 && (
+            <View style={styles.inlineHistoryCard}>
+              <TouchableOpacity
+                style={styles.inlineHistoryHeader}
+                onPress={() => setShowReportHistory(!showReportHistory)}
+              >
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                >
+                  <Ionicons
+                    name="clipboard-outline"
+                    size={18}
+                    color={PRIMARY}
+                  />
+                  <Text style={styles.inlineHistoryTitle}>
+                    Progress Reports ({detail.progress_reports.length})
+                  </Text>
+                </View>
+                <Ionicons
+                  name={showReportHistory ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color={MUTED}
+                />
+              </TouchableOpacity>
+
+              {showReportHistory && (
+                <View style={styles.inlineHistoryContent}>
+                  {detail.progress_reports.map((report) => (
+                    <View key={report.report_id} style={styles.historyItem}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          marginBottom: 6,
+                        }}
+                      >
+                        <Text style={styles.historyItemDate}>
+                          {formatDate(report.submitted_at)} •{" "}
+                          {report.visit_type === "initial"
+                            ? "Initial"
+                            : "Ongoing"}
+                        </Text>
+                        <StatusBadge status={report.status} />
+                      </View>
+                      <View style={{ flexDirection: "row", gap: 16 }}>
+                        <Text style={styles.historyItemValue}>
+                          Survived:{" "}
+                          <Text style={{ fontWeight: "700", color: PRIMARY }}>
+                            {report.total_survived}
+                          </Text>
+                        </Text>
+                        <Text style={styles.historyItemValue}>
+                          Dead:{" "}
+                          <Text style={{ fontWeight: "700", color: "#DC2626" }}>
+                            {report.total_dead}
+                          </Text>
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
 
           {/* ─── About this Site (Description) ─── */}
           {assigned_site?.description && (
@@ -794,15 +913,13 @@ export default function ApplicationPage() {
                 onTextLayout={(e) => {
                   if (!descExpanded && !isTruncated) {
                     const lineCount = e.nativeEvent.lines?.length || 0;
-                    if (lineCount > DESCRIPTION_LINE_LIMIT) {
+                    if (lineCount > DESCRIPTION_LINE_LIMIT)
                       setIsTruncated(true);
-                    }
                   }
                 }}
               >
                 {formatDescription(assigned_site.description)}
               </Text>
-
               {isTruncated && (
                 <TouchableOpacity
                   onPress={() => setDescExpanded(!descExpanded)}
@@ -855,23 +972,19 @@ export default function ApplicationPage() {
             </TouchableOpacity>
           </View>
 
-          {/* ─── About Tab Content ─── */}
+          {/* ── About Tab Content ─── */}
           {activeTab === "about" && (
             <>
-              {/* Site Metrics */}
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>Site Details</Text>
                 <View style={styles.detailRow}>
-                  <View style={styles.detailItem}></View>
                   <View style={styles.detailItem}>
                     <Text style={styles.detailLabel}>Accessibility</Text>
                     <Text style={styles.detailValue}>
                       {getAccessibilityText(assigned_site?.accessibility)}
                     </Text>
                   </View>
-                </View>
-                {assigned_site?.land_classification_name && (
-                  <View style={styles.detailRow}>
+                  {assigned_site?.land_classification_name && (
                     <View style={styles.detailItem}>
                       <Text style={styles.detailLabel}>
                         Land Classification
@@ -880,11 +993,10 @@ export default function ApplicationPage() {
                         {assigned_site.land_classification_name}
                       </Text>
                     </View>
-                  </View>
-                )}
+                  )}
+                </View>
               </View>
 
-              {/* Map Preview */}
               {assigned_site && (
                 <View style={styles.mapSection}>
                   <View style={styles.mapHeader}>
@@ -908,7 +1020,6 @@ export default function ApplicationPage() {
                 </View>
               )}
 
-              {/* Recommended Species */}
               {assigned_site?.recommended_species &&
                 assigned_site.recommended_species.length > 0 && (
                   <View style={styles.speciesSection}>
@@ -916,6 +1027,7 @@ export default function ApplicationPage() {
                     <View style={styles.speciesWrap}>
                       {assigned_site.recommended_species.map((sp) => (
                         <View key={sp.species_id} style={styles.speciesChip}>
+                          <Ionicons name="leaf" size={12} color={PRIMARY} />
                           <Text style={styles.speciesChipText}>
                             {sp.species_name}
                           </Text>
@@ -925,7 +1037,6 @@ export default function ApplicationPage() {
                   </View>
                 )}
 
-              {/* Guidance */}
               <View style={styles.guidanceCard}>
                 <Ionicons
                   name="information-circle-outline"
@@ -933,14 +1044,19 @@ export default function ApplicationPage() {
                   color={MUTED}
                 />
                 <Text style={styles.guidanceText}>
-                  {application?.status === "for_evaluation" &&
+                  {application.status === "for_evaluation" &&
                     "Your application is being evaluated by the Data Manager. You'll be notified once a decision is made."}
-                  {application?.status === "for_head" &&
+                  {application.status === "for_head" &&
                     "Your application is pending final approval from the City ENRO Head."}
-                  {application?.status === "accepted" &&
+                  {application.status === "accepted" &&
                     "Application approved! Please prepare for the orientation scheduled above."}
-                  {application?.status === "under_monitoring" &&
+                  {application.status === "under_monitoring" &&
                     "Program is active. Onsite inspectors will monitor progress and submit reports."}
+                  {application.status === "completed" &&
+                    "Congratulations! This program has been successfully completed."}
+                  {(application.status === "rejected" ||
+                    application.status === "cancelled") &&
+                    "This application was not approved. Please contact the ENRO office for more details."}
                 </Text>
               </View>
             </>
@@ -996,7 +1112,7 @@ export default function ApplicationPage() {
         </View>
       </ScrollView>
 
-      {/* ─── Floating Quick Links ─── */}
+      {/* ── Floating Quick Links ─── */}
       <FloatingQuickLinks
         totalApprovedSeedlings={totalApprovedSeedlings}
         reportCount={reportCount}
@@ -1004,7 +1120,7 @@ export default function ApplicationPage() {
         onReportPress={() => router.push("/tree_growers/progressReports")}
       />
 
-      {/* ─── Map Modal ─── */}
+      {/* ── Map Modal ─── */}
       <Modal
         visible={showMap}
         animationType="slide"
@@ -1104,8 +1220,6 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   loadingText: { marginTop: 14, color: MUTED, fontSize: 14 },
-
-  // Error state
   errorTitle: {
     fontSize: 20,
     fontWeight: "700",
@@ -1130,66 +1244,14 @@ const styles = StyleSheet.create({
   },
   retryText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 
-  // Terminal state
-  terminalBanner: {
-    backgroundColor: PRIMARY,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  terminalTitle: { fontSize: 22, fontWeight: "800", color: "#fff" },
-  terminalSub: { fontSize: 13, color: "rgba(255,255,255,0.7)", marginTop: 4 },
-  terminalBody: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 32,
-  },
-  terminalH1: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: INK,
-    textAlign: "center",
-    marginTop: 20,
-    marginBottom: 12,
-  },
-  terminalDesc: {
-    fontSize: 15,
-    color: MUTED,
-    textAlign: "center",
-    lineHeight: 22,
-    marginBottom: 32,
-    maxWidth: 300,
-  },
-  terminalBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: PRIMARY,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    gap: 10,
-    width: "100%",
-    maxWidth: 320,
-  },
-  terminalBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-
-  // Top Bar
-  topBar: {
+  floatingBackBtn: {
     position: "absolute",
-    top: 0,
-    right: 0,
+    left: 16,
     zIndex: 100,
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  notifBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.9)",
+    backgroundColor: "rgba(255,255,255,0.95)",
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
@@ -1197,27 +1259,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  notifDot: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#EF4444",
-    borderWidth: 1.5,
-    borderColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 3,
-  },
-  notifDotText: {
-    color: "#fff",
-    fontSize: 9,
-    fontWeight: "800",
-  },
 
-  // Hero - 42% of screen
   heroContainer: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT * 0.42,
@@ -1226,7 +1268,6 @@ const styles = StyleSheet.create({
   },
   heroImage: { width: "100%", height: "100%" },
 
-  // Floating Timeline Position
   floatingTimelinePosition: {
     position: "relative",
     zIndex: 10,
@@ -1235,7 +1276,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
 
-  // Content Sheet
   contentSheet: {
     backgroundColor: WHITE,
     borderTopLeftRadius: 28,
@@ -1243,7 +1283,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     marginTop: -20,
-    minHeight: SCREEN_HEIGHT - SCREEN_HEIGHT * 0.42 + 20,
     shadowColor: "#000",
     shadowOpacity: 0.08,
     shadowRadius: 20,
@@ -1252,7 +1291,29 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
 
-  // Orientation Banner
+  statsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: WHITE,
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    marginTop: 12,
+  },
+  statItem: { flex: 1, alignItems: "center" },
+  statValue: { fontSize: 15, fontWeight: "700", color: INK },
+  statLabel: {
+    fontSize: 10,
+    color: MUTED,
+    marginTop: 3,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  statDivider: { width: 1, height: 28, backgroundColor: BORDER },
+
   orientationBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1279,7 +1340,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Site Header
   siteHeader: { marginBottom: 16 },
   siteName: {
     fontSize: 24,
@@ -1297,7 +1357,6 @@ const styles = StyleSheet.create({
   locationText: { fontSize: 14, color: MUTED, fontWeight: "500" },
   groupText: { fontSize: 13, color: FAINT, marginTop: 4, fontWeight: "500" },
 
-  // ✅ NEW: Project Application Card
   projectApplicationCard: {
     backgroundColor: WHITE,
     borderRadius: 16,
@@ -1320,24 +1379,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  projectTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: INK,
-  },
-  projectSubtitle: {
-    fontSize: 12,
-    color: MUTED,
-    marginTop: 2,
-  },
-  projectGrid: {
-    flexDirection: "row",
-    gap: 16,
-    marginBottom: 16,
-  },
-  projectField: {
-    flex: 1,
-  },
+  projectTitle: { fontSize: 16, fontWeight: "700", color: INK },
+  projectSubtitle: { fontSize: 12, color: MUTED, marginTop: 2 },
+  projectGrid: { flexDirection: "row", gap: 16, marginBottom: 16 },
+  projectField: { flex: 1 },
   projectLabel: {
     fontSize: 11,
     color: MUTED,
@@ -1346,14 +1391,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 6,
   },
-  projectValue: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: INK,
-  },
-  maintenancePlanSection: {
-    marginTop: 8,
-  },
+  projectValue: { fontSize: 15, fontWeight: "700", color: INK },
+  maintenancePlanSection: { marginTop: 8 },
   maintenancePlanLink: {
     flexDirection: "row",
     alignItems: "center",
@@ -1373,29 +1412,53 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  maintenancePlanInfo: {
-    flex: 1,
+  maintenancePlanInfo: { flex: 1 },
+  maintenancePlanFilename: { fontSize: 13, fontWeight: "600", color: PRIMARY },
+  maintenancePlanHint: { fontSize: 11, color: "#059669", marginTop: 2 },
+
+  // Inline History Styles
+  inlineHistoryCard: {
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
-  maintenancePlanFilename: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: PRIMARY,
+  inlineHistoryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  maintenancePlanHint: {
-    fontSize: 11,
-    color: "#059669",
-    marginTop: 2,
+  inlineHistoryTitle: { fontSize: 15, fontWeight: "700", color: INK },
+  inlineHistoryContent: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
+  historyItem: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  historyItemDate: { fontSize: 12, color: MUTED, fontWeight: "500" },
+  historyItemValue: { fontSize: 13, color: INK, marginTop: 4 },
+  historyItemNote: {
+    fontSize: 12,
+    color: MUTED,
+    marginTop: 4,
+    fontStyle: "italic",
   },
 
-  // Description Section
-  descriptionSection: {
-    marginBottom: 20,
+  descriptionSection: { marginBottom: 20 },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: INK,
+    marginBottom: 12,
   },
-  descriptionText: {
-    fontSize: 15,
-    lineHeight: 24,
-    color: MUTED,
-  },
+  descriptionText: { fontSize: 15, lineHeight: 24, color: MUTED },
   seeMoreBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1403,37 +1466,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     alignSelf: "flex-start",
   },
-  seeMoreText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: PRIMARY,
-  },
+  seeMoreText: { fontSize: 14, fontWeight: "700", color: PRIMARY },
 
-  // Stats Row
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: WHITE,
-    borderRadius: 12,
-    paddingVertical: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: BORDER,
-    marginTop: 12,
-  },
-  statItem: { flex: 1, alignItems: "center" },
-  statValue: { fontSize: 15, fontWeight: "700", color: INK },
-  statLabel: {
-    fontSize: 10,
-    color: MUTED,
-    marginTop: 3,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  statDivider: { width: 1, height: 28, backgroundColor: BORDER },
-
-  // Tabs
   tabBar: {
     flexDirection: "row",
     borderBottomWidth: 1,
@@ -1457,19 +1491,8 @@ const styles = StyleSheet.create({
   tabTextActive: { color: PRIMARY, fontWeight: "700" },
   tabCount: { fontSize: 14, color: MUTED, fontWeight: "500" },
 
-  // Detail Section
   detailSection: { marginBottom: 20 },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: INK,
-    marginBottom: 12,
-  },
-  detailRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 12,
-  },
+  detailRow: { flexDirection: "row", gap: 12, marginBottom: 12 },
   detailItem: {
     flex: 1,
     backgroundColor: "#F9FAFB",
@@ -1486,13 +1509,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 4,
   },
-  detailValue: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: INK,
-  },
+  detailValue: { fontSize: 15, fontWeight: "700", color: INK },
 
-  // Map Section
   mapSection: { marginBottom: 20 },
   mapHeader: {
     flexDirection: "row",
@@ -1500,11 +1518,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
-  mapExpandText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: PRIMARY,
-  },
+  mapExpandText: { fontSize: 13, fontWeight: "600", color: PRIMARY },
   mapPreview: {
     height: 220,
     borderRadius: 16,
@@ -1513,10 +1527,12 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
   },
 
-  // Species
   speciesSection: { marginBottom: 20 },
   speciesWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   speciesChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     backgroundColor: "#F3F4F6",
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -1526,7 +1542,24 @@ const styles = StyleSheet.create({
   },
   speciesChipText: { fontSize: 13, fontWeight: "600", color: INK },
 
-  // Gallery Grid
+  guidanceCard: {
+    flexDirection: "row",
+    gap: 10,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  guidanceText: {
+    fontSize: 13,
+    color: MUTED,
+    flex: 1,
+    lineHeight: 20,
+    fontWeight: "500",
+  },
+
   galleryGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1562,26 +1595,6 @@ const styles = StyleSheet.create({
   },
   galleryEmptyText: { fontSize: 13, color: MUTED, marginTop: 8 },
 
-  // Guidance
-  guidanceCard: {
-    flexDirection: "row",
-    gap: 10,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  guidanceText: {
-    fontSize: 13,
-    color: MUTED,
-    flex: 1,
-    lineHeight: 20,
-    fontWeight: "500",
-  },
-
-  // Map Modal
   mapModalBar: {
     position: "absolute",
     left: 16,
@@ -1612,7 +1625,6 @@ const styles = StyleSheet.create({
   },
   mapTitleTxt: { color: "#fff", fontWeight: "700", fontSize: 13, flex: 1 },
 
-  // Gallery Modal
   galleryModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
@@ -1654,16 +1666,15 @@ const badgeStyles = StyleSheet.create({
   wrap: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 20,
     gap: 5,
     alignSelf: "flex-start",
-    marginLeft: 4,
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
   text: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -1671,9 +1682,7 @@ const badgeStyles = StyleSheet.create({
 });
 
 const floatTimelineStyles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-  },
+  container: { alignItems: "center" },
   card: {
     backgroundColor: WHITE,
     borderRadius: 20,

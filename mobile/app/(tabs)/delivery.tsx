@@ -37,12 +37,7 @@ const cardShadow = {
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type DeliveryStatus =
-  | "accepted"
-  | "confirmed"
-  | "cancelled"
-  | "rejected"
-  | "pending";
+type DeliveryStatus = "accepted" | "confirmed" | "cancelled" | "rejected" | "pending";
 type FilterTab = "all" | "accepted" | "confirmed" | "cancelled";
 
 interface SeedlingSpeciesItem {
@@ -60,19 +55,12 @@ interface DeliveryTask {
   fulfillment_type: string;
   no_request_seedling: number;
   submitted_at: string | null;
-  // NOTE: backend's get_inspector_seedling_tasks currently doesn't return this field
-  // and hardcodes the queryset to status='accepted'. Add "status": req.status to that
-  // serializer and relax the filter (or accept a ?status= query param) for the
-  // All/Completed/Canceled tabs below to actually work end-to-end.
-  status: DeliveryStatus;
+  status: DeliveryStatus; // ✅ Backend now returns this field
   species: SeedlingSpeciesItem[];
 }
 
 // ─── Status Meta ─────────────────────────────────────────────────────────────
-const STATUS_META: Record<
-  string,
-  { label: string; color: string; bg: string }
-> = {
+const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: "Pending", color: WARNING, bg: "#FEF3C7" },
   accepted: { label: "Awaiting Delivery", color: WARNING, bg: "#FEF3C7" },
   confirmed: { label: "Completed", color: SUCCESS, bg: "#DCFCE7" },
@@ -102,45 +90,54 @@ export default function OnsiteInspectorDelivery() {
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
 
   // ─── Fetch List ────────────────────────────────────────────────────────────
-  const fetchDeliveries = useCallback(async (isRefresh = false) => {
-    try {
-      if (!isRefresh) setLoading(true);
-      const token = await SecureStore.getItemAsync("token");
-      if (!token) throw new Error("No authentication token found.");
+  const fetchDeliveries = useCallback(
+    async (isRefresh = false) => {
+      try {
+        if (!isRefresh) setLoading(true);
+        const token = await SecureStore.getItemAsync("token");
+        if (!token) throw new Error("No authentication token found.");
 
-      const res = await fetch(`${api}/api/requests/inspector-tasks/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        // Surface the real reason instead of a generic message — a 403 means
-        // an auth/role mismatch, a 500 means the backend threw before it
-        // could return JSON.
-        let detail = `HTTP ${res.status}`;
-        try {
-          const errBody = await res.json();
-          if (errBody?.error) detail = errBody.error;
-        } catch {
-          // response wasn't JSON — status code is all we have
+        // ✅ Pass the activeTab to the backend as a status filter
+        const params = new URLSearchParams();
+        if (activeTab !== "all") {
+          params.append("status", activeTab);
         }
-        console.error(`❌ inspector-tasks failed: ${detail}`);
-        throw new Error(
-          res.status === 403
-            ? "You're not authorized to view deliveries. Make sure you're logged in as an inspector."
-            : `Failed to load deliveries (${detail}).`,
-        );
-      }
 
-      const data = await res.json();
-      setDeliveries(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      console.error("❌ Fetch deliveries error:", err);
-      Alert.alert("Error", err.message || "Failed to load deliveries.");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+        const queryString = params.toString();
+        const url = `${api}/api/requests/inspector-tasks/${queryString ? `?${queryString}` : ""}`;
+
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const errBody = await res.json();
+            if (errBody?.error) detail = errBody.error;
+          } catch {
+            // response wasn't JSON
+          }
+          console.error(`❌ inspector-tasks failed: ${detail}`);
+          throw new Error(
+            res.status === 403
+              ? "You're not authorized to view deliveries. Make sure you're logged in as an inspector."
+              : `Failed to load deliveries (${detail}).`
+          );
+        }
+
+        const data = await res.json();
+        setDeliveries(Array.isArray(data) ? data : []);
+      } catch (err: any) {
+        console.error("❌ Fetch deliveries error:", err);
+        Alert.alert("Error", err.message || "Failed to load deliveries.");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [activeTab] // ✅ Re-fetch when tab changes
+  );
 
   useEffect(() => {
     fetchDeliveries();
@@ -151,15 +148,14 @@ export default function OnsiteInspectorDelivery() {
     fetchDeliveries(true);
   };
 
-  // ─── Filtering ─────────────────────────────────────────────────────────────
+  // ─── Filtering (Client-side search only, backend handles tab filtering) ───
   const filteredDeliveries = deliveries.filter((item) => {
-    const matchesTab = activeTab === "all" ? true : item.status === activeTab;
     const q = search.toLowerCase();
     const matchesSearch =
       !q ||
       item.group_name?.toLowerCase().includes(q) ||
       item.application_title?.toLowerCase().includes(q);
-    return matchesTab && matchesSearch;
+    return matchesSearch;
   });
 
   // ─── Navigation to Detail Screen ────────────────────────────────────────────
@@ -175,9 +171,7 @@ export default function OnsiteInspectorDelivery() {
     const meta = STATUS_META[item.status] || STATUS_META.accepted;
     const speciesSummary =
       item.species && item.species.length > 0
-        ? item.species
-            .map((s) => `${s.species_name} (x${s.quantity})`)
-            .join(", ")
+        ? item.species.map((s) => `${s.species_name} (x${s.quantity})`).join(", ")
         : "No species listed";
 
     return (
@@ -188,11 +182,7 @@ export default function OnsiteInspectorDelivery() {
       >
         <View style={styles.cardTopRow}>
           <View style={styles.cardIcon}>
-            <MaterialCommunityIcons
-              name="truck-delivery-outline"
-              size={20}
-              color={PRIMARY}
-            />
+            <MaterialCommunityIcons name="truck-delivery-outline" size={20} color={PRIMARY} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.cardGrower} numberOfLines={1}>
@@ -219,9 +209,7 @@ export default function OnsiteInspectorDelivery() {
         </View>
         <View style={styles.cardDetailRow}>
           <Ionicons name="calendar-outline" size={16} color={MUTED} />
-          <Text style={styles.cardDetailText}>
-            {formatDate(item.submitted_at)}
-          </Text>
+          <Text style={styles.cardDetailText}>{formatDate(item.submitted_at)}</Text>
         </View>
         <View style={styles.cardDetailRow}>
           <Ionicons name="location-outline" size={16} color={MUTED} />
@@ -284,19 +272,11 @@ export default function OnsiteInspectorDelivery() {
         {tabs.map((tab) => (
           <TouchableOpacity
             key={tab.key}
-            style={[
-              styles.tabBtn,
-              activeTab === tab.key && styles.tabBtnActive,
-            ]}
+            style={[styles.tabBtn, activeTab === tab.key && styles.tabBtnActive]}
             onPress={() => setActiveTab(tab.key)}
             activeOpacity={0.7}
           >
-            <Text
-              style={[
-                styles.tabBtnText,
-                activeTab === tab.key && styles.tabBtnTextActive,
-              ]}
-            >
+            <Text style={[styles.tabBtnText, activeTab === tab.key && styles.tabBtnTextActive]}>
               {tab.label}
             </Text>
           </TouchableOpacity>
@@ -313,20 +293,14 @@ export default function OnsiteInspectorDelivery() {
           paddingBottom: insets.bottom + 40,
         }}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={PRIMARY}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={PRIMARY} />
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name="cube-outline" size={48} color="#D1D5DB" />
             <Text style={styles.emptyStateText}>No deliveries found</Text>
             <Text style={styles.emptyStateSubtext}>
-              {search
-                ? "Try a different search term"
-                : "You have no assigned deliveries yet"}
+              {search ? "Try a different search term" : "You have no assigned deliveries yet"}
             </Text>
           </View>
         }

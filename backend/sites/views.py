@@ -159,20 +159,31 @@ def get_sites(request, reforestation_area_id):
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     search = request.GET.get("search", "").strip()
-    entries = max(1, int(request.GET.get("entries", 10)))
+    entries = max(1, int(request.GET.get("entries", 50))) # Increased default for better UX
     page = max(1, int(request.GET.get("page", 1)))
-    status_filter = request.GET.get("status", "all").strip().lower()
+    status_filter = request.GET.get("status", "accepted").strip().lower() # Default to accepted
     pinned_filter = request.GET.get("pinned_only", "").strip().lower()
-    verification_filter = request.GET.get("verification_status", "all").strip().lower()
+    verification_filter = request.GET.get("verification_status", "verified").strip().lower() # Default to verified
     
     land_classification_filter = request.GET.get("land_classification_id", "").strip()
+    all_filter = request.GET.get("all", "").strip().lower() # ✅ NEW: Check for 'all' parameter
 
     offset = (page - 1) * entries
 
-    sites = Sites.objects.filter(
-        reforestation_area_id=reforestation_area_id,
-        is_active=True
-    ).select_related('meta_verification', 'meta_verification__verified_land_classification').order_by("-is_pinned", "-created_at")
+    # ✅ UPDATED: Conditionally filter by area_id or fetch all active sites
+    if all_filter == "true":
+        sites = Sites.objects.filter(
+            is_active=True
+        ).select_related(
+            'meta_verification', 'meta_verification__verified_land_classification'
+        ).order_by("-is_pinned", "-created_at")
+    else:
+        sites = Sites.objects.filter(
+            reforestation_area_id=reforestation_area_id,
+            is_active=True
+        ).select_related(
+            'meta_verification', 'meta_verification__verified_land_classification'
+        ).order_by("-is_pinned", "-created_at")
 
     if search:
         sites = sites.filter(name__icontains=search)
@@ -248,6 +259,7 @@ def get_sites(request, reforestation_area_id):
 
         data.append({
             "site_id": s.site_id,
+            "reforestation_area_id": s.reforestation_area_id, # ✅ ADDED: Required for frontend routing
             "name": s.name,
             "status": s.status,
             "is_pinned": s.is_pinned,
@@ -269,7 +281,6 @@ def get_sites(request, reforestation_area_id):
         "entries": entries,
         "total": total
     }, status=200)
-
 
 # ─────────────────────────────────────────────
 # [KEEP] GET SINGLE SITE
@@ -1154,3 +1165,129 @@ def update_site_coordinates(request, site_id):
     except Exception as e:
         logger.error(f"Update site coordinates error: {e}", exc_info=True)
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def get_available_sites(request, reforestation_area_id):
+    """
+    Fetches sites available for assignment.
+    Excludes sites tied to active/ongoing applications.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    search = request.GET.get("search", "").strip()
+    entries = max(1, int(request.GET.get("entries", 50)))
+    page = max(1, int(request.GET.get("page", 1)))
+    
+    # Defaults to accepted and verified for assignment
+    status_filter = request.GET.get("status", "accepted").strip().lower() 
+    verification_filter = request.GET.get("verification_status", "verified").strip().lower() 
+    
+    pinned_filter = request.GET.get("pinned_only", "").strip().lower()
+    land_classification_filter = request.GET.get("land_classification_id", "").strip()
+    all_filter = request.GET.get("all", "").strip().lower()
+
+    offset = (page - 1) * entries
+
+    # 1. Base Query
+    sites = Sites.objects.filter(
+        is_active=True
+    ).select_related(
+        'meta_verification', 'meta_verification__verified_land_classification'
+    ).order_by("-is_pinned", "-created_at")
+
+    # 2. Area Filter
+    if all_filter != "true":
+        sites = sites.filter(reforestation_area_id=reforestation_area_id)
+
+    # 3. Status & Verification Filters
+    if status_filter != "all":
+        sites = sites.filter(status=status_filter)
+    if verification_filter != "all":
+        sites = sites.filter(meta_verification__status=verification_filter)
+        
+    if pinned_filter == "true":
+        sites = sites.filter(is_pinned=True)
+    
+    if land_classification_filter:
+        try:
+            lc_id = int(land_classification_filter)
+            sites = sites.filter(meta_verification__verified_land_classification_id=lc_id)
+        except (ValueError, TypeError):
+            pass
+
+    # 4. ✅ AVAILABILITY FILTER (Crucial Step)
+    # Exclude sites that are currently tied to active, ongoing, or finalized applications.
+    active_statuses = [
+        'accepted', 'under_monitoring', 'completed', 'failed', 
+        'for_evaluation', 'for_head'
+    ]
+    sites = sites.exclude(applications__status__in=active_statuses)
+
+    # 5. Search Filter
+    if search:
+        sites = sites.filter(name__icontains=search)
+
+    total = sites.count()
+    total_page = max(1, math.ceil(total / entries))
+    sites_list = sites[offset: offset + entries]
+
+    data = []
+    for s in sites_list:
+        # (Keep the exact same serialization logic as get_sites)
+        current_sd = s.site_data_versions.filter(is_current=True).first()
+        validation = {
+            "has_safety_note": False, "has_survivability_note": False,
+            "final_decision": None, "is_ready_to_finalize": False
+        }
+        if current_sd and current_sd.site_data:
+            validation["has_safety_note"] = bool(current_sd.site_data.get('safety', {}).get('decision_note', '').strip())
+            validation["has_survivability_note"] = bool(current_sd.site_data.get('survivability', {}).get('decision_note', '').strip())
+            validation["final_decision"] = current_sd.site_data.get('final_decision')
+            validation["is_ready_to_finalize"] = bool(validation["final_decision"])
+
+        meta_verification = getattr(s, 'meta_verification', None)
+        verification_info = {
+            "status": "pending", "land_classification": None,
+            "security_concerns_count": 0, "has_accessibility": False,
+            "accessibility_type": None, "verified_animals_count": 0,
+        }
+        if meta_verification:
+            verification_info["status"] = meta_verification.status
+            if meta_verification.verified_land_classification:
+                verification_info["land_classification"] = {
+                    "id": meta_verification.verified_land_classification.land_classification_id,
+                    "name": meta_verification.verified_land_classification.name
+                }
+            if meta_verification.verified_security_concerns:
+                verification_info["security_concerns_count"] = len(meta_verification.verified_security_concerns)
+            if meta_verification.verified_accessibility:
+                verification_info["has_accessibility"] = True
+                if isinstance(meta_verification.verified_accessibility, dict):
+                    verification_info["accessibility_type"] = meta_verification.verified_accessibility.get('type', 'Unknown')
+            verification_info["verified_animals_count"] = meta_verification.animal_relations.count()
+
+        permit_count = s.permit_documents.count()
+
+        data.append({
+            "site_id": s.site_id,
+            "reforestation_area_id": s.reforestation_area_id,
+            "name": s.name,
+            "status": s.status,
+            "is_pinned": s.is_pinned,
+            "validation": validation,
+            "verification": verification_info,
+            "permit_count": permit_count,
+            "metrics": {
+                "ndvi": s.ndvi_value,
+                "area_hectares": s.total_area_hectares,
+                "seedlings": s.total_seedlings_planted,
+            },
+            "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        })
+
+    return JsonResponse({
+        "data": data, "total_page": total_page,
+        "page": page, "entries": entries, "total": total
+    }, status=200)

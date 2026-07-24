@@ -1,5 +1,5 @@
 from django.urls import path
-from . import head_views, views, file_views, dashboard_views, request_views
+from . import head_views, views, file_views, dashboard_views, request_views,reports_treeGrowers_views
 
 urlpatterns = [
     # ─── APPLICATIONS (DataManager & General) ───────────────────────
@@ -74,4 +74,6 @@ urlpatterns = [
     
     # ─── SITE APPLICATIONS ──────────────────────────────────────────
     path('get_site_applications/<int:site_id>/', views.get_site_applications, name='get_site_applications'),
+    path('update_orientation_date/<int:application_id>/', views.update_orientation_date, name='update_orientation_date'),
+      path('get_tree_grower_application_detail/<int:application_id>/', reports_treeGrowers_views.get_tree_grower_application_detail, name='get_tree_grower_application_detail')
 ]

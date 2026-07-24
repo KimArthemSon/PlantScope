@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Platform,
   ImageSourcePropType,
+  Modal,
 } from "react-native";
 import { MaterialCommunityIcons as Icon, Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -40,7 +41,6 @@ const C = {
   card: "#dbdbdb",
 };
 
-// ─── AUTH TOKEN HELPER (moved here now that the header lives on Home) ──────
 const TOKEN_KEY = "token";
 const getToken = async () => {
   if (Platform.OS === "web") return localStorage.getItem(TOKEN_KEY);
@@ -52,64 +52,22 @@ type UserData = {
   id: number;
   email: string;
   profile_img: string | null;
-  full_name: string;
+  full_name: string; // Will hold group_name for tree growers
   user_role: string | null;
 };
 
-// ─── MOCK DATA FOR TREE GROWER CONTEXT ───────────────────────────────────────
-
-const availableSites = [
-  {
-    id: 0,
-    name: "Punta Reforestation Area",
-    barangay: "Brgy. Punta",
-    area: "2.5 ha",
-    status: "Available",
-  },
-  {
-    id: 1,
-    name: "Uwak Community Site",
-    barangay: "Brgy. Uwak",
-    area: "1.8 ha",
-    status: "Available",
-  },
-];
-
-// The site this tree grower has actually been assigned to / taken on,
-// as opposed to the general list of open sites below.
-const mySite = {
-  id: 0,
-  name: "Punta Reforestation Area",
-  barangay: "Brgy. Punta",
-  area: "2.5 ha",
-  status: "Under Monitoring",
-  progress: 85,
-  label: "85% Survival Rate",
-};
-
-// Type for carousel image source (can be local require or remote URI)
-type CarouselImageSource = ImageSourcePropType | { uri: string };
-
-// Type for carousel items
-type CarouselItem = {
+type MySiteData = {
   id: number;
-  key: string;
-  title: string;
-  description: string;
-  cta: string;
-  image: CarouselImageSource;
-  route: string;
-};
+  name: string;
+  barangay: string;
+  area: string;
+  status: string;
+  progress: number;
+  label: string;
+} | null;
 
-// ─────────────────────────────────────────────
-// NOTE ON IMAGES:
-// The `image` values below use a placeholder image
-// service (picsum.photos, fixed seeds) to SIMULATE
-// what real photography would look like in each
-// carousel card, per the reference design. Swap the
-// `uri` for real, licensed photography before shipping.
-// ─────────────────────────────────────────────
-const carouselItems: CarouselItem[] = [
+// ─── MOCK DATA FOR CAROUSEL ───────────────────────────────────────────────
+const carouselItems = [
   {
     id: 0,
     key: "apply",
@@ -142,13 +100,26 @@ const carouselItems: CarouselItem[] = [
   },
 ];
 
-// ─── STYLES ──────────────────────────────────────────────────────────────────
+const availableSites = [
+  {
+    id: 0,
+    name: "Punta Reforestation Area",
+    barangay: "Brgy. Punta",
+    area: "2.5 ha",
+    status: "Available",
+  },
+  {
+    id: 1,
+    name: "Uwak Community Site",
+    barangay: "Brgy. Uwak",
+    area: "1.8 ha",
+    status: "Available",
+  },
+];
 
+// ─── STYLES ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-
-  // In-page header (replaces the old dark green navigation header).
-  // Same background as the page, so it blends into the dashboard.
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -173,6 +144,7 @@ const styles = StyleSheet.create({
   },
   welcomeText: { fontSize: 12, color: C.grayLight, fontWeight: "500" },
   nameText: { fontSize: 16, fontWeight: "800", color: C.primary },
+  emailText: { fontSize: 11, color: C.gray, marginTop: 1 },
   bellWrap: {
     position: "relative",
     width: 42,
@@ -206,7 +178,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
-
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -270,7 +241,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  completedText: { fontSize: 12, fontWeight: "600", color: C.green },
   progressContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -286,15 +256,6 @@ const styles = StyleSheet.create({
   },
   progressFill: { height: "100%", borderRadius: 3 },
   progressText: { fontSize: 12, fontWeight: "600", color: C.gray },
-  myCourseThumb: {
-    width: 64,
-    height: 56,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  // "My Site" — the single site this grower has taken
   mySiteCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -327,19 +288,13 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 10,
   },
-  mySiteStatusText: {
-    fontSize: 10.5,
-    fontWeight: "700",
-    color: C.primary,
-  },
+  mySiteStatusText: { fontSize: 10.5, fontWeight: "700", color: C.primary },
   mySiteLabel: {
     fontSize: 11,
     color: C.grayLight,
     marginTop: 4,
     fontWeight: "500",
   },
-
-  // Two-line section header (e.g. "Top Recommended" / "in your nearest location")
   sectionHeaderStacked: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -405,6 +360,59 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   carouselIndicator: { width: 8, height: 8, borderRadius: 4 },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: C.white,
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    maxWidth: 400,
+    alignItems: "center",
+  },
+  modalIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: C.greenLight,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: C.primary,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalDesc: {
+    fontSize: 14,
+    color: C.gray,
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  modalButton: {
+    backgroundColor: C.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: "100%",
+  },
+  modalButtonText: {
+    color: C.white,
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
 });
 
 // ─── COMPONENTS ──────────────────────────────────────────────────────────────
@@ -436,10 +444,36 @@ function MySiteCard({
   progressAnim,
   onPress,
 }: {
-  item: typeof mySite;
+  item: MySiteData;
   progressAnim: Animated.Value;
   onPress: () => void;
 }) {
+  if (!item) {
+    return (
+      <View
+        style={[
+          styles.mySiteCard,
+          { borderColor: C.border, borderStyle: "dashed" },
+        ]}
+      >
+        <View style={[styles.mySiteThumb, { backgroundColor: C.grayLight }]}>
+          <Icon name="clock-outline" size={26} color="white" />
+        </View>
+        <View style={styles.courseContent}>
+          <Text style={[styles.courseTitle, { color: C.gray }]}>
+            Pending Assignment
+          </Text>
+          <Text style={styles.courseLevel}>
+            Your application is currently under review.
+          </Text>
+          <Text style={styles.mySiteLabel}>
+            We will notify you once a site is assigned.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <TouchableOpacity
       style={styles.mySiteCard}
@@ -488,7 +522,7 @@ function CarouselCard({
   item,
   onPress,
 }: {
-  item: CarouselItem;
+  item: (typeof carouselItems)[0];
   onPress: (route: string) => void;
 }) {
   return (
@@ -515,6 +549,39 @@ function CarouselCard({
   );
 }
 
+function NotificationModal({
+  visible,
+  notification,
+  onClose,
+}: {
+  visible: boolean;
+  notification: any;
+  onClose: () => void;
+}) {
+  if (!visible || !notification) return null;
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalIconWrap}>
+            <Icon name="bell-ring" size={32} color={C.primary} />
+          </View>
+          <Text style={styles.modalTitle}>
+            {notification.title || "Important Update"}
+          </Text>
+          <Text style={styles.modalDesc}>
+            {notification.description ||
+              "You have a new update regarding your application."}
+          </Text>
+          <TouchableOpacity style={styles.modalButton} onPress={onClose}>
+            <Text style={styles.modalButtonText}>Got it</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── MAIN DASHBOARD ─────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -525,10 +592,13 @@ export default function Home() {
   const carouselRef = useRef<FlatList>(null);
   const crossfadeAnim = useRef(new Animated.Value(0)).current;
 
-  // ─── Header state (moved from the old CustomHeader) ───
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const [mySite, setMySite] = useState<MySiteData>(null);
+  const [showNotifModal, setShowNotifModal] = useState(false);
+  const [latestNotif, setLatestNotif] = useState<any>(null);
 
   useEffect(() => {
     fetchUserData();
@@ -544,6 +614,7 @@ export default function Home() {
         setLoadingUser(false);
         return;
       }
+
       const res = await fetch(`${api}/api/get_me/`, {
         method: "POST",
         headers: {
@@ -551,9 +622,16 @@ export default function Home() {
           "Content-Type": "application/json",
         },
       });
+
       if (res.ok) {
         const data = await res.json();
         setUserData(data);
+
+        // ✅ Fetch Tree Grower specific data if applicable
+        if (data.user_role === "treeGrowers") {
+          fetchTreeGrowerSite(token);
+          fetchLatestNotification(token);
+        }
       } else {
         console.warn("Failed to fetch user data:", res.status);
       }
@@ -561,6 +639,94 @@ export default function Home() {
       console.error("Error fetching user data:", error);
     } finally {
       setLoadingUser(false);
+    }
+  };
+
+  const fetchTreeGrowerSite = async (token: string) => {
+    try {
+      const res = await fetch(`${api}/api/get_tree_grower_application/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.assigned_site) {
+          const site = data.assigned_site;
+          const appStatus = data.application?.status;
+
+          // Map status to readable format
+          let statusText = "Pending";
+          if (appStatus === "accepted") statusText = "Needs Orientation";
+          else if (appStatus === "under_monitoring")
+            statusText = "Under Monitoring";
+          else if (appStatus === "completed") statusText = "Completed";
+
+          setMySite({
+            id: site.site_id,
+            name: site.name,
+            barangay: site.barangay_name || "Unknown Barangay",
+            area: `${site.total_area_hectares} ha`,
+            status: statusText,
+            progress: 85, // Placeholder progress; can be calculated from total_survived/total_planted if available
+            label:
+              statusText === "Completed"
+                ? "Program Concluded"
+                : "Monitoring Active",
+          });
+        } else {
+          setMySite(null); // No site assigned yet
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching tree grower application:", error);
+    }
+  };
+
+  // ✅ FIXED: Correctly parse response.data array
+  const fetchLatestNotification = async (token: string) => {
+    try {
+      const res = await fetch(
+        `${api}/api/notifications/?unread_only=true&page=1&entries=1`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (res.ok) {
+        const response = await res.json();
+        if (response.data && response.data.length > 0) {
+          setLatestNotif(response.data[0]);
+          setShowNotifModal(true);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+    }
+  };
+
+  // ✅ NEW: Mark as read when user clicks "Got it"
+  const handleDismissNotification = async () => {
+    setShowNotifModal(false);
+    if (latestNotif) {
+      try {
+        const token = await getToken();
+        // Matches your urls.py: path('notifications/<int:notification_id>/read/', ...)
+        const res = await fetch(
+          `${api}/api/notifications/${latestNotif.notification_id}/read/`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+
+        if (res.ok) {
+          // Decrement the unread badge count locally
+          setUnreadCount((prev) => Math.max(0, prev - 1));
+        }
+      } catch (error) {
+        console.error("Error marking notification as read:", error);
+      }
     }
   };
 
@@ -580,18 +746,16 @@ export default function Home() {
     }
   };
 
-  const displayName = userData?.full_name || "Tree Grower";
-  const profileImage = userData?.profile_img;
-  const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
-
   useEffect(() => {
-    Animated.timing(mySiteProgressAnim, {
-      toValue: mySite.progress,
-      duration: 800,
-      delay: 500,
-      useNativeDriver: false,
-    }).start();
-  }, [mySiteProgressAnim]);
+    if (mySite) {
+      Animated.timing(mySiteProgressAnim, {
+        toValue: mySite.progress,
+        duration: 800,
+        delay: 500,
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [mySite, mySiteProgressAnim]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -624,6 +788,9 @@ export default function Home() {
   }, [crossfadeAnim]);
 
   const goTo = (route: string) => router.push(route as any);
+  const displayName = userData?.full_name || "Tree Grower";
+  const profileImage = userData?.profile_img;
+  const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -632,7 +799,7 @@ export default function Home() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
       >
-        {/* In-page header — blends with the dashboard background */}
+        {/* In-page header */}
         <View style={[styles.headerRow, { paddingTop: insets.top + 14 }]}>
           <TouchableOpacity
             style={styles.headerLeft}
@@ -660,6 +827,11 @@ export default function Home() {
               <Text style={styles.nameText} numberOfLines={1}>
                 {displayName}
               </Text>
+              {userData?.email && (
+                <Text style={styles.emailText} numberOfLines={1}>
+                  {userData.email}
+                </Text>
+              )}
             </View>
           </TouchableOpacity>
 
@@ -682,15 +854,19 @@ export default function Home() {
         </View>
 
         {/* Search Bar */}
-        <View style={styles.searchBar}>
+        <TouchableOpacity 
+          style={styles.searchBar}
+          activeOpacity={0.7}
+          onPress={() => router.push("/tree_growers/sites" as any)}
+        >
           <Icon name="magnify" size={18} color={C.grayLight} />
           <Text style={styles.searchPlaceholder}>
             Search sites, applications...
           </Text>
           <Icon name="tune" size={16} color={C.gray} />
-        </View>
+        </TouchableOpacity>
 
-        {/* Featured Carousel: Apply / How to Plant / About Us */}
+        {/* Featured Carousel */}
         <View style={{ marginHorizontal: -16, paddingHorizontal: 16 }}>
           <View style={{ height: 240 }}>
             <FlatList
@@ -744,7 +920,7 @@ export default function Home() {
           ))}
         </Animated.View>
 
-        {/* My Site — the site this grower has actually taken */}
+        {/* My Site — Dynamically loaded */}
         <View style={{ marginBottom: 20 }}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: C.navy }]}>
@@ -752,7 +928,7 @@ export default function Home() {
             </Text>
             <TouchableOpacity
               style={styles.viewAllButton}
-              onPress={() => router.push("/tree_growers/siteDetails" as any)}
+              onPress={() => router.push("/tree_growers/application")}
             >
               <Text style={[styles.viewAllText, { color: C.primary }]}>
                 View All
@@ -763,11 +939,11 @@ export default function Home() {
           <MySiteCard
             item={mySite}
             progressAnim={mySiteProgressAnim}
-            onPress={() => router.push("/tree_growers/siteDetails" as any)}
+            onPress={() => router.push("/tree_growers/application" as any)}
           />
         </View>
 
-        {/* Available Sites, renamed to match the "recommended near you" framing */}
+        {/* Available Sites */}
         <View style={{ marginBottom: 20 }}>
           <View style={styles.sectionHeaderStacked}>
             <View>
@@ -793,6 +969,13 @@ export default function Home() {
           ))}
         </View>
       </ScrollView>
+
+      {/* ✅ Notification Modal */}
+      <NotificationModal
+        visible={showNotifModal}
+        notification={latestNotif}
+        onClose={handleDismissNotification}
+      />
     </SafeAreaView>
   );
 }

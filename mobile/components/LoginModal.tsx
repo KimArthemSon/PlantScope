@@ -64,7 +64,9 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
   const alert = useAlert();
 
   const [showPassword, setShowPassword] = useState(false);
-  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(null);
+  const [focusedField, setFocusedField] = useState<"email" | "password" | null>(
+    null,
+  );
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
@@ -169,7 +171,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
     if (!formData.email || !formData.password) {
       alert.error(
         "Missing Fields",
-        "Please enter your email and password to continue."
+        "Please enter your email and password to continue.",
       );
       return;
     }
@@ -195,7 +197,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         alert.warning(
           "Account Temporarily Locked",
           `Too many failed attempts. Please try again in ${secs} seconds.`,
-          5000
+          5000,
         );
         return;
       }
@@ -204,7 +206,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         setAttemptsLeft(data.attempts_left ?? null);
         alert.error(
           "Login Failed",
-          data.error || "Invalid email or password. Please try again."
+          data.error || "Invalid email or password. Please try again.",
         );
         return;
       }
@@ -215,35 +217,27 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
         await setToken(data.token);
         await setUserRole(data.user_role);
 
-        alert.success(
-          "Welcome Back!",
-          `Signed in as ${data.email}`,
-          2500
-        );
+        alert.success("Welcome Back!", `Signed in as ${data.email}`, 2500);
         handleClose();
         router.replace("/home");
       } else if (data.user_role === "treeGrowers") {
         await setToken(data.token);
         await setUserRole(data.user_role);
 
-        alert.success(
-          "Welcome Back!",
-          `Signed in as ${data.email}`,
-          2500
-        );
+        alert.success("Welcome Back!", `Signed in as ${data.email}`, 2500);
         handleClose();
-        router.replace("/tree_growers/application");
+        router.replace("/tree_growers/home");
       } else {
         alert.error(
           "Access Denied",
-          "You don't have permission to access this application."
+          "You don't have permission to access this application.",
         );
       }
     } catch (error) {
       alert.error(
         "Connection Error",
         "Cannot reach the server. Please check your internet connection and try again.",
-        5000
+        5000,
       );
     } finally {
       setLoading(false);
