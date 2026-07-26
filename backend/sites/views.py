@@ -1291,3 +1291,69 @@ def get_available_sites(request, reforestation_area_id):
         "data": data, "total_page": total_page,
         "page": page, "entries": entries, "total": total
     }, status=200)
+
+
+@csrf_exempt
+def get_mcda_data(request, reforestation_area_id):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    try:
+        # 1. Get the specific reforestation area
+        area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id, deleted_at__isnull=True)
+        
+        # 2. Get active sites for this specific area
+        # ✅ ADDED: 'created_at' to the values query
+        sites_qs = Sites.objects.filter(
+            reforestation_area_id=reforestation_area_id,
+            is_active=True
+        ).values(
+            'site_id', 'name', 'center_coordinate', 'polygon_coordinates', 
+            'status', 'is_pinned', 'total_area_hectares', 'created_at'
+        )
+        
+        # 3. Format sites data
+        sites_data = []
+        for s in sites_qs:
+            sites_data.append({
+                "site_id": s["site_id"],
+                "name": s["name"],
+                "center_coordinate": s["center_coordinate"],
+                "polygon_coordinates": s["polygon_coordinates"],
+                "status": s["status"],
+                "is_pinned": s["is_pinned"],
+                
+                # ✅ ADDED: Format datetime to ISO string for frontend
+                "created_at": s["created_at"].isoformat() if s["created_at"] else None,
+                
+                "metrics": {
+                    "area_hectares": s["total_area_hectares"] or 0.0
+                },
+                
+                # ✅ ADDED: Default validation object to match frontend Site interface.
+                # This prevents "Cannot read properties of undefined" in SiteList.tsx 
+                # while keeping the query lightweight (no heavy joins needed).
+                "validation": {
+                    "has_safety_note": False,
+                    "has_survivability_note": False,
+                    "final_decision": None,
+                    "is_ready_to_finalize": False
+                }
+            })
+            
+        return JsonResponse({
+            "success": True,
+            "reforestation_area": {
+                "reforestation_area_id": area.reforestation_area_id,
+                "name": area.name,
+                "coordinate": area.coordinate, # ✅ Actual coordinate from DB [lat, lng]
+                "barangay": {
+                    "barangay_id": area.barangay.barangay_id,
+                    "name": area.barangay.name
+                } if area.barangay else None
+            },
+            "sites": sites_data
+        }, status=200)
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

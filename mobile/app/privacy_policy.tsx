@@ -16,8 +16,8 @@ export default function PrivacyPolicy() {
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity 
-          style={styles.backButton} 
+        <TouchableOpacity
+          style={styles.backButton}
           onPress={() => router.back()}
           activeOpacity={0.7}
         >
@@ -27,9 +27,12 @@ export default function PrivacyPolicy() {
         <Text style={styles.headerTitle}>Data Privacy Notice</Text>
       </View>
 
-      <ScrollView 
-        style={styles.scroll} 
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 30 }]}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + 30 },
+        ]}
       >
         <Text style={styles.mainTitle}>Data Privacy Notice</Text>
         <Text style={styles.subtitle}>
@@ -39,11 +42,12 @@ export default function PrivacyPolicy() {
         {/* PREAMBLE */}
         <Section title="PREAMBLE">
           <Text style={styles.body}>
-            <Text style={styles.bold}>PLANTSCOPE</Text> is a GIS-based reforestation
-            monitoring and site suitability assessment platform developed by students of
-            the{" "}
+            <Text style={styles.bold}>PLANTSCOPE</Text> is a GIS-based
+            reforestation monitoring and site suitability assessment platform
+            developed by students of the{" "}
             <Text style={styles.bold}>
-              College of ICT and Engineering, Western Leyte College of Ormoc City
+              College of ICT and Engineering, Western Leyte College of Ormoc
+              City
             </Text>
             , in collaboration with the{" "}
             <Text style={styles.bold}>
@@ -57,32 +61,47 @@ export default function PrivacyPolicy() {
           </Text>
           <Text style={styles.body}>
             This Data Privacy Notice is issued pursuant to{" "}
-            <Text style={styles.bold}>Republic Act No. 10173</Text>, known as the{" "}
-            <Text style={styles.bold}>Data Privacy Act of 2012 (DPA)</Text>, and its
-            Implementing Rules and Regulations (IRR).
+            <Text style={styles.bold}>Republic Act No. 10173</Text>, known as
+            the <Text style={styles.bold}>Data Privacy Act of 2012 (DPA)</Text>,
+            and its Implementing Rules and Regulations (IRR).
           </Text>
           <View style={styles.highlight}>
             <Text style={styles.highlightText}>
-              By registering an account or accessing any feature of PLANTSCOPE, users
-              acknowledge that they have read and understood this notice.
+              By registering an account or accessing any feature of PLANTSCOPE,
+              users acknowledge that they have read and understood this notice.
             </Text>
           </View>
         </Section>
 
         {/* SECTION 1 */}
         <Section title="SECTION 1: PERSONAL INFORMATION CONTROLLER">
-          <InfoRow label="Entity" value="City Environment and Natural Resources Office (City ENRO), Ormoc City LGU, in coordination with the College of ICT and Engineering, Western Leyte College of Ormoc City" />
-          <InfoRow label="Address" value="A. Bonifacio St., Ormoc City, Leyte, Philippines" />
-          <InfoRow label="DPO / Contact" value="Designated Data Protection Officer (DPO) of Ormoc City LGU or the PLANTSCOPE Data Manager (System Administrator)" />
-          <InfoRow label="Email" value="system.admin@plantscope.gov.ph (to be assigned upon deployment)" />
-          <InfoRow label="Phone" value="+63-XXX-XXX-XXXX (to be assigned upon deployment)" />
+          <InfoRow
+            label="Entity"
+            value="City Environment and Natural Resources Office (City ENRO), Ormoc City LGU, in coordination with the College of ICT and Engineering, Western Leyte College of Ormoc City"
+          />
+          <InfoRow
+            label="Address"
+            value="A. Bonifacio St., Ormoc City, Leyte, Philippines"
+          />
+          <InfoRow
+            label="DPO / Contact"
+            value="Designated Data Protection Officer (DPO) of Ormoc City LGU or the PLANTSCOPE Data Manager (System Administrator)"
+          />
+          <InfoRow
+            label="Email"
+            value="system.admin@plantscope.gov.ph (to be assigned upon deployment)"
+          />
+          <InfoRow
+            label="Phone"
+            value="+63-XXX-XXX-XXXX (to be assigned upon deployment)"
+          />
         </Section>
 
         {/* SECTION 2 */}
         <Section title="SECTION 2: PERSONAL DATA COLLECTED">
           <Text style={styles.body}>
-            PLANTSCOPE collects the following categories of personal data from its
-            registered users, depending on their assigned system role:
+            PLANTSCOPE collects the following categories of personal data from
+            its registered users, depending on their assigned system role:
           </Text>
           <SubSection title="2.1 City ENRO Head">
             <BulletItem text="Full name, official email address, contact number" />
@@ -124,21 +143,22 @@ export default function PrivacyPolicy() {
         {/* SECTION 3 */}
         <Section title="SECTION 3: SENSITIVE PERSONAL INFORMATION">
           <Text style={styles.body}>
-            The following data may qualify as sensitive or privileged under Section
-            3(l) of RA 10173:
+            The following data may qualify as sensitive or privileged under
+            Section 3(l) of RA 10173:
           </Text>
           <Card>
             <Text style={styles.bold}>Precise GPS Coordinates: </Text>
             <Text style={styles.cardBody}>
-              Location data tied to a person's presence at a field site may reveal
-              movement patterns or physical location of government personnel.
+              Location data tied to a person's presence at a field site may
+              reveal movement patterns or physical location of government
+              personnel.
             </Text>
           </Card>
           <Card>
             <Text style={styles.bold}>Geotagged Photographs: </Text>
             <Text style={styles.cardBody}>
-              Photographs with embedded EXIF data contain both visual and locational
-              sensitive information.
+              Photographs with embedded EXIF data contain both visual and
+              locational sensitive information.
             </Text>
           </Card>
           <Card>
@@ -156,7 +176,9 @@ export default function PrivacyPolicy() {
 
         {/* SECTION 4 */}
         <Section title="SECTION 4: PURPOSE AND LEGAL BASIS FOR DATA PROCESSING">
-          <Text style={styles.body}>Processing is conducted on the basis of:</Text>
+          <Text style={styles.body}>
+            Processing is conducted on the basis of:
+          </Text>
           <BulletItem text="Consent of the data subject (for community users, upon registration)" />
           <BulletItem text="Fulfillment of a contract or quasi-contract (for LGU personnel)" />
           <BulletItem text="Compliance with legal obligations (RA 10173, RA 7160, environmental laws)" />
@@ -165,30 +187,66 @@ export default function PrivacyPolicy() {
 
         {/* SECTION 5 */}
         <Section title="SECTION 5: HOW DATA IS USED AND PROCESSED">
-          <BulletItem label="Collection" text="Data is gathered through the web platform, mobile field application, and community registration portal." />
-          <BulletItem label="Storage" text="All data is stored in a PostgreSQL 13+ database deployed on Ormoc City LGU infrastructure." />
-          <BulletItem label="Sharing" text="Personal data is shared only among authorized PLANTSCOPE users for official duties. Data is NOT sold, traded, or shared with unauthorized third parties." />
-          <BulletItem label="Archiving & Disposal" text="Inactive records are managed through the Archive Data Management module. Data subject to deletion is irreversibly removed per retention schedules." />
+          <BulletItem
+            label="Collection"
+            text="Data is gathered through the web platform, mobile field application, and community registration portal."
+          />
+          <BulletItem
+            label="Storage"
+            text="All data is stored in a PostgreSQL 13+ database deployed on Ormoc City LGU infrastructure."
+          />
+          <BulletItem
+            label="Sharing"
+            text="Personal data is shared only among authorized PLANTSCOPE users for official duties. Data is NOT sold, traded, or shared with unauthorized third parties."
+          />
+          <BulletItem
+            label="Archiving & Disposal"
+            text="Inactive records are managed through the Archive Data Management module. Data subject to deletion is irreversibly removed per retention schedules."
+          />
         </Section>
 
         {/* SECTION 6 */}
         <Section title="SECTION 6: DATA RETENTION PERIOD">
-          <RetentionRow label="User Account Data (LGU Staff)" value="Employment + 5 years" />
-          <RetentionRow label="User Account Data (Community Users)" value="Active participation + 2 years" />
-          <RetentionRow label="Field Assessment Records" value="Minimum 10 years" />
-          <RetentionRow label="Finalized Site Records (site_data)" value="Permanent or until superseded" />
-          <RetentionRow label="Audit Trail & Version History" value="Permanent" />
-          <RetentionRow label="GPS Coordinates & Geotagged Photos" value="Monitoring program + 5 years" />
-          <RetentionRow label="Community Program Records" value="Program duration + 5 years" />
-          <RetentionRow label="System & Session Logs" value="1 year from record date" />
+          <RetentionRow
+            label="User Account Data (LGU Staff)"
+            value="Employment + 5 years"
+          />
+          <RetentionRow
+            label="User Account Data (Community Users)"
+            value="Active participation + 2 years"
+          />
+          <RetentionRow
+            label="Field Assessment Records"
+            value="Minimum 10 years"
+          />
+          <RetentionRow
+            label="Finalized Site Records (site_data)"
+            value="Permanent or until superseded"
+          />
+          <RetentionRow
+            label="Audit Trail & Version History"
+            value="Permanent"
+          />
+          <RetentionRow
+            label="GPS Coordinates & Geotagged Photos"
+            value="Monitoring program + 5 years"
+          />
+          <RetentionRow
+            label="Community Program Records"
+            value="Program duration + 5 years"
+          />
+          <RetentionRow
+            label="System & Session Logs"
+            value="1 year from record date"
+          />
         </Section>
 
         {/* SECTION 7 */}
         <Section title="SECTION 7: SECURITY MEASURES">
           <Text style={styles.body}>
-            PLANTSCOPE implements appropriate organizational, technical, and physical
-            security measures in accordance with Section 20 of RA 10173 and NPC
-            Circular No. 16-01.
+            PLANTSCOPE implements appropriate organizational, technical, and
+            physical security measures in accordance with Section 20 of RA 10173
+            and NPC Circular No. 16-01.
           </Text>
           <SubSection title="7.1 Technical Security Measures">
             <BulletItem text="Password hashing & encryption using industry-standard cryptographic methods; TLS/SSL for data in transit" />
@@ -206,40 +264,42 @@ export default function PrivacyPolicy() {
         {/* SECTION 8 */}
         <Section title="SECTION 8: RIGHTS OF DATA SUBJECTS">
           <Text style={styles.body}>
-            In accordance with Chapter IV of RA 10173, all users are entitled to the
-            following rights:
+            In accordance with Chapter IV of RA 10173, all users are entitled to
+            the following rights:
           </Text>
           <Card>
             <Text style={styles.bold}>Right to be Informed: </Text>
             <Text style={styles.cardBody}>
-              You have the right to know whether your personal data is being processed.
-              This Notice fulfills that right.
+              You have the right to know whether your personal data is being
+              processed. This Notice fulfills that right.
             </Text>
           </Card>
           <Card>
             <Text style={styles.bold}>Right to Access: </Text>
             <Text style={styles.cardBody}>
-              Request access to your personal data held by PLANTSCOPE, including copies
-              and usage details.
+              Request access to your personal data held by PLANTSCOPE, including
+              copies and usage details.
             </Text>
           </Card>
           <Card>
             <Text style={styles.bold}>Right to Correction: </Text>
             <Text style={styles.cardBody}>
-              Dispute inaccuracies and have them corrected without unreasonable delay.
+              Dispute inaccuracies and have them corrected without unreasonable
+              delay.
             </Text>
           </Card>
           <Card>
             <Text style={styles.bold}>Right to Erasure or Blocking: </Text>
             <Text style={styles.cardBody}>
-              Request deletion/blocking when data is incomplete, outdated, false, or
-              unnecessary (subject to legal retention requirements).
+              Request deletion/blocking when data is incomplete, outdated,
+              false, or unnecessary (subject to legal retention requirements).
             </Text>
           </Card>
           <Card>
             <Text style={styles.bold}>Right to Object: </Text>
             <Text style={styles.cardBody}>
-              Object to processing in certain circumstances via written submission.
+              Object to processing in certain circumstances via written
+              submission.
             </Text>
           </Card>
           <Card>
@@ -257,17 +317,20 @@ export default function PrivacyPolicy() {
             </Text>
           </Card>
           <Text style={styles.body}>
-            Requests will be acknowledged within five (5) business days and acted upon
-            within thirty (30) days.
+            Requests will be acknowledged within five (5) business days and
+            acted upon within thirty (30) days.
           </Text>
         </Section>
 
         {/* SECTION 9 */}
         <Section title="SECTION 9: CONTACT INFORMATION">
           <View style={styles.contactCard}>
-            <Text style={styles.contactTitle}>PRIMARY: PLANTSCOPE Data Manager</Text>
+            <Text style={styles.contactTitle}>
+              PRIMARY: PLANTSCOPE Data Manager
+            </Text>
             <Text style={styles.contactBody}>
-              City Environment and Natural Resources Office (City ENRO), Ormoc City LGU
+              City Environment and Natural Resources Office (City ENRO), Ormoc
+              City LGU
             </Text>
             <Text style={styles.contactBody}>
               Email:{" "}
@@ -305,13 +368,13 @@ export default function PrivacyPolicy() {
         {/* ACKNOWLEDGMENT */}
         <View style={styles.acknowledgment}>
           <Text style={styles.acknowledgmentText}>
-            <Text style={styles.bold}>ACKNOWLEDGMENT:</Text> By accessing or using
-            PLANTSCOPE, you confirm that you have read, understood, and agreed to this
-            Data Privacy Notice.
+            <Text style={styles.bold}>ACKNOWLEDGMENT:</Text> By accessing or
+            using PLANTSCOPE, you confirm that you have read, understood, and
+            agreed to this Data Privacy Notice.
           </Text>
           <Text style={styles.acknowledgmentSub}>
-            PLANTSCOPE | Western Leyte College of Ormoc City | College of ICT and
-            Engineering | RA 10173 Compliant
+            PLANTSCOPE | Western Leyte College of Ormoc City | College of ICT
+            and Engineering | RA 10173 Compliant
           </Text>
         </View>
       </ScrollView>
@@ -319,7 +382,13 @@ export default function PrivacyPolicy() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -328,7 +397,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function SubSection({ title, children }: { title: string; children: React.ReactNode }) {
+function SubSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <View style={styles.subSection}>
       <Text style={styles.subSectionTitle}>{title}</Text>

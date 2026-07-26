@@ -1,5 +1,3 @@
-// src/pages/GISS/multicriteria_analysis/types/siteTypes.ts
-
 // ✅ SIMPLIFIED: No more complex per-layer tracking
 export interface ValidationStatus {
   has_safety_note: boolean;
@@ -8,8 +6,8 @@ export interface ValidationStatus {
   is_ready_to_finalize: boolean;
 }
 
+// ✅ REMOVED: ndvi field
 export interface SiteMetrics {
-  ndvi: number | null;
   area_hectares: number;
   seedlings: number;
 }
@@ -20,8 +18,12 @@ export interface Site {
   status: "pending" | "under_review" | "accepted" | "rejected" | "completed";
   is_pinned: boolean;
   created_at: string;
-  validation: ValidationStatus; // ✅ Changed from validation_progress
+  validation: ValidationStatus;
   metrics: SiteMetrics;
+  
+  // ✅ ADDED: For direct map rendering without fetching full details
+  center_coordinate?: [number, number] | null;
+  polygon_coordinates?: [number, number][];
 }
 
 // ✅ SIMPLIFIED: Just decision notes + final decision
@@ -87,13 +89,13 @@ export interface FieldAssessmentEvidence {
   }>;
 }
 
+// ✅ REMOVED: ndvi_value field
 export interface SiteDetail {
   site_id: number;
   name: string;
   status: string;
   polygon_coordinates: [number, number][]; // Leaflet format [lat, lng]
   center_coordinate: [number, number] | null;
-  ndvi_value: number | null;
   area_hectares: number;
   
   // ✅ SIMPLIFIED validation data
@@ -108,4 +110,16 @@ export interface SiteDetail {
     rank: number;
     notes: string;
   }>;
+}
+
+// ✅ NEW: Type for the unified MCDA API response
+export interface MCDADataResponse {
+  success: boolean;
+  reforestation_area: {
+    reforestation_area_id: number;
+    name: string;
+    coordinate: [number, number] | null;
+    barangay: { barangay_id: number; name: string } | null;
+  } | null;
+  sites: Site[];
 }

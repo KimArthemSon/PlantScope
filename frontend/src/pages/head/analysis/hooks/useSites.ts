@@ -1,15 +1,10 @@
 import { useState, useCallback } from "react";
-import type { Site, SiteDetail } from "../types/siteTypes";
 import { api_second } from "@/constant/api";
+
 const BASE_URL = api_second;
 
-export const toGeoJSONCoords = (
-  coords: [number, number][],
-): [number, number][] => {
-  return coords.map(([lat, lng]) => [lat, lng]); // Leaflet [lat,lng] → GeoJSON [lng,lat]
-};
-
-export const calculateGeoJSONCentroid = (
+// ✅ FIXED: Backend expects [lat, lng], so we DO NOT convert to GeoJSON [lng, lat]
+export const calculateCentroid = (
   coords: [number, number][],
 ): [number, number] | null => {
   if (!coords || coords.length === 0) return null;
@@ -19,11 +14,67 @@ export const calculateGeoJSONCentroid = (
   );
   const avgLat = sum[0] / coords.length;
   const avgLng = sum[1] / coords.length;
-  return [avgLng, avgLat]; // GeoJSON format [lng, lat]
+  return [avgLat, avgLng]; // ✅ Returns [lat, lng]
 };
 
+// ── Types ─────────────────────────────────────────────────────────────────
+export interface ValidationStatus {
+  has_safety_note: boolean;
+  has_survivability_note: boolean;
+  final_decision: "ACCEPT" | "REJECT" | null;
+  is_ready_to_finalize: boolean;
+}
+
+export interface SiteMetrics {
+  area_hectares: number;
+  seedlings?: number;
+}
+
+export interface Site {
+  site_id: number;
+  name: string;
+  status: "pending" | "under_review" | "accepted" | "rejected" | "completed";
+  is_pinned: boolean;
+  center_coordinate?: [number, number] | null;
+  polygon_coordinates?: [number, number][];
+  metrics: SiteMetrics;
+  created_at?: string;
+  validation?: ValidationStatus;
+}
+
+export interface SiteDetail {
+  site_id: number;
+  name: string;
+  status: string;
+  polygon_coordinates: [number, number][]; // Leaflet format [lat, lng]
+  center_coordinate: [number, number] | null;
+  area_hectares: number;
+  validation_data?: any;
+  field_evidence?: any[];
+  species_recommendations?: Array<{
+    id: number;
+    name: string;
+    rank: number;
+    notes: string;
+  }>;
+}
+
+export interface MCDADataResponse {
+  success: boolean;
+  reforestation_area: {
+    reforestation_area_id: number;
+    name: string;
+    coordinate: [number, number] | null;
+    barangay: { barangay_id: number; name: string } | null;
+  } | null;
+  sites: Site[];
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────
 export function useSites() {
   const [sites, setSites] = useState<Site[]>([]);
+  const [reforestationArea, setReforestationArea] =
+    useState<MCDADataResponse["reforestation_area"]>(null);
   const [loading, setLoading] = useState(false);
   const [selectedSite, setSelectedSite] = useState<SiteDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +89,7 @@ export function useSites() {
       };
       const res = await fetch(url, { ...options, headers });
       const contentType = res.headers.get("content-type");
+
       if (!res.ok || !contentType?.includes("application/json")) {
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}: ${res.statusText}`);
@@ -45,6 +97,26 @@ export function useSites() {
       return res.json();
     },
     [],
+  );
+
+  const fetchMCDAData = useCallback(
+    async (areaId: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data: MCDADataResponse = await fetchWithAuth(
+          `${BASE_URL}/api/get_mcda_data/${areaId}/`,
+        );
+        setReforestationArea(data.reforestation_area);
+        setSites(data.sites || []);
+      } catch (err: any) {
+        console.error("❌ [useSites] fetchMCDAData error:", err);
+        setError(err.message || "Failed to fetch MCDA data");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchWithAuth],
   );
 
   const fetchSites = useCallback(
@@ -57,7 +129,7 @@ export function useSites() {
         );
         setSites(data.data || []);
       } catch (err: any) {
-        console.error("fetchSites error:", err);
+        console.error("❌ [useSites] fetchSites error:", err);
         setError(err.message || "Failed to fetch sites");
       } finally {
         setLoading(false);
@@ -75,7 +147,7 @@ export function useSites() {
         setSelectedSite(data);
         return data;
       } catch (err: any) {
-        console.error("fetchSiteDetail error:", err);
+        console.error("❌ [useSites] fetchSiteDetail error:", err);
         setError(err.message || "Failed to fetch site details");
         return null;
       } finally {
@@ -85,6 +157,7 @@ export function useSites() {
     [fetchWithAuth],
   );
 
+  // ✅ FIXED: No coordinate conversion. Backend expects [lat, lng].
   const createSite = useCallback(
     async (
       areaId: string,
@@ -94,30 +167,32 @@ export function useSites() {
       ndvi_value?: number,
     ) => {
       try {
-        const geojsonCoords = toGeoJSONCoords(polygon_coordinates);
-        const centerCoordinate = calculateGeoJSONCentroid(polygon_coordinates);
+        const centerCoordinate = calculateCentroid(polygon_coordinates);
+
         const data = await fetchWithAuth(`${BASE_URL}/api/sites/create_site/`, {
           method: "POST",
           body: JSON.stringify({
             reforestation_area_id: parseInt(areaId),
             name,
-            polygon_coordinates: geojsonCoords,
+            polygon_coordinates: polygon_coordinates,
             total_area_hectares,
             ndvi_value,
             center_coordinate: centerCoordinate,
           }),
         });
-        await fetchSites(areaId);
+        // ✅ FIXED: Use fetchMCDAData instead of fetchSites to get complete data
+        await fetchMCDAData(areaId);
         return data;
       } catch (err: any) {
-        console.error("createSite error:", err);
+        console.error("❌ [useSites] createSite error:", err);
         setError(err.message || "Failed to create site");
         return null;
       }
     },
-    [fetchWithAuth, fetchSites],
+    [fetchWithAuth, fetchMCDAData],
   );
 
+  // ✅ FIXED: No coordinate conversion.
   const updatePolygon = useCallback(
     async (
       siteId: number,
@@ -125,20 +200,19 @@ export function useSites() {
       ndvi_value?: number,
     ) => {
       try {
-        const geojsonCoords = toGeoJSONCoords(polygon_coordinates);
         const data = await fetchWithAuth(
           `${BASE_URL}/api/update_polygon/${siteId}/`,
           {
             method: "PUT",
             body: JSON.stringify({
-              polygon_coordinates: geojsonCoords,
+              polygon_coordinates: polygon_coordinates, // ✅ Send [lat, lng] directly
               ndvi_value,
             }),
           },
         );
         return data;
       } catch (err: any) {
-        console.error("updatePolygon error:", err);
+        console.error("❌ [useSites] updatePolygon error:", err);
         setError(err.message || "Failed to update polygon");
         return null;
       }
@@ -152,18 +226,48 @@ export function useSites() {
         await fetchWithAuth(`${BASE_URL}/api/delete_site/${siteId}/`, {
           method: "DELETE",
         });
-        await fetchSites(areaId);
+        // ✅ FIXED: Use fetchMCDAData instead of fetchSites to get complete data with center_coordinate
+        await fetchMCDAData(areaId);
         return true;
       } catch (err: any) {
-        console.error("deleteSite error:", err);
+        console.error("❌ [useSites] deleteSite error:", err);
         setError(err.message || "Failed to delete site");
         return false;
       }
     },
-    [fetchWithAuth, fetchSites],
+    [fetchWithAuth, fetchMCDAData],
   );
 
-  // ✅ UPDATED: Save validation draft (simplified - matches mobile spec)
+  // ✅ FIXED: No coordinate conversion.
+  const updateSiteCoordinates = useCallback(
+    async (
+      siteId: number,
+      polygonCoordinates?: [number, number][],
+      centerCoordinate?: [number, number],
+    ) => {
+      try {
+        const body: any = {};
+        if (polygonCoordinates) body.polygon_coordinates = polygonCoordinates; // ✅ Send [lat, lng] directly
+        if (centerCoordinate) body.center_coordinate = centerCoordinate;
+
+        const data = await fetchWithAuth(
+          `${BASE_URL}/api/site/${siteId}/update_coordinates/`,
+          { method: "PUT", body: JSON.stringify(body) },
+        );
+
+        if (selectedSite && selectedSite.site_id === siteId) {
+          await fetchSiteDetail(siteId);
+        }
+        return data;
+      } catch (err: any) {
+        console.error("❌ [useSites] updateSiteCoordinates error:", err);
+        setError(err.message || "Failed to update coordinates");
+        return null;
+      }
+    },
+    [fetchWithAuth, fetchSiteDetail, selectedSite],
+  );
+
   const saveValidationDraft = useCallback(
     async (data: {
       safety_note?: string;
@@ -183,11 +287,10 @@ export function useSites() {
           `${BASE_URL}/api/site/${selectedSite.site_id}/validation/draft/`,
           { method: "PUT", body: JSON.stringify(payload) },
         );
-        // Refresh site detail to get updated validation data
         await fetchSiteDetail(selectedSite.site_id);
         return !!result;
       } catch (err: any) {
-        console.error("saveValidationDraft error:", err);
+        console.error("❌ [useSites] saveValidationDraft error:", err);
         setError(err.message || "Failed to save validation draft");
         return false;
       }
@@ -195,7 +298,6 @@ export function useSites() {
     [fetchWithAuth, selectedSite, fetchSiteDetail],
   );
 
-  // ✅ UPDATED: Finalize site (simplified - ONE decision for entire site)
   const finalizeSite = useCallback(
     async (decision: "ACCEPT" | "REJECT", note: string) => {
       try {
@@ -210,16 +312,15 @@ export function useSites() {
             }),
           },
         );
-        // Refresh sites list after finalization
         if (result) {
-          const areaId = new URLSearchParams(window.location.search).get(
+          const urlAreaId = new URLSearchParams(window.location.search).get(
             "areaId",
           );
-          if (areaId) await fetchSites(areaId);
+          if (urlAreaId) await fetchSites(urlAreaId);
         }
         return !!result;
       } catch (err: any) {
-        console.error("finalizeSite error:", err);
+        console.error("❌ [useSites] finalizeSite error:", err);
         setError(err.message || "Failed to finalize site");
         return false;
       }
@@ -235,59 +336,29 @@ export function useSites() {
         });
         return true;
       } catch (err: any) {
-        console.error("togglePin error:", err);
+        console.error("❌ [useSites] togglePin error:", err);
         setError(err.message || "Failed to toggle pin");
         return false;
       }
     },
     [fetchWithAuth],
   );
- const updateSiteCoordinates = useCallback(
-  async (
-    siteId: number,
-    polygonCoordinates?: [number, number][],
-    centerCoordinate?: [number, number]
-  ) => {
-    try {
-      const body: any = {};
-      if (polygonCoordinates) body.polygon_coordinates = polygonCoordinates;
-      if (centerCoordinate) body.center_coordinate = centerCoordinate;
-      
-      const data = await fetchWithAuth(
-        `${BASE_URL}/api/site/${siteId}/update_coordinates/`,
-        {
-          method: "PUT",
-          body: JSON.stringify(body),
-        }
-      );
-      
-      // Refresh the site detail
-      if (selectedSite) {
-        await fetchSiteDetail(siteId);
-      }
-      return data;
-    } catch (err: any) {
-      console.error("updateSiteCoordinates error:", err);
-      setError(err.message || "Failed to update coordinates");
-      return null;
-    }
-  },
-  [fetchWithAuth, fetchSiteDetail, selectedSite]
-);
 
   return {
     sites,
+    reforestationArea,
     loading,
     error,
     selectedSite,
+    fetchMCDAData,
     fetchSites,
     fetchSiteDetail,
     createSite,
     updatePolygon,
     updateSiteCoordinates,
     deleteSite,
-    saveValidationDraft, // ✅ Renamed from updateLayer
-    finalizeSite, // ✅ Updated signature
+    saveValidationDraft,
+    finalizeSite,
     togglePin,
     setSelectedSite,
     setError,

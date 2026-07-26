@@ -58,6 +58,8 @@ urlpatterns = [
     path('potential-sites/bulk-create/', potentialsite_views.bulk_create_potential_sites, name='bulk_create_potential_sites'),
     path('potential-sites/update/<int:potential_sites_id>/', potentialsite_views.update_potential_site, name='update_potential_site'),
     path('analyze-hazard/', hazardreports_views.analyze_hazard_area, name='analyze_hazard_area'),
-    path('get_available_sites/<int:reforestation_area_id>/', views.get_available_sites, name='get_available_sites')
+    path('get_available_sites/<int:reforestation_area_id>/', views.get_available_sites, name='get_available_sites'),
+
+    path('get_mcda_data/<int:reforestation_area_id>/', views.get_mcda_data, name="get_mcda_data"),
 
 ]
