@@ -267,7 +267,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
           ? api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
           : api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
         
-        console.log('🔍 Fetching assessments:', url); // Debug log
+      
         
         const res = await fetch(url, { 
           headers: { Authorization: `Bearer ${token}` } 

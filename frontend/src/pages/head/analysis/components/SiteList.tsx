@@ -22,8 +22,8 @@ interface SiteListProps {
   onDeleteSite: (siteId: number, name: string) => void;
   onTogglePin: (siteId: number) => void;
   areaId: string | null;
-  selectedSiteId?: string | null; // ✅ NEW
-  onSiteSelectForFilter?: (site: Site | null) => void; // ✅ NEW
+  selectedSiteId?: string | null;
+  onSiteSelectForFilter?: (site: Site | null) => void;
 }
 
 const STATUS_CONFIG: Record<
@@ -41,7 +41,17 @@ const STATUS_CONFIG: Record<
   },
 };
 
-const getValidationBadge = (validation: any) => {
+// ✅ SAFE: Handle undefined validation data
+const getValidationBadge = (validation: any | undefined) => {
+  // If validation is undefined, return "Pending" state
+  if (!validation) {
+    return {
+      icon: AlertTriangle,
+      color: "bg-gray-100 text-gray-700",
+      label: "Not Started",
+    };
+  }
+
   if (validation.final_decision === "ACCEPT") {
     return {
       icon: CheckCircle,
@@ -155,6 +165,7 @@ export default function SiteList({
           const StatusIcon = STATUS_CONFIG[site.status]?.icon || AlertTriangle;
           const statusColor =
             STATUS_CONFIG[site.status]?.color || "text-gray-600";
+          // ✅ SAFE: Handle possible undefined validation
           const validationBadge = getValidationBadge(site.validation);
           const ValidationIcon = validationBadge.icon;
           const isSelected = selectedSiteId === String(site.site_id);
@@ -185,9 +196,11 @@ export default function SiteList({
                       <StatusIcon size={10} />
                       {STATUS_CONFIG[site.status]?.label || site.status}
                     </span>
-                    <span className="text-[10px] text-gray-400">
-                      {new Date(site.created_at).toLocaleDateString()}
-                    </span>
+                    {site.created_at && (
+                      <span className="text-[10px] text-gray-400">
+                        {new Date(site.created_at).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -198,11 +211,7 @@ export default function SiteList({
                   <Ruler size={10} />
                   {site.metrics.area_hectares.toFixed(2)} ha
                 </span>
-                {site.metrics.ndvi !== null && (
-                  <span className="flex items-center gap-1">
-                    <span>NDVI: {site.metrics.ndvi.toFixed(2)}</span>
-                  </span>
-                )}
+               
               </div>
 
               {/* Validation Status */}
@@ -215,7 +224,7 @@ export default function SiteList({
                 </span>
 
                 <div className="flex gap-1 mt-1">
-                  {site.validation.has_safety_note && (
+                  {site.validation?.has_safety_note && (
                     <span
                       className="text-[9px] text-blue-600"
                       title="Safety note added"
@@ -223,7 +232,7 @@ export default function SiteList({
                       Safety ✓
                     </span>
                   )}
-                  {site.validation.has_survivability_note && (
+                  {site.validation?.has_survivability_note && (
                     <span
                       className="text-[9px] text-purple-600"
                       title="Survivability note added"
@@ -234,8 +243,7 @@ export default function SiteList({
                 </div>
               </div>
 
-              {/* ✅ UPDATED: Actions with Filter button */}
-             
+              {/* Actions */}
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => onSelectSite(site)}
@@ -247,8 +255,8 @@ export default function SiteList({
                 <button
                   onClick={() => onValidateSite(site)}
                   disabled={
-                    !site.validation.has_safety_note &&
-                    !site.validation.has_survivability_note &&
+                    !site.validation?.has_safety_note &&
+                    !site.validation?.has_survivability_note &&
                     site.status !== "pending"
                   }
                   className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 text-[10px] font-medium px-2 py-1 rounded transition flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"

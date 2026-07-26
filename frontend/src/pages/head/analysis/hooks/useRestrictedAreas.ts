@@ -185,7 +185,7 @@ export function useRestrictedAreas(mapRef: React.RefObject<L.Map | null>) {
 
         if (!res.ok) {
             const data = await res.json()
-            console.log(data.error)
+           
            throw new Error(`Server error: ${res.status}`);
         }
 
