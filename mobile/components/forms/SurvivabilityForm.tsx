@@ -29,6 +29,11 @@ import { useNetworkStatus } from "@/utils/networkStatus";
 import FloatingMapButton from "@/components/FloatingMapButton";
 import { useAlert } from "@/components/AlertContext";
 
+// ✅ GUIDE IMPORT: Ready to connect
+import SoilGuide from "@/components/guides/survivability_soil";
+import WaterAvailabilityGuide from "@/components/guides/survivability_water_availability";
+import SlopeGuide from "@/components/guides/survivability_slope";
+
 const API_BASE = `${api}/api`;
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -713,8 +718,11 @@ type SectionCardProps = {
   iconLib?: "ion" | "mci";
   accentColor: string;
   step: number;
+  showGuide?: boolean;
+  onGuidePress?: () => void;
   children: React.ReactNode;
 };
+
 const SectionCard = ({
   title,
   subtitle,
@@ -722,6 +730,8 @@ const SectionCard = ({
   iconLib = "ion",
   accentColor,
   step,
+  showGuide = false,
+  onGuidePress,
   children,
 }: SectionCardProps) => (
   <View style={styles.card}>
@@ -745,8 +755,21 @@ const SectionCard = ({
             <Text style={styles.cardSubtitle}>{subtitle}</Text>
           ) : null}
         </View>
-        <View style={[styles.stepBadge, { borderColor: accentColor }]}>
-          <Text style={[styles.stepText, { color: accentColor }]}>{step}</Text>
+        <View style={styles.cardHeaderActions}>
+          {showGuide && onGuidePress && (
+            <TouchableOpacity
+              style={[styles.guideButton, { backgroundColor: accentColor }]}
+              onPress={onGuidePress}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="book-outline" size={16} color="#fff" />
+            </TouchableOpacity>
+          )}
+          <View style={[styles.stepBadge, { borderColor: accentColor }]}>
+            <Text style={[styles.stepText, { color: accentColor }]}>
+              {step}
+            </Text>
+          </View>
         </View>
       </View>
       <View style={styles.cardBody}>{children}</View>
@@ -886,6 +909,11 @@ export default function SurvivabilityForm() {
   // ✅ GPS-REFACTOR: Readiness state
   const [gpsReadiness, setGpsReadiness] = useState<GPSReadiness>("checking");
   const [gpsReadinessAge, setGpsReadinessAge] = useState<number | null>(null);
+
+  // ✅ GUIDE STATES
+  const [showSoilGuide, setShowSoilGuide] = useState(false);
+  const [showWaterGuide, setShowWaterGuide] = useState(false);
+  const [showSlopeGuide, setShowSlopeGuide] = useState(false);
 
   // ✅ OFFLINE-SAFETY: Prevent API calls on mount if offline and not editing a draft
   useEffect(() => {
@@ -1549,6 +1577,7 @@ export default function SurvivabilityForm() {
           </View>
         )}
 
+        {/* ✅ SOIL SECTION WITH GUIDE */}
         <SectionCard
           title="Soil"
           subtitle={`${soilImages.length + localImages.filter((i) => i.subLayerCode === "soil").length} GPS photo${soilImages.length + localImages.filter((i) => i.subLayerCode === "soil").length !== 1 ? "s" : ""}`}
@@ -1556,6 +1585,8 @@ export default function SurvivabilityForm() {
           iconLib="ion"
           accentColor="#92400E"
           step={1}
+          showGuide={true}
+          onGuidePress={() => setShowSoilGuide(true)}
         >
           <FieldLabel label="Overall Note" />
           <TextInput
@@ -1640,6 +1671,7 @@ export default function SurvivabilityForm() {
           {renderLocalImages("soil")}
         </SectionCard>
 
+        {/* ✅ WATER SECTION WITH GUIDE PLACEHOLDER */}
         <SectionCard
           title="Water Availability"
           subtitle={`${waterImages.length + localImages.filter((i) => i.subLayerCode === "water").length} GPS photo${waterImages.length + localImages.filter((i) => i.subLayerCode === "water").length !== 1 ? "s" : ""}`}
@@ -1647,6 +1679,8 @@ export default function SurvivabilityForm() {
           iconLib="ion"
           accentColor="#1D4ED8"
           step={2}
+          showGuide={true}
+          onGuidePress={() => setShowWaterGuide(true)}
         >
           <FieldLabel label="Overall Note" />
           <TextInput
@@ -1731,6 +1765,7 @@ export default function SurvivabilityForm() {
           {renderLocalImages("water")}
         </SectionCard>
 
+        {/* ✅ SLOPE SECTION WITH GUIDE PLACEHOLDER */}
         <SectionCard
           title="Slope"
           subtitle={`${slopeImages.length + localImages.filter((i) => i.subLayerCode === "slope").length} GPS photo${slopeImages.length + localImages.filter((i) => i.subLayerCode === "slope").length !== 1 ? "s" : ""}`}
@@ -1738,6 +1773,8 @@ export default function SurvivabilityForm() {
           iconLib="ion"
           accentColor="#B91C1C"
           step={3}
+          showGuide={true}
+          onGuidePress={() => setShowSlopeGuide(true)}
         >
           <FieldLabel label="Overall Note" />
           <TextInput
@@ -1822,6 +1859,7 @@ export default function SurvivabilityForm() {
           {renderLocalImages("slope")}
         </SectionCard>
 
+        {/* ✅ ASSESSMENT LOCATION (NO GUIDE) */}
         <SectionCard
           title="Assessment Location"
           subtitle="GPS position during assessment"
@@ -1920,6 +1958,7 @@ export default function SurvivabilityForm() {
           )}
         </SectionCard>
 
+        {/* ✅ OVERALL NOTES (NO GUIDE, AS REQUESTED) */}
         <SectionCard
           title="Overall Notes"
           subtitle="General summary and remarks"
@@ -2129,6 +2168,21 @@ export default function SurvivabilityForm() {
         </View>
       </Modal>
 
+      {/* ✅ GUIDE MODALS */}
+      <SoilGuide
+        visible={showSoilGuide}
+        onClose={() => setShowSoilGuide(false)}
+      />
+      <WaterAvailabilityGuide
+        visible={showWaterGuide}
+        onClose={() => setShowWaterGuide(false)}
+      />
+
+      <SlopeGuide
+        visible={showSlopeGuide}
+        onClose={() => setShowSlopeGuide(false)}
+      />
+
       <FloatingMapButton
         areaId={parseInt(areaId)}
         areaName={params.areaName as string}
@@ -2276,6 +2330,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     marginBottom: 16,
+  },
+  cardHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  guideButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
   },
   iconBadge: {
     width: 36,
