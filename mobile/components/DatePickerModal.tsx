@@ -39,21 +39,28 @@ export default function DatePickerModal({
   onConfirm,
   onClose,
 }: DatePickerModalProps) {
-  const [year, setYear] = useState(2000);
-  const [month, setMonth] = useState(0);
-  const [selectedDay, setSelectedDay] = useState(0);
+  // Get current date to use as the default "latest" starting point
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
+  const currentDay = today.getDate();
+
+  const [year, setYear] = useState(currentYear);
+  const [month, setMonth] = useState(currentMonth);
+  const [selectedDay, setSelectedDay] = useState(currentDay);
 
   useEffect(() => {
     if (visible) {
       if (value) {
         const p = value.split("-");
-        setYear(parseInt(p[0]) || 2000);
+        setYear(parseInt(p[0]) || currentYear);
         setMonth((parseInt(p[1]) || 1) - 1);
-        setSelectedDay(parseInt(p[2]) || 0);
+        setSelectedDay(parseInt(p[2]) || currentDay);
       } else {
-        setYear(2000);
-        setMonth(0);
-        setSelectedDay(0);
+        // Default to today's date if no value is provided
+        setYear(currentYear);
+        setMonth(currentMonth);
+        setSelectedDay(currentDay);
       }
     }
   }, [visible]);
@@ -74,6 +81,7 @@ export default function DatePickerModal({
       setYear((y) => y - 1);
     } else setMonth((m) => m - 1);
   };
+
   const nextMonth = () => {
     setSelectedDay(0);
     if (month === 11) {

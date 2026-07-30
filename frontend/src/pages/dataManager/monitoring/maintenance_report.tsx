@@ -24,6 +24,7 @@ import {
   Edit2,
   Globe,
   Building2,
+  Info,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { api } from "@/constant/api.ts";
@@ -216,7 +217,7 @@ const getAccessibilityText = (accessibility: any) => {
     if (accessibility.type)
       return accessibility.type
         .replace(/_/g, " ")
-        .replace(/\b\w/g, (l) => l.toUpperCase());
+        .replace(/\b\w/g, (l: string) => l.toUpperCase());
     if (accessibility.description) return accessibility.description;
   }
   return "Specified";
@@ -300,7 +301,6 @@ export default function Maintenance_report() {
   const [alertModal, setAlertModal] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
 
-  // ✅ NEW: Update Orientation Date Modal State
   const [updateOrientationModal, setUpdateOrientationModal] = useState<{
     open: boolean;
     newDate: string;
@@ -382,7 +382,7 @@ export default function Maintenance_report() {
       });
 
       setUpdateOrientationModal({ open: false, newDate: "", reason: "" });
-      fetchApplication(); // Refresh to get updated data
+      fetchApplication();
     } catch (err: any) {
       setPSAlert({ type: "failed", title: "Failed", message: err.message });
     } finally {
@@ -395,51 +395,137 @@ export default function Maintenance_report() {
     detail?.seedling_requests.filter((r) => r.status === "accepted") || [];
   const allProgressReports = detail?.progress_reports || [];
 
-  const acceptedReports = allProgressReports.filter(
-    (r) => r.status === "accepted",
-  );
+  // Sort reports so index 0 is always the NEWEST
+  const sortedAcceptedReports = [...allProgressReports]
+    .filter((r) => r.status === "accepted")
+    .sort(
+      (a, b) =>
+        new Date(b.submitted_at || 0).getTime() -
+        new Date(a.submitted_at || 0).getTime(),
+    );
+
   const pendingReports = allProgressReports.filter(
     (r) => r.status === "pending",
   );
 
-  // ✅ Seedlings Provided: Sum all accepted seedling requests
-  const totalSeedlingsProvided = acceptedSeedlingRequests.reduce((sum, req) => {
+  // Helper: Calculate per-species breakdown
+  const calculateSpeciesBreakdown = () => {
+    const initialReport = sortedAcceptedReports.find(
+      (r) => r.visit_type === "initial",
+    );
+    const ongoingReports = sortedAcceptedReports.filter(
+      (r) => r.visit_type === "ongoing",
+    );
+
+    const allSpeciesIds = new Set<number>();
+    const speciesNameMap = new Map<number, string>();
+
+    sortedAcceptedReports.forEach((report) => {
+      report.species.forEach((sp) => {
+        allSpeciesIds.add(sp.species_id);
+        speciesNameMap.set(sp.species_id, sp.species_name);
+      });
+    });
+
+    const breakdown: {
+      tree_species_id: number;
+      species_name: string;
+      officially_planted: number;
+      total_added: number;
+      total_dead: number;
+      calculated_survived: number;
+      survival_rate: number;
+    }[] = [];
+
+    allSpeciesIds.forEach((speciesId) => {
+      const speciesName = speciesNameMap.get(speciesId) || "Unknown";
+
+      const initialSpecies = initialReport?.species.find(
+        (sp) => sp.species_id === speciesId,
+      );
+      const officially_planted = initialSpecies?.no_planted || 0;
+
+      let total_added = 0;
+      sortedAcceptedReports.forEach((report) => {
+        const speciesInReport = report.species.find(
+          (sp) => sp.species_id === speciesId,
+        );
+        total_added += speciesInReport?.no_added_by_grower || 0;
+      });
+
+      // Loop forwards (0 to length) because array is sorted Newest -> Oldest
+      let total_dead = 0;
+      for (let i = 0; i < ongoingReports.length; i++) {
+        const speciesInReport = ongoingReports[i].species.find(
+          (sp) => sp.species_id === speciesId,
+        );
+        if (speciesInReport) {
+          total_dead = speciesInReport.no_dead;
+          break; // Stop at the first (newest) match
+        }
+      }
+      if (total_dead === 0 && initialSpecies) {
+        total_dead = initialSpecies.no_dead || 0;
+      }
+
+      const total_accounted = officially_planted + total_added;
+      const calculated_survived = Math.max(0, total_accounted - total_dead);
+      const survival_rate =
+        total_accounted > 0 ? (calculated_survived / total_accounted) * 100 : 0;
+
+      breakdown.push({
+        tree_species_id: speciesId,
+        species_name: speciesName,
+        officially_planted,
+        total_added,
+        total_dead,
+        calculated_survived,
+        survival_rate,
+      });
+    });
+
+    return breakdown;
+  };
+
+  const speciesBreakdown = calculateSpeciesBreakdown();
+
+  // 1. Total Provided
+  const totalProvided = acceptedSeedlingRequests.reduce((sum, req) => {
     return (
       sum + (req.species?.reduce((sSum, sp) => sSum + sp.quantity, 0) || 0)
     );
   }, 0);
 
-  // ✅ Total Survived & Total Dead: Use LATEST accepted report (cumulative)
-  // Sort by submitted_at to get the most recent report
-  const sortedAcceptedReports = [...acceptedReports].sort(
-    (a, b) =>
-      new Date(b.submitted_at || 0).getTime() -
-      new Date(a.submitted_at || 0).getTime(),
+  // 2. Total Officially Planted (Initial only)
+  const initialReport = sortedAcceptedReports.find(
+    (r) => r.visit_type === "initial",
   );
-
-  const latestReport = sortedAcceptedReports[0] || null;
-
-  const totalSurvived = latestReport?.total_survived || 0;
-  const totalDead = latestReport?.total_dead || 0;
-
-  // ✅ Total Ever Planted: Initial planted + Total added by grower (cumulative)
-  const initialReport = acceptedReports.find((r) => r.visit_type === "initial");
-  const initialPlanted =
+  const totalOfficiallyPlanted =
     initialReport?.species.reduce((sum, sp) => sum + (sp.no_planted || 0), 0) ||
     0;
 
-  // Sum all added by grower from all accepted reports
-  const totalAddedByGrower = acceptedReports.reduce(
-    (sum, rep) => sum + (rep.total_added_by_grower || 0),
+  // 3. Total Added (Cumulative)
+  const totalAdded = speciesBreakdown.reduce(
+    (sum, sp) => sum + sp.total_added,
     0,
   );
 
-  const totalEverPlanted = initialPlanted + totalAddedByGrower;
+  // 4. Total Dead (From latest accepted report)
+  const latestReport =
+    sortedAcceptedReports.length > 0 ? sortedAcceptedReports[0] : null;
+  const totalDead =
+    latestReport?.species.reduce((sum, sp) => sum + (sp.no_dead || 0), 0) || 0;
 
-  // ✅ Survival Rate: (Total Survived / Total Ever Planted) × 100
+  // 5. Total Planted (Dead or Alive) = Officially Planted + Added
+  const totalPlanted = totalOfficiallyPlanted + totalAdded;
+
+  // 6. Total Survived (Calculated)
+  const totalSurvived = Math.max(0, totalPlanted - totalDead);
+
+  // 7. Survival Rate
   const survivalRate =
-    totalEverPlanted > 0
-      ? ((totalSurvived / totalEverPlanted) * 100).toFixed(1)
+    totalPlanted > 0
+      ? ((totalSurvived / totalPlanted) * 100).toFixed(1)
       : "0.0";
   const survivalRateNum = parseFloat(survivalRate);
 
@@ -449,6 +535,15 @@ export default function Maintenance_report() {
       : survivalRateNum >= 50
         ? "text-amber-600 bg-amber-50 border-amber-200"
         : "text-red-600 bg-red-50 border-red-200";
+
+  // 8. Pending Report Action Logic
+  const appStatus = detail?.application.status || "";
+  const isNeedsOrientation = appStatus === "accepted";
+
+  // Find the FIRST pending report that requires action
+  const firstPendingReport = pendingReports.find((r) =>
+    isNeedsOrientation ? r.visit_type === "initial" : true,
+  );
 
   // ─── Actions ───────────────────────────────────────────────────────────────
 
@@ -604,8 +699,6 @@ export default function Maintenance_report() {
   }
 
   const { application, group, assigned_site } = detail;
-  const appStatus = application.status;
-  const isNeedsOrientation = appStatus === "accepted";
 
   return (
     <div
@@ -691,7 +784,6 @@ export default function Maintenance_report() {
                 )}
               </div>
 
-              {/* ✅ Show Update Orientation Button for 'accepted' status */}
               {isNeedsOrientation && (
                 <div className="mt-4 pt-4 border-t border-gray-100">
                   <div className="flex flex-col sm:flex-row gap-3">
@@ -724,7 +816,7 @@ export default function Maintenance_report() {
               )}
             </div>
 
-            {/* ✅ NEW: Maintenance Plan Section */}
+            {/* Maintenance Plan Section */}
             {application.maintenance_plan && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                 <SectionHeader
@@ -915,24 +1007,24 @@ export default function Maintenance_report() {
               </div>
             )}
 
-            {/* ✅ UPDATED: Show metrics, seedlings, and reports for both 'accepted' AND 'under_monitoring' */}
-            {/* This allows Data Managers to approve initial orientation reports */}
+            {/* ✅ UPDATED: Metrics & Reports Section */}
             {(isNeedsOrientation || appStatus === "under_monitoring") && (
               <>
-                {/* Program Progress Summary - Only for under_monitoring or if there are accepted reports */}
-                {acceptedReports.length > 0 && (
+                {/* Program Progress Summary */}
+                {sortedAcceptedReports.length > 0 && (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                     <h3 className="text-sm font-bold text-[#0F4A2F] mb-4 flex items-center gap-2">
                       <TrendingUp size={16} /> Program Progress Summary
                     </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* ✅ UPDATED: 6-card grid for comprehensive metrics */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 text-center">
                         <Package
                           size={20}
                           className="text-blue-600 mx-auto mb-2"
                         />
                         <p className="text-2xl font-bold text-blue-800">
-                          {totalSeedlingsProvided.toLocaleString()}
+                          {totalProvided.toLocaleString()}
                         </p>
                         <p className="text-xs text-blue-600 font-medium">
                           Seedlings Provided
@@ -944,10 +1036,34 @@ export default function Maintenance_report() {
                           className="text-emerald-600 mx-auto mb-2"
                         />
                         <p className="text-2xl font-bold text-emerald-800">
-                          {totalEverPlanted.toLocaleString()}
+                          {totalOfficiallyPlanted.toLocaleString()}
                         </p>
                         <p className="text-xs text-emerald-600 font-medium">
-                          Total Ever Planted
+                          Officially Planted
+                        </p>
+                      </div>
+                      <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 text-center">
+                        <Trees
+                          size={20}
+                          className="text-indigo-600 mx-auto mb-2"
+                        />
+                        <p className="text-2xl font-bold text-indigo-800">
+                          {totalPlanted.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-indigo-600 font-medium">
+                          Total Planted
+                        </p>
+                      </div>
+                      <div className="p-4 bg-red-50 rounded-xl border border-red-100 text-center">
+                        <XCircle
+                          size={20}
+                          className="text-red-600 mx-auto mb-2"
+                        />
+                        <p className="text-2xl font-bold text-red-800">
+                          {totalDead.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-red-600 font-medium">
+                          Total Dead
                         </p>
                       </div>
                       <div className="p-4 bg-green-50 rounded-xl border border-green-100 text-center">
@@ -972,6 +1088,85 @@ export default function Maintenance_report() {
                     </div>
                   </div>
                 )}
+
+                {/* Species Progress Breakdown */}
+                {speciesBreakdown.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <h3 className="text-sm font-bold text-[#0F4A2F] flex items-center gap-2">
+                        <Trees size={16} /> Species Progress Breakdown
+                      </h3>
+                      <div className="flex items-center gap-1 text-[10px] text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                        <Info size={10} />
+                        Survived is auto-calculated: (Planted + Added) - Dead
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {speciesBreakdown.map((sp) => (
+                        <div
+                          key={sp.tree_species_id}
+                          className="p-4 bg-gray-50 rounded-xl border border-gray-100"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Sprout size={16} className="text-[#0F4A2F]" />
+                              <span className="font-bold text-gray-800">
+                                {sp.species_name}
+                              </span>
+                            </div>
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                                sp.survival_rate >= 80
+                                  ? "bg-green-50 text-green-700 border-green-200"
+                                  : sp.survival_rate >= 50
+                                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                                    : "bg-red-50 text-red-700 border-red-200"
+                              }`}
+                            >
+                              {sp.survival_rate.toFixed(1)}% Survival
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">
+                                Officially Planted
+                              </p>
+                              <p className="font-bold text-blue-700">
+                                {sp.officially_planted}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">
+                                Added by Grower
+                              </p>
+                              <p className="font-bold text-emerald-700">
+                                {sp.total_added}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">
+                                Total Dead
+                              </p>
+                              <p className="font-bold text-red-700">
+                                {sp.total_dead}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">
+                                Calculated Survived
+                              </p>
+                              <p className="font-bold text-green-700">
+                                {sp.calculated_survived}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Progress Reports */}
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                   <div className="flex items-center justify-between mb-4">
@@ -1017,7 +1212,7 @@ export default function Maintenance_report() {
                                     : "Ongoing Monitoring Visit"}
                                 </span>
                               </div>
-                              <StatusBadge status={report.status} />
+                            
                             </div>
 
                             {isInitial && (
@@ -1084,9 +1279,14 @@ export default function Maintenance_report() {
 
                             {report.species && report.species.length > 0 && (
                               <div className="mb-4 pt-4 border-t border-gray-200/60">
-                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3">
-                                  Species Breakdown
-                                </p>
+                                <div className="flex items-center gap-1.5 mb-3">
+                                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                                    Species Breakdown
+                                  </p>
+                                  <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                                    Survived = (Planted + Added) - Dead
+                                  </span>
+                                </div>
                                 <div className="space-y-2">
                                   {report.species.map((sp, idx) => (
                                     <div
@@ -1158,7 +1358,7 @@ export default function Maintenance_report() {
                   )}
                 </div>
 
-                {/* Approved Seedling Requests - Only for under_monitoring or if there are accepted requests */}
+                {/* Approved Seedling Requests */}
                 {acceptedSeedlingRequests.length > 0 && (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                     <div className="flex items-center justify-between mb-4">
@@ -1222,7 +1422,7 @@ export default function Maintenance_report() {
             )}
           </div>
 
-          {/*  Right: Actions Panel ── */}
+          {/* ─ Right: Actions Panel ── */}
           <div className="w-full lg:w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm sticky top-6">
               <div className="p-5 border-b border-gray-100">
@@ -1233,12 +1433,8 @@ export default function Maintenance_report() {
               </div>
 
               <div className="p-5 space-y-4">
-                {/* ✅ UPDATED: Show approve/reject for pending reports when:
-                    - Status is 'accepted' AND there's a pending INITIAL report (orientation)
-                    - Status is 'under_monitoring' AND there are any pending reports */}
-                {(isNeedsOrientation &&
-                  pendingReports.some((r) => r.visit_type === "initial")) ||
-                (!isNeedsOrientation && pendingReports.length > 0) ? (
+                {/* Action Required for FIRST pending report only */}
+                {firstPendingReport ? (
                   <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
                     <p className="text-xs font-bold text-amber-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                       <BellRing size={14} /> Action Required
@@ -1257,7 +1453,7 @@ export default function Maintenance_report() {
                         <>
                           The inspector has submitted a{" "}
                           <span className="font-semibold">
-                            {pendingReports[0].visit_type === "initial"
+                            {firstPendingReport.visit_type === "initial"
                               ? "new initial orientation"
                               : "new ongoing monitoring"}
                           </span>{" "}
@@ -1270,11 +1466,7 @@ export default function Maintenance_report() {
                       <button
                         onClick={() =>
                           handleUpdateProgressReport(
-                            pendingReports.find((r) =>
-                              isNeedsOrientation
-                                ? r.visit_type === "initial"
-                                : true,
-                            )?.report_id || pendingReports[0].report_id,
+                            firstPendingReport.report_id,
                             "accepted",
                             "Report approved",
                           )
@@ -1289,12 +1481,7 @@ export default function Maintenance_report() {
                         onClick={() =>
                           setRejectReportModal({
                             open: true,
-                            reportId:
-                              pendingReports.find((r) =>
-                                isNeedsOrientation
-                                  ? r.visit_type === "initial"
-                                  : true,
-                              )?.reportId || pendingReports[0].report_id,
+                            reportId: firstPendingReport.report_id,
                             reason: "",
                           })
                         }
@@ -1307,7 +1494,7 @@ export default function Maintenance_report() {
                   </div>
                 ) : null}
 
-                {/* Completion Decision (Only for under_monitoring, no pending reports) */}
+                {/* Completion Decision */}
                 {!isNeedsOrientation &&
                   (appStatus === "accepted" ||
                     appStatus === "under_monitoring") &&
@@ -1389,10 +1576,12 @@ export default function Maintenance_report() {
                     <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                     <span>
                       {isNeedsOrientation
-                        ? pendingReports.some((r) => r.visit_type === "initial")
+                        ? firstPendingReport
                           ? "Initial orientation report submitted. Approve it to move to Under Monitoring."
                           : "This application is awaiting orientation. Update the orientation date if needed."
-                        : "Reports highlighted in amber or blue are pending your review and approval."}
+                        : firstPendingReport
+                          ? "A report is pending your review and approval. Metrics will update upon approval."
+                          : "All reports are up to date. You may mark the program as completed or failed when objectives are met."}
                     </span>
                   </p>
                 </div>

@@ -10,7 +10,6 @@ import {
   RefreshControl,
   TextInput,
   Dimensions,
-  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
@@ -48,17 +47,28 @@ const STATUS_CONFIG = {
     label: "Orientation",
     color: "#3B82F6",
     bgColor: "#EFF6FF",
-    borderColor: "#3B82F6",
+    borderColor: "#BFDBFE",
     icon: "calendar-outline",
   },
   under_monitoring: {
     label: "Ongoing",
     color: "#10B981",
     bgColor: "#ECFDF5",
-    borderColor: "#10B981",
+    borderColor: "#A7F3D0",
     icon: "leaf-outline",
   },
 };
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+function formatStat(value: number | null, fallback = "—") {
+  if (value === null || value === undefined) return fallback;
+  return value.toString();
+}
+
+function formatRate(value: number | null) {
+  if (value === null || value === undefined) return "—";
+  return `${value}%`;
+}
 
 // ─── Components ────────────────────────────────────────────────────────────
 
@@ -73,7 +83,7 @@ function StatusBadge({ status }: { status: string }) {
         { backgroundColor: config.bgColor, borderColor: config.borderColor },
       ]}
     >
-      <Ionicons name={config.icon} size={12} color={config.color} />
+      <Ionicons name={config.icon} size={11} color={config.color} />
       <Text style={[styles.statusText, { color: config.color }]}>
         {config.label}
       </Text>
@@ -89,15 +99,17 @@ function UrgencyChip({
   status: string;
 }) {
   let bgColor = "#F3F4F6";
-  let textColor = "#4B5563";
-  let label = `${days}d`;
-  let iconName: any = "checkmark-circle";
+  let textColor = "#6B7280";
+  let label = days !== null ? `${days}d` : "—";
+  let iconName: any = "time-outline";
 
-  if (status === "accepted" && (days === null || days === 0)) {
-    bgColor = "#F3F4F6";
-    textColor = "#4B5563";
-    label = "Awaiting Initial";
-    iconName = "time-outline";
+  if (status === "accepted") {
+    if (days === null || days === 0) {
+      label = "Awaiting Initial";
+      iconName = "time-outline";
+    } else {
+      label = `${days}d`;
+    }
   } else if (days === null) {
     bgColor = "#FEE2E2";
     textColor = "#DC2626";
@@ -106,25 +118,66 @@ function UrgencyChip({
   } else if (days >= 90) {
     bgColor = "#FEE2E2";
     textColor = "#DC2626";
-    label = `${days}d Critical`;
+    label = `${days}d`;
     iconName = "alert-circle";
   } else if (days >= 60) {
     bgColor = "#FED7AA";
-    textColor = "#EA580C";
-    label = `${days}d Warning`;
+    textColor = "#C2410C";
+    label = `${days}d`;
     iconName = "warning";
   } else if (days >= 30) {
     bgColor = "#FEF3C7";
-    textColor = "#D97706";
+    textColor = "#B45309";
     label = `${days}d`;
     iconName = "time-outline";
   }
 
   return (
     <View style={[styles.urgencyChip, { backgroundColor: bgColor }]}>
-      <Ionicons name={iconName} size={13} color={textColor} />
+      <Ionicons name={iconName} size={11} color={textColor} />
       <Text style={[styles.urgencyText, { color: textColor }]}>{label}</Text>
     </View>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onPress,
+  activeColor = "#3B82F6",
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  activeColor?: string;
+}) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.filterChip,
+        active && {
+          backgroundColor: `${activeColor}15`,
+          borderColor: activeColor,
+        },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Text
+        style={[
+          styles.filterChipText,
+          active && { color: activeColor, fontWeight: "700" },
+        ]}
+      >
+        {label}
+      </Text>
+      <Ionicons
+        name="chevron-down"
+        size={12}
+        color={active ? activeColor : "#9CA3AF"}
+        style={{ marginLeft: 2 }}
+      />
+    </TouchableOpacity>
   );
 }
 
@@ -144,8 +197,11 @@ const OnsiteInspectorMonitoring: React.FC = () => {
     "all" | "new" | "old"
   >("all");
   const [sortBy, setSortBy] = useState<"newest" | "urgent">("urgent");
-  const [showFilters, setShowFilters] = useState(false);
-  const [filteredApps, setFilteredApps] = useState<Application[]>([]);
+
+  // Dropdown states
+  const [openDropdown, setOpenDropdown] = useState<
+    null | "sort" | "classification" | "urgency"
+  >(null);
 
   const fetchApplications = async (isRefresh = false) => {
     try {
@@ -182,14 +238,14 @@ const OnsiteInspectorMonitoring: React.FC = () => {
     fetchApplications();
   }, [sortBy, classificationFilter]);
 
-  // Reset urgency filter when switching to Orientation tab
+  // Reset urgency when switching to Orientation
   useEffect(() => {
     if (statusFilter === "accepted") {
       setUrgencyFilter("all");
     }
   }, [statusFilter]);
 
-  useEffect(() => {
+  const filteredApps = React.useMemo(() => {
     let filtered = [...applications];
 
     if (statusFilter !== "all") {
@@ -207,7 +263,6 @@ const OnsiteInspectorMonitoring: React.FC = () => {
       );
     }
 
-    // ✅ Apply urgency filter (mutually exclusive ranges matching web version)
     if (statusFilter !== "accepted" && urgencyFilter !== "all") {
       if (urgencyFilter === "30_plus") {
         filtered = filtered.filter((app) => {
@@ -241,7 +296,7 @@ const OnsiteInspectorMonitoring: React.FC = () => {
       );
     }
 
-    setFilteredApps(filtered);
+    return filtered;
   }, [searchText, statusFilter, urgencyFilter, applications, sortBy]);
 
   const orientationCount = applications.filter(
@@ -256,14 +311,19 @@ const OnsiteInspectorMonitoring: React.FC = () => {
       STATUS_CONFIG[item.status as keyof typeof STATUS_CONFIG] ||
       STATUS_CONFIG.accepted;
 
+    const hasNoData =
+      item.total_survived === 0 &&
+      item.total_dead === 0 &&
+      item.survival_rate === 0;
+
     return (
       <TouchableOpacity
         style={[styles.card, { borderLeftColor: statusConfig.color }]}
         activeOpacity={0.7}
-        onPress={() => router.push(`/monitoring/${item.application_id}`)}
+        onPress={() => router.push(`./monitoring/${item.application_id}`)}
       >
         <View style={styles.cardContent}>
-          {/* Header — single status badge + urgency chip only */}
+          {/* Header */}
           <View style={styles.cardHeader}>
             <StatusBadge status={item.status} />
             <UrgencyChip
@@ -272,33 +332,37 @@ const OnsiteInspectorMonitoring: React.FC = () => {
             />
           </View>
 
-          {/* Title & Group — classification folded in as plain text */}
+          {/* Title & Group */}
           <Text style={styles.cardTitle} numberOfLines={2}>
             {item.title}
           </Text>
           <Text style={styles.groupName}>
             {item.group_name}
+            <Text style={styles.metaDot}> · </Text>
             <Text style={styles.classificationInline}>
-              {"  ·  "}
               {item.classification === "new" ? "First-Time" : "Returning"}
             </Text>
           </Text>
 
           {/* Location */}
           <View style={styles.locationRow}>
-            <Ionicons name="location-outline" size={15} color="#9CA3AF" />
+            <Ionicons name="location-outline" size={13} color="#9CA3AF" />
             <Text style={styles.locationText} numberOfLines={1}>
-              {item.barangay || "No Barangay"} • {item.site_name || "No Site"}
+              {item.barangay || "No Barangay"} · {item.site_name || "No Site"}
             </Text>
           </View>
 
-          {/* Stats — flattened, no nested card background */}
+          {/* Stats */}
           <View style={styles.statsRow}>
             <View style={styles.statBlock}>
               <Text style={styles.survivalNumbers}>
-                <Text style={styles.survivedText}>{item.total_survived}</Text>
+                <Text style={styles.survivedText}>
+                  {formatStat(item.total_survived)}
+                </Text>
                 <Text style={styles.slashText}> / </Text>
-                <Text style={styles.deadText}>{item.total_dead}</Text>
+                <Text style={styles.deadText}>
+                  {formatStat(item.total_dead)}
+                </Text>
               </Text>
               <Text style={styles.statLabel}>Survived / Dead</Text>
             </View>
@@ -306,16 +370,124 @@ const OnsiteInspectorMonitoring: React.FC = () => {
             <View style={styles.statDivider} />
 
             <View style={styles.statBlock}>
-              <Text style={styles.rateValue}>{item.survival_rate}%</Text>
+              <Text
+                style={[styles.rateValue, hasNoData && { color: "#9CA3AF" }]}
+              >
+                {formatRate(item.survival_rate)}
+              </Text>
               <Text style={styles.statLabel}>Survival Rate</Text>
             </View>
           </View>
+        </View>
 
-          {/* Footer */}
-          <View style={styles.cardFooter}>
-            <Text style={styles.actionText}>View Details & Submit Report</Text>
-            <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-          </View>
+        {/* Footer — minimal */}
+        <View style={styles.cardFooter}>
+          <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderDropdown = () => {
+    if (!openDropdown) return null;
+
+    const items: { label: string; onPress: () => void }[] = [];
+    let title = "";
+
+    if (openDropdown === "sort") {
+      title = "Sort By";
+      items.push(
+        {
+          label: "Most Urgent",
+          onPress: () => {
+            setSortBy("urgent");
+            setOpenDropdown(null);
+          },
+        },
+        {
+          label: "Newest First",
+          onPress: () => {
+            setSortBy("newest");
+            setOpenDropdown(null);
+          },
+        },
+      );
+    } else if (openDropdown === "classification") {
+      title = "Classification";
+      items.push(
+        {
+          label: "All",
+          onPress: () => {
+            setClassificationFilter("all");
+            setOpenDropdown(null);
+          },
+        },
+        {
+          label: "First-Time",
+          onPress: () => {
+            setClassificationFilter("new");
+            setOpenDropdown(null);
+          },
+        },
+        {
+          label: "Returning",
+          onPress: () => {
+            setClassificationFilter("old");
+            setOpenDropdown(null);
+          },
+        },
+      );
+    } else if (openDropdown === "urgency") {
+      title = "Urgency";
+      items.push(
+        {
+          label: "All",
+          onPress: () => {
+            setUrgencyFilter("all");
+            setOpenDropdown(null);
+          },
+        },
+        {
+          label: "30+ Days",
+          onPress: () => {
+            setUrgencyFilter("30_plus");
+            setOpenDropdown(null);
+          },
+        },
+        {
+          label: "60+ Days",
+          onPress: () => {
+            setUrgencyFilter("60_plus");
+            setOpenDropdown(null);
+          },
+        },
+        {
+          label: "90+ Days",
+          onPress: () => {
+            setUrgencyFilter("90_plus");
+            setOpenDropdown(null);
+          },
+        },
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        style={styles.dropdownOverlay}
+        activeOpacity={1}
+        onPress={() => setOpenDropdown(null)}
+      >
+        <View style={styles.dropdown}>
+          <Text style={styles.dropdownTitle}>{title}</Text>
+          {items.map((item, idx) => (
+            <TouchableOpacity
+              key={idx}
+              style={styles.dropdownItem}
+              onPress={item.onPress}
+            >
+              <Text style={styles.dropdownItemText}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </TouchableOpacity>
     );
@@ -323,325 +495,186 @@ const OnsiteInspectorMonitoring: React.FC = () => {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <ScrollView 
-        showsVerticalScrollIndicator={false}
-        style={styles.headerScroll}
-      >
-        <View style={styles.header}>
-          <Text style={styles.headerEyebrow}>Monitoring</Text>
-          <Text style={styles.headerTitle}>Tree Planting Programs</Text>
+      {/* Fixed Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerEyebrow}>Monitoring</Text>
+        <Text style={styles.headerTitle}>Tree Planting Programs</Text>
 
-          {/* Search Bar */}
-          <View style={styles.searchContainer}>
-            <Ionicons
-              name="search"
-              size={20}
-              color="#9CA3AF"
-              style={styles.searchIcon}
-            />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search programs, groups, sites..."
-              value={searchText}
-              onChangeText={setSearchText}
-              placeholderTextColor="#9CA3AF"
-            />
-            <TouchableOpacity
-              onPress={() => setShowFilters(!showFilters)}
-              style={styles.filterButton}
-            >
-              <Ionicons
-                name={showFilters ? "close" : "options"}
-                size={20}
-                color={showFilters ? "#3B82F6" : "#6B7280"}
-              />
+        {/* Search */}
+        <View style={styles.searchContainer}>
+          <Ionicons
+            name="search"
+            size={18}
+            color="#9CA3AF"
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search programs, groups, sites..."
+            value={searchText}
+            onChangeText={setSearchText}
+            placeholderTextColor="#9CA3AF"
+          />
+          {searchText.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchText("")}>
+              <Ionicons name="close-circle" size={18} color="#9CA3AF" />
             </TouchableOpacity>
-          </View>
+          )}
+        </View>
 
-          {/* Status Filter Tabs — horizontal scroll, single line */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tabScrollContent}
-            style={styles.tabScroll}
+        {/* Status Tabs */}
+        <View style={styles.tabRow}>
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              statusFilter === "accepted" && styles.tabActive,
+              {
+                borderColor:
+                  statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
+              },
+            ]}
+            onPress={() => setStatusFilter("accepted")}
           >
-            <TouchableOpacity
+            <Ionicons
+              name="calendar"
+              size={14}
+              color={statusFilter === "accepted" ? "#3B82F6" : "#9CA3AF"}
+            />
+            <Text
               style={[
-                styles.tab,
+                styles.tabText,
+                statusFilter === "accepted" && styles.tabTextActive,
+              ]}
+            >
+              Orientation
+            </Text>
+            <View
+              style={[
+                styles.tabBadge,
                 {
                   backgroundColor:
-                    statusFilter === "accepted" ? "#EFF6FF" : "#FFFFFF",
-                  borderColor:
                     statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
                 },
               ]}
-              onPress={() => setStatusFilter("accepted")}
             >
-              <Ionicons
-                name="calendar"
-                size={16}
-                color={statusFilter === "accepted" ? "#3B82F6" : "#6B7280"}
-              />
               <Text
                 style={[
-                  styles.tabText,
-                  statusFilter === "accepted" && styles.activeTabText,
-                ]}
-              >
-                Orientation
-              </Text>
-              <View
-                style={[
-                  styles.tabBadge,
+                  styles.tabBadgeText,
                   {
-                    backgroundColor:
-                      statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
+                    color: statusFilter === "accepted" ? "#FFFFFF" : "#6B7280",
                   },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.tabBadgeText,
-                    {
-                      color: statusFilter === "accepted" ? "#FFFFFF" : "#6B7280",
-                    },
-                  ]}
-                >
-                  {orientationCount}
-                </Text>
-              </View>
-            </TouchableOpacity>
+                {orientationCount}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
-            <TouchableOpacity
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              statusFilter === "under_monitoring" && styles.tabActive,
+              {
+                borderColor:
+                  statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
+              },
+            ]}
+            onPress={() => setStatusFilter("under_monitoring")}
+          >
+            <Ionicons
+              name="leaf"
+              size={14}
+              color={
+                statusFilter === "under_monitoring" ? "#10B981" : "#9CA3AF"
+              }
+            />
+            <Text
               style={[
-                styles.tab,
+                styles.tabText,
+                statusFilter === "under_monitoring" && styles.tabTextActive,
+              ]}
+            >
+              Ongoing
+            </Text>
+            <View
+              style={[
+                styles.tabBadge,
                 {
                   backgroundColor:
-                    statusFilter === "under_monitoring" ? "#ECFDF5" : "#FFFFFF",
-                  borderColor:
                     statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
                 },
               ]}
-              onPress={() => setStatusFilter("under_monitoring")}
             >
-              <Ionicons
-                name="leaf"
-                size={16}
-                color={
-                  statusFilter === "under_monitoring" ? "#10B981" : "#6B7280"
-                }
-              />
               <Text
                 style={[
-                  styles.tabText,
-                  statusFilter === "under_monitoring" && styles.activeTabText,
-                ]}
-              >
-                Ongoing
-              </Text>
-              <View
-                style={[
-                  styles.tabBadge,
+                  styles.tabBadgeText,
                   {
-                    backgroundColor:
-                      statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
+                    color:
+                      statusFilter === "under_monitoring"
+                        ? "#FFFFFF"
+                        : "#6B7280",
                   },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.tabBadgeText,
-                    {
-                      color:
-                        statusFilter === "under_monitoring"
-                          ? "#FFFFFF"
-                          : "#6B7280",
-                    },
-                  ]}
-                >
-                  {ongoingCount}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.tab,
-                {
-                  backgroundColor: statusFilter === "all" ? "#F3F4F6" : "#FFFFFF",
-                  borderColor: statusFilter === "all" ? "#9CA3AF" : "#E5E7EB",
-                },
-              ]}
-              onPress={() => setStatusFilter("all")}
-            >
-              <Ionicons name="grid" size={16} color="#6B7280" />
-              <Text
-                style={[
-                  styles.tabText,
-                  statusFilter === "all" && styles.activeTabText,
-                ]}
-              >
-                All
+                {ongoingCount}
               </Text>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* Expanded Filters */}
-          {showFilters && (
-            <View style={styles.filterPanel}>
-              <View style={styles.filterRow}>
-                <Text style={styles.filterLabel}>Sort By:</Text>
-                <View style={styles.filterChips}>
-                  <TouchableOpacity
-                    style={[
-                      styles.filterChip,
-                      sortBy === "urgent" && styles.filterChipActive,
-                    ]}
-                    onPress={() => setSortBy("urgent")}
-                  >
-                    <Text
-                      style={[
-                        styles.filterChipText,
-                        sortBy === "urgent" && styles.filterChipTextActive,
-                      ]}
-                    >
-                      Most Urgent
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.filterChip,
-                      sortBy === "newest" && styles.filterChipActive,
-                    ]}
-                    onPress={() => setSortBy("newest")}
-                  >
-                    <Text
-                      style={[
-                        styles.filterChipText,
-                        sortBy === "newest" && styles.filterChipTextActive,
-                      ]}
-                    >
-                      Newest
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.filterRow}>
-                <Text style={styles.filterLabel}>Classification:</Text>
-                <View style={styles.filterChips}>
-                  <TouchableOpacity
-                    style={[
-                      styles.filterChip,
-                      classificationFilter === "all" && styles.filterChipActive,
-                    ]}
-                    onPress={() => setClassificationFilter("all")}
-                  >
-                    <Text
-                      style={[
-                        styles.filterChipText,
-                        classificationFilter === "all" &&
-                          styles.filterChipTextActive,
-                      ]}
-                    >
-                      All
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.filterChip,
-                      classificationFilter === "new" && styles.filterChipActive,
-                    ]}
-                    onPress={() => setClassificationFilter("new")}
-                  >
-                    <Text
-                      style={[
-                        styles.filterChipText,
-                        classificationFilter === "new" &&
-                          styles.filterChipTextActive,
-                      ]}
-                    >
-                      First-Time
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.filterChip,
-                      classificationFilter === "old" && styles.filterChipActive,
-                    ]}
-                    onPress={() => setClassificationFilter("old")}
-                  >
-                    <Text
-                      style={[
-                        styles.filterChipText,
-                        classificationFilter === "old" &&
-                          styles.filterChipTextActive,
-                      ]}
-                    >
-                      Returning
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
             </View>
-          )}
+          </TouchableOpacity>
 
-          {/* ✅ NEW: Urgency Filters (Only for Ongoing or All) */}
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              statusFilter === "all" && styles.tabActiveAll,
+              { borderColor: statusFilter === "all" ? "#6B7280" : "#E5E7EB" },
+            ]}
+            onPress={() => setStatusFilter("all")}
+          >
+            <Ionicons
+              name="grid"
+              size={14}
+              color={statusFilter === "all" ? "#374151" : "#9CA3AF"}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                statusFilter === "all" && styles.tabTextActive,
+              ]}
+            >
+              All
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Compact Filter Bar */}
+        <View style={styles.filterBar}>
           {(statusFilter === "under_monitoring" || statusFilter === "all") && (
-            <View style={styles.urgencyFilterContainer}>
-              <Text style={styles.filterLabel}>Urgency:</Text>
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false} 
-                style={styles.urgencyScroll}
-              >
-                <View style={styles.urgencyChips}>
-                  {[
-                    { key: "all", label: "All", icon: "grid", color: "#374151", bg: "#F3F4F6" },
-                    { key: "30_plus", label: "30+ Days", icon: "time-outline", color: "#D97706", bg: "#FEF3C7" },
-                    { key: "60_plus", label: "60+ Days", icon: "warning", color: "#EA580C", bg: "#FED7AA" },
-                    { key: "90_plus", label: "90+ Days", icon: "alert-circle", color: "#DC2626", bg: "#FEE2E2" },
-                  ].map((filter) => {
-                    const isActive = urgencyFilter === filter.key;
-                    return (
-                      <TouchableOpacity
-                        key={filter.key}
-                        style={[
-                          styles.urgencyChipBtn,
-                          isActive
-                            ? { backgroundColor: filter.bg, borderColor: filter.color }
-                            : { backgroundColor: "#FFFFFF", borderColor: "#E5E7EB" },
-                        ]}
-                        onPress={() => setUrgencyFilter(filter.key as UrgencyFilter)}
-                      >
-                        <Ionicons 
-                          name={filter.icon as any} 
-                          size={14} 
-                          color={isActive ? filter.color : "#6B7280"} 
-                        />
-                        <Text 
-                          style={[
-                            styles.urgencyChipText, 
-                            isActive ? { color: filter.color } : { color: "#374151" }
-                          ]}
-                        >
-                          {filter.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-            </View>
+            <FilterChip
+              label={
+                urgencyFilter === "all"
+                  ? "Urgency: All"
+                  : urgencyFilter === "30_plus"
+                    ? "Urgency: 30+"
+                    : urgencyFilter === "60_plus"
+                      ? "Urgency: 60+"
+                      : "Urgency: 90+"
+              }
+              active={openDropdown === "urgency"}
+              activeColor="#DC2626"
+              onPress={() =>
+                setOpenDropdown(openDropdown === "urgency" ? null : "urgency")
+              }
+            />
           )}
         </View>
-      </ScrollView>
+      </View>
+
+      {/* Dropdown Overlay */}
+      {renderDropdown()}
 
       {/* Content */}
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#3B82F6" />
+          <ActivityIndicator size="small" color="#3B82F6" />
           <Text style={styles.loadingText}>Loading programs...</Text>
         </View>
       ) : (
@@ -651,12 +684,13 @@ const OnsiteInspectorMonitoring: React.FC = () => {
           keyExtractor={(item) => item.application_id.toString()}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <View style={styles.emptyIcon}>
                 <Ionicons
                   name="folder-open-outline"
-                  size={48}
+                  size={40}
                   color="#D1D5DB"
                 />
               </View>
@@ -667,7 +701,7 @@ const OnsiteInspectorMonitoring: React.FC = () => {
                   : statusFilter === "accepted"
                     ? "No programs in orientation"
                     : statusFilter === "under_monitoring"
-                      ? "No ongoing programs match this urgency"
+                      ? "No ongoing programs match this filter"
                       : "No active applications found."}
               </Text>
             </View>
@@ -691,246 +725,239 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F9FAFB",
   },
-  headerScroll: {
-    flexGrow: 0,
-  },
   header: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
     backgroundColor: "#F9FAFB",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
   },
   headerEyebrow: {
-    fontSize: 13,
-    color: "#6B7280",
+    fontSize: 11,
+    color: "#9CA3AF",
     fontWeight: "600",
-    marginBottom: 4,
+    marginTop: 8,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: "800",
     color: "#111827",
-    letterSpacing: -0.5,
-    marginBottom: 16,
+    letterSpacing: -0.3,
+    marginBottom: 12,
+    marginTop: 2,
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    height: 50,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 16,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 42,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 12,
   },
   searchIcon: {
-    marginRight: 12,
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
     color: "#111827",
     fontWeight: "500",
   },
-  filterButton: {
-    padding: 4,
-  },
-  tabScroll: {
-    marginBottom: 16,
-  },
-  tabScrollContent: {
+  tabRow: {
     flexDirection: "row",
-    gap: 10,
-    paddingRight: 20,
+    gap: 8,
+    marginBottom: 10,
   },
   tab: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 10,
     borderWidth: 1,
-    flexShrink: 0,
+    backgroundColor: "#FFFFFF",
+  },
+  tabActive: {
+    backgroundColor: "#EFF6FF",
+  },
+  tabActiveAll: {
+    backgroundColor: "#F3F4F6",
   },
   tabText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: "#6B7280",
   },
-  activeTabText: {
-    fontWeight: "700",
+  tabTextActive: {
     color: "#111827",
+    fontWeight: "700",
   },
   tabBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
     marginLeft: 2,
+    minWidth: 18,
+    alignItems: "center",
   },
   tabBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
   },
-  filterPanel: {
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    marginBottom: 16,
-  },
-  filterRow: {
-    marginBottom: 16,
-  },
-  filterLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#6B7280",
-    marginBottom: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  filterChips: {
+  filterBar: {
     flexDirection: "row",
     gap: 8,
   },
   filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: "#F9FAFB",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
-  filterChipActive: {
-    backgroundColor: "#3B82F6",
-    borderColor: "#3B82F6",
-  },
   filterChipText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  filterChipTextActive: {
-    color: "#FFFFFF",
-  },
-  
-  // ✅ Urgency Filter Styles
-  urgencyFilterContainer: {
-    marginTop: 8,
-  },
-  urgencyScroll: {
-    marginTop: 8,
-  },
-  urgencyChips: {
-    flexDirection: "row",
-    gap: 8,
-    paddingRight: 20,
-  },
-  urgencyChipBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  urgencyChipText: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "500",
+    color: "#4B5563",
   },
-
+  dropdownOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 50,
+    backgroundColor: "rgba(0,0,0,0.04)",
+  },
+  dropdown: {
+    position: "absolute",
+    top: 190,
+    left: 16,
+    right: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingVertical: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  dropdownTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#9CA3AF",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  dropdownItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: "#374151",
+    fontWeight: "500",
+  },
   listContent: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 100,
   },
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    marginBottom: 14,
-    borderLeftWidth: 4,
+    borderRadius: 14,
+    marginBottom: 10,
+    borderLeftWidth: 3,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
     overflow: "hidden",
   },
   cardContent: {
-    padding: 18,
+    padding: 14,
+    paddingBottom: 10,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     borderWidth: 1,
   },
   statusText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
   },
   urgencyChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   urgencyText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
   },
   cardTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "700",
     color: "#111827",
-    marginBottom: 4,
-    lineHeight: 22,
+    marginBottom: 3,
+    lineHeight: 20,
   },
   groupName: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#6B7280",
-    marginBottom: 10,
+    marginBottom: 8,
+  },
+  metaDot: {
+    color: "#D1D5DB",
   },
   classificationInline: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#9CA3AF",
     fontWeight: "500",
   },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 14,
+    gap: 4,
+    marginBottom: 10,
   },
   locationText: {
-    fontSize: 13,
-    color: "#6B7280",
+    fontSize: 12,
+    color: "#9CA3AF",
     flex: 1,
   },
   statsRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingTop: 12,
-    paddingBottom: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "#F3F4F6",
   },
@@ -938,7 +965,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   survivalNumbers: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
   },
   survivedText: {
@@ -950,35 +977,30 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   deadText: {
-    color: "#DC2626",
+    color: "#EF4444",
     fontWeight: "700",
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: "#9CA3AF",
-    marginTop: 3,
+    marginTop: 2,
   },
   rateValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800",
     color: "#111827",
   },
   statDivider: {
     width: 1,
-    height: 32,
+    height: 28,
     backgroundColor: "#F3F4F6",
-    marginHorizontal: 16,
+    marginHorizontal: 14,
   },
   cardFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: 12,
-  },
-  actionText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#059669",
+    alignItems: "flex-end",
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+    marginTop: -4,
   },
   center: {
     flex: 1,
@@ -987,35 +1009,36 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   loadingText: {
-    marginTop: 16,
-    color: "#6B7280",
-    fontSize: 15,
+    marginTop: 12,
+    color: "#9CA3AF",
+    fontSize: 14,
     fontWeight: "500",
   },
   emptyState: {
     alignItems: "center",
     marginTop: 80,
-    gap: 16,
     paddingHorizontal: 40,
   },
   emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: "#F3F4F6",
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     color: "#374151",
+    marginBottom: 4,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: "#6B7280",
+    fontSize: 13,
+    color: "#9CA3AF",
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 18,
   },
 });
 

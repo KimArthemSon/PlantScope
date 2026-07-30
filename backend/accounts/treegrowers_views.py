@@ -75,9 +75,9 @@ def record_activity(request, action_type, entity_type, entity_id=None,
 @csrf_exempt
 def register_tree_grower(request):
     """
-    Register a new tree grower with their group and initial application.
-    Tree growers must be part of a group (minimum 2 members).
+    Register a new tree grower group and initial application.
     NOTE: Seedling requests are handled separately AFTER application acceptance.
+    Personal information is NOT collected or stored at this stage.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
@@ -85,8 +85,8 @@ def register_tree_grower(request):
     data = request.POST
     files = request.FILES
 
-    # 1️⃣ Validate required user fields
-    required_fields = ['email', 'password', 'first_name', 'last_name', 'contact', 'address', 'gender']
+    # 1️⃣ Validate required user fields (Only email and password for account creation)
+    required_fields = ['email', 'password']
     missing = [f for f in required_fields if not data.get(f)]
     if missing:
         return JsonResponse({'error': 'Missing required fields', 'fields': missing}, status=400)
@@ -94,21 +94,7 @@ def register_tree_grower(request):
     # 2️⃣ Extract & sanitize basic user data
     email = data.get('email').strip().lower()
     password = data.get('password')
-    first_name = data.get('first_name').strip()
-    middle_name = data.get('middle_name', '').strip()
-    last_name = data.get('last_name').strip()
-    contact = data.get('contact').strip()
-    address = data.get('address').strip()
-    gender = data.get('gender')
     
-    # Optional birthday
-    birthday = None
-    if data.get('birthday'):
-        try:
-            birthday = datetime.strptime(data.get('birthday'), '%Y-%m-%d').date()
-        except ValueError:
-            return JsonResponse({'error': 'Invalid birthday format. Use YYYY-MM-DD.'}, status=400)
-
     # 3️⃣ Validate password format
     password_regex = r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$'
     if not re.match(password_regex, password):
@@ -162,8 +148,8 @@ def register_tree_grower(request):
         'maintenance_plan': files.get('maintenance_plan'),
     }
 
-    # Optional proposed_site and proposed_orientation_date (for returning growers)
-    proposed_site_id = data.get('proposed_site_id') or None  # Handle empty strings
+    # Optional proposed_site and proposed_orientation_date
+    proposed_site_id = data.get('proposed_site_id') or None
     proposed_orientation_date = data.get('proposed_orientation_date')
     
     if proposed_orientation_date:
@@ -172,7 +158,7 @@ def register_tree_grower(request):
         except ValueError:
             return JsonResponse({'error': 'Invalid proposed_orientation_date format. Use YYYY-MM-DD.'}, status=400)
 
-    # 7️⃣ Database Transaction (NO SEEDLING REQUEST HERE)
+    # 7️⃣ Database Transaction (NO PERSONAL PROFILE CREATED)
     try:
         with transaction.atomic():
             # Create User
@@ -184,20 +170,7 @@ def register_tree_grower(request):
                 is_active=False  # Requires approval before activation
             )
 
-            # Create Profile
-            profile.objects.create(
-                users=user,
-                first_name=first_name,
-                middle_name=middle_name,
-                last_name=last_name,
-                birthday=birthday,
-                contact=contact,
-                address=address,
-                profile_img=files.get('profile_img'),
-                gender=gender,
-            )
-
-            # Create Tree Grower Group
+            # Create Tree Grower Group (Profile creation completely removed to save storage)
             group = TreeGrowerGroup.objects.create(
                 group_name=group_data['group_name'],
                 users=user,
@@ -211,7 +184,7 @@ def register_tree_grower(request):
             application = Application.objects.create(
                 user=user,
                 title=app_data['title'],
-                classification='new',  # First-time applicant
+                classification='new',
                 status='for_evaluation',
                 maintenance_plan=app_data['maintenance_plan'],
                 total_treegrowers_will_participate=app_data['total_treegrowers_will_participate'],
@@ -226,14 +199,14 @@ def register_tree_grower(request):
             entity_type='User',
             entity_id=user.id,
             entity_label=email,
-            description=f'New tree grower account registered with group: {group.group_name}',
+            description=f'New tree grower group account registered: {group.group_name}',
             new_data={'email': email, 'user_role': 'treeGrowers', 'is_active': user.is_active},
         )
 
         return JsonResponse({
             'message': 'Tree grower registration successful',
             'user_id': user.id,
-            'group_id': group.group_id,
+            'group_id': group.group_id, # Adjust to 'id' if your model uses standard 'id'
             'application_id': application.application_id,
             'next_step': 'awaiting_evaluation'
         }, status=201)

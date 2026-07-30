@@ -11,11 +11,11 @@ import {
   Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // 👈 Add this
 import LoginModal from "@/components/LoginModal";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 
-// ✅ Cross-platform Storage Keys
 const TOKEN_KEY = "token";
 const USER_ROLE_KEY = "user_role";
 
@@ -41,10 +41,10 @@ const clearAuthData = async () => {
 
 export default function HomePage() {
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // 👈 Get safe area insets
   const [loginVisible, setLoginVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideUpAnim = useRef(new Animated.Value(60)).current;
   const cardSlideAnim = useRef(new Animated.Value(200)).current;
@@ -55,17 +55,13 @@ export default function HomePage() {
     startAnimations();
   }, []);
 
-  // ✅ Check if user is already logged in (works offline!)
   const checkIfStillLoggedIn = async () => {
     try {
       const token = await getToken();
-
       if (!token) {
         setIsLoading(false);
         return;
       }
-
-      // Try to validate token online
       const response = await fetch(`${api}/api/get_me/`, {
         method: "POST",
         headers: {
@@ -73,11 +69,8 @@ export default function HomePage() {
           "Content-Type": "application/json",
         },
       });
-
       const data = await response.json();
-
       if (response.ok && data.user_role) {
-        // ✅ Online: Token valid, route based on role
         if (data.user_role === "OnsiteInspector") {
           router.replace("/home");
         } else if (data.user_role === "treeGrowers") {
@@ -96,15 +89,12 @@ export default function HomePage() {
     }
   };
 
-  // ✅ Handle offline authentication with cached data
   const handleOfflineAuth = async () => {
     try {
       const token = await getToken();
       const cachedRole = await getUserRole();
-
       if (token && cachedRole) {
         console.log("Offline mode: Using cached role:", cachedRole);
-
         if (cachedRole === "OnsiteInspector") {
           router.replace("/home");
           return;
@@ -113,7 +103,6 @@ export default function HomePage() {
           return;
         }
       }
-
       setIsLoading(false);
     } catch (error) {
       console.error("Offline auth error:", error);
@@ -121,7 +110,6 @@ export default function HomePage() {
     }
   };
 
-  // ✅ Start entrance animations
   const startAnimations = () => {
     Animated.timing(brandFade, {
       toValue: 1,
@@ -156,7 +144,6 @@ export default function HomePage() {
     }).start();
   };
 
-  // ✅ Show loading screen while checking auth
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -211,6 +198,7 @@ export default function HomePage() {
             styles.card,
             {
               transform: [{ translateY: cardSlideAnim }],
+              paddingBottom: 28 + insets.bottom, // 👈 Push content above nav bar
             },
           ]}
         >
@@ -233,12 +221,10 @@ export default function HomePage() {
             activeOpacity={0.7}
           >
             <Text style={styles.createAccountText}>Or Create Account</Text>
-           
           </TouchableOpacity>
         </Animated.View>
       </ImageBackground>
 
-      {/* Login Modal */}
       <LoginModal
         visible={loginVisible}
         onClose={() => setLoginVisible(false)}
@@ -315,7 +301,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: 28,
     paddingTop: 32,
-    paddingBottom: 42,
+    // paddingBottom removed from here — handled inline
     zIndex: 20,
   },
   cardDescription: {
