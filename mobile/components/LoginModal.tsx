@@ -309,7 +309,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
                 ]}
               >
                 <Image
-                  source={require("../assets/images/logo.jpg")}
+                  source={require("../assets/images/new_icon.png")}
                   style={styles.logo}
                 />
               </Animated.View>
