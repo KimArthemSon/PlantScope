@@ -3,3 +3,5 @@ npx expo prebuild --platform android --clean
 eas build --platform android --profile preview
 
 eas update --platform android --branch preview --message "Fixed UI"
+
+npx eas update --channel preview --message "Describe what you changed"

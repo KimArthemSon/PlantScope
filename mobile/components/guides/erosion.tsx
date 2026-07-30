@@ -13,25 +13,25 @@ import { Ionicons } from "@expo/vector-icons";
 
 // ────────────────────────────────────────────
 // IMAGE IMPORTS
-// Ensure your images are placed in: assets/safety/flood/
+// Ensure your images are placed in: assets/safety/erosion/
 // Supported formats: .jpg, .png, .jpeg (adjust extension if needed)
-// ─────────────────────────────────────────────
-const safeFlood1 = require("@/assets/safety/flood/safe_flood_1.png");
-const safeFlood2 = require("@/assets/safety/flood/safe_flood_2.png");
-const safeFlood3 = require("@/assets/safety/flood/safe_flood_3.png");
+// ────────────────────────────────────────────
+const safeErosion1 = require("@/assets/safety/erosion/safe_erosion_1.png");
+const safeErosion2 = require("@/assets/safety/erosion/safe_erosion_2.png");
+const safeErosion3 = require("@/assets/safety/erosion/safe_erosion_3.png");
 
-const dangerFlood1 = require("@/assets/safety/flood/danger_flood_1.png");
-const dangerFlood2 = require("@/assets/safety/flood/danger_flood_2.png");
-const dangerFlood3 = require("@/assets/safety/flood/danger_flood_3.png");
+const dangerErosion1 = require("@/assets/safety/erosion/danger_erosion_1.png");
+const dangerErosion2 = require("@/assets/safety/erosion/danger_erosion_2.png");
+const dangerErosion3 = require("@/assets/safety/erosion/danger_erosion_3.png");
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-interface FloodGuideProps {
+interface ErosionGuideProps {
   visible: boolean;
   onClose: () => void;
 }
 
-export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
+export default function ErosionGuide({ visible, onClose }: ErosionGuideProps) {
   return (
     <Modal
       visible={visible}
@@ -44,12 +44,12 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerIconWrap}>
-              <Ionicons name="water" size={20} color="#fff" />
+              <Ionicons name="alert-circle" size={20} color="#fff" />
             </View>
             <View style={styles.headerTextGroup}>
-              <Text style={styles.headerTitle}>Flood Assessment Guide</Text>
+              <Text style={styles.headerTitle}>Soil Erosion Guide</Text>
               <Text style={styles.headerSubtitle}>
-                Is the area safe from flooding?
+                Is the topsoil disappearing?
               </Text>
             </View>
             <TouchableOpacity
@@ -77,37 +77,39 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                 showsHorizontalScrollIndicator={false}
                 style={styles.imageCarousel}
               >
-                <Image source={safeFlood1} style={styles.carouselImage} />
-                <Image source={safeFlood2} style={styles.carouselImage} />
-                <Image source={safeFlood3} style={styles.carouselImage} />
+                <Image source={safeErosion1} style={styles.carouselImage} />
+                <Image source={safeErosion2} style={styles.carouselImage} />
+                <Image source={safeErosion3} style={styles.carouselImage} />
               </ScrollView>
 
               <View style={styles.criteriaList}>
                 <View style={styles.criteriaItem}>
-                  <Ionicons name="water-outline" size={14} color="#16A34A" />
+                  <Ionicons name="leaf-outline" size={14} color="#16A34A" />
                   <Text style={styles.criteriaValue}>
-                    Water drains quickly.
+                    Ground covered by leaves.
                   </Text>
                 </View>
                 <View style={styles.criteriaItem}>
-                  <Ionicons name="cloud-outline" size={14} color="#16A34A" />
-                  <Text style={styles.criteriaValue}>Dry ground.</Text>
+                  <Ionicons name="grass-outline" size={14} color="#16A34A" />
+                  <Text style={styles.criteriaValue}>
+                    Thick grass or plants.
+                  </Text>
                 </View>
                 <View style={styles.criteriaItem}>
                   <Ionicons
-                    name="footsteps-outline"
+                    name="color-palette-outline"
                     size={14}
                     color="#16A34A"
                   />
-                  <Text style={styles.criteriaValue}>
-                    Soil is firm when stepped on.
-                  </Text>
+                  <Text style={styles.criteriaValue}>Dark soil visible.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
-                  <Ionicons name="location-outline" size={14} color="#16A34A" />
-                  <Text style={styles.criteriaValue}>
-                    Area is higher than nearby rivers or streams.
-                  </Text>
+                  <Ionicons name="remove-outline" size={14} color="#16A34A" />
+                  <Text style={styles.criteriaValue}>No exposed roots.</Text>
+                </View>
+                <View style={styles.criteriaItem}>
+                  <Ionicons name="water-outline" size={14} color="#16A34A" />
+                  <Text style={styles.criteriaValue}>No erosion channel.</Text>
                 </View>
               </View>
             </View>
@@ -124,24 +126,12 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                 showsHorizontalScrollIndicator={false}
                 style={styles.imageCarousel}
               >
-                <Image source={dangerFlood1} style={styles.carouselImage} />
-                <Image source={dangerFlood2} style={styles.carouselImage} />
-                <Image source={dangerFlood3} style={styles.carouselImage} />
+                <Image source={dangerErosion1} style={styles.carouselImage} />
+                <Image source={dangerErosion2} style={styles.carouselImage} />
+                <Image source={dangerErosion3} style={styles.carouselImage} />
               </ScrollView>
 
               <View style={styles.criteriaList}>
-                <View style={styles.criteriaItem}>
-                  <Ionicons name="water-outline" size={14} color="#DC2626" />
-                  <Text style={styles.criteriaValue}>
-                    Water stays on the ground even on normal days.
-                  </Text>
-                </View>
-                <View style={styles.criteriaItem}>
-                  <Ionicons name="cloud-outline" size={14} color="#DC2626" />
-                  <Text style={styles.criteriaValue}>
-                    Soil is always muddy or soft.
-                  </Text>
-                </View>
                 <View style={styles.criteriaItem}>
                   <Ionicons
                     name="trending-down-outline"
@@ -149,14 +139,30 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                     color="#DC2626"
                   />
                   <Text style={styles.criteriaValue}>
-                    Low-lying area where water collects.
+                    Deep erosion channels.
                   </Text>
                 </View>
                 <View style={styles.criteriaItem}>
-                  <Ionicons name="location-outline" size={14} color="#DC2626" />
+                  <Ionicons
+                    name="git-branch-outline"
+                    size={14}
+                    color="#DC2626"
+                  />
+                  <Text style={styles.criteriaValue}>Exposed tree roots.</Text>
+                </View>
+                <View style={styles.criteriaItem}>
+                  <Ionicons name="layers-outline" size={14} color="#DC2626" />
+                  <Text style={styles.criteriaValue}>Bare soil.</Text>
+                </View>
+                <View style={styles.criteriaItem}>
+                  <Ionicons name="water-outline" size={14} color="#DC2626" />
                   <Text style={styles.criteriaValue}>
-                    Near a river, creek, or drainage channel.
+                    Muddy runoff or creek.
                   </Text>
+                </View>
+                <View style={styles.criteriaItem}>
+                  <Ionicons name="cloud-outline" size={14} color="#DC2626" />
+                  <Text style={styles.criteriaValue}>Soil washed away.</Text>
                 </View>
               </View>
             </View>
@@ -172,7 +178,7 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                 />
                 <Text style={styles.commentText}>
                   <Text style={styles.commentLabel}>Good: </Text>
-                  "The ground is dry. Wala nagapundo ang tubig."
+                  "The soil is protected by leaves and grass. Walay erosion."
                 </Text>
               </View>
               <View style={styles.commentBox}>
@@ -183,7 +189,8 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                 />
                 <Text style={styles.commentText}>
                   <Text style={styles.commentLabel}>Problem: </Text>
-                  "Water is stagnant. Duol ug sapa."
+                  "High risk of soil erosion. Nakalantad ang gamot ug lawom ang
+                  kanal."
                 </Text>
               </View>
             </View>
@@ -235,7 +242,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: "#1D4ED8",
+    backgroundColor: "#B91C1C",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -359,13 +366,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   footerButton: {
-    backgroundColor: "#1D4ED8",
+    backgroundColor: "#B91C1C",
     margin: 20,
     marginTop: 10,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
-    shadowColor: "#1D4ED8",
+    shadowColor: "#B91C1C",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,

@@ -28,7 +28,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import FloatingMapButton from "@/components/FloatingMapButton";
 import { useAlert } from "@/components/AlertContext";
 import FloodGuide from "@/components/guides/flood";
-
+import LandslideGuide from "@/components/guides/landslide";
+import ErosionGuide from "@/components/guides/erosion";
 // ─────────────────────────────────────────────
 // ✅ GPS-REFACTOR: Constants
 // ────────────────────────────────────────────
@@ -48,7 +49,7 @@ interface LocationData {
   barangay?: string;
   timestamp: string;
   accuracy?: number;
-  isFallback?: boolean; // ✅ GPS-REFACTOR: Track if this is a cached fallback
+  isFallback?: boolean;
 }
 
 interface SafetyImage {
@@ -88,7 +89,6 @@ function SimpleGeocam({
   const cameraRef = useRef<CameraView>(null);
   const { warning, error: showError } = useAlert();
 
-  // ✅ GPS-REFACTOR: Cleaner timeout + fallback logic
   const getCurrentLocation = async (): Promise<LocationData | null> => {
     try {
       if (!locationPermission?.granted) {
@@ -103,7 +103,6 @@ function SimpleGeocam({
       let isFallback = false;
 
       try {
-        // 1. Try live GPS with strict 30s timeout
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(
             () => reject(new Error("GPS_TIMEOUT")),
@@ -118,7 +117,6 @@ function SimpleGeocam({
           timeoutPromise,
         ]);
       } catch (liveErr: any) {
-        // 2. Live GPS failed or timed out — try last known position
         console.warn(
           "Live GPS failed/timed out, trying fallback:",
           liveErr.message,
@@ -429,7 +427,7 @@ function SimpleGeocam({
 
 // ─────────────────────────────────────────────
 // CAMERA STYLES
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────
 
 const cam = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
@@ -698,6 +696,7 @@ type SectionCardProps = {
   showGuide?: boolean;
   children: React.ReactNode;
 };
+
 const SectionCard = ({
   title,
   subtitle,
@@ -741,7 +740,9 @@ const SectionCard = ({
             </TouchableOpacity>
           )}
           <View style={[styles.stepBadge, { borderColor: accentColor }]}>
-            <Text style={[styles.stepText, { color: accentColor }]}>{step}</Text>
+            <Text style={[styles.stepText, { color: accentColor }]}>
+              {step}
+            </Text>
           </View>
         </View>
       </View>
@@ -853,7 +854,6 @@ export default function SafetyForm() {
   const [locationAccuracy, setLocationAccuracy] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
 
-  // ✅ GPS-REFACTOR: Countdown state for UI
   const [gpsCountdown, setGpsCountdown] = useState(30);
 
   const [floodImages, setFloodImages] = useState<SafetyImage[]>([]);
@@ -881,14 +881,14 @@ export default function SafetyForm() {
   const [pendingNote, setPendingNote] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // ✅ GPS-REFACTOR: Readiness state
   const [gpsReadiness, setGpsReadiness] = useState<GPSReadiness>("checking");
   const [gpsReadinessAge, setGpsReadinessAge] = useState<number | null>(null);
 
-  // ✅ FLOOD GUIDE: State for showing flood guide modal
+  // ✅ GUIDE STATES
   const [showFloodGuide, setShowFloodGuide] = useState(false);
+  const [showLandslideGuide, setShowLandslideGuide] = useState(false);
+  const [showErosionGuide, setShowErosionGuide] = useState(false);
 
-  // ✅ OFFLINE-SAFETY: Prevent API calls on mount if offline and not editing a draft
   useEffect(() => {
     if (isEditingOfflineDraft) {
       loadOfflineDraftData();
@@ -942,14 +942,12 @@ export default function SafetyForm() {
     }
   }, [assessmentId, offlineDraftId, isOnline]);
 
-  // ✅ GPS-REFACTOR: Check readiness on mount
   useEffect(() => {
     if (!loading) {
       checkGPSReadiness();
     }
   }, [loading]);
 
-  // ✅ GPS-REFACTOR: Readiness checker logic
   const checkGPSReadiness = async () => {
     try {
       const { status } = await Location.getForegroundPermissionsAsync();
@@ -1022,12 +1020,10 @@ export default function SafetyForm() {
     setOverallSafetyNote(safety.overall_notes || "");
   };
 
-  // ✅ GPS-REFACTOR: Robust location handler with 30s timeout, countdown, and fallback
   const handleGetCurrentLocation = async () => {
     setGettingLocation(true);
     setGpsCountdown(30);
 
-    // Start countdown timer
     const interval = setInterval(() => {
       setGpsCountdown((prev) => {
         if (prev <= 1) {
@@ -1150,7 +1146,6 @@ export default function SafetyForm() {
       timestamp: new Date().toISOString(),
     };
 
-    // ✅ OFFLINE-SAFETY: Prevent API upload if offline
     if (numericAssessmentId && !isNaN(numericAssessmentId) && isOnline) {
       setUploading(true);
       try {
@@ -1321,7 +1316,6 @@ export default function SafetyForm() {
     }
   };
 
-  // ✅ OFFLINE-SAFETY: Guard against accidental API calls
   const handleDraft = async () => {
     if (!isOnline) {
       warning(
@@ -1358,7 +1352,6 @@ export default function SafetyForm() {
     }
   };
 
-  // ✅ OFFLINE-SAFETY: Guard against accidental API calls
   const handleSubmit = async () => {
     if (!isOnline) {
       warning(
@@ -1381,7 +1374,6 @@ export default function SafetyForm() {
     );
   };
 
-  // ✅ OFFLINE-SAFETY: Prevent deleting from server while offline
   const handleDeleteImage = async (
     img: SafetyImage,
     category: "flood" | "landslide" | "erosion" | "other",
@@ -1512,7 +1504,6 @@ export default function SafetyForm() {
     );
   };
 
-  // ✅ GPS-REFACTOR: Helper to format readiness age
   const formatReadinessAge = () => {
     if (gpsReadinessAge === null) return "never";
     if (gpsReadinessAge < 1 / 60) return "just now";
@@ -1548,7 +1539,6 @@ export default function SafetyForm() {
           </View>
         )}
 
-        {/* ✅ GPS-REFACTOR: Readiness Banner */}
         {!isViewMode && gpsReadiness !== "checking" && (
           <GPSReadinessBanner
             readiness={gpsReadiness}
@@ -1564,6 +1554,7 @@ export default function SafetyForm() {
           </View>
         )}
 
+        {/* ✅ FLOOD SECTION WITH GUIDE */}
         <SectionCard
           title="Flood Evidence"
           subtitle={`${floodImages.length + localImages.filter((i) => i.subLayerCode === "flood").length} photo${floodImages.length + localImages.filter((i) => i.subLayerCode === "flood").length !== 1 ? "s" : ""}`}
@@ -1659,6 +1650,7 @@ export default function SafetyForm() {
           {renderLocalImages("flood")}
         </SectionCard>
 
+        {/* ✅ LANDSLIDE SECTION WITH GUIDE PLACEHOLDER */}
         <SectionCard
           title="Landslide Indicators"
           subtitle={`${landslideImages.length + localImages.filter((i) => i.subLayerCode === "landslide").length} photo${landslideImages.length + localImages.filter((i) => i.subLayerCode === "landslide").length !== 1 ? "s" : ""}`}
@@ -1666,6 +1658,8 @@ export default function SafetyForm() {
           iconLib="mci"
           accentColor="#854D0E"
           step={2}
+          showGuide={true}
+          onGuidePress={() => setShowLandslideGuide(true)}
         >
           <FieldLabel label="Overall Note" />
           <TextInput
@@ -1752,6 +1746,7 @@ export default function SafetyForm() {
           {renderLocalImages("landslide")}
         </SectionCard>
 
+        {/* ✅ EROSION SECTION WITH GUIDE PLACEHOLDER */}
         <SectionCard
           title="Soil Erosion"
           subtitle={`${erosionImages.length + localImages.filter((i) => i.subLayerCode === "erosion").length} photo${erosionImages.length + localImages.filter((i) => i.subLayerCode === "erosion").length !== 1 ? "s" : ""}`}
@@ -1759,6 +1754,8 @@ export default function SafetyForm() {
           iconLib="ion"
           accentColor="#B91C1C"
           step={3}
+          showGuide={true}
+          onGuidePress={() => setShowErosionGuide(true)}
         >
           <FieldLabel label="Overall Note" />
           <TextInput
@@ -1845,6 +1842,7 @@ export default function SafetyForm() {
           {renderLocalImages("erosion")}
         </SectionCard>
 
+        {/* ✅ OTHER SECTION (NO GUIDE) */}
         <SectionCard
           title="Other Observation"
           subtitle={`${otherImages.length + localImages.filter((i) => i.subLayerCode === "other").length} photo${otherImages.length + localImages.filter((i) => i.subLayerCode === "other").length !== 1 ? "s" : ""}`}
@@ -2245,12 +2243,20 @@ export default function SafetyForm() {
         </View>
       </Modal>
 
-      {/* ✅ FLOOD GUIDE MODAL */}
+      {/* ✅ GUIDE MODALS */}
       <FloodGuide
         visible={showFloodGuide}
         onClose={() => setShowFloodGuide(false)}
       />
+      <LandslideGuide
+        visible={showLandslideGuide}
+        onClose={() => setShowLandslideGuide(false)}
+      />
 
+      <ErosionGuide
+        visible={showErosionGuide}
+        onClose={() => setShowErosionGuide(false)}
+      />
       <FloatingMapButton
         areaId={parseInt(areaId)}
         areaName={params.areaName as string}
@@ -2356,8 +2362,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   viewModeBannerText: { color: "#fff", fontWeight: "600", fontSize: 13 },
-
-  // ✅ GPS-REFACTOR: Banner styles
   gpsBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -2378,7 +2382,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   card: {
     backgroundColor: "#fff",
     borderRadius: 14,

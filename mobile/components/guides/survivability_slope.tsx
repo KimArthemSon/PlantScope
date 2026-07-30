@@ -13,25 +13,26 @@ import { Ionicons } from "@expo/vector-icons";
 
 // ────────────────────────────────────────────
 // IMAGE IMPORTS
-// Ensure your images are placed in: assets/safety/flood/
+// Ensure your images are placed in: assets/survivability/slope/
 // Supported formats: .jpg, .png, .jpeg (adjust extension if needed)
 // ─────────────────────────────────────────────
-const safeFlood1 = require("@/assets/safety/flood/safe_flood_1.png");
-const safeFlood2 = require("@/assets/safety/flood/safe_flood_2.png");
-const safeFlood3 = require("@/assets/safety/flood/safe_flood_3.png");
+const goodSlope1 = require("@/assets/survivability/slope/good_slope_1.png");
+const goodSlope2 = require("@/assets/survivability/slope/good_slope_2.png");
 
-const dangerFlood1 = require("@/assets/safety/flood/danger_flood_1.png");
-const dangerFlood2 = require("@/assets/safety/flood/danger_flood_2.png");
-const dangerFlood3 = require("@/assets/safety/flood/danger_flood_3.png");
+const rollingSlope1 = require("@/assets/survivability/slope/rolling_slope_1.png");
+const rollingSlope2 = require("@/assets/survivability/slope/rolling_slope_2.png");
+
+const badSlope1 = require("@/assets/survivability/slope/bad_slope_1.png");
+const badSlope2 = require("@/assets/survivability/slope/bad_slope_2.png");
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-interface FloodGuideProps {
+interface SlopeGuideProps {
   visible: boolean;
   onClose: () => void;
 }
 
-export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
+export default function SlopeGuide({ visible, onClose }: SlopeGuideProps) {
   return (
     <Modal
       visible={visible}
@@ -44,12 +45,12 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerIconWrap}>
-              <Ionicons name="water" size={20} color="#fff" />
+              <Ionicons name="trending-up" size={20} color="#fff" />
             </View>
             <View style={styles.headerTextGroup}>
-              <Text style={styles.headerTitle}>Flood Assessment Guide</Text>
+              <Text style={styles.headerTitle}>Slope Assessment Guide</Text>
               <Text style={styles.headerSubtitle}>
-                Is the area safe from flooding?
+                Is the ground stable to plant on?
               </Text>
             </View>
             <TouchableOpacity
@@ -65,11 +66,14 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
           >
-            {/* SAFE Section */}
+            {/* FLAT / GENTLE Section (BEST) */}
             <View style={styles.section}>
-              <View style={styles.sectionHeaderSafe}>
+              <View style={styles.sectionHeaderGood}>
                 <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
-                <Text style={styles.sectionTitleSafe}>SAFE</Text>
+                <Text style={styles.sectionTitleGood}>FLAT / GENTLE</Text>
+                <View style={styles.badgeGood}>
+                  <Text style={styles.badgeGoodText}>BEST</Text>
+                </View>
               </View>
 
               <ScrollView
@@ -77,46 +81,36 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                 showsHorizontalScrollIndicator={false}
                 style={styles.imageCarousel}
               >
-                <Image source={safeFlood1} style={styles.carouselImage} />
-                <Image source={safeFlood2} style={styles.carouselImage} />
-                <Image source={safeFlood3} style={styles.carouselImage} />
+                <Image source={goodSlope1} style={styles.carouselImage} />
+                <Image source={goodSlope2} style={styles.carouselImage} />
               </ScrollView>
 
               <View style={styles.criteriaList}>
                 <View style={styles.criteriaItem}>
+                  <Ionicons name="walk-outline" size={14} color="#16A34A" />
+                  <Text style={styles.criteriaValue}>Easy to walk.</Text>
+                </View>
+                <View style={styles.criteriaItem}>
+                  <Ionicons name="leaf-outline" size={14} color="#16A34A" />
+                  <Text style={styles.criteriaValue}>Best for planting.</Text>
+                </View>
+                <View style={styles.criteriaItem}>
                   <Ionicons name="water-outline" size={14} color="#16A34A" />
                   <Text style={styles.criteriaValue}>
-                    Water drains quickly.
-                  </Text>
-                </View>
-                <View style={styles.criteriaItem}>
-                  <Ionicons name="cloud-outline" size={14} color="#16A34A" />
-                  <Text style={styles.criteriaValue}>Dry ground.</Text>
-                </View>
-                <View style={styles.criteriaItem}>
-                  <Ionicons
-                    name="footsteps-outline"
-                    size={14}
-                    color="#16A34A"
-                  />
-                  <Text style={styles.criteriaValue}>
-                    Soil is firm when stepped on.
-                  </Text>
-                </View>
-                <View style={styles.criteriaItem}>
-                  <Ionicons name="location-outline" size={14} color="#16A34A" />
-                  <Text style={styles.criteriaValue}>
-                    Area is higher than nearby rivers or streams.
+                    Water soaks into soil.
                   </Text>
                 </View>
               </View>
             </View>
 
-            {/* DANGER Section */}
+            {/* ROLLING / HILLY Section (CAUTION) */}
             <View style={styles.section}>
-              <View style={styles.sectionHeaderDanger}>
-                <Ionicons name="close-circle" size={20} color="#DC2626" />
-                <Text style={styles.sectionTitleDanger}>DANGER</Text>
+              <View style={styles.sectionHeaderCaution}>
+                <Ionicons name="alert-circle" size={20} color="#D97706" />
+                <Text style={styles.sectionTitleCaution}>ROLLING / HILLY</Text>
+                <View style={styles.badgeCaution}>
+                  <Text style={styles.badgeCautionText}>CAUTION</Text>
+                </View>
               </View>
 
               <ScrollView
@@ -124,23 +118,51 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                 showsHorizontalScrollIndicator={false}
                 style={styles.imageCarousel}
               >
-                <Image source={dangerFlood1} style={styles.carouselImage} />
-                <Image source={dangerFlood2} style={styles.carouselImage} />
-                <Image source={dangerFlood3} style={styles.carouselImage} />
+                <Image source={rollingSlope1} style={styles.carouselImage} />
+                <Image source={rollingSlope2} style={styles.carouselImage} />
               </ScrollView>
 
               <View style={styles.criteriaList}>
                 <View style={styles.criteriaItem}>
-                  <Ionicons name="water-outline" size={14} color="#DC2626" />
-                  <Text style={styles.criteriaValue}>
-                    Water stays on the ground even on normal days.
-                  </Text>
+                  <Ionicons name="resize-outline" size={14} color="#D97706" />
+                  <Text style={styles.criteriaValue}>Small hills.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
-                  <Ionicons name="cloud-outline" size={14} color="#DC2626" />
+                  <Ionicons name="warning-outline" size={14} color="#D97706" />
+                  <Text style={styles.criteriaValue}>Plant with care.</Text>
+                </View>
+                <View style={styles.criteriaItem}>
+                  <Ionicons name="water-outline" size={14} color="#D97706" />
                   <Text style={styles.criteriaValue}>
-                    Soil is always muddy or soft.
+                    Water flows downhill.
                   </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* VERY STEEP Section (AVOID) */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderBad}>
+                <Ionicons name="close-circle" size={20} color="#DC2626" />
+                <Text style={styles.sectionTitleBad}>VERY STEEP</Text>
+                <View style={styles.badgeBad}>
+                  <Text style={styles.badgeBadText}>AVOID</Text>
+                </View>
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.imageCarousel}
+              >
+                <Image source={badSlope1} style={styles.carouselImage} />
+                <Image source={badSlope2} style={styles.carouselImage} />
+              </ScrollView>
+
+              <View style={styles.criteriaList}>
+                <View style={styles.criteriaItem}>
+                  <Ionicons name="walk-outline" size={14} color="#DC2626" />
+                  <Text style={styles.criteriaValue}>Hard to walk.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
                   <Ionicons
@@ -148,14 +170,12 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                     size={14}
                     color="#DC2626"
                   />
-                  <Text style={styles.criteriaValue}>
-                    Low-lying area where water collects.
-                  </Text>
+                  <Text style={styles.criteriaValue}>High erosion risk.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
-                  <Ionicons name="location-outline" size={14} color="#DC2626" />
+                  <Ionicons name="ban-outline" size={14} color="#DC2626" />
                   <Text style={styles.criteriaValue}>
-                    Near a river, creek, or drainage channel.
+                    Avoid planting if possible.
                   </Text>
                 </View>
               </View>
@@ -172,7 +192,7 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                 />
                 <Text style={styles.commentText}>
                   <Text style={styles.commentLabel}>Good: </Text>
-                  "The ground is dry. Wala nagapundo ang tubig."
+                  "The slope is gentle. Dali ra tamnan."
                 </Text>
               </View>
               <View style={styles.commentBox}>
@@ -183,7 +203,7 @@ export default function FloodGuide({ visible, onClose }: FloodGuideProps) {
                 />
                 <Text style={styles.commentText}>
                   <Text style={styles.commentLabel}>Problem: </Text>
-                  "Water is stagnant. Duol ug sapa."
+                  "The slope is too steep. Bakilid kaayo, dili maayo tamnan."
                 </Text>
               </View>
             </View>
@@ -235,7 +255,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: "#1D4ED8",
+    backgroundColor: "#B91C1C",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -271,28 +291,80 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  // SAFE Section
-  sectionHeaderSafe: {
+  // GOOD / FLAT-GENTLE
+  sectionHeaderGood: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginBottom: 12,
   },
-  sectionTitleSafe: {
+  sectionTitleGood: {
     fontSize: 16,
     fontWeight: "800",
     color: "#16A34A",
     letterSpacing: 0.5,
   },
-  // DANGER Section
-  sectionHeaderDanger: {
+  badgeGood: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginLeft: "auto",
+  },
+  badgeGoodText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#16A34A",
+    letterSpacing: 0.5,
+  },
+  // CAUTION / ROLLING-HILLY
+  sectionHeaderCaution: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginBottom: 12,
   },
-  sectionTitleDanger: {
+  sectionTitleCaution: {
     fontSize: 16,
+    fontWeight: "800",
+    color: "#D97706",
+    letterSpacing: 0.5,
+  },
+  badgeCaution: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginLeft: "auto",
+  },
+  badgeCautionText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#D97706",
+    letterSpacing: 0.5,
+  },
+  // BAD / VERY STEEP
+  sectionHeaderBad: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionTitleBad: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#DC2626",
+    letterSpacing: 0.5,
+  },
+  badgeBad: {
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginLeft: "auto",
+  },
+  badgeBadText: {
+    fontSize: 10,
     fontWeight: "800",
     color: "#DC2626",
     letterSpacing: 0.5,
@@ -359,13 +431,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   footerButton: {
-    backgroundColor: "#1D4ED8",
+    backgroundColor: "#B91C1C",
     margin: 20,
     marginTop: 10,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
-    shadowColor: "#1D4ED8",
+    shadowColor: "#B91C1C",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
