@@ -208,6 +208,58 @@ export default function MulticriteriaAnalysis() {
   const hazardLayers = useHazardLayers(mapRef);
   const barangayAreas = useBarangayAreas(mapRef);
 
+  // ── FIELD ASSESSMENT LOCATION PICKER STATE ────────────────────────────
+  const tempFaLocationMarkerRef = useRef<L.Marker | null>(null);
+  const [tempFaLocationCoords, setTempFaLocationCoords] = useState<
+    [number, number] | null
+  >(null);
+
+  // ✅ BULLETPROOF FIX: Ignore map clicks that happen immediately after button clicks
+  const isProcessingActionRef = useRef(false);
+
+  const updateTempFaLocationMarker = useCallback((coords: [number, number]) => {
+    if (!mapRef.current) return;
+    if (tempFaLocationMarkerRef.current) {
+      tempFaLocationMarkerRef.current.setLatLng(coords);
+    } else {
+      const icon = L.divIcon({
+        className: "temp-fa-location-marker",
+        html: `<div style="background:#F97316;width:24px;height:24px;border-radius:50%;border:4px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><div style="width:8px;height:8px;background:white;border-radius:50%;"></div></div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 24],
+      });
+      tempFaLocationMarkerRef.current = L.marker(coords, { icon }).addTo(
+        mapRef.current,
+      );
+    }
+  }, []);
+
+  const handleMapClickForFaLocation = useCallback(
+    (e: L.LeafletMouseEvent) => {
+      // ✅ If we just clicked a button, ignore this map click entirely
+      if (isProcessingActionRef.current) {
+        isProcessingActionRef.current = false; // Reset for next time
+        return;
+      }
+
+      const coords: [number, number] = [e.latlng.lat, e.latlng.lng];
+      setTempFaLocationCoords(coords);
+      updateTempFaLocationMarker(coords);
+    },
+    [updateTempFaLocationMarker],
+  );
+
+  // Cleanup effect for FA location picking
+  useEffect(() => {
+    if (!fieldAssessments.locationTargetId) {
+      if (tempFaLocationMarkerRef.current && mapRef.current) {
+        mapRef.current.removeLayer(tempFaLocationMarkerRef.current);
+        tempFaLocationMarkerRef.current = null;
+      }
+      setTempFaLocationCoords(null);
+    }
+  }, [fieldAssessments.locationTargetId]);
+
   const handleFetchLayer = useCallback(
     (
       layer: MCDALayer,
@@ -1492,7 +1544,7 @@ export default function MulticriteriaAnalysis() {
   );
 
   // ========================================================================
-  // ✅ HAZARD DRAWING CLICK HANDLER
+  // ✅ HAZARD DRAWING CLICK HANDLER & FA LOCATION PICKER
   // ========================================================================
   useEffect(() => {
     const map = mapRef.current;
@@ -1506,6 +1558,8 @@ export default function MulticriteriaAnalysis() {
         barangayAreas.addHazardPoint(e.latlng.lat, e.latlng.lng);
       } else if (barangayAreas.isMapEditMode && barangayAreas.showHazardForm) {
         barangayAreas.addVertexOnMap(e.latlng.lat, e.latlng.lng);
+      } else if (fieldAssessments.locationTargetId) {
+        handleMapClickForFaLocation(e);
       }
     };
     const handleDblClick = () => {
@@ -1520,7 +1574,9 @@ export default function MulticriteriaAnalysis() {
       isDrawingNewPolygon ||
       isPlacingNewCenter ||
       barangayAreas.isDrawingHazard ||
-      (barangayAreas.isMapEditMode && barangayAreas.showHazardForm);
+      (barangayAreas.isMapEditMode && barangayAreas.showHazardForm) ||
+      !!fieldAssessments.locationTargetId;
+
     if (isAnyDrawing) {
       map.getContainer().style.cursor = "crosshair";
       map.on("click", handleClick);
@@ -1549,6 +1605,8 @@ export default function MulticriteriaAnalysis() {
     barangayAreas.addHazardPoint,
     barangayAreas.addVertexOnMap,
     barangayAreas.finishDrawingHazard,
+    fieldAssessments.locationTargetId,
+    handleMapClickForFaLocation,
   ]);
 
   // ========================================================================
@@ -1869,6 +1927,193 @@ export default function MulticriteriaAnalysis() {
                     </div>
                   </div>
                 )}
+
+              {/* FA Location Picking Panel */}
+              {fieldAssessments.locationTargetId && (
+                <div
+                  className="absolute bottom-6 right-6 z-[9999] bg-white p-4 rounded-xl shadow-2xl border-2 border-orange-500 w-96 max-w-[calc(100%-3rem)]"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (e.nativeEvent) e.nativeEvent.stopPropagation();
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
+                    <h4 className="font-bold text-sm text-orange-800 flex items-center gap-2">
+                      <MapPin size={16} /> Set Assessment Location
+                    </h4>
+                    <button
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        isProcessingActionRef.current = true;
+                        setTimeout(() => {
+                          isProcessingActionRef.current = false;
+                        }, 200);
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        if (e.nativeEvent) {
+                          e.nativeEvent.stopPropagation();
+                          e.nativeEvent.preventDefault();
+                        }
+                        fieldAssessments.setLocationTargetId(null);
+                      }}
+                      className="text-gray-500 hover:text-gray-700 hover:bg-gray-100 p-1 rounded transition"
+                      title="Cancel location picking"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Click on the map to place a marker, or enter exact
+                    coordinates below.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 mb-4">
+                    <div>
+                      <label className="text-[10px] text-gray-600 font-semibold uppercase">
+                        Latitude
+                      </label>
+                      <input
+                        type="text"
+                        value={
+                          tempFaLocationCoords
+                            ? tempFaLocationCoords[0].toFixed(6)
+                            : ""
+                        }
+                        onChange={(e) => {
+                          const lat = parseFloat(e.target.value);
+                          if (!isNaN(lat)) {
+                            const lng = tempFaLocationCoords
+                              ? tempFaLocationCoords[1]
+                              : 124.6086;
+                            setTempFaLocationCoords([lat, lng]);
+                            updateTempFaLocationMarker([lat, lng]);
+                          }
+                        }}
+                        placeholder="e.g. 11.0086"
+                        className="w-full text-xs border-2 border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none font-mono font-semibold text-gray-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-600 font-semibold uppercase">
+                        Longitude
+                      </label>
+                      <input
+                        type="text"
+                        value={
+                          tempFaLocationCoords
+                            ? tempFaLocationCoords[1].toFixed(6)
+                            : ""
+                        }
+                        onChange={(e) => {
+                          const lng = parseFloat(e.target.value);
+                          if (!isNaN(lng)) {
+                            const lat = tempFaLocationCoords
+                              ? tempFaLocationCoords[0]
+                              : 11.0086;
+                            setTempFaLocationCoords([lat, lng]);
+                            updateTempFaLocationMarker([lat, lng]);
+                          }
+                        }}
+                        placeholder="e.g. 124.6086"
+                        className="w-full text-xs border-2 border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none font-mono font-semibold text-gray-800"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        isProcessingActionRef.current = true;
+                        setTimeout(() => {
+                          isProcessingActionRef.current = false;
+                        }, 200);
+                      }}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        if (e.nativeEvent) {
+                          e.nativeEvent.stopPropagation();
+                          e.nativeEvent.preventDefault();
+                        }
+
+                        console.log("💾 [UI] Save Location button clicked");
+
+                        if (
+                          tempFaLocationMarkerRef.current &&
+                          fieldAssessments.locationTargetId
+                        ) {
+                          const latlng =
+                            tempFaLocationMarkerRef.current.getLatLng();
+                          const lat = latlng.lat;
+                          const lng = latlng.lng;
+
+                          console.log(
+                            "📍 [UI] Saving coordinates directly from marker ref:",
+                            { lat, lng },
+                          );
+
+                          const result = await fieldAssessments.updateLocation(
+                            fieldAssessments.locationTargetId,
+                            lat,
+                            lng,
+                            20, // gps_accuracy_meters
+                          );
+
+                          if (result.success) {
+                            setAlert({
+                              type: "success",
+                              title: "Location Saved",
+                              message:
+                                result.message ||
+                                "Assessment location updated successfully.",
+                            });
+                            fieldAssessments.setLocationTargetId(null);
+                            if (areaId) {
+                              handleFetchLayer(fieldAssessments.activeLayer);
+                            }
+                          } else {
+                            setAlert({
+                              type: "error",
+                              title: "Save Failed",
+                              message:
+                                result.message || "Could not update location.",
+                            });
+                          }
+                        }
+                      }}
+                      disabled={!tempFaLocationMarkerRef.current}
+                      className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition flex items-center justify-center gap-2"
+                    >
+                      <Save size={14} /> Save Location
+                    </button>
+                    <button
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        isProcessingActionRef.current = true;
+                        setTimeout(() => {
+                          isProcessingActionRef.current = false;
+                        }, 200);
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        if (e.nativeEvent) {
+                          e.nativeEvent.stopPropagation();
+                          e.nativeEvent.preventDefault();
+                        }
+                        fieldAssessments.setLocationTargetId(null);
+                      }}
+                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* GIS SPECIALIST: REAL-TIME COORDINATE EDITOR FORM */}
@@ -2185,7 +2430,8 @@ export default function MulticriteriaAnalysis() {
                 {!showNameInput && !isDrawing && !isDrawingNewPolygon && (
                   <button
                     onClick={startDrawing}
-                    className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded transition flex items-center gap-1"
+                    disabled={!!fieldAssessments.locationTargetId}
+                    className="px-4 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-xs font-semibold rounded transition flex items-center gap-1"
                   >
                     <Pen size={12} /> Draw Polygon
                   </button>

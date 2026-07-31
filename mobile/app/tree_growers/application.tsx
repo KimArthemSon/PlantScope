@@ -28,7 +28,6 @@ const WHITE = "#FFFFFF";
 const BG = "#F4F7F5";
 const BORDER = "#E5E7EB";
 
-// Number of lines to show before truncating the description
 const DESCRIPTION_LINE_LIMIT = 4;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -277,26 +276,27 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
-// ─── Floating Progress Timeline ────────────────────────────────────────────
+// ─── Floating Progress Timeline (FIXED: Aligned with Backend STATUS_CHOICES) ─
 const FloatingProgressTimeline = ({ status }: { status: string }) => {
+  // Exactly matches Django Application.STATUS_CHOICES active flow
   const steps = [
-    { key: "submitted", label: "Submitted", icon: "document-text" },
-    { key: "for_evaluation", label: "Evaluating", icon: "search" },
-    { key: "for_head", label: "Review", icon: "people" },
+    { key: "for_evaluation", label: "Evaluation", icon: "search" },
+    { key: "for_head", label: "Head Review", icon: "people" },
     { key: "accepted", label: "Approved", icon: "checkmark-circle" },
     { key: "under_monitoring", label: "Active", icon: "leaf" },
-    { key: "completed", label: "Done", icon: "trophy" },
+    { key: "completed", label: "Completed", icon: "trophy" },
   ];
 
   const statusOrder = [
-    "submitted",
     "for_evaluation",
     "for_head",
     "accepted",
     "under_monitoring",
     "completed",
   ];
-  const currentIndex = statusOrder.indexOf(status);
+
+  // Fallback to 0 if status is somehow not in the order (e.g., rejected, though terminal state catches this)
+  const currentIndex = Math.max(0, statusOrder.indexOf(status));
 
   return (
     <View style={floatTimelineStyles.container}>
@@ -330,6 +330,7 @@ const FloatingProgressTimeline = ({ status }: { status: string }) => {
                     isActive && floatTimelineStyles.stepLabelActive,
                     isCurrent && floatTimelineStyles.stepLabelCurrent,
                   ]}
+                  numberOfLines={1}
                 >
                   {step.label}
                 </Text>
@@ -351,44 +352,63 @@ const FloatingProgressTimeline = ({ status }: { status: string }) => {
   );
 };
 
-// ─── Floating Action Button for Quick Links ────────────────────────────────
+// ─── Floating Action Button for Quick Links (FIXED: Seedling restriction) ──
 const FloatingQuickLinks = ({
+  applicationStatus,
   totalApprovedSeedlings,
   reportCount,
   onSeedlingPress,
   onReportPress,
 }: {
+  applicationStatus: string;
   totalApprovedSeedlings: number;
   reportCount: number;
   onSeedlingPress: () => void;
   onReportPress: () => void;
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const canRequestSeedlings = applicationStatus === "under_monitoring";
 
   return (
     <View style={fabStyles.container}>
       {expanded && (
         <>
           <TouchableOpacity
-            style={[fabStyles.fabItem, { marginBottom: 10 }]}
+            style={[
+              fabStyles.fabItem,
+              { marginBottom: 10 },
+              !canRequestSeedlings && { opacity: 0.6 },
+            ]}
             onPress={() => {
-              onSeedlingPress();
-              setExpanded(false);
+              if (canRequestSeedlings) {
+                onSeedlingPress();
+                setExpanded(false);
+              }
             }}
             activeOpacity={0.8}
+            disabled={!canRequestSeedlings}
           >
             <View style={fabStyles.fabItemIcon}>
-              <Ionicons name="leaf-outline" size={20} color={PRIMARY} />
+              <Ionicons
+                name={
+                  canRequestSeedlings ? "leaf-outline" : "lock-closed-outline"
+                }
+                size={20}
+                color={canRequestSeedlings ? PRIMARY : MUTED}
+              />
             </View>
             <View style={fabStyles.fabItemLabel}>
               <Text style={fabStyles.fabItemTitle}>Seedling Requests</Text>
               <Text style={fabStyles.fabItemSub}>
-                {totalApprovedSeedlings > 0
-                  ? `${totalApprovedSeedlings} approved`
-                  : "Request seedlings"}
+                {canRequestSeedlings
+                  ? totalApprovedSeedlings > 0
+                    ? `${totalApprovedSeedlings} approved`
+                    : "Request seedlings"
+                  : "Available during monitoring"}
               </Text>
             </View>
           </TouchableOpacity>
+
           <TouchableOpacity
             style={[fabStyles.fabItem, { marginBottom: 14 }]}
             onPress={() => {
@@ -441,11 +461,7 @@ export default function ApplicationPage() {
   const [showMap, setShowMap] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [showGallery, setShowGallery] = useState(false);
-
-  // ✅ NEW: Notification state
   const [unreadCount, setUnreadCount] = useState(0);
-
-  // ✅ Description "see more" state
   const [descExpanded, setDescExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
 
@@ -472,7 +488,6 @@ export default function ApplicationPage() {
     }
   };
 
-  // ✅ Fetch unread notification count
   const fetchUnreadCount = async () => {
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -492,7 +507,7 @@ export default function ApplicationPage() {
   useEffect(() => {
     fetchData();
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 60000); // Poll every 60 seconds
+    const interval = setInterval(fetchUnreadCount, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -577,7 +592,9 @@ export default function ApplicationPage() {
 
   const isTerminalState =
     !detail?.application ||
-    ["completed", "rejected", "cancelled"].includes(detail.application.status);
+    ["completed", "rejected", "cancelled", "failed"].includes(
+      detail.application.status,
+    );
 
   if (isTerminalState) {
     return (
@@ -619,7 +636,6 @@ export default function ApplicationPage() {
 
   return (
     <View style={styles.container}>
-      {/* ─── Top Bar: Notification with count ─── */}
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity
           style={styles.notifBtn}
@@ -637,7 +653,6 @@ export default function ApplicationPage() {
         </TouchableOpacity>
       </View>
 
-      {/* ─── Scrollable Content ─── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -648,7 +663,6 @@ export default function ApplicationPage() {
           />
         }
       >
-        {/* ─── Site Image (42% of screen) ─── */}
         <View style={styles.heroContainer}>
           <Image
             source={{
@@ -661,17 +675,13 @@ export default function ApplicationPage() {
           />
         </View>
 
-        {/* ─── Floating Progress Timeline ─── */}
         <View style={styles.floatingTimelinePosition}>
           <FloatingProgressTimeline status={application?.status} />
         </View>
 
-        {/* ─── Application Info Card ── */}
         <View style={styles.contentSheet}>
-          {/* Spacer for floating timeline */}
           <View style={{ height: 28 }} />
 
-          {/* ─── Compact Stats Row ─── */}
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
@@ -700,7 +710,7 @@ export default function ApplicationPage() {
             </View>
           </View>
 
-          {/* ✅ UPDATED: Orientation Date - Only show if status is 'accepted' */}
+          {/* ✅ FIX 2: Orientation Date strictly shown ONLY when status is 'accepted' */}
           {application?.status === "accepted" &&
             application?.orientation_date && (
               <View style={styles.orientationBanner}>
@@ -715,7 +725,6 @@ export default function ApplicationPage() {
               </View>
             )}
 
-          {/* Site Name & Status */}
           <View style={styles.siteHeader}>
             <Text style={styles.siteName}>
               {assigned_site?.name || application.title}
@@ -734,7 +743,6 @@ export default function ApplicationPage() {
             </Text>
           </View>
 
-          {/* ✅ NEW: Project Application Details Card */}
           <View style={styles.projectApplicationCard}>
             <View style={styles.projectHeader}>
               <View style={styles.projectIconWrap}>
@@ -761,7 +769,6 @@ export default function ApplicationPage() {
               </View>
             </View>
 
-            {/* Proposed Orientation Date */}
             {application?.proposed_orientation_date && (
               <View style={styles.projectField}>
                 <Text style={styles.projectLabel}>
@@ -772,12 +779,8 @@ export default function ApplicationPage() {
                 </Text>
               </View>
             )}
-
-            {/* Maintenance Plan */}
-           
           </View>
 
-          {/* ─── About this Site (Description) ─── */}
           {assigned_site?.description && (
             <View style={styles.descriptionSection}>
               <Text style={styles.sectionTitle}>About this Site</Text>
@@ -794,15 +797,13 @@ export default function ApplicationPage() {
                 onTextLayout={(e) => {
                   if (!descExpanded && !isTruncated) {
                     const lineCount = e.nativeEvent.lines?.length || 0;
-                    if (lineCount > DESCRIPTION_LINE_LIMIT) {
+                    if (lineCount > DESCRIPTION_LINE_LIMIT)
                       setIsTruncated(true);
-                    }
                   }
                 }}
               >
                 {formatDescription(assigned_site.description)}
               </Text>
-
               {isTruncated && (
                 <TouchableOpacity
                   onPress={() => setDescExpanded(!descExpanded)}
@@ -822,7 +823,6 @@ export default function ApplicationPage() {
             </View>
           )}
 
-          {/* ─── Tabs: About | Gallery ─── */}
           <View style={styles.tabBar}>
             <TouchableOpacity
               style={[styles.tab, activeTab === "about" && styles.tabActive]}
@@ -855,14 +855,11 @@ export default function ApplicationPage() {
             </TouchableOpacity>
           </View>
 
-          {/* ─── About Tab Content ─── */}
           {activeTab === "about" && (
             <>
-              {/* Site Metrics */}
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>Site Details</Text>
                 <View style={styles.detailRow}>
-                  <View style={styles.detailItem}></View>
                   <View style={styles.detailItem}>
                     <Text style={styles.detailLabel}>Accessibility</Text>
                     <Text style={styles.detailValue}>
@@ -884,7 +881,6 @@ export default function ApplicationPage() {
                 )}
               </View>
 
-              {/* Map Preview */}
               {assigned_site && (
                 <View style={styles.mapSection}>
                   <View style={styles.mapHeader}>
@@ -908,7 +904,6 @@ export default function ApplicationPage() {
                 </View>
               )}
 
-              {/* Recommended Species */}
               {assigned_site?.recommended_species &&
                 assigned_site.recommended_species.length > 0 && (
                   <View style={styles.speciesSection}>
@@ -925,7 +920,6 @@ export default function ApplicationPage() {
                   </View>
                 )}
 
-              {/* Guidance */}
               <View style={styles.guidanceCard}>
                 <Ionicons
                   name="information-circle-outline"
@@ -946,7 +940,6 @@ export default function ApplicationPage() {
             </>
           )}
 
-          {/* ─── Gallery Tab Content ─── */}
           {activeTab === "gallery" && (
             <View style={styles.galleryGrid}>
               {galleryImages.length > 0 ? (
@@ -996,15 +989,15 @@ export default function ApplicationPage() {
         </View>
       </ScrollView>
 
-      {/* ─── Floating Quick Links ─── */}
+      {/* ✅ FIX 1 & 3: Pass applicationStatus to enforce seedling restrictions */}
       <FloatingQuickLinks
+        applicationStatus={application?.status || ""}
         totalApprovedSeedlings={totalApprovedSeedlings}
         reportCount={reportCount}
         onSeedlingPress={() => router.push("/tree_growers/seedlingRequests")}
         onReportPress={() => router.push("/tree_growers/progressReports")}
       />
 
-      {/* ─── Map Modal ─── */}
       <Modal
         visible={showMap}
         animationType="slide"
@@ -1037,7 +1030,6 @@ export default function ApplicationPage() {
         </View>
       </Modal>
 
-      {/* ─── Gallery Full Screen Modal ─── */}
       <Modal
         visible={showGallery}
         animationType="fade"
@@ -1104,8 +1096,6 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   loadingText: { marginTop: 14, color: MUTED, fontSize: 14 },
-
-  // Error state
   errorTitle: {
     fontSize: 20,
     fontWeight: "700",
@@ -1129,8 +1119,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   retryText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-
-  // Terminal state
   terminalBanner: {
     backgroundColor: PRIMARY,
     paddingHorizontal: 20,
@@ -1173,8 +1161,6 @@ const styles = StyleSheet.create({
     maxWidth: 320,
   },
   terminalBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-
-  // Top Bar
   topBar: {
     position: "absolute",
     top: 0,
@@ -1211,13 +1197,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 3,
   },
-  notifDotText: {
-    color: "#fff",
-    fontSize: 9,
-    fontWeight: "800",
-  },
-
-  // Hero - 42% of screen
+  notifDotText: { color: "#fff", fontSize: 9, fontWeight: "800" },
   heroContainer: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT * 0.42,
@@ -1225,8 +1205,6 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   heroImage: { width: "100%", height: "100%" },
-
-  // Floating Timeline Position
   floatingTimelinePosition: {
     position: "relative",
     zIndex: 10,
@@ -1234,8 +1212,6 @@ const styles = StyleSheet.create({
     marginBottom: -26,
     paddingHorizontal: 16,
   },
-
-  // Content Sheet
   contentSheet: {
     backgroundColor: WHITE,
     borderTopLeftRadius: 28,
@@ -1251,8 +1227,6 @@ const styles = StyleSheet.create({
     elevation: 10,
     zIndex: 5,
   },
-
-  // Orientation Banner
   orientationBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1278,8 +1252,6 @@ const styles = StyleSheet.create({
     color: PRIMARY,
     marginTop: 2,
   },
-
-  // Site Header
   siteHeader: { marginBottom: 16 },
   siteName: {
     fontSize: 24,
@@ -1296,8 +1268,6 @@ const styles = StyleSheet.create({
   },
   locationText: { fontSize: 14, color: MUTED, fontWeight: "500" },
   groupText: { fontSize: 13, color: FAINT, marginTop: 4, fontWeight: "500" },
-
-  // ✅ NEW: Project Application Card
   projectApplicationCard: {
     backgroundColor: WHITE,
     borderRadius: 16,
@@ -1320,24 +1290,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  projectTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: INK,
-  },
-  projectSubtitle: {
-    fontSize: 12,
-    color: MUTED,
-    marginTop: 2,
-  },
-  projectGrid: {
-    flexDirection: "row",
-    gap: 16,
-    marginBottom: 16,
-  },
-  projectField: {
-    flex: 1,
-  },
+  projectTitle: { fontSize: 16, fontWeight: "700", color: INK },
+  projectSubtitle: { fontSize: 12, color: MUTED, marginTop: 2 },
+  projectGrid: { flexDirection: "row", gap: 16, marginBottom: 16 },
+  projectField: { flex: 1 },
   projectLabel: {
     fontSize: 11,
     color: MUTED,
@@ -1346,56 +1302,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 6,
   },
-  projectValue: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: INK,
-  },
-  maintenancePlanSection: {
-    marginTop: 8,
-  },
-  maintenancePlanLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: "#ECFDF5",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#DCFCE7",
-    borderStyle: "dashed",
-  },
-  maintenancePlanIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: PRIMARY,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  maintenancePlanInfo: {
-    flex: 1,
-  },
-  maintenancePlanFilename: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: PRIMARY,
-  },
-  maintenancePlanHint: {
-    fontSize: 11,
-    color: "#059669",
-    marginTop: 2,
-  },
-
-  // Description Section
-  descriptionSection: {
-    marginBottom: 20,
-  },
-  descriptionText: {
-    fontSize: 15,
-    lineHeight: 24,
-    color: MUTED,
-  },
+  projectValue: { fontSize: 15, fontWeight: "700", color: INK },
+  descriptionSection: { marginBottom: 20 },
+  descriptionText: { fontSize: 15, lineHeight: 24, color: MUTED },
   seeMoreBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1403,13 +1312,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     alignSelf: "flex-start",
   },
-  seeMoreText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: PRIMARY,
-  },
-
-  // Stats Row
+  seeMoreText: { fontSize: 14, fontWeight: "700", color: PRIMARY },
   statsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1432,8 +1335,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   statDivider: { width: 1, height: 28, backgroundColor: BORDER },
-
-  // Tabs
   tabBar: {
     flexDirection: "row",
     borderBottomWidth: 1,
@@ -1456,8 +1357,6 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 14, fontWeight: "600", color: MUTED },
   tabTextActive: { color: PRIMARY, fontWeight: "700" },
   tabCount: { fontSize: 14, color: MUTED, fontWeight: "500" },
-
-  // Detail Section
   detailSection: { marginBottom: 20 },
   sectionTitle: {
     fontSize: 16,
@@ -1465,11 +1364,7 @@ const styles = StyleSheet.create({
     color: INK,
     marginBottom: 12,
   },
-  detailRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 12,
-  },
+  detailRow: { flexDirection: "row", gap: 12, marginBottom: 12 },
   detailItem: {
     flex: 1,
     backgroundColor: "#F9FAFB",
@@ -1486,13 +1381,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 4,
   },
-  detailValue: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: INK,
-  },
-
-  // Map Section
+  detailValue: { fontSize: 15, fontWeight: "700", color: INK },
   mapSection: { marginBottom: 20 },
   mapHeader: {
     flexDirection: "row",
@@ -1500,11 +1389,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
-  mapExpandText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: PRIMARY,
-  },
+  mapExpandText: { fontSize: 13, fontWeight: "600", color: PRIMARY },
   mapPreview: {
     height: 220,
     borderRadius: 16,
@@ -1512,8 +1397,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
   },
-
-  // Species
   speciesSection: { marginBottom: 20 },
   speciesWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   speciesChip: {
@@ -1525,8 +1408,6 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
   },
   speciesChipText: { fontSize: 13, fontWeight: "600", color: INK },
-
-  // Gallery Grid
   galleryGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1561,8 +1442,6 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
   },
   galleryEmptyText: { fontSize: 13, color: MUTED, marginTop: 8 },
-
-  // Guidance
   guidanceCard: {
     flexDirection: "row",
     gap: 10,
@@ -1580,8 +1459,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: "500",
   },
-
-  // Map Modal
   mapModalBar: {
     position: "absolute",
     left: 16,
@@ -1611,8 +1488,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   mapTitleTxt: { color: "#fff", fontWeight: "700", fontSize: 13, flex: 1 },
-
-  // Gallery Modal
   galleryModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
@@ -1671,9 +1546,7 @@ const badgeStyles = StyleSheet.create({
 });
 
 const floatTimelineStyles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-  },
+  container: { alignItems: "center" },
   card: {
     backgroundColor: WHITE,
     borderRadius: 20,

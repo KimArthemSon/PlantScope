@@ -20,7 +20,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  User,
   Phone,
   MapPin,
   Building2,
@@ -53,7 +52,6 @@ const inputStyleOverride = {
 const STEPS = [
   { label: "Account Information", title: "Create your\naccount." },
   { label: "Email Verification", title: "Verify your\nemail." },
-  { label: "Personal Details", title: "Tell us about\nyourself." },
   { label: "Group & Project", title: "Your group\n& project." },
   { label: "Review & Submit", title: "Review your\napplication." },
 ];
@@ -77,6 +75,7 @@ type FieldProps = {
   multiline?: boolean;
   required?: boolean;
 };
+
 function Field({
   label,
   icon,
@@ -133,6 +132,7 @@ type FileButtonProps = {
   isImage?: boolean;
   required?: boolean;
 };
+
 function FileButton({
   label,
   value,
@@ -160,42 +160,6 @@ function FileButton({
         </Text>
         {value && <CheckCircle size={16} color="#22C55E" />}
       </TouchableOpacity>
-    </View>
-  );
-}
-
-function GenderPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <View style={styles.formGroup}>
-      <Text style={styles.label}>Gender</Text>
-      <View style={styles.genderRow}>
-        {["Male", "Female", "Other"].map((g) => (
-          <TouchableOpacity
-            key={g}
-            style={[
-              styles.genderChip,
-              value === g.toLowerCase() && styles.genderChipActive,
-            ]}
-            onPress={() => onChange(g.toLowerCase())}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.genderChipText,
-                value === g.toLowerCase() && styles.genderChipTextActive,
-              ]}
-            >
-              {g}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
     </View>
   );
 }
@@ -275,7 +239,6 @@ export default function Signup() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showProposedDatePicker, setShowProposedDatePicker] = useState(false);
 
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
@@ -292,10 +255,9 @@ export default function Signup() {
   const scrollViewRef = useRef<ScrollView>(null);
 
   const cardSlideAnim = useRef(new Animated.Value(300)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
   const headlineFade = useRef(new Animated.Value(0)).current;
 
-  // Dynamic card height based on step (PRESERVED)
+  // Dynamic card height based on step (Adjusted for 4 steps)
   const getCardMaxHeight = () => {
     switch (step) {
       case 0:
@@ -303,11 +265,9 @@ export default function Signup() {
       case 1:
         return windowHeight * 0.42;
       case 2:
-        return windowHeight * 0.72;
+        return windowHeight * 0.75; // Taller to accommodate combined Group & Project
       case 3:
-        return windowHeight * 0.72;
-      case 4:
-        return windowHeight * 0.72;
+        return windowHeight * 0.7;
       default:
         return windowHeight * 0.55;
     }
@@ -325,13 +285,6 @@ export default function Signup() {
       duration: 600,
       useNativeDriver: true,
       delay: 100,
-    }).start();
-
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-      delay: 200,
     }).start();
 
     Animated.spring(cardSlideAnim, {
@@ -352,24 +305,16 @@ export default function Signup() {
       friction: 8,
     }).start();
 
-    // FIX: Reset scroll position to top when step changes
     setTimeout(() => {
       scrollViewRef.current?.scrollTo({ y: 0, animated: false });
     }, 100);
   }, [step]);
 
+  // REMOVED: first_name, middle_name, last_name, birthday, contact, address, gender, profile_img
   const [formData, setFormData] = useState({
     email: "",
     password: "",
     confirmPassword: "",
-    first_name: "",
-    middle_name: "",
-    last_name: "",
-    birthday: "",
-    contact: "",
-    address: "",
-    gender: "",
-    profile_img: null as any,
     group_name: "",
     group_type: "",
     group_address: "",
@@ -399,23 +344,23 @@ export default function Signup() {
     }
   };
 
- const pickDocument = async (field: string) => {
-  const result = await DocumentPicker.getDocumentAsync({
-    type: [
-      "application/pdf", 
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ],
-    copyToCacheDirectory: true,
-  });
-  if (!result.canceled && result.assets.length > 0) {
-    const asset = result.assets[0];
-    update(field, {
-      uri: asset.uri,
-      name: asset.name,
-      type: asset.mimeType ?? "application/octet-stream",
+  const pickDocument = async (field: string) => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ],
+      copyToCacheDirectory: true,
     });
-  }
-};
+    if (!result.canceled && result.assets.length > 0) {
+      const asset = result.assets[0];
+      update(field, {
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType ?? "application/octet-stream",
+      });
+    }
+  };
 
   const validateStep = (): string | null => {
     if (step === 0) {
@@ -433,13 +378,6 @@ export default function Signup() {
         return "Passwords do not match.";
     }
     if (step === 2) {
-      if (!formData.first_name) return "First name is required.";
-      if (!formData.last_name) return "Last name is required.";
-      if (!formData.contact) return "Contact number is required.";
-      if (!formData.address) return "Address is required.";
-      if (!formData.gender) return "Gender is required.";
-    }
-    if (step === 3) {
       if (!formData.group_name) return "Group name is required.";
       if (!formData.group_type) return "Group type is required.";
       if (!formData.group_address) return "Group address is required.";
@@ -571,7 +509,7 @@ export default function Signup() {
     }
     alert.confirm(
       "Submit Application?",
-      "Are you sure you want to submit your tree grower application? Please ensure all information is accurate. Once submitted, your application will be reviewed by the administrator.",
+      "Are you sure you want to submit your tree grower group application? Please ensure all information is accurate. Once submitted, your application will be reviewed by the administrator.",
       performSubmit,
       {
         confirmText: "Yes, Submit",
@@ -588,24 +526,8 @@ export default function Signup() {
       fd.append("email", formData.email);
       fd.append("password", formData.password);
       fd.append("user_role", "treeGrowers");
-      fd.append("first_name", formData.first_name);
-      fd.append("last_name", formData.last_name);
-      fd.append("middle_name", formData.middle_name);
-      fd.append("contact", formData.contact);
-      fd.append("address", formData.address);
-      if (formData.birthday) fd.append("birthday", formData.birthday);
-      let g = "O";
-      if (formData.gender === "male") g = "M";
-      else if (formData.gender === "female") g = "F";
-      fd.append("gender", g);
-      fd.append("is_active", "false");
-      if (formData.profile_img) {
-        fd.append("profile_img", {
-          uri: formData.profile_img.uri,
-          name: formData.profile_img.name,
-          type: formData.profile_img.type,
-        } as any);
-      }
+
+      // Group Data
       fd.append("group_name", formData.group_name);
       fd.append("group_type", formData.group_type);
       fd.append("group_address", formData.group_address);
@@ -617,6 +539,8 @@ export default function Signup() {
           type: formData.group_profile.type,
         } as any);
       }
+
+      // Application Data
       fd.append("title", formData.title);
       fd.append(
         "total_treegrowers_will_participate",
@@ -635,6 +559,7 @@ export default function Signup() {
           type: formData.maintenance_plan.type,
         } as any);
       }
+
       const res = await fetch(api + "/api/register_tree_grower/", {
         method: "POST",
         body: fd,
@@ -650,7 +575,7 @@ export default function Signup() {
       }
       alert.success(
         "Application Submitted! 🌱",
-        "Your application has been successfully sent and is now under evaluation. You will be notified via email once your application is accepted or rejected. Please check your email regularly for updates.",
+        "Your group application has been successfully sent and is now under evaluation. You will be notified via email once your application is accepted or rejected.",
         8000,
       );
       setTimeout(() => {
@@ -814,83 +739,6 @@ export default function Signup() {
       case 2:
         return (
           <>
-            <Field
-              label="First Name"
-              icon={<User size={18} color="#9CA3AF" />}
-              value={formData.first_name}
-              onChangeText={(v) => update("first_name", v)}
-              required
-            />
-            <Field
-              label="Middle Name"
-              icon={<User size={18} color="#9CA3AF" />}
-              value={formData.middle_name}
-              onChangeText={(v) => update("middle_name", v)}
-            />
-            <Field
-              label="Last Name"
-              icon={<User size={18} color="#9CA3AF" />}
-              value={formData.last_name}
-              onChangeText={(v) => update("last_name", v)}
-              required
-            />
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>
-                Birthday{" "}
-                <Text style={{ color: "#9CA3AF", fontSize: 10 }}>
-                  (optional)
-                </Text>
-              </Text>
-              <TouchableOpacity
-                style={styles.inputContainer}
-                onPress={() => setShowDatePicker(true)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.inputIcon}>
-                  <Calendar size={18} color="#9CA3AF" />
-                </View>
-                <Text
-                  style={[
-                    styles.dateDisplay,
-                    !formData.birthday && styles.dateDisplayPlaceholder,
-                  ]}
-                >
-                  {formData.birthday || "Select your birthday"}
-                </Text>
-                <Calendar size={16} color="#22C55E" />
-              </TouchableOpacity>
-            </View>
-            <Field
-              label="Contact Number"
-              icon={<Phone size={18} color="#9CA3AF" />}
-              value={formData.contact}
-              onChangeText={(v) => update("contact", v)}
-              keyboardType="phone-pad"
-              autoCapitalize="none"
-              required
-            />
-            <Field
-              label="Address"
-              icon={<MapPin size={18} color="#9CA3AF" />}
-              value={formData.address}
-              onChangeText={(v) => update("address", v)}
-              required
-            />
-            <GenderPicker
-              value={formData.gender}
-              onChange={(v) => update("gender", v)}
-            />
-            <FileButton
-              label="Profile Image"
-              value={formData.profile_img}
-              onPress={() => pickImage("profile_img")}
-              isImage
-            />
-          </>
-        );
-      case 3:
-        return (
-          <>
             <Text style={styles.sectionHeading}>Group Details</Text>
             <Field
               label="Group Name"
@@ -996,30 +844,12 @@ export default function Signup() {
             </View>
           </>
         );
-      case 4:
+      case 3:
         return (
           <>
             <ReviewSection title="Account">
               <ReviewRow label="Email" value={formData.email} />
               <ReviewRow label="Password" value="••••••••" />
-            </ReviewSection>
-
-            <ReviewSection title="Personal">
-              <ReviewRow
-                label="Name"
-                value={`${formData.first_name} ${formData.middle_name} ${formData.last_name}`.trim()}
-              />
-              <ReviewRow
-                label="Birthday"
-                value={formData.birthday || "Not provided"}
-              />
-              <ReviewRow label="Contact" value={formData.contact} />
-              <ReviewRow label="Address" value={formData.address} />
-              <ReviewRow label="Gender" value={formData.gender} />
-              <ReviewRow
-                label="Profile Image"
-                value={formData.profile_img?.name ?? "Not provided"}
-              />
             </ReviewSection>
 
             <ReviewSection title="Group">
@@ -1057,7 +887,7 @@ export default function Signup() {
 
             <View style={styles.noteBox}>
               <Text style={styles.noteText}>
-                ⚠️ Your account will be set as{" "}
+                ⚠️ Your group account will be set as{" "}
                 <Text style={styles.noteBold}>For Evaluation</Text> until
                 approved by an administrator.
               </Text>
@@ -1096,7 +926,7 @@ export default function Signup() {
                     {!hasViewedPrivacy && !hasViewedTerms
                       ? "📖 Please read both documents before agreeing"
                       : !hasViewedPrivacy
-                        ? " Please read the Privacy Policy first"
+                        ? "📖 Please read the Privacy Policy first"
                         : "📖 Please read the Terms & Conditions first"}
                   </Text>
                 </View>
@@ -1159,7 +989,6 @@ export default function Signup() {
         >
           <View style={styles.overlay} />
 
-          {/* Top Brand & Headline - Safe Area Aware */}
           <Animated.View
             style={[
               styles.topWrapper,
@@ -1189,7 +1018,6 @@ export default function Signup() {
             </View>
           </Animated.View>
 
-          {/* Bottom Card - Dynamic Height */}
           <Animated.View
             style={[
               styles.card,
@@ -1203,7 +1031,7 @@ export default function Signup() {
               ref={scrollViewRef}
               contentContainerStyle={[
                 styles.cardScrollContent,
-                { paddingBottom: 16 + insets.bottom }, // FIX: Prevents nav bar overlap
+                { paddingBottom: 16 + insets.bottom },
               ]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={true}
@@ -1213,7 +1041,6 @@ export default function Signup() {
             >
               {renderStep()}
 
-              {/* Navigation */}
               <View style={styles.navRow}>
                 {step > 0 && (
                   <TouchableOpacity
@@ -1226,7 +1053,7 @@ export default function Signup() {
                   </TouchableOpacity>
                 )}
 
-                {step < 4 ? (
+                {step < 3 ? (
                   <TouchableOpacity
                     style={[
                       styles.nextButton,
@@ -1268,7 +1095,6 @@ export default function Signup() {
                 )}
               </View>
 
-              {/* Bottom link */}
               {step === 0 && (
                 <View style={styles.bottomText}>
                   <Text style={styles.registerText}>
@@ -1283,12 +1109,6 @@ export default function Signup() {
           </Animated.View>
         </ImageBackground>
 
-        <DatePickerModal
-          visible={showDatePicker}
-          value={formData.birthday}
-          onConfirm={(d) => update("birthday", d)}
-          onClose={() => setShowDatePicker(false)}
-        />
         <DatePickerModal
           visible={showProposedDatePicker}
           value={formData.proposed_orientation_date}
@@ -1315,19 +1135,9 @@ export default function Signup() {
 
 // ─── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#0B0F0D",
-  },
-  root: {
-    flex: 1,
-    backgroundColor: "#0B0F0D",
-  },
-  background: {
-    flex: 1,
-    width: "100%",
-    height: "100%",
-  },
+  safeArea: { flex: 1, backgroundColor: "#0B0F0D" },
+  root: { flex: 1, backgroundColor: "#0B0F0D" },
+  background: { flex: 1, width: "100%", height: "100%" },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(11, 15, 13, 0.78)",
@@ -1360,11 +1170,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontWeight: "500",
   },
-  dotsContainer: {
-    flexDirection: "row",
-    gap: 6,
-    alignItems: "center",
-  },
+  dotsContainer: { flexDirection: "row", gap: 6, alignItems: "center" },
   dot: {
     width: 6,
     height: 6,
@@ -1376,9 +1182,7 @@ const styles = StyleSheet.create({
     width: 18,
     borderRadius: 3,
   },
-  dotDone: {
-    backgroundColor: "#22C55E",
-  },
+  dotDone: { backgroundColor: "#22C55E" },
   card: {
     position: "absolute",
     bottom: 0,
@@ -1397,16 +1201,10 @@ const styles = StyleSheet.create({
   cardScrollContent: {
     paddingHorizontal: 24,
     paddingTop: 24,
-    paddingBottom: 16, // Base padding, overridden inline with insets.bottom
     flexGrow: 1,
   },
   formGroup: { marginBottom: 12 },
-  label: {
-    color: "#374151",
-    fontSize: 12,
-    marginBottom: 5,
-    fontWeight: "600",
-  },
+  label: { color: "#374151", fontSize: 12, marginBottom: 5, fontWeight: "600" },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1427,31 +1225,10 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     borderWidth: 0,
   },
-  dateDisplay: {
-    flex: 1,
-    color: "#1C1C1E",
-    fontSize: 15,
-    paddingVertical: 6,
-  },
+  dateDisplay: { flex: 1, color: "#1C1C1E", fontSize: 15, paddingVertical: 6 },
   dateDisplayPlaceholder: { color: "#9CA3AF" },
   eyeButton: { padding: 6 },
   hint: { fontSize: 10, color: "#9CA3AF", marginTop: 3 },
-  genderRow: { flexDirection: "row", gap: 8 },
-  genderChip: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#F9FAFB",
-    alignItems: "center",
-  },
-  genderChipActive: {
-    borderColor: "#22C55E",
-    backgroundColor: "#F0FDF4",
-  },
-  genderChipText: { color: "#6B7280", fontSize: 13, fontWeight: "600" },
-  genderChipTextActive: { color: "#1C1C1E" },
   fileButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1666,17 +1443,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
   },
-  groupTypeChipActive: {
-    borderColor: "#22C55E",
-    backgroundColor: "#F0FDF4",
-  },
+  groupTypeChipActive: { borderColor: "#22C55E", backgroundColor: "#F0FDF4" },
   groupTypeChipText: {
     color: "#6B7280",
     fontSize: 11,
     fontWeight: "600",
     textAlign: "center",
   },
-  groupTypeChipTextActive: {
-    color: "#1C1C1E",
-  },
+  groupTypeChipTextActive: { color: "#1C1C1E" },
 });

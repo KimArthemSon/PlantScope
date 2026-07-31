@@ -191,7 +191,6 @@ def get_application(request, application_id):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
-    # ✅ REMOVED 'user__profile' from select_related to optimize query
     app = get_object_or_404(
         Application.objects.select_related(
             'user__tree_grower_group',
@@ -206,7 +205,9 @@ def get_application(request, application_id):
     )
     
     latest_reason = Reason.objects.filter(application=app).order_by('-created').first()
-    seedling_requests = SeedlingRequest.objects.filter(application=app).order_by('-created_at')
+    
+    # ✅ OPTIMIZATION: Added select_related to prevent N+1 queries on assigned_inspector.profile
+    seedling_requests = SeedlingRequest.objects.filter(application=app).select_related('assigned_inspector__profile').order_by('-created_at')
     progress_reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
 
     assigned_site_data = None
@@ -252,13 +253,12 @@ def get_application(request, application_id):
             "barangay": (prop.reforestation_area.barangay.name if prop.reforestation_area and prop.reforestation_area.barangay else None),
         }
 
-    # ✅ Cleaner variable assignment for group data
     group = getattr(app.user, 'tree_grower_group', None)
     
     data = {
         "application": {
             "application_id": app.application_id,
-            "email": app.user.email,  # ✅ ADDED: Email for Account Information display
+            "email": app.user.email,
             "title": app.title,
             "classification": app.classification,
             "status": app.status,
@@ -278,7 +278,7 @@ def get_application(request, application_id):
             "group_address": group.address if group else "",
             "group_profile": get_cloudinary_url(str(group.profile_img)) if group and group.profile_img else None,
         },
-        # ✅ REMOVED: "profile" dictionary entirely to eliminate personal information
+        # ✅ CONFIRMED: "profile" dictionary is completely removed, eliminating personal info
         
         "assigned_site": assigned_site_data,
         "proposed_site": proposed_site_data,
@@ -322,7 +322,6 @@ def get_application(request, application_id):
     }
     
     return JsonResponse(data, status=200)
-
 
 @csrf_exempt
 def get_ongoing_applications(request):
@@ -990,7 +989,7 @@ def create_progress_report(request):
     if not app_id or not report_species_json:
         return JsonResponse({'error': 'application_id and report_species required'}, status=400)
 
-    # ✅ NEW: ENFORCE PROOF IMAGE FOR ALL VISITS (Initial & Ongoing)
+    # ✅ ENFORCE PROOF IMAGE FOR ALL VISITS
     if 'proof_image' not in request.FILES:
         return JsonResponse({'error': 'Proof image is required for all monitoring visits'}, status=400)
 
@@ -1017,13 +1016,20 @@ def create_progress_report(request):
         if not orientation_conducted:
             return JsonResponse({'error': 'orientation_conducted must be true for initial visit'}, status=400)
 
+    # ✅ NEW: PREVENT DUPLICATE PENDING REPORTS
+    # Check if there is already a pending report for this application
+    if ProgressReport.objects.filter(application=app, status='pending').exists():
+        return JsonResponse({
+            'error': 'A report for this application is currently pending review. Please wait for the Data Manager to process it before submitting a new one.'
+        }, status=400)
+
     try:
         with transaction.atomic():
             report = ProgressReport.objects.create(
                 application=app,
                 visit_type=visit_type,
                 description=description,
-                proof_image_monitor_required=request.FILES['proof_image'],  # ✅ Now strictly required
+                proof_image_monitor_required=request.FILES['proof_image'],
                 agreement_image=request.FILES.get('agreement_image') if visit_type == 'initial' else None,
                 orientation_conducted=(request.POST.get('orientation_conducted', 'false').lower() == 'true') if visit_type == 'initial' else False,
                 status='pending'
@@ -1034,10 +1040,12 @@ def create_progress_report(request):
                     raise ValueError("Each report species must be an object")
                 
                 tree_species_id = item.get('tree_species_id')
-                no_survived = item.get('no_survived', 0)
-                no_dead = item.get('no_dead', 0)
-                no_planted = item.get('no_planted', 0)
-                no_added_by_grower = item.get('no_added_by_grower', 0)
+                
+                # ✅ SAFE CASTING: Prevents TypeError if frontend sends null or empty string
+                no_survived = int(item.get('no_survived') or 0)
+                no_dead = int(item.get('no_dead') or 0)
+                no_planted = int(item.get('no_planted') or 0)
+                no_added_by_grower = int(item.get('no_added_by_grower') or 0)
 
                 if not tree_species_id:
                     raise ValueError(f"Missing tree_species_id: {item}")
@@ -1047,10 +1055,10 @@ def create_progress_report(request):
                 ProgressReportSpecies.objects.create(
                     progress_report=report,
                     tree_species=tree_species,
-                    no_planted=int(no_planted),
-                    no_added_by_grower=int(no_added_by_grower),
-                    no_survived=int(no_survived),
-                    no_dead=int(no_dead),
+                    no_planted=no_planted,
+                    no_added_by_grower=no_added_by_grower,
+                    no_survived=no_survived,
+                    no_dead=no_dead,
                 )
 
         return JsonResponse({
@@ -1058,6 +1066,7 @@ def create_progress_report(request):
             'report_id': report.progress_report_id,
             'visit_type': report.visit_type
         }, status=201)
+        
     except Tree_species.DoesNotExist as e:
         return JsonResponse({'error': f'Tree species not found: {str(e)}'}, status=400)
     except Exception as e:
