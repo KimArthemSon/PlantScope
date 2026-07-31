@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import L from "leaflet";
+import { api } from "@/constant/api";
 
 export type MCDALayer = "safety" | "boundary_verification" | "survivability";
 export type AssessmentType = "specific" | "general" | "all";
@@ -52,11 +53,9 @@ export interface FieldAssessmentsResponse {
   };
 }
 
-import { api, api_second } from "@/constant/api";
-
 const LAYER_EMOJIS: Record<MCDALayer, string> = {
-  safety: "⚠️",
-  boundary_verification: "📍",
+  safety: "️",
+  boundary_verification: "",
   survivability: "🌱",
 };
 
@@ -67,8 +66,10 @@ const GENERAL_MARKER_COLOR = "#3B82F6";
 export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const photoMarkersRef = useRef<Map<number, L.Marker[]>>(new Map());
-  
-  const [assessments, setAssessments] = useState<Record<MCDALayer, FieldAssessmentEntry[]>>({
+
+  const [assessments, setAssessments] = useState<
+    Record<MCDALayer, FieldAssessmentEntry[]>
+  >({
     safety: [],
     boundary_verification: [],
     survivability: [],
@@ -80,7 +81,9 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
     survivability: false,
   });
 
-  const [counts, setCounts] = useState<Record<MCDALayer, { specific: number; general: number; all: number }>>({
+  const [counts, setCounts] = useState<
+    Record<MCDALayer, { specific: number; general: number; all: number }>
+  >({
     safety: { specific: 0, general: 0, all: 0 },
     boundary_verification: { specific: 0, general: 0, all: 0 },
     survivability: { specific: 0, general: 0, all: 0 },
@@ -113,25 +116,28 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         }
       });
     },
-    [mapRef]
+    [mapRef],
   );
 
-  const removePhotoMarkers = useCallback((assessmentId: number) => {
-    const map = mapRef.current;
-    if (!map) return;
+  const removePhotoMarkers = useCallback(
+    (assessmentId: number) => {
+      const map = mapRef.current;
+      if (!map) return;
 
-    const markers = photoMarkersRef.current.get(assessmentId);
-    if (markers) {
-      markers.forEach((marker) => {
-        try {
-          map.removeLayer(marker);
-        } catch {
-          // ignore
-        }
-      });
-      photoMarkersRef.current.delete(assessmentId);
-    }
-  }, [mapRef]);
+      const markers = photoMarkersRef.current.get(assessmentId);
+      if (markers) {
+        markers.forEach((marker) => {
+          try {
+            map.removeLayer(marker);
+          } catch {
+            // ignore
+          }
+        });
+        photoMarkersRef.current.delete(assessmentId);
+      }
+    },
+    [mapRef],
+  );
 
   const removeAllPhotoMarkers = useCallback(() => {
     const map = mapRef.current;
@@ -164,7 +170,9 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         if (!loc?.latitude || !loc?.longitude) return;
 
         const isSpecific = entry.assessment_type === "specific";
-        const markerColor = isSpecific ? SPECIFIC_MARKER_COLOR : GENERAL_MARKER_COLOR;
+        const markerColor = isSpecific
+          ? SPECIFIC_MARKER_COLOR
+          : GENERAL_MARKER_COLOR;
         const markerLabel = isSpecific ? "S" : "G";
 
         const marker = L.marker([loc.latitude, loc.longitude], {
@@ -187,8 +195,11 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         }).addTo(map);
 
         const typeLabel = isSpecific ? "Specific" : "General";
-        const siteInfo = isSpecific && entry.site_name ? `<br/><span style="font-size:10px;color:#666">Site: ${entry.site_name}</span>` : "";
-        
+        const siteInfo =
+          isSpecific && entry.site_name
+            ? `<br/><span style="font-size:10px;color:#666">Site: ${entry.site_name}</span>`
+            : "";
+
         marker.bindPopup(`
           <strong>${typeLabel} F${idx + 1} — ${entry.inspector.full_name}</strong>${siteInfo}<br/>
           <span style="font-size:11px;color:#666">${entry.assessment_date}</span><br/>
@@ -198,99 +209,105 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         markersRef.current.set(`${layer}-${idx}`, marker);
       });
     },
-    [mapRef, removeLayerMarkers, removeAllPhotoMarkers]
+    [mapRef, removeLayerMarkers, removeAllPhotoMarkers],
   );
 
-  const placePhotoMarkers = useCallback((entry: FieldAssessmentEntry) => {
-    const map = mapRef.current;
-    if (!map || !entry.images || entry.images.length === 0) return;
+  const placePhotoMarkers = useCallback(
+    (entry: FieldAssessmentEntry) => {
+      const map = mapRef.current;
+      if (!map || !entry.images || entry.images.length === 0) return;
 
-    removePhotoMarkers(entry.field_assessment_id);
+      removePhotoMarkers(entry.field_assessment_id);
 
-    const photoMarkers: L.Marker[] = [];
+      const photoMarkers: L.Marker[] = [];
 
-    entry.images.forEach((img, idx) => {
-      if (!img.latitude || !img.longitude) return;
+      entry.images.forEach((img, idx) => {
+        if (!img.latitude || !img.longitude) return;
 
-      const marker = L.marker([img.latitude, img.longitude], {
-        icon: L.divIcon({
-          className: "photo-marker",
-          html: `<div style="
+        const marker = L.marker([img.latitude, img.longitude], {
+          icon: L.divIcon({
+            className: "photo-marker",
+            html: `<div style="
             background:${PHOTO_MARKER_COLOR};width:24px;height:24px;border-radius:50%;
             border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);
             display:flex;align-items:center;justify-content:center;
             font-size:11px;cursor:pointer;
           ">📷</div>`,
-          iconSize: [24, 24],
-          iconAnchor: [12, 24],
-          popupAnchor: [0, -24],
-        }),
-      }).addTo(map);
+            iconSize: [24, 24],
+            iconAnchor: [12, 24],
+            popupAnchor: [0, -24],
+          }),
+        }).addTo(map);
 
-      const layerName = img.layer.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      marker.bindPopup(`
+        const layerName = img.layer
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (l) => l.toUpperCase());
+        marker.bindPopup(`
         <div style="min-width:150px;">
           <strong style="font-size:12px;color:${PHOTO_MARKER_COLOR}">📷 Photo ${idx + 1}</strong><br/>
           <span style="font-size:11px;color:#666">${layerName}</span><br/>
-          <span style="font-size:10px;color:#999">${img.description || 'No description'}</span><br/>
+          <span style="font-size:10px;color:#999">${img.description || "No description"}</span><br/>
           <span style="font-size:9px;color:#aaa">${img.latitude.toFixed(5)}, ${img.longitude.toFixed(5)}</span>
         </div>
       `);
 
-      photoMarkers.push(marker);
-    });
+        photoMarkers.push(marker);
+      });
 
-    if (photoMarkers.length > 0) {
-      photoMarkersRef.current.set(entry.field_assessment_id, photoMarkers);
-    }
-  }, [mapRef, removePhotoMarkers]);
+      if (photoMarkers.length > 0) {
+        photoMarkersRef.current.set(entry.field_assessment_id, photoMarkers);
+      }
+    },
+    [mapRef, removePhotoMarkers],
+  );
 
-  // ✅ UPDATED: fetchLayer now accepts siteId parameter
   const fetchLayer = useCallback(
-    async (areaId: string, layer: MCDALayer, assessmentType?: AssessmentType, siteId?: string) => {
+    async (
+      areaId: string,
+      layer: MCDALayer,
+      assessmentType?: AssessmentType,
+      siteId?: string,
+    ) => {
       setLoading((prev) => ({ ...prev, [layer]: true }));
       try {
         const token = localStorage.getItem("token");
-        
-        // ✅ Build query parameters - include site_id when provided
+
         const params = new URLSearchParams();
         if (assessmentType && assessmentType !== "all") {
           params.append("assessment_type", assessmentType);
         }
-        // ✅ NEW: Add site_id if provided
         if (siteId) {
           params.append("site_id", siteId);
         }
-        
+
         const queryString = params.toString();
-        const url = queryString 
-          ? api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
-          : api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
-        
-      
-        
-        const res = await fetch(url, { 
-          headers: { Authorization: `Bearer ${token}` } 
+        const url = queryString
+          ? api +
+            `api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
+          : api + `api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
+
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
         });
-        
+
         if (!res.ok) {
           const errorText = await res.text();
           throw new Error(`HTTP ${res.status}: ${errorText}`);
         }
-        
+
         const json: FieldAssessmentsResponse = await res.json();
         const entries = json.data ?? [];
-       
+
         setAssessments((prev) => ({ ...prev, [layer]: entries }));
-        
+
         if (json.counts) {
           setCounts((prev) => ({ ...prev, [layer]: json.counts! }));
         }
-        
+
         placeMarkers(entries, layer);
         setActiveLayer(layer);
         setSelectedIndex(entries.length > 0 ? 0 : null);
-        
+
         if (entries.length > 0 && showPhotoMarkers) {
           placePhotoMarkers(entries[0]);
         }
@@ -300,16 +317,20 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         setLoading((prev) => ({ ...prev, [layer]: false }));
       }
     },
-    [placeMarkers, placePhotoMarkers, showPhotoMarkers]
+    [placeMarkers, placePhotoMarkers, showPhotoMarkers],
   );
 
-  // ✅ UPDATED: refreshLayer also accepts siteId
   const refreshLayer = useCallback(
-    async (areaId: string, layer: MCDALayer, assessmentType?: AssessmentType, siteId?: string) => {
+    async (
+      areaId: string,
+      layer: MCDALayer,
+      assessmentType?: AssessmentType,
+      siteId?: string,
+    ) => {
       setLoading((prev) => ({ ...prev, [layer]: true }));
       try {
         const token = localStorage.getItem("token");
-        
+
         const params = new URLSearchParams();
         if (assessmentType && assessmentType !== "all") {
           params.append("assessment_type", assessmentType);
@@ -317,26 +338,27 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         if (siteId) {
           params.append("site_id", siteId);
         }
-        
+
         const queryString = params.toString();
-        const url = queryString 
-          ? api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
-          : api+`api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
-        
-        const res = await fetch(url, { 
-          headers: { Authorization: `Bearer ${token}` } 
+        const url = queryString
+          ? api +
+            `api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
+          : api + `api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
+
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
         });
-        
+
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json: FieldAssessmentsResponse = await res.json();
         const entries = json.data ?? [];
 
         setAssessments((prev) => ({ ...prev, [layer]: entries }));
-        
+
         if (json.counts) {
           setCounts((prev) => ({ ...prev, [layer]: json.counts! }));
         }
-        
+
         placeMarkers(entries, layer);
       } catch (err) {
         console.error(`refreshLayer(${layer}) error:`, err);
@@ -344,7 +366,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         setLoading((prev) => ({ ...prev, [layer]: false }));
       }
     },
-    [placeMarkers]
+    [placeMarkers],
   );
 
   const flyToMarker = useCallback(
@@ -357,7 +379,7 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
         marker.openPopup();
       }
     },
-    [mapRef]
+    [mapRef],
   );
 
   const updateLocation = useCallback(
@@ -365,24 +387,41 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
       fieldAssessmentId: number,
       latitude: number,
       longitude: number,
-      gps_accuracy_meters: number = 20
+      gps_accuracy_meters: number = 20,
     ): Promise<{ success: boolean; message?: string }> => {
       try {
         const token = localStorage.getItem("token");
+
+        // 🔍 DEBUG: Log the exact values received by the hook
+        console.log("📍 [useFieldAssessments] Received coordinates to save:", {
+          fieldAssessmentId,
+          latitude,
+          longitude,
+        });
+
+        const payload = {
+          field_assessment_id: fieldAssessmentId,
+          coordinate: { latitude, longitude, gps_accuracy_meters },
+        };
+
+        // 🔍 DEBUG: Log the exact JSON string being sent to the server
+        console.log(
+          "📡 [useFieldAssessments] API Payload being sent:",
+          JSON.stringify(payload, null, 2),
+        );
+
         const res = await fetch(
-          api+"api/update_field_assessment_coordinate/",
+          api + "api/update_field_assessment_coordinate/",
           {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              field_assessment_id: fieldAssessmentId,
-              coordinate: { latitude, longitude, gps_accuracy_meters },
-            }),
-          }
+            body: JSON.stringify(payload),
+          },
         );
+
         const json = await res.json();
         if (!res.ok) throw new Error(json.message ?? `HTTP ${res.status}`);
 
@@ -404,11 +443,11 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
 
         return { success: true, message: json.message };
       } catch (err: any) {
-        console.error("updateLocation error:", err);
+        console.error("❌ [useFieldAssessments] updateLocation error:", err);
         return { success: false, message: err.message };
       }
     },
-    []
+    [],
   );
 
   return {
