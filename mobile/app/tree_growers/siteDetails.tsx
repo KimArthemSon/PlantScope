@@ -130,7 +130,7 @@ interface SiteDetails {
   barangay: string;
   total_area_hectares: number;
   ndvi_value: number | null;
-  center_coordinate: [number, number] | null;
+  marker_coordinate: [number, number] | null;
   polygon_coordinates: [number, number][] | null;
   general_images: Array<{
     image_id: number;
@@ -545,7 +545,7 @@ export default function SiteDetails() {
           )}
 
           {/* ️ View Map Button */}
-          {details.center_coordinate && (
+          {details.marker_coordinate && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Location</Text>
               <TouchableOpacity
@@ -720,7 +720,7 @@ export default function SiteDetails() {
             {/* Full Screen Map */}
             <View style={styles.mapModalMapContainer}>
               <OsmMapComponent
-                centerCoordinate={details.center_coordinate!}
+                centerCoordinate={details.marker_coordinate!}
                 polygonCoordinates={details.polygon_coordinates}
                 title={details.name}
                 style={{ flex: 1 }}
