@@ -4,7 +4,7 @@ from reforestation_areas.models import Reforestation_areas
 from tree_species.models import Tree_species
 from accounts.models import User
 from animals.models import Animal
-from cloudinary.models import CloudinaryField  # ✅ ADD THIS IMPORT
+from cloudinary.models import CloudinaryField
 import math
 
 # ─────────────────────────────────────────────
@@ -31,13 +31,23 @@ class Sites(models.Model):
     is_active = models.BooleanField(default=True, db_index=True)
     is_pinned = models.BooleanField(default=False, db_index=True)
     
-    polygon_coordinates = models.JSONField(null=True, blank=True)
-    center_coordinate = models.JSONField(null=True, blank=True)
-    marker_coordinate = models.JSONField(null=True, blank=True)
+    # ✅ CLEANED: Removed center_coordinate, keeping only marker_coordinate
+    polygon_coordinates = models.JSONField(
+        null=True, 
+        blank=True,
+        help_text="Array of [lat, lng] coordinates defining the site boundary."
+    )
+    marker_coordinate = models.JSONField(
+        null=True, 
+        blank=True,
+        help_text="Single [lat, lng] coordinate for the site marker/pin location."
+    )
 
-    ndvi_value = models.FloatField(null=True, blank=True)
-    total_area_hectares = models.FloatField(default=0.0)
-    total_seedlings_planted = models.IntegerField(default=0)
+    # ✅ CLEANED: Removed ndvi_value and total_seedlings_planted
+    total_area_hectares = models.FloatField(
+        default=0.0,
+        help_text="Calculated area from polygon coordinates in hectares."
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -53,16 +63,83 @@ class Sites(models.Model):
             models.UniqueConstraint(fields=['reforestation_area', 'name'], name='unique_site_name_per_area')
         ]
 
+    def save(self, *args, **kwargs):
+        """
+        ✅ ADDED: Auto-calculate area from polygon before saving
+        """
+        if self.polygon_coordinates and len(self.polygon_coordinates) >= 3:
+            self.total_area_hectares = self.calculate_area_from_polygon()
+        super().save(*args, **kwargs)
+
     def calculate_area_from_polygon(self) -> float:
+        """
+        ✅ IMPROVED: More robust area calculation with coordinate validation
+        
+        IMPORTANT: This method expects coordinates in [lat, lng] format (Leaflet standard).
+        If your database stores [lng, lat] (GeoJSON standard), you'll need to swap the indices.
+        
+        Returns:
+            float: Area in hectares, rounded to 4 decimal places
+        """
         if not self.polygon_coordinates or len(self.polygon_coordinates) < 3:
             return 0.0
+        
         coords = self.polygon_coordinates
+        
+        # ✅ VALIDATION: Check if coordinates are in valid lat/lng ranges
+        # Latitude: -90 to 90, Longitude: -180 to 180
+        try:
+            # Check first coordinate to determine format
+            first_coord = coords[0]
+            if len(first_coord) != 2:
+                return 0.0
+            
+            val1, val2 = first_coord[0], first_coord[1]
+            
+            # If first value is outside lat range but second is within, likely [lng, lat]
+            if abs(val1) > 90 and abs(val2) <= 90:
+                # Swap to [lat, lng]
+                coords = [[c[1], c[0]] for c in coords]
+            elif abs(val1) <= 90 and abs(val2) <= 90:
+                # Both valid, assume [lat, lng] (Leaflet format)
+                pass
+            else:
+                # Invalid coordinates
+                return 0.0
+                
+        except (IndexError, TypeError):
+            return 0.0
+        
+        # Calculate centroid latitude for accurate meter conversion
         lat_rad = math.radians(sum(c[0] for c in coords) / len(coords))
+        
+        # Meters per degree at this latitude (WGS84 approximation)
         meters_per_deg_lat = 111132.92 - 559.82 * math.cos(2*lat_rad) + 1.175 * math.cos(4*lat_rad)
         meters_per_deg_lng = 111412.84 * math.cos(lat_rad) - 93.5 * math.cos(3*lat_rad)
-        local_coords = [((lng - coords[0][1]) * meters_per_deg_lng, (lat - coords[0][0]) * meters_per_deg_lat) for lat, lng in coords]
-        area_sqm = sum((local_coords[i][0] * local_coords[(i + 1) % len(local_coords)][1] - local_coords[(i + 1) % len(local_coords)][0] * local_coords[i][1]) for i in range(len(local_coords)))
-        return round(abs(area_sqm) / 2 / 10000, 4)
+        
+        # Convert to local coordinates (meters from first point)
+        local_coords = [
+            (
+                (c[1] - coords[0][1]) * meters_per_deg_lng,  # x = longitude difference
+                (c[0] - coords[0][0]) * meters_per_deg_lat   # y = latitude difference
+            ) 
+            for c in coords
+        ]
+        
+        # Shoelace formula for polygon area
+        n = len(local_coords)
+        area_sqm = 0
+        for i in range(n):
+            j = (i + 1) % n
+            area_sqm += local_coords[i][0] * local_coords[j][1]
+            area_sqm -= local_coords[j][0] * local_coords[i][1]
+        
+        area_sqm = abs(area_sqm) / 2
+        
+        # Convert square meters to hectares (1 hectare = 10,000 sq meters)
+        area_hectares = area_sqm / 10000
+        
+        return round(area_hectares, 4)
 
 
 # ─────────────────────────────────────────────
@@ -88,19 +165,17 @@ class Potential_sites(models.Model):
     def reforestation_area(self):
         return self.site.reforestation_area if self.site else None
     
-    # ✅ ADD THIS METHOD
     def to_dict(self):
         return {
             "potential_sites_id": self.potential_sites_id,
             "site_id": self.site.site_id if self.site else None,
-            "polygon_coordinates": self.polygon_coordinates,  # Already in [lng, lat] GeoJSON format
+            "polygon_coordinates": self.polygon_coordinates,
             "area_hectares": self.area_hectares,
             "avg_ndvi": self.avg_ndvi,
             "suitability_score": self.suitability_score,
             "ndvi_threshold": self.ndvi_threshold,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
-    
 
     class Meta:
         ordering = ['-created_at']
@@ -110,7 +185,7 @@ class Potential_sites(models.Model):
         return f"Potential-{self.potential_sites_id} -> {target}"
 
 
-# ─────────────────────────────────────────────
+# ────────────────────────────────────────────
 # SITE META DATA VERIFICATION (Official Truth)
 # ─────────────────────────────────────────────
 class SiteMetaDataVerification(models.Model):
@@ -191,9 +266,7 @@ class SiteVerifiedAnimal(models.Model):
 # ─────────────────────────────────────────────
 # PERMIT DOCUMENTS (Site-Specific)
 # ─────────────────────────────────────────────
-
 class PermitDocument(models.Model):
-    # ✅ UPDATED: Only 3 document types now
     DOCUMENT_TYPES = (
         ('land_title', 'Land Title'), 
         ('tax_declaration', 'Tax Declaration'), 
@@ -204,14 +277,11 @@ class PermitDocument(models.Model):
     site = models.ForeignKey(Sites, on_delete=models.CASCADE, related_name='permit_documents')
     source_assessment_id = models.BigIntegerField(null=True, blank=True)
     document_type = models.CharField(max_length=30, choices=DOCUMENT_TYPES)
-    
-    # ✅ UPDATED: Removed 'permit_number' and 'file', added 'notes' for text-based tracking
     notes = models.TextField(
         blank=True, 
         null=True, 
         help_text="Details, reference numbers, or notes regarding this document/permit."
     )
-    
     verification_notes = models.TextField(blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -226,6 +296,7 @@ class PermitDocument(models.Model):
 
     def __str__(self):
         return f"{self.get_document_type_display()} - Site: {self.site.name}"
+
 
 # ─────────────────────────────────────────────
 # SITE DATA, SPECIES & IMAGES
@@ -274,10 +345,7 @@ class Site_images(models.Model):
     site = models.ForeignKey(Sites, null=True, blank=True, on_delete=models.CASCADE, related_name='site_images')
     LAYER_CHOICES = (('safety', 'Safety'), ('survivability', 'Survivability'), ('general', 'General'))
     layer_tag = models.CharField(max_length=30, choices=LAYER_CHOICES, default='general')
-    
-    # ✅ CHANGED: Use CloudinaryField instead of ImageField
     img = CloudinaryField('image', folder='sites', blank=True, null=True)
-    
     caption = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

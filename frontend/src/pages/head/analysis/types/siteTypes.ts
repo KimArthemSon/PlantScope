@@ -20,9 +20,9 @@ export interface Site {
   created_at: string;
   validation: ValidationStatus;
   metrics: SiteMetrics;
-  
+
   // ✅ ADDED: For direct map rendering without fetching full details
-  center_coordinate?: [number, number] | null;
+  marker_coordinate?: [number, number] | null;
   polygon_coordinates?: [number, number][];
 }
 
@@ -66,8 +66,12 @@ export interface FieldAssessmentEvidence {
   field_assessment_id: number;
   inspector: { email: string; name: string };
   assessment_date: string | null;
-  location: { latitude: number; longitude: number; gps_accuracy_meters?: number } | null;
-  
+  location: {
+    latitude: number;
+    longitude: number;
+    gps_accuracy_meters?: number;
+  } | null;
+
   // ✅ Mobile spec structure: nested under meta_data
   meta_data?: {
     legal_documents?: {
@@ -79,7 +83,7 @@ export interface FieldAssessmentEvidence {
     security_concerns?: SecurityConcerns;
     accessibility?: Accessibility;
   };
-  
+
   images: Array<{
     url: string | null;
     layer: string; // "meta_land_title" | "meta_tax_decl" | etc.
@@ -95,15 +99,15 @@ export interface SiteDetail {
   name: string;
   status: string;
   polygon_coordinates: [number, number][]; // Leaflet format [lat, lng]
-  center_coordinate: [number, number] | null;
+  marker_coordinate: [number, number] | null;
   area_hectares: number;
-  
+
   // ✅ SIMPLIFIED validation data
   validation_data: ValidationData;
-  
+
   // Field evidence from inspectors (for review)
   field_evidence?: FieldAssessmentEvidence[];
-  
+
   species_recommendations: Array<{
     id: number;
     name: string;

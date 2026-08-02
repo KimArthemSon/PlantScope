@@ -139,7 +139,7 @@ interface SiteResponse {
   description: string | null;
   status: string;
   polygon_coordinates: [number, number][] | null;
-  center_coordinate: [number, number] | null;
+  marker_coordinate: [number, number] | null;
   ndvi_value: number | null;
   area_hectares: number;
   potential_sites: PotentialSite[];
@@ -1845,7 +1845,7 @@ export default function SiteInformation(): JSX.Element {
 
   if (!siteData) return <></>;
 
-  const coordinates: [number, number] = siteData.center_coordinate ?? [
+  const coordinates: [number, number] = siteData.marker_coordinate ?? [
     10.1015, 124.6012,
   ];
 

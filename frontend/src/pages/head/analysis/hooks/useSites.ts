@@ -3,7 +3,7 @@ import { api_second } from "@/constant/api";
 
 const BASE_URL = api_second;
 
-// ✅ FIXED: Backend expects [lat, lng], so we DO NOT convert to GeoJSON [lng, lat]
+// ✅ HELPER: Calculates centroid from [lat, lng] coordinates
 export const calculateCentroid = (
   coords: [number, number][],
 ): [number, number] | null => {
@@ -14,7 +14,7 @@ export const calculateCentroid = (
   );
   const avgLat = sum[0] / coords.length;
   const avgLng = sum[1] / coords.length;
-  return [avgLat, avgLng]; // ✅ Returns [lat, lng]
+  return [avgLat, avgLng]; // Returns [lat, lng]
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ export interface Site {
   name: string;
   status: "pending" | "under_review" | "accepted" | "rejected" | "completed";
   is_pinned: boolean;
-  center_coordinate?: [number, number] | null;
+  marker_coordinate?: [number, number] | null;
   polygon_coordinates?: [number, number][];
   metrics: SiteMetrics;
   created_at?: string;
@@ -47,7 +47,7 @@ export interface SiteDetail {
   name: string;
   status: string;
   polygon_coordinates: [number, number][]; // Leaflet format [lat, lng]
-  center_coordinate: [number, number] | null;
+  marker_coordinate: [number, number] | null;
   area_hectares: number;
   validation_data?: any;
   field_evidence?: any[];
@@ -157,17 +157,16 @@ export function useSites() {
     [fetchWithAuth],
   );
 
-  // ✅ FIXED: No coordinate conversion. Backend expects [lat, lng].
+  // ✅ CLEANED: Removed ndvi_value parameter and payload
   const createSite = useCallback(
     async (
       areaId: string,
       name: string,
       polygon_coordinates: [number, number][],
       total_area_hectares: number,
-      ndvi_value?: number,
     ) => {
       try {
-        const centerCoordinate = calculateCentroid(polygon_coordinates);
+        const markerCoordinate = calculateCentroid(polygon_coordinates);
 
         const data = await fetchWithAuth(`${BASE_URL}/api/sites/create_site/`, {
           method: "POST",
@@ -176,11 +175,9 @@ export function useSites() {
             name,
             polygon_coordinates: polygon_coordinates,
             total_area_hectares,
-            ndvi_value,
-            center_coordinate: centerCoordinate,
+            marker_coordinate: markerCoordinate,
           }),
         });
-        // ✅ FIXED: Use fetchMCDAData instead of fetchSites to get complete data
         await fetchMCDAData(areaId);
         return data;
       } catch (err: any) {
@@ -192,21 +189,16 @@ export function useSites() {
     [fetchWithAuth, fetchMCDAData],
   );
 
-  // ✅ FIXED: No coordinate conversion.
+  // ✅ CLEANED: Removed ndvi_value parameter and payload
   const updatePolygon = useCallback(
-    async (
-      siteId: number,
-      polygon_coordinates: [number, number][],
-      ndvi_value?: number,
-    ) => {
+    async (siteId: number, polygon_coordinates: [number, number][]) => {
       try {
         const data = await fetchWithAuth(
           `${BASE_URL}/api/update_polygon/${siteId}/`,
           {
             method: "PUT",
             body: JSON.stringify({
-              polygon_coordinates: polygon_coordinates, // ✅ Send [lat, lng] directly
-              ndvi_value,
+              polygon_coordinates: polygon_coordinates,
             }),
           },
         );
@@ -226,7 +218,6 @@ export function useSites() {
         await fetchWithAuth(`${BASE_URL}/api/delete_site/${siteId}/`, {
           method: "DELETE",
         });
-        // ✅ FIXED: Use fetchMCDAData instead of fetchSites to get complete data with center_coordinate
         await fetchMCDAData(areaId);
         return true;
       } catch (err: any) {
@@ -238,17 +229,17 @@ export function useSites() {
     [fetchWithAuth, fetchMCDAData],
   );
 
-  // ✅ FIXED: No coordinate conversion.
+  // ✅ CLEANED: Renamed centerCoordinate to markerCoordinate for clarity
   const updateSiteCoordinates = useCallback(
     async (
       siteId: number,
       polygonCoordinates?: [number, number][],
-      centerCoordinate?: [number, number],
+      markerCoordinate?: [number, number],
     ) => {
       try {
         const body: any = {};
-        if (polygonCoordinates) body.polygon_coordinates = polygonCoordinates; // ✅ Send [lat, lng] directly
-        if (centerCoordinate) body.center_coordinate = centerCoordinate;
+        if (polygonCoordinates) body.polygon_coordinates = polygonCoordinates;
+        if (markerCoordinate) body.marker_coordinate = markerCoordinate;
 
         const data = await fetchWithAuth(
           `${BASE_URL}/api/site/${siteId}/update_coordinates/`,

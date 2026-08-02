@@ -75,7 +75,7 @@ def get_site_details_for_tree_grower(request, site_id):
         'barangay': site.reforestation_area.barangay.name if site.reforestation_area.barangay else 'N/A',
         'total_area_hectares': site.total_area_hectares,
         'ndvi_value': site.ndvi_value,
-        'center_coordinate': site.center_coordinate,
+        'center_coordinate': site.marker_coordinate,
         'polygon_coordinates': site.polygon_coordinates,
         'general_images': general_images,
         'recommended_species': recommended_species,
