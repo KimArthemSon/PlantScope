@@ -358,7 +358,11 @@ export default function Map() {
     lng: number;
   } | null>(null);
   const [showDMS, setShowDMS] = useState(false);
+
+  // ✅ NEW: State for filtering sites by reforestation area
   const [showSites, setShowSites] = useState(false);
+  const [filteredAreaId, setFilteredAreaId] = useState<number | null>(null);
+
   const [showLegend, setShowLegend] = useState(false);
 
   // ✅ SEPARATED STATE FOR SITE AND POTENTIAL SITES
@@ -2431,6 +2435,7 @@ export default function Map() {
                         );
                         if (areaSites.length > 0) {
                           setShowSites(true);
+                          setFilteredAreaId(area.reforestation_area_id); // ✅ NEW: Filter to this specific area
                           const validCoords = areaSites
                             .filter(
                               (s) =>
@@ -2453,13 +2458,13 @@ export default function Map() {
                           setPSAlert({
                             type: "success",
                             title: "Sites Loaded",
-                            message: `Showing ${areaSites.length} site(s).`,
+                            message: `Showing ${areaSites.length} site(s) for this area.`,
                           });
                         } else {
                           setPSAlert({
                             type: "failed",
                             title: "No Sites",
-                            message: `No sites found.`,
+                            message: `No sites found for this area.`,
                           });
                         }
                       }}
@@ -2476,7 +2481,14 @@ export default function Map() {
         {showSites &&
           sites.length > 0 &&
           sites.map((site) => {
-            // ✅ FIX: Normalize marker coordinate
+            // ✅ FIX: Filter sites by reforestation_area_id if filteredAreaId is set
+            if (
+              filteredAreaId !== null &&
+              site.reforestation_area_id !== filteredAreaId
+            ) {
+              return null;
+            }
+
             const normalizedCoord = normalizeMarkerCoordinate(
               site.marker_coordinate,
             );
