@@ -21,6 +21,7 @@ import {
   Navigation,
   Eye,
   Plus,
+  Globe,
 } from "lucide-react";
 
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
@@ -58,7 +59,76 @@ L.Marker.prototype.options.icon = L.icon({
   iconAnchor: [12, 41],
 });
 
-// ── Marker Factory Function ─────────────────────────────────────────────
+// ✅ Coordinate validation utility
+const isValidLatLng = (coord: [number, number]): boolean => {
+  const [lat, lng] = coord;
+  return (
+    typeof lat === "number" &&
+    typeof lng === "number" &&
+    !isNaN(lat) &&
+    !isNaN(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+};
+
+// ✅ Normalize coordinates to ensure [lat, lng] format for polygons
+const normalizeCoordinates = (
+  coords: [number, number][],
+): [number, number][] => {
+  if (!coords || !Array.isArray(coords)) return [];
+
+  return coords
+    .map((coord) => {
+      if (!Array.isArray(coord) || coord.length < 2) return coord;
+
+      const [first, second] = coord;
+
+      if (Math.abs(first) > 90 || Math.abs(second) > 90) {
+        if (Math.abs(first) > 90 && Math.abs(second) <= 90) {
+          return [second, first] as [number, number];
+        }
+        return coord;
+      }
+
+      return coord;
+    })
+    .filter(isValidLatLng);
+};
+
+// ✅ Normalize single marker coordinates to ensure [lat, lng] format
+const normalizeMarkerCoordinate = (
+  coord: [number, number] | null | undefined,
+): [number, number] | null => {
+  if (!coord || !Array.isArray(coord) || coord.length < 2) return null;
+
+  const [first, second] = coord;
+
+  if (isValidLatLng([first, second])) {
+    return [first, second];
+  }
+
+  if (isValidLatLng([second, first])) {
+    return [second, first];
+  }
+
+  return null;
+};
+
+// ✅ Convert decimal degrees to Degrees, Minutes, Seconds (DMS)
+const decimalToDMS = (value: number, type: "lat" | "lng") => {
+  const absolute = Math.abs(value);
+  const degrees = Math.floor(absolute);
+  const minutesNotTruncated = (absolute - degrees) * 60;
+  const minutes = Math.floor(minutesNotTruncated);
+  const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(2);
+  let direction =
+    type === "lat" ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W";
+  return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
+};
+
 const createMarkerIcon = (
   type: "barangay" | "reforestation" | "site" | "temp",
   labelText: string = "",
@@ -110,7 +180,7 @@ const createMarkerIcon = (
       </div>
     `,
     iconSize: [estimatedWidth, 30],
-    iconAnchor: [estimatedWidth / 2, 30],
+    iconAnchor: [12, 30],
     popupAnchor: [0, -30],
   });
 };
@@ -134,34 +204,40 @@ export default function MulticriteriaAnalysis() {
   const siteMarkersRef = useRef<L.Marker[]>([]);
   const areaMarkerRef = useRef<L.Marker | null>(null);
 
+  // ✅ NEW: Ref for the coordinate probe marker
+  const probeMarkerRef = useRef<L.Marker | null>(null);
+
   const [viewingSite, setViewingSite] = useState<SiteDetail | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedPolygon, setEditedPolygon] = useState<[number, number][] | null>(
     null,
   );
-  const [editedCenter, setEditedCenter] = useState<[number, number] | null>(
+  const [editedMarker, setEditedMarker] = useState<[number, number] | null>(
     null,
   );
   const [isSavingCoordinates, setIsSavingCoordinates] = useState(false);
   const [showCoordinateModal, setShowCoordinateModal] = useState(false);
+  const [showViewingSitePolygon, setShowViewingSitePolygon] = useState(true);
+
+  const [isPickingMarkerLocation, setIsPickingMarkerLocation] = useState(false);
 
   const editablePolygonRef = useRef<L.Polygon | null>(null);
   const vertexMarkersRef = useRef<L.Marker[]>([]);
   const addVertexMarkersRef = useRef<L.Marker[]>([]);
-  const editableCenterMarkerRef = useRef<L.Marker | null>(null);
+  const editableMarkerRef = useRef<L.Marker | null>(null);
 
   const [isDrawingNewPolygon, setIsDrawingNewPolygon] = useState(false);
   const [newPolygonPoints, setNewPolygonPoints] = useState<[number, number][]>(
     [],
   );
-  const [isPlacingNewCenter, setIsPlacingNewCenter] = useState(false);
+  const [isPlacingNewMarker, setIsPlacingNewMarker] = useState(false);
   const newPolygonMarkersRef = useRef<L.Marker[]>([]);
   const newPolygonLineRef = useRef<L.Polyline | null>(null);
 
   const renderAllMarkersRef = useRef<(coords: [number, number][]) => void>(
     () => {},
   );
-
+  const hasInitialAreaLoadRef = useRef(false);
   const [alert, setAlert] = useState<AlertState | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string;
@@ -202,19 +278,26 @@ export default function MulticriteriaAnalysis() {
   const [siteName, setSiteName] = useState("");
   const [showNameInput, setShowNameInput] = useState(false);
 
+  // ✅ NEW: State for Coordinate Probe Mode
+  const [isCoordinateProbeMode, setIsCoordinateProbeMode] = useState(false);
+
+  const [mouseCoords, setMouseCoords] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [showDMS, setShowDMS] = useState(false);
+
   const fieldAssessments = useFieldAssessments(mapRef);
   const sites = useSites();
   const potentialSitesHook = usePotentialSites();
   const hazardLayers = useHazardLayers(mapRef);
   const barangayAreas = useBarangayAreas(mapRef);
 
-  // ── FIELD ASSESSMENT LOCATION PICKER STATE ────────────────────────────
   const tempFaLocationMarkerRef = useRef<L.Marker | null>(null);
   const [tempFaLocationCoords, setTempFaLocationCoords] = useState<
     [number, number] | null
   >(null);
 
-  // ✅ BULLETPROOF FIX: Ignore map clicks that happen immediately after button clicks
   const isProcessingActionRef = useRef(false);
 
   const updateTempFaLocationMarker = useCallback((coords: [number, number]) => {
@@ -236,9 +319,8 @@ export default function MulticriteriaAnalysis() {
 
   const handleMapClickForFaLocation = useCallback(
     (e: L.LeafletMouseEvent) => {
-      // ✅ If we just clicked a button, ignore this map click entirely
       if (isProcessingActionRef.current) {
-        isProcessingActionRef.current = false; // Reset for next time
+        isProcessingActionRef.current = false;
         return;
       }
 
@@ -249,7 +331,6 @@ export default function MulticriteriaAnalysis() {
     [updateTempFaLocationMarker],
   );
 
-  // Cleanup effect for FA location picking
   useEffect(() => {
     if (!fieldAssessments.locationTargetId) {
       if (tempFaLocationMarkerRef.current && mapRef.current) {
@@ -285,42 +366,115 @@ export default function MulticriteriaAnalysis() {
     [areaId, assessmentType, selectedSiteIdForFilter, fieldAssessments],
   );
 
+  // ✅ NEW: Handle dropping a coordinate probe pin
+  const handleDropProbe = useCallback((lat: number, lng: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Remove existing probe marker if any
+    if (probeMarkerRef.current) {
+      map.removeLayer(probeMarkerRef.current);
+    }
+
+    const latDMS = decimalToDMS(lat, "lat");
+    const lngDMS = decimalToDMS(lng, "lng");
+
+    const popupContent = `
+      <div style="font-family: sans-serif; min-width: 180px;">
+        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #7e22ce; border-bottom: 1px solid #e9d5ff; padding-bottom: 4px;">📍 Dropped Pin</h4>
+        <div style="margin-bottom: 8px;">
+          <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Latitude</div>
+          <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lat.toFixed(6)}</div>
+          <div style="font-size: 10px; color: #888;">${latDMS}</div>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Longitude</div>
+          <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lng.toFixed(6)}</div>
+          <div style="font-size: 10px; color: #888;">${lngDMS}</div>
+        </div>
+        <button id="clear-probe-btn" style="width: 100%; padding: 6px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s;">Clear Pin</button>
+      </div>
+    `;
+
+    const marker = L.marker([lat, lng], {
+      icon: createMarkerIcon("temp", "Probe"),
+    }).addTo(map);
+
+    marker.bindPopup(popupContent).openPopup();
+
+    marker.on("popupopen", () => {
+      const btn = document.getElementById("clear-probe-btn");
+      if (btn) {
+        btn.onclick = () => {
+          if (probeMarkerRef.current && mapRef.current) {
+            mapRef.current.removeLayer(probeMarkerRef.current);
+            probeMarkerRef.current = null;
+          }
+        };
+        btn.onmouseover = () => (btn.style.background = "#dc2626");
+        btn.onmouseout = () => (btn.style.background = "#ef4444");
+      }
+    });
+
+    probeMarkerRef.current = marker;
+  }, []);
+
   const handleViewSite = useCallback(
     async (site: Site) => {
       try {
         const detail = await sites.fetchSiteDetail(site.site_id);
         if (detail) {
           setViewingSite(detail);
+
           if (polygonRef.current) {
             mapRef.current?.removeLayer(polygonRef.current);
             polygonRef.current = null;
           }
+
           if (
             detail.polygon_coordinates &&
             detail.polygon_coordinates.length > 0
           ) {
-            polygonRef.current = L.polygon(detail.polygon_coordinates, {
-              color: "#22C55E",
-              fillColor: "#81C784",
-              fillOpacity: 0.6,
-              weight: 4,
-            }).addTo(mapRef.current!);
-            mapRef.current?.fitBounds(polygonRef.current.getBounds(), {
-              padding: [50, 50],
-            });
-          } else if (detail.center_coordinate) {
-            const centerMarker = L.marker(detail.center_coordinate, {
-              icon: createMarkerIcon("site", detail.name),
-            }).addTo(mapRef.current!);
-            centerMarker.bindPopup(`
-            <div style="text-align:center;font-family:sans-serif;">
-              <strong style="color:#22C55E;font-size:14px;">${detail.name}</strong><br/>
-              <span style="font-size:11px;color:#666;">Center Location</span><br/>
-              <span style="font-size:10px;color:#999;font-family:monospace;">
-                ${detail.center_coordinate[0].toFixed(6)}, ${detail.center_coordinate[1].toFixed(6)}
-              </span>
-            </div>`);
-            mapRef.current?.setView(detail.center_coordinate, 17);
+            const normalizedCoords = normalizeCoordinates(
+              detail.polygon_coordinates,
+            );
+
+            if (normalizedCoords.length >= 3) {
+              polygonRef.current = L.polygon(normalizedCoords, {
+                color: "#22C55E",
+                fillColor: "#81C784",
+                fillOpacity: 0.6,
+                weight: 4,
+              }).addTo(mapRef.current!);
+
+              mapRef.current?.fitBounds(polygonRef.current.getBounds(), {
+                padding: [50, 50],
+              });
+            } else {
+              console.warn(
+                "Invalid polygon coordinates after normalization:",
+                detail.polygon_coordinates,
+              );
+            }
+          } else if (detail.marker_coordinate) {
+            const normalizedMarker = normalizeMarkerCoordinate(
+              detail.marker_coordinate,
+            );
+
+            if (normalizedMarker) {
+              const siteMarker = L.marker(normalizedMarker, {
+                icon: createMarkerIcon("site", detail.name),
+              }).addTo(mapRef.current!);
+              siteMarker.bindPopup(`
+              <div style="text-align:center;font-family:sans-serif;">
+                <strong style="color:#22C55E;font-size:14px;">${detail.name}</strong><br/>
+                <span style="font-size:11px;color:#666;">Site Location</span><br/>
+                <span style="font-size:10px;color:#999;font-family:monospace;">
+                  ${normalizedMarker[0].toFixed(6)}, ${normalizedMarker[1].toFixed(6)}
+                </span>
+              </div>`);
+              mapRef.current?.setView(normalizedMarker, 17);
+            }
           }
         }
       } catch (err: any) {
@@ -339,9 +493,9 @@ export default function MulticriteriaAnalysis() {
     vertexMarkersRef.current = [];
     addVertexMarkersRef.current.forEach((m) => mapRef.current?.removeLayer(m));
     addVertexMarkersRef.current = [];
-    if (editableCenterMarkerRef.current) {
-      mapRef.current?.removeLayer(editableCenterMarkerRef.current);
-      editableCenterMarkerRef.current = null;
+    if (editableMarkerRef.current) {
+      mapRef.current?.removeLayer(editableMarkerRef.current);
+      editableMarkerRef.current = null;
     }
     if (editablePolygonRef.current) {
       mapRef.current?.removeLayer(editablePolygonRef.current);
@@ -431,9 +585,6 @@ export default function MulticriteriaAnalysis() {
     renderAllMarkersRef.current = renderAllMarkers;
   }, [renderAllMarkers]);
 
-  // ========================================================================
-  // ✅ 1. MAP INITIALIZATION & CENTERING
-  // ========================================================================
   useEffect(() => {
     if (mapContainerRef.current && !mapRef.current) {
       mapRef.current = L.map(mapContainerRef.current, {
@@ -456,6 +607,15 @@ export default function MulticriteriaAnalysis() {
         .scale({ imperial: false, position: "bottomleft" })
         .addTo(mapRef.current);
 
+      const handleMouseMove = (e: L.LeafletMouseEvent) => {
+        setMouseCoords({ lat: e.latlng.lat, lng: e.latlng.lng });
+      };
+      const handleMouseOut = () => {
+        setMouseCoords(null);
+      };
+      mapRef.current.on("mousemove", handleMouseMove);
+      mapRef.current.on("mouseout", handleMouseOut);
+
       if (areaId) {
         sites.fetchMCDAData(areaId);
         const initialSiteId = siteId || undefined;
@@ -468,7 +628,11 @@ export default function MulticriteriaAnalysis() {
       }
 
       return () => {
-        mapRef.current?.remove();
+        if (mapRef.current) {
+          mapRef.current.off("mousemove", handleMouseMove);
+          mapRef.current.off("mouseout", handleMouseOut);
+          mapRef.current?.remove();
+        }
         mapRef.current = null;
       };
     }
@@ -478,15 +642,16 @@ export default function MulticriteriaAnalysis() {
     const map = mapRef.current;
     if (!map) return;
     const reforestationArea = sites.reforestationArea;
+
     if (reforestationArea && reforestationArea.coordinate) {
-      const [lat, lng] = reforestationArea.coordinate;
-      map.flyTo([lat, lng], 14, { duration: 1.2 });
+      if (!hasInitialAreaLoadRef.current) {
+        const [lat, lng] = reforestationArea.coordinate;
+        map.flyTo([lat, lng], 14, { duration: 1.2 });
+        hasInitialAreaLoadRef.current = true;
+      }
     }
   }, [sites.reforestationArea]);
 
-  // ========================================================================
-  // ✅ 2. AUTO-LOAD SITE MARKERS
-  // ========================================================================
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -495,9 +660,10 @@ export default function MulticriteriaAnalysis() {
     if (!showSites || !sites.sites.length) return;
 
     sites.sites.forEach((site) => {
-      const center = site.center_coordinate;
-      if (center) {
-        const marker = L.marker(center, {
+      const normalizedCoord = normalizeMarkerCoordinate(site.marker_coordinate);
+
+      if (normalizedCoord) {
+        const marker = L.marker(normalizedCoord, {
           icon: createMarkerIcon("site", site.name),
         }).addTo(map);
         marker.bindPopup(`
@@ -517,9 +683,6 @@ export default function MulticriteriaAnalysis() {
     };
   }, [sites.sites, handleViewSite, showSites]);
 
-  // ========================================================================
-  // ✅ 3. AUTO-LOAD BARANGAY MARKERS
-  // ========================================================================
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -528,10 +691,13 @@ export default function MulticriteriaAnalysis() {
     if (!barangayAreas.barangayList.length) return;
 
     barangayAreas.barangayList.forEach((barangay) => {
-      const lat = barangay.coordinate[0];
-      const lng = barangay.coordinate[1];
-      if (lat && lng) {
-        const marker = L.marker([lat, lng], {
+      const normalizedCoord = normalizeMarkerCoordinate([
+        barangay.coordinate[0],
+        barangay.coordinate[1],
+      ]);
+
+      if (normalizedCoord) {
+        const marker = L.marker(normalizedCoord, {
           icon: createMarkerIcon("barangay", barangay.name),
         }).addTo(map);
         marker.bindPopup(
@@ -546,9 +712,6 @@ export default function MulticriteriaAnalysis() {
     };
   }, [barangayAreas.barangayList]);
 
-  // ========================================================================
-  // ✅ 4. REFORESTATION AREA MARKER
-  // ========================================================================
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !areaId) return;
@@ -560,22 +723,25 @@ export default function MulticriteriaAnalysis() {
 
     const reforestationArea = sites.reforestationArea;
     if (reforestationArea && reforestationArea.coordinate) {
-      const [lat, lng] = reforestationArea.coordinate;
-      areaMarkerRef.current = L.marker([lat, lng], {
-        icon: createMarkerIcon("reforestation", reforestationArea.name),
-      }).addTo(map);
-      areaMarkerRef.current.bindPopup(
-        `<div style="text-align:center;font-family:sans-serif;"><strong style="color:#2563eb;font-size:14px;">${reforestationArea.name}</strong><br/><span style="font-size:11px;color:#666;">Area ID: ${areaId}</span></div>`,
+      const normalizedCoord = normalizeMarkerCoordinate(
+        reforestationArea.coordinate,
       );
+
+      if (normalizedCoord) {
+        const [lat, lng] = normalizedCoord;
+        areaMarkerRef.current = L.marker([lat, lng], {
+          icon: createMarkerIcon("reforestation", reforestationArea.name),
+        }).addTo(map);
+        areaMarkerRef.current.bindPopup(
+          `<div style="text-align:center;font-family:sans-serif;"><strong style="color:#2563eb;font-size:14px;">${reforestationArea.name}</strong><br/><span style="font-size:11px;color:#666;">Area ID: ${areaId}</span></div>`,
+        );
+      }
     }
     return () => {
       if (areaMarkerRef.current) map.removeLayer(areaMarkerRef.current);
     };
   }, [areaId, sites.reforestationArea, showReforestationArea]);
 
-  // ========================================================================
-  // ✅ 5. POTENTIAL SITES RENDERING (Lighter Blue)
-  // ========================================================================
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -630,9 +796,6 @@ export default function MulticriteriaAnalysis() {
     };
   }, [showPotentialSites, potentialSitesHook.potentialSites]);
 
-  // ========================================================================
-  // ✅ GIS SPECIALIST: REAL-TIME DRAWING SYNC & COORDINATE EDITOR
-  // ========================================================================
   useEffect(() => {
     if (!isDrawing || !mapRef.current) return;
     if (drawingLineRef.current)
@@ -828,6 +991,11 @@ export default function MulticriteriaAnalysis() {
     }
     const nameToUse =
       siteName.trim() || `Site-${Date.now().toString().slice(-4)}`;
+
+    const map = mapRef.current;
+    const currentZoom = map?.getZoom();
+    const currentCenter = map?.getCenter();
+
     try {
       const data = await sites.createSite(
         areaId,
@@ -842,6 +1010,14 @@ export default function MulticriteriaAnalysis() {
           message: data.message ?? "Saved.",
         });
         clearPolygon();
+        if (areaId) await sites.fetchMCDAData(areaId);
+
+        setTimeout(() => {
+          if (map && currentZoom !== undefined && currentCenter) {
+            map.invalidateSize();
+            map.setView(currentCenter, currentZoom, { animate: false });
+          }
+        }, 100);
       } else {
         const errorMsg = sites.error?.includes("already exists")
           ? "A site with this name already exists."
@@ -1105,7 +1281,10 @@ export default function MulticriteriaAnalysis() {
       if (!map) return;
       const newPoint: [number, number] = [e.latlng.lat, e.latlng.lng];
       const updatedPoints = [...newPolygonPoints, newPoint];
+
+      setEditedPolygon(updatedPoints);
       setNewPolygonPoints(updatedPoints);
+
       const marker = L.marker(newPoint, {
         icon: L.divIcon({
           className: "new-polygon-vertex",
@@ -1120,6 +1299,7 @@ export default function MulticriteriaAnalysis() {
         );
         if (idx !== -1) {
           const newPoints = updatedPoints.filter((_, i) => i !== idx);
+          setEditedPolygon(newPoints);
           setNewPolygonPoints(newPoints);
           map.removeLayer(marker);
           newPolygonMarkersRef.current = newPolygonMarkersRef.current.filter(
@@ -1185,7 +1365,6 @@ export default function MulticriteriaAnalysis() {
       map.removeLayer(newPolygonLineRef.current);
       newPolygonLineRef.current = null;
     }
-    // Transfer drawn points to editedPolygon so the form populates
     setEditedPolygon([...newPolygonPoints]);
     setIsDrawingNewPolygon(false);
     setNewPolygonPoints([]);
@@ -1220,87 +1399,89 @@ export default function MulticriteriaAnalysis() {
     setEditedPolygon(null);
   }, []);
 
-  const handleMapClickForNewCenter = useCallback(
+  const handleMapClickForNewMarker = useCallback(
     (e: L.LeafletMouseEvent) => {
-      if (!isPlacingNewCenter) return;
+      if (!isPlacingNewMarker) return;
       const map = mapRef.current;
       if (!map) return;
-      const newCenter: [number, number] = [e.latlng.lat, e.latlng.lng];
-      setEditedCenter(newCenter);
-      setIsPlacingNewCenter(false);
-      const centerMarker = L.marker(newCenter, {
+      const newMarker: [number, number] = [e.latlng.lat, e.latlng.lng];
+      setEditedMarker(newMarker);
+      setIsPlacingNewMarker(false);
+      const marker = L.marker(newMarker, {
         draggable: true,
         icon: L.divIcon({
-          className: "center-marker-edit",
+          className: "marker-edit",
           html: `<div style="background:#FF6B00;width:24px;height:24px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><div style="width:8px;height:8px;background:white;border-radius:50%;"></div></div>`,
           iconSize: [24, 24],
           iconAnchor: [12, 12],
         }),
       }).addTo(map);
-      centerMarker.on("drag", (ev) => {
+      marker.on("drag", (ev) => {
         const latlng = ev.target.getLatLng();
-        setEditedCenter([latlng.lat, latlng.lng]);
+        setEditedMarker([latlng.lat, latlng.lng]);
       });
-      editableCenterMarkerRef.current = centerMarker;
+      editableMarkerRef.current = marker;
       setAlert({
         type: "success",
-        title: "Center Placed",
-        message: "Center marker placed. Drag to adjust position.",
+        title: "Marker Placed",
+        message: "Site marker placed. Drag to adjust position.",
       });
     },
-    [isPlacingNewCenter],
+    [isPlacingNewMarker],
   );
 
-  const handleAutoCenter = useCallback(() => {
+  const handleAutoMarker = useCallback(() => {
     if (!editedPolygon || editedPolygon.length < 3) {
       setAlert({
         type: "failed",
         title: "Need Polygon",
-        message: "Draw a polygon first before auto-calculating center.",
+        message: "Draw a polygon first before auto-calculating marker.",
       });
       return;
     }
     const sumLat = editedPolygon.reduce((sum, p) => sum + p[0], 0);
     const sumLng = editedPolygon.reduce((sum, p) => sum + p[1], 0);
-    const center: [number, number] = [
+    const marker: [number, number] = [
       sumLat / editedPolygon.length,
       sumLng / editedPolygon.length,
     ];
-    setEditedCenter(center);
-    setIsPlacingNewCenter(false);
-    if (editableCenterMarkerRef.current)
-      mapRef.current?.removeLayer(editableCenterMarkerRef.current);
+    setEditedMarker(marker);
+    setIsPlacingNewMarker(false);
+    if (editableMarkerRef.current)
+      mapRef.current?.removeLayer(editableMarkerRef.current);
     const map = mapRef.current;
     if (!map) return;
-    const centerMarker = L.marker(center, {
+    const markerIcon = L.marker(marker, {
       draggable: true,
       icon: L.divIcon({
-        className: "center-marker-edit",
+        className: "marker-edit",
         html: `<div style="background:#FF6B00;width:24px;height:24px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><div style="width:8px;height:8px;background:white;border-radius:50%;"></div></div>`,
         iconSize: [24, 24],
         iconAnchor: [12, 12],
       }),
     }).addTo(map);
-    centerMarker.on("drag", (e) => {
+    markerIcon.on("drag", (e) => {
       const latlng = e.target.getLatLng();
-      setEditedCenter([latlng.lat, latlng.lng]);
+      setEditedMarker([latlng.lat, latlng.lng]);
     });
-    editableCenterMarkerRef.current = centerMarker;
+    editableMarkerRef.current = markerIcon;
     setAlert({
       type: "success",
-      title: "Center Calculated",
-      message: "Center auto-calculated from polygon. You can drag to adjust.",
+      title: "Marker Calculated",
+      message: "Marker auto-calculated from polygon. You can drag to adjust.",
     });
   }, [editedPolygon]);
 
   const exitEditMode = useCallback(() => {
     setIsEditMode(false);
     setEditedPolygon(null);
-    setEditedCenter(null);
+    setEditedMarker(null);
     setIsDrawingNewPolygon(false);
-    setIsPlacingNewCenter(false);
+    setIsPlacingNewMarker(false);
+    setIsPickingMarkerLocation(false);
     setNewPolygonPoints([]);
     setShowCoordinateModal(false);
+    setShowViewingSitePolygon(true);
     clearEditMarkers();
     const map = mapRef.current;
     if (map) {
@@ -1321,12 +1502,10 @@ export default function MulticriteriaAnalysis() {
     }
   }, [viewingSite, clearEditMarkers]);
 
-  // ✅ FIXED: handleEnterEditMode now ensures form shows even if no coordinates exist
   const handleEnterEditMode = useCallback(() => {
     if (!viewingSite) return;
     setIsEditMode(true);
 
-    // Initialize to empty array instead of null so the form condition passes
     const initialPolygon =
       viewingSite.polygon_coordinates &&
       viewingSite.polygon_coordinates.length > 0
@@ -1334,8 +1513,8 @@ export default function MulticriteriaAnalysis() {
         : [];
     setEditedPolygon(initialPolygon);
 
-    setEditedCenter(
-      viewingSite.center_coordinate ? [...viewingSite.center_coordinate] : null,
+    setEditedMarker(
+      viewingSite.marker_coordinate ? [...viewingSite.marker_coordinate] : null,
     );
 
     if (polygonRef.current) {
@@ -1344,7 +1523,7 @@ export default function MulticriteriaAnalysis() {
     }
 
     const hasPolygon = initialPolygon.length > 0;
-    const hasCenter = !!viewingSite.center_coordinate;
+    const hasMarker = !!viewingSite.marker_coordinate;
 
     if (hasPolygon) {
       const editablePolygon = L.polygon(viewingSite.polygon_coordinates!, {
@@ -1357,7 +1536,6 @@ export default function MulticriteriaAnalysis() {
       editablePolygonRef.current = editablePolygon;
       renderAllMarkersRef.current(viewingSite.polygon_coordinates!);
     } else {
-      // No polygon exists yet, enter drawing mode
       setIsDrawingNewPolygon(true);
       setNewPolygonPoints([]);
       setAlert({
@@ -1368,44 +1546,54 @@ export default function MulticriteriaAnalysis() {
       });
     }
 
-    // ✅ CRITICAL FIX: Always show the modal in edit mode so the form is visible
     setShowCoordinateModal(true);
 
-    if (hasCenter) {
-      const centerMarker = L.marker(viewingSite.center_coordinate!, {
+    if (hasMarker) {
+      const marker = L.marker(viewingSite.marker_coordinate!, {
         draggable: true,
         icon: L.divIcon({
-          className: "center-marker-edit",
+          className: "marker-edit",
           html: `<div style="background:#F97316;width:28px;height:28px;border-radius:50%;border:4px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><div style="width:10px;height:10px;background:white;border-radius:50%;"></div></div>`,
           iconSize: [28, 28],
           iconAnchor: [14, 28],
         }),
       }).addTo(mapRef.current!);
-      centerMarker.on("drag", (e) => {
+      marker.on("drag", (e) => {
         const latlng = e.target.getLatLng();
-        setEditedCenter([latlng.lat, latlng.lng]);
+        setEditedMarker([latlng.lat, latlng.lng]);
       });
-      editableCenterMarkerRef.current = centerMarker;
+      editableMarkerRef.current = marker;
     } else {
-      setIsPlacingNewCenter(true);
+      setIsPlacingNewMarker(true);
     }
   }, [viewingSite]);
 
   const handleSaveCoordinates = useCallback(async () => {
-    if (!viewingSite || !editedPolygon || !editedCenter) {
+    if (
+      !viewingSite ||
+      !editedPolygon ||
+      editedPolygon.length < 3 ||
+      !editedMarker
+    ) {
       setAlert({
         type: "failed",
         title: "Missing Data",
-        message: "Both polygon and center coordinates are required.",
+        message:
+          "Polygon must have at least 3 vertices and a marker coordinate is required.",
       });
       return;
     }
+
+    const map = mapRef.current;
+    const currentZoom = map?.getZoom();
+    const currentCenter = map?.getCenter();
+
     setIsSavingCoordinates(true);
     try {
       const result = await sites.updateSiteCoordinates(
         viewingSite.site_id,
         editedPolygon,
-        editedCenter,
+        editedMarker,
       );
       if (result) {
         setAlert({
@@ -1413,9 +1601,18 @@ export default function MulticriteriaAnalysis() {
           title: "Saved",
           message: "Site coordinates updated successfully.",
         });
+
         exitEditMode();
+
         await sites.fetchSiteDetail(viewingSite.site_id);
         if (areaId) await sites.fetchMCDAData(areaId);
+
+        setTimeout(() => {
+          if (map && currentZoom !== undefined && currentCenter) {
+            map.invalidateSize();
+            map.setView(currentCenter, currentZoom, { animate: false });
+          }
+        }, 100);
       } else {
         setAlert({
           type: "error",
@@ -1432,7 +1629,7 @@ export default function MulticriteriaAnalysis() {
     } finally {
       setIsSavingCoordinates(false);
     }
-  }, [viewingSite, editedPolygon, editedCenter, sites, areaId, exitEditMode]);
+  }, [viewingSite, editedPolygon, editedMarker, sites, areaId, exitEditMode]);
 
   const handleCancelEdit = useCallback(() => {
     setConfirmDialog({
@@ -1463,6 +1660,7 @@ export default function MulticriteriaAnalysis() {
           setConfirmDialog(null);
           exitEditMode();
           setViewingSite(null);
+          setShowViewingSitePolygon(true);
           if (polygonRef.current) {
             mapRef.current?.removeLayer(polygonRef.current);
             polygonRef.current = null;
@@ -1471,6 +1669,7 @@ export default function MulticriteriaAnalysis() {
       });
     } else {
       setViewingSite(null);
+      setShowViewingSitePolygon(true);
       if (polygonRef.current) {
         mapRef.current?.removeLayer(polygonRef.current);
         polygonRef.current = null;
@@ -1486,11 +1685,43 @@ export default function MulticriteriaAnalysis() {
       if (axis === "lat") newCoords[index] = [numValue, newCoords[index][1]];
       else newCoords[index] = [newCoords[index][0], numValue];
       setEditedPolygon(newCoords);
+
+      if (isDrawingNewPolygon) {
+        setNewPolygonPoints(newCoords);
+        const map = mapRef.current;
+        if (map) {
+          newPolygonMarkersRef.current.forEach((m) => map.removeLayer(m));
+          newPolygonMarkersRef.current = [];
+          if (newPolygonLineRef.current) {
+            map.removeLayer(newPolygonLineRef.current);
+            newPolygonLineRef.current = null;
+          }
+          newCoords.forEach((pt, idx) => {
+            const marker = L.marker(pt, {
+              icon: L.divIcon({
+                className: "new-polygon-vertex",
+                html: `<div style="background:#FF6B00;width:16px;height:16px;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:8px;color:white;font-weight:bold;">${idx + 1}</div>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8],
+              }),
+            }).addTo(map);
+            newPolygonMarkersRef.current.push(marker);
+          });
+          if (newCoords.length >= 2) {
+            newPolygonLineRef.current = L.polyline(newCoords, {
+              color: "#FF6B00",
+              weight: 3,
+              dashArray: "5, 5",
+            }).addTo(map);
+          }
+        }
+      }
+
       if (editablePolygonRef.current)
         editablePolygonRef.current.setLatLngs(newCoords);
       renderAllMarkersRef.current(newCoords);
     },
-    [editedPolygon],
+    [editedPolygon, isDrawingNewPolygon],
   );
 
   const handleEditRemoveVertex = useCallback(
@@ -1505,11 +1736,43 @@ export default function MulticriteriaAnalysis() {
       }
       const newCoords = editedPolygon.filter((_, i) => i !== index);
       setEditedPolygon(newCoords);
+
+      if (isDrawingNewPolygon) {
+        setNewPolygonPoints(newCoords);
+        const map = mapRef.current;
+        if (map) {
+          newPolygonMarkersRef.current.forEach((m) => map.removeLayer(m));
+          newPolygonMarkersRef.current = [];
+          if (newPolygonLineRef.current) {
+            map.removeLayer(newPolygonLineRef.current);
+            newPolygonLineRef.current = null;
+          }
+          newCoords.forEach((pt, idx) => {
+            const marker = L.marker(pt, {
+              icon: L.divIcon({
+                className: "new-polygon-vertex",
+                html: `<div style="background:#FF6B00;width:16px;height:16px;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:8px;color:white;font-weight:bold;">${idx + 1}</div>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8],
+              }),
+            }).addTo(map);
+            newPolygonMarkersRef.current.push(marker);
+          });
+          if (newCoords.length >= 2) {
+            newPolygonLineRef.current = L.polyline(newCoords, {
+              color: "#FF6B00",
+              weight: 3,
+              dashArray: "5, 5",
+            }).addTo(map);
+          }
+        }
+      }
+
       if (editablePolygonRef.current)
         editablePolygonRef.current.setLatLngs(newCoords);
       renderAllMarkersRef.current(newCoords);
     },
-    [editedPolygon],
+    [editedPolygon, isDrawingNewPolygon],
   );
 
   const handleEditAddVertex = useCallback(() => {
@@ -1522,38 +1785,106 @@ export default function MulticriteriaAnalysis() {
     }
     const newCoords = [...editedPolygon, newPoint];
     setEditedPolygon(newCoords);
+
+    if (isDrawingNewPolygon) {
+      setNewPolygonPoints(newCoords);
+      const map = mapRef.current;
+      if (map) {
+        newPolygonMarkersRef.current.forEach((m) => map.removeLayer(m));
+        newPolygonMarkersRef.current = [];
+        if (newPolygonLineRef.current) {
+          map.removeLayer(newPolygonLineRef.current);
+          newPolygonLineRef.current = null;
+        }
+        newCoords.forEach((pt, idx) => {
+          const marker = L.marker(pt, {
+            icon: L.divIcon({
+              className: "new-polygon-vertex",
+              html: `<div style="background:#FF6B00;width:16px;height:16px;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:8px;color:white;font-weight:bold;">${idx + 1}</div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8],
+            }),
+          }).addTo(map);
+          newPolygonMarkersRef.current.push(marker);
+        });
+        if (newCoords.length >= 2) {
+          newPolygonLineRef.current = L.polyline(newCoords, {
+            color: "#FF6B00",
+            weight: 3,
+            dashArray: "5, 5",
+          }).addTo(map);
+        }
+      }
+    }
+
     if (editablePolygonRef.current)
       editablePolygonRef.current.setLatLngs(newCoords);
     renderAllMarkersRef.current(newCoords);
-  }, [editedPolygon]);
+  }, [editedPolygon, isDrawingNewPolygon]);
 
-  const handleEditCenterChange = useCallback(
+  const handleEditMarkerChange = useCallback(
     (axis: "lat" | "lng", value: string) => {
       const numValue = parseFloat(value);
       if (isNaN(numValue)) return;
-      const newCenter: [number, number] = editedCenter
-        ? [...editedCenter]
+      const newMarker: [number, number] = editedMarker
+        ? [...editedMarker]
         : [0, 0];
-      if (axis === "lat") newCenter[0] = numValue;
-      else newCenter[1] = numValue;
-      setEditedCenter(newCenter);
-      if (editableCenterMarkerRef.current)
-        editableCenterMarkerRef.current.setLatLng(newCenter);
+      if (axis === "lat") newMarker[0] = numValue;
+      else newMarker[1] = numValue;
+      setEditedMarker(newMarker);
+      if (editableMarkerRef.current)
+        editableMarkerRef.current.setLatLng(newMarker);
     },
-    [editedCenter],
+    [editedMarker],
   );
 
-  // ========================================================================
-  // ✅ HAZARD DRAWING CLICK HANDLER & FA LOCATION PICKER
-  // ========================================================================
+  // ✅ UPDATED: Map click handler with "Pick from Map" and "Coordinate Probe" features
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const handleClick = (e: L.LeafletMouseEvent) => {
+      // ✅ NEW: Handle Coordinate Probe Mode
+      if (isCoordinateProbeMode) {
+        handleDropProbe(e.latlng.lat, e.latlng.lng);
+        return; // Stop other handlers
+      }
+
+      if (isPickingMarkerLocation) {
+        const newMarker: [number, number] = [e.latlng.lat, e.latlng.lng];
+        setEditedMarker(newMarker);
+
+        if (editableMarkerRef.current) {
+          editableMarkerRef.current.setLatLng(newMarker);
+        } else {
+          const marker = L.marker(newMarker, {
+            draggable: true,
+            icon: L.divIcon({
+              className: "marker-edit",
+              html: `<div style="background:#F97316;width:28px;height:28px;border-radius:50%;border:4px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><div style="width:10px;height:10px;background:white;border-radius:50%;"></div></div>`,
+              iconSize: [28, 28],
+              iconAnchor: [14, 28],
+            }),
+          }).addTo(map);
+          marker.on("drag", (ev) => {
+            const latlng = ev.target.getLatLng();
+            setEditedMarker([latlng.lat, latlng.lng]);
+          });
+          editableMarkerRef.current = marker;
+        }
+
+        setIsPickingMarkerLocation(false);
+        setAlert({
+          type: "success",
+          title: "Marker Placed",
+          message: "Site marker updated from map click.",
+        });
+        return;
+      }
+
       if (isDrawingNewPolygon) {
         handleMapClickForNewPolygon(e);
-      } else if (isPlacingNewCenter) {
-        handleMapClickForNewCenter(e);
+      } else if (isPlacingNewMarker) {
+        handleMapClickForNewMarker(e);
       } else if (barangayAreas.isDrawingHazard) {
         barangayAreas.addHazardPoint(e.latlng.lat, e.latlng.lng);
       } else if (barangayAreas.isMapEditMode && barangayAreas.showHazardForm) {
@@ -1572,7 +1903,9 @@ export default function MulticriteriaAnalysis() {
     };
     const isAnyDrawing =
       isDrawingNewPolygon ||
-      isPlacingNewCenter ||
+      isPlacingNewMarker ||
+      isPickingMarkerLocation ||
+      isCoordinateProbeMode || // ✅ NEW: Add probe mode
       barangayAreas.isDrawingHazard ||
       (barangayAreas.isMapEditMode && barangayAreas.showHazardForm) ||
       !!fieldAssessments.locationTargetId;
@@ -1595,23 +1928,23 @@ export default function MulticriteriaAnalysis() {
     };
   }, [
     isDrawingNewPolygon,
-    isPlacingNewCenter,
+    isPlacingNewMarker,
+    isPickingMarkerLocation,
+    isCoordinateProbeMode, // ✅ NEW: Add to dependencies
     barangayAreas.isDrawingHazard,
     barangayAreas.isMapEditMode,
     barangayAreas.showHazardForm,
     barangayAreas.hazardPolygonPoints,
     handleMapClickForNewPolygon,
-    handleMapClickForNewCenter,
+    handleMapClickForNewMarker,
     barangayAreas.addHazardPoint,
     barangayAreas.addVertexOnMap,
     barangayAreas.finishDrawingHazard,
     fieldAssessments.locationTargetId,
     handleMapClickForFaLocation,
+    handleDropProbe, // ✅ NEW: Add to dependencies
   ]);
 
-  // ========================================================================
-  // RENDER UI
-  // ========================================================================
   return (
     <div className="flex min-h-screen bg-gray-50 flex-col relative">
       {alert && (
@@ -1646,7 +1979,6 @@ export default function MulticriteriaAnalysis() {
       )}
 
       <main className="flex-1 p-3 flex flex-col gap-3">
-        {/* Toolbar */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-3 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2 flex-wrap">
             <button
@@ -1675,6 +2007,17 @@ export default function MulticriteriaAnalysis() {
                   ? `Hide Potential (${potentialSitesHook.potentialSites.length})`
                   : `Potential Sites (${potentialSitesHook.potentialSites.length})`}
             </button>
+            <div className="w-px h-5 bg-gray-200 mx-0.5" />
+
+            {/* ✅ NEW: Coordinate Probe Toggle Button */}
+            <button
+              onClick={() => setIsCoordinateProbeMode(!isCoordinateProbeMode)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${isCoordinateProbeMode ? "bg-purple-600 hover:bg-purple-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+            >
+              <Target size={12} />{" "}
+              {isCoordinateProbeMode ? "Exit Probe" : "Drop Pin"}
+            </button>
+
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
             <button
               onClick={() =>
@@ -1719,7 +2062,6 @@ export default function MulticriteriaAnalysis() {
           </div>
         </div>
 
-        {/* Site View/Edit Panel */}
         {viewingSite && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-3 flex-shrink-0">
             <div className="flex items-center justify-between">
@@ -1740,6 +2082,31 @@ export default function MulticriteriaAnalysis() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {viewingSite.polygon_coordinates?.length ||
+                (isEditMode && editedPolygon?.length) ? (
+                  <button
+                    onClick={() => {
+                      const show = !showViewingSitePolygon;
+                      setShowViewingSitePolygon(show);
+                      if (isEditMode && editablePolygonRef.current) {
+                        if (show)
+                          editablePolygonRef.current.addTo(mapRef.current!);
+                        else
+                          mapRef.current?.removeLayer(
+                            editablePolygonRef.current,
+                          );
+                      } else if (polygonRef.current) {
+                        if (show) polygonRef.current.addTo(mapRef.current!);
+                        else mapRef.current?.removeLayer(polygonRef.current);
+                      }
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded"
+                  >
+                    <Eye size={12} />{" "}
+                    {showViewingSitePolygon ? "Hide Polygon" : "Show Polygon"}
+                  </button>
+                ) : null}
+
                 {isEditMode ? (
                   <>
                     <span className="text-xs text-orange-600 font-medium bg-orange-50 px-2 py-1 rounded">
@@ -1754,7 +2121,10 @@ export default function MulticriteriaAnalysis() {
                     <button
                       onClick={handleSaveCoordinates}
                       disabled={
-                        isSavingCoordinates || !editedPolygon || !editedCenter
+                        isSavingCoordinates ||
+                        !editedPolygon ||
+                        !editedMarker ||
+                        editedPolygon.length < 3
                       }
                       className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded disabled:opacity-50"
                     >
@@ -1821,21 +2191,46 @@ export default function MulticriteriaAnalysis() {
               <div className="flex-1 overflow-y-auto p-6">
                 <SiteCoordinatesEditor
                   coordinates={editedPolygon}
-                  center={editedCenter}
+                  center={editedMarker}
                   onVertexChange={handleEditVertexChange}
                   onRemoveVertex={handleEditRemoveVertex}
                   onAddVertex={handleEditAddVertex}
-                  onCenterChange={handleEditCenterChange}
+                  onCenterChange={handleEditMarkerChange}
                   title="Polygon Vertices"
                   isEditing={true}
                 />
                 {editedPolygon && editedPolygon.length >= 3 && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="mt-4 pt-4 border-t border-gray-200 flex gap-2 flex-wrap">
                     <button
-                      onClick={handleAutoCenter}
+                      onClick={handleAutoMarker}
                       className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition"
                     >
-                      <Target size={14} /> Auto-Calculate Center from Polygon
+                      <Target size={14} /> Auto-Calculate Marker from Polygon
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const newState = !isPickingMarkerLocation;
+                        setIsPickingMarkerLocation(newState);
+                        if (newState) {
+                          setAlert({
+                            type: "success",
+                            title: "Pick Marker Mode",
+                            message:
+                              "Click anywhere on the map to place the site marker.",
+                          });
+                        }
+                      }}
+                      className={`flex items-center gap-2 px-4 py-2 text-white text-xs font-semibold rounded-lg transition ${
+                        isPickingMarkerLocation
+                          ? "bg-red-600 hover:bg-red-700"
+                          : "bg-blue-600 hover:bg-blue-700"
+                      }`}
+                    >
+                      <MapPin size={14} />
+                      {isPickingMarkerLocation
+                        ? "Cancel Pick"
+                        : "Pick from Map"}
                     </button>
                   </div>
                 )}
@@ -1855,7 +2250,10 @@ export default function MulticriteriaAnalysis() {
                   <button
                     onClick={handleSaveCoordinates}
                     disabled={
-                      isSavingCoordinates || !editedPolygon || !editedCenter
+                      isSavingCoordinates ||
+                      !editedPolygon ||
+                      !editedMarker ||
+                      editedPolygon.length < 3
                     }
                     className="flex items-center gap-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50"
                   >
@@ -1874,12 +2272,43 @@ export default function MulticriteriaAnalysis() {
 
         <div className="flex gap-3 flex-1 min-h-0">
           <div className="flex-[4] flex flex-col gap-2 min-w-0 relative">
-            {/* Map Container */}
             <div
               ref={mapContainerRef}
               className="w-full rounded-lg shadow-inner border-2 border-gray-300 relative overflow-hidden h-[75vh] min-h-[450px]"
             >
-              {/* Drawing Mode Indicator */}
+              {/* Coordinate Display */}
+              <div className="absolute top-4 right-4 z-[1001] bg-white px-3 py-2 rounded-lg shadow-lg border border-gray-300 text-xs font-mono">
+                <div className="flex items-center gap-2">
+                  <Globe size={14} className="text-green-700" />
+                  {mouseCoords ? (
+                    <>
+                      <span className="text-gray-600">
+                        <strong>Lat:</strong>{" "}
+                        {showDMS
+                          ? decimalToDMS(mouseCoords.lat, "lat")
+                          : mouseCoords.lat.toFixed(6)}
+                      </span>
+                      <span className="text-gray-600 ml-2">
+                        <strong>Lng:</strong>{" "}
+                        {showDMS
+                          ? decimalToDMS(mouseCoords.lng, "lng")
+                          : mouseCoords.lng.toFixed(6)}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400">
+                      Move mouse to see coordinates
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setShowDMS(!showDMS)}
+                    className="ml-2 px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-[10px] font-semibold text-gray-600 transition-colors"
+                  >
+                    {showDMS ? "DMS" : "DD"}
+                  </button>
+                </div>
+              </div>
+
               {isDrawing && (
                 <div className="absolute top-3 left-3 bg-white/95 px-3 py-1.5 rounded-lg shadow-md border border-green-200 z-[100]">
                   <p className="text-xs font-semibold text-green-800">
@@ -1891,7 +2320,6 @@ export default function MulticriteriaAnalysis() {
                 </div>
               )}
 
-              {/* Area Indicator */}
               {polygonArea !== null && !isDrawing && (
                 <div className="absolute bottom-3 left-3 bg-white/95 px-2.5 py-1.5 rounded-lg shadow-md border border-green-200 z-[100]">
                   <div className="flex items-center gap-1.5">
@@ -1903,7 +2331,6 @@ export default function MulticriteriaAnalysis() {
                 </div>
               )}
 
-              {/* Potential Sites Legend (Lighter Blue) */}
               {showPotentialSites &&
                 potentialSitesHook.potentialSites.length > 0 && (
                   <div className="absolute top-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-blue-200 z-[100]">
@@ -1928,7 +2355,6 @@ export default function MulticriteriaAnalysis() {
                   </div>
                 )}
 
-              {/* FA Location Picking Panel */}
               {fieldAssessments.locationTargetId && (
                 <div
                   className="absolute bottom-6 right-6 z-[9999] bg-white p-4 rounded-xl shadow-2xl border-2 border-orange-500 w-96 max-w-[calc(100%-3rem)]"
@@ -2039,8 +2465,6 @@ export default function MulticriteriaAnalysis() {
                           e.nativeEvent.preventDefault();
                         }
 
-                        console.log("💾 [UI] Save Location button clicked");
-
                         if (
                           tempFaLocationMarkerRef.current &&
                           fieldAssessments.locationTargetId
@@ -2050,16 +2474,11 @@ export default function MulticriteriaAnalysis() {
                           const lat = latlng.lat;
                           const lng = latlng.lng;
 
-                          console.log(
-                            "📍 [UI] Saving coordinates directly from marker ref:",
-                            { lat, lng },
-                          );
-
                           const result = await fieldAssessments.updateLocation(
                             fieldAssessments.locationTargetId,
                             lat,
                             lng,
-                            20, // gps_accuracy_meters
+                            20,
                           );
 
                           if (result.success) {
@@ -2116,7 +2535,6 @@ export default function MulticriteriaAnalysis() {
               )}
             </div>
 
-            {/* GIS SPECIALIST: REAL-TIME COORDINATE EDITOR FORM */}
             {isDrawing && showCoordPanel && (
               <div className="fixed top-28 right-6 z-[9999] bg-white p-4 rounded-xl shadow-2xl border-2 border-green-500 w-96 max-h-[65vh] flex flex-col">
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
@@ -2229,7 +2647,6 @@ export default function MulticriteriaAnalysis() {
               </div>
             )}
 
-            {/* Floating "Show" Button when panel is hidden */}
             {isDrawing && !showCoordPanel && (
               <button
                 onClick={() => setShowCoordPanel(true)}
@@ -2243,7 +2660,6 @@ export default function MulticriteriaAnalysis() {
               </button>
             )}
 
-            {/* Prominent Center Modal for Name Input */}
             {showNameInput && (
               <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
                 <div className="bg-white p-6 rounded-2xl shadow-2xl border-2 border-green-500 w-[450px] max-w-[90vw] mx-4">
@@ -2304,7 +2720,6 @@ export default function MulticriteriaAnalysis() {
               </div>
             )}
 
-            {/* Hazard Assessment Panel (Below Map) */}
             <HazardAssessmentPanel
               isOpen={hazardLayers.isPanelOpen}
               onClose={() => hazardLayers.setIsPanelOpen(false)}
@@ -2321,7 +2736,6 @@ export default function MulticriteriaAnalysis() {
               onUpdateFirmsTimeRange={hazardLayers.updateFirmsTimeRange}
             />
 
-            {/* Bottom Toolbar (Below Map) */}
             <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3 text-xs text-gray-500">
                 <span className="flex items-center gap-1">
@@ -2384,7 +2798,6 @@ export default function MulticriteriaAnalysis() {
                   </>
                 )}
 
-                {/* ✅ NEW: Controls for Editing a Site with No Coordinates (Orange Drawing Mode) */}
                 {isDrawingNewPolygon && (
                   <>
                     <button
@@ -2447,7 +2860,6 @@ export default function MulticriteriaAnalysis() {
             </div>
           </div>
 
-          {/* Right Column: Field Assessments */}
           <div className="flex-[2] flex flex-col gap-3 min-w-0">
             <div className="flex-1 bg-white rounded-lg border border-gray-200 flex flex-col min-h-0">
               <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
@@ -2673,7 +3085,6 @@ export default function MulticriteriaAnalysis() {
           </div>
         </div>
 
-        {/* Bottom Row: Site List and Field Assessment Details */}
         <div className="flex gap-3">
           <div className="w-[40%] bg-white rounded-lg border border-gray-200 flex flex-col min-h-[120px]">
             <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import L from "leaflet";
 import { api } from "@/constant/api";
 
@@ -54,8 +54,8 @@ export interface FieldAssessmentsResponse {
 }
 
 const LAYER_EMOJIS: Record<MCDALayer, string> = {
-  safety: "️",
-  boundary_verification: "",
+  safety: "🛡️",
+  boundary_verification: "📏",
   survivability: "🌱",
 };
 
@@ -63,7 +63,11 @@ const PHOTO_MARKER_COLOR = "#3B82F6";
 const SPECIFIC_MARKER_COLOR = "#10B981";
 const GENERAL_MARKER_COLOR = "#3B82F6";
 
-export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
+// ✅ NEW: Accept showCoordinates parameter
+export function useFieldAssessments(
+  mapRef: React.RefObject<L.Map | null>,
+  showCoordinates: boolean = true
+) {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const photoMarkersRef = useRef<Map<number, L.Marker[]>>(new Map());
 
@@ -93,6 +97,16 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [locationTargetId, setLocationTargetId] = useState<number | null>(null);
   const [showPhotoMarkers, setShowPhotoMarkers] = useState(true);
+
+  // ✅ NEW: Helper for DMS conversion
+  const toDMS = (val: number, type: "lat" | "lng") => {
+    const abs = Math.abs(val);
+    const deg = Math.floor(abs);
+    const min = Math.floor((abs - deg) * 60);
+    const sec = (((abs - deg) * 60 - min) * 60).toFixed(1);
+    const dir = type === "lat" ? (val >= 0 ? "N" : "S") : val >= 0 ? "E" : "W";
+    return `${deg}° ${min}' ${sec}" ${dir}`;
+  };
 
   const removeLayerMarkers = useCallback(
     (layer: MCDALayer) => {
@@ -200,17 +214,47 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
             ? `<br/><span style="font-size:10px;color:#666">Site: ${entry.site_name}</span>`
             : "";
 
+        // ✅ NEW: Conditionally build coordinate HTML for the popup
+        const coordHtml = showCoordinates
+          ? `
+          <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e5e7eb; font-family: monospace; font-size: 11px; color: #4b5563;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+              <span style="color: #6b7280; font-family: sans-serif; font-size: 10px; font-weight: 600;">LAT:</span>
+              <span style="font-weight: 600;">${loc.latitude.toFixed(6)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+              <span style="color: #6b7280; font-family: sans-serif; font-size: 10px; font-weight: 600;">LNG:</span>
+              <span style="font-weight: 600;">${loc.longitude.toFixed(6)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 9px; color: #9ca3af;">
+              <span>${toDMS(loc.latitude, "lat")}</span>
+              <span>${toDMS(loc.longitude, "lng")}</span>
+            </div>
+          </div>
+        `
+          : "";
+
         marker.bindPopup(`
           <strong>${typeLabel} F${idx + 1} — ${entry.inspector.full_name}</strong>${siteInfo}<br/>
           <span style="font-size:11px;color:#666">${entry.assessment_date}</span><br/>
           <span style="font-size:10px;color:#999">GPS ±${loc.gps_accuracy_meters}m</span>
+          ${coordHtml}
         `);
 
         markersRef.current.set(`${layer}-${idx}`, marker);
       });
     },
-    [mapRef, removeLayerMarkers, removeAllPhotoMarkers],
+    // ✅ IMPORTANT: Added showCoordinates to dependencies so it recreates markers when toggled
+    [mapRef, removeLayerMarkers, removeAllPhotoMarkers, showCoordinates]
   );
+
+  // ✅ NEW: Automatically refresh markers when the showCoordinates toggle changes
+  useEffect(() => {
+    const entries = assessments[activeLayer];
+    if (entries && entries.length > 0 && mapRef.current) {
+      placeMarkers(entries, activeLayer);
+    }
+  }, [showCoordinates, activeLayer, assessments, placeMarkers, mapRef]);
 
   const placePhotoMarkers = useCallback(
     (entry: FieldAssessmentEntry) => {
@@ -392,7 +436,6 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
       try {
         const token = localStorage.getItem("token");
 
-        // 🔍 DEBUG: Log the exact values received by the hook
         console.log("📍 [useFieldAssessments] Received coordinates to save:", {
           fieldAssessmentId,
           latitude,
@@ -404,7 +447,6 @@ export function useFieldAssessments(mapRef: React.RefObject<L.Map | null>) {
           coordinate: { latitude, longitude, gps_accuracy_meters },
         };
 
-        // 🔍 DEBUG: Log the exact JSON string being sent to the server
         console.log(
           "📡 [useFieldAssessments] API Payload being sent:",
           JSON.stringify(payload, null, 2),

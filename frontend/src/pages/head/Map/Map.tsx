@@ -104,7 +104,7 @@ export interface Site {
   site_id: number;
   name: string;
   reforestation_area_id: number;
-  center_coordinate: [number, number] | null;
+  marker_coordinate: [number, number] | null;
   polygon_coordinates?: any;
   status: string;
   total_area_hectares?: number;
@@ -143,6 +143,45 @@ const decimalToDMS = (value: number, type: "lat" | "lng") => {
   return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
 };
 
+// ✅ NEW: Normalize single marker coordinates to ensure [lat, lng] format
+const normalizeMarkerCoordinate = (
+  coord: [number, number] | null | undefined,
+): [number, number] | null => {
+  if (!coord || !Array.isArray(coord) || coord.length < 2) return null;
+
+  const [first, second] = coord;
+
+  // If it's already valid [lat, lng], return it
+  if (
+    typeof first === "number" &&
+    typeof second === "number" &&
+    !isNaN(first) &&
+    !isNaN(second) &&
+    first >= -90 &&
+    first <= 90 &&
+    second >= -180 &&
+    second <= 180
+  ) {
+    return [first, second];
+  }
+
+  // If it's invalid, check if swapping makes it valid [lng, lat] -> [lat, lng]
+  if (
+    typeof second === "number" &&
+    typeof first === "number" &&
+    !isNaN(second) &&
+    !isNaN(first) &&
+    second >= -90 &&
+    second <= 90 &&
+    first >= -180 &&
+    first <= 180
+  ) {
+    return [second, first];
+  }
+
+  return null; // Completely invalid coordinate
+};
+
 const createMarkerIcon = (
   type: "barangay" | "reforestation" | "site" | "temp",
   labelText: string = "",
@@ -178,10 +217,7 @@ const createMarkerIcon = (
     html,
     className: "custom-marker-icon-small",
     iconSize: [labelText ? Math.min(200, 28 + labelText.length * 7) : 24, 30],
-    iconAnchor: [
-      labelText ? Math.min(200, 28 + labelText.length * 7) / 2 : 12,
-      30,
-    ],
+    iconAnchor: [12, 30], // ✅ CRITICAL FIX: Always anchor to the tip of the 24px wide pin, not the center of the label
     popupAnchor: [0, -30],
   });
 };
@@ -225,7 +261,7 @@ export default function Map() {
   const [siteForm, setSiteForm] = useState({
     reforestation_area_id: 0,
     name: "",
-    center_coordinate: null as [number, number] | null,
+    marker_coordinate: null as [number, number] | null,
   });
   const [selectedPotentialSiteIds, setSelectedPotentialSiteIds] = useState<
     number[]
@@ -426,7 +462,7 @@ export default function Map() {
       }
       if (isPickingSiteMarker) {
         setSiteMarkerPosition([lat, lng]);
-        setSiteForm({ ...siteForm, center_coordinate: [lat, lng] });
+        setSiteForm({ ...siteForm, marker_coordinate: [lat, lng] });
         setIsPickingSiteMarker(false);
         setPSAlert({
           type: "success",
@@ -1104,7 +1140,7 @@ export default function Map() {
     if (
       !siteForm.name.trim() ||
       !siteForm.reforestation_area_id ||
-      !siteForm.center_coordinate
+      !siteForm.marker_coordinate
     ) {
       setPSAlert({
         type: "failed",
@@ -1117,7 +1153,7 @@ export default function Map() {
       const payload = {
         name: siteForm.name.trim(),
         reforestation_area_id: siteForm.reforestation_area_id,
-        center_coordinate: siteForm.center_coordinate,
+        marker_coordinate: siteForm.marker_coordinate,
       };
       const res = await fetch(`${api}api/sites/create_site/`, {
         method: "POST",
@@ -1163,7 +1199,7 @@ export default function Map() {
       setSiteForm({
         reforestation_area_id: 0,
         name: "",
-        center_coordinate: null,
+        marker_coordinate: null,
       });
       setSiteMarkerPosition(null);
       setSelectedPotentialSiteIds([]);
@@ -2150,8 +2186,8 @@ export default function Map() {
                     <input
                       type="text"
                       value={
-                        siteForm.center_coordinate
-                          ? `${siteForm.center_coordinate[0].toFixed(6)}, ${siteForm.center_coordinate[1].toFixed(6)}`
+                        siteForm.marker_coordinate
+                          ? `${siteForm.marker_coordinate[0].toFixed(6)}, ${siteForm.marker_coordinate[1].toFixed(6)}`
                           : ""
                       }
                       readOnly
@@ -2189,7 +2225,7 @@ export default function Map() {
                       setSiteForm({
                         reforestation_area_id: 0,
                         name: "",
-                        center_coordinate: null,
+                        marker_coordinate: null,
                       });
                       setSiteMarkerPosition(null);
                       setSelectedPotentialSiteIds([]);
@@ -2350,9 +2386,11 @@ export default function Map() {
 
         {reforestation_areas.length > 0 &&
           reforestation_areas.map((area) => {
-            if (!area.coordinate || area.coordinate.length !== 2) return null;
-            const lat = Number(area.coordinate[0]);
-            const lng = Number(area.coordinate[1]);
+            // ✅ FIX: Normalize marker coordinate
+            const normalizedCoord = normalizeMarkerCoordinate(area.coordinate);
+            if (!normalizedCoord) return null;
+            const lat = Number(normalizedCoord[0]);
+            const lng = Number(normalizedCoord[1]);
             if (isNaN(lat) || isNaN(lng)) return null;
             return (
               <Marker
@@ -2396,13 +2434,13 @@ export default function Map() {
                           const validCoords = areaSites
                             .filter(
                               (s) =>
-                                s.center_coordinate &&
-                                s.center_coordinate.length === 2,
+                                s.marker_coordinate &&
+                                s.marker_coordinate.length === 2,
                             )
                             .map((s) =>
                               L.latLng(
-                                s.center_coordinate![0],
-                                s.center_coordinate![1],
+                                s.marker_coordinate![0],
+                                s.marker_coordinate![1],
                               ),
                             );
                           if (validCoords.length > 0) {
@@ -2438,10 +2476,13 @@ export default function Map() {
         {showSites &&
           sites.length > 0 &&
           sites.map((site) => {
-            if (!site.center_coordinate || site.center_coordinate.length !== 2)
-              return null;
-            const lat = Number(site.center_coordinate[0]);
-            const lng = Number(site.center_coordinate[1]);
+            // ✅ FIX: Normalize marker coordinate
+            const normalizedCoord = normalizeMarkerCoordinate(
+              site.marker_coordinate,
+            );
+            if (!normalizedCoord) return null;
+            const lat = Number(normalizedCoord[0]);
+            const lng = Number(normalizedCoord[1]);
             if (isNaN(lat) || isNaN(lng)) return null;
             return (
               <Marker
@@ -2461,9 +2502,11 @@ export default function Map() {
 
         {barangays.length > 0 &&
           barangays.map((area) => {
-            if (!area.coordinate || area.coordinate.length !== 2) return null;
-            const lat = Number(area.coordinate[0]);
-            const lng = Number(area.coordinate[1]);
+            // ✅ FIX: Normalize marker coordinate
+            const normalizedCoord = normalizeMarkerCoordinate(area.coordinate);
+            if (!normalizedCoord) return null;
+            const lat = Number(normalizedCoord[0]);
+            const lng = Number(normalizedCoord[1]);
             if (isNaN(lat) || isNaN(lng)) return null;
             return (
               <Marker
