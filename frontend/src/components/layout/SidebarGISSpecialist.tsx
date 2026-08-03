@@ -3,32 +3,31 @@ import {
   BarChart3,
   ClipboardList,
   TreePine,
-  FileText,
   LogOut,
   ChevronLeft,
   Map,
   Layers2,
   Bell,
   ChevronDown,
-  Mail,
   User,
-  Settings,
   Check,
   X,
-  Shield,
   Clock,
   AlertTriangle,
   Home,
+  Info,
+  Sparkles,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo.png";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Logout from "./logout";
 import { Outlet } from "react-router-dom";
 import PlantScopeLoader from "../alert/PlantScopeLoader";
 import NotFoundPage from "./NotFoundPage";
 import { useAuthorize } from "../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
+import { api } from "@/constant/api.ts";
 import "../../global css/sidebarScrollbar.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -40,79 +39,70 @@ interface UserData {
   user_role: string;
 }
 
-// ─── Mock Notifications ───────────────────────────────────────────────────────
-const INITIAL_NOTIFICATIONS = [
-  {
-    id: 1,
-    type: "alert",
-    title: "New Application Submitted",
-    desc: "Reforestation permit #2024-089 awaiting review.",
-    time: "2 min ago",
-    read: false,
-  },
-  {
-    id: 2,
-    type: "success",
-    title: "Monitoring Report Ready",
-    desc: "Site BNY-03 monthly report has been generated.",
-    time: "1 hr ago",
-    read: false,
-  },
-  {
-    id: 3,
-    type: "warning",
-    title: "Calendar Reminder",
-    desc: "Field inspection scheduled for tomorrow, 8:00 AM.",
-    time: "3 hr ago",
-    read: false,
-  },
-  {
-    id: 4,
-    type: "info",
-    title: "Account Updated",
-    desc: "Ranger Cruz's access level was modified by admin.",
-    time: "Yesterday",
-    read: true,
-  },
-  {
-    id: 5,
-    type: "success",
-    title: "Tree Planting Logged",
-    desc: "480 seedlings recorded in Area MNL-07.",
-    time: "2 days ago",
-    read: true,
-  },
-];
+interface Notification {
+  notification_id: number;
+  type: "alert" | "success" | "warning" | "info";
+  title: string;
+  description: string;
+  link: string | null;
+  is_read: boolean;
+  is_general: boolean;
+  created_at: string;
+}
 
+// ─── Notification Type Config ─────────────────────────────────────────────────
 const NOTIF_TYPE_CONFIG: Record<
   string,
-  { icon: React.ReactNode; color: string; bg: string; dot: string }
+  {
+    icon: React.ReactNode;
+    color: string;
+    bg: string;
+    dot: string;
+    border: string;
+  }
 > = {
   alert: {
-    icon: <AlertTriangle size={13} />,
+    icon: <AlertTriangle size={14} />,
     color: "text-red-400",
     bg: "bg-red-500/10",
     dot: "bg-red-400",
+    border: "border-red-500/20",
   },
   success: {
-    icon: <Check size={13} />,
+    icon: <Check size={14} />,
     color: "text-emerald-400",
     bg: "bg-emerald-500/10",
     dot: "bg-emerald-400",
+    border: "border-emerald-500/20",
   },
   warning: {
-    icon: <Clock size={13} />,
+    icon: <Clock size={14} />,
     color: "text-amber-400",
     bg: "bg-amber-500/10",
     dot: "bg-amber-400",
+    border: "border-amber-500/20",
   },
   info: {
-    icon: <Shield size={13} />,
+    icon: <Info size={14} />,
     color: "text-sky-400",
     bg: "bg-sky-500/10",
     dot: "bg-sky-400",
+    border: "border-sky-500/20",
   },
 };
+
+// ─── Time Ago Helper ──────────────────────────────────────────────────────────
+function timeAgo(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (seconds < 60) return "Just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+  return date.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function initials(name: string): string {
@@ -156,6 +146,7 @@ function UserAvatar({
       />
     );
   }
+
   return (
     <div
       className={`${dim} bg-gradient-to-br from-emerald-400 to-teal-600
@@ -166,101 +157,183 @@ function UserAvatar({
   );
 }
 
-// ─── Notification Panel ───────────────────────────────────────────────────────
+// ─── Modern Notification Panel ────────────────────────────────────────────────
 interface NotifPanelProps {
-  notes: typeof INITIAL_NOTIFICATIONS;
+  notes: Notification[];
+  unreadCount: number;
+  loading: boolean;
   onMarkAll: () => void;
+  onMarkRead: (id: number) => void;
   onDismiss: (id: number) => void;
   onClose: () => void;
+  onNavigate: (link: string) => void;
+  onViewAll: () => void;
 }
 
 function NotificationPanel({
   notes,
+  unreadCount,
+  loading,
   onMarkAll,
+  onMarkRead,
   onDismiss,
   onClose,
+  onNavigate,
+  onViewAll,
 }: NotifPanelProps) {
-  const unread = notes.filter((n) => !n.read).length;
   return (
     <div
-      className="absolute right-0 top-full mt-3 w-[360px] z-50
-      bg-[#0a3320]/95 backdrop-blur-xl border border-white/10
-      rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
-      animate-slideDown"
+      className="absolute right-0 top-full mt-3 w-[400px] z-50
+      bg-gradient-to-b from-[#0a3320]/98 to-[#082818]/98 backdrop-blur-2xl 
+      border border-white/10 rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.7)] 
+      overflow-hidden animate-slideDown"
     >
-      <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-        <div className="flex items-center gap-2">
-          <span className="text-white font-semibold text-sm">Notifications</span>
-          {unread > 0 && (
-            <span className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-              {unread} NEW
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {unread > 0 && (
+      {/* Header */}
+      <div className="relative px-5 py-4 border-b border-white/10 bg-gradient-to-r from-emerald-500/10 to-transparent">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+              <Bell size={16} className="text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-sm">Notifications</h3>
+              <p className="text-white/40 text-[10px]">
+                Stay updated with your activity
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {unreadCount > 0 && (
+              <>
+                <span className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg shadow-emerald-500/30">
+                  {unreadCount} NEW
+                </span>
+                <button
+                  onClick={onMarkAll}
+                  className="text-[11px] text-emerald-300 hover:text-emerald-200 transition-colors cursor-pointer font-semibold px-2 py-1 rounded-lg hover:bg-white/5"
+                >
+                  Mark all
+                </button>
+              </>
+            )}
             <button
-              onClick={onMarkAll}
-              className="text-[11px] text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+              onClick={onClose}
+              className="text-white/40 hover:text-white/80 transition-colors p-1.5 rounded-lg hover:bg-white/10 cursor-pointer"
             >
-              Mark all read
+              <X size={14} />
             </button>
-          )}
-          <button
-            onClick={onClose}
-            className="text-white/40 hover:text-white/80 transition-colors p-1 rounded-lg hover:bg-white/10 cursor-pointer"
-          >
-            <X size={14} />
-          </button>
+          </div>
         </div>
       </div>
 
-      <div className="max-h-[380px] overflow-y-auto notif-scroll">
-        {notes.length === 0 ? (
-          <div className="py-12 flex flex-col items-center gap-3 text-white/30">
-            <Bell size={26} />
-            <span className="text-sm">No notifications</span>
+      {/* Notification List */}
+      <div className="max-h-[440px] overflow-y-auto notif-scroll">
+        {loading ? (
+          <div className="py-16 flex flex-col items-center gap-3 text-white/30">
+            <div className="w-8 h-8 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+            <span className="text-xs">Loading notifications...</span>
+          </div>
+        ) : notes.length === 0 ? (
+          <div className="py-16 flex flex-col items-center gap-3 text-white/30">
+            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
+              <Sparkles size={28} className="text-white/20" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-white/50">
+                All caught up!
+              </p>
+              <p className="text-[11px] text-white/30 mt-1">
+                No new notifications
+              </p>
+            </div>
           </div>
         ) : (
-          notes.map((n) => {
-            const cfg = NOTIF_TYPE_CONFIG[n.type];
-            return (
-              <div
-                key={n.id}
-                className={`relative flex gap-3 px-5 py-3.5 border-b border-white/[0.05] transition-colors group
-                ${n.read ? "opacity-50" : "hover:bg-white/[0.04]"}`}
-              >
-                {!n.read && (
-                  <span
-                    className={`absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${cfg.dot}`}
-                  />
-                )}
+          <div className="py-2">
+            {notes.map((n) => {
+              const cfg = NOTIF_TYPE_CONFIG[n.type] || NOTIF_TYPE_CONFIG.info;
+              return (
                 <div
-                  className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center ${cfg.bg} ${cfg.color} mt-0.5`}
+                  key={n.notification_id}
+                  className={`relative group flex gap-3 px-5 py-3.5 border-b border-white/[0.04] 
+                    transition-all duration-200 cursor-pointer
+                    ${n.is_read ? "opacity-60" : "hover:bg-white/[0.04]"}
+                    ${!n.is_read ? "bg-white/[0.02]" : ""}
+                  `}
+                  onClick={() => {
+                    if (!n.is_read) onMarkRead(n.notification_id);
+                    if (n.link) onNavigate(n.link);
+                  }}
                 >
-                  {cfg.icon}
+                  {!n.is_read && (
+                    <span
+                      className={`absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${cfg.dot} shadow-lg shadow-current`}
+                    />
+                  )}
+
+                  <div
+                    className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${cfg.bg} ${cfg.color} mt-0.5 border ${cfg.border}`}
+                  >
+                    {cfg.icon}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <p
+                        className={`text-[13px] font-semibold leading-tight ${n.is_read ? "text-white/70" : "text-white"}`}
+                      >
+                        {n.title}
+                      </p>
+                      <span className="text-white/25 text-[10px] shrink-0 mt-0.5">
+                        {timeAgo(n.created_at)}
+                      </span>
+                    </div>
+                    {n.description && (
+                      <p className="text-white/45 text-[11.5px] mt-1 leading-snug line-clamp-2">
+                        {n.description}
+                      </p>
+                    )}
+                    {n.link && (
+                      <div className="flex items-center gap-1 mt-1.5">
+                        <span className="text-emerald-400/70 text-[10px] font-semibold">
+                          Open →
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDismiss(n.notification_id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-white/70 shrink-0 cursor-pointer p-1 rounded-lg hover:bg-white/10 mt-0.5"
+                    title="Dismiss"
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-white/90 text-[13px] font-medium leading-tight">{n.title}</p>
-                  <p className="text-white/45 text-[11.5px] mt-0.5 leading-snug">{n.desc}</p>
-                  <span className="text-white/25 text-[11px] mt-1 block">{n.time}</span>
-                </div>
-                <button
-                  onClick={() => onDismiss(n.id)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-white/70 shrink-0 cursor-pointer mt-1"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            );
-          })
+              );
+            })}
+          </div>
         )}
       </div>
 
-      <div className="px-5 py-3 border-t border-white/10 text-center">
-        <button className="text-[12px] text-emerald-400/70 hover:text-emerald-300 transition-colors cursor-pointer">
-          View all notifications →
-        </button>
+      {/* Footer */}
+      <div className="px-5 py-3 border-t border-white/10 bg-gradient-to-r from-transparent to-emerald-500/5">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onViewAll}
+            className="flex-1 text-center text-[12px] text-emerald-300/80 hover:text-emerald-200 transition-colors cursor-pointer font-semibold py-1.5 rounded-lg hover:bg-white/5 flex items-center justify-center gap-1.5"
+          >
+            View all notifications →
+          </button>
+          <button
+            onClick={onClose}
+            className="text-[12px] text-white/50 hover:text-white/80 transition-colors cursor-pointer font-semibold py-1.5 px-3 rounded-lg hover:bg-white/5"
+          >
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -276,51 +349,76 @@ interface ProfileDropdownProps {
 function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
   return (
     <div
-      className="absolute right-0 top-full mt-3 w-[280px] z-10000
+      className="absolute right-0 top-full mt-3 w-[280px] z-19999
       bg-[#0a3320]/95 backdrop-blur-xl border border-white/10
       rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden
       animate-slideDown"
     >
+      {/* User card */}
       <div className="px-5 py-5 border-b border-white/10">
         <div className="flex items-center gap-3">
           <UserAvatar user={user} size="lg" />
           <div className="min-w-0 flex-1">
-            <p className="text-white font-semibold text-[14px] truncate">{user?.full_name ?? "—"}</p>
-            <p className="text-white/45 text-[11.5px] truncate" title={user?.email}>{user?.email ?? "—"}</p>
+            <p className="text-white font-semibold text-[14px] truncate">
+              {user?.full_name ?? "—"}
+            </p>
+            <p
+              className="text-white/45 text-[11.5px] truncate"
+              title={user?.email}
+            >
+              {user?.email ?? "—"}
+            </p>
             <div className="flex items-center gap-1.5 mt-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-400/80 text-[11px] font-medium">{user?.user_role ?? "—"}</span>
+              <span className="text-emerald-400/80 text-[11px] font-medium">
+                {user?.user_role ?? "—"}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
+      {/* Menu items */}
       <div className="py-2">
         {[
-          { icon: <User size={14} />, label: "My Profile", sub: "View & edit info", path: "/GISS/my-profile" },
-          
+          {
+            icon: <User size={14} />,
+            label: "My Profile",
+            sub: "View & edit info",
+            path: "/GISS/my-profile",
+          },
         ].map((item) => (
           <button
             key={item.label}
             onClick={() => item.path && onNavigate(item.path)}
             className="w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left cursor-pointer group"
           >
-            <span className="text-white/40 group-hover:text-emerald-400 transition-colors">{item.icon}</span>
+            <span className="text-white/40 group-hover:text-emerald-400 transition-colors">
+              {item.icon}
+            </span>
             <div>
-              <p className="text-white/80 text-[13px] group-hover:text-white transition-colors">{item.label}</p>
+              <p className="text-white/80 text-[13px] group-hover:text-white transition-colors">
+                {item.label}
+              </p>
               <p className="text-white/30 text-[11px]">{item.sub}</p>
             </div>
           </button>
         ))}
       </div>
 
+      {/* Sign out */}
       <div className="border-t border-white/10 p-2">
         <button
           onClick={onLogout}
           className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-red-500/10 transition-colors text-left cursor-pointer group"
         >
-          <LogOut size={14} className="text-red-400/60 group-hover:text-red-400 transition-colors" />
-          <span className="text-red-400/60 group-hover:text-red-400 text-[13px] transition-colors">Sign out</span>
+          <LogOut
+            size={14}
+            className="text-red-400/60 group-hover:text-red-400 transition-colors"
+          />
+          <span className="text-red-400/60 group-hover:text-red-400 text-[13px] transition-colors">
+            Sign out
+          </span>
         </button>
       </div>
     </div>
@@ -333,16 +431,169 @@ export default function SidebarGISS() {
   const navigate = useNavigate();
   const [isLogout, setIsLogout] = useState(false);
   const [expanded, setExpanded] = useState(true);
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
+  // Notification state
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [notifLoading, setNotifLoading] = useState(false);
+
   const notifRef: any = useRef<HTMLDivElement>(null);
   const profileRef: any = useRef<HTMLDivElement>(null);
+  const notifIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   useOutsideClick(notifRef, () => setShowNotifs(false));
   useOutsideClick(profileRef, () => setShowProfile(false));
 
   const { isAuthorized, isLoading, user_data } = useAuthorize("GISSpecialist");
+
+  // ── Fetch notifications (full list) ────────────────────────────────────────
+  const fetchNotifications = useCallback(async () => {
+    if (document.hidden) return;
+    if (!isAuthorized) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      const res = await fetch(`${api}api/notifications/?entries=20`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data.data || []);
+        setUnreadNotifCount(data.unread_count || 0);
+      }
+    } catch (err) {
+      console.error("Failed to fetch notifications:", err);
+    }
+  }, [isAuthorized]);
+
+  // ── Fetch unread count only (lightweight for polling) ──────────────────────
+  const fetchUnreadCount = useCallback(async () => {
+    if (document.hidden) return;
+    if (!isAuthorized) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      const res = await fetch(`${api}api/notifications/unread-count/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadNotifCount(data.unread_count || 0);
+      }
+    } catch (err) {
+      console.error("Failed to fetch unread count:", err);
+    }
+  }, [isAuthorized]);
+
+  // ── Mark notification as read ──────────────────────────────────────────────
+  const handleMarkRead = async (id: number) => {
+    try {
+      const token = localStorage.getItem("token");
+      await fetch(`${api}api/notifications/${id}/read/`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.notification_id === id ? { ...n, is_read: true } : n,
+        ),
+      );
+      setUnreadNotifCount((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error("Failed to mark notification as read:", err);
+    }
+  };
+
+  // ── Mark all as read ───────────────────────────────────────────────────────
+  const handleMarkAllRead = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${api}api/notifications/mark-all-read/`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+        setUnreadNotifCount(0);
+      }
+    } catch (err) {
+      console.error("Failed to mark all as read:", err);
+    }
+  };
+
+  // ── Dismiss notification ───────────────────────────────────────────────────
+  const handleDismiss = async (id: number) => {
+    try {
+      const token = localStorage.getItem("token");
+      await fetch(`${api}api/notifications/${id}/`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const notif = notifications.find((n) => n.notification_id === id);
+      setNotifications((prev) => prev.filter((n) => n.notification_id !== id));
+      if (notif && !notif.is_read) {
+        setUnreadNotifCount((prev) => Math.max(0, prev - 1));
+      }
+    } catch (err) {
+      console.error("Failed to dismiss notification:", err);
+    }
+  };
+
+  // ── Navigate from notification ─────────────────────────────────────────────
+  const handleNotifNavigate = (link: string) => {
+    setShowNotifs(false);
+    navigate(link);
+  };
+
+  // ── View all notifications ─────────────────────────────────────────────────
+  const handleViewAll = () => {
+    setShowNotifs(false);
+    navigate("/GISS/notification");
+  };
+
+  // ── Smart polling for notifications ────────────────────────────────────────
+  useEffect(() => {
+    if (!isAuthorized) {
+      setNotifications([]);
+      setUnreadNotifCount(0);
+      return;
+    }
+
+    // Initial full fetch
+    setNotifLoading(true);
+    fetchNotifications().finally(() => setNotifLoading(false));
+
+    // Poll unread count every 60s (lightweight)
+    notifIntervalRef.current = setInterval(() => fetchUnreadCount(), 60000);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchUnreadCount();
+        fetchNotifications();
+      }
+    };
+    const handleFocus = () => {
+      fetchUnreadCount();
+      fetchNotifications();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      if (notifIntervalRef.current) clearInterval(notifIntervalRef.current);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [isAuthorized, fetchNotifications, fetchUnreadCount]);
 
   if (isLoading) return <PlantScopeLoader />;
   if (!localStorage.getItem("token")) {
@@ -350,8 +601,6 @@ export default function SidebarGISS() {
     return null;
   }
   if (!isAuthorized) return <NotFoundPage />;
-
-  const unread = notifications.filter((n) => !n.read).length;
 
   const PAGE_TITLES: Record<string, string> = {
     "/dashboard/GISS": "Dashboard",
@@ -363,40 +612,71 @@ export default function SidebarGISS() {
     "/GISS/maintenance/ormoc-city": "Ormoc City",
     "/GISS/maintenance/Classified_areas": "Classified Areas",
     "/GISS/maintenance/hazard_areas/": "Hazard Areas",
+    "/GISS/notification": "Notifications",
   };
   const pageTitle = PAGE_TITLES[location.pathname] ?? "PlantScope";
 
-  const handleLogout = () => setIsLogout(true);
-
-  // ── ✅ Grouped Navigation ────────────────────────────────────────────────────
+  // ── Grouped Navigation ────────────────────────────────────────────────────
   const navGroups = [
     {
       title: "Overview",
       items: [
-        { to: "/dashboard/GISS", icon: <LayoutDashboard size={18} />, label: "Dashboard" },
+        {
+          to: "/dashboard/GISS",
+          icon: <LayoutDashboard size={18} />,
+          label: "Dashboard",
+        },
         { to: "/GISS/map", icon: <Map size={18} />, label: "Map" },
       ],
     },
     {
       title: "Reforestation",
       items: [
-        { to: "/GISS/reforestation-areas", icon: <ClipboardList size={18} />, label: "Reforestation Area" },
-        { to: "/GISS/reforestation_area_site", icon: <Layers2 size={18} />, label: "Analysis" },
-        { to: "/GISS/official-reforestation", icon: <TreePine size={18} />, label: "Official Sites" },
+        {
+          to: "/GISS/reforestation-areas",
+          icon: <ClipboardList size={18} />,
+          label: "Reforestation Area",
+        },
+        {
+          to: "/GISS/reforestation_area_site",
+          icon: <Layers2 size={18} />,
+          label: "Analysis",
+        },
+        {
+          to: "/GISS/official-reforestation",
+          icon: <TreePine size={18} />,
+          label: "Official Sites",
+        },
       ],
     },
     {
       title: "Maintenance",
       items: [
-        { to: "/GISS/maintenance/ormoc-city", icon: <Home size={18} />, label: "Ormoc City" },
-        { to: "/GISS/maintenance/Classified_areas", icon: <Map size={18} />, label: "Classified Areas" },
-        { to: "/GISS/maintenance/hazard_areas/", icon: <AlertTriangle size={18} />, label: "Hazard Areas" },
+        {
+          to: "/GISS/maintenance/ormoc-city",
+          icon: <Home size={18} />,
+          label: "Ormoc City",
+        },
+        {
+          to: "/GISS/maintenance/Classified_areas",
+          icon: <Map size={18} />,
+          label: "Classified Areas",
+        },
+        {
+          to: "/GISS/maintenance/hazard_areas/",
+          icon: <AlertTriangle size={18} />,
+          label: "Hazard Areas",
+        },
       ],
     },
     {
       title: "Analytics",
       items: [
-        { to: "/GISS/reports", icon: <BarChart3 size={18} />, label: "Reports" },
+        {
+          to: "/GISS/reports",
+          icon: <BarChart3 size={18} />,
+          label: "Reports",
+        },
       ],
     },
   ];
@@ -435,9 +715,16 @@ export default function SidebarGISS() {
         }
         .notif-ring { animation: notif-pulse 2.2s ease infinite; }
 
+        @keyframes badge-pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.08); opacity: 0.9; }
+        }
+        .badge-pulse { animation: badge-pulse 2s ease-in-out infinite; }
+
         .notif-scroll::-webkit-scrollbar       { width:4px; }
         .notif-scroll::-webkit-scrollbar-track { background:transparent; }
         .notif-scroll::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:99px; }
+        .notif-scroll::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,.2); }
 
         .hdr-divider {
           width:1px; height:28px;
@@ -450,47 +737,58 @@ export default function SidebarGISS() {
         .nav-item:hover {
           transform: translateX(2px);
         }
+
+        .line-clamp-2 {
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
       `}</style>
 
       <Logout setIsLogout={setIsLogout} isLogout={isLogout} />
 
       {/* ── Sidebar ── */}
       <aside
-        className={` top-0 h-screen bg-gradient-to-b from-[#0F4A2F] via-[#0d4028] to-[#0a3320] text-white flex flex-col shadow-2xl transition-all duration-500 ease-out ${
+        className={`sticky top-0 h-screen bg-gradient-to-b from-[#0F4A2F] via-[#0d4028] to-[#0a3320] text-white flex flex-col shadow-2xl transition-all duration-500 ease-out ${
           expanded ? "w-[260px] min-w-[260px]" : "w-[80px] min-w-[80px]"
         }`}
       >
         {/* Logo Section */}
         <div className="p-4 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="relative shrink-0">
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 p-0.5 shadow-lg shadow-emerald-500/20 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-                <img src={logo} alt="Logo" className="w-full h-full rounded-[10px] object-cover bg-white" />
+            <div className={`relative shrink-0 ${!expanded ? "mx-auto" : ""}`}>
+              <div
+                className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 p-0.5 shadow-lg shadow-emerald-500/20 cursor-pointer"
+                onClick={() => setExpanded(!expanded)}
+                title={expanded ? "Collapse sidebar" : "Expand sidebar"}
+              >
+                <img
+                  src={logo}
+                  alt="Logo"
+                  className="w-full h-full rounded-[10px] object-cover bg-white"
+                />
               </div>
               <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#0F4A2F] animate-pulse" />
             </div>
-            
+
             {expanded && (
               <>
                 <div className="flex-1 min-w-0">
-                  <h1 className="text-base font-bold text-white tracking-tight truncate">PlantScope</h1>
-                  <p className="text-[10px] text-emerald-300/70 uppercase tracking-wider font-semibold">GIS Specialist</p>
+                  <h1 className="text-base font-bold text-white tracking-tight truncate">
+                    PlantScope
+                  </h1>
+                  <p className="text-[10px] text-emerald-300/70 uppercase tracking-wider font-semibold">
+                    GIS Specialist
+                  </p>
                 </div>
                 <button
                   onClick={() => setExpanded(!expanded)}
-                  className="p-1.5 rounded-lg hover:bg-white/10 transition-all"
+                  className="p-1.5 rounded-lg hover:bg-white/10 transition-all cursor-pointer"
                 >
                   <ChevronLeft size={16} className="text-white/60" />
                 </button>
               </>
-            )}
-            {!expanded && (
-              <button
-                onClick={() => setExpanded(!expanded)}
-                className="p-1.5 rounded-lg hover:bg-white/10 transition-all mx-auto"
-              >
-                <ChevronLeft size={16} className="text-white/60 rotate-180" />
-              </button>
             )}
           </div>
         </div>
@@ -507,11 +805,11 @@ export default function SidebarGISS() {
                   <div className="flex-1 h-px bg-gradient-to-r from-emerald-500/30 to-transparent" />
                 </div>
               )}
-              
+
               <div className="space-y-0.5">
                 {group.items.map(({ to, icon, label }) => {
                   const isActive = location.pathname === to;
-                  
+
                   return (
                     <Link
                       key={to}
@@ -520,21 +818,22 @@ export default function SidebarGISS() {
                         isActive
                           ? "bg-white/15 text-white shadow-lg border border-white/10"
                           : "text-white/70 hover:text-white hover:bg-white/5 border border-transparent"
-                      } ${!expanded && 'justify-center'}`}
+                      } ${!expanded && "justify-center"}`}
                     >
-                      {/* Active indicator */}
                       {isActive && expanded && (
                         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-emerald-400 rounded-r-full shadow-lg shadow-emerald-400/50" />
                       )}
-                      
-                      {/* Icon */}
-                      <span className={`relative shrink-0 ${isActive ? 'text-emerald-400' : 'text-white/60 group-hover:text-white'}`}>
+
+                      <span
+                        className={`relative shrink-0 ${isActive ? "text-emerald-400" : "text-white/60 group-hover:text-white"}`}
+                      >
                         {icon}
                       </span>
-                      
-                      {/* Label */}
+
                       {expanded && (
-                        <span className="flex-1 text-sm font-medium truncate">{label}</span>
+                        <span className="flex-1 text-sm font-medium truncate">
+                          {label}
+                        </span>
                       )}
                     </Link>
                   );
@@ -551,7 +850,9 @@ export default function SidebarGISS() {
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50" />
-                  <span className="text-[10px] font-semibold text-white/80">System Online</span>
+                  <span className="text-[10px] font-semibold text-white/80">
+                    System Online
+                  </span>
                 </div>
                 <span className="text-[9px] text-white/40">v1.0</span>
               </div>
@@ -567,7 +868,7 @@ export default function SidebarGISS() {
         <header
           className="ps-header bg-gradient-to-r from-[#0b3622] via-[#0d4028] to-[#0F4A2F]
           border-b border-white/[0.07] px-6 h-[68px] flex items-center gap-4
-          shadow-[0_4px_40px_rgba(0,0,0,0.35)] z-10000"
+          shadow-[0_4px_40px_rgba(0,0,0,0.35)] z-9998"
         >
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="w-1 h-8 rounded-full bg-gradient-to-b from-emerald-400 to-teal-500 shrink-0" />
@@ -581,7 +882,9 @@ export default function SidebarGISS() {
             </div>
             <div className="hidden sm:flex items-center gap-1.5 glass-btn rounded-full px-3 py-1.5 ml-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">LIVE</span>
+              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">
+                LIVE
+              </span>
             </div>
           </div>
 
@@ -589,31 +892,43 @@ export default function SidebarGISS() {
             <div className="hidden lg:flex items-center gap-2 glass-btn rounded-xl px-3.5 py-2">
               <Clock size={12} className="text-white/40" />
               <span className="text-white/50 text-[12px] font-medium">
-                {new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}
+                {new Date().toLocaleDateString("en-PH", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
               </span>
             </div>
 
             <div className="hdr-divider mx-1 hidden lg:block" />
 
-            {/* Bell */}
+            {/* Bell - Real Notifications */}
             <div className="relative" ref={notifRef}>
               <button
-                onClick={() => { setShowNotifs((v) => !v); setShowProfile(false); }}
+                onClick={() => {
+                  setShowNotifs((v) => !v);
+                  setShowProfile(false);
+                }}
                 className="glass-btn relative w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer"
               >
                 <Bell size={16} className="text-white/70" />
-                {unread > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-emerald-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center notif-ring">
-                    {unread}
+                {unreadNotifCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-gradient-to-r from-red-500 to-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center notif-ring shadow-lg shadow-red-500/30">
+                    {unreadNotifCount > 99 ? "99+" : unreadNotifCount}
                   </span>
                 )}
               </button>
               {showNotifs && (
                 <NotificationPanel
                   notes={notifications}
-                  onMarkAll={() => setNotifications((p) => p.map((n) => ({ ...n, read: true })))}
-                  onDismiss={(id) => setNotifications((p) => p.filter((n) => n.id !== id))}
+                  unreadCount={unreadNotifCount}
+                  loading={notifLoading}
+                  onMarkAll={handleMarkAllRead}
+                  onMarkRead={handleMarkRead}
+                  onDismiss={handleDismiss}
                   onClose={() => setShowNotifs(false)}
+                  onNavigate={handleNotifNavigate}
+                  onViewAll={handleViewAll}
                 />
               )}
             </div>
@@ -623,7 +938,10 @@ export default function SidebarGISS() {
             {/* Profile */}
             <div className="relative" ref={profileRef}>
               <button
-                onClick={() => { setShowProfile((v) => !v); setShowNotifs(false); }}
+                onClick={() => {
+                  setShowProfile((v) => !v);
+                  setShowNotifs(false);
+                }}
                 className="glass-btn flex items-center gap-2.5 rounded-xl pl-1.5 pr-3 py-1.5 cursor-pointer"
               >
                 <UserAvatar user={user_data ?? null} size="sm" />
@@ -644,8 +962,11 @@ export default function SidebarGISS() {
               {showProfile && (
                 <ProfileDropdown
                   user={user_data ?? null}
-                  onLogout={handleLogout}
-                  onNavigate={(path) => { setShowProfile(false); navigate(path); }}
+                  onLogout={() => setIsLogout(true)}
+                  onNavigate={(path) => {
+                    setShowProfile(false);
+                    navigate(path);
+                  }}
                 />
               )}
             </div>

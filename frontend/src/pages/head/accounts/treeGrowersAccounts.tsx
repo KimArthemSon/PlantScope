@@ -5,26 +5,45 @@ import {
   ChevronLeft,
   Eye,
   X,
-  User,
   Building2,
   BadgeCheck,
   Power,
+  Users,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import { api } from "@/constant/api.ts";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface TreeGrower {
   id: number;
   email: string;
   is_active: boolean;
-  profile_img: string;
-  full_name: string;
-  contact_number: string;
-  address: string;
+  created_at?: string;
+  group_name?: string;
+  group_type?: string;
+  group_type_display?: string;
+  group_contact?: string;
+  group_address?: string;
+  group_img?: string | null;
+  // legacy fallbacks (old API shape)
+  contact_number?: string;
+  address?: string;
+  profile_img?: string | null;
+}
+
+interface GrowerGroup {
+  group_id?: number;
+  group_name: string;
+  group_type?: string;
+  group_type_display?: string;
+  address?: string;
+  contact?: string;
+  created_at?: string;
+  updated_at?: string;
+  profile_img?: string | null;
 }
 
 interface GrowerDetail {
@@ -32,24 +51,7 @@ interface GrowerDetail {
   email: string;
   is_active: boolean;
   created_at: string;
-  profile: {
-    first_name: string;
-    middle_name: string;
-    last_name: string;
-    birthday: string | null;
-    gender: string;
-    contact: string;
-    address: string;
-    profile_img: string | null;
-  };
-  organization: {
-    organization_name: string;
-    email: string;
-    address: string;
-    contact: string;
-    created_at: string;
-    profile_img: string | null;
-  } | null;
+  group: GrowerGroup | null;
 }
 
 interface Filter {
@@ -57,6 +59,41 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
+}
+
+// ── Group type helpers ────────────────────────────────────────────────────────
+
+const GROUP_TYPE_LABELS: Record<string, string> = {
+  formal_org: "Formal Organization",
+  community_group: "Community Group",
+  informal_group: "Informal Group",
+};
+
+const GROUP_TYPE_COLORS: Record<string, string> = {
+  formal_org: "bg-blue-100 text-blue-700 border-blue-200",
+  community_group: "bg-green-100 text-green-700 border-green-200",
+  informal_group: "bg-gray-100 text-gray-700 border-gray-200",
+};
+
+function groupTypeLabel(raw?: string, display?: string): string {
+  return display || GROUP_TYPE_LABELS[raw ?? ""] || raw || "—";
+}
+
+function groupTypeColor(raw?: string): string {
+  return (
+    GROUP_TYPE_COLORS[raw ?? ""] || "bg-gray-100 text-gray-700 border-gray-200"
+  );
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
@@ -177,7 +214,7 @@ export default function TreeGrowersAccounts() {
     }
   };
 
-  // ── Delete ───────────────────────────────────────────────────────────────────
+  // ── Delete / toggle ──────────────────────────────────────────────────────────
 
   const setDelete = (id: number) => {
     setIdDelete(id);
@@ -239,12 +276,6 @@ export default function TreeGrowersAccounts() {
     }
   };
 
-  const genderLabel: Record<string, string> = {
-    M: "Male",
-    F: "Female",
-    O: "Other",
-  };
-
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -273,7 +304,7 @@ export default function TreeGrowersAccounts() {
             {/* Modal header bar */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white rounded-t-2xl">
               <h2 className="text-base font-bold text-gray-800">
-                Tree Grower Profile
+                Tree Grower Group Details
               </h2>
               <button
                 onClick={() => setViewDetail(null)}
@@ -291,30 +322,34 @@ export default function TreeGrowersAccounts() {
                 </div>
               ) : viewDetail ? (
                 <>
-                  {/* Profile hero */}
+                  {/* Group hero */}
                   <div className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] rounded-2xl p-5 flex items-center gap-4 text-white">
-                    {viewDetail.profile.profile_img ? (
+                    {viewDetail.group?.profile_img ? (
                       <img
-                        src={`{viewDetail.profile.profile_img}`}
-                        alt="Profile"
+                        src={viewDetail.group.profile_img}
+                        alt="Group"
                         className="w-20 h-20 rounded-xl object-cover border-2 border-white/30 flex-shrink-0"
                       />
                     ) : (
                       <div className="w-20 h-20 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
-                        <User size={32} className="text-white/60" />
+                        <Building2 size={32} className="text-white/60" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-lg font-bold leading-tight">
-                        {[
-                          viewDetail.profile.first_name,
-                          viewDetail.profile.middle_name,
-                          viewDetail.profile.last_name,
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
+                        {viewDetail.group?.group_name || "No Group"}
                       </p>
-                      <p className="text-sm text-green-200 mt-0.5 truncate">
+                      {viewDetail.group && (
+                        <span
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold border mt-1 ${groupTypeColor(viewDetail.group.group_type)}`}
+                        >
+                          {groupTypeLabel(
+                            viewDetail.group.group_type,
+                            viewDetail.group.group_type_display,
+                          )}
+                        </span>
+                      )}
+                      <p className="text-sm text-green-200 mt-2 truncate">
                         {viewDetail.email}
                       </p>
                       <div className="flex items-center gap-2 mt-2">
@@ -328,49 +363,15 @@ export default function TreeGrowersAccounts() {
                           {viewDetail.is_active ? "Active" : "Inactive"}
                         </span>
                         <span className="text-xs text-green-300">
-                          Joined{" "}
-                          {new Date(viewDetail.created_at).toLocaleDateString(
-                            "en-PH",
-                            {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            },
-                          )}
+                          Joined {formatDate(viewDetail.created_at)}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Two-column cards */}
+                  {/* Cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Personal Information */}
-                    <SectionCard
-                      icon={<User size={15} />}
-                      title="Personal Information"
-                    >
-                      <InfoRow
-                        label="Birthday"
-                        value={viewDetail.profile.birthday ?? "—"}
-                      />
-                      <InfoRow
-                        label="Gender"
-                        value={
-                          genderLabel[viewDetail.profile.gender] ??
-                          viewDetail.profile.gender
-                        }
-                      />
-                      <InfoRow
-                        label="Contact"
-                        value={viewDetail.profile.contact}
-                      />
-                      <InfoRow
-                        label="Address"
-                        value={viewDetail.profile.address}
-                      />
-                    </SectionCard>
-
-                    {/* Account */}
+                    {/* Account Details */}
                     <SectionCard
                       icon={<BadgeCheck size={15} />}
                       title="Account Details"
@@ -386,62 +387,39 @@ export default function TreeGrowersAccounts() {
                         value={String(viewDetail.id)}
                       />
                     </SectionCard>
-                  </div>
 
-                  {/* Organization */}
-                  {viewDetail.organization ? (
-                    <SectionCard
-                      icon={<Building2 size={15} />}
-                      title="Organization"
-                    >
-                      <div className="flex items-center gap-3 mb-3 pb-3 border-b border-gray-100">
-                        {viewDetail.organization.profile_img ? (
-                          <img
-                            src={`{viewDetail.organization.profile_img}`}
-                            alt="Org"
-                            className="w-12 h-12 rounded-xl object-cover border border-green-100 flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
-                            <Building2 size={20} className="text-green-300" />
-                          </div>
-                        )}
-                        <div>
-                          <p className="font-bold text-gray-800 text-sm">
-                            {viewDetail.organization.organization_name}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            Registered{" "}
-                            {new Date(
-                              viewDetail.organization.created_at,
-                            ).toLocaleDateString("en-PH", {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            })}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4">
+                    {/* Group Information */}
+                    {viewDetail.group ? (
+                      <SectionCard
+                        icon={<Users size={15} />}
+                        title="Group Information"
+                      >
                         <InfoRow
-                          label="Email"
-                          value={viewDetail.organization.email}
+                          label="Group Type"
+                          value={groupTypeLabel(
+                            viewDetail.group.group_type,
+                            viewDetail.group.group_type_display,
+                          )}
                         />
                         <InfoRow
                           label="Contact"
-                          value={viewDetail.organization.contact}
+                          value={viewDetail.group.contact || "—"}
                         />
                         <InfoRow
                           label="Address"
-                          value={viewDetail.organization.address}
+                          value={viewDetail.group.address || "—"}
                         />
+                        <InfoRow
+                          label="Registered"
+                          value={formatDate(viewDetail.group.created_at)}
+                        />
+                      </SectionCard>
+                    ) : (
+                      <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-6 flex items-center justify-center gap-2 text-gray-300 text-sm">
+                        <Building2 size={18} /> No group linked
                       </div>
-                    </SectionCard>
-                  ) : (
-                    <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-6 flex items-center justify-center gap-2 text-gray-300 text-sm">
-                      <Building2 size={18} /> No organization linked
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </>
               ) : null}
             </div>
@@ -473,7 +451,7 @@ export default function TreeGrowersAccounts() {
 
           <input
             type="text"
-            placeholder="Search tree growers..."
+            placeholder="Search by email or group name..."
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -496,8 +474,8 @@ export default function TreeGrowersAccounts() {
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Profile</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Full Name</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Group Name</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Group Type</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Email</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Contact</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Address</th>
@@ -507,71 +485,93 @@ export default function TreeGrowersAccounts() {
             </thead>
             <tbody>
               {treeGrowers.length > 0 ? (
-                treeGrowers.map((grower, index) => (
-                  <tr
-                    key={grower.id}
-                    className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition`}
-                  >
-                    <td className="py-3 px-5 text-[.9rem]">
-                      {index + 1 + (filter.page - 1) * filter.entries}
-                    </td>
-                    <td className="py-3 px-5">
-                      <img
-                        src={grower.profile_img}
-                        alt="profile"
-                        className="rounded-full w-20 h-[90%] min-h-20 max-h-25"
-                      />
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem]">
-                      {grower.full_name}
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem]">{grower.email}</td>
-                    <td className="py-3 px-5 text-[.9rem]">
-                      {grower.contact_number}
-                    </td>
-                    <td className="py-3 px-5 text-[.9rem]">{grower.address}</td>
-                    <td className="py-3 px-5 text-[.9rem]">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          grower.is_active
-                            ? "bg-yellow-100 text-green-700"
-                            : "bg-red-100 text-red-700"
-                        }`}
-                      >
-                        {grower.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="py-3 px-5">
-                      <div className="flex items-center gap-2">
-                        <Eye
-                          size={16}
-                          onClick={() => openDetail(grower.id)}
-                          className="cursor-pointer"
-                        />
-
-                        <button
-                          onClick={() =>
-                            handleToggleStatus(grower.id, grower.is_active)
-                          }
-                          title={grower.is_active ? "Deactivate" : "Activate"}
-                          className={`px-2 py-1.5 rounded-md flex items-center cursor-pointer transition-colors ${
+                treeGrowers.map((grower, index) => {
+                  const img = grower.group_img || grower.profile_img;
+                  return (
+                    <tr
+                      key={grower.id}
+                      className={`${index % 2 === 0 ? "" : "bg-[#0F4A2F0D]"} transition`}
+                    >
+                      <td className="py-3 px-5 text-[.9rem]">
+                        {index + 1 + (filter.page - 1) * filter.entries}
+                      </td>
+                      <td className="py-3 px-5">
+                        <div className="flex items-center gap-3">
+                          {img ? (
+                            <img
+                              src={img}
+                              alt="group"
+                              className="rounded-lg w-12 h-12 object-cover border border-gray-200 flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                              <Building2 size={20} className="text-gray-400" />
+                            </div>
+                          )}
+                          <span className="text-[.9rem] font-medium">
+                            {grower.group_name || "No Group"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-5">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap ${groupTypeColor(grower.group_type)}`}
+                        >
+                          {groupTypeLabel(
+                            grower.group_type,
+                            grower.group_type_display,
+                          )}
+                        </span>
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem]">{grower.email}</td>
+                      <td className="py-3 px-5 text-[.9rem]">
+                        {grower.group_contact || grower.contact_number || "—"}
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem]">
+                        {grower.group_address || grower.address || "—"}
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem]">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
                             grower.is_active
-                              ? "text-yellow-600 hover:bg-yellow-50"
-                              : "text-green-600 hover:bg-green-50"
+                              ? "bg-yellow-100 text-green-700"
+                              : "bg-red-100 text-red-700"
                           }`}
                         >
-                          <Power size={16} />
-                        </button>
-                        <button
-                          onClick={() => setDelete(grower.id)}
-                          className="text-red-500 px-2 py-1.5 rounded-md flex items-center cursor-pointer hover:bg-red-50 transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {grower.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="py-3 px-5">
+                        <div className="flex items-center gap-2">
+                          <Eye
+                            size={16}
+                            onClick={() => openDetail(grower.id)}
+                            className="cursor-pointer"
+                          />
+                          <button
+                            onClick={() =>
+                              handleToggleStatus(grower.id, grower.is_active)
+                            }
+                            title={grower.is_active ? "Deactivate" : "Activate"}
+                            className={`px-2 py-1.5 rounded-md flex items-center cursor-pointer transition-colors ${
+                              grower.is_active
+                                ? "text-yellow-600 hover:bg-yellow-50"
+                                : "text-green-600 hover:bg-green-50"
+                            }`}
+                          >
+                            <Power size={16} />
+                          </button>
+                          <button
+                            onClick={() => setDelete(grower.id)}
+                            className="text-red-500 px-2 py-1.5 rounded-md flex items-center cursor-pointer hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
                   <td

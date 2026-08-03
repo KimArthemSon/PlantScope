@@ -374,7 +374,6 @@ function ProfileDropdown({ user, onLogout, onNavigate }: ProfileDropdownProps) {
             sub: "View & edit info",
             path: "/my-profile",
           },
-        
         ].map((item) => (
           <button
             key={item.label}
@@ -421,10 +420,10 @@ export default function Sidebar() {
   const [expanded, setExpanded] = useState(true);
   const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  
+
   // Badge counts
   const [pendingHeadCount, setPendingHeadCount] = useState(0);
-  
+
   // Notification state
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
@@ -435,7 +434,7 @@ export default function Sidebar() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const notifIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isFetchingRef = useRef(false);
-  
+
   useOutsideClick(notifRef, () => setShowNotifs(false));
   useOutsideClick(profileRef, () => setShowProfile(false));
 
@@ -449,7 +448,7 @@ export default function Sidebar() {
     if (!isAuthorized) return;
 
     isFetchingRef.current = true;
-    
+
     try {
       const token = localStorage.getItem("token");
       if (!token) return;
@@ -617,7 +616,7 @@ export default function Sidebar() {
     // Poll unread count every 60s (lightweight)
     notifIntervalRef.current = setInterval(() => fetchUnreadCount(), 60000);
 
-    const handleVisibilityChange = () => { 
+    const handleVisibilityChange = () => {
       if (!document.hidden) {
         fetchUnreadCount();
         fetchNotifications();
@@ -671,11 +670,11 @@ export default function Sidebar() {
     {
       title: "Management",
       items: [
-        { 
-          to: "/applications", 
-          icon: <ListCheck size={18} />, 
-          label: "Applications", 
-          badge: pendingHeadCount > 0 ? pendingHeadCount : null 
+        {
+          to: "/applications",
+          icon: <ListCheck size={18} />,
+          label: "Applications",
+          badge: pendingHeadCount > 0 ? pendingHeadCount : null,
         },
         { to: "/calendar", icon: <Calendar size={18} />, label: "Calendar", badge: null },
         { to: "/monitoring", icon: <MonitorDot size={18} />, label: "Monitoring", badge: null },
@@ -698,7 +697,7 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className="flex">
+    <div className="flex h-screen overflow-hidden">
       {/* ── Global styles ── */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap');
@@ -732,11 +731,10 @@ export default function Sidebar() {
         .notif-ring { animation: notif-pulse 2.2s ease infinite; }
 
         @keyframes badge-pulse {
-          0%  { box-shadow: 0 0 0 0   rgba(239,68,68,.5); }
-          60% { box-shadow: 0 0 0 4px rgba(239,68,68,0);  }
-          100%{ box-shadow: 0 0 0 0   rgba(239,68,68,0);  }
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.08); opacity: 0.9; }
         }
-        .badge-pulse { animation: badge-pulse 2s ease infinite; }
+        .badge-pulse { animation: badge-pulse 2s ease-in-out infinite; }
 
         .notif-scroll::-webkit-scrollbar       { width:4px; }
         .notif-scroll::-webkit-scrollbar-track { background:transparent; }
@@ -746,6 +744,13 @@ export default function Sidebar() {
         .hdr-divider {
           width:1px; height:28px;
           background: linear-gradient(to bottom, transparent, rgba(255,255,255,.15), transparent);
+        }
+
+        .nav-item {
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .nav-item:hover {
+          transform: translateX(2px);
         }
 
         .line-clamp-2 {
@@ -759,108 +764,133 @@ export default function Sidebar() {
       <Logout setIsLogout={setIsLogout} isLogout={isLogout} />
 
       {/* ── Sidebar ── */}
-      <div
-        className={`sticky top-0 pt-0 pb-0 h-screen bg-gradient-to-b from-[#0F4A2F] to-[#0a3a24] text-white flex flex-col justify-between shadow-2xl transition-all duration-500 ease-in-out ${
-          expanded ? "p-3 w-[260px] min-w-[260px]" : "p-2 w-[80px] min-w-[80px]"
+      <aside
+        className={`sticky top-0 h-screen bg-gradient-to-b from-[#0F4A2F] via-[#0d4028] to-[#0a3320] text-white flex flex-col shadow-2xl transition-all duration-500 ease-out ${
+          expanded ? "w-[260px] min-w-[260px]" : "w-[80px] min-w-[80px]"
         }`}
       >
-        {/* Logo / brand */}
-        <div className="p-3 mb-3 flex flex-row items-center border-b border-white/10">
-          <img
-            src={logo}
-            alt="Logo"
-            className="w-10 h-10 object-cover rounded-xl border-2 border-white/30 cursor-pointer shrink-0 shadow-lg"
-            onClick={() => setExpanded(!expanded)}
-          />
-          {expanded && (
-            <>
-              <div className="ml-3 flex-1">
-                <h1 className="text-lg font-bold tracking-wide leading-tight text-white">
-                  PlantScope
-                </h1>
-                <p className="text-[9px] text-emerald-300/70 uppercase tracking-wider">
-                  ENRO Ormoc City
-                </p>
-              </div>
-              <button
-                className="p-1.5 rounded-lg hover:bg-white/10 cursor-pointer transition-all"
+        {/* Logo Section */}
+        <div className="p-4 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className={`relative shrink-0 ${!expanded ? "mx-auto" : ""}`}>
+              <div
+                className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 p-0.5 shadow-lg shadow-emerald-500/20 cursor-pointer"
                 onClick={() => setExpanded(!expanded)}
+                title={expanded ? "Collapse sidebar" : "Expand sidebar"}
               >
-                <ChevronLeft size={16} />
-              </button>
-            </>
-          )}
-        </div>
+                <img
+                  src={logo}
+                  alt="Logo"
+                  className="w-full h-full rounded-[10px] object-cover bg-white"
+                />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#0F4A2F] animate-pulse" />
+            </div>
 
-        {/* Nav groups */}
-        <div className="flex-1 overflow-y-auto sidebar-scrollbar">
-          <nav className="flex flex-col gap-4">
-            {navGroups.map((group) => (
-              <div key={group.title} className="flex flex-col">
-                {expanded && (
-                  <div className="mb-2 px-3">
-                    <p className="text-[10px] font-bold text-emerald-300/60 uppercase tracking-wider">
-                      {group.title}
-                    </p>
-                    <div className="mt-1 h-px bg-gradient-to-r from-emerald-500/30 to-transparent" />
-                  </div>
-                )}
-                <div className="flex flex-col gap-1">
-                  {group.items.map(({ to, icon, label, badge }) => {
-                    const isActive = location.pathname === to;
-                    const hasBadge = badge !== null && badge > 0;
-                    
-                    return (
-                      <Link
-                        key={to}
-                        to={to}
-                        onClick={() => {
-                          if (to === "/applications") fetchPendingCount();
-                        }}
-                        className={`flex items-center transition-all duration-200 rounded-xl px-3 py-2.5 relative group
-                          ${location.pathname === to
-                            ? "bg-white/20 text-white shadow-lg"
-                            : "text-white/70 hover:bg-white/10 hover:text-white"
-                          }`}
-                      >
-                        <span className="shrink-0">{icon}</span>
-                        {expanded && (
-                          <>
-                            <span className="ml-3 text-sm font-medium flex-1">
-                              {label}
-                            </span>
-                            {hasBadge && (
-                              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md min-w-[18px] h-[18px] flex items-center justify-center badge-pulse shadow-md">
-                                {badge > 9 ? '9+' : badge}
-                              </span>
-                            )}
-                          </>
-                        )}
-                        {!expanded && hasBadge && (
-                          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-                        )}
-                      </Link>
-                    );
-                  })}
+            {expanded && (
+              <>
+                <div className="flex-1 min-w-0">
+                  <h1 className="text-base font-bold text-white tracking-tight truncate">
+                    PlantScope
+                  </h1>
+                  <p className="text-[10px] text-emerald-300/70 uppercase tracking-wider font-semibold">
+                    City ENRO Head
+                  </p>
                 </div>
-              </div>
-            ))}
-          </nav>
+                <button
+                  onClick={() => setExpanded(!expanded)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 transition-all cursor-pointer"
+                >
+                  <ChevronLeft size={16} className="text-white/60" />
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Footer version tag */}
-        {expanded && (
-          <div className="border-t border-white/10 pt-3 mt-3">
-            <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-white/5">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[10px] text-white/60">v1.0.0</span>
+        {/* Navigation Groups */}
+        <nav className="flex-1 overflow-y-auto sidebar-scrollbar p-3 space-y-5">
+          {navGroups.map((group) => (
+            <div key={group.title}>
+              {expanded && (
+                <div className="mb-2 px-3 flex items-center gap-2">
+                  <p className="text-[10px] font-bold text-emerald-300/60 uppercase tracking-wider">
+                    {group.title}
+                  </p>
+                  <div className="flex-1 h-px bg-gradient-to-r from-emerald-500/30 to-transparent" />
+                </div>
+              )}
+
+              <div className="space-y-0.5">
+                {group.items.map(({ to, icon, label, badge }) => {
+                  const isActive = location.pathname === to;
+                  const hasBadge = badge !== null && badge > 0;
+
+                  return (
+                    <Link
+                      key={to}
+                      to={to}
+                      onClick={() => {
+                        if (to === "/applications") fetchPendingCount();
+                      }}
+                      className={`nav-item group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer relative overflow-hidden ${
+                        isActive
+                          ? "bg-white/15 text-white shadow-lg border border-white/10"
+                          : "text-white/70 hover:text-white hover:bg-white/5 border border-transparent"
+                      } ${!expanded && "justify-center"}`}
+                    >
+                      {isActive && expanded && (
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-emerald-400 rounded-r-full shadow-lg shadow-emerald-400/50" />
+                      )}
+
+                      <span
+                        className={`relative shrink-0 ${isActive ? "text-emerald-400" : "text-white/60 group-hover:text-white"}`}
+                      >
+                        {icon}
+                      </span>
+
+                      {expanded && (
+                        <>
+                          <span className="flex-1 text-sm font-medium truncate">
+                            {label}
+                          </span>
+                          {hasBadge && (
+                            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md min-w-[18px] h-[18px] flex items-center justify-center badge-pulse shadow-md">
+                              {badge > 9 ? "9+" : badge}
+                            </span>
+                          )}
+                        </>
+                      )}
+
+                      {!expanded && hasBadge && (
+                        <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50" />
+                      )}
+                    </Link>
+                  );
+                })}
               </div>
-              <span className="text-[10px] text-white/40">ENRO</span>
+            </div>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        {expanded && (
+          <div className="p-3 border-t border-white/10">
+            <div className="bg-gradient-to-r from-white/5 to-transparent rounded-xl p-3 border border-white/5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50" />
+                  <span className="text-[10px] font-semibold text-white/80">
+                    System Online
+                  </span>
+                </div>
+                <span className="text-[9px] text-white/40">v1.0.0</span>
+              </div>
+              <p className="text-[9px] text-white/40">ENRO Ormoc City</p>
             </div>
           </div>
         )}
-      </div>
+      </aside>
 
       {/* ── Main content ── */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden bg-[#f5faf6]">
@@ -975,7 +1005,7 @@ export default function Sidebar() {
             </div>
           </div>
         </header>
-        {/* ══ END HEADER ══════════════════════════════════════════════════════ */}
+        {/* ══ END HEADER ══════════════════════════════════════════════════════ */ }
 
         <Outlet />
       </main>
