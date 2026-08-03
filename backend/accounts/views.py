@@ -568,53 +568,6 @@ def get_me(request):
         return JsonResponse({'error': 'Invalid token or server error'}, status=400)
 
 
-@csrf_exempt
-def get_tree_grower_detail(request, user_id):
-    """Get detailed information about a tree grower including their group"""
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET allowed'}, status=405)
-
-    try:
-        user = User.objects.get(id=user_id, user_role='treeGrowers')
-    except User.DoesNotExist:
-        return JsonResponse({'error': 'Tree grower not found'}, status=404)
-
-    p = getattr(user, 'profile', None)
-    group = getattr(user, 'tree_grower_group', None)
-
-    # ✅ UPDATED: Use get_cloudinary_url helper
-    profile_img_url = None
-    if p and p.profile_img:
-        profile_img_url = get_cloudinary_url(str(p.profile_img))  # ← CHANGED
-    
-    group_img_url = None
-    if group and group.profile_img:
-        group_img_url = get_cloudinary_url(str(group.profile_img))  # ← CHANGED
-
-    return JsonResponse({
-        'id':         user.id,
-        'email':      user.email,
-        'is_active':  user.is_active,
-        'created_at': str(user.created_at),
-        'profile': {
-            'first_name':  p.first_name  if p else '',
-            'middle_name': p.middle_name if p else '',
-            'last_name':   p.last_name   if p else '',
-            'birthday':    str(p.birthday) if p and p.birthday else None,
-            'gender':      p.gender      if p else '',
-            'contact':     p.contact     if p else '',
-            'address':     p.address     if p else '',
-            'profile_img': profile_img_url,  # ← CHANGED
-        },
-        'group': {
-            'group_name':   group.group_name,
-            'group_type':   group.get_group_type_display(),
-            'address':      group.address,
-            'contact':      group.contact,
-            'created_at':   str(group.created_at),
-            'profile_img':  group_img_url,  # ← CHANGED
-        } if group else None,
-    })
 
 
 @csrf_exempt
@@ -645,67 +598,114 @@ def toggle_user_status(request, user_id):
 
 @csrf_exempt
 def list_tree_growers(request):
-    """List all tree growers with their group information"""
+    """List all tree growers with their group information (groups, not individuals)"""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     search = request.GET.get('search', '').strip()
-    page = int(request.GET.get('page', 1))
-    entries = int(request.GET.get('entries', 10))
+
+    try:
+        page = max(1, int(request.GET.get('page', 1)))
+        entries = min(100, max(1, int(request.GET.get('entries', 10))))
+    except (TypeError, ValueError):
+        page, entries = 1, 10
 
     with connection.cursor() as cursor:
-        # 1️⃣ Get total count
+        # 1️⃣ Total count (search: email OR group name)
         cursor.execute(
             '''
             SELECT COUNT(*)
             FROM accounts_user AS u
-            JOIN accounts_profile AS a ON u.id = a.users_id
-            WHERE u.email LIKE %s AND u.user_role = %s
+            LEFT JOIN accounts_treegrowergroup AS g ON u.id = g.users_id
+            WHERE u.user_role = %s
+              AND (u.email LIKE %s OR g.group_name LIKE %s)
             ''',
-            [f"%{search}%", "treeGrowers"]
+            ["treeGrowers", f"%{search}%", f"%{search}%"]
         )
         total_count_row = cursor.fetchone()
         total_count = total_count_row[0] if total_count_row else 0
         total_pages = max(math.ceil(total_count / entries), 1)
 
-        # 2️⃣ Fetch paginated rows
+        # 2️⃣ Paginated rows (account + group only)
         offset = (page - 1) * entries
         cursor.execute(
             '''
             SELECT u.id, u.email, u.is_active, u.created_at,
-                   a.profile_img, a.first_name, a.last_name, a.contact, a.address,
-                   g.group_name, g.group_type
+                   g.group_name, g.group_type,
+                   CASE g.group_type
+                       WHEN 'formal_org'      THEN 'Formal Organization'
+                       WHEN 'community_group' THEN 'Community Group'
+                       ELSE 'Informal Group'
+                   END AS group_type_display,
+                   g.contact       AS group_contact,
+                   g.address       AS group_address,
+                   g.profile_img   AS group_img
             FROM accounts_user AS u
-            JOIN accounts_profile AS a ON u.id = a.users_id
             LEFT JOIN accounts_treegrowergroup AS g ON u.id = g.users_id
-            WHERE u.email LIKE %s AND u.user_role = %s
-            ORDER BY u.created_at desc
+            WHERE u.user_role = %s
+              AND (u.email LIKE %s OR g.group_name LIKE %s)
+            ORDER BY u.created_at DESC
             LIMIT %s OFFSET %s
             ''',
-            [f"%{search}%", "treeGrowers", entries, offset]
+            ["treeGrowers", f"%{search}%", f"%{search}%", entries, offset]
         )
 
         columns = [col[0] for col in cursor.description]
         rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-        # ✅ UPDATED: Use get_cloudinary_url helper
-        users_list = [
+        tree_growers = [
             {
-                'id':             user['id'],
-                'email':          user['email'],
-                'is_active':      user['is_active'],
-                'profile_img':    get_cloudinary_url(user['profile_img']),  # ← CHANGED
-                'full_name':      f"{user['first_name']} {user['last_name']}".strip(),
-                'contact_number': user.get('contact', ''),
-                'address':        user.get('address', ''),
-                'group_name':     user.get('group_name', ''),
-                'group_type':     user.get('group_type', ''),
+                'id':                 row['id'],
+                'email':              row['email'],
+                'is_active':          bool(row['is_active']),
+                'created_at':         str(row['created_at']) if row['created_at'] else None,
+                'group_name':         row['group_name'] or '',
+                'group_type':         row['group_type'] or '',
+                'group_type_display': row['group_type_display'] or '',
+                'group_contact':      row['group_contact'] or '',
+                'group_address':      row['group_address'] or '',
+                'group_img':          get_cloudinary_url(row['group_img']) if row['group_img'] else None,
             }
-            for user in rows
+            for row in rows
         ]
 
-    response = {
+    return JsonResponse({
         'total_pages': total_pages,
-        'tree_growers': users_list,
-    }
-    return JsonResponse(response, safe=False)
+        'tree_growers': tree_growers,
+    }, safe=False)
+
+
+@csrf_exempt
+def get_tree_grower_detail(request, user_id):
+    """Tree grower detail: account + group (groups, not individuals)"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    try:
+        user = User.objects.get(id=user_id, user_role='treeGrowers')
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'Tree grower not found'}, status=404)
+
+    group = getattr(user, 'tree_grower_group', None)
+
+    group_img_url = None
+    if group and group.profile_img:
+        group_img_url = get_cloudinary_url(str(group.profile_img))
+
+    return JsonResponse({
+        'id':         user.id,
+        'email':      user.email,
+        'is_active':  user.is_active,
+        'created_at': str(user.created_at),
+        'group': {
+            'group_id':           group.group_id,
+            'group_name':         group.group_name,
+            'group_type':         group.group_type,
+            'group_type_display': group.get_group_type_display(),
+            'address':            group.address,
+            'contact':            group.contact,
+            'created_at':         str(group.created_at),
+            'updated_at':         str(group.updated_at),
+            'profile_img':        group_img_url,
+        } if group else None,
+    })
