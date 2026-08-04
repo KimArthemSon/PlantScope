@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 import { useAlert } from "@/components/AlertContext";
 
@@ -76,6 +77,7 @@ const timeAgo = (dateString: string): string => {
 export default function NotificationsPage() {
   const router = useRouter();
   const alert = useAlert();
+  const insets = useSafeAreaInsets();
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -240,7 +242,7 @@ export default function NotificationsPage() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color="#0F4A2F" />
         <Text style={styles.loadingText}>Loading notifications…</Text>
       </View>
@@ -250,7 +252,7 @@ export default function NotificationsPage() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
@@ -302,7 +304,7 @@ export default function NotificationsPage() {
       {/* Notifications List */}
       <ScrollView
         style={styles.list}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 16 }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -359,7 +361,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingBottom: 16,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",

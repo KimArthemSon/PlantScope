@@ -368,21 +368,13 @@ export default function EditProfile() {
           const rawGroupType = tgData.group?.group_type || "informal_group";
           const mappedGroupType = groupTypeMap[rawGroupType] || rawGroupType;
 
+          // Tree growers no longer have personal profile fields loaded
           setProfile({
             ...EMPTY,
             id: tgData.id,
             email: tgData.email,
             user_role: "treeGrowers",
             is_active: tgData.is_active ? "true" : "false",
-
-            first_name: tgData.profile?.first_name || "",
-            middle_name: tgData.profile?.middle_name || "",
-            last_name: tgData.profile?.last_name || "",
-            birthday: tgData.profile?.birthday || "",
-            gender: tgData.profile?.gender || "O",
-            contact: tgData.profile?.contact || "",
-            address: tgData.profile?.address || "",
-            preview_profile: tgData.profile?.profile_img || "",
 
             group_name: tgData.group?.group_name || "",
             group_type: mappedGroupType,
@@ -479,26 +471,30 @@ export default function EditProfile() {
       const token = await SecureStore.getItemAsync("token");
       const fd = new FormData();
 
-      // Common fields
+      // Common fields for everyone
       fd.append("email", profile.email);
-      fd.append("first_name", profile.first_name);
-      fd.append("last_name", profile.last_name);
-      fd.append("middle_name", profile.middle_name);
-      fd.append("contact", profile.contact);
-      fd.append("gender", profile.gender);
-      if (profile.birthday) fd.append("birthday", profile.birthday);
-      fd.append("address", profile.address);
       fd.append("user_role", profile.user_role);
       fd.append("is_active", profile.is_active);
 
       if (pwd.length > 0) fd.append("password", pwd);
 
-      if (profileImgFile) {
-        fd.append("profile_img", {
-          uri: profileImgFile.uri,
-          name: profileImgFile.name,
-          type: profileImgFile.type,
-        } as any);
+      // Personal fields (only for non-tree growers)
+      if (profile.user_role !== "treeGrowers") {
+        fd.append("first_name", profile.first_name);
+        fd.append("last_name", profile.last_name);
+        fd.append("middle_name", profile.middle_name);
+        fd.append("contact", profile.contact);
+        fd.append("gender", profile.gender);
+        if (profile.birthday) fd.append("birthday", profile.birthday);
+        fd.append("address", profile.address);
+
+        if (profileImgFile) {
+          fd.append("profile_img", {
+            uri: profileImgFile.uri,
+            name: profileImgFile.name,
+            type: profileImgFile.type,
+          } as any);
+        }
       }
 
       let endpoint = `${API}/update_user/${userId}`;
@@ -650,28 +646,47 @@ export default function EditProfile() {
       >
         {/* ── Avatar Hero ── */}
         <View style={styles.hero}>
-          <View style={styles.avatarContainer}>
-            {profile.preview_profile ? (
-              <Image
-                source={{ uri: profile.preview_profile }}
-                style={styles.avatar}
-              />
-            ) : (
-              <View style={styles.avatarFallback}>
-                <Text style={styles.avatarInitials}>
-                  {initials(profile.first_name, profile.last_name)}
-                </Text>
-              </View>
-            )}
-            <TouchableOpacity
-              style={styles.editAvatarBtn}
-              onPress={() => pickImage("profile")}
-              activeOpacity={0.8}
-            >
-              <MaterialCommunityIcons name="pencil" size={14} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.heroName}>{fullName}</Text>
+          {profile.user_role === "treeGrowers" ? (
+            <View style={styles.avatarContainer}>
+              {profile.preview_group_profile ? (
+                <Image
+                  source={{ uri: profile.preview_group_profile }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <MaterialCommunityIcons name="leaf" size={32} color="#FFF" />
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={styles.avatarContainer}>
+              {profile.preview_profile ? (
+                <Image
+                  source={{ uri: profile.preview_profile }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarInitials}>
+                    {initials(profile.first_name, profile.last_name)}
+                  </Text>
+                </View>
+              )}
+              <TouchableOpacity
+                style={styles.editAvatarBtn}
+                onPress={() => pickImage("profile")}
+                activeOpacity={0.8}
+              >
+                <MaterialCommunityIcons name="pencil" size={14} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          )}
+          <Text style={styles.heroName}>
+            {profile.user_role === "treeGrowers"
+              ? profile.group_name || "Tree Grower Group"
+              : fullName}
+          </Text>
           {profile.user_role ? (
             <View style={styles.roleBadge}>
               <Ionicons name="shield-checkmark" size={12} color="#0F4A2F" />
@@ -685,88 +700,90 @@ export default function EditProfile() {
         </View>
 
         {/* ── Personal Information ── */}
-        <SectionCard
-          icon="account-outline"
-          title="Personal Information"
-          subtitle="Name, contact and location"
-        >
-          <Row>
-            <Field
-              label="First Name"
-              icon="account-outline"
-              value={profile.first_name}
-              onChangeText={set("first_name")}
-              placeholder="First name"
-            />
-            <Field
-              label="Middle Name"
-              icon="account-outline"
-              value={profile.middle_name}
-              onChangeText={set("middle_name")}
-              placeholder="Middle name"
-            />
-          </Row>
-          <Field
-            label="Last Name"
+        {profile.user_role !== "treeGrowers" && (
+          <SectionCard
             icon="account-outline"
-            value={profile.last_name}
-            onChangeText={set("last_name")}
-            placeholder="Last name"
-          />
-          <Field
-            label="Contact Number"
-            icon="phone-outline"
-            value={profile.contact}
-            onChangeText={set("contact")}
-            placeholder="+63 912 345 6789"
-            keyboardType="phone-pad"
-          />
-          <Row>
-            <PickerField
-              label="Gender"
-              icon="gender-male-female"
-              value={profile.gender}
-              onSelect={set("gender")}
-              options={[
-                { label: "Male", value: "M" },
-                { label: "Female", value: "F" },
-                { label: "Other", value: "O" },
-              ]}
+            title="Personal Information"
+            subtitle="Name, contact and location"
+          >
+            <Row>
+              <Field
+                label="First Name"
+                icon="account-outline"
+                value={profile.first_name}
+                onChangeText={set("first_name")}
+                placeholder="First name"
+              />
+              <Field
+                label="Middle Name"
+                icon="account-outline"
+                value={profile.middle_name}
+                onChangeText={set("middle_name")}
+                placeholder="Middle name"
+              />
+            </Row>
+            <Field
+              label="Last Name"
+              icon="account-outline"
+              value={profile.last_name}
+              onChangeText={set("last_name")}
+              placeholder="Last name"
             />
-            {/* Birthday with Date Picker */}
-            <View style={styles.fieldWrap}>
-              <Text style={styles.label}>Birthday</Text>
-              <TouchableOpacity
-                style={styles.inputRow}
-                onPress={() => setShowDatePicker(true)}
-                activeOpacity={0.7}
-              >
-                <MaterialCommunityIcons
-                  name="cake-variant-outline"
-                  size={16}
-                  color="#0F4A2F"
-                  style={styles.inputIcon}
-                />
-                <Text
-                  style={[
-                    styles.input,
-                    !profile.birthday && styles.placeholderText,
-                  ]}
+            <Field
+              label="Contact Number"
+              icon="phone-outline"
+              value={profile.contact}
+              onChangeText={set("contact")}
+              placeholder="+63 912 345 6789"
+              keyboardType="phone-pad"
+            />
+            <Row>
+              <PickerField
+                label="Gender"
+                icon="gender-male-female"
+                value={profile.gender}
+                onSelect={set("gender")}
+                options={[
+                  { label: "Male", value: "M" },
+                  { label: "Female", value: "F" },
+                  { label: "Other", value: "O" },
+                ]}
+              />
+              {/* Birthday with Date Picker */}
+              <View style={styles.fieldWrap}>
+                <Text style={styles.label}>Birthday</Text>
+                <TouchableOpacity
+                  style={styles.inputRow}
+                  onPress={() => setShowDatePicker(true)}
+                  activeOpacity={0.7}
                 >
-                  {profile.birthday || "Select date"}
-                </Text>
-                <Ionicons name="calendar-outline" size={16} color="#9CA3AF" />
-              </TouchableOpacity>
-            </View>
-          </Row>
-          <Field
-            label="Address"
-            icon="map-marker-outline"
-            value={profile.address}
-            onChangeText={set("address")}
-            placeholder="Brgy., City, Province"
-          />
-        </SectionCard>
+                  <MaterialCommunityIcons
+                    name="cake-variant-outline"
+                    size={16}
+                    color="#0F4A2F"
+                    style={styles.inputIcon}
+                  />
+                  <Text
+                    style={[
+                      styles.input,
+                      !profile.birthday && styles.placeholderText,
+                    ]}
+                  >
+                    {profile.birthday || "Select date"}
+                  </Text>
+                  <Ionicons name="calendar-outline" size={16} color="#9CA3AF" />
+                </TouchableOpacity>
+              </View>
+            </Row>
+            <Field
+              label="Address"
+              icon="map-marker-outline"
+              value={profile.address}
+              onChangeText={set("address")}
+              placeholder="Brgy., City, Province"
+            />
+          </SectionCard>
+        )}
 
         {/* ── Organization Information (Tree Growers Only) ── */}
         {profile.user_role === "treeGrowers" && (

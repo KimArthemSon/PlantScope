@@ -17,7 +17,8 @@ from reforestation_areas.models import Reforestation_areas
 from tree_species.models import Tree_species
 from animals.models import Animal
 from Field_assessment.models import Field_assessment
-
+from tree_planting_programs.models import Application
+from django.db.models import Exists, OuterRef, Q
 logger = logging.getLogger(__name__)
 
 
@@ -230,6 +231,221 @@ def get_sites(request, reforestation_area_id):
 
     return JsonResponse({"data": data, "total_page": total_page, "page": page, "entries": entries, "total": total}, status=200)
 
+# Only these site statuses are considered "official"
+OFFICIAL_SITE_STATUSES = ['accepted', 'under_monitoring', 'completed', 'rejected']
+
+ACTIVE_APPLICATION_STATUSES = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
+
+
+@csrf_exempt
+def get_official_sites(request):
+    """
+    GET: Global dashboard of OFFICIAL sites across ALL reforestation areas.
+
+    Rules:
+    - Site must be active and meta-verified.
+    - Site status must be one of: accepted, under_monitoring, completed, rejected.
+    - Optional filters: area, barangay, land classification, program status, pinned, search.
+    - Both area and status filters support "all" to show everything within official scope.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    search = request.GET.get("search", "").strip()
+    entries = max(1, int(request.GET.get("entries", 50)))
+    page = max(1, int(request.GET.get("page", 1)))
+
+    status_filter = request.GET.get("status", "all").strip().lower()
+    pinned_filter = request.GET.get("pinned_only", "").strip().lower()
+    land_classification_filter = request.GET.get("land_classification_id", "").strip()
+    area_filter = request.GET.get("reforestation_area_id", "").strip()
+    barangay_filter = request.GET.get("barangay_id", "").strip()
+    program_status_filter = request.GET.get("program_status", "").strip().lower()
+
+    offset = (page - 1) * entries
+
+    # ─────────────────────────────────────────────
+    # 1. BASE QUERYSET (STRICT OFFICIAL RULES)
+    # ─────────────────────────────────────────────
+    sites = Sites.objects.filter(
+        is_active=True,
+        meta_verification__status='verified',
+    )
+
+    # ─────────────────────────────────────────────
+    # 2. STATUS FILTER
+    # "all" or empty = show all official statuses
+    # Specific value(s) = filter to those (comma-separated supported)
+    # ─────────────────────────────────────────────
+    if status_filter and status_filter != "all":
+        requested_statuses = [
+            s.strip() for s in status_filter.split(',')
+            if s.strip() in OFFICIAL_SITE_STATUSES
+        ]
+        # Only apply filter if we got valid statuses; otherwise fall back to all official
+        if requested_statuses:
+            sites = sites.filter(status__in=requested_statuses)
+        else:
+            sites = sites.filter(status__in=OFFICIAL_SITE_STATUSES)
+    else:
+        # "all" or empty → no restriction beyond official scope
+        sites = sites.filter(status__in=OFFICIAL_SITE_STATUSES)
+
+    # ─────────────────────────────────────────────
+    # 3. ANNOTATE PROGRAM STATUS
+    # ─────────────────────────────────────────────
+    active_apps = Application.objects.filter(
+        site=OuterRef('pk'),
+        status__in=ACTIVE_APPLICATION_STATUSES
+    )
+    completed_apps = Application.objects.filter(
+        site=OuterRef('pk'),
+        status='completed'
+    )
+
+    sites = sites.annotate(
+        has_active_app=Exists(active_apps),
+        has_completed_app=Exists(completed_apps),
+    ).select_related(
+        'reforestation_area__barangay',
+        'meta_verification',
+        'meta_verification__verified_land_classification',
+    ).prefetch_related(
+        'site_data_versions',
+        'permit_documents',
+        'meta_verification__animal_relations',
+    ).order_by('-is_pinned', '-created_at')
+
+    # ─────────────────────────────────────────────
+    # 4. OPTIONAL FILTERS
+    # ─────────────────────────────────────────────
+    if search:
+        sites = sites.filter(
+            Q(name__icontains=search) |
+            Q(reforestation_area__name__icontains=search)
+        )
+
+    # ✅ AREA FILTER: "all" or empty = no area restriction (show all areas)
+    if area_filter and area_filter != "all":
+        try:
+            sites = sites.filter(reforestation_area_id=int(area_filter))
+        except (ValueError, TypeError):
+            pass  # Invalid ID → ignore filter, show all
+
+    if barangay_filter:
+        try:
+            sites = sites.filter(reforestation_area__barangay_id=int(barangay_filter))
+        except (ValueError, TypeError):
+            pass
+
+    if pinned_filter == "true":
+        sites = sites.filter(is_pinned=True)
+
+    if land_classification_filter:
+        try:
+            sites = sites.filter(meta_verification__verified_land_classification_id=int(land_classification_filter))
+        except (ValueError, TypeError):
+            pass
+
+    # ✅ PROGRAM STATUS FILTER
+    if program_status_filter == 'ongoing':
+        sites = sites.filter(Q(has_active_app=True) | Q(status='under_monitoring'))
+    elif program_status_filter == 'completed':
+        sites = sites.filter(has_active_app=False).filter(Q(has_completed_app=True) | Q(status='completed'))
+    elif program_status_filter == 'available':
+        sites = sites.filter(has_active_app=False, has_completed_app=False).exclude(status__in=['completed', 'under_monitoring'])
+    # else: empty or "all" → no program status restriction
+
+    # ─────────────────────────────────────────────
+    # 5. PAGINATION
+    # ─────────────────────────────────────────────
+    total = sites.count()
+    total_page = max(1, math.ceil(total / entries))
+    sites_list = sites[offset: offset + entries]
+
+    # ─────────────────────────────────────────────
+    # 6. SERIALIZE
+    # ─────────────────────────────────────────────
+    data = []
+    for s in sites_list:
+        # Validation data (from current site_data version)
+        current_sd = next((sd for sd in s.site_data_versions.all() if sd.is_current), None)
+        validation = {
+            "has_safety_note": False,
+            "has_survivability_note": False,
+            "final_decision": None,
+            "is_ready_to_finalize": False,
+        }
+
+        if current_sd and current_sd.site_data:
+            validation["has_safety_note"] = bool(current_sd.site_data.get('safety', {}).get('decision_note', '').strip())
+            validation["has_survivability_note"] = bool(current_sd.site_data.get('survivability', {}).get('decision_note', '').strip())
+            validation["final_decision"] = current_sd.site_data.get('final_decision')
+            validation["is_ready_to_finalize"] = bool(validation["final_decision"])
+
+        # Verification metadata
+        meta_verification = getattr(s, 'meta_verification', None)
+        verification_info = {
+            "status": "pending",
+            "land_classification": None,
+            "security_concerns_count": 0,
+            "has_accessibility": False,
+            "accessibility_type": None,
+            "verified_animals_count": 0,
+        }
+
+        if meta_verification:
+            verification_info["status"] = meta_verification.status
+            if meta_verification.verified_land_classification:
+                verification_info["land_classification"] = {
+                    "id": meta_verification.verified_land_classification.land_classification_id,
+                    "name": meta_verification.verified_land_classification.name,
+                }
+            if meta_verification.verified_security_concerns:
+                verification_info["security_concerns_count"] = len(meta_verification.verified_security_concerns)
+            if meta_verification.verified_accessibility:
+                verification_info["has_accessibility"] = True
+                if isinstance(meta_verification.verified_accessibility, dict):
+                    verification_info["accessibility_type"] = meta_verification.verified_accessibility.get('type', 'Unknown')
+            verification_info["verified_animals_count"] = len(meta_verification.animal_relations.all())
+
+        # Program status calculation
+        if s.has_active_app or s.status == 'under_monitoring':
+            program_status = 'ongoing'
+        elif s.has_completed_app or s.status == 'completed':
+            program_status = 'completed'
+        else:
+            program_status = 'available'
+
+        # Location info
+        area = s.reforestation_area
+        barangay = area.barangay if area else None
+
+        data.append({
+            "site_id": s.site_id,
+            "reforestation_area_id": s.reforestation_area_id,
+            "reforestation_area": area.name if area else 'N/A',
+            "barangay": barangay.name if barangay else 'N/A',
+            "name": s.name,
+            "status": s.status,                          # ← Site lifecycle status (accepted, completed, etc.)
+            "program_status": program_status,            # ← Program state (available, ongoing, completed)
+            "is_pinned": s.is_pinned,
+            "validation": validation,
+            "verification": verification_info,           # ← Meta verification (verified, pending, etc.)
+            "permit_count": len(s.permit_documents.all()),
+            "metrics": {
+                "area_hectares": s.total_area_hectares,
+            },
+            "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
+    return JsonResponse({
+        "data": data,
+        "total_page": total_page,
+        "page": page,
+        "entries": entries,
+        "total": total,
+    }, status=200)
 
 # ─────────────────────────────────────────────
 # GET SINGLE SITE

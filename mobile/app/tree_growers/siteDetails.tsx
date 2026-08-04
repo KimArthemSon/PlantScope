@@ -23,10 +23,7 @@ import { api } from "@/constants/url_fixed";
 
 const { width, height: screenHeight } = Dimensions.get("window");
 
-// Bottom tab bar height (standard for most React Navigation tab bars)
 const TAB_BAR_HEIGHT = 80;
-
-// Number of lines to show before truncating the description
 const DESCRIPTION_LINE_LIMIT = 4;
 
 // --- OSM / Leaflet Map Component ---
@@ -121,7 +118,46 @@ const OsmMapComponent = ({
   );
 };
 
-// --- Main Screen Component ---
+// --- Types (✅ Privacy-clean: no active applications, no other growers' info) ---
+interface SiteHistorySummary {
+  total_applications: number;
+  past_program_count: number;
+  completed_application_count: number;
+  rejected_application_count: number;
+  cancelled_application_count: number;
+  failed_application_count: number;
+  total_monitoring_visits: number;
+  initial_visit_count: number;
+  ongoing_visit_count: number;
+  latest_monitoring_date: string | null;
+  average_survival_rate: number;
+  total_seedling_requests: number;
+  total_seedlings_requested: number;
+  total_seedlings_confirmed: number;
+}
+
+interface RecentMonitoringVisit {
+  progress_report_id: number;
+  visit_type: string;
+  visit_type_label: string;
+  status: string;
+  status_label: string;
+  orientation_conducted: boolean;
+  submitted_at: string;
+  total_survived: number;
+  total_dead: number;
+  total_plants: number;
+  survival_rate: number;
+}
+
+interface SiteHistory {
+  has_history: boolean;
+  past_program_count: number;
+  summary: SiteHistorySummary;
+  recent_monitoring_visits: RecentMonitoringVisit[];
+  seedling_summary: any;
+}
+
 interface SiteDetails {
   site_id: number;
   name: string;
@@ -129,7 +165,6 @@ interface SiteDetails {
   reforestation_area: string;
   barangay: string;
   total_area_hectares: number;
-  ndvi_value: number | null;
   marker_coordinate: [number, number] | null;
   polygon_coordinates: [number, number][] | null;
   general_images: Array<{
@@ -147,8 +182,10 @@ interface SiteDetails {
   accessibility: { type: string; description: string } | null;
   land_classification: { id: number; name: string } | null;
   created_at: string;
+  site_history: SiteHistory;
 }
 
+// --- Main Screen Component ---
 export default function SiteDetails() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -159,40 +196,37 @@ export default function SiteDetails() {
   const [details, setDetails] = useState<SiteDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mapModalVisible, setMapModalVisible] = useState(false);
   const [galleryModalVisible, setGalleryModalVisible] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
-  // ✅ FIXED: Description "see more" state
   const [descExpanded, setDescExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
 
-  // Animated values for parallax
   const scrollY = useRef(new Animated.Value(0)).current;
   const HEADER_HEIGHT = 340;
 
   const fetchDetails = async (isRefresh: boolean = false) => {
     try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
+
       const token = await SecureStore.getItemAsync("token");
       if (!token) throw new Error("No authentication token found.");
 
       const res = await fetch(
         `${api}/api/get_site_details_for_tree_grower/${siteId}/`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       const data = await res.json();
       if (!res.ok)
         throw new Error(data.error || "Failed to fetch site details");
+      setErrorMessage(null);
       setDetails(data);
     } catch (err: any) {
+      setErrorMessage(err.message);
       Alert.alert("Error", err.message);
     } finally {
       setLoading(false);
@@ -205,13 +239,11 @@ export default function SiteDetails() {
   }, [siteId]);
 
   const onRefresh = () => {
-    // ✅ Reset description states on refresh
     setDescExpanded(false);
     setIsTruncated(false);
     fetchDetails(true);
   };
 
-  // Parallax: image scales and fades as you scroll
   const imageScale = scrollY.interpolate({
     inputRange: [-HEADER_HEIGHT, 0, HEADER_HEIGHT],
     outputRange: [1.3, 1, 1.1],
@@ -224,7 +256,6 @@ export default function SiteDetails() {
     extrapolate: "clamp",
   });
 
-  // Header opacity for title fade-in
   const headerOpacity = scrollY.interpolate({
     inputRange: [HEADER_HEIGHT - 120, HEADER_HEIGHT - 40],
     outputRange: [0, 1],
@@ -279,7 +310,9 @@ export default function SiteDetails() {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.center}>
-          <Text style={styles.errorText}>Failed to load site details</Text>
+          <Text style={styles.errorText}>
+            {errorMessage || "Failed to load site details"}
+          </Text>
           <TouchableOpacity
             onPress={() => router.back()}
             style={styles.textBackButton}
@@ -295,9 +328,12 @@ export default function SiteDetails() {
   const galleryImages = details.general_images;
   const hasMultipleImages = galleryImages.length > 1;
 
+  // ✅ Past programs count for the "Now Available Again" banner
+  const pastPrograms = details.site_history?.summary?.past_program_count || 0;
+
   return (
     <View style={styles.container}>
-      {/* 🖼️ Hero Image - Fixed at top, no translateY (no gap) */}
+      {/* 🖼️ Hero Image */}
       <Animated.View
         style={[
           styles.heroImageContainer,
@@ -323,18 +359,14 @@ export default function SiteDetails() {
             <Ionicons name="image" size={48} color="#94A3B8" />
           </View>
         )}
-        {/* Bottom gradient fade into content */}
         <View style={styles.heroGradient} />
       </Animated.View>
 
-      {/* 📌 Sticky Header (fades in on scroll) */}
+      {/* 📌 Sticky Header */}
       <Animated.View
         style={[
           styles.stickyHeader,
-          {
-            paddingTop: insets.top + 8,
-            opacity: headerOpacity,
-          },
+          { paddingTop: insets.top + 8, opacity: headerOpacity },
         ]}
       >
         <Text style={styles.stickyHeaderTitle} numberOfLines={1}>
@@ -378,17 +410,18 @@ export default function SiteDetails() {
           />
         }
       >
-        {/* Spacer pushes content to start below hero */}
         <View style={{ height: HEADER_HEIGHT - 30 }} />
 
-        {/* 📝 Content Sheet */}
         <View style={styles.contentSheet}>
           {/* Header Info */}
           <View style={styles.headerSection}>
             <View style={styles.headerTopRow}>
-              <View style={styles.statusPill}>
+              {/* ✅ Always Available — backend guarantees the site is free */}
+              <View style={[styles.statusPill, { backgroundColor: "#ECFDF5" }]}>
                 <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-                <Text style={styles.statusPillText}>Available</Text>
+                <Text style={[styles.statusPillText, { color: "#059669" }]}>
+                  Available
+                </Text>
               </View>
               <View style={styles.ratingBadge}>
                 <Ionicons name="star" size={12} color="#F59E0B" />
@@ -410,13 +443,12 @@ export default function SiteDetails() {
             </Text>
           </View>
 
-          {/* ✅ FIXED: Description Section with See More / See Less */}
+          {/* ✅ Description Section */}
           {details.description && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>About this Site</Text>
               <Text
                 style={styles.descriptionText}
-                // Only apply numberOfLines if it's truncated AND collapsed
                 numberOfLines={
                   descExpanded
                     ? undefined
@@ -425,18 +457,15 @@ export default function SiteDetails() {
                       : undefined
                 }
                 onTextLayout={(e) => {
-                  // Only measure when collapsed and not yet determined to be truncated
                   if (!descExpanded && !isTruncated) {
-                    if (e.nativeEvent.lines.length > DESCRIPTION_LINE_LIMIT) {
+                    if (e.nativeEvent.lines.length > DESCRIPTION_LINE_LIMIT)
                       setIsTruncated(true);
-                    }
                   }
                 }}
               >
                 {details.description}
               </Text>
 
-              {/* Show button only if text actually exceeded the line limit */}
               {isTruncated && (
                 <TouchableOpacity
                   onPress={() => setDescExpanded(!descExpanded)}
@@ -453,6 +482,86 @@ export default function SiteDetails() {
                   />
                 </TouchableOpacity>
               )}
+            </View>
+          )}
+
+          {/* 🌳 Site History Section (anonymous, past-only) */}
+          {details.site_history?.has_history && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Site History</Text>
+
+              {/* ✅ NEW: Positive "Now Available Again" banner */}
+              {pastPrograms > 0 && (
+                <View style={styles.historyAvailableBanner}>
+                  <Ionicons name="refresh-circle" size={20} color="#047857" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyAvailableTitle}>
+                      Now Available Again
+                    </Text>
+                    <Text style={styles.historyAvailableText}>
+                      This site successfully hosted {pastPrograms} past program
+                      {pastPrograms > 1 ? "s" : ""} and is now open for new
+                      applications.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Stats Row */}
+              <View style={styles.historyStatsRow}>
+                <View style={styles.historyStatCard}>
+                  <Text style={styles.historyStatValue}>
+                    {details.site_history.summary.total_monitoring_visits}
+                  </Text>
+                  <Text style={styles.historyStatLabel}>Monitoring Visits</Text>
+                </View>
+                <View style={styles.historyStatCard}>
+                  <Text style={styles.historyStatValue}>
+                    {details.site_history.summary.total_seedlings_confirmed ||
+                      0}
+                  </Text>
+                  <Text style={styles.historyStatLabel}>Trees Planted</Text>
+                </View>
+              </View>
+
+              {/* Latest Visit Card */}
+              {details.site_history.recent_monitoring_visits &&
+                details.site_history.recent_monitoring_visits.length > 0 && (
+                  <View style={styles.historyVisitCard}>
+                    <View style={styles.historyVisitHeader}>
+                      <Ionicons name="clipboard" size={18} color="#0F4A2F" />
+                      <Text style={styles.historyVisitTitle}>Latest Visit</Text>
+                      <Text style={styles.historyVisitDate}>
+                        {
+                          details.site_history.recent_monitoring_visits[0]
+                            .submitted_at
+                        }
+                      </Text>
+                    </View>
+                    <View style={styles.historyVisitBody}>
+                      <Text style={styles.historyVisitText}>
+                        <Text style={{ fontWeight: "700" }}>
+                          {
+                            details.site_history.recent_monitoring_visits[0]
+                              .total_survived
+                          }
+                        </Text>{" "}
+                        trees thriving
+                      </Text>
+                      <View style={styles.historyVisitDivider} />
+                      <Text style={styles.historyVisitText}>
+                        <Text style={{ fontWeight: "700" }}>
+                          {
+                            details.site_history.recent_monitoring_visits[0]
+                              .survival_rate
+                          }
+                          %
+                        </Text>{" "}
+                        survival rate
+                      </Text>
+                    </View>
+                  </View>
+                )}
             </View>
           )}
 
@@ -481,17 +590,17 @@ export default function SiteDetails() {
                 <View
                   style={[
                     styles.metricIconCircle,
-                    { backgroundColor: "#EFF6FF" },
+                    { backgroundColor: "#FEF3C7" },
                   ]}
                 >
-                  <Ionicons name="analytics" size={20} color="#2563EB" />
+                  <Ionicons name="pulse" size={20} color="#D97706" />
                 </View>
                 <Text style={styles.metricValue}>
-                  {details.ndvi_value !== null
-                    ? details.ndvi_value.toFixed(2)
+                  {details.site_history?.summary?.average_survival_rate
+                    ? `${details.site_history.summary.average_survival_rate}%`
                     : "N/A"}
                 </Text>
-                <Text style={styles.metricLabel}>NDVI Score</Text>
+                <Text style={styles.metricLabel}>Survival Rate</Text>
               </View>
 
               <View style={styles.metricDivider} />
@@ -500,13 +609,14 @@ export default function SiteDetails() {
                 <View
                   style={[
                     styles.metricIconCircle,
-                    { backgroundColor: "#FFFBEB" },
+                    { backgroundColor: "#EFF6FF" },
                   ]}
                 >
-                  <Ionicons name="chatbubble" size={20} color="#D97706" />
+                  <Ionicons name="people" size={20} color="#2563EB" />
                 </View>
-                <Text style={styles.metricValue}>213</Text>
-                <Text style={styles.metricLabel}>Reviews</Text>
+                {/* ✅ Uses past_program_count instead of total_applications */}
+                <Text style={styles.metricValue}>{pastPrograms}</Text>
+                <Text style={styles.metricLabel}>Past Programs</Text>
               </View>
             </View>
           </View>
@@ -670,12 +780,13 @@ export default function SiteDetails() {
                 <>
                   <Text style={styles.applyButtonText}>Apply to This Site</Text>
                   <View style={styles.applyButtonIconBox}>
-                    <Ionicons name="arrow-forward" size={18} color="#0F4A2F" />
+                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                   </View>
                 </>
               )}
             </TouchableOpacity>
 
+            {/* User has ongoing application warning (own application only) */}
             {hasOngoing && (
               <View style={styles.warningBanner}>
                 <Ionicons name="information-circle" size={16} color="#D97706" />
@@ -687,7 +798,6 @@ export default function SiteDetails() {
             )}
           </View>
 
-          {/* Bottom spacer accounts for tab bar */}
           <View style={{ height: TAB_BAR_HEIGHT + insets.bottom + 20 }} />
         </View>
       </Animated.ScrollView>
@@ -701,7 +811,6 @@ export default function SiteDetails() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.mapModalContent}>
-            {/* Modal Header */}
             <View
               style={[styles.mapModalHeader, { paddingTop: insets.top + 12 }]}
             >
@@ -717,7 +826,6 @@ export default function SiteDetails() {
               <View style={{ width: 40 }} />
             </View>
 
-            {/* Full Screen Map */}
             <View style={styles.mapModalMapContainer}>
               <OsmMapComponent
                 centerCoordinate={details.marker_coordinate!}
@@ -727,7 +835,6 @@ export default function SiteDetails() {
               />
             </View>
 
-            {/* Modal Footer Info */}
             <View style={styles.mapModalFooter}>
               <View style={styles.mapModalFooterInfo}>
                 <Ionicons name="location" size={16} color="#0F4A2F" />
@@ -754,7 +861,6 @@ export default function SiteDetails() {
         onRequestClose={() => setGalleryModalVisible(false)}
       >
         <View style={styles.galleryModalOverlay}>
-          {/* Close button */}
           <TouchableOpacity
             style={[styles.galleryModalCloseBtn, { top: insets.top + 16 }]}
             onPress={() => setGalleryModalVisible(false)}
@@ -762,14 +868,12 @@ export default function SiteDetails() {
             <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>
 
-          {/* Image counter */}
           <View style={[styles.galleryCounter, { top: insets.top + 20 }]}>
             <Text style={styles.galleryCounterText}>
               {selectedImageIndex + 1} / {galleryImages.length}
             </Text>
           </View>
 
-          {/* Horizontal image scroll */}
           <ScrollView
             horizontal
             pagingEnabled
@@ -805,19 +909,22 @@ export default function SiteDetails() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────
+// ─── Styles ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F8FAFC",
-  },
+  container: { flex: 1, backgroundColor: "#F8FAFC" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 12, color: "#64748B", fontSize: 14 },
-  errorText: { fontSize: 16, color: "#EF4444", marginBottom: 16 },
+  errorText: {
+    fontSize: 15,
+    color: "#EF4444",
+    marginBottom: 16,
+    textAlign: "center",
+    paddingHorizontal: 32,
+    lineHeight: 22,
+  },
   textBackButton: { padding: 8 },
   backButtonText: { color: "#0F4A2F", fontWeight: "700", fontSize: 15 },
 
-  // Hero Image - Fixed at top, no translateY (no gap)
   heroImageContainer: {
     position: "absolute",
     top: 0,
@@ -840,7 +947,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(248,250,252,0)",
   },
 
-  // Sticky Header
   stickyHeader: {
     position: "absolute",
     top: 0,
@@ -862,7 +968,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Floating Buttons
   floatingBackBtn: {
     position: "absolute",
     left: 16,
@@ -896,12 +1001,8 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
 
-  // Scroll Content
-  scrollContent: {
-    flexGrow: 1,
-  },
+  scrollContent: { flexGrow: 1 },
 
-  // Content Sheet
   contentSheet: {
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
@@ -916,10 +1017,7 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
 
-  // Header Section
-  headerSection: {
-    marginBottom: 24,
-  },
+  headerSection: { marginBottom: 24 },
   headerTopRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -929,18 +1027,13 @@ const styles = StyleSheet.create({
   statusPill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ECFDF5",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 20,
     gap: 4,
   },
-  statusPillText: { fontSize: 12, fontWeight: "700", color: "#059669" },
-  ratingBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
+  statusPillText: { fontSize: 12, fontWeight: "700" },
+  ratingBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
   ratingText: { fontSize: 14, fontWeight: "700", color: "#0F172A" },
   siteName: {
     fontSize: 28,
@@ -958,10 +1051,7 @@ const styles = StyleSheet.create({
   locationText: { fontSize: 14, color: "#475569", fontWeight: "500" },
   dateText: { fontSize: 12, color: "#94A3B8", fontWeight: "400" },
 
-  // Sections
-  section: {
-    marginBottom: 28,
-  },
+  section: { marginBottom: 28 },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "800",
@@ -974,13 +1064,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 14,
   },
-  seeAllText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#0F4A2F",
-  },
+  seeAllText: { fontSize: 13, fontWeight: "600", color: "#0F4A2F" },
 
-  // Metrics
   metricsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -990,10 +1075,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 12,
   },
-  metricItem: {
-    alignItems: "center",
-    flex: 1,
-  },
+  metricItem: { alignItems: "center", flex: 1 },
   metricIconCircle: {
     width: 44,
     height: 44,
@@ -1015,13 +1097,8 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  metricDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: "#E2E8F0",
-  },
+  metricDivider: { width: 1, height: 40, backgroundColor: "#E2E8F0" },
 
-  // Map Button
   mapButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1040,26 +1117,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  mapButtonTextBox: {
-    flex: 1,
-  },
+  mapButtonTextBox: { flex: 1 },
   mapButtonTitle: {
     fontSize: 15,
     fontWeight: "700",
     color: "#0F172A",
     marginBottom: 2,
   },
-  mapButtonSubtitle: {
-    fontSize: 13,
-    color: "#64748B",
-  },
+  mapButtonSubtitle: { fontSize: 13, color: "#64748B" },
 
-  // Description
-  descriptionText: {
-    fontSize: 15,
-    lineHeight: 24,
-    color: "#475569",
-  },
+  descriptionText: { fontSize: 15, lineHeight: 24, color: "#475569" },
   seeMoreBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1067,13 +1134,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     alignSelf: "flex-start",
   },
-  seeMoreText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#0F4A2F",
-  },
+  seeMoreText: { fontSize: 14, fontWeight: "700", color: "#0F4A2F" },
 
-  // Accessibility
   accessibilityCard: {
     backgroundColor: "#F8FAFC",
     borderRadius: 16,
@@ -1085,11 +1147,7 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 8,
   },
-  accessibilityType: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#065F46",
-  },
+  accessibilityType: { fontSize: 15, fontWeight: "700", color: "#065F46" },
   accessibilityDesc: {
     fontSize: 14,
     color: "#64748B",
@@ -1097,7 +1155,6 @@ const styles = StyleSheet.create({
     paddingLeft: 30,
   },
 
-  // Land Classification
   classificationCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -1108,17 +1165,9 @@ const styles = StyleSheet.create({
     gap: 10,
     alignSelf: "flex-start",
   },
-  classificationText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#4338CA",
-  },
+  classificationText: { fontSize: 15, fontWeight: "700", color: "#4338CA" },
 
-  // Gallery
-  galleryScrollContent: {
-    gap: 10,
-    paddingRight: 20,
-  },
+  galleryScrollContent: { gap: 10, paddingRight: 20 },
   galleryThumbnail: {
     width: 120,
     height: 120,
@@ -1126,10 +1175,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     position: "relative",
   },
-  galleryImage: {
-    width: "100%",
-    height: "100%",
-  },
+  galleryImage: { width: "100%", height: "100%" },
   galleryHeroBadge: {
     position: "absolute",
     top: 8,
@@ -1139,22 +1185,10 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 8,
   },
-  galleryHeroBadgeText: {
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  galleryCountText: {
-    fontSize: 13,
-    color: "#94A3B8",
-    fontWeight: "500",
-  },
+  galleryHeroBadgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  galleryCountText: { fontSize: 13, color: "#94A3B8", fontWeight: "500" },
 
-  // Species (Horizontal Scroll)
-  speciesScrollContent: {
-    gap: 12,
-    paddingRight: 20,
-  },
+  speciesScrollContent: { gap: 12, paddingRight: 20 },
   speciesCard: {
     width: 160,
     backgroundColor: "#F8FAFC",
@@ -1170,9 +1204,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  speciesInfo: {
-    padding: 12,
-  },
+  speciesInfo: { padding: 12 },
   speciesRankBadge: {
     position: "absolute",
     top: -14,
@@ -1193,16 +1225,83 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     marginBottom: 2,
   },
-  speciesNotes: {
-    fontSize: 12,
-    color: "#64748B",
-  },
+  speciesNotes: { fontSize: 12, color: "#64748B" },
 
-  // Footer / Apply Button
-  footerSection: {
-    marginTop: 8,
-    marginBottom: 16,
+  // --- Site History Styles ---
+  // ✅ NEW: Positive green "Now Available Again" banner
+  historyAvailableBanner: {
+    flexDirection: "row",
+    backgroundColor: "#F0FDF4",
+    padding: 12,
+    borderRadius: 12,
+    gap: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
   },
+  historyAvailableTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#065F46",
+    marginBottom: 2,
+  },
+  historyAvailableText: {
+    fontSize: 13,
+    color: "#047857",
+    fontWeight: "500",
+    lineHeight: 18,
+  },
+  historyStatsRow: { flexDirection: "row", gap: 12, marginBottom: 12 },
+  historyStatCard: {
+    flex: 1,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  historyStatValue: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 2,
+  },
+  historyStatLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+    textTransform: "uppercase",
+  },
+  historyVisitCard: {
+    backgroundColor: "#F0FDF4",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+  },
+  historyVisitHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+  },
+  historyVisitTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#065F46",
+    flex: 1,
+  },
+  historyVisitDate: { fontSize: 12, color: "#047857", fontWeight: "500" },
+  historyVisitBody: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+  },
+  historyVisitText: { fontSize: 14, color: "#064E3B" },
+  historyVisitDivider: { width: 1, height: 20, backgroundColor: "#A7F3D0" },
+
+  footerSection: { marginTop: 8, marginBottom: 16 },
   applyButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1226,7 +1325,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   applyButtonDisabled: {
     backgroundColor: "#E2E8F0",
     shadowOpacity: 0,
@@ -1258,7 +1356,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Map Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1296,9 +1393,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginHorizontal: 12,
   },
-  mapModalMapContainer: {
-    flex: 1,
-  },
+  mapModalMapContainer: { flex: 1 },
   mapModalFooter: {
     paddingHorizontal: 20,
     paddingVertical: 16,
@@ -1314,24 +1409,15 @@ const styles = StyleSheet.create({
     gap: 6,
     flex: 1,
   },
-  mapModalFooterText: {
-    fontSize: 14,
-    color: "#475569",
-    fontWeight: "500",
-  },
+  mapModalFooterText: { fontSize: 14, color: "#475569", fontWeight: "500" },
   mapModalDoneBtn: {
     backgroundColor: "#0F4A2F",
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
   },
-  mapModalDoneBtnText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "700",
-  },
+  mapModalDoneBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
 
-  // Gallery Modal
   galleryModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
@@ -1348,26 +1434,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  galleryCounter: {
-    position: "absolute",
-    left: 20,
-    zIndex: 100,
-  },
-  galleryCounterText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  galleryCounter: { position: "absolute", left: 20, zIndex: 100 },
+  galleryCounterText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   galleryFullImageWrapper: {
     width: width,
     height: screenHeight,
     justifyContent: "center",
     alignItems: "center",
   },
-  galleryFullImage: {
-    width: width,
-    height: screenHeight * 0.7,
-  },
+  galleryFullImage: { width: width, height: screenHeight * 0.7 },
   galleryCaptionBox: {
     position: "absolute",
     bottom: 100,
@@ -1377,13 +1452,8 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
   },
-  galleryCaptionText: {
-    color: "#fff",
-    fontSize: 14,
-    textAlign: "center",
-  },
+  galleryCaptionText: { color: "#fff", fontSize: 14, textAlign: "center" },
 
-  // Map Component (reused)
   mapContainer: { width: "100%", height: "100%" },
   webview: { flex: 1 },
 });

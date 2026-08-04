@@ -13,7 +13,6 @@ import {
   RefreshControl,
   ScrollView,
   Dimensions,
-  Platform,
   Animated,
   Modal,
 } from "react-native";
@@ -23,8 +22,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const CARD_PADDING = 16;
-const IMAGE_WIDTH = SCREEN_WIDTH - CARD_PADDING * 2;
 
 const BG = "#F5F6F8";
 const PRIMARY = "#0F4A2F";
@@ -48,13 +45,13 @@ interface SiteImage {
   caption: string | null;
 }
 
+// ✅ MATCHES YOUR REAL API RESPONSE EXACTLY (NDVI Removed)
 interface Site {
   site_id: number;
   name: string;
   reforestation_area: string;
   barangay: string;
   total_area_hectares: number;
-  ndvi_value: number | null;
   images: SiteImage[];
   is_pinned: boolean;
   created_at: string;
@@ -79,7 +76,6 @@ const ApplicationBadge: React.FC = () => {
   const handlePress = () => {
     if (!expanded) {
       if (autoShrinkTimer.current) clearTimeout(autoShrinkTimer.current);
-
       Animated.spring(animWidth, {
         toValue: 195,
         useNativeDriver: false,
@@ -87,7 +83,6 @@ const ApplicationBadge: React.FC = () => {
         tension: 40,
       }).start();
       setExpanded(true);
-
       autoShrinkTimer.current = setTimeout(() => {
         Animated.spring(animWidth, {
           toValue: 40,
@@ -99,9 +94,7 @@ const ApplicationBadge: React.FC = () => {
       }, 2500);
     } else {
       if (autoShrinkTimer.current) clearTimeout(autoShrinkTimer.current);
-
       setShowModal(true);
-
       Animated.spring(animWidth, {
         toValue: 40,
         useNativeDriver: false,
@@ -176,18 +169,9 @@ const ApplicationBadge: React.FC = () => {
 };
 
 /* ─────────────────────────────────────────────────────────────────
-   SITES HEADER - Spacious layout (not fixed position)
+   SITES HEADER
    ────────────────────────────────────────────────────────────── */
-const SitesHeader: React.FC<{
-  search: string;
-  setSearch: (val: string) => void;
-  onSearch: () => void;
-  showBarangayDropdown: boolean;
-  setShowBarangayDropdown: (val: boolean) => void;
-  selectedBarangay: string;
-  unreadCount: number;
-  hasOngoingApplication: boolean;
-}> = ({
+const SitesHeader: React.FC<any> = ({
   search,
   setSearch,
   onSearch,
@@ -199,18 +183,14 @@ const SitesHeader: React.FC<{
 }) => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-
   const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
 
   return (
     <View style={[sitesHdr.wrap, { paddingTop: insets.top + 20 }]}>
-      {/* Top Row: Title + Badges */}
       <View style={sitesHdr.topRow}>
         <Text style={sitesHdr.title}>Explore Sites</Text>
-
         <View style={sitesHdr.rightActions}>
           {hasOngoingApplication && <ApplicationBadge />}
-
           <TouchableOpacity
             style={sitesHdr.iconBtn}
             activeOpacity={0.6}
@@ -226,7 +206,6 @@ const SitesHeader: React.FC<{
         </View>
       </View>
 
-      {/* Bottom Row: Search + Filter */}
       <View style={sitesHdr.searchRow}>
         <View style={sitesHdr.searchPill}>
           <Ionicons name="search" size={18} color={MUTED} />
@@ -251,7 +230,6 @@ const SitesHeader: React.FC<{
             </TouchableOpacity>
           )}
         </View>
-
         <TouchableOpacity
           style={[
             sitesHdr.filterBtn,
@@ -273,7 +251,7 @@ const SitesHeader: React.FC<{
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   SITE CARD COMPONENT - Single image (no carousel)
+   SITE CARD COMPONENT
    ──────────────────────────────────────────────────────────────── */
 const SiteCard = ({
   item,
@@ -293,7 +271,7 @@ const SiteCard = ({
             source={{
               uri: firstImage.url.startsWith("http")
                 ? firstImage.url
-                : `${firstImage.url}`,
+                : `${api}${firstImage.url}`,
             }}
             style={styles.cardImage}
             resizeMode="cover"
@@ -333,6 +311,21 @@ const SiteCard = ({
           <Ionicons name="arrow-forward" size={16} color={PRIMARY} />
         </TouchableOpacity>
       </View>
+
+      {/* ✅ Bottom Metric Bar */}
+      <View style={styles.metricBar}>
+        <View style={styles.metricItem}>
+          <Ionicons name="leaf-outline" size={14} color={PRIMARY} />
+          <Text style={styles.metricText}>
+            {item.total_area_hectares.toFixed(2)} Hectares
+          </Text>
+        </View>
+        <View style={styles.metricDivider} />
+        <View style={styles.metricItem}>
+          <Ionicons name="calendar-outline" size={14} color={PRIMARY} />
+          <Text style={styles.metricText}>Listed {item.created_at}</Text>
+        </View>
+      </View>
     </View>
   );
 };
@@ -349,7 +342,6 @@ const BackToTopButton: React.FC<{
     outputRange: [0, 1],
     extrapolate: "clamp",
   });
-
   const scale = scrollY.interpolate({
     inputRange: [200, 300],
     outputRange: [0.8, 1],
@@ -358,13 +350,7 @@ const BackToTopButton: React.FC<{
 
   return (
     <Animated.View
-      style={[
-        styles.backToTopContainer,
-        {
-          opacity,
-          transform: [{ scale }],
-        },
-      ]}
+      style={[styles.backToTopContainer, { opacity, transform: [{ scale }] }]}
     >
       <TouchableOpacity
         style={styles.backToTopButton}
@@ -411,11 +397,8 @@ export default function Sites() {
           const data = await res.json();
           setUnreadCount(data.unread_count || 0);
         }
-      } catch (e) {
-        console.error("Failed to fetch unread count:", e);
-      }
+      } catch (e) {}
     };
-
     fetchUnreadCount();
     const interval = setInterval(fetchUnreadCount, 60000);
     return () => clearInterval(interval);
@@ -432,9 +415,7 @@ export default function Sites() {
         const data = await res.json();
         setAvailableBarangays(data.data || []);
       }
-    } catch (err) {
-      console.error("Failed to fetch barangays:", err);
-    }
+    } catch (err) {}
   };
 
   const fetchSites = async (
@@ -461,7 +442,9 @@ export default function Sites() {
 
       const res = await fetch(
         `${api}/api/get_available_sites_for_tree_grower/?${params.toString()}`,
-        { headers: { Authorization: `Bearer ${token}` } },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
       );
 
       const data = await res.json();
@@ -473,12 +456,12 @@ export default function Sites() {
         setSites(data.data || []);
       }
 
+      // ✅ Correctly uses `has_next` from your real API
       setHasMore(data.has_next || false);
       setTotal(data.total || 0);
       setHasOngoingApplication(data.has_ongoing_application === true);
       setPage(pageNum);
     } catch (err: any) {
-      console.error("Fetch sites error:", err);
       Alert.alert("Error", err.message);
     } finally {
       setLoading(false);
@@ -497,7 +480,6 @@ export default function Sites() {
     setSites([]);
     fetchSites(1, false, false, search, selectedBarangay);
   };
-
   const handleBarangayFilter = (barangay: string) => {
     setSelectedBarangay(barangay);
     setShowBarangayDropdown(false);
@@ -505,7 +487,6 @@ export default function Sites() {
     setSites([]);
     fetchSites(1, false, false, search, barangay);
   };
-
   const clearFilters = () => {
     setSearch("");
     setSelectedBarangay("");
@@ -513,16 +494,14 @@ export default function Sites() {
     setSites([]);
     fetchSites(1, false, false, "", "");
   };
-
   const handleRefresh = () => {
     setPage(1);
     fetchSites(1, true, false, search, selectedBarangay);
   };
 
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore) {
+    if (!loadingMore && hasMore)
       fetchSites(page + 1, false, true, search, selectedBarangay);
-    }
   };
 
   const handleViewDetails = (site: Site) => {
@@ -535,23 +514,19 @@ export default function Sites() {
     });
   };
 
-  const handleScrollToTop = () => {
+  const handleScrollToTop = () =>
     flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-  };
-
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
     { useNativeDriver: false },
   );
 
-  const renderFooter = () => {
-    if (!loadingMore) return null;
-    return (
+  const renderFooter = () =>
+    !loadingMore ? null : (
       <View style={styles.footer}>
         <ActivityIndicator size="small" color={PRIMARY} />
       </View>
     );
-  };
 
   const renderEmpty = () => {
     if (loading) return null;
@@ -579,7 +554,7 @@ export default function Sites() {
   };
 
   return (
-    <View style={[styles.container]}>
+    <View style={styles.container}>
       <FlatList
         ref={flatListRef}
         data={sites}
@@ -612,7 +587,6 @@ export default function Sites() {
               unreadCount={unreadCount}
               hasOngoingApplication={hasOngoingApplication}
             />
-
             {selectedBarangay ? (
               <View style={styles.activeFilterRow}>
                 <View style={styles.activeFilterChip}>
@@ -629,7 +603,6 @@ export default function Sites() {
                 </View>
               </View>
             ) : null}
-
             {showBarangayDropdown && (
               <View style={styles.dropdownContainer}>
                 <ScrollView showsVerticalScrollIndicator={false}>
@@ -663,7 +636,6 @@ export default function Sites() {
                 </ScrollView>
               </View>
             )}
-
             {!loading && sites.length > 0 && (
               <Text style={styles.resultsText}>
                 Showing {sites.length} of {total} sites
@@ -674,8 +646,6 @@ export default function Sites() {
         onScroll={handleScroll}
         scrollEventThrottle={16}
       />
-
-      {/* Floating Back to Top Button */}
       <BackToTopButton scrollY={scrollY} onScrollToTop={handleScrollToTop} />
     </View>
   );
@@ -685,28 +655,15 @@ export default function Sites() {
    STYLES
    ──────────────────────────────────────────────────────────── */
 const sitesHdr = StyleSheet.create({
-  wrap: {
-    backgroundColor: BG,
-    paddingHorizontal: 0,
-    paddingBottom: 20,
-  },
+  wrap: { backgroundColor: BG, paddingHorizontal: 0, paddingBottom: 20 },
   topRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 20,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: INK,
-    letterSpacing: -0.5,
-  },
-  rightActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
+  title: { fontSize: 28, fontWeight: "800", color: INK, letterSpacing: -0.5 },
+  rightActions: { flexDirection: "row", alignItems: "center", gap: 10 },
   iconBtn: {
     width: 40,
     height: 40,
@@ -730,16 +687,8 @@ const sitesHdr = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#FFFFFF",
   },
-  badgeText: {
-    color: "#FFFFFF",
-    fontSize: 9,
-    fontWeight: "700",
-  },
-  searchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
+  badgeText: { color: "#FFFFFF", fontSize: 9, fontWeight: "700" },
+  searchRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   searchPill: {
     flex: 1,
     flexDirection: "row",
@@ -755,12 +704,7 @@ const sitesHdr = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: INK,
-    paddingVertical: 0,
-  },
+  searchInput: { flex: 1, fontSize: 14, color: INK, paddingVertical: 0 },
   filterBtn: {
     width: 40,
     height: 40,
@@ -774,9 +718,7 @@ const sitesHdr = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  filterBtnActive: {
-    backgroundColor: PRIMARY,
-  },
+  filterBtnActive: { backgroundColor: PRIMARY },
   filterBadge: {
     position: "absolute",
     top: 6,
@@ -812,11 +754,7 @@ const appBadge = StyleSheet.create({
     paddingHorizontal: 12,
     gap: 8,
   },
-  text: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: YELLOW,
-  },
+  text: { fontSize: 12, fontWeight: "800", color: YELLOW },
 });
 
 const modalStyles = StyleSheet.create({
@@ -879,10 +817,7 @@ const modalStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BG,
-  },
+  container: { flex: 1, backgroundColor: BG },
   activeFilterRow: {
     flexDirection: "row",
     paddingHorizontal: 20,
@@ -900,11 +835,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
   },
-  activeFilterChipText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: PRIMARY,
-  },
+  activeFilterChipText: { fontSize: 12, fontWeight: "600", color: PRIMARY },
   dropdownContainer: {
     marginHorizontal: 20,
     marginTop: 8,
@@ -916,54 +847,22 @@ const styles = StyleSheet.create({
     maxHeight: 220,
     ...cardShadow,
   },
-  dropdownItem: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  dropdownItemActive: {
-    backgroundColor: "#F0FDF4",
-  },
-  dropdownItemText: {
-    fontSize: 13,
-    color: INK,
-  },
-  dropdownItemTextActive: {
-    color: PRIMARY,
-    fontWeight: "600",
-  },
-  resultsText: {
-   
-    marginTop: 8,
-    marginBottom: 16,
-    fontSize: 12,
-    color: MUTED,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 0,
-    paddingBottom: 100,
-  },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  footer: {
-    paddingVertical: 16,
-    alignItems: "center",
-  },
+  dropdownItem: { paddingHorizontal: 14, paddingVertical: 10 },
+  dropdownItemActive: { backgroundColor: "#F0FDF4" },
+  dropdownItemText: { fontSize: 13, color: INK },
+  dropdownItemTextActive: { color: PRIMARY, fontWeight: "600" },
+  resultsText: { marginTop: 8, marginBottom: 16, fontSize: 12, color: MUTED },
+  listContent: { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 100 },
+  footer: { paddingVertical: 16, alignItems: "center" },
   card: {
     marginBottom: 24,
     borderRadius: 16,
     ...cardShadow,
     overflow: "hidden",
+    backgroundColor: WHITE,
   },
-  imageContainer: {
-    position: "relative",
-    height: 240,
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  cardImage: {
-    width: "100%",
-    height: "100%",
-  },
+  imageContainer: { position: "relative", height: 220 },
+  cardImage: { width: "100%", height: "100%" },
   placeholderImage: {
     backgroundColor: "#F3F4F6",
     justifyContent: "center",
@@ -985,16 +884,12 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
   },
-  statusText: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#10B981",
-  },
+  statusText: { fontSize: 10, fontWeight: "600", color: "#10B981" },
   imageInfoOverlay: {
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 70,
+    bottom: 60,
     paddingHorizontal: 16,
     paddingTop: 24,
     paddingBottom: 12,
@@ -1032,7 +927,7 @@ const styles = StyleSheet.create({
   },
   viewButton: {
     position: "absolute",
-    bottom: 16,
+    bottom: 12,
     left: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -1047,11 +942,23 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 5,
   },
-  viewButtonText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: PRIMARY,
+  viewButtonText: { fontSize: 13, fontWeight: "700", color: PRIMARY },
+
+  // ✅ Metric Bar Styles
+  metricBar: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: WHITE,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
   },
+  metricItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  metricText: { fontSize: 12, fontWeight: "600", color: INK },
+  metricDivider: { width: 1, height: 16, backgroundColor: "#E2E8F0" },
+
   emptyState: { alignItems: "center", marginTop: 80, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: "600", color: "#374151" },
   emptySubtitle: {
@@ -1067,12 +974,7 @@ const styles = StyleSheet.create({
     backgroundColor: PRIMARY,
     borderRadius: 8,
   },
-  clearFiltersText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  // Back to Top Button Styles
+  clearFiltersText: { color: "#fff", fontSize: 13, fontWeight: "600" },
   backToTopContainer: {
     position: "absolute",
     bottom: 24,

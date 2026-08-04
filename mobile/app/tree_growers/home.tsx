@@ -804,7 +804,7 @@ export default function Home() {
           <TouchableOpacity
             style={styles.headerLeft}
             activeOpacity={0.7}
-            onPress={() => router.push("/profile" as any)}
+            onPress={() => router.push("/tree_growers/profile" as any)}
           >
             {loadingUser ? (
               <View style={styles.avatarPlaceholder}>

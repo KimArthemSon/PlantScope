@@ -537,9 +537,7 @@ function SiteSelectionPanel({
                               {site.metrics.area_hectares.toFixed(2)} ha
                             </span>
                           )}
-                          {site.metrics.ndvi !== null && (
-                            <span>NDVI: {site.metrics.ndvi.toFixed(2)}</span>
-                          )}
+                        
                           {site.verification.land_classification && (
                             <span className="flex items-center gap-1 text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
                               <Layers size={10} />{" "}
