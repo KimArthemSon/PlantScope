@@ -220,199 +220,259 @@ def register_tree_grower(request):
 @csrf_exempt
 def update_tree_grower(request, user_id):
     """
-    Update tree grower profile including personal info and group/organization details.
-    Handles User, Profile, and TreeGrowerGroup models.
+    Update tree grower account.
+
+    Tree growers are treated as group accounts, not individual persons.
+    Therefore personal profile fields such as first_name, last_name, birthday,
+    gender, personal contact, personal address, and personal profile image
+    are no longer handled here.
+
+    Updated models:
+    - User: email, password, is_active
+    - TreeGrowerGroup: group_name, group_type, address, contact, profile_img
     """
+
     if request.method not in ['POST', 'PUT']:
         return JsonResponse({'error': 'Only POST/PUT allowed'}, status=405)
-    
-    # Get the tree grower user
+
     user = get_object_or_404(User, id=user_id, user_role='treeGrowers')
-    user_profile = getattr(user, 'profile', None)
     tree_grower_group = getattr(user, 'tree_grower_group', None)
 
-    # Password validation regex
+    # ------------------------------------------------------------
+    # Payload parsing
+    # Supports:
+    # - multipart/form-data
+    # - application/x-www-form-urlencoded
+    # - application/json
+    # ------------------------------------------------------------
+    if request.content_type and 'application/json' in request.content_type:
+        try:
+            payload = json.loads(request.body.decode('utf-8') or '{}')
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON body.'}, status=400)
+
+        if not isinstance(payload, dict):
+            return JsonResponse({'error': 'Invalid JSON payload.'}, status=400)
+
+        files = {}
+    else:
+        payload = request.POST
+        files = request.FILES
+
+    def get_value(key, default=None):
+        value = payload.get(key, default)
+        return default if value is None else value
+
+    def get_str(key, default=''):
+        value = payload.get(key, default)
+        if value is None:
+            value = default
+        return str(value).strip()
+
     password_regex = r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$'
+    valid_group_types = ['formal_org', 'community_group', 'informal_group']
 
     try:
-        # ===== SNAPSHOT BEFORE UPDATE =====
+        # =========================================================
+        # SNAPSHOT BEFORE UPDATE
+        # =========================================================
         _old = {
             'email': user.email,
             'is_active': user.is_active,
-            'first_name': user_profile.first_name if user_profile else '',
-            'middle_name': user_profile.middle_name if user_profile else '',
-            'last_name': user_profile.last_name if user_profile else '',
-            'birthday': str(user_profile.birthday) if user_profile and user_profile.birthday else '',
-            'contact': user_profile.contact if user_profile else '',
-            'address': user_profile.address if user_profile else '',
-            'gender': user_profile.gender if user_profile else '',
             'group_name': tree_grower_group.group_name if tree_grower_group else '',
             'group_type': tree_grower_group.group_type if tree_grower_group else '',
             'group_address': tree_grower_group.address if tree_grower_group else '',
             'group_contact': tree_grower_group.contact if tree_grower_group else '',
         }
 
-        # ===== EXTRACT FORM DATA =====
-        # User fields
-        email = request.POST.get('email', user.email).strip().lower()
-        is_active = request.POST.get('is_active', str(user.is_active)).lower() == 'true'
-        password = request.POST.get('password', None)
+        # Keep old group image reference so we can delete it only after successful save
+        old_group_image = None
+        if tree_grower_group and tree_grower_group.profile_img:
+            old_group_image = tree_grower_group.profile_img
 
-        # Profile fields
-        first_name = request.POST.get('first_name', user_profile.first_name if user_profile else "").strip()
-        middle_name = request.POST.get('middle_name', user_profile.middle_name if user_profile else "").strip()
-        last_name = request.POST.get('last_name', user_profile.last_name if user_profile else "").strip()
-        
-        birthday = request.POST.get('birthday', None)
-        if birthday:
-            try:
-                birthday = datetime.strptime(birthday, '%Y-%m-%d').date()
-            except ValueError:
-                return JsonResponse({'error': 'Invalid birthday format. Use YYYY-MM-DD.'}, status=400)
-        elif user_profile:
-            birthday = user_profile.birthday
-        
-        contact = request.POST.get('contact', user_profile.contact if user_profile else "").strip()
-        address = request.POST.get('address', user_profile.address if user_profile else "").strip()
-        gender = request.POST.get('gender', user_profile.gender if user_profile else "O")
+        # =========================================================
+        # EXTRACT USER FIELDS
+        # =========================================================
+        email = get_str('email', user.email).lower()
 
-        # Tree Grower Group fields
-        group_name = request.POST.get('group_name', tree_grower_group.group_name if tree_grower_group else "").strip()
-        group_type = request.POST.get('group_type', tree_grower_group.group_type if tree_grower_group else "informal_group").strip()
-        group_address = request.POST.get('group_address', tree_grower_group.address if tree_grower_group else "").strip()
-        group_contact = request.POST.get('group_contact', tree_grower_group.contact if tree_grower_group else "").strip()
+        if not email:
+            return JsonResponse({'error': 'Email is required.'}, status=400)
 
-        # Files
-        profile_img = request.FILES.get('profile_img', None)
-        group_profile_img = request.FILES.get('group_profile_img', None)
+        is_active_raw = get_value('is_active', user.is_active)
 
-        # ===== VALIDATIONS =====
-        
-        # Validate password if provided
-        if password:
-            if not re.match(password_regex, password):
-                return JsonResponse({
-                    'error': 'Password must contain uppercase, lowercase, number, special character, and be at least 8 characters long.'
-                }, status=400)
-            hashed_password = hashlib.sha256(password.encode()).hexdigest()
-            user.password = hashed_password
+        if isinstance(is_active_raw, bool):
+            is_active = is_active_raw
+        elif isinstance(is_active_raw, str):
+            is_active = is_active_raw.strip().lower() in ['true', '1', 'yes']
+        else:
+            is_active = bool(is_active_raw)
 
-        # Validate email uniqueness if changed
+        password = get_value('password', None)
+        password = str(password).strip() if password is not None else None
+
+        if password == '':
+            password = None
+
+        # =========================================================
+        # EXTRACT TREE GROWER GROUP FIELDS
+        # =========================================================
+        group_name = get_str(
+            'group_name',
+            tree_grower_group.group_name if tree_grower_group else ''
+        )
+
+        group_type = get_str(
+            'group_type',
+            tree_grower_group.group_type if tree_grower_group else 'informal_group'
+        ) or 'informal_group'
+
+        group_address = get_str(
+            'group_address',
+            tree_grower_group.address if tree_grower_group else ''
+        )
+
+        group_contact = get_str(
+            'group_contact',
+            tree_grower_group.contact if tree_grower_group else ''
+        )
+
+        group_profile_img = files.get('group_profile_img') if files else None
+
+        # =========================================================
+        # VALIDATIONS
+        # =========================================================
+
+        # Email uniqueness
         if user.email != email and User.objects.filter(email=email).exists():
             return JsonResponse({'error': 'Email already exists'}, status=400)
 
-        # Validate group type
-        valid_group_types = ['formal_org', 'community_group', 'informal_group']
+        # Password validation
+        if password:
+            if not re.match(password_regex, password):
+                return JsonResponse({
+                    'error': (
+                        'Password must contain uppercase, lowercase, number, '
+                        'special character, and be at least 8 characters long.'
+                    )
+                }, status=400)
+
+        # Group type validation
         if group_type not in valid_group_types:
             return JsonResponse({
                 'error': f'Invalid group type. Must be one of: {", ".join(valid_group_types)}'
             }, status=400)
 
-        # Validate required fields
-        if not first_name or not last_name:
-            return JsonResponse({'error': 'First name and last name are required.'}, status=400)
-        
+        # Required group fields
         if not group_name:
             return JsonResponse({'error': 'Group name is required.'}, status=400)
 
         if not group_contact:
             return JsonResponse({'error': 'Group contact is required.'}, status=400)
 
-        # ===== UPDATE USER =====
-        user.email = email
-        user.is_active = is_active
-        user.save()
+        # =========================================================
+        # UPDATE USER + TREE GROWER GROUP
+        # =========================================================
+        with transaction.atomic():
+            # Update user account fields
+            user.email = email
+            user.is_active = is_active
 
-        # ===== UPDATE OR CREATE PROFILE =====
-        if user_profile is None:
-            user_profile = profile(users=user)
-        
-        user_profile.first_name = first_name
-        user_profile.middle_name = middle_name
-        user_profile.last_name = last_name
-        user_profile.birthday = birthday
-        user_profile.contact = contact
-        user_profile.address = address
-        user_profile.gender = gender
-        
-        if profile_img:
-            # Delete old image from Cloudinary if exists
-            if user_profile.profile_img:
-                delete_cloudinary_resource(user_profile.profile_img, resource_type='image')
-            user_profile.profile_img = profile_img
-        
-        user_profile.save()
+            if password:
+                # NOTE:
+                # Keeping your existing sha256 behavior for compatibility.
+                # For production authentication, consider migrating to
+                # Django's built-in password hashing in a separate task.
+                user.password = hashlib.sha256(password.encode()).hexdigest()
 
-        # ===== UPDATE OR CREATE TREE GROWER GROUP =====
-        if tree_grower_group is None:
-            tree_grower_group = TreeGrowerGroup(users=user)
-        
-        tree_grower_group.group_name = group_name
-        tree_grower_group.group_type = group_type
-        tree_grower_group.address = group_address
-        tree_grower_group.contact = group_contact
-        
-        if group_profile_img:
-            # Delete old group image from Cloudinary if exists
-            if tree_grower_group.profile_img:
-                delete_cloudinary_resource(tree_grower_group.profile_img, resource_type='image')
-            tree_grower_group.profile_img = group_profile_img
-        
-        tree_grower_group.save()
+            user.save()
 
-        # ===== SNAPSHOT AFTER UPDATE =====
+            # Update or create tree grower group
+            if tree_grower_group is None:
+                tree_grower_group = TreeGrowerGroup(users=user)
+
+            tree_grower_group.group_name = group_name
+            tree_grower_group.group_type = group_type
+            tree_grower_group.address = group_address
+            tree_grower_group.contact = group_contact
+
+            if group_profile_img:
+                tree_grower_group.profile_img = group_profile_img
+
+            tree_grower_group.save()
+
+        # =========================================================
+        # DELETE OLD GROUP IMAGE AFTER SUCCESSFUL SAVE
+        # =========================================================
+        if group_profile_img and old_group_image:
+            try:
+                delete_cloudinary_resource(old_group_image, resource_type='image')
+            except Exception as cloudinary_error:
+                # Do not fail the whole update if old image cleanup fails
+                print(f"Warning: Failed to delete old group image: {cloudinary_error}")
+
+        # =========================================================
+        # SNAPSHOT AFTER UPDATE
+        # =========================================================
         _new = {
             'email': email,
             'is_active': is_active,
-            'first_name': first_name,
-            'middle_name': middle_name,
-            'last_name': last_name,
-            'birthday': str(birthday) if birthday else '',
-            'contact': contact,
-            'address': address,
-            'gender': gender,
             'group_name': group_name,
             'group_type': group_type,
             'group_address': group_address,
             'group_contact': group_contact,
         }
-        
-        if password:
-            _new['password'] = '***'  # Don't log actual password
 
-        # Find changed fields
-        _changed = [k for k in _old if str(_old[k]) != str(_new.get(k, ''))]
+        _changed = [
+            key for key in _old
+            if str(_old[key]) != str(_new.get(key, ''))
+        ]
+
         if password:
+            _new['password'] = '***'
             _changed.append('password')
 
-        # ===== ACTIVITY LOGGING =====
+        if group_profile_img:
+            _changed.append('group_profile_img')
+
+        # =========================================================
+        # ACTIVITY LOG
+        # =========================================================
         record_activity(
             request,
             action_type='UPDATE',
             entity_type='TreeGrower',
             entity_id=user_id,
             entity_label=email,
-            description=f'Tree grower profile updated. Fields changed: {", ".join(_changed) or "none"}.',
+            description=(
+                'Tree grower group updated. '
+                f'Fields changed: {", ".join(_changed) or "none"}.'
+            ),
             old_data=_old,
             new_data=_new,
             changed_fields=_changed,
         )
 
-        # ===== PREPARE RESPONSE =====
+        # =========================================================
+        # RESPONSE
+        # =========================================================
         response_data = {
-            'message': 'Tree grower profile updated successfully',
+            'message': 'Tree grower group updated successfully',
             'user_id': user.id,
             'email': user.email,
-            'profile': {
-                'first_name': user_profile.first_name,
-                'last_name': user_profile.last_name,
-                'profile_img': get_cloudinary_url(str(user_profile.profile_img)) if user_profile.profile_img else None,
-            },
+            'is_active': user.is_active,
             'group': {
+                'group_id': tree_grower_group.group_id,
                 'group_name': tree_grower_group.group_name,
-                'group_type': tree_grower_group.get_group_type_display(),
-                'profile_img': get_cloudinary_url(str(tree_grower_group.profile_img)) if tree_grower_group.profile_img else None,
-            } if tree_grower_group else None,
+                'group_type': tree_grower_group.group_type,
+                'group_type_display': tree_grower_group.get_group_type_display(),
+                'group_address': tree_grower_group.address,
+                'group_contact': tree_grower_group.contact,
+                'profile_img': (
+                    get_cloudinary_url(str(tree_grower_group.profile_img))
+                    if tree_grower_group.profile_img
+                    else None
+                ),
+            },
         }
 
         return JsonResponse(response_data, status=200)
@@ -421,3 +481,5 @@ def update_tree_grower(request, user_id):
         print(f"Error updating tree grower: {str(e)}")
         traceback.print_exc()
         return JsonResponse({'error': f'Something went wrong: {str(e)}'}, status=400)
+
+    

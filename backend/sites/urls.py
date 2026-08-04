@@ -41,13 +41,13 @@ urlpatterns = [
 
      # ✅ NEW: Site basic info update
     path('update_site_basic_info/<int:site_id>/', update_views.update_site_basic_info, name='update_site_basic_info'),
-    
+    path('get_official_sites/', views.get_official_sites, name='get_official_sites'),
     # ✅ NEW: Site images management
     path('list_site_images/<int:site_id>/', update_views.list_site_images, name='list_site_images'),
     path('upload_site_image/<int:site_id>/', update_views.upload_site_image, name='upload_site_image'),
     path('delete_site_image/<int:site_image_id>/', update_views.delete_site_image, name='delete_site_image'),
      path('get_site_details_for_tree_grower/<int:site_id>/', treeGrowers_sties_views.get_site_details_for_tree_grower, name='get_site_details_for_tree_grower'),
-
+   
 
       # ═══════════════════════════════════════════════════════════
     # 🎯 POTENTIAL SITES (NDVI Analytical Markers)

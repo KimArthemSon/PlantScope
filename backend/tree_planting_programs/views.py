@@ -22,6 +22,7 @@ from accounts.models import User
 from reforestation_areas.models import Reforestation_areas
 from sites.models import SiteMetaDataVerification, Sites
 from tree_species.models import Tree_species
+from django.db.models import Exists, OuterRef, Q
 
 from .email_service import (
     send_application_accepted_email,
@@ -1612,6 +1613,7 @@ def get_available_sites_for_tree_grower(request):
     search = request.GET.get('search', '').strip()
     barangay_filter = request.GET.get('barangay', '').strip()
 
+    # Base queryset: only accepted, verified, active sites
     sites = Sites.objects.filter(
         status='accepted',
         meta_verification__status='verified',
@@ -1622,6 +1624,14 @@ def get_available_sites_for_tree_grower(request):
     ).prefetch_related(
         'site_images'
     ).order_by('-is_pinned', '-created_at')
+
+    # ✅ EXCLUDE OCCUPIED SITES
+    # Sites with active applications should not appear in the available list
+    active_applications = Application.objects.filter(
+        site=OuterRef('pk'),
+        status__in=ongoing_statuses
+    )
+    sites = sites.filter(~Exists(active_applications))
 
     if search:
         sites = sites.filter(
@@ -1654,8 +1664,8 @@ def get_available_sites_for_tree_grower(request):
         data.append({
             'site_id': site.site_id,
             'name': site.name,
-            'reforestation_area': site.reforestation_area.name,
-            'barangay': site.reforestation_area.barangay.name if site.reforestation_area.barangay else 'N/A',
+            'reforestation_area': site.reforestation_area.name if site.reforestation_area else 'N/A',
+            'barangay': site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else 'N/A',
             'total_area_hectares': site.total_area_hectares,
             'images': images_data,
             'is_pinned': site.is_pinned,
