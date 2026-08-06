@@ -657,7 +657,7 @@ export default function OfficialSites() {
                     </th>
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Site Status</th>
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Program</th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Land Class.</th>
+                  
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
@@ -708,15 +708,7 @@ export default function OfficialSites() {
                               <ProgramIcon size={10} /> {programBadge.label}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3">
-                            {site.verification.land_classification ? (
-                              <span className="text-xs font-medium text-slate-700 bg-blue-50 px-2 py-1 rounded border border-blue-200">
-                                {site.verification.land_classification.name}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-400 italic">Not set</span>
-                            )}
-                          </td>
+                        
                           <td className="py-2.5 px-3">
                             <div className="flex gap-1">
                               <button

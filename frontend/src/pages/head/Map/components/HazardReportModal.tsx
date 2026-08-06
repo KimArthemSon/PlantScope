@@ -10,6 +10,7 @@ import {
   Database,
   RefreshCw,
   WifiOff,
+  Radar as RadarIcon,
 } from "lucide-react";
 import {
   PieChart,
@@ -18,6 +19,11 @@ import {
   ResponsiveContainer,
   Tooltip,
   Legend,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
 } from "recharts";
 import { api } from "@/constant/api.ts";
 
@@ -47,7 +53,7 @@ export interface HazardReportData {
 interface HazardReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  geometry: any; // ✅ Changed to geometry to match the correct POST endpoint
+  geometry: any;
   siteName?: string;
 }
 
@@ -230,7 +236,6 @@ export default function HazardReportModal({
     setError(null);
     setReportData(null);
 
-    // 1. Check basic browser online status
     if (!navigator.onLine) {
       setError(
         "You appear to be offline. Please check your internet connection and try again.",
@@ -239,14 +244,12 @@ export default function HazardReportModal({
       return;
     }
 
-    // 2. Setup AbortController for laggy internet timeout (30 seconds)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     try {
       const token = localStorage.getItem("token");
 
-      // ✅ Using the CORRECT endpoint from your map.tsx
       const response = await fetch(`${api}api/analyze-hazard/`, {
         method: "POST",
         headers: {
@@ -273,7 +276,6 @@ export default function HazardReportModal({
       clearTimeout(timeoutId);
       console.error("Hazard Analysis Error:", err);
 
-      // 3. Robust Network Error Detection
       if (err.name === "AbortError" || err.message === "NETWORK_TIMEOUT") {
         setError(
           "The request took too long. Your internet connection might be too slow or unstable. Please check your connection and try again.",
@@ -552,6 +554,76 @@ export default function HazardReportModal({
                   >
                     <Download size={16} /> Print / Save as PDF
                   </button>
+                </div>
+              </div>
+
+              {/* ============================================================ */}
+              {/* ✅ ADVANCED ANALYTICS (Radar Chart)                          */}
+              {/* ============================================================ */}
+              <div className="flex justify-center">
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm w-full max-w-lg">
+                  <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <RadarIcon size={16} className="text-[#0f4a2f]" /> Composite
+                    Risk Profile
+                  </h3>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart
+                        data={[
+                          {
+                            subject: "Flood",
+                            value:
+                              (reportData.flood?.very_high_percentage || 0) +
+                              (reportData.flood?.high_percentage || 0) +
+                              (reportData.flood?.moderate_percentage || 0) +
+                              (reportData.flood?.low_percentage || 0),
+                          },
+                          {
+                            subject: "Landslide",
+                            value:
+                              (reportData.landslide?.very_high_percentage ||
+                                0) +
+                              (reportData.landslide?.high_percentage || 0) +
+                              (reportData.landslide?.moderate_percentage || 0) +
+                              (reportData.landslide?.low_percentage || 0),
+                          },
+                          {
+                            subject: "EIL",
+                            value:
+                              (reportData.eil?.very_high_percentage || 0) +
+                              (reportData.eil?.high_percentage || 0) +
+                              (reportData.eil?.moderate_percentage || 0) +
+                              (reportData.eil?.low_percentage || 0),
+                          },
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        outerRadius="75%"
+                      >
+                        <PolarGrid />
+                        <PolarAngleAxis
+                          dataKey="subject"
+                          tick={{ fontSize: 12, fill: "#374151" }}
+                        />
+                        <PolarRadiusAxis
+                          angle={90}
+                          domain={[0, 100]}
+                          tick={{ fontSize: 10 }}
+                        />
+                        <Radar
+                          name="Susceptibility %"
+                          dataKey="value"
+                          stroke="#0f4a2f"
+                          fill="#0f4a2f"
+                          fillOpacity={0.4}
+                        />
+                        <Tooltip />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <p className="text-center text-[10px] text-gray-500 mt-1">
+                    Share of site with any susceptibility per hazard (0–100%).
+                  </p>
                 </div>
               </div>
 
