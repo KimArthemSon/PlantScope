@@ -34,6 +34,7 @@ import {
   Map as MapIcon,
   PawPrint,
   Landmark,
+  ArrowRight,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
@@ -209,7 +210,14 @@ function VerificationStatusBadge({
 }) {
   const config: Record<
     string,
-    { bg: string; text: string; border: string; icon: any; label: string }
+    {
+      bg: string;
+      text: string;
+      border: string;
+      icon: any;
+      label: string;
+      dot: string;
+    }
   > = {
     pending: {
       bg: "bg-amber-50",
@@ -217,27 +225,31 @@ function VerificationStatusBadge({
       border: "border-amber-200",
       icon: Clock,
       label: "Pending Review",
+      dot: "bg-amber-500",
     },
     draft: {
-      bg: "bg-blue-50",
-      text: "text-blue-700",
-      border: "border-blue-200",
+      bg: "bg-slate-50",
+      text: "text-slate-700",
+      border: "border-slate-200",
       icon: RotateCcw,
       label: "Draft",
+      dot: "bg-slate-400",
     },
     verified: {
-      bg: "bg-green-50",
-      text: "text-green-700",
-      border: "border-green-200",
+      bg: "bg-emerald-50",
+      text: "text-emerald-700",
+      border: "border-emerald-200",
       icon: CheckCircle,
-      label: "Verified ✓",
+      label: "Verified",
+      dot: "bg-emerald-500",
     },
     rejected: {
       bg: "bg-red-50",
       text: "text-red-700",
       border: "border-red-200",
       icon: XCircle,
-      label: "Rejected ✗",
+      label: "Rejected",
+      dot: "bg-red-500",
     },
   };
   const {
@@ -246,27 +258,30 @@ function VerificationStatusBadge({
     border,
     icon: Icon,
     label,
+    dot,
   } = config[status] || config["pending"];
   return (
-    <span
-      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${bg} ${text} ${border}`}
+    <div
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border ${bg} ${text} ${border}`}
     >
-      <Icon size={12} /> {label}
-    </span>
+      <div className={`w-2 h-2 rounded-full ${dot}`}></div>
+      <Icon size={14} />
+      {label}
+    </div>
   );
 }
 
 function AssessmentTypeBadge({ type }: { type: "specific" | "general" }) {
   if (type === "specific") {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
-        <Target size={10} /> Specific
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
+        <Target size={12} /> Specific
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
-      <Building2 size={10} /> General
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+      <Building2 size={12} /> General
     </span>
   );
 }
@@ -300,28 +315,28 @@ function SecurityBadge({ concern }: { concern: string }) {
     },
     other: {
       label: "Other",
-      color: "bg-gray-100 text-gray-700 border-gray-200",
+      color: "bg-slate-100 text-slate-700 border-slate-200",
       icon: AlertCircle,
     },
   };
   const config = map[concern] || {
     label: concern,
-    color: "bg-gray-100 text-gray-700",
+    color: "bg-slate-100 text-slate-700 border-slate-200",
     icon: AlertCircle,
   };
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold border ${config.color}`}
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${config.color}`}
     >
-      <config.icon size={10} /> {config.label}
+      <config.icon size={12} /> {config.label}
     </span>
   );
 }
 
 function AnimalBadge({ animal }: { animal: AnimalInfo }) {
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-      <PawPrint size={10} /> {animal.name}
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+      <PawPrint size={11} /> {animal.name}
     </span>
   );
 }
@@ -347,43 +362,45 @@ function AssessmentDataViewer({
 
   if (!data || !data.meta_data)
     return (
-      <p className="text-xs text-gray-400 italic">No meta data available</p>
+      <p className="text-xs text-slate-400 italic">
+        No assessment data available
+      </p>
     );
   const metaData = data.meta_data;
   const toggleSection = (section: string) =>
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       {landClassification && (
-        <div className="border border-purple-200 rounded-lg overflow-hidden">
+        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
           <button
             onClick={() => toggleSection("land_classification")}
-            className="w-full flex items-center justify-between px-3 py-2 bg-purple-50 hover:bg-purple-100 transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
           >
-            <div className="flex items-center gap-2">
-              <Layers size={14} className="text-purple-600" />
-              <span className="text-xs font-bold text-purple-800">
+            <div className="flex items-center gap-3">
+              <Layers size={16} className="text-emerald-600" />
+              <span className="text-sm font-semibold text-slate-800">
                 Land Classification
               </span>
             </div>
             {expandedSections.land_classification ? (
-              <ChevronDown size={14} />
+              <ChevronDown size={16} className="text-slate-400" />
             ) : (
-              <ChevronRight size={14} />
+              <ChevronRight size={16} className="text-slate-400" />
             )}
           </button>
           {expandedSections.land_classification && (
-            <div className="p-3 bg-white">
+            <div className="p-4 bg-slate-50 border-t border-slate-200">
               <div className="flex items-center gap-2">
-                <CheckCircle size={12} className="text-purple-600" />
-                <p className="text-xs font-bold text-purple-800">
+                <CheckCircle size={14} className="text-emerald-600" />
+                <p className="text-sm font-semibold text-slate-800">
                   {landClassification.name}
                 </p>
               </div>
               {metaData.legal_documents?.land_classification
                 ?.inspector_notes && (
-                <p className="text-xs text-purple-600 mt-2 italic">
+                <p className="text-xs text-slate-600 mt-3 italic">
                   "
                   {metaData.legal_documents.land_classification.inspector_notes}
                   "
@@ -394,36 +411,36 @@ function AssessmentDataViewer({
         </div>
       )}
       {animalsPresent && animalsPresent.length > 0 && (
-        <div className="border border-emerald-200 rounded-lg overflow-hidden">
+        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
           <button
             onClick={() => toggleSection("animals")}
-            className="w-full flex items-center justify-between px-3 py-2 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
           >
-            <div className="flex items-center gap-2">
-              <PawPrint size={14} className="text-emerald-600" />
-              <span className="text-xs font-bold text-emerald-800">
+            <div className="flex items-center gap-3">
+              <PawPrint size={16} className="text-emerald-600" />
+              <span className="text-sm font-semibold text-slate-800">
                 Animals Observed ({animalsPresent.length})
               </span>
             </div>
             {expandedSections.animals ? (
-              <ChevronDown size={14} />
+              <ChevronDown size={16} className="text-slate-400" />
             ) : (
-              <ChevronRight size={14} />
+              <ChevronRight size={16} className="text-slate-400" />
             )}
           </button>
           {expandedSections.animals && (
-            <div className="p-3 bg-white">
-              <div className="flex flex-wrap gap-1">
+            <div className="p-4 bg-slate-50 border-t border-slate-200">
+              <div className="flex flex-wrap gap-2">
                 {animalsPresent.map((animal) => (
                   <div
                     key={animal.animal_id}
-                    className="p-2 bg-emerald-50 rounded border border-emerald-200"
+                    className="p-3 bg-white rounded-lg border border-emerald-200 hover:border-emerald-300 transition-colors"
                   >
-                    <p className="text-xs font-bold text-emerald-800">
+                    <p className="text-xs font-bold text-slate-800">
                       {animal.name}
                     </p>
                     {animal.scientific_name && (
-                      <p className="text-[10px] text-emerald-600 italic">
+                      <p className="text-[11px] text-slate-500 italic mt-1">
                         {animal.scientific_name}
                       </p>
                     )}
@@ -435,37 +452,37 @@ function AssessmentDataViewer({
         </div>
       )}
       {metaData.accessibility && (
-        <div className="border border-blue-200 rounded-lg overflow-hidden">
+        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
           <button
             onClick={() => toggleSection("accessibility")}
-            className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 hover:bg-blue-100 transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
           >
-            <div className="flex items-center gap-2">
-              <Car size={14} className="text-blue-600" />
-              <span className="text-xs font-bold text-blue-800">
+            <div className="flex items-center gap-3">
+              <Car size={16} className="text-emerald-600" />
+              <span className="text-sm font-semibold text-slate-800">
                 Accessibility
               </span>
             </div>
             {expandedSections.accessibility ? (
-              <ChevronDown size={14} />
+              <ChevronDown size={16} className="text-slate-400" />
             ) : (
-              <ChevronRight size={14} />
+              <ChevronRight size={16} className="text-slate-400" />
             )}
           </button>
           {expandedSections.accessibility && (
-            <div className="p-3 bg-white space-y-2">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-4">
               {metaData.accessibility.vehicle_access && (
                 <div>
-                  <p className="text-[10px] uppercase font-semibold text-gray-400">
+                  <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
                     Vehicle Access
                   </p>
                   {Array.isArray(metaData.accessibility.vehicle_access) ? (
-                    <div className="flex flex-wrap gap-1 mt-1">
+                    <div className="flex flex-wrap gap-2">
                       {metaData.accessibility.vehicle_access.map(
                         (access: string, idx: number) => (
                           <span
                             key={idx}
-                            className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-semibold"
+                            className="px-3 py-1.5 bg-white text-slate-700 rounded-lg text-xs font-medium border border-slate-200"
                           >
                             {access}
                           </span>
@@ -473,7 +490,7 @@ function AssessmentDataViewer({
                       )}
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-700">
+                    <p className="text-sm text-slate-700">
                       {metaData.accessibility.vehicle_access}
                     </p>
                   )}
@@ -481,20 +498,20 @@ function AssessmentDataViewer({
               )}
               {metaData.accessibility.notes && (
                 <div>
-                  <p className="text-[10px] uppercase font-semibold text-gray-400">
+                  <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
                     Notes
                   </p>
-                  <p className="text-xs text-gray-700">
+                  <p className="text-sm text-slate-700">
                     {metaData.accessibility.notes}
                   </p>
                 </div>
               )}
               {metaData.accessibility.route_description && (
                 <div>
-                  <p className="text-[10px] uppercase font-semibold text-gray-400">
+                  <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
                     Route Description
                   </p>
-                  <p className="text-xs text-gray-700">
+                  <p className="text-sm text-slate-700">
                     {metaData.accessibility.route_description}
                   </p>
                 </div>
@@ -504,54 +521,51 @@ function AssessmentDataViewer({
         </div>
       )}
 
-      {/* ✅ UPDATED: STRICTLY TEXT ONLY for Legal Documents. No photo_url rendering. */}
       {metaData.legal_documents && (
-        <div className="border border-green-200 rounded-lg overflow-hidden">
+        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
           <button
             onClick={() => toggleSection("legal_documents")}
-            className="w-full flex items-center justify-between px-3 py-2 bg-green-50 hover:bg-green-100 transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
           >
-            <div className="flex items-center gap-2">
-              <FileText size={14} className="text-green-600" />
-              <span className="text-xs font-bold text-green-800">
+            <div className="flex items-center gap-3">
+              <FileText size={16} className="text-emerald-600" />
+              <span className="text-sm font-semibold text-slate-800">
                 Legal Documents
               </span>
             </div>
             {expandedSections.legal_documents ? (
-              <ChevronDown size={14} />
+              <ChevronDown size={16} className="text-slate-400" />
             ) : (
-              <ChevronRight size={14} />
+              <ChevronRight size={16} className="text-slate-400" />
             )}
           </button>
           {expandedSections.legal_documents && (
-            <div className="p-3 bg-white space-y-3">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
               {metaData.legal_documents.land_title && (
-                <div className="p-2 bg-gray-50 rounded border border-gray-200">
-                  <div className="flex items-center gap-1 mb-1">
-                    <CheckCircle size={12} className="text-green-600" />
-                    <p className="text-xs font-bold text-gray-800">
+                <div className="p-3 bg-white rounded-lg border border-slate-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle size={14} className="text-emerald-600" />
+                    <p className="text-xs font-semibold text-slate-800">
                       Land Title
                     </p>
                   </div>
-                  {/* ✅ Only renders the text note, ignoring any legacy photo_url */}
                   {metaData.legal_documents.land_title.note && (
-                    <p className="text-xs text-gray-600 italic">
+                    <p className="text-xs text-slate-600 italic">
                       "{metaData.legal_documents.land_title.note}"
                     </p>
                   )}
                 </div>
               )}
               {metaData.legal_documents.tax_declaration && (
-                <div className="p-2 bg-gray-50 rounded border border-gray-200">
-                  <div className="flex items-center gap-1 mb-1">
-                    <CheckCircle size={12} className="text-green-600" />
-                    <p className="text-xs font-bold text-gray-800">
+                <div className="p-3 bg-white rounded-lg border border-slate-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle size={14} className="text-emerald-600" />
+                    <p className="text-xs font-semibold text-slate-800">
                       Tax Declaration
                     </p>
                   </div>
-                  {/* ✅ Only renders the text note, ignoring any legacy photo_url */}
                   {metaData.legal_documents.tax_declaration.note && (
-                    <p className="text-xs text-gray-600 italic">
+                    <p className="text-xs text-slate-600 italic">
                       "{metaData.legal_documents.tax_declaration.note}"
                     </p>
                   )}
@@ -560,18 +574,17 @@ function AssessmentDataViewer({
               {metaData.legal_documents.other_documents &&
                 Array.isArray(metaData.legal_documents.other_documents) && (
                   <div>
-                    <p className="text-[10px] uppercase font-semibold text-gray-400 mb-2">
+                    <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
                       Other Documents
                     </p>
                     {metaData.legal_documents.other_documents.map(
                       (doc: any, idx: number) => (
                         <div
                           key={idx}
-                          className="p-2 bg-gray-50 rounded border border-gray-200 mb-2"
+                          className="p-3 bg-white rounded-lg border border-slate-200 mb-2"
                         >
-                          {/* ✅ Only renders the text note, ignoring any legacy photo_url */}
                           {doc.note && (
-                            <p className="text-xs text-gray-600 italic">
+                            <p className="text-xs text-slate-600 italic">
                               "{doc.note}"
                             </p>
                           )}
@@ -586,33 +599,33 @@ function AssessmentDataViewer({
       )}
 
       {metaData.security_concerns && (
-        <div className="border border-orange-200 rounded-lg overflow-hidden">
+        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
           <button
             onClick={() => toggleSection("security_concerns")}
-            className="w-full flex items-center justify-between px-3 py-2 bg-orange-50 hover:bg-orange-100 transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
           >
-            <div className="flex items-center gap-2">
-              <ShieldAlert size={14} className="text-orange-600" />
-              <span className="text-xs font-bold text-orange-800">
+            <div className="flex items-center gap-3">
+              <ShieldAlert size={16} className="text-emerald-600" />
+              <span className="text-sm font-semibold text-slate-800">
                 Security Concerns
               </span>
             </div>
             {expandedSections.security_concerns ? (
-              <ChevronDown size={14} />
+              <ChevronDown size={16} className="text-slate-400" />
             ) : (
-              <ChevronRight size={14} />
+              <ChevronRight size={16} className="text-slate-400" />
             )}
           </button>
           {expandedSections.security_concerns && (
-            <div className="p-3 bg-white space-y-2">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-4">
               {metaData.security_concerns.selected &&
                 Array.isArray(metaData.security_concerns.selected) &&
                 metaData.security_concerns.selected.length > 0 && (
                   <div>
-                    <p className="text-[10px] uppercase font-semibold text-gray-400 mb-2">
+                    <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
                       Selected Concerns
                     </p>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-2">
                       {metaData.security_concerns.selected.map(
                         (concern: string, idx: number) => (
                           <SecurityBadge key={idx} concern={concern} />
@@ -623,10 +636,10 @@ function AssessmentDataViewer({
                 )}
               {metaData.security_concerns.note && (
                 <div>
-                  <p className="text-[10px] uppercase font-semibold text-gray-400">
+                  <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
                     Additional Notes
                   </p>
-                  <p className="text-xs text-gray-700">
+                  <p className="text-sm text-slate-700">
                     {metaData.security_concerns.note}
                   </p>
                 </div>
@@ -731,7 +744,6 @@ export default function MetaDataVerification() {
   >(null);
   const [savingLocation, setSavingLocation] = useState(false);
 
-  // ✅ NEW: Automatically derive ownership type from the selected Land Classification
   const selectedLC = landClassifications.find(
     (lc) => lc.land_classification_id === verifiedLandClassificationId,
   );
@@ -1358,14 +1370,17 @@ export default function MetaDataVerification() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-100">
-        <Loader2 className="animate-spin h-10 w-10 text-green-700" />
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="text-center">
+          <Loader2 className="animate-spin h-8 w-8 text-emerald-600 mx-auto mb-3" />
+          <p className="text-sm text-slate-600">Loading verification data...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex w-full h-screen bg-gray-100 p-6 gap-6 overflow-hidden">
+    <div className="flex w-full h-screen bg-slate-50 gap-5 overflow-hidden p-5">
       {PSalert && (
         <PlantScopeAlert
           type={PSalert.type}
@@ -1386,62 +1401,82 @@ export default function MetaDataVerification() {
       )}
 
       {/* ───────── LEFT PANEL: Field Assessments List ───────── */}
-      <div className="w-112.5 bg-white rounded-2xl shadow flex flex-col min-h-0 border border-gray-200">
-        <div className="border-b p-5 bg-gray-50 rounded-t-2xl">
-          <h2 className="text-xl font-bold text-green-700 flex items-center gap-2">
-            <ClipboardCheck size={20} /> Inspector Submissions
-          </h2>
-          <p className="text-sm text-gray-500 truncate mt-1">
-            {siteInfo?.name || `Site #${id}`}
-          </p>
+      <div className="w-[420px] bg-white rounded-2xl shadow-sm flex flex-col min-h-0 border border-slate-200">
+        <div className="border-b border-slate-200 p-5 bg-gradient-to-br from-white to-slate-50">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2.5 bg-emerald-100 rounded-lg">
+              <ClipboardCheck size={20} className="text-emerald-700" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                Inspector Submissions
+              </h2>
+              <p className="text-sm text-slate-600 mt-0.5">
+                {siteInfo?.name || `Site #${id}`}
+              </p>
+            </div>
+          </div>
+
           {siteInfo?.reforestation_area_name && (
-            <p className="text-xs text-gray-400 mt-0.5">
-              Area: {siteInfo.reforestation_area_name}
+            <p className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1.5 rounded-lg inline-block mt-2">
+              📍 {siteInfo.reforestation_area_name}
             </p>
           )}
 
-          <div className="mt-3 flex gap-1 bg-gray-100 p-1 rounded-lg">
+          <div className="mt-4 flex gap-1.5 bg-slate-100 p-1.5 rounded-xl">
             <button
               onClick={() => setAssessmentFilter("all")}
-              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${assessmentFilter === "all" ? "bg-white text-green-700 shadow-sm" : "text-gray-600 hover:text-gray-800"}`}
+              className={`flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                assessmentFilter === "all"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
             >
-              <Filter size={12} /> All ({assessmentCounts.total})
+              <Filter size={13} /> All ({assessmentCounts.total})
             </button>
             <button
               onClick={() => setAssessmentFilter("specific")}
-              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${assessmentFilter === "specific" ? "bg-white text-green-700 shadow-sm" : "text-gray-600 hover:text-gray-800"}`}
+              className={`flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                assessmentFilter === "specific"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
             >
-              <Target size={12} /> Specific ({assessmentCounts.specific})
+              <Target size={13} /> Specific ({assessmentCounts.specific})
             </button>
             <button
               onClick={() => setAssessmentFilter("general")}
-              className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors ${assessmentFilter === "general" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-800"}`}
+              className={`flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                assessmentFilter === "general"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
             >
-              <Building2 size={12} /> General ({assessmentCounts.general})
+              <Building2 size={13} /> General ({assessmentCounts.general})
             </button>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-4 grid grid-cols-2 gap-2.5">
             <div>
-              <label className="text-[10px] font-semibold text-gray-500 mb-1 block">
+              <label className="text-xs font-semibold text-slate-600 mb-1.5 block">
                 From Date
               </label>
               <input
                 type="date"
                 value={filterDateFrom}
                 onChange={(e) => setFilterDateFrom(e.target.value)}
-                className="w-full border border-gray-200 rounded-md p-1.5 text-xs bg-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
               />
             </div>
             <div>
-              <label className="text-[10px] font-semibold text-gray-500 mb-1 block">
+              <label className="text-xs font-semibold text-slate-600 mb-1.5 block">
                 To Date
               </label>
               <input
                 type="date"
                 value={filterDateTo}
                 onChange={(e) => setFilterDateTo(e.target.value)}
-                className="w-full border border-gray-200 rounded-md p-1.5 text-xs bg-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
               />
             </div>
           </div>
@@ -1451,18 +1486,20 @@ export default function MetaDataVerification() {
                 setFilterDateFrom("");
                 setFilterDateTo("");
               }}
-              className="mt-2 w-full text-[10px] text-red-500 hover:text-red-700 font-semibold flex items-center justify-center gap-1"
+              className="mt-2.5 w-full text-xs text-red-600 hover:text-red-700 font-semibold flex items-center justify-center gap-1.5 py-1.5 hover:bg-red-50 rounded-lg transition-colors"
             >
-              <X size={10} /> Clear Dates
+              <X size={12} /> Clear Dates
             </button>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
           {filteredAssessments.length === 0 ? (
-            <div className="text-center py-10 text-gray-400 text-sm">
-              <ClipboardCheck className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>
+            <div className="text-center py-12 text-slate-400">
+              <div className="w-12 h-12 mx-auto mb-3 bg-slate-200 rounded-full flex items-center justify-center">
+                <ClipboardCheck className="w-6 h-6 text-slate-400" />
+              </div>
+              <p className="text-sm font-medium">
                 {assessmentFilter === "all"
                   ? "No field assessments found."
                   : assessmentFilter === "specific"
@@ -1480,11 +1517,14 @@ export default function MetaDataVerification() {
               return (
                 <div
                   key={item.id}
-                  className={`bg-white rounded-xl p-4 border shadow-sm transition-all ${isSelected ? "border-green-400 ring-2 ring-green-100" : "border-gray-200 hover:border-green-300"}`}
+                  className={`bg-white rounded-xl p-4 border-2 transition-all hover:shadow-md ${
+                    isSelected
+                      ? "border-emerald-300 bg-emerald-50/30"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
                 >
                   <div className="flex items-start gap-3 mb-3">
-                    {/* ✅ UPDATED: Added border-2 border-green-600 to highlight the profile image */}
-                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-sm overflow-hidden border-2 border-green-600">
+                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden flex-shrink-0 shadow-sm">
                       {item.inspector_profile_img ? (
                         <img
                           src={
@@ -1496,14 +1536,14 @@ export default function MetaDataVerification() {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        item.inspector_name.charAt(0)
+                        item.inspector_name.charAt(0).toUpperCase()
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-800 truncate">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
                         {item.inspector_name}
                       </p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-slate-500 mt-0.5">
                         {item.assessment_date
                           ? new Date(item.assessment_date).toLocaleDateString()
                           : "No date"}
@@ -1515,11 +1555,14 @@ export default function MetaDataVerification() {
                   {(item.land_classification ||
                     (item.animals_present &&
                       item.animals_present.length > 0)) && (
-                    <div className="mb-3 p-2 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                    <div className="mb-3 space-y-2">
                       {item.land_classification && (
-                        <div className="flex items-center gap-1">
-                          <Layers size={10} className="text-purple-600" />
-                          <span className="text-[10px] font-semibold text-purple-700">
+                        <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg">
+                          <Layers
+                            size={12}
+                            className="text-emerald-600 flex-shrink-0"
+                          />
+                          <span className="text-xs font-semibold text-emerald-900">
                             {item.land_classification.name}
                           </span>
                         </div>
@@ -1527,16 +1570,17 @@ export default function MetaDataVerification() {
                       {item.animals_present &&
                         item.animals_present.length > 0 && (
                           <div>
-                            <div className="flex items-center gap-1 mb-1">
+                            <div className="flex items-center gap-2 mb-2 px-2">
                               <PawPrint
-                                size={10}
+                                size={12}
                                 className="text-emerald-600"
                               />
-                              <span className="text-[10px] font-semibold text-emerald-700">
-                                Animals ({item.animals_present.length})
+                              <span className="text-xs font-semibold text-emerald-900">
+                                {item.animals_present.length} animal
+                                {item.animals_present.length !== 1 ? "s" : ""}
                               </span>
                             </div>
-                            <div className="flex flex-wrap gap-1">
+                            <div className="flex flex-wrap gap-1.5 px-2">
                               {item.animals_present
                                 .slice(0, 3)
                                 .map((animal) => (
@@ -1546,8 +1590,8 @@ export default function MetaDataVerification() {
                                   />
                                 ))}
                               {item.animals_present.length > 3 && (
-                                <span className="text-[9px] text-gray-500 self-center">
-                                  +{item.animals_present.length - 3} more
+                                <span className="text-xs text-slate-500 self-center font-medium">
+                                  +{item.animals_present.length - 3}
                                 </span>
                               )}
                             </div>
@@ -1556,25 +1600,25 @@ export default function MetaDataVerification() {
                     </div>
                   )}
 
-                  <label className="flex items-center gap-2 mb-3 p-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+                  <label className="flex items-center gap-2 mb-3 p-2.5 bg-emerald-50/50 rounded-lg cursor-pointer hover:bg-emerald-100/50 transition-colors border border-emerald-200/50">
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleAssessmentReference(item.id)}
-                      className="rounded text-green-600 focus:ring-green-500"
+                      className="rounded accent-emerald-600"
                     />
-                    <span className="text-xs font-medium text-gray-700">
+                    <span className="text-xs font-semibold text-emerald-900">
                       Use as evidence
                     </span>
                   </label>
 
                   {item.images && item.images.length > 0 && (
                     <div className="mb-3">
-                      <p className="text-[10px] uppercase font-bold text-gray-400 mb-1">
-                        Attachments ({item.images.length})
+                      <p className="text-xs uppercase font-bold text-slate-500 mb-2">
+                        📎 Attachments ({item.images.length})
                       </p>
-                      <div className="grid grid-cols-3 gap-1">
-                        {item.images.slice(0, 6).map((img) => (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {item.images.slice(0, 8).map((img) => (
                           <a
                             key={img.image_id}
                             href={
@@ -1586,7 +1630,7 @@ export default function MetaDataVerification() {
                             }
                             target="_blank"
                             rel="noreferrer"
-                            className="block aspect-square rounded overflow-hidden border border-gray-200 hover:border-green-400 transition"
+                            className="block aspect-square rounded-lg overflow-hidden border-2 border-slate-200 hover:border-emerald-400 transition-all hover:shadow-md"
                             title={img.description || img.layer}
                           >
                             {img.url ? (
@@ -1604,78 +1648,83 @@ export default function MetaDataVerification() {
                                 }}
                               />
                             ) : (
-                              <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                              <div className="w-full h-full bg-slate-100 flex items-center justify-center">
                                 <ImageIcon
-                                  size={12}
-                                  className="text-gray-400"
+                                  size={14}
+                                  className="text-slate-400"
                                 />
                               </div>
                             )}
                           </a>
                         ))}
-                        {item.images.length > 6 && (
-                          <div className="aspect-square rounded bg-gray-100 flex items-center justify-center text-xs text-gray-500 font-bold">
-                            +{item.images.length - 6}
+                        {item.images.length > 8 && (
+                          <div className="aspect-square rounded-lg bg-slate-200 flex items-center justify-center text-xs text-slate-600 font-bold">
+                            +{item.images.length - 8}
                           </div>
                         )}
                       </div>
                     </div>
                   )}
 
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    {hasLocation ? (
-                      <div className="flex items-center gap-1 text-[10px] text-gray-500 flex-1">
-                        <MapPin size={10} />
-                        <span>
-                          {Number(item.location.latitude).toFixed(5)},{" "}
-                          {Number(item.location.longitude).toFixed(5)}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-[10px] text-orange-500 flex-1">
-                        <AlertCircle size={10} />
-                        <span>No location recorded</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-1">
+                  <div className="mb-2.5 flex flex-col gap-2.5">
+                    <div className="flex items-center gap-2">
+                      {hasLocation ? (
+                        <div className="flex items-center gap-1.5 text-xs text-emerald-700 flex-1 bg-emerald-50 px-2.5 py-1.5 rounded-lg font-medium">
+                          <MapPin size={12} className="text-emerald-600" />
+                          <span>
+                            {Number(item.location.latitude).toFixed(5)},{" "}
+                            {Number(item.location.longitude).toFixed(5)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-xs text-orange-700 flex-1 bg-orange-50 px-2.5 py-1.5 rounded-lg font-medium">
+                          <AlertCircle size={12} className="text-orange-600" />
+                          <span>No location</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
                       {canManageAssessments && (
                         <>
                           <button
                             onClick={() => handleUnsendAssessment(item.id)}
                             title="Unsend Assessment"
-                            className="flex items-center justify-center p-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 rounded transition-colors border border-yellow-200"
+                            className="flex items-center justify-center p-2 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all border border-slate-200 hover:border-amber-200"
                           >
-                            <RotateCcw size={12} />
+                            <RotateCcw size={14} />
                           </button>
                           <button
                             onClick={() => handleDeleteAssessment(item.id)}
                             title="Delete Assessment"
-                            className="flex items-center justify-center p-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors border border-red-200"
+                            className="flex items-center justify-center p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all border border-slate-200 hover:border-red-200"
                           >
-                            <Trash2 size={12} />
+                            <Trash2 size={14} />
                           </button>
                         </>
                       )}
                       <button
                         onClick={() => openMapModal(item)}
-                        className="flex items-center gap-1 px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[10px] font-semibold transition-colors border border-blue-200"
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm hover:shadow-md"
                       >
-                        <MapIcon size={10} />{" "}
+                        <MapIcon size={14} />
                         {hasLocation ? "View Map" : "Set Location"}
                       </button>
                     </div>
                   </div>
 
                   {item.field_assessment_data && (
-                    <details className="text-xs">
-                      <summary className="cursor-pointer text-gray-500 hover:text-gray-700 font-medium mb-2">
-                        View assessment data
+                    <details className="text-xs mt-3 border-t border-slate-200 pt-3">
+                      <summary className="cursor-pointer text-slate-600 hover:text-slate-900 font-semibold text-xs select-none">
+                        📋 View assessment data
                       </summary>
-                      <AssessmentDataViewer
-                        data={item.field_assessment_data}
-                        landClassification={item.land_classification}
-                        animalsPresent={item.animals_present}
-                      />
+                      <div className="mt-3">
+                        <AssessmentDataViewer
+                          data={item.field_assessment_data}
+                          landClassification={item.land_classification}
+                          animalsPresent={item.animals_present}
+                        />
+                      </div>
                     </details>
                   )}
                 </div>
@@ -1686,13 +1735,17 @@ export default function MetaDataVerification() {
       </div>
 
       {/* ───────── RIGHT PANEL: Verification Form ───────── */}
-      <div className="flex-1 bg-white rounded-2xl shadow p-8 flex flex-col gap-6 min-h-0 border border-gray-200 overflow-y-auto">
-        <div className="flex items-center justify-between">
+      <div className="flex-1 bg-white rounded-2xl shadow-sm flex flex-col min-h-0 border border-slate-200 overflow-hidden">
+        {/* Header */}
+        <div className="border-b border-slate-200 px-6 py-5 bg-gradient-to-r from-white via-emerald-50/30 to-white flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-green-700">
-              Meta Data Verification
-            </h2>
-            <p className="text-sm text-gray-500 mt-1">
+            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2.5">
+              <div className="p-2 bg-emerald-100 rounded-lg">
+                <ShieldCheck size={20} className="text-emerald-700" />
+              </div>
+              Verification Form
+            </h1>
+            <p className="text-sm text-slate-600 mt-2">
               {siteInfo?.name || `Site #${id}`}
             </p>
           </div>
@@ -1701,381 +1754,441 @@ export default function MetaDataVerification() {
           )}
         </div>
 
-        {/* ✅ STEP 1: Verified Land Classification (Now includes ownership type inline) */}
-        <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-          <h3 className="font-bold text-purple-800 flex items-center gap-2 mb-3">
-            <Layers size={16} /> Verified Land Classification
-          </h3>
-          <select
-            value={verifiedLandClassificationId}
-            onChange={(e) =>
-              setVerifiedLandClassificationId(parseInt(e.target.value) || "")
-            }
-            className="w-full border rounded-lg p-3 text-sm bg-white"
-            disabled={landClassifications.length === 0}
-          >
-            <option value="">-- Select Classification --</option>
-            {landClassifications.map((lc) => (
-              <option
-                key={lc.land_classification_id}
-                value={lc.land_classification_id}
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="px-6 py-6 space-y-8">
+            {/* Land Classification */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <Layers size={18} className="text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-900">
+                    Land Classification
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Step 1 of 3 - Required
+                  </p>
+                </div>
+              </div>
+              <select
+                value={verifiedLandClassificationId}
+                onChange={(e) =>
+                  setVerifiedLandClassificationId(
+                    parseInt(e.target.value) || "",
+                  )
+                }
+                className="w-full border-2 border-slate-300 rounded-lg px-4 py-3 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-medium"
+                disabled={landClassifications.length === 0}
               >
-                {lc.name}{" "}
-                {lc.ownership_type === "public" ? "(Public)" : "(Private)"}
-              </option>
-            ))}
-          </select>
-
-          {/* ✅ Visual Badge showing derived ownership type */}
-          {selectedLC && (
-            <div className="mt-3 flex items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
-                  selectedLC.ownership_type === "public"
-                    ? "bg-blue-100 text-blue-700 border-blue-200"
-                    : "bg-amber-100 text-amber-700 border-amber-200"
-                }`}
-              >
-                {selectedLC.ownership_type === "public"
-                  ? "🔵 Public / Government"
-                  : "🟠 Private"}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* ✅ STEP 2: Conditional Legal Documents Section based on derived ownership */}
-        {!verifiedLandClassificationId ? (
-          <div className="p-4 bg-gray-100 rounded-lg border border-gray-200 flex items-center gap-3">
-            <AlertCircle size={20} className="text-gray-400" />
-            <div>
-              <h3 className="font-bold text-gray-600">
-                Select Land Classification First
-              </h3>
-              <p className="text-xs text-gray-500">
-                Please select a land classification above to determine if legal
-                documents are required.
-              </p>
-            </div>
-          </div>
-        ) : derivedOwnershipType === "private" ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                <FileText size={18} className="text-green-600" /> Legal
-                Documents
-              </h3>
-              <span className="text-xs text-gray-500">
-                {permits.length} records
-              </span>
-            </div>
-
-            {permits.length > 0 && (
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {permits.map((permit) => (
-                  <div
-                    key={permit.permit_id}
-                    className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                <option value="">-- Select Classification --</option>
+                {landClassifications.map((lc) => (
+                  <option
+                    key={lc.land_classification_id}
+                    value={lc.land_classification_id}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-800 capitalize">
-                          {permit.document_type.replace(/_/g, " ")}
-                        </p>
-                        {permit.notes && (
-                          <p className="text-xs text-gray-600 mt-1 italic">
-                            "{permit.notes}"
-                          </p>
-                        )}
-                        {permit.verification_notes && (
-                          <p className="text-[10px] text-gray-500 mt-1">
-                            Admin: {permit.verification_notes}
-                          </p>
-                        )}
-                        <p className="text-[10px] text-gray-400 mt-1">
-                          Added:{" "}
-                          {new Date(permit.uploaded_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleDeletePermit(permit.permit_id)}
-                        className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
+                    {lc.name}{" "}
+                    {lc.ownership_type === "public" ? "(Public)" : "(Private)"}
+                  </option>
                 ))}
+              </select>
+
+              {selectedLC && (
+                <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                  <Check size={16} className="text-emerald-600 flex-shrink-0" />
+                  <span className="text-sm font-medium text-emerald-900">
+                    {selectedLC.ownership_type === "public"
+                      ? "Public / Government Land"
+                      : "Private Land"}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Legal Documents Section */}
+            {!verifiedLandClassificationId ? (
+              <div className="p-4 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 flex items-start gap-3">
+                <AlertCircle
+                  size={20}
+                  className="text-slate-600 mt-0.5 flex-shrink-0"
+                />
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-900">
+                    Select Land Classification First
+                  </h4>
+                  <p className="text-xs text-slate-600 mt-1">
+                    This determines if legal documents are required for
+                    verification.
+                  </p>
+                </div>
+              </div>
+            ) : derivedOwnershipType === "private" ? (
+              <div className="space-y-4 border-2 border-slate-200 rounded-xl p-5 bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-emerald-100 rounded-lg">
+                    <FileText size={18} className="text-emerald-700" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-900">
+                      Legal Documents
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Step 2 of 3 - {permits.length} records
+                    </p>
+                  </div>
+                </div>
+
+                {permits.length > 0 && (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {permits.map((permit) => (
+                      <div
+                        key={permit.permit_id}
+                        className="p-3 bg-white rounded-lg border border-slate-200 hover:border-slate-300 transition-colors"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold text-slate-900 capitalize">
+                              {permit.document_type.replace(/_/g, " ")}
+                            </p>
+                            {permit.notes && (
+                              <p className="text-xs text-slate-600 mt-1.5 italic">
+                                "{permit.notes}"
+                              </p>
+                            )}
+                            {permit.verification_notes && (
+                              <p className="text-xs text-slate-500 mt-1.5 bg-slate-100 px-2 py-1 rounded">
+                                ✓ {permit.verification_notes}
+                              </p>
+                            )}
+                            <p className="text-xs text-slate-500 mt-2">
+                              Added{" "}
+                              {new Date(
+                                permit.uploaded_at,
+                              ).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeletePermit(permit.permit_id)}
+                            className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-3 pt-4 border-t border-slate-300">
+                  <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                    <Plus size={16} className="text-emerald-600" /> Add Document
+                    Record
+                  </h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 mb-2 block">
+                        Document Type *
+                      </label>
+                      <select
+                        value={newPermit.document_type}
+                        onChange={(e) =>
+                          setNewPermit({
+                            ...newPermit,
+                            document_type: e.target.value,
+                          })
+                        }
+                        className="w-full border-2 border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                      >
+                        <option value="land_title">Land Title</option>
+                        <option value="tax_declaration">Tax Declaration</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 mb-2 block">
+                        Notes / Reference Details *
+                      </label>
+                      <textarea
+                        value={newPermit.notes}
+                        onChange={(e) =>
+                          setNewPermit({ ...newPermit, notes: e.target.value })
+                        }
+                        className="w-full border-2 border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                        placeholder="Ex: TCT No. 12345, Registered under Juan Dela Cruz"
+                        rows={2}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 mb-2 block">
+                        Verification Notes (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={newPermit.verification_notes}
+                        onChange={(e) =>
+                          setNewPermit({
+                            ...newPermit,
+                            verification_notes: e.target.value,
+                          })
+                        }
+                        className="w-full border-2 border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                        placeholder="Ex: Verified against municipal records"
+                      />
+                    </div>
+                    <button
+                      onClick={handleAddPermitRecord}
+                      disabled={uploadingPermit || !newPermit.notes.trim()}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2.5 flex items-center justify-center gap-2 font-semibold text-sm disabled:opacity-40 transition-all shadow-sm hover:shadow-md"
+                    >
+                      {uploadingPermit ? (
+                        <>
+                          <Loader2 className="animate-spin" size={16} />{" "}
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={16} /> Add Record
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-emerald-50 rounded-xl border-2 border-emerald-200 flex items-start gap-3">
+                <Landmark
+                  size={20}
+                  className="text-emerald-600 mt-0.5 flex-shrink-0"
+                />
+                <div>
+                  <h4 className="text-sm font-semibold text-emerald-900">
+                    No Legal Documents Required
+                  </h4>
+                  <p className="text-xs text-emerald-700 mt-1">
+                    This public land does not require legal document
+                    verification.
+                  </p>
+                </div>
               </div>
             )}
 
-            <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-              <h4 className="text-sm font-bold text-green-800 mb-3 flex items-center gap-2">
-                <Plus size={14} /> Add Document Record
-              </h4>
-              <div className="space-y-3">
+            {/* Security Concerns */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <ShieldAlert size={18} className="text-red-700" />
+                </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">
-                    Document Type *
-                  </label>
-                  <select
-                    value={newPermit.document_type}
-                    onChange={(e) =>
-                      setNewPermit({
-                        ...newPermit,
-                        document_type: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                  <h3 className="font-semibold text-slate-900">
+                    Security Concerns
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Step 3 of 3 - Multi-select
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  "Armed Threat / Violence",
+                  "Hostile Person on Site",
+                  "Illegal Activity Observed",
+                  "Community Resistance",
+                  "Land Conflict",
+                  "Other",
+                ].map((concern) => (
+                  <label
+                    key={concern}
+                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border-2 cursor-pointer transition-all font-medium text-sm ${
+                      verifiedSecurityConcerns.includes(concern)
+                        ? "bg-red-50 border-red-300"
+                        : "bg-white border-slate-300 hover:border-slate-400"
+                    }`}
                   >
-                    <option value="land_title">Land Title</option>
-                    <option value="tax_declaration">Tax Declaration</option>
-                    <option value="other">Other</option>
-                  </select>
+                    <input
+                      type="checkbox"
+                      checked={verifiedSecurityConcerns.includes(concern)}
+                      onChange={(e) => {
+                        if (e.target.checked)
+                          setVerifiedSecurityConcerns([
+                            ...verifiedSecurityConcerns,
+                            concern,
+                          ]);
+                        else
+                          setVerifiedSecurityConcerns(
+                            verifiedSecurityConcerns.filter(
+                              (c) => c !== concern,
+                            ),
+                          );
+                      }}
+                      className="rounded accent-red-600"
+                    />
+                    <span className="text-sm">{concern}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Accessibility */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Route size={18} className="text-blue-700" />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">
-                    Notes / Reference Details *
-                  </label>
-                  <textarea
-                    value={newPermit.notes}
-                    onChange={(e) =>
-                      setNewPermit({ ...newPermit, notes: e.target.value })
-                    }
-                    className="w-full border rounded-lg p-2 text-sm bg-white"
-                    placeholder="Ex: TCT No. 12345, Registered under Juan Dela Cruz"
-                    rows={2}
-                  />
+                  <h3 className="font-semibold text-slate-900">
+                    Accessibility
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {verifiedAccessibility.length} recorded
+                  </p>
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 mb-1 block">
-                    Verification Notes (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={newPermit.verification_notes}
-                    onChange={(e) =>
-                      setNewPermit({
-                        ...newPermit,
-                        verification_notes: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded-lg p-2 text-sm bg-white"
-                    placeholder="Ex: Verified against municipal records"
-                  />
+              </div>
+
+              {verifiedAccessibility.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {verifiedAccessibility.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200"
+                    >
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-slate-900 capitalize">
+                          {entry.type.replace(/_/g, " ")}
+                        </p>
+                        {entry.description && (
+                          <p className="text-xs text-slate-600 mt-1.5">
+                            {entry.description}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => removeAccessibilityEntry(entry.id)}
+                        className="text-red-500 hover:text-red-700 p-1 hover:bg-white rounded-lg transition-colors"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="p-4 bg-slate-50 rounded-lg border-2 border-slate-300 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 mb-2 block">
+                      Type *
+                    </label>
+                    <select
+                      value={newAccessibility.type}
+                      onChange={(e) =>
+                        setNewAccessibility({
+                          ...newAccessibility,
+                          type: e.target.value,
+                          description: "",
+                        })
+                      }
+                      className="w-full border-2 border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                    >
+                      <option value="">-- Select --</option>
+                      <option value="vehicle_accessible">
+                        Vehicle Accessible
+                      </option>
+                      <option value="motorcycle_only">Motorcycle Only</option>
+                      <option value="footpath_only">Footpath Only</option>
+                      <option value="not_accessible">Not Accessible</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 mb-2 block">
+                      Description
+                    </label>
+                    <input
+                      type="text"
+                      value={newAccessibility.description}
+                      onChange={(e) =>
+                        setNewAccessibility({
+                          ...newAccessibility,
+                          description: e.target.value,
+                        })
+                      }
+                      className="w-full border-2 border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                      placeholder="Ex: 2km dirt road, 4x4 required"
+                    />
+                  </div>
                 </div>
                 <button
-                  onClick={handleAddPermitRecord}
-                  disabled={uploadingPermit || !newPermit.notes.trim()}
-                  className="w-full bg-green-700 text-white rounded-lg p-2 flex items-center justify-center gap-2 hover:bg-green-800 font-semibold text-sm disabled:opacity-50 transition-colors"
+                  onClick={addAccessibilityEntry}
+                  disabled={!newAccessibility.type}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2.5 flex items-center justify-center gap-2 font-semibold text-sm disabled:opacity-40 transition-all shadow-sm"
                 >
-                  {uploadingPermit ? (
-                    <>
-                      <Loader2 className="animate-spin" size={16} /> Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Plus size={16} /> Add Record
-                    </>
-                  )}
+                  <Plus size={16} /> Add
                 </button>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="p-4 bg-gray-100 rounded-lg border border-gray-200 flex items-center gap-3">
-            <Landmark size={20} className="text-gray-400" />
-            <div>
-              <h3 className="font-bold text-gray-600">
-                Legal Documents Not Required
-              </h3>
-              <p className="text-xs text-gray-500">
-                Public or government-owned land does not require legal document
-                verification.
-              </p>
-            </div>
-          </div>
-        )}
 
-        {/* ✅ STEP 3: Remaining Meta Data */}
-        <div className="space-y-6">
-          {/* Security */}
-          <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
-            <h3 className="font-bold text-orange-800 flex items-center gap-2 mb-3">
-              <ShieldAlert size={16} /> Verified Security Concerns
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {[
-                "Armed Threat / Violence",
-                "Hostile Person on Site",
-                "Illegal Activity Observed",
-                "Community Resistance",
-                "Land Conflict",
-                "Other",
-              ].map((concern) => (
-                <label
-                  key={concern}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${verifiedSecurityConcerns.includes(concern) ? "bg-orange-100 border-orange-400" : "bg-white hover:bg-orange-50"}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={verifiedSecurityConcerns.includes(concern)}
-                    onChange={(e) => {
-                      if (e.target.checked)
-                        setVerifiedSecurityConcerns([
-                          ...verifiedSecurityConcerns,
-                          concern,
-                        ]);
-                      else
-                        setVerifiedSecurityConcerns(
-                          verifiedSecurityConcerns.filter((c) => c !== concern),
-                        );
-                    }}
-                    className="rounded text-orange-600"
-                  />
-                  <span className="text-sm">{concern}</span>
-                </label>
-              ))}
-            </div>
-          </div>
+            {/* Animals */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <PawPrint size={18} className="text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-900">
+                    Verified Animals ({verifiedAnimals.length})
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Optional - Document wildlife
+                  </p>
+                </div>
+              </div>
 
-          {/* Accessibility */}
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h3 className="font-bold text-blue-800 flex items-center gap-2 mb-3">
-              <Route size={16} /> Verified Accessibility
-            </h3>
-            {verifiedAccessibility.length > 0 && (
-              <div className="space-y-2 mb-4">
-                {verifiedAccessibility.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-start gap-2 p-3 bg-white rounded-lg border border-blue-100"
-                  >
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold capitalize">
-                        {entry.type.replace(/_/g, " ")}
-                      </p>
-                      {entry.description && (
-                        <p className="text-xs text-gray-600 mt-1">
-                          {entry.description}
-                        </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => removeAccessibilityEntry(entry.id)}
-                      className="text-red-500 p-1 hover:bg-red-50 rounded"
+              {verifiedAnimals.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {verifiedAnimals.map((animal) => (
+                    <div
+                      key={animal.animal_id}
+                      className="p-3 bg-white rounded-lg border-2 border-emerald-200"
                     >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="p-3 bg-blue-100/50 rounded-lg border border-blue-200">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-semibold text-gray-600 mb-1 block">
-                    Type *
-                  </label>
-                  <select
-                    value={newAccessibility.type}
-                    onChange={(e) =>
-                      setNewAccessibility({
-                        ...newAccessibility,
-                        type: e.target.value,
-                        description: "",
-                      })
-                    }
-                    className="w-full border rounded-lg p-2 text-sm bg-white"
-                  >
-                    <option value="">-- Select --</option>
-                    <option value="vehicle_accessible">
-                      Vehicle Accessible
-                    </option>
-                    <option value="motorcycle_only">Motorcycle Only</option>
-                    <option value="footpath_only">Footpath Only</option>
-                    <option value="not_accessible">Not Accessible</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-semibold text-gray-600 mb-1 block">
-                    Description
-                  </label>
-                  <input
-                    type="text"
-                    value={newAccessibility.description}
-                    onChange={(e) =>
-                      setNewAccessibility({
-                        ...newAccessibility,
-                        description: e.target.value,
-                      })
-                    }
-                    className="w-full border rounded-lg p-2 text-sm bg-white"
-                    placeholder="Ex: 2km dirt road, 4x4 required"
-                  />
-                </div>
-              </div>
-              <button
-                onClick={addAccessibilityEntry}
-                disabled={!newAccessibility.type}
-                className="mt-3 w-full bg-blue-600 text-white rounded-lg p-2 flex items-center justify-center gap-2 hover:bg-blue-700 font-semibold text-sm disabled:opacity-50"
-              >
-                <Plus size={14} /> Add
-              </button>
-            </div>
-          </div>
-
-          {/* Verified Animals */}
-          <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
-            <h3 className="font-bold text-emerald-800 flex items-center gap-2 mb-3">
-              <PawPrint size={16} /> Verified Animals ({verifiedAnimals.length})
-            </h3>
-            {verifiedAnimals.length > 0 && (
-              <div className="space-y-2 mb-4">
-                {verifiedAnimals.map((animal) => (
-                  <div
-                    key={animal.animal_id}
-                    className="p-3 bg-white rounded-lg border border-emerald-100"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <p className="text-sm font-bold text-emerald-800">
-                          {animal.name}
-                        </p>
-                        {animal.scientific_name && (
-                          <p className="text-[10px] text-emerald-600 italic">
-                            {animal.scientific_name}
+                      <div className="flex items-start justify-between mb-2.5">
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-slate-900">
+                            {animal.name}
                           </p>
-                        )}
+                          {animal.scientific_name && (
+                            <p className="text-xs text-slate-500 italic mt-0.5">
+                              {animal.scientific_name}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => removeVerifiedAnimal(animal.animal_id)}
+                          className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => removeVerifiedAnimal(animal.animal_id)}
-                        className="text-red-500 p-1 hover:bg-red-50 rounded"
-                      >
-                        <X size={14} />
-                      </button>
+                      <input
+                        type="text"
+                        value={animal.admin_notes}
+                        onChange={(e) =>
+                          updateVerifiedAnimalNotes(
+                            animal.animal_id,
+                            e.target.value,
+                          )
+                        }
+                        placeholder="Admin notes (optional)"
+                        className="w-full border-2 border-slate-300 rounded-lg p-2.5 text-xs bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                      />
                     </div>
-                    <input
-                      type="text"
-                      value={animal.admin_notes}
-                      onChange={(e) =>
-                        updateVerifiedAnimalNotes(
-                          animal.animal_id,
-                          e.target.value,
-                        )
-                      }
-                      placeholder="Admin notes (optional)"
-                      className="w-full border border-emerald-200 rounded p-2 text-xs bg-emerald-50/50"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="p-3 bg-emerald-100/50 rounded-lg border border-emerald-200">
-              <div className="space-y-3">
+                  ))}
+                </div>
+              )}
+
+              <div className="p-4 bg-slate-50 rounded-lg border-2 border-slate-300 space-y-3">
                 <div>
-                  <label className="text-[10px] font-semibold text-gray-600 mb-1 block">
+                  <label className="text-xs font-semibold text-slate-700 mb-2 block">
                     Select Animal *
                   </label>
                   <select
@@ -2083,7 +2196,7 @@ export default function MetaDataVerification() {
                     onChange={(e) =>
                       setNewAnimalId(parseInt(e.target.value) || "")
                     }
-                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                    className="w-full border-2 border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
                     disabled={animals.length === 0}
                   >
                     <option value="">-- Select Animal --</option>
@@ -2098,99 +2211,114 @@ export default function MetaDataVerification() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-semibold text-gray-600 mb-1 block">
+                  <label className="text-xs font-semibold text-slate-700 mb-2 block">
                     Admin Notes (Optional)
                   </label>
                   <input
                     type="text"
                     value={newAnimalNotes}
                     onChange={(e) => setNewAnimalNotes(e.target.value)}
-                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                    className="w-full border-2 border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
                     placeholder="Ex: Commonly spotted near water source"
                   />
                 </div>
                 <button
                   onClick={addVerifiedAnimal}
                   disabled={!newAnimalId}
-                  className="w-full bg-emerald-600 text-white rounded-lg p-2 flex items-center justify-center gap-2 hover:bg-emerald-700 font-semibold text-sm disabled:opacity-50"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-2.5 flex items-center justify-center gap-2 font-semibold text-sm disabled:opacity-40 transition-all shadow-sm"
                 >
-                  <Plus size={14} /> Add Animal
+                  <Plus size={16} /> Add Animal
                 </button>
               </div>
             </div>
-          </div>
 
-          {/* Decision Note */}
-          <div>
-            <label className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-2">
-              <FileText size={18} className="text-green-600" /> Decision Note *
-            </label>
-            <textarea
-              placeholder="Explain reason for acceptance or rejection..."
-              value={decisionNote}
-              onChange={(e) => setDecisionNote(e.target.value)}
-              className="w-full border rounded-lg p-3 text-sm"
-              rows={3}
-              required
-            />
-          </div>
-
-          {/* Evidence Summary */}
-          {referencedAssessmentIds.length > 0 && (
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-xs font-semibold text-gray-600 mb-2">
-                Referenced Assessments: {referencedAssessmentIds.length}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {referencedAssessmentIds.map((refId) => {
-                  const a = fieldAssessments.find((x) => x.id === refId);
-                  return (
-                    <span
-                      key={refId}
-                      className={`text-[10px] px-2 py-1 rounded-full border ${a?.type === "specific" ? "bg-green-100 text-green-700 border-green-200" : "bg-blue-100 text-blue-700 border-blue-200"}`}
-                    >
-                      #{refId} - {a?.inspector_name || "Unknown"} (
-                      {a?.type || "unknown"})
-                    </span>
-                  );
-                })}
+            {/* Decision Note */}
+            <div className="space-y-3 border-t-2 border-slate-200 pt-6">
+              <div className="flex items-start gap-2">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <FileText size={18} className="text-purple-700" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-900">
+                    Decision Note *
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Explain your decision
+                  </p>
+                </div>
               </div>
+              <textarea
+                placeholder="Provide detailed explanation for acceptance or rejection..."
+                value={decisionNote}
+                onChange={(e) => setDecisionNote(e.target.value)}
+                className="w-full border-2 border-slate-300 rounded-lg p-3.5 text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition-all font-medium"
+                rows={4}
+                required
+              />
             </div>
-          )}
+
+            {/* Evidence Summary */}
+            {referencedAssessmentIds.length > 0 && (
+              <div className="p-4 bg-emerald-50 rounded-lg border-2 border-emerald-300">
+                <p className="text-xs font-semibold text-emerald-900 mb-3 flex items-center gap-2">
+                  <CheckCircle size={14} /> Evidence:{" "}
+                  {referencedAssessmentIds.length} assessment
+                  {referencedAssessmentIds.length !== 1 ? "s" : ""}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {referencedAssessmentIds.map((refId) => {
+                    const a = fieldAssessments.find((x) => x.id === refId);
+                    return (
+                      <span
+                        key={refId}
+                        className={`text-xs px-3 py-1.5 rounded-lg font-semibold border ${
+                          a?.type === "specific"
+                            ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                            : "bg-slate-100 text-slate-900 border-slate-300"
+                        }`}
+                      >
+                        #{refId} • {a?.inspector_name || "Unknown"}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Actions */}
-        <div className="mt-auto pt-6 border-t flex gap-4">
+        {/* Footer Actions */}
+        <div className="shrink-0 border-t-2 border-slate-200 px-6 py-4 bg-gradient-to-r from-white to-slate-50 flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="flex-1 border border-gray-300 rounded-lg p-3 flex items-center justify-center gap-2 hover:bg-gray-50"
+            className="px-4 py-2.5 text-sm text-slate-700 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition-colors font-medium"
             disabled={saving}
           >
-            <X size={18} /> Cancel
+            Cancel
           </button>
           <button
             onClick={() => saveVerification("draft")}
-            className="flex-1 border border-blue-600 text-blue-700 rounded-lg p-3 flex items-center justify-center gap-2 hover:bg-blue-50 font-semibold"
+            className="flex-1 border-2 border-slate-400 text-slate-900 hover:bg-slate-100 rounded-lg p-2.5 flex items-center justify-center gap-2 font-semibold transition-all disabled:opacity-40"
             disabled={saving}
           >
             {saving ? (
               <Loader2 className="animate-spin" size={18} />
             ) : (
               <Save size={18} />
-            )}{" "}
+            )}
             Save Draft
           </button>
-          <div className="flex gap-2">
+          <div className="flex gap-2.5">
             <button
               onClick={() => saveVerification("rejected")}
-              className="px-6 py-3 bg-red-600 text-white rounded-lg flex items-center gap-2 hover:bg-red-700 font-bold shadow-md disabled:opacity-50"
+              className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 font-semibold text-sm disabled:opacity-40 transition-all shadow-sm hover:shadow-md"
               disabled={saving || !decisionNote.trim()}
             >
               <XCircle size={18} /> Reject
             </button>
             <button
               onClick={() => saveVerification("verified")}
-              className="px-6 py-3 bg-green-700 text-white rounded-lg flex items-center gap-2 hover:bg-green-800 font-bold shadow-md disabled:opacity-50"
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-2 font-semibold text-sm disabled:opacity-40 transition-all shadow-sm hover:shadow-md"
               disabled={saving || !decisionNote.trim()}
             >
               <CheckCircle size={18} /> Accept
@@ -2199,17 +2327,18 @@ export default function MetaDataVerification() {
         </div>
       </div>
 
-      {/* Map Modal (Unchanged) */}
+      {/* Map Modal */}
       {isMapModalOpen && selectedAssessment && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between p-5 border-b bg-gradient-to-r from-green-50 to-blue-50">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden border border-slate-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b-2 border-slate-200 bg-gradient-to-r from-white to-slate-50">
               <div>
-                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                  <MapIcon size={20} className="text-green-700" /> Assessment
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-3">
+                  <MapIcon size={22} className="text-emerald-600" /> Assessment
                   Location
                 </h3>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-slate-600 mt-2">
                   {selectedAssessment.inspector_name} •{" "}
                   {selectedAssessment.assessment_date
                     ? new Date(
@@ -2222,19 +2351,21 @@ export default function MetaDataVerification() {
                 {!isEditMode && (
                   <button
                     onClick={() => setIsEditMode(true)}
-                    className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-all shadow-sm"
                   >
-                    <Edit3 size={14} /> Edit Location
+                    <Edit3 size={16} /> Edit Location
                   </button>
                 )}
                 <button
                   onClick={closeMapModal}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
                 >
-                  <X size={20} className="text-gray-600" />
+                  <X size={22} className="text-slate-600" />
                 </button>
               </div>
             </div>
+
+            {/* Modal Body */}
             <div className="flex-1 flex overflow-hidden">
               <div className="flex-1 relative">
                 <MapContainer
@@ -2261,7 +2392,7 @@ export default function MetaDataVerification() {
                       <Popup>
                         <div className="text-sm">
                           <strong>Assessment Location</strong>
-                          <div className="text-xs text-gray-600 mt-1">
+                          <div className="text-xs text-slate-600 mt-2">
                             Lat: {mapMarkerPosition[0].toFixed(6)}
                             <br />
                             Lng: {mapMarkerPosition[1].toFixed(6)}
@@ -2272,20 +2403,23 @@ export default function MetaDataVerification() {
                   )}
                 </MapContainer>
                 {isPickingLocation && (
-                  <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-orange-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-sm font-semibold z-[1000]">
+                  <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 text-sm font-semibold z-[1000]">
                     <Navigation size={16} className="animate-pulse" /> Click on
                     map to set location
                   </div>
                 )}
               </div>
+
               {isEditMode && (
-                <div className="w-80 border-l bg-gray-50 p-4 overflow-y-auto">
-                  <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                    <MapPin size={16} className="text-green-700" /> Set Location
+                <div className="w-72 border-l-2 border-slate-200 bg-slate-50 p-5 overflow-y-auto">
+                  <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <MapPin size={18} className="text-emerald-600" /> Set
+                    Location
                   </h4>
-                  <div className="space-y-3 mb-4">
+
+                  <div className="space-y-4 mb-5">
                     <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                      <label className="text-xs font-semibold text-slate-700 mb-2 block">
                         Latitude *
                       </label>
                       <input
@@ -2293,12 +2427,12 @@ export default function MetaDataVerification() {
                         step="any"
                         value={manualLat}
                         onChange={(e) => setManualLat(e.target.value)}
-                        className="w-full border rounded-lg p-2 text-sm bg-white"
+                        className="w-full border-2 border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-medium"
                         placeholder="e.g., 11.047541"
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-gray-600 mb-1 block">
+                      <label className="text-xs font-semibold text-slate-700 mb-2 block">
                         Longitude *
                       </label>
                       <input
@@ -2306,46 +2440,49 @@ export default function MetaDataVerification() {
                         step="any"
                         value={manualLng}
                         onChange={(e) => setManualLng(e.target.value)}
-                        className="w-full border rounded-lg p-2 text-sm bg-white"
+                        className="w-full border-2 border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-medium"
                         placeholder="e.g., 124.632806"
                       />
                     </div>
                     <button
                       onClick={handleManualCoordinateSubmit}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg p-2 text-sm font-semibold transition-colors"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-2.5 text-sm font-semibold transition-all shadow-sm"
                     >
                       Apply Coordinates
                     </button>
                   </div>
-                  <div className="border-t border-gray-200 pt-4 mb-4">
-                    <p className="text-xs text-gray-500 mb-3">
+
+                  <div className="border-t-2 border-slate-300 pt-4 mb-5">
+                    <p className="text-xs text-slate-600 mb-3 font-medium">
                       Or click on map:
                     </p>
                     <button
                       onClick={startPickingLocation}
                       disabled={isPickingLocation}
-                      className="w-full bg-green-600 hover:bg-green-700 text-white rounded-lg p-2 text-sm font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                      className="w-full bg-slate-800 hover:bg-slate-900 text-white rounded-lg px-3 py-2.5 text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-40"
                     >
-                      <Navigation size={14} />{" "}
+                      <Navigation size={16} />
                       {isPickingLocation ? "Picking..." : "Pick from Map"}
                     </button>
                   </div>
+
                   {mapMarkerPosition && (
-                    <div className="p-3 bg-green-50 rounded-lg border border-green-200 mb-4">
-                      <p className="text-xs font-semibold text-green-800 mb-1">
+                    <div className="p-3 bg-emerald-50 rounded-lg border-2 border-emerald-300 mb-4">
+                      <p className="text-xs font-semibold text-emerald-900 mb-1.5">
                         Current Location:
                       </p>
-                      <p className="text-xs text-green-700 font-mono">
+                      <p className="text-xs text-emerald-800 font-mono">
                         {mapMarkerPosition[0].toFixed(6)},{" "}
                         {mapMarkerPosition[1].toFixed(6)}
                       </p>
                     </div>
                   )}
-                  <div className="space-y-2">
+
+                  <div className="space-y-2.5">
                     <button
                       onClick={saveLocation}
                       disabled={savingLocation || !mapMarkerPosition}
-                      className="w-full bg-green-700 hover:bg-green-800 text-white rounded-lg p-3 text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-2.5 text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-40 shadow-sm"
                     >
                       {savingLocation ? (
                         <>
@@ -2379,7 +2516,7 @@ export default function MetaDataVerification() {
                           );
                         }
                       }}
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
+                      className="w-full border-2 border-slate-400 text-slate-900 hover:bg-slate-100 rounded-lg px-3 py-2.5 text-sm font-semibold transition-all"
                     >
                       Cancel
                     </button>
@@ -2387,19 +2524,23 @@ export default function MetaDataVerification() {
                 </div>
               )}
             </div>
-            <div className="border-t p-4 bg-gray-50">
-              <div className="flex items-center justify-between text-xs text-gray-600">
+
+            {/* Modal Footer */}
+            <div className="border-t-2 border-slate-200 p-4 bg-slate-50">
+              <div className="flex items-center justify-between text-xs text-slate-600">
                 <div className="flex items-center gap-4">
-                  <span className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded-full bg-green-500"></div>{" "}
-                    Existing Location
+                  <span className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                    Verified Location
                   </span>
-                  <span className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded-full bg-red-500"></div>{" "}
-                    New/Edited Location
+                  <span className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                    Editing Location
                   </span>
                 </div>
-                <span>Press ESC or click X to close</span>
+                <span className="font-medium">
+                  Press ESC or click X to close
+                </span>
               </div>
             </div>
           </div>

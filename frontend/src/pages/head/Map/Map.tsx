@@ -143,7 +143,6 @@ const decimalToDMS = (value: number, type: "lat" | "lng") => {
   return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
 };
 
-// ✅ NEW: Normalize single marker coordinates to ensure [lat, lng] format
 const normalizeMarkerCoordinate = (
   coord: [number, number] | null | undefined,
 ): [number, number] | null => {
@@ -151,7 +150,6 @@ const normalizeMarkerCoordinate = (
 
   const [first, second] = coord;
 
-  // If it's already valid [lat, lng], return it
   if (
     typeof first === "number" &&
     typeof second === "number" &&
@@ -165,7 +163,6 @@ const normalizeMarkerCoordinate = (
     return [first, second];
   }
 
-  // If it's invalid, check if swapping makes it valid [lng, lat] -> [lat, lng]
   if (
     typeof second === "number" &&
     typeof first === "number" &&
@@ -179,7 +176,7 @@ const normalizeMarkerCoordinate = (
     return [second, first];
   }
 
-  return null; // Completely invalid coordinate
+  return null;
 };
 
 const createMarkerIcon = (
@@ -217,7 +214,7 @@ const createMarkerIcon = (
     html,
     className: "custom-marker-icon-small",
     iconSize: [labelText ? Math.min(200, 28 + labelText.length * 7) : 24, 30],
-    iconAnchor: [12, 30], // ✅ CRITICAL FIX: Always anchor to the tip of the 24px wide pin, not the center of the label
+    iconAnchor: [12, 30],
     popupAnchor: [0, -30],
   });
 };
@@ -237,6 +234,12 @@ export default function Map() {
   const [visibleHazardBarangayId, setVisibleHazardBarangayId] = useState<
     number | null
   >(null);
+
+  // ✅ Layer Visibility States
+  const [showBarangayMarkers, setShowBarangayMarkers] = useState(true);
+  const [showReforestationMarkers, setShowReforestationMarkers] =
+    useState(true);
+  const [showSiteMarkers, setShowSiteMarkers] = useState(true);
 
   const getHazardColor = (hazardType: string) => {
     const colors: { [key: string]: { stroke: string; fill: string } } = {
@@ -319,7 +322,6 @@ export default function Map() {
   const PHIVOLCS_EIL_WMS_URL =
     "https://gisweb.phivolcs.dost.gov.ph/arcgis/services/PHIVOLCSPublic/EarthquakeInducedLandslide/MapServer/WMSServer";
 
-  // ✅ UPDATED: States for Hazard Report Modal (Passes geometry to modal)
   const [isHazardReportOpen, setIsHazardReportOpen] = useState(false);
   const [reportGeometry, setReportGeometry] = useState<any>(null);
   const [reportSiteName, setReportSiteName] = useState<string>("");
@@ -359,13 +361,11 @@ export default function Map() {
   } | null>(null);
   const [showDMS, setShowDMS] = useState(false);
 
-  // ✅ NEW: State for filtering sites by reforestation area
-  const [showSites, setShowSites] = useState(false);
+  // ✅ Filter state: null = show all sites, number = show only sites from that area
   const [filteredAreaId, setFilteredAreaId] = useState<number | null>(null);
 
   const [showLegend, setShowLegend] = useState(false);
 
-  // ✅ SEPARATED STATE FOR SITE AND POTENTIAL SITES
   const [showSitePolygon, setShowSitePolygon] = useState(false);
   const [showPotentialSites, setShowPotentialSites] = useState(false);
   const [currentSitePolygon, setCurrentSitePolygon] = useState<any>(null);
@@ -377,7 +377,6 @@ export default function Map() {
     number | null
   >(null);
 
-  // ✅ NEW: Custom Confirmation Modal State
   const [showReplaceConfirm, setShowReplaceConfirm] = useState(false);
   const [pendingNewSites, setPendingNewSites] = useState<any[]>([]);
   const [pendingNewCount, setPendingNewCount] = useState(0);
@@ -479,10 +478,6 @@ export default function Map() {
     return () => map.off("click", handleClick);
   }, [isPickingMarker, isPickingSiteMarker, areaForm, siteForm]);
 
-  // ==========================================================
-  // ✅ CORE FEATURES IMPLEMENTATION
-  // ==========================================================
-
   const handleShowSiteInMap = async (siteId: number, polygon: any) => {
     setShowPotentialSites(false);
     setActivePotentialSites([]);
@@ -539,8 +534,6 @@ export default function Map() {
     }
   };
 
-  // ✅ UPDATED: Function to open the modal with geometry.
-  // The modal handles all fetching, loading states, and network errors internally.
   const handleGenerateHazardReport = (geometry: any, siteName: string) => {
     if (!geometry) {
       setPSAlert({
@@ -656,7 +649,6 @@ export default function Map() {
     });
   };
 
-  // ✅ NEW: Handle Custom Confirmation
   const handleConfirmReplace = async () => {
     if (!reanalyzeTargetSiteId || pendingNewSites.length === 0) return;
 
@@ -737,10 +729,6 @@ export default function Map() {
     });
   };
 
-  // ==========================================================
-  // END CORE FEATURES
-  // ==========================================================
-
   const startMarkerPlacement = () => {
     setIsPickingMarker(true);
     setPSAlert({
@@ -783,7 +771,7 @@ export default function Map() {
           title: "NDVI Loaded",
           message: "Canopy guide opened.",
         });
-      } else throw new Error("No tile URL returned");
+      } else throw new Error("No tile url returned");
     } catch (error: any) {
       setPSAlert({
         type: "error",
@@ -856,16 +844,14 @@ export default function Map() {
       if (!res.ok) throw new Error(data.error || "Failed to analyze");
 
       if (data.success && data.features && data.features.length > 0) {
-        // ✅ RE-ANALYZE MODE: Show custom confirmation WITH PREVIEW instead of auto-replacing
         if (reanalyzeTargetSiteId) {
           setPendingNewSites(data.features);
           setPendingNewCount(data.features.length);
           setShowReplaceConfirm(true);
-          setIsProcessing(false); // Stop spinner so user can interact with modal and see preview
-          return; // Exit early, wait for user confirmation
+          setIsProcessing(false);
+          return;
         }
 
-        // Normal flow for creating a NEW site
         setSuitablePolygons(data);
         const totalArea = data.features.reduce(
           (sum: number, f: any) => sum + (f.properties.area_hectares || 0),
@@ -898,7 +884,6 @@ export default function Map() {
       });
     }
 
-    // Only reset processing if we didn't open the confirmation modal
     if (!showReplaceConfirm) {
       setIsProcessing(false);
     }
@@ -1412,6 +1397,14 @@ export default function Map() {
     handleReanalyze(selectedSiteId ? parseInt(selectedSiteId) : 0);
   };
 
+  // ✅ Helper: Get the name of the currently filtered area
+  const filteredAreaName =
+    filteredAreaId !== null
+      ? reforestation_areas.find(
+          (a) => a.reforestation_area_id === filteredAreaId,
+        )?.name || "Unknown Area"
+      : null;
+
   return (
     <div className="relative h-screen w-full">
       {PSalert && (
@@ -1423,7 +1416,6 @@ export default function Map() {
         />
       )}
 
-      {/* ✅ CUSTOM CONFIRMATION MODAL FOR RE-ANALYZE WITH EXPLICIT RESULTS */}
       {showReplaceConfirm && (
         <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 border border-gray-200 animate-in fade-in zoom-in duration-200">
@@ -1592,7 +1584,7 @@ export default function Map() {
 
       <div className="absolute left-4 top-1/2 -translate-y-1/2 z-[1001] space-y-3">
         {showLegend && (
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 w-[220px]">
+          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 w-[240px]">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
                 <Layers size={16} className="text-[#0f4a2f]" /> Map Legend
@@ -1605,85 +1597,148 @@ export default function Map() {
               </button>
             </div>
             <div className="space-y-2.5">
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-8 flex items-center justify-center">
-                  <div
-                    style={{
-                      width: "24px",
-                      height: "30px",
-                      position: "relative",
-                    }}
-                  >
-                    <svg width="24" height="30" viewBox="0 0 24 30">
-                      <path
-                        d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
-                        fill="#EAB308"
-                        stroke="white"
-                        strokeWidth="2"
-                      />
-                    </svg>
+              {/* Barangay Toggle */}
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={showBarangayMarkers}
+                  onChange={(e) => setShowBarangayMarkers(e.target.checked)}
+                  className="w-4 h-4 text-yellow-500 bg-gray-100 border-gray-300 rounded focus:ring-yellow-500 focus:ring-2"
+                />
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="w-6 h-8 flex items-center justify-center">
+                    <div
+                      style={{
+                        width: "24px",
+                        height: "30px",
+                        position: "relative",
+                      }}
+                    >
+                      <svg width="24" height="30" viewBox="0 0 24 30">
+                        <path
+                          d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
+                          fill="#EAB308"
+                          stroke="white"
+                          strokeWidth="2"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-800 group-hover:text-[#0f4a2f] transition-colors">
+                      Barangay
+                    </p>
+                    <p className="text-[10px] text-gray-500">
+                      Administrative area
+                    </p>
                   </div>
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-800">
-                    Barangay
-                  </p>
-                  <p className="text-[10px] text-gray-500">
-                    Administrative area
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-8 flex items-center justify-center">
-                  <div
-                    style={{
-                      width: "24px",
-                      height: "30px",
-                      position: "relative",
-                    }}
-                  >
-                    <svg width="24" height="30" viewBox="0 0 24 30">
-                      <path
-                        d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
-                        fill="#3B82F6"
-                        stroke="white"
-                        strokeWidth="2"
-                      />
-                    </svg>
+              </label>
+
+              {/* Reforestation Area Toggle */}
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={showReforestationMarkers}
+                  onChange={(e) =>
+                    setShowReforestationMarkers(e.target.checked)
+                  }
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-600 focus:ring-2"
+                />
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="w-6 h-8 flex items-center justify-center">
+                    <div
+                      style={{
+                        width: "24px",
+                        height: "30px",
+                        position: "relative",
+                      }}
+                    >
+                      <svg width="24" height="30" viewBox="0 0 24 30">
+                        <path
+                          d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
+                          fill="#3B82F6"
+                          stroke="white"
+                          strokeWidth="2"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-800 group-hover:text-[#0f4a2f] transition-colors">
+                      Reforestation Area
+                    </p>
+                    <p className="text-[10px] text-gray-500">Project zone</p>
                   </div>
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-800">
-                    Reforestation Area
-                  </p>
-                  <p className="text-[10px] text-gray-500">Project zone</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-8 flex items-center justify-center">
-                  <div
-                    style={{
-                      width: "24px",
-                      height: "30px",
-                      position: "relative",
-                    }}
-                  >
-                    <svg width="24" height="30" viewBox="0 0 24 30">
-                      <path
-                        d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
-                        fill="#22C55E"
-                        stroke="white"
-                        strokeWidth="2"
-                      />
-                    </svg>
+              </label>
+
+              {/* Site Toggle */}
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={showSiteMarkers}
+                  onChange={(e) => setShowSiteMarkers(e.target.checked)}
+                  className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-600 focus:ring-2"
+                />
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="w-6 h-8 flex items-center justify-center">
+                    <div
+                      style={{
+                        width: "24px",
+                        height: "30px",
+                        position: "relative",
+                      }}
+                    >
+                      <svg width="24" height="30" viewBox="0 0 24 30">
+                        <path
+                          d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
+                          fill="#22C55E"
+                          stroke="white"
+                          strokeWidth="2"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-800 group-hover:text-[#0f4a2f] transition-colors">
+                      Site
+                    </p>
+                    <p className="text-[10px] text-gray-500">
+                      Planting location
+                    </p>
                   </div>
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-800">Site</p>
-                  <p className="text-[10px] text-gray-500">Planting location</p>
-                </div>
-              </div>
+              </label>
             </div>
+
+            {/* ✅ NEW: Clear Filter Button - appears only when a specific area is filtered */}
+            {filteredAreaId !== null && (
+              <div className="mt-3 pt-3 border-t border-gray-200">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 mb-2">
+                  <p className="text-[10px] text-blue-700 font-semibold flex items-center gap-1">
+                    <Filter size={10} />
+                    Filtered: {filteredAreaName}
+                  </p>
+                  <p className="text-[10px] text-blue-500 mt-0.5">
+                    Showing sites from this area only
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setFilteredAreaId(null);
+                    setPSAlert({
+                      type: "success",
+                      title: "Filter Cleared",
+                      message: "Now showing all sites on the map.",
+                    });
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 bg-[#0f4a2f] hover:bg-[#0f4a2fdd] text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors"
+                >
+                  <X size={12} /> Clear Filter (Show All Sites)
+                </button>
+              </div>
+            )}
           </div>
         )}
         {!showLegend && (
@@ -1772,6 +1827,83 @@ export default function Map() {
           <House size={16} /> Home
         </button>
         <div className="flex gap-1 ml-auto">
+          <div className="relative">
+            <div
+              className={`absolute top-[-280px] right-0 w-[16rem] flex flex-col gap-3 p-3 bg-white border border-[#0f4a2fe0] rounded-md ${isFilterPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+            >
+              <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
+                <h2 className="text-white text-[.8rem] flex items-center justify-center gap-2">
+                  <Filter size={16} /> Filters & Search
+                </h2>
+              </div>
+              <div className="border-b border-gray-200 pb-2">
+                <label className="text-[.7rem] text-gray-600 font-semibold flex items-center gap-1">
+                  <MapPin size={12} /> Filter by Barangay
+                </label>
+                <select
+                  onChange={(e) => {
+                    const id = parseInt(e.target.value, 10);
+                    const b = barangays.find((x) => x.barangay_id === id);
+                    if (b && mapRef.current)
+                      mapRef.current.setView(
+                        b.coordinate as [number, number],
+                        16,
+                      );
+                  }}
+                  className="w-full text-[.7rem] mt-1 p-1.5 border rounded-md bg-gray-50"
+                >
+                  <option value={0}>-- Select Barangay --</option>
+                  {barangays.map((b) => (
+                    <option key={b.barangay_id} value={b.barangay_id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[.7rem] text-gray-600 font-semibold flex items-center gap-1">
+                  <Globe size={12} /> Search by Coordinates
+                </label>
+                <div className="space-y-2 mt-1">
+                  <div>
+                    <input
+                      type="number"
+                      placeholder="Latitude"
+                      value={searchLat}
+                      onChange={(e) => setSearchLat(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
+                      className="w-full text-[.7rem] p-1.5 border rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="number"
+                      placeholder="Longitude"
+                      value={searchLng}
+                      onChange={(e) => setSearchLng(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
+                      className="w-full text-[.7rem] p-1.5 border rounded-md"
+                    />
+                  </div>
+                  <button
+                    onClick={goToCoordinate}
+                    className="w-full flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] mt-1"
+                  >
+                    <Move size={14} /> Go to Location
+                  </button>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                closeAll();
+                setIsFilterPenelOpen(!isFilterPenelOpen);
+              }}
+              className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] transition-all ${isFilterPenelOpen ? "bg-green-600 text-white shadow-lg ring-2 ring-green-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
+            >
+              <Filter size={16} /> Filter
+            </button>
+          </div>
           {userRole != "DataManager" && userRole != "CityENROHead" && (
             <div className="relative ml-auto">
               {isNdviPenelOpen && (
@@ -1906,83 +2038,7 @@ export default function Map() {
               </button>
             </div>
           )}
-          <div className="relative">
-            <div
-              className={`absolute top-[-280px] right-0 w-[16rem] flex flex-col gap-3 p-3 bg-white border border-[#0f4a2fe0] rounded-md ${isFilterPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
-            >
-              <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] rounded-md">
-                <h2 className="text-white text-[.8rem] flex items-center justify-center gap-2">
-                  <Filter size={16} /> Filters & Search
-                </h2>
-              </div>
-              <div className="border-b border-gray-200 pb-2">
-                <label className="text-[.7rem] text-gray-600 font-semibold flex items-center gap-1">
-                  <MapPin size={12} /> Filter by Barangay
-                </label>
-                <select
-                  onChange={(e) => {
-                    const id = parseInt(e.target.value, 10);
-                    const b = barangays.find((x) => x.barangay_id === id);
-                    if (b && mapRef.current)
-                      mapRef.current.setView(
-                        b.coordinate as [number, number],
-                        16,
-                      );
-                  }}
-                  className="w-full text-[.7rem] mt-1 p-1.5 border rounded-md bg-gray-50"
-                >
-                  <option value={0}>-- Select Barangay --</option>
-                  {barangays.map((b) => (
-                    <option key={b.barangay_id} value={b.barangay_id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-[.7rem] text-gray-600 font-semibold flex items-center gap-1">
-                  <Globe size={12} /> Search by Coordinates
-                </label>
-                <div className="space-y-2 mt-1">
-                  <div>
-                    <input
-                      type="number"
-                      placeholder="Latitude"
-                      value={searchLat}
-                      onChange={(e) => setSearchLat(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
-                      className="w-full text-[.7rem] p-1.5 border rounded-md"
-                    />
-                  </div>
-                  <div>
-                    <input
-                      type="number"
-                      placeholder="Longitude"
-                      value={searchLng}
-                      onChange={(e) => setSearchLng(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && goToCoordinate()}
-                      className="w-full text-[.7rem] p-1.5 border rounded-md"
-                    />
-                  </div>
-                  <button
-                    onClick={goToCoordinate}
-                    className="w-full flex items-center justify-center gap-2 bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white h-8 px-2 py-1 rounded-lg text-[.7rem] mt-1"
-                  >
-                    <Move size={14} /> Go to Location
-                  </button>
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                closeAll();
-                setIsFilterPenelOpen(!isFilterPenelOpen);
-              }}
-              className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-[.7rem] transition-all ${isFilterPenelOpen ? "bg-green-600 text-white shadow-lg ring-2 ring-green-400" : "bg-[#0f4a2fe0] hover:bg-[#0f4a2f] text-white"}`}
-            >
-              <Filter size={16} /> Filter
-            </button>
-          </div>
+
           <div className="relative">
             <HazardAssessmentPanel
               isOpen={isHazardPanelOpen}
@@ -2327,7 +2383,6 @@ export default function Map() {
               layer.bindPopup(popupContent);
 
               layer.on("popupopen", () => {
-                // ✅ NEW: Hazard Report Button Handler
                 const hazardBtn = document.getElementById(
                   `hazard-report-btn-analyze-${props.potential_sites_id}`,
                 );
@@ -2366,7 +2421,6 @@ export default function Map() {
           />
         )}
 
-        {/* ✅ PREVIEW NEW POTENTIAL SITES BEFORE CONFIRMATION (Blue Dashed) */}
         {showReplaceConfirm && pendingNewSites.length > 0 && (
           <GeoJSON
             key="preview-new-sites"
@@ -2379,7 +2433,7 @@ export default function Map() {
               })),
             }}
             style={() => ({
-              color: "#3B82F6", // Blue for preview
+              color: "#3B82F6",
               weight: 2,
               fillColor: "#93C5FD",
               fillOpacity: 0.4,
@@ -2388,9 +2442,10 @@ export default function Map() {
           />
         )}
 
-        {reforestation_areas.length > 0 &&
+        {/* ✅ Reforestation Areas - controlled by showReforestationMarkers */}
+        {showReforestationMarkers &&
+          reforestation_areas.length > 0 &&
           reforestation_areas.map((area) => {
-            // ✅ FIX: Normalize marker coordinate
             const normalizedCoord = normalizeMarkerCoordinate(area.coordinate);
             if (!normalizedCoord) return null;
             const lat = Number(normalizedCoord[0]);
@@ -2426,6 +2481,7 @@ export default function Map() {
                         )}
                       </div>
                     </div>
+                    {/* ✅ "Show Sites" button: filters to THIS area only */}
                     <button
                       onClick={() => {
                         const areaSites = sites.filter(
@@ -2434,8 +2490,11 @@ export default function Map() {
                             area.reforestation_area_id,
                         );
                         if (areaSites.length > 0) {
-                          setShowSites(true);
-                          setFilteredAreaId(area.reforestation_area_id); // ✅ NEW: Filter to this specific area
+                          // Turn on the site layer
+                          setShowSiteMarkers(true);
+                          // Filter to show ONLY this area's sites
+                          setFilteredAreaId(area.reforestation_area_id);
+                          // Zoom to the filtered sites
                           const validCoords = areaSites
                             .filter(
                               (s) =>
@@ -2458,13 +2517,13 @@ export default function Map() {
                           setPSAlert({
                             type: "success",
                             title: "Sites Loaded",
-                            message: `Showing ${areaSites.length} site(s) for this area.`,
+                            message: `Showing ${areaSites.length} site(s) for "${area.name}".`,
                           });
                         } else {
                           setPSAlert({
                             type: "failed",
                             title: "No Sites",
-                            message: `No sites found for this area.`,
+                            message: `No sites found for "${area.name}".`,
                           });
                         }
                       }}
@@ -2478,10 +2537,11 @@ export default function Map() {
             );
           })}
 
-        {showSites &&
+        {/* ✅ Sites - controlled by showSiteMarkers + filteredAreaId */}
+        {showSiteMarkers &&
           sites.length > 0 &&
           sites.map((site) => {
-            // ✅ FIX: Filter sites by reforestation_area_id if filteredAreaId is set
+            // If filteredAreaId is set, ONLY show sites from that area
             if (
               filteredAreaId !== null &&
               site.reforestation_area_id !== filteredAreaId
@@ -2512,9 +2572,10 @@ export default function Map() {
             );
           })}
 
-        {barangays.length > 0 &&
+        {/* ✅ Barangays - controlled by showBarangayMarkers */}
+        {showBarangayMarkers &&
+          barangays.length > 0 &&
           barangays.map((area) => {
-            // ✅ FIX: Normalize marker coordinate
             const normalizedCoord = normalizeMarkerCoordinate(area.coordinate);
             if (!normalizedCoord) return null;
             const lat = Number(normalizedCoord[0]);
@@ -2623,7 +2684,6 @@ export default function Map() {
           </Marker>
         )}
 
-        {/* ✅ RENDER SITE POLYGON */}
         {showSitePolygon && currentSitePolygon && (
           <GeoJSON
             key={`site-polygon-${activeShownSiteId}`}
@@ -2651,13 +2711,11 @@ export default function Map() {
               `;
               layer.bindPopup(popupContent);
 
-              // Attach click event when popup opens
               layer.on("popupopen", () => {
                 const btn = document.getElementById("hazard-report-btn");
                 if (btn) {
                   btn.onclick = () => {
                     layer.closePopup();
-                    // ✅ UPDATED: Pass the currentSitePolygon geometry to the modal
                     handleGenerateHazardReport(
                       currentSitePolygon,
                       selectedSiteName || "Selected Site",
@@ -2669,7 +2727,6 @@ export default function Map() {
           />
         )}
 
-        {/* ✅ RENDER POTENTIAL SITES (With Generate Hazard Report added) */}
         {showPotentialSites && activePotentialSites.length > 0 && (
           <GeoJSON
             key={`potential-sites-${activeShownSiteId}`}
@@ -2707,7 +2764,6 @@ export default function Map() {
 
               layer.bindPopup(popupContent);
 
-              // ✅ Attach click event safely when popup opens
               layer.on("popupopen", () => {
                 const btn = document.getElementById(
                   `hazard-report-btn-${p.potential_sites_id}`,
@@ -2897,7 +2953,6 @@ export default function Map() {
         onReanalyze={handleReanalyze}
       />
 
-      {/* ✅ UPDATED: HazardReportModal now receives geometry and handles its own fetching, loading, and network errors */}
       <HazardReportModal
         isOpen={isHazardReportOpen}
         onClose={() => setIsHazardReportOpen(false)}

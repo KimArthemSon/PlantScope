@@ -63,10 +63,12 @@ const PHOTO_MARKER_COLOR = "#3B82F6";
 const SPECIFIC_MARKER_COLOR = "#10B981";
 const GENERAL_MARKER_COLOR = "#3B82F6";
 
-// ✅ NEW: Accept showCoordinates parameter
+// ✅ Extended: isDrawingMode + onSnapToMarker for snap-to-assessment feature
 export function useFieldAssessments(
   mapRef: React.RefObject<L.Map | null>,
-  showCoordinates: boolean = true
+  showCoordinates: boolean = true,
+  isDrawingMode: boolean = false,
+  onSnapToMarker?: (lat: number, lng: number) => void,
 ) {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const photoMarkersRef = useRef<Map<number, L.Marker[]>>(new Map());
@@ -97,8 +99,25 @@ export function useFieldAssessments(
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [locationTargetId, setLocationTargetId] = useState<number | null>(null);
   const [showPhotoMarkers, setShowPhotoMarkers] = useState(true);
+  const [showAssessmentMarkers, setShowAssessmentMarkers] = useState(true);
 
-  // ✅ NEW: Helper for DMS conversion
+  // ✅ Refs so marker handlers read latest values without recreating markers
+  const isDrawingModeRef = useRef(isDrawingMode);
+  const onSnapToMarkerRef = useRef(onSnapToMarker);
+  const showAssessmentMarkersRef = useRef(showAssessmentMarkers);
+
+  useEffect(() => {
+    isDrawingModeRef.current = isDrawingMode;
+  }, [isDrawingMode]);
+
+  useEffect(() => {
+    onSnapToMarkerRef.current = onSnapToMarker;
+  }, [onSnapToMarker]);
+
+  useEffect(() => {
+    showAssessmentMarkersRef.current = showAssessmentMarkers;
+  }, [showAssessmentMarkers]);
+
   const toDMS = (val: number, type: "lat" | "lng") => {
     const abs = Math.abs(val);
     const deg = Math.floor(abs);
@@ -206,7 +225,7 @@ export function useFieldAssessments(
             iconAnchor: [16, 32],
             popupAnchor: [0, -32],
           }),
-        }).addTo(map);
+        });
 
         const typeLabel = isSpecific ? "Specific" : "General";
         const siteInfo =
@@ -214,7 +233,6 @@ export function useFieldAssessments(
             ? `<br/><span style="font-size:10px;color:#666">Site: ${entry.site_name}</span>`
             : "";
 
-        // ✅ NEW: Conditionally build coordinate HTML for the popup
         const coordHtml = showCoordinates
           ? `
           <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e5e7eb; font-family: monospace; font-size: 11px; color: #4b5563;">
@@ -241,20 +259,56 @@ export function useFieldAssessments(
           ${coordHtml}
         `);
 
+        // ✅ SNAP: while drawing/editing, click uses this assessment's exact coordinate
+        marker.on("click", (e: L.LeafletMouseEvent) => {
+          if (isDrawingModeRef.current && onSnapToMarkerRef.current) {
+            L.DomEvent.stopPropagation(e);
+            onSnapToMarkerRef.current(loc.latitude, loc.longitude);
+          }
+        });
+
+        // ✅ Keep popup from opening while snapping
+        marker.on("popupopen", () => {
+          if (isDrawingModeRef.current) {
+            marker.closePopup();
+          }
+        });
+
+        // ✅ Respect show/hide toggle on placement
+        if (showAssessmentMarkersRef.current) {
+          marker.addTo(map);
+        }
+
         markersRef.current.set(`${layer}-${idx}`, marker);
       });
     },
-    // ✅ IMPORTANT: Added showCoordinates to dependencies so it recreates markers when toggled
-    [mapRef, removeLayerMarkers, removeAllPhotoMarkers, showCoordinates]
+    [mapRef, removeLayerMarkers, removeAllPhotoMarkers, showCoordinates],
   );
 
-  // ✅ NEW: Automatically refresh markers when the showCoordinates toggle changes
+  // ✅ Crosshair cursor on markers while snap mode is active
   useEffect(() => {
-    const entries = assessments[activeLayer];
-    if (entries && entries.length > 0 && mapRef.current) {
-      placeMarkers(entries, activeLayer);
-    }
-  }, [showCoordinates, activeLayer, assessments, placeMarkers, mapRef]);
+    markersRef.current.forEach((marker) => {
+      const el = marker.getElement();
+      if (el) {
+        el.style.cursor = isDrawingMode ? "crosshair" : "pointer";
+        const inner = el.firstElementChild as HTMLElement | null;
+        if (inner) inner.style.cursor = isDrawingMode ? "crosshair" : "pointer";
+      }
+    });
+  }, [isDrawingMode]);
+
+  // ✅ Toggle marker visibility live when showAssessmentMarkers OR assessments change
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    markersRef.current.forEach((marker) => {
+      if (showAssessmentMarkers) {
+        if (!map.hasLayer(marker)) marker.addTo(map);
+      } else {
+        if (map.hasLayer(marker)) map.removeLayer(marker);
+      }
+    });
+  }, [assessments, showAssessmentMarkers, mapRef]);
 
   const placePhotoMarkers = useCallback(
     (entry: FieldAssessmentEntry) => {
@@ -436,21 +490,10 @@ export function useFieldAssessments(
       try {
         const token = localStorage.getItem("token");
 
-        console.log("📍 [useFieldAssessments] Received coordinates to save:", {
-          fieldAssessmentId,
-          latitude,
-          longitude,
-        });
-
         const payload = {
           field_assessment_id: fieldAssessmentId,
           coordinate: { latitude, longitude, gps_accuracy_meters },
         };
-
-        console.log(
-          "📡 [useFieldAssessments] API Payload being sent:",
-          JSON.stringify(payload, null, 2),
-        );
 
         const res = await fetch(
           api + "api/update_field_assessment_coordinate/",
@@ -510,5 +553,7 @@ export function useFieldAssessments(
     removePhotoMarkers,
     showPhotoMarkers,
     setShowPhotoMarkers,
+    showAssessmentMarkers,
+    setShowAssessmentMarkers,
   };
 }
