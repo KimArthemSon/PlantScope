@@ -5,12 +5,15 @@ import {
   CheckCircle,
   MapPin,
   Shield,
-  Download,
   Info,
   Database,
   RefreshCw,
   WifiOff,
   Radar as RadarIcon,
+  TrendingUp,
+  Waves,
+  Mountain,
+  Activity,
 } from "lucide-react";
 import {
   PieChart,
@@ -208,6 +211,27 @@ const COLOR_LEGENDS = {
   ],
 };
 
+const CustomLegend = ({ payload }: any) => {
+  return (
+    <div className="flex flex-wrap justify-center gap-2 mt-3">
+      {payload.map((entry: any, index: number) => (
+        <div
+          key={`legend-${index}`}
+          className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded-full border border-gray-100"
+        >
+          <div
+            className="w-2.5 h-2.5 rounded-full"
+            style={{ backgroundColor: entry.color }}
+          />
+          <span className="text-xs font-medium text-gray-600">
+            {entry.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export default function HazardReportModal({
   isOpen,
   onClose,
@@ -303,11 +327,22 @@ export default function HazardReportModal({
   const getRiskColor = (risk: string) => {
     switch (risk) {
       case "HIGH":
-        return "bg-red-100 text-red-700 border-red-200";
+        return "bg-red-50 text-red-700 border-red-200";
       case "MODERATE":
-        return "bg-yellow-100 text-yellow-700 border-yellow-200";
+        return "bg-amber-50 text-amber-700 border-amber-200";
       default:
-        return "bg-green-100 text-green-700 border-green-200";
+        return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    }
+  };
+
+  const getRiskIconColor = (risk: string) => {
+    switch (risk) {
+      case "HIGH":
+        return "bg-red-100 text-red-600";
+      case "MODERATE":
+        return "bg-amber-100 text-amber-600";
+      default:
+        return "bg-emerald-100 text-emerald-600";
     }
   };
 
@@ -361,11 +396,26 @@ export default function HazardReportModal({
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-white p-2 border border-gray-200 rounded shadow-lg text-xs">
-          <p className="font-bold text-gray-700">{data.name}</p>
+        <div className="bg-white p-3 border border-gray-200 rounded-xl shadow-xl text-xs">
+          <p className="font-bold text-gray-800 mb-1">{data.name}</p>
           <p className="text-gray-600">{data.value.toFixed(2)} ha</p>
-          <p className="text-gray-500">
-            {((data.value / data.totalArea) * 100).toFixed(1)}%
+          <p className="text-gray-400 mt-0.5">
+            {((data.value / data.totalArea) * 100).toFixed(1)}% of total area
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const RadarTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-gray-900 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs border border-gray-700">
+          <p className="font-semibold text-sm">{data.subject}</p>
+          <p className="text-gray-300 mt-0.5">
+            {data.value.toFixed(1)}% of site area is susceptible
           </p>
         </div>
       );
@@ -383,7 +433,7 @@ export default function HazardReportModal({
     totalArea: number;
   }) => {
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {legends.map((item) => {
           let percentage = 0;
           switch (item.key) {
@@ -408,26 +458,35 @@ export default function HazardReportModal({
           return (
             <div
               key={item.key}
-              className="flex items-start gap-2 p-1.5 rounded hover:bg-gray-50 transition-colors"
+              className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100"
             >
               <div
-                className="w-4 h-4 rounded-full flex-shrink-0 mt-0.5 border border-gray-200"
+                className="w-4 h-4 rounded-full flex-shrink-0 mt-0.5 border-2 border-white shadow-sm"
                 style={{ backgroundColor: item.color }}
               />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-gray-700">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-gray-700">
                     {item.label}
                   </span>
-                  <span className="text-xs font-bold text-gray-900">
+                  <span className="text-xs font-bold text-gray-900 tabular-nums">
                     {percentage.toFixed(1)}%
                   </span>
                 </div>
-                <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-1.5">
+                  <div
+                    className="h-1.5 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${percentage}%`,
+                      backgroundColor: item.color,
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] text-gray-500 leading-relaxed mt-1.5">
                   {item.description}
                 </p>
                 {item.restValue && item.restValue !== "N/A" && (
-                  <p className="text-[9px] text-gray-400 mt-0.5">
+                  <p className="text-[10px] text-gray-400 mt-1 font-medium">
                     REST Value: {item.restValue}
                   </p>
                 )}
@@ -439,21 +498,61 @@ export default function HazardReportModal({
     );
   };
 
+  const radarData = reportData
+    ? [
+        {
+          subject: "Flood",
+          value:
+            (reportData.flood?.very_high_percentage || 0) +
+            (reportData.flood?.high_percentage || 0) +
+            (reportData.flood?.moderate_percentage || 0) +
+            (reportData.flood?.low_percentage || 0),
+          icon: Waves,
+          color: "#2563eb",
+        },
+        {
+          subject: "Landslide",
+          value:
+            (reportData.landslide?.very_high_percentage || 0) +
+            (reportData.landslide?.high_percentage || 0) +
+            (reportData.landslide?.moderate_percentage || 0) +
+            (reportData.landslide?.low_percentage || 0),
+          icon: Mountain,
+          color: "#f97316",
+        },
+        {
+          subject: "EIL",
+          value:
+            (reportData.eil?.very_high_percentage || 0) +
+            (reportData.eil?.high_percentage || 0) +
+            (reportData.eil?.moderate_percentage || 0) +
+            (reportData.eil?.low_percentage || 0),
+          icon: Activity,
+          color: "#a855f7",
+        },
+      ]
+    : [];
+
+  const dominantHazard = radarData.length
+    ? radarData.reduce((max, item) => (item.value > max.value ? item : max), radarData[0])
+    : null;
+
   return (
     <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto border border-gray-200 flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-y-auto border border-gray-200 flex flex-col">
         {/* --- HEADER --- */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between z-10 rounded-t-2xl">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#0f4a2f] rounded-lg">
-              <Shield className="text-white" size={24} />
+        <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-gray-200 p-6 flex items-center justify-between z-10 rounded-t-2xl">
+          <div className="flex items-center gap-4">
+            <div className="p-2.5 bg-[#0f4a2f] rounded-xl shadow-sm">
+              <Shield className="text-white" size={22} />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">
+              <h2 className="text-xl font-bold text-gray-900 tracking-tight">
                 Hazard Assessment Report
               </h2>
               {siteName && (
-                <p className="text-sm text-gray-500 mt-0.5">
+                <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1.5">
+                  <MapPin size={13} className="text-gray-400" />
                   Analyzing:{" "}
                   <span className="font-semibold text-[#0f4a2f]">
                     {siteName}
@@ -464,18 +563,18 @@ export default function HazardReportModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500 hover:text-gray-700"
+            className="p-2.5 hover:bg-gray-100 rounded-xl transition-colors text-gray-400 hover:text-gray-700"
           >
-            <X size={24} />
+            <X size={22} />
           </button>
         </div>
 
-        <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+        <div className="p-6 space-y-8 flex-1 overflow-y-auto">
           {/* ✅ LOADING STATE */}
           {isLoading && (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="relative">
-                <div className="w-16 h-16 border-4 border-gray-200 border-t-[#0f4a2f] rounded-full animate-spin" />
+                <div className="w-16 h-16 border-4 border-gray-100 border-t-[#0f4a2f] rounded-full animate-spin" />
                 <Database
                   className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[#0f4a2f]"
                   size={24}
@@ -507,13 +606,13 @@ export default function HazardReportModal({
               <div className="flex gap-3">
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
                 >
                   Close
                 </button>
                 <button
                   onClick={fetchHazardReport}
-                  className="px-4 py-2 text-sm font-medium text-white bg-[#0f4a2f] rounded-lg hover:bg-[#0a3522] transition-colors flex items-center gap-2"
+                  className="px-5 py-2.5 text-sm font-medium text-white bg-[#0f4a2f] rounded-xl hover:bg-[#0a3522] transition-colors flex items-center gap-2 shadow-sm"
                 >
                   <RefreshCw size={16} /> Retry
                 </button>
@@ -526,122 +625,200 @@ export default function HazardReportModal({
             <>
               {/* --- TOP STATS ROW --- */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                    <MapPin size={14} /> Total Area Analyzed
-                  </p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
-                    {reportData.total_area_ha.toFixed(2)}{" "}
-                    <span className="text-sm font-normal text-gray-500">
-                      hectares
+                <div className="bg-gray-50/80 p-5 rounded-2xl border border-gray-200/80 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-[#0f4a2f]/10 flex items-center justify-center flex-shrink-0">
+                    <MapPin size={22} className="text-[#0f4a2f]" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                      Total Area Analyzed
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900 mt-0.5">
+                      {reportData.total_area_ha.toFixed(2)}{" "}
+                      <span className="text-sm font-medium text-gray-500">
+                        ha
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50/80 p-5 rounded-2xl border border-gray-200/80 flex items-center gap-4">
+                  <div
+                    className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${getRiskIconColor(reportData.overall_risk)}`}
+                  >
+                    <AlertTriangle size={22} />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                      Overall Risk Level
+                    </p>
+                    <span
+                      className={`inline-block mt-1.5 px-4 py-1 rounded-full text-sm font-bold border ${getRiskColor(reportData.overall_risk)}`}
+                    >
+                      {reportData.overall_risk} RISK
                     </span>
-                  </p>
+                  </div>
                 </div>
-                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                    <AlertTriangle size={14} /> Overall Risk Level
-                  </p>
-                  <span
-                    className={`inline-block mt-2 px-4 py-1.5 rounded-full text-sm font-bold border ${getRiskColor(reportData.overall_risk)}`}
-                  >
-                    {reportData.overall_risk} RISK
-                  </span>
-                </div>
-                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col justify-center">
-                  <button
-                    onClick={() => window.print()}
-                    className="flex items-center justify-center gap-2 w-full h-full bg-[#0f4a2f] hover:bg-[#0a3522] text-white rounded-lg transition-colors text-sm font-semibold shadow-sm"
-                  >
-                    <Download size={16} /> Print / Save as PDF
-                  </button>
+
+                <div className="bg-gray-50/80 p-5 rounded-2xl border border-gray-200/80 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-gray-200/80 flex items-center justify-center flex-shrink-0">
+                    <TrendingUp size={22} className="text-gray-600" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                      Dominant Hazard
+                    </p>
+                    <p className="text-lg font-bold text-gray-900 mt-1">
+                      {dominantHazard && dominantHazard.value > 0
+                        ? dominantHazard.subject
+                        : "None Detected"}
+                    </p>
+                    {dominantHazard && dominantHazard.value > 0 && (
+                      <p className="text-xs text-gray-500 font-medium">
+                        {dominantHazard.value.toFixed(1)}% susceptible
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {/* ============================================================ */}
               {/* ✅ ADVANCED ANALYTICS (Radar Chart)                          */}
               {/* ============================================================ */}
-              <div className="flex justify-center">
-                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm w-full max-w-lg">
-                  <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <RadarIcon size={16} className="text-[#0f4a2f]" /> Composite
-                    Risk Profile
+              <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                    <RadarIcon size={18} className="text-[#0f4a2f]" />
+                    Composite Risk Profile
                   </h3>
-                  <div className="h-[300px]">
+                  {dominantHazard && dominantHazard.value > 0 && (
+                    <span className="text-xs font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                      Highest: {dominantHazard.subject} ({dominantHazard.value.toFixed(1)}%)
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mb-6">
+                  Share of site area with any susceptibility per hazard type (0–100%).
+                </p>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
+                  {/* Radar Chart */}
+                  <div className="lg:col-span-2 h-[340px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <RadarChart
-                        data={[
-                          {
-                            subject: "Flood",
-                            value:
-                              (reportData.flood?.very_high_percentage || 0) +
-                              (reportData.flood?.high_percentage || 0) +
-                              (reportData.flood?.moderate_percentage || 0) +
-                              (reportData.flood?.low_percentage || 0),
-                          },
-                          {
-                            subject: "Landslide",
-                            value:
-                              (reportData.landslide?.very_high_percentage ||
-                                0) +
-                              (reportData.landslide?.high_percentage || 0) +
-                              (reportData.landslide?.moderate_percentage || 0) +
-                              (reportData.landslide?.low_percentage || 0),
-                          },
-                          {
-                            subject: "EIL",
-                            value:
-                              (reportData.eil?.very_high_percentage || 0) +
-                              (reportData.eil?.high_percentage || 0) +
-                              (reportData.eil?.moderate_percentage || 0) +
-                              (reportData.eil?.low_percentage || 0),
-                          },
-                        ]}
+                        data={radarData}
                         cx="50%"
                         cy="50%"
                         outerRadius="75%"
                       >
-                        <PolarGrid />
+                        <defs>
+                          <linearGradient
+                            id="radarFill"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="0%"
+                              stopColor="#0f4a2f"
+                              stopOpacity={0.35}
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor="#0f4a2f"
+                              stopOpacity={0.05}
+                            />
+                          </linearGradient>
+                        </defs>
+                        <PolarGrid
+                          stroke="#e5e7eb"
+                          strokeDasharray="4 4"
+                        />
                         <PolarAngleAxis
                           dataKey="subject"
-                          tick={{ fontSize: 12, fill: "#374151" }}
+                          tick={{ fontSize: 13, fill: "#374151", fontWeight: 600 }}
                         />
                         <PolarRadiusAxis
                           angle={90}
                           domain={[0, 100]}
-                          tick={{ fontSize: 10 }}
+                          tick={{ fontSize: 11, fill: "#9ca3af" }}
+                          tickCount={6}
+                          stroke="#e5e7eb"
                         />
                         <Radar
                           name="Susceptibility %"
                           dataKey="value"
                           stroke="#0f4a2f"
-                          fill="#0f4a2f"
-                          fillOpacity={0.4}
+                          strokeWidth={2.5}
+                          fill="url(#radarFill)"
                         />
-                        <Tooltip />
+                        <Tooltip content={<RadarTooltip />} />
                       </RadarChart>
                     </ResponsiveContainer>
                   </div>
-                  <p className="text-center text-[10px] text-gray-500 mt-1">
-                    Share of site with any susceptibility per hazard (0–100%).
-                  </p>
+
+                  {/* Mini Hazard Stats */}
+                  <div className="space-y-3">
+                    {radarData.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <div
+                          key={item.subject}
+                          className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Icon
+                                size={16}
+                                style={{ color: item.color }}
+                              />
+                              <span className="text-sm font-semibold text-gray-700">
+                                {item.subject}
+                              </span>
+                            </div>
+                            <span className="text-sm font-bold text-gray-900 tabular-nums">
+                              {item.value.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className="h-2 rounded-full transition-all duration-700"
+                              style={{
+                                width: `${item.value}%`,
+                                backgroundColor: item.color,
+                              }}
+                            />
+                          </div>
+                          <p className="text-[11px] text-gray-400 mt-1.5">
+                            {item.value > 50
+                              ? "Majority of area is susceptible"
+                              : item.value > 0
+                                ? "Partial susceptibility detected"
+                                : "No susceptibility detected"}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
               {/* --- DATA SOURCE DISCLAIMER --- */}
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-4">
                 <div className="flex items-start gap-3">
                   <Database
                     size={18}
-                    className="text-blue-600 mt-0.5 flex-shrink-0"
+                    className="text-blue-500 mt-0.5 flex-shrink-0"
                   />
                   <div>
-                    <p className="text-sm font-semibold text-blue-800">
+                    <p className="text-sm font-bold text-blue-800">
                       Data Source
                     </p>
-                    <p className="text-xs text-blue-700">
+                    <p className="text-xs text-blue-600 mt-0.5">
                       MGB/PHIVOLCS REST Feature Service
                     </p>
-                    <p className="text-[10px] text-blue-600 mt-1">
+                    <p className="text-[11px] text-blue-500/80 mt-1 leading-relaxed">
                       Percentages are calculated from feature data intersecting
                       the selected polygon. Map tile layers are for visual
                       reference only.
@@ -653,60 +830,72 @@ export default function HazardReportModal({
               {/* --- CHARTS + LEGENDS ROW --- */}
               <div className="space-y-6">
                 {/* Flood Section */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                  <div className="flex flex-col">
-                    <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-blue-600"></span>{" "}
-                      Flood Susceptibility
-                    </h3>
-                    <div className="flex-1 min-h-[200px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={prepareChartData(
-                              reportData.flood,
-                              FLOOD_COLORS,
-                            ).map((d) => ({
-                              ...d,
-                              totalArea: reportData.total_area_ha,
-                            }))}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={50}
-                            outerRadius={75}
-                            paddingAngle={3}
-                            dataKey="value"
-                          >
-                            {prepareChartData(
-                              reportData.flood,
-                              FLOOD_COLORS,
-                            ).map((entry, index) => (
-                              <Cell
-                                key={`cell-flood-${index}`}
-                                fill={entry.color}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip content={<CustomTooltip />} />
-                          <Legend content={CustomLegend} />
-                        </PieChart>
-                      </ResponsiveContainer>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="relative">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 rounded-l" />
+                    <div className="pl-4">
+                      <h3 className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2">
+                        <Waves size={16} className="text-blue-500" />
+                        Flood Susceptibility
+                      </h3>
+                      <p className="text-xs text-gray-400 mb-4">
+                        Rain-induced and fluvial flood hazard assessment
+                      </p>
+                      <div className="h-[220px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={prepareChartData(
+                                reportData.flood,
+                                FLOOD_COLORS,
+                              ).map((d) => ({
+                                ...d,
+                                totalArea: reportData.total_area_ha,
+                              }))}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={80}
+                              paddingAngle={4}
+                              dataKey="value"
+                              stroke="none"
+                            >
+                              {prepareChartData(
+                                reportData.flood,
+                                FLOOD_COLORS,
+                              ).map((entry, index) => (
+                                <Cell
+                                  key={`cell-flood-${index}`}
+                                  fill={entry.color}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend content={<CustomLegend />} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 mt-2">
+                        <span className="text-xs font-semibold text-gray-500">
+                          Susceptible Area:
+                        </span>
+                        <span className="text-xs font-bold text-blue-600">
+                          {(
+                            reportData.flood.very_high_percentage +
+                            reportData.flood.high_percentage +
+                            reportData.flood.moderate_percentage +
+                            reportData.flood.low_percentage
+                          ).toFixed(1)}
+                          %
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-center text-xs text-gray-500 mt-2 font-medium">
-                      {(
-                        reportData.flood.very_high_percentage +
-                        reportData.flood.high_percentage +
-                        reportData.flood.moderate_percentage +
-                        reportData.flood.low_percentage
-                      ).toFixed(1)}
-                      % has flood susceptibility
-                    </p>
                   </div>
                   <div className="flex flex-col">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <Info size={12} /> Color Legend & Meaning
+                    <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <Info size={12} /> Severity Breakdown
                     </h4>
-                    <div className="flex-1 overflow-y-auto max-h-[250px] pr-2">
+                    <div className="flex-1 overflow-y-auto max-h-[280px] pr-1 custom-scrollbar">
                       <ColorLegend
                         legends={COLOR_LEGENDS.flood}
                         hazardData={reportData.flood}
@@ -717,60 +906,72 @@ export default function HazardReportModal({
                 </div>
 
                 {/* Landslide Section */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                  <div className="flex flex-col">
-                    <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-orange-500"></span>{" "}
-                      Rain-Induced Landslide
-                    </h3>
-                    <div className="flex-1 min-h-[200px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={prepareChartData(
-                              reportData.landslide,
-                              LANDSLIDE_COLORS,
-                            ).map((d) => ({
-                              ...d,
-                              totalArea: reportData.total_area_ha,
-                            }))}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={50}
-                            outerRadius={75}
-                            paddingAngle={3}
-                            dataKey="value"
-                          >
-                            {prepareChartData(
-                              reportData.landslide,
-                              LANDSLIDE_COLORS,
-                            ).map((entry, index) => (
-                              <Cell
-                                key={`cell-landslide-${index}`}
-                                fill={entry.color}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip content={<CustomTooltip />} />
-                          <Legend content={CustomLegend} />
-                        </PieChart>
-                      </ResponsiveContainer>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="relative">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-orange-500 rounded-l" />
+                    <div className="pl-4">
+                      <h3 className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2">
+                        <Mountain size={16} className="text-orange-500" />
+                        Rain-Induced Landslide
+                      </h3>
+                      <p className="text-xs text-gray-400 mb-4">
+                        Slope stability and soil saturation hazard assessment
+                      </p>
+                      <div className="h-[220px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={prepareChartData(
+                                reportData.landslide,
+                                LANDSLIDE_COLORS,
+                              ).map((d) => ({
+                                ...d,
+                                totalArea: reportData.total_area_ha,
+                              }))}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={80}
+                              paddingAngle={4}
+                              dataKey="value"
+                              stroke="none"
+                            >
+                              {prepareChartData(
+                                reportData.landslide,
+                                LANDSLIDE_COLORS,
+                              ).map((entry, index) => (
+                                <Cell
+                                  key={`cell-landslide-${index}`}
+                                  fill={entry.color}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend content={<CustomLegend />} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 mt-2">
+                        <span className="text-xs font-semibold text-gray-500">
+                          Susceptible Area:
+                        </span>
+                        <span className="text-xs font-bold text-orange-600">
+                          {(
+                            reportData.landslide.very_high_percentage +
+                            reportData.landslide.high_percentage +
+                            reportData.landslide.moderate_percentage +
+                            reportData.landslide.low_percentage
+                          ).toFixed(1)}
+                          %
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-center text-xs text-gray-500 mt-2 font-medium">
-                      {(
-                        reportData.landslide.very_high_percentage +
-                        reportData.landslide.high_percentage +
-                        reportData.landslide.moderate_percentage +
-                        reportData.landslide.low_percentage
-                      ).toFixed(1)}
-                      % has landslide susceptibility
-                    </p>
                   </div>
                   <div className="flex flex-col">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <Info size={12} /> Color Legend & Meaning
+                    <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <Info size={12} /> Severity Breakdown
                     </h4>
-                    <div className="flex-1 overflow-y-auto max-h-[250px] pr-2">
+                    <div className="flex-1 overflow-y-auto max-h-[280px] pr-1 custom-scrollbar">
                       <ColorLegend
                         legends={COLOR_LEGENDS.landslide}
                         hazardData={reportData.landslide}
@@ -781,59 +982,72 @@ export default function HazardReportModal({
                 </div>
 
                 {/* EIL Section */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                  <div className="flex flex-col">
-                    <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>{" "}
-                      Earthquake-Induced Landslide
-                    </h3>
-                    <div className="flex-1 min-h-[200px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={prepareChartData(
-                              reportData.eil,
-                              EIL_COLORS,
-                            ).map((d) => ({
-                              ...d,
-                              totalArea: reportData.total_area_ha,
-                            }))}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={50}
-                            outerRadius={75}
-                            paddingAngle={3}
-                            dataKey="value"
-                          >
-                            {prepareChartData(reportData.eil, EIL_COLORS).map(
-                              (entry, index) => (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="relative">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-purple-500 rounded-l" />
+                    <div className="pl-4">
+                      <h3 className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2">
+                        <Activity size={16} className="text-purple-500" />
+                        Earthquake-Induced Landslide
+                      </h3>
+                      <p className="text-xs text-gray-400 mb-4">
+                        Seismic-triggered slope failure hazard assessment
+                      </p>
+                      <div className="h-[220px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={prepareChartData(
+                                reportData.eil,
+                                EIL_COLORS,
+                              ).map((d) => ({
+                                ...d,
+                                totalArea: reportData.total_area_ha,
+                              }))}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={80}
+                              paddingAngle={4}
+                              dataKey="value"
+                              stroke="none"
+                            >
+                              {prepareChartData(
+                                reportData.eil,
+                                EIL_COLORS,
+                              ).map((entry, index) => (
                                 <Cell
                                   key={`cell-eil-${index}`}
                                   fill={entry.color}
                                 />
-                              ),
-                            )}
-                          </Pie>
-                          <Tooltip content={<CustomTooltip />} />
-                          <Legend content={CustomLegend} />
-                        </PieChart>
-                      </ResponsiveContainer>
+                              ))}
+                            </Pie>
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend content={<CustomLegend />} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 mt-2">
+                        <span className="text-xs font-semibold text-gray-500">
+                          Susceptible Area:
+                        </span>
+                        <span className="text-xs font-bold text-purple-600">
+                          {(
+                            reportData.eil.very_high_percentage +
+                            reportData.eil.high_percentage +
+                            reportData.eil.moderate_percentage +
+                            reportData.eil.low_percentage
+                          ).toFixed(1)}
+                          %
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-center text-xs text-gray-500 mt-2 font-medium">
-                      {(
-                        reportData.eil.very_high_percentage +
-                        reportData.eil.high_percentage +
-                        reportData.eil.moderate_percentage +
-                        reportData.eil.low_percentage
-                      ).toFixed(1)}
-                      % has EIL susceptibility
-                    </p>
                   </div>
                   <div className="flex flex-col">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <Info size={12} /> Color Legend & Meaning
+                    <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <Info size={12} /> Severity Breakdown
                     </h4>
-                    <div className="flex-1 overflow-y-auto max-h-[250px] pr-2">
+                    <div className="flex-1 overflow-y-auto max-h-[280px] pr-1 custom-scrollbar">
                       <ColorLegend
                         legends={COLOR_LEGENDS.eil}
                         hazardData={reportData.eil}
@@ -845,9 +1059,10 @@ export default function HazardReportModal({
               </div>
 
               {/* --- RECOMMENDATIONS --- */}
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
-                <h3 className="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
-                  <AlertTriangle size={18} /> System Recommendations
+              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <AlertTriangle size={18} className="text-gray-600" />
+                  System Recommendations
                 </h3>
                 <ul className="space-y-3">
                   {reportData.recommendations.map((rec, idx) => {
@@ -855,17 +1070,21 @@ export default function HazardReportModal({
                     return (
                       <li
                         key={idx}
-                        className="flex items-start gap-3 text-sm text-blue-900 bg-white/60 p-3 rounded-lg border border-blue-100"
+                        className={`flex items-start gap-3 text-sm text-gray-700 bg-white p-4 rounded-xl border-l-4 shadow-sm ${
+                          isWarning
+                            ? "border-l-amber-400"
+                            : "border-l-emerald-400"
+                        }`}
                       >
                         {isWarning ? (
                           <AlertTriangle
                             size={18}
-                            className="mt-0.5 flex-shrink-0 text-yellow-600"
+                            className="mt-0.5 flex-shrink-0 text-amber-500"
                           />
                         ) : (
                           <CheckCircle
                             size={18}
-                            className="mt-0.5 flex-shrink-0 text-green-600"
+                            className="mt-0.5 flex-shrink-0 text-emerald-500"
                           />
                         )}
                         <span className="leading-relaxed">
@@ -878,7 +1097,7 @@ export default function HazardReportModal({
               </div>
 
               {/* --- FOOTER DISCLAIMER --- */}
-              <div className="text-center text-[10px] text-gray-400 border-t border-gray-100 pt-4">
+              <div className="text-center text-[11px] text-gray-400 border-t border-gray-100 pt-5 pb-2">
                 <p>
                   Report generated using MGB/PHIVOLCS REST Feature Service data.
                   Map tile layers are for visual reference only.
@@ -894,19 +1113,3 @@ export default function HazardReportModal({
     </div>
   );
 }
-
-const CustomLegend = ({ payload }: any) => {
-  return (
-    <div className="flex flex-wrap justify-center gap-2 mt-2">
-      {payload.map((entry: any, index: number) => (
-        <div key={`legend-${index}`} className="flex items-center gap-1">
-          <div
-            className="w-3 h-3 rounded-full"
-            style={{ backgroundColor: entry.color }}
-          />
-          <span className="text-xs text-gray-600">{entry.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-};
