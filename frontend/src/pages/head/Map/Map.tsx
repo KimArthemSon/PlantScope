@@ -224,7 +224,7 @@ export default function Map() {
   const ORMOCCITY: [number, number] = [11.02, 124.61];
   const mapRef = useRef<L.Map | null>(null);
   const drawnLayerRef = useRef<any>(null);
-
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   const [classified_areas, setClassified_areas] = useState<ClassifiedArea[]>(
     [],
   );
@@ -402,36 +402,106 @@ export default function Map() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showNDVI, isNdviPenelOpen]);
 
+  // ✅ Geoman handlers attached to the LIVE map instance (survives HMR / remounts)
   useEffect(() => {
-    if (!mapRef.current) return;
-    const map = mapRef.current;
-    if (!map.pm) return;
-    map.off("pm:create");
+    const map = mapInstance;
+    if (!map || !map.pm) return;
+
     const handleCreate = (e: any) => {
       const newLayer = e.layer;
       if (!newLayer) return;
+
+      // Keep only the newest drawn layer
       map.eachLayer((layer: any) => {
         if (
+          (layer as any).isDrawnAnalysisLayer ||
           layer instanceof L.Rectangle ||
           (layer instanceof L.Polygon && !layer.options.fill)
         ) {
           if (layer !== newLayer) map.removeLayer(layer);
         }
       });
-      drawnLayerRef.current = null;
-      newLayer.setStyle({ color: "#3b82f6", weight: 2, fill: false });
+
+      // 1) Mark + style + FORCE interactivity FIRST
+      (newLayer as any).isDrawnAnalysisLayer = true;
+      newLayer.setStyle({
+        color: "#3b82f6",
+        weight: 2,
+        fillColor: "#3b82f6",
+        fillOpacity: 0.2,
+        fill: true,
+      });
+      newLayer.options.interactive = true;
+      if (typeof newLayer.bringToFront === "function") newLayer.bringToFront();
+
       if (!map.hasLayer(newLayer)) newLayer.addTo(map);
       drawnLayerRef.current = newLayer;
-      map.pm.disableDraw();
+
       try {
         const geoJson = newLayer.toGeoJSON();
         if (geoJson && geoJson.geometry) setDrawnGeometry(geoJson.geometry);
       } catch (err) {
         console.error("Error extracting GeoJSON:", err);
       }
+
+      // 2) Bind popup BEFORE touching draw mode, so it can never be skipped
+      const popupContent = `
+      <div style="min-width: 200px; font-family: system-ui;">
+        <h3 style="margin-bottom: 8px; font-weight: bold; color: #3B82F6; font-size: 14px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Analysis Area</h3>
+        <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+          You can generate a hazard report for this drawn area.
+        </p>
+       <button onclick="window.handleDrawnAreaHazardReport()" style="width: 100%; padding: 8px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s;">
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+  Generate Hazard Report
+</button>
+      </div>
+    `;
+      newLayer.bindPopup(popupContent, { closeOnClick: false });
+
+      // newLayer.on("popupopen", () => {
+      //   const btn = document.getElementById("drawn-area-hazard-report-btn");
+      //   if (btn) {
+      //     btn.onclick = () => {
+      //       try {
+      //         const geoJson = newLayer.toGeoJSON();
+      //         if (geoJson && geoJson.geometry) {
+      //           handleGenerateHazardReport(
+      //             geoJson.geometry,
+      //             "Drawn Analysis Area",
+      //           );
+      //         }
+      //       } catch (err) {
+      //         console.error(
+      //           "Error extracting geometry for hazard report:",
+      //           err,
+      //         );
+      //       }
+      //       newLayer.closePopup();
+      //     };
+      //   }
+      // });
+
+      // ✅ Fallback: any click on the shape always opens the popup
+      newLayer.on("click", () => {
+        try {
+          newLayer.openPopup();
+        } catch (err) {
+          console.error("Failed to open popup:", err);
+        }
+      });
+
+      // 3) Disable draw LAST, async + guarded (never blocks the popup again)
+      setTimeout(() => {
+        try {
+          if (map.pm) map.pm.disableDraw();
+        } catch (err) {
+          console.error("disableDraw failed:", err);
+        }
+      }, 0);
     };
-    map.on("pm:create", handleCreate);
-    map.on("pm:edit", (e: any) => {
+
+    const handleEdit = (e: any) => {
       const layer = e.layer;
       if (layer === drawnLayerRef.current) {
         try {
@@ -441,12 +511,15 @@ export default function Map() {
           console.error("Error updating geometry on edit:", err);
         }
       }
-    });
+    };
+
+    map.on("pm:create", handleCreate);
+    map.on("pm:edit", handleEdit);
     return () => {
       map.off("pm:create", handleCreate);
-      map.off("pm:edit");
+      map.off("pm:edit", handleEdit);
     };
-  }, []);
+  }, [mapInstance]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -801,7 +874,8 @@ export default function Map() {
       mapRef.current.eachLayer((layer: any) => {
         if (
           !geometryToUse &&
-          (layer instanceof L.Rectangle ||
+          ((layer as any).isDrawnAnalysisLayer ||
+            layer instanceof L.Rectangle ||
             (layer instanceof L.Polygon && !layer.options.fill))
         ) {
           try {
@@ -931,6 +1005,7 @@ export default function Map() {
     if (mapRef.current) {
       mapRef.current.eachLayer((layer: any) => {
         if (
+          (layer as any).isDrawnAnalysisLayer ||
           layer instanceof L.Rectangle ||
           (layer instanceof L.Polygon && !layer.options.fill)
         )
@@ -955,6 +1030,7 @@ export default function Map() {
     }
     mapRef.current.eachLayer((layer: any) => {
       if (
+        (layer as any).isDrawnAnalysisLayer ||
         layer instanceof L.Rectangle ||
         (layer instanceof L.Polygon && !layer.options.fill)
       )
@@ -1396,7 +1472,20 @@ export default function Map() {
   (window as any).handleReanalyze = () => {
     handleReanalyze(selectedSiteId ? parseInt(selectedSiteId) : 0);
   };
-
+  // ✅ NEW: popup button handler for the drawn analysis area
+  (window as any).handleDrawnAreaHazardReport = () => {
+    const layer = drawnLayerRef.current;
+    if (!layer) return;
+    try {
+      const geoJson = layer.toGeoJSON();
+      if (geoJson && geoJson.geometry) {
+        handleGenerateHazardReport(geoJson.geometry, "Drawn Analysis Area");
+      }
+    } catch (err) {
+      console.error("Error extracting geometry for hazard report:", err);
+    }
+    layer.closePopup();
+  };
   // ✅ Helper: Get the name of the currently filtered area
   const filteredAreaName =
     filteredAreaId !== null
@@ -2322,7 +2411,12 @@ export default function Map() {
         className="h-full w-full"
         style={{ minHeight: "100vh" }}
       >
-        <MapInitializer setMapRef={(map) => (mapRef.current = map)} />
+        <MapInitializer
+          setMapRef={(map) => {
+            mapRef.current = map;
+            setMapInstance(map);
+          }}
+        />
         <MouseTracker onCoordsChange={setMouseCoords} />
         <TileLayer
           url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
