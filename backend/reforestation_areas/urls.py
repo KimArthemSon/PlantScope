@@ -3,7 +3,7 @@ from . import views
 from . import views_ndvi
 from . import views_fire
 from . import report_views
-
+from . import views_hazard_analysis    
 urlpatterns = [
     # ═══════════════════════════════════════════════════════════
     # 🌳 REFORESTATION AREA CRUD (Core Container Only)
@@ -31,4 +31,8 @@ urlpatterns = [
      path('gis_assessments_list/', report_views.get_gis_assessments_list, name='gis_assessments_list'),
       path('gis_dashboard/', report_views.get_gis_dashboard, name='gis_dashboard'),
       path('gis_sites_list/', report_views.get_gis_sites_list, name='gis_sites_list'),
+
+      # 🛡️ HAZARD ANALYSIS ENDPOINTS (NEW — organized like the others)
+    path('analyze-hazard/', views_hazard_analysis.analyze_hazard_area, name='analyze_hazard_area'),
+    path('analyze-barangay-hazards/<str:barangay_id>/', views_hazard_analysis.analyze_barangay_hazards, name='analyze_barangay_hazards'),
 ]
