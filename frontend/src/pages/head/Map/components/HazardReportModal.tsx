@@ -45,12 +45,19 @@ export interface HazardSeverityData {
 
 export interface HazardReportData {
   success?: boolean;
+  latest?: boolean;
   total_area_ha: number;
   flood: HazardSeverityData;
   landslide: HazardSeverityData;
   eil: HazardSeverityData;
+  data_availability?: {
+    flood: boolean;
+    landslide: boolean;
+    eil: boolean;
+  };
   overall_risk: "LOW" | "MODERATE" | "HIGH";
   recommendations: string[];
+  seismic_history?: any;
 }
 
 interface HazardReportModalProps {
@@ -88,7 +95,7 @@ const COLOR_LEGENDS = {
       key: "very_high",
       label: "Very High",
       color: FLOOD_COLORS.very_high,
-      restValue: "VH",
+      restValue: "VHF",
       description:
         "Flood height >2.0m and/or duration >3 days. Perennial flooding; not recommended for planting.",
     },
@@ -96,7 +103,7 @@ const COLOR_LEGENDS = {
       key: "high",
       label: "High",
       color: FLOOD_COLORS.high,
-      restValue: "H",
+      restValue: "HF",
       description:
         "Flood height 1.0-2.0m and/or duration >3 days. Frequent flooding; limit to riparian vegetation.",
     },
@@ -104,7 +111,7 @@ const COLOR_LEGENDS = {
       key: "moderate",
       label: "Moderate",
       color: FLOOD_COLORS.moderate,
-      restValue: "M",
+      restValue: "MF",
       description:
         "Flood height 0.5-1.0m and/or duration 1-3 days. Use flood-resistant species.",
     },
@@ -112,7 +119,7 @@ const COLOR_LEGENDS = {
       key: "low",
       label: "Low",
       color: FLOOD_COLORS.low,
-      restValue: "L",
+      restValue: "LF",
       description:
         "Flood height ≤0.5m and/or duration <1 day. Minimal risk for reforestation activities.",
     },
@@ -130,7 +137,7 @@ const COLOR_LEGENDS = {
       key: "very_high",
       label: "Very High",
       color: LANDSLIDE_COLORS.very_high,
-      restValue: "VH",
+      restValue: "VHL",
       description:
         "Steep slopes with weak materials. Recent landslides, escarpments, and tension cracks present.",
     },
@@ -172,7 +179,7 @@ const COLOR_LEGENDS = {
       key: "very_high",
       label: "Very High",
       color: EIL_COLORS.very_high,
-      restValue: "VH",
+      restValue: "03",
       description:
         "Steep slopes prone to earthquake-triggered landslides. Avoid structures; use shallow-rooted vegetation only.",
     },
@@ -180,7 +187,7 @@ const COLOR_LEGENDS = {
       key: "high",
       label: "High",
       color: EIL_COLORS.high,
-      restValue: "H",
+      restValue: "03",
       description:
         "Steep slopes prone to earthquake-triggered landslides. Avoid structures; use shallow-rooted vegetation only.",
     },
@@ -188,7 +195,7 @@ const COLOR_LEGENDS = {
       key: "moderate",
       label: "Moderate",
       color: EIL_COLORS.moderate,
-      restValue: "M",
+      restValue: "02",
       description:
         "Areas that may experience landslides during strong earthquakes (Magnitude ≥6.0).",
     },
@@ -196,7 +203,7 @@ const COLOR_LEGENDS = {
       key: "low",
       label: "Low",
       color: EIL_COLORS.low,
-      restValue: "L",
+      restValue: "01",
       description:
         "Areas unlikely to experience earthquake-induced landslides. Generally safe for development.",
     },
@@ -534,8 +541,14 @@ export default function HazardReportModal({
     : [];
 
   const dominantHazard = radarData.length
-    ? radarData.reduce((max, item) => (item.value > max.value ? item : max), radarData[0])
+    ? radarData.reduce(
+        (max, item) => (item.value > max.value ? item : max),
+        radarData[0],
+      )
     : null;
+
+  // Check if EIL data is unavailable
+  const eilUnavailable = reportData?.data_availability?.eil === false;
 
   return (
     <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -693,12 +706,14 @@ export default function HazardReportModal({
                   </h3>
                   {dominantHazard && dominantHazard.value > 0 && (
                     <span className="text-xs font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-                      Highest: {dominantHazard.subject} ({dominantHazard.value.toFixed(1)}%)
+                      Highest: {dominantHazard.subject} (
+                      {dominantHazard.value.toFixed(1)}%)
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-gray-400 mb-6">
-                  Share of site area with any susceptibility per hazard type (0–100%).
+                  Share of site area with any susceptibility per hazard type
+                  (0–100%).
                 </p>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
@@ -731,13 +746,14 @@ export default function HazardReportModal({
                             />
                           </linearGradient>
                         </defs>
-                        <PolarGrid
-                          stroke="#e5e7eb"
-                          strokeDasharray="4 4"
-                        />
+                        <PolarGrid stroke="#e5e7eb" strokeDasharray="4 4" />
                         <PolarAngleAxis
                           dataKey="subject"
-                          tick={{ fontSize: 13, fill: "#374151", fontWeight: 600 }}
+                          tick={{
+                            fontSize: 13,
+                            fill: "#374151",
+                            fontWeight: 600,
+                          }}
                         />
                         <PolarRadiusAxis
                           angle={90}
@@ -762,40 +778,46 @@ export default function HazardReportModal({
                   <div className="space-y-3">
                     {radarData.map((item) => {
                       const Icon = item.icon;
+                      const isEilNoData =
+                        item.subject === "EIL" && eilUnavailable;
                       return (
                         <div
                           key={item.subject}
-                          className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 hover:bg-gray-50 transition-colors"
+                          className={`p-4 rounded-xl border ${isEilNoData ? "border-amber-200 bg-amber-50/50" : "border-gray-100 bg-gray-50/50"} hover:bg-gray-50 transition-colors`}
                         >
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
-                              <Icon
-                                size={16}
-                                style={{ color: item.color }}
-                              />
+                              <Icon size={16} style={{ color: item.color }} />
                               <span className="text-sm font-semibold text-gray-700">
                                 {item.subject}
                               </span>
+                              {isEilNoData && (
+                                <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                                  NO DATA
+                                </span>
+                              )}
                             </div>
                             <span className="text-sm font-bold text-gray-900 tabular-nums">
-                              {item.value.toFixed(1)}%
+                              {isEilNoData ? "—" : `${item.value.toFixed(1)}%`}
                             </span>
                           </div>
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div
                               className="h-2 rounded-full transition-all duration-700"
                               style={{
-                                width: `${item.value}%`,
+                                width: isEilNoData ? "0%" : `${item.value}%`,
                                 backgroundColor: item.color,
                               }}
                             />
                           </div>
                           <p className="text-[11px] text-gray-400 mt-1.5">
-                            {item.value > 50
-                              ? "Majority of area is susceptible"
-                              : item.value > 0
-                                ? "Partial susceptibility detected"
-                                : "No susceptibility detected"}
+                            {isEilNoData
+                              ? "Service unavailable — see map overlay"
+                              : item.value > 50
+                                ? "Majority of area is susceptible"
+                                : item.value > 0
+                                  ? "Partial susceptibility detected"
+                                  : "No susceptibility detected"}
                           </p>
                         </div>
                       );
@@ -989,58 +1011,80 @@ export default function HazardReportModal({
                       <h3 className="text-sm font-bold text-gray-800 mb-1 flex items-center gap-2">
                         <Activity size={16} className="text-purple-500" />
                         Earthquake-Induced Landslide
+                        {eilUnavailable && (
+                          <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full ml-2">
+                            NO DATA
+                          </span>
+                        )}
                       </h3>
                       <p className="text-xs text-gray-400 mb-4">
                         Seismic-triggered slope failure hazard assessment
                       </p>
-                      <div className="h-[220px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={prepareChartData(
-                                reportData.eil,
-                                EIL_COLORS,
-                              ).map((d) => ({
-                                ...d,
-                                totalArea: reportData.total_area_ha,
-                              }))}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={80}
-                              paddingAngle={4}
-                              dataKey="value"
-                              stroke="none"
-                            >
-                              {prepareChartData(
-                                reportData.eil,
-                                EIL_COLORS,
-                              ).map((entry, index) => (
-                                <Cell
-                                  key={`cell-eil-${index}`}
-                                  fill={entry.color}
-                                />
-                              ))}
-                            </Pie>
-                            <Tooltip content={<CustomTooltip />} />
-                            <Legend content={<CustomLegend />} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                      <div className="flex items-center justify-center gap-2 mt-2">
-                        <span className="text-xs font-semibold text-gray-500">
-                          Susceptible Area:
-                        </span>
-                        <span className="text-xs font-bold text-purple-600">
-                          {(
-                            reportData.eil.very_high_percentage +
-                            reportData.eil.high_percentage +
-                            reportData.eil.moderate_percentage +
-                            reportData.eil.low_percentage
-                          ).toFixed(1)}
-                          %
-                        </span>
-                      </div>
+                      {eilUnavailable ? (
+                        <div className="h-[220px] flex flex-col items-center justify-center text-center px-6 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                          <WifiOff size={32} className="text-gray-300 mb-3" />
+                          <p className="text-sm font-semibold text-gray-600">
+                            No EIL Data Available
+                          </p>
+                          <p className="text-xs text-gray-400 mt-2 leading-relaxed max-w-xs">
+                            The PHIVOLCS EIL feature service is not returning
+                            data (server limitation). Refer to the official
+                            PHIVOLCS EIL map overlay on the main map for visual
+                            reference.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="h-[220px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={prepareChartData(
+                                  reportData.eil,
+                                  EIL_COLORS,
+                                ).map((d) => ({
+                                  ...d,
+                                  totalArea: reportData.total_area_ha,
+                                }))}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={55}
+                                outerRadius={80}
+                                paddingAngle={4}
+                                dataKey="value"
+                                stroke="none"
+                              >
+                                {prepareChartData(
+                                  reportData.eil,
+                                  EIL_COLORS,
+                                ).map((entry, index) => (
+                                  <Cell
+                                    key={`cell-eil-${index}`}
+                                    fill={entry.color}
+                                  />
+                                ))}
+                              </Pie>
+                              <Tooltip content={<CustomTooltip />} />
+                              <Legend content={<CustomLegend />} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                      {!eilUnavailable && (
+                        <div className="flex items-center justify-center gap-2 mt-2">
+                          <span className="text-xs font-semibold text-gray-500">
+                            Susceptible Area:
+                          </span>
+                          <span className="text-xs font-bold text-purple-600">
+                            {(
+                              reportData.eil.very_high_percentage +
+                              reportData.eil.high_percentage +
+                              reportData.eil.moderate_percentage +
+                              reportData.eil.low_percentage
+                            ).toFixed(1)}
+                            %
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-col">
@@ -1049,7 +1093,7 @@ export default function HazardReportModal({
                     </h4>
                     <div className="flex-1 overflow-y-auto max-h-[280px] pr-1 custom-scrollbar">
                       <ColorLegend
-                        legends={COLOR_LEGENDS.eil}
+                        legends={eilUnavailable ? [] : COLOR_LEGENDS.eil}
                         hazardData={reportData.eil}
                         totalArea={reportData.total_area_ha}
                       />
