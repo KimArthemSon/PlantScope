@@ -1,11 +1,21 @@
-import logo from "../../assets/logo.png";
-import { Eye, EyeOff, LockIcon, Book } from "lucide-react";
-import { useEffect, useState } from "react";
-import "../../global css/login.css";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  Eye,
+  EyeOff,
+  ArrowLeft,
+  CheckCircle2,
+  AlertTriangle,
+  Lock,
+} from "lucide-react";
+
+import "@/global css/login.css";
+import "@/assets/homepage/homepage.css";
+import logoImg from "@/assets/homepage/logo.jpg";
+import heroVideo from "@/assets/homepage/hero.mp4";
+import { api } from "@/constant/api.ts";
 import PlantScopeAlert from "../../components/alert/PlantScopeAlert";
 import PlantScopeLoader from "../../components/alert/PlantScopeLoader";
-import { api } from "@/constant/api.ts";
 
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
@@ -22,8 +32,10 @@ export default function Login() {
 
   const navigate = useNavigate();
 
+  /* ─── Auth check (unchanged) ─── */
   useEffect(() => {
     checkIfStillLogin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -36,17 +48,13 @@ export default function Login() {
 
   const checkIfStillLogin = async () => {
     const token = localStorage.getItem("token");
-    if (!token) {
-      return;
-    }
+    if (!token) return;
     try {
       const response = await fetch(api + "api/get_me/", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
-
       const data = await response.json();
-
       if (response.ok) {
         setIsLoading(false);
         setPSAlert({
@@ -54,21 +62,12 @@ export default function Login() {
           title: "Login Successful",
           message: `Redirecting to dashboard...`,
         });
-
-        if (data.token) {
-          localStorage.setItem("token", data.token);
-        }
-
+        if (data.token) localStorage.setItem("token", data.token);
         setTimeout(() => {
-          if (data.user_role === "CityENROHead") {
-            navigate("/dashboard");
-          } else if (data.user_role === "DataManager") {
-            navigate("/dashboard-data-manager");
-          } else if (data.user_role === "GISSpecialist") {
-            navigate("/dashboard/GISS");
-          } else if (data.user_role === "AFA") {
-            navigate("/dashboard/AFA");
-          }
+          if (data.user_role === "CityENROHead") navigate("/dashboard");
+          else if (data.user_role === "DataManager") navigate("/dashboard-data-manager");
+          else if (data.user_role === "GISSpecialist") navigate("/dashboard/GISS");
+          else if (data.user_role === "AFA") navigate("/dashboard/AFA");
         }, 2000);
       }
     } catch (error) {
@@ -77,7 +76,8 @@ export default function Login() {
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
+  /* ─── Login handler (logic unchanged) ─── */
+  const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
@@ -90,17 +90,13 @@ export default function Login() {
       });
       return;
     }
-    console.log("Logging in with:", username, password);
+
     try {
       const response = await fetch(api + "api/login/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: username, password: password }),
       });
-
       const data = await response.json();
 
       if (response.ok) {
@@ -111,19 +107,11 @@ export default function Login() {
           title: "Login Successful",
           message: `Redirecting to dashboard...`,
         });
-
-        if (data.token) {
-          localStorage.setItem("token", data.token);
-        }
-
+        if (data.token) localStorage.setItem("token", data.token);
         setTimeout(() => {
-          if (data.user_role === "DataManager") {
-            navigate("/dashboard-data-manager");
-          } else if (data.user_role === "CityENROHead") {
-            navigate("/dashboard");
-          } else if (data.user_role === "GISSpecialist") {
-            navigate("/dashboard/GISS");
-          }
+          if (data.user_role === "DataManager") navigate("/dashboard-data-manager");
+          else if (data.user_role === "CityENROHead") navigate("/dashboard");
+          else if (data.user_role === "GISSpecialist") navigate("/dashboard/GISS");
         }, 3000);
       } else if (response.status === 403) {
         setIsLoading(false);
@@ -140,9 +128,7 @@ export default function Login() {
         setPSAlert({
           type: "failed",
           title: "Login Failed",
-          message: `${
-            data.error || "Login failed. Please check your credentials."
-          }`,
+          message: `${data.error || "Login failed. Please check your credentials."}`,
         });
       }
     } catch (error) {
@@ -157,7 +143,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(135deg,#4CAF50_75%,#FFFFFF_25%)] flex items-center justify-center p-4">
+    <div className="relative min-h-screen overflow-hidden" style={{ background: "#0A0F0D" }}>
       {isLoading && <PlantScopeLoader />}
       {PSalert && (
         <PlantScopeAlert
@@ -167,158 +153,274 @@ export default function Login() {
           onClose={() => setPSAlert(null)}
         />
       )}
-      <div className="w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row bg-white">
-        {/* Left Panel */}
-        <div className="flex-1 p-8 md:p-12 bg-linear-to-br from-green-600 to-green-700 text-white flex flex-col items-center justify-center space-y-6">
-          <div className="logo-container-login mb-6">
-            <div className="radar-ring"></div>
-            <div className="w-32 h-32 mx-auto rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-lg animate-bounce-logo">
-              <img
-                src={logo}
-                alt="PlantScope Logo"
-                className="w-24 h-24 object-contain"
-              />
-            </div>
-          </div>
-          <h1 className="text-3xl font-bold text-center">PLANTSCOPE</h1>
 
-          {/* <p className="text-sm text-green-200 text-center">
-            • Reforestation • Sustainability • Data-Driven Planning
-          </p> */}
-          <div className="mt-1 space-y-4 text-left w-full max-w-sm">
-            <p className="flex items-center gap-3 text-sm text-green-100">
-              <span className="w-6 h-6 flex items-center justify-center bg-[#04de71] text-white rounded-full text-base">
-                ✓
-              </span>
-              Prioritize reforestation sites
-            </p>
-
-            <p className="flex items-center gap-3 text-sm text-green-100">
-              <span className="w-6 h-6 flex items-center justify-center bg-[#04de71] text-white rounded-full text-base">
-                ✓
-              </span>
-              Data-driven planning tools
-            </p>
-
-            <p className="flex items-center gap-3 text-sm text-green-100">
-              <span className="w-6 h-6 flex items-center justify-center bg-[#04de71] text-white rounded-full text-base">
-                ✓
-              </span>
-              GIS-enabled mapping system
-            </p>
-          </div>
-        </div>
-
-        {/* Right Panel - Login Form */}
-        <div className="flex-1 p-8 md:p-12 flex flex-col justify-center border-2 border-green-400 rounded-tr-3xl rounded-br-3xl">
-          <div className="max-w-md mx-auto w-full">
-            <h2 className="text-2xl font-bold text-gray-800 mb-1">
-              Welcome Back
-            </h2>
-            <p className="text-sm text-gray-500 mb-8">
-              Sign in to manage reforestation data
-            </p>
-
-            <form onSubmit={handleLogin} className="space-y-6">
-              {/* Username */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter your email"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-3 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
-                />
-              </div>
-
-              {/* Password */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Password:
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-3 pr-10 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-green-600"
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Lockout / attempts feedback */}
-              {lockoutSeconds > 0 ? (
-                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
-                  <span className="text-base">🔒</span>
-                  <span>
-                    Account locked — try again in{" "}
-                    <span className="font-bold tabular-nums">
-                      {lockoutSeconds}s
-                    </span>
-                  </span>
-                </div>
-              ) : attemptsLeft !== null && attemptsLeft > 0 ? (
-                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm font-medium">
-                  <span className="text-base">⚠️</span>
-                  <span>
-                    <span className="font-bold">{attemptsLeft}</span>{" "}
-                    {attemptsLeft === 1 ? "attempt" : "attempts"} remaining
-                    before lockout
-                  </span>
-                </div>
-              ) : null}
-
-              {/* Login Button */}
-              <button
-                type="submit"
-                disabled={lockoutSeconds > 0}
-                className="mt-8 w-full bg-linear-to-r from-green-700 cursor-pointer to-green-800 text-white py-3 rounded-lg font-semibold text-lg hover:from-green-800 hover:to-green-900 transform hover:scale-[1.01] transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-              >
-                Login
-              </button>
-
-              <button
-                type="button"
-                className="mt-8 w-full bg-transparent border border-black text-[rgb(0,0,0,.5)] py-3 rounded-lg font-semibold text-lg hover:bg-[rgb(238,236,236)] hover:backdrop-blur-sm cursor-pointer transition-all shadow-lg flex items-center justify-center gap-2"
-                onClick={() => (window.location.href = "/")}
-              >
-                Back to Home
-              </button>
-            </form>
-          </div>
-        </div>
+      {/* ═══ VIDEO BACKGROUND (same as homepage hero) ═══ */}
+      <div className="absolute inset-0 overflow-hidden">
+        <video autoPlay muted loop playsInline className="hero-video">
+          <source src={heroVideo} type="video/mp4" />
+        </video>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(to right, rgba(10,15,13,0.88) 0%, rgba(10,15,13,0.72) 50%, rgba(10,15,13,0.62) 100%)",
+          }}
+        />
       </div>
 
-      <footer className="fixed bottom-6 left-0 right-0 flex items-center justify-center z-50 pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-5 px-6 py-2.5 text-sm font-medium text-white/75 bg-black/30 backdrop-blur-md rounded-full border border-white/20 shadow-xl">
-          <a
-            href="/privacy-policy"
-            className="flex items-center gap-2 hover:text-white transition-colors duration-200"
-          >
-            <LockIcon size={16} className="text-green-400 " /> Privacy Policy
-          </a>
+      {/* ═══ CONTENT ═══ */}
+      <div className="relative z-10 flex flex-col min-h-screen">
+        {/* ─── Minimal top bar: brand left, quiet back link right ─── */}
+        <header className="w-full">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => navigate("/")}
+              className="flex items-center gap-3 cursor-pointer"
+              aria-label="PlantScope — go to home"
+            >
+              <span
+                className="w-10 h-10 rounded-full overflow-hidden border flex-shrink-0 block"
+                style={{ borderColor: "rgba(255,255,255,0.4)" }}
+              >
+                <img src={logoImg} className="w-full h-full object-cover" alt="PlantScope Logo" />
+              </span>
+              <span
+                className="font-bold text-lg text-white leading-none"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
+                PlantScope
+              </span>
+            </button>
 
-          <span className="text-white/30">|</span>
+            <a
+              href="/"
+              className="back-link"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/");
+              }}
+            >
+              <ArrowLeft size={16} /> Back to Home
+            </a>
+          </div>
+        </header>
 
-          <a
-            href="/terms"
-            className="flex items-center gap-2 hover:text-white transition-colors duration-200"
-          >
-            <Book size={16} className="text-blue-400 " /> Terms of Service
-          </a>
-        </div>
-      </footer>
+        {/* ─── Split: info left, floating glass form right ─── */}
+        <main className="flex-1 flex items-center">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full py-10 lg:py-16">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+              {/* LEFT — brand narrative (hero rhythm) */}
+              <div className="text-center lg:text-left">
+                <div
+                  className="inline-flex items-center gap-2 mb-6"
+                  style={{
+                    borderLeft: "2px solid #7CD56A",
+                    paddingLeft: "1rem",
+                    color: "rgba(255,255,255,0.55)",
+                    fontSize: "0.7rem",
+                    fontWeight: 600,
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  <span>GIS-Enabled Reforestation System</span>
+                </div>
+
+                <h1
+                  style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    color: "#fff",
+                    fontSize: "clamp(2.5rem, 6vw, 4.25rem)",
+                    fontWeight: 400,
+                    letterSpacing: "-0.03em",
+                    lineHeight: 1.05,
+                    marginBottom: "1.25rem",
+                  }}
+                >
+                  Welcome Back.
+                </h1>
+
+                <p
+                  style={{
+                    color: "rgba(255,255,255,0.6)",
+                    fontSize: "clamp(1rem, 1.4vw, 1.15rem)",
+                    lineHeight: 1.7,
+                    maxWidth: "480px",
+                    margin: "0 auto",
+                  }}
+                  className="lg:!mx-0"
+                >
+                  Sign in to manage reforestation data across Ormoc City — site
+                  assessments, planting records, and monitoring in one platform.
+                </p>
+
+                <ul className="space-y-3 mt-8 inline-block text-left">
+                  {[
+                    "Scientific site prioritization with MCDA scoring",
+                    "Field-validated GIS workflows for inspectors",
+                    "Community tree planting program management",
+                  ].map((text, i) => (
+                    <li
+                      key={i}
+                      className="flex items-center gap-3 text-sm"
+                      style={{ color: "rgba(255,255,255,0.8)" }}
+                    >
+                      <CheckCircle2 size={18} color="#7CD56A" className="flex-shrink-0" />
+                      <span>{text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* RIGHT — floating glass login card */}
+              <div className="glass-card p-8 md:p-10 w-full max-w-md mx-auto">
+                <span className="eyebrow" style={{ color: "#8FE07C" }}>
+                  Sign In
+                </span>
+                <h2
+                  style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    color: "#fff",
+                    fontSize: "1.5rem",
+                    fontWeight: 600,
+                    marginBottom: "0.25rem",
+                  }}
+                >
+                  Access your dashboard
+                </h2>
+                <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.9rem", marginBottom: "1.75rem" }}>
+                  Authorized personnel only.
+                </p>
+
+                <form onSubmit={handleLogin} className="space-y-5">
+                  {/* Email */}
+                  <div>
+                    <label
+                      htmlFor="email"
+                      className="block text-sm font-medium mb-1.5"
+                      style={{ color: "rgba(255,255,255,0.8)" }}
+                    >
+                      Email
+                    </label>
+                    <input
+                      id="email"
+                      type="email"
+                      placeholder="Enter your email"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="form-input glass"
+                      autoComplete="email"
+                    />
+                  </div>
+
+                  {/* Password */}
+                  <div>
+                    <label
+                      htmlFor="password"
+                      className="block text-sm font-medium mb-1.5"
+                      style={{ color: "rgba(255,255,255,0.8)" }}
+                    >
+                      Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="form-input glass pr-12"
+                        autoComplete="current-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 transition-colors"
+                        style={{ color: "rgba(255,255,255,0.6)" }}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? <EyeOff className="text-black" size={20} /> : <Eye className="text-black" size={20} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lockout feedback */}
+                  {lockoutSeconds > 0 && (
+                    <div
+                      className="flex items-center gap-2.5 px-4 py-3 rounded-lg"
+                      style={{
+                        background: "rgba(239, 68, 68, 0.12)",
+                        border: "1px solid rgba(239, 68, 68, 0.35)",
+                      }}
+                    >
+                      <Lock size={18} color="#fca5a5" className="flex-shrink-0" />
+                      <span className="text-sm" style={{ color: "#fca5a5" }}>
+                        Account locked — try again in{" "}
+                        <strong className="tabular-nums">{lockoutSeconds}s</strong>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Attempts remaining feedback */}
+                  {!lockoutSeconds && attemptsLeft !== null && attemptsLeft > 0 && (
+                    <div
+                      className="flex items-center gap-2.5 px-4 py-3 rounded-lg"
+                      style={{
+                        background: "rgba(245, 158, 11, 0.12)",
+                        border: "1px solid rgba(245, 158, 11, 0.35)",
+                      }}
+                    >
+                      <AlertTriangle size={18} color="#fcd34d" className="flex-shrink-0" />
+                      <span className="text-sm" style={{ color: "#fcd34d" }}>
+                        <strong>{attemptsLeft}</strong>{" "}
+                        {attemptsLeft === 1 ? "attempt" : "attempts"} remaining before lockout
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Primary CTA — hero button style */}
+                  <button
+                    type="submit"
+                    disabled={lockoutSeconds > 0}
+                    className="btn-minimal-primary w-full"
+                    style={{
+                      justifyContent: "center",
+                      padding: "0.9rem 2rem",
+                      fontSize: "1rem",
+                      opacity: lockoutSeconds > 0 ? 0.5 : 1,
+                      cursor: lockoutSeconds > 0 ? "not-allowed" : "pointer",
+                      transform: lockoutSeconds > 0 ? "none" : undefined,
+                    }}
+                  >
+                    Log In
+                  </button>
+                </form>
+
+                {/* Legal micro-links */}
+                <div
+                  className="mt-6 pt-5 flex items-center justify-center gap-3 text-xs"
+                  style={{ borderTop: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.5)" }}
+                >
+                  <a href="/privacy-policy" className="hover:text-white transition-colors">
+                    Privacy Notice
+                  </a>
+                  <span>·</span>
+                  <a href="/terms" className="hover:text-white transition-colors">
+                    Terms &amp; Conditions
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        {/* ─── Bottom micro line ─── */}
+        <footer className="pb-6 pt-2 text-center text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+          © 2026 PlantScope – Developed with 💚 for Ormoc City
+        </footer>
+      </div>
     </div>
   );
 }
