@@ -240,6 +240,9 @@ export default function Map() {
   const [showReforestationMarkers, setShowReforestationMarkers] =
     useState(true);
   const [showSiteMarkers, setShowSiteMarkers] = useState(true);
+  
+  // ✅ NEW: Analysis Polygons Visibility State
+  const [showAnalysisPolygons, setShowAnalysisPolygons] = useState(true);
 
   const getHazardColor = (hazardType: string) => {
     const colors: { [key: string]: { stroke: string; fill: string } } = {
@@ -266,6 +269,11 @@ export default function Map() {
     name: "",
     marker_coordinate: null as [number, number] | null,
   });
+  
+  // ✅ NEW: Separate text states for coordinate inputs to prevent cursor jumping
+  const [areaCoordinateInput, setAreaCoordinateInput] = useState("");
+  const [siteCoordinateInput, setSiteCoordinateInput] = useState("");
+
   const [selectedPotentialSiteIds, setSelectedPotentialSiteIds] = useState<
     number[]
   >([]);
@@ -402,6 +410,23 @@ export default function Map() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showNDVI, isNdviPenelOpen]);
 
+  // ✅ NEW: Control Geoman Drawn Layer Visibility
+  useEffect(() => {
+    if (!mapRef.current || !drawnLayerRef.current) return;
+    const map = mapRef.current;
+    const layer = drawnLayerRef.current;
+
+    if (showAnalysisPolygons) {
+      if (!map.hasLayer(layer)) {
+        map.addLayer(layer);
+      }
+    } else {
+      if (map.hasLayer(layer)) {
+        map.removeLayer(layer);
+      }
+    }
+  }, [showAnalysisPolygons]);
+
   // ✅ Geoman handlers attached to the LIVE map instance (survives HMR / remounts)
   useEffect(() => {
     const map = mapInstance;
@@ -437,6 +462,9 @@ export default function Map() {
       if (!map.hasLayer(newLayer)) newLayer.addTo(map);
       drawnLayerRef.current = newLayer;
 
+      // ✅ Ensure visibility is true when a new rectangle is drawn
+      setShowAnalysisPolygons(true);
+
       try {
         const geoJson = newLayer.toGeoJSON();
         if (geoJson && geoJson.geometry) setDrawnGeometry(geoJson.geometry);
@@ -458,29 +486,6 @@ export default function Map() {
       </div>
     `;
       newLayer.bindPopup(popupContent, { closeOnClick: false });
-
-      // newLayer.on("popupopen", () => {
-      //   const btn = document.getElementById("drawn-area-hazard-report-btn");
-      //   if (btn) {
-      //     btn.onclick = () => {
-      //       try {
-      //         const geoJson = newLayer.toGeoJSON();
-      //         if (geoJson && geoJson.geometry) {
-      //           handleGenerateHazardReport(
-      //             geoJson.geometry,
-      //             "Drawn Analysis Area",
-      //           );
-      //         }
-      //       } catch (err) {
-      //         console.error(
-      //           "Error extracting geometry for hazard report:",
-      //           err,
-      //         );
-      //       }
-      //       newLayer.closePopup();
-      //     };
-      //   }
-      // });
 
       // ✅ Fallback: any click on the shape always opens the popup
       newLayer.on("click", () => {
@@ -528,7 +533,8 @@ export default function Map() {
       const { lat, lng } = e.latlng;
       if (isPickingMarker) {
         setMarkerPosition([lat, lng]);
-        setAreaForm({ ...areaForm, coordinate: [lat, lng] });
+        setAreaForm((prev) => ({ ...prev, coordinate: [lat, lng] }));
+        setAreaCoordinateInput(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
         setIsPickingMarker(false);
         setPSAlert({
           type: "success",
@@ -538,7 +544,8 @@ export default function Map() {
       }
       if (isPickingSiteMarker) {
         setSiteMarkerPosition([lat, lng]);
-        setSiteForm({ ...siteForm, marker_coordinate: [lat, lng] });
+        setSiteForm((prev) => ({ ...prev, marker_coordinate: [lat, lng] }));
+        setSiteCoordinateInput(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
         setIsPickingSiteMarker(false);
         setPSAlert({
           type: "success",
@@ -549,7 +556,7 @@ export default function Map() {
     };
     map.on("click", handleClick);
     return () => map.off("click", handleClick);
-  }, [isPickingMarker, isPickingSiteMarker, areaForm, siteForm]);
+  }, [isPickingMarker, isPickingSiteMarker]);
 
   const handleShowSiteInMap = async (siteId: number, polygon: any) => {
     setShowPotentialSites(false);
@@ -598,7 +605,7 @@ export default function Map() {
         message: "Site boundary displayed.",
       });
     } catch (error) {
-      console.error("❌ Error showing site on map:", error);
+      console.error(" Error showing site on map:", error);
       setPSAlert({
         type: "error",
         title: "Error",
@@ -714,6 +721,7 @@ export default function Map() {
     setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
     setReanalyzeTargetSiteId(siteId);
     setIsDrawPenelOpen(true);
+    setShowAnalysisPolygons(true); // ✅ Ensure visible for re-analyze
     setPSAlert({
       type: "success",
       title: "Re-analyze Mode",
@@ -904,6 +912,9 @@ export default function Map() {
     setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
     setSelectedPotentialSiteIds([]);
     setIsProcessing(true);
+    
+    // ✅ Auto-show analysis polygons when running new analysis
+    setShowAnalysisPolygons(true);
 
     try {
       const res = await fetch(`${api}api/suitable-sites/`, {
@@ -997,6 +1008,7 @@ export default function Map() {
     setPendingNewSites([]);
     setPendingNewCount(0);
     setIsProcessing(false);
+    setShowAnalysisPolygons(true); // ✅ Reset visibility
     if (mapRef.current && drawnLayerRef.current) {
       if (mapRef.current.hasLayer(drawnLayerRef.current))
         mapRef.current.removeLayer(drawnLayerRef.current);
@@ -1047,6 +1059,7 @@ export default function Map() {
       return;
     }
     mapRef.current.pm.disableDraw();
+    setShowAnalysisPolygons(true); // ✅ Ensure visible when starting new draw
     setTimeout(() => {
       if (mapRef.current && mapRef.current.pm) {
         try {
@@ -1192,6 +1205,7 @@ export default function Map() {
         barangay_id: 0,
         coordinate: null,
       });
+      setAreaCoordinateInput(""); // ✅ Clear text input
       setMarkerPosition(null);
       setIsAreaFormPenelOpen(false);
       get_all_reforestation_areas();
@@ -1266,6 +1280,7 @@ export default function Map() {
         name: "",
         marker_coordinate: null,
       });
+      setSiteCoordinateInput(""); // ✅ Clear text input
       setSiteMarkerPosition(null);
       setSelectedPotentialSiteIds([]);
       setIsSiteFormPenelOpen(false);
@@ -2092,8 +2107,7 @@ export default function Map() {
                 >
                   {isProcessing ? (
                     <>
-                      <Loader2 size={16} className="animate-spin" />{" "}
-                      Analyzing...
+                      <Loader2 size={16} className="animate-spin" /> Analyzing...
                     </>
                   ) : (
                     <>
@@ -2101,6 +2115,30 @@ export default function Map() {
                     </>
                   )}
                 </button>
+                
+                {/* ✅ NEW: Show/Hide Analysis Polygons Toggle */}
+                {(drawnGeometry || suitablePolygons) && (
+                  <button
+                    onClick={() => {
+                      setShowAnalysisPolygons(!showAnalysisPolygons);
+                      setPSAlert({
+                        type: "success",
+                        title: showAnalysisPolygons ? "Analysis Hidden" : "Analysis Shown",
+                        message: showAnalysisPolygons 
+                          ? "Analysis polygons hidden. You can now place markers without interference."
+                          : "Analysis polygons visible again.",
+                      });
+                    }}
+                    className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      showAnalysisPolygons 
+                        ? "bg-gray-100 hover:bg-gray-200 text-gray-700" 
+                        : "bg-blue-100 hover:bg-blue-200 text-blue-700"
+                    }`}
+                  >
+                    <Eye size={16} /> {showAnalysisPolygons ? "Hide Analysis" : "Show Analysis"}
+                  </button>
+                )}
+                
                 <div className="flex gap-2">
                   <button
                     onClick={cancelDrawing}
@@ -2234,13 +2272,26 @@ export default function Map() {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      value={
-                        areaForm.coordinate
-                          ? `${areaForm.coordinate[0].toFixed(6)}, ${areaForm.coordinate[1].toFixed(6)}`
-                          : ""
-                      }
-                      readOnly
-                      className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50"
+                      placeholder="Ex: 11.094850, 124.710310"
+                      value={areaCoordinateInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setAreaCoordinateInput(val);
+                        
+                        const parts = val.split(',').map(p => p.trim());
+                        if (parts.length === 2) {
+                          const lat = parseFloat(parts[0]);
+                          const lng = parseFloat(parts[1]);
+                          if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                            setAreaForm(prev => ({ ...prev, coordinate: [lat, lng] }));
+                          } else if (val === "") {
+                            setAreaForm(prev => ({ ...prev, coordinate: null }));
+                          }
+                        } else if (val === "") {
+                          setAreaForm(prev => ({ ...prev, coordinate: null }));
+                        }
+                      }}
+                      className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
                     />
                     <button
                       type="button"
@@ -2334,13 +2385,26 @@ export default function Map() {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      value={
-                        siteForm.marker_coordinate
-                          ? `${siteForm.marker_coordinate[0].toFixed(6)}, ${siteForm.marker_coordinate[1].toFixed(6)}`
-                          : ""
-                      }
-                      readOnly
-                      className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50"
+                      placeholder="Ex: 11.094850, 124.710310"
+                      value={siteCoordinateInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSiteCoordinateInput(val);
+                        
+                        const parts = val.split(',').map(p => p.trim());
+                        if (parts.length === 2) {
+                          const lat = parseFloat(parts[0]);
+                          const lng = parseFloat(parts[1]);
+                          if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                            setSiteForm(prev => ({ ...prev, marker_coordinate: [lat, lng] }));
+                          } else if (val === "") {
+                            setSiteForm(prev => ({ ...prev, marker_coordinate: null }));
+                          }
+                        } else if (val === "") {
+                          setSiteForm(prev => ({ ...prev, marker_coordinate: null }));
+                        }
+                      }}
+                      className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
                     />
                     <button
                       type="button"
@@ -2376,6 +2440,7 @@ export default function Map() {
                         name: "",
                         marker_coordinate: null,
                       });
+                      setSiteCoordinateInput(""); // ✅ Clear text input
                       setSiteMarkerPosition(null);
                       setSelectedPotentialSiteIds([]);
                     }}
@@ -2432,7 +2497,11 @@ export default function Map() {
           />
         )}
 
-        {suitablePolygons && suitablePolygons.features && (
+        {/* ✅ REMOVED: Duplicate GeoJSON for drawnGeometry. 
+            The actual Geoman layer is now controlled via the useEffect above. */}
+
+        {/* ✅ Suitable Polygons - respects showAnalysisPolygons */}
+        {showAnalysisPolygons && suitablePolygons && suitablePolygons.features && (
           <GeoJSON
             data={{
               type: suitablePolygons.type,
@@ -2515,7 +2584,8 @@ export default function Map() {
           />
         )}
 
-        {showReplaceConfirm && pendingNewSites.length > 0 && (
+        {/* ✅ Pending New Sites (Re-analyze Preview) - respects showAnalysisPolygons */}
+        {showAnalysisPolygons && showReplaceConfirm && pendingNewSites.length > 0 && (
           <GeoJSON
             key="preview-new-sites"
             data={{
