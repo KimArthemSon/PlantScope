@@ -874,7 +874,7 @@ export default function Sidebar() {
         </nav>
 
         {/* Footer */}
-        {expanded && (
+       {expanded && (
           <div className="p-3 border-t border-white/10">
             <div className="bg-gradient-to-r from-white/5 to-transparent rounded-xl p-3 border border-white/5">
               <div className="flex items-center justify-between mb-1">
@@ -884,7 +884,7 @@ export default function Sidebar() {
                     System Online
                   </span>
                 </div>
-                <span className="text-[9px] text-white/40">v1.0.0</span>
+                <span className="text-[9px] text-white/40">*</span>
               </div>
               <p className="text-[9px] text-white/40">ENRO Ormoc City</p>
             </div>
