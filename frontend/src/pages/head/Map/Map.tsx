@@ -240,7 +240,7 @@ export default function Map() {
   const [showReforestationMarkers, setShowReforestationMarkers] =
     useState(true);
   const [showSiteMarkers, setShowSiteMarkers] = useState(true);
-  
+
   // ✅ NEW: Analysis Polygons Visibility State
   const [showAnalysisPolygons, setShowAnalysisPolygons] = useState(true);
 
@@ -269,7 +269,7 @@ export default function Map() {
     name: "",
     marker_coordinate: null as [number, number] | null,
   });
-  
+
   // ✅ NEW: Separate text states for coordinate inputs to prevent cursor jumping
   const [areaCoordinateInput, setAreaCoordinateInput] = useState("");
   const [siteCoordinateInput, setSiteCoordinateInput] = useState("");
@@ -912,7 +912,7 @@ export default function Map() {
     setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
     setSelectedPotentialSiteIds([]);
     setIsProcessing(true);
-    
+
     // ✅ Auto-show analysis polygons when running new analysis
     setShowAnalysisPolygons(true);
 
@@ -2107,7 +2107,8 @@ export default function Map() {
                 >
                   {isProcessing ? (
                     <>
-                      <Loader2 size={16} className="animate-spin" /> Analyzing...
+                      <Loader2 size={16} className="animate-spin" />{" "}
+                      Analyzing...
                     </>
                   ) : (
                     <>
@@ -2115,7 +2116,7 @@ export default function Map() {
                     </>
                   )}
                 </button>
-                
+
                 {/* ✅ NEW: Show/Hide Analysis Polygons Toggle */}
                 {(drawnGeometry || suitablePolygons) && (
                   <button
@@ -2123,22 +2124,25 @@ export default function Map() {
                       setShowAnalysisPolygons(!showAnalysisPolygons);
                       setPSAlert({
                         type: "success",
-                        title: showAnalysisPolygons ? "Analysis Hidden" : "Analysis Shown",
-                        message: showAnalysisPolygons 
+                        title: showAnalysisPolygons
+                          ? "Analysis Hidden"
+                          : "Analysis Shown",
+                        message: showAnalysisPolygons
                           ? "Analysis polygons hidden. You can now place markers without interference."
                           : "Analysis polygons visible again.",
                       });
                     }}
                     className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      showAnalysisPolygons 
-                        ? "bg-gray-100 hover:bg-gray-200 text-gray-700" 
+                      showAnalysisPolygons
+                        ? "bg-gray-100 hover:bg-gray-200 text-gray-700"
                         : "bg-blue-100 hover:bg-blue-200 text-blue-700"
                     }`}
                   >
-                    <Eye size={16} /> {showAnalysisPolygons ? "Hide Analysis" : "Show Analysis"}
+                    <Eye size={16} />{" "}
+                    {showAnalysisPolygons ? "Hide Analysis" : "Show Analysis"}
                   </button>
                 )}
-                
+
                 <div className="flex gap-2">
                   <button
                     onClick={cancelDrawing}
@@ -2277,18 +2281,34 @@ export default function Map() {
                       onChange={(e) => {
                         const val = e.target.value;
                         setAreaCoordinateInput(val);
-                        
-                        const parts = val.split(',').map(p => p.trim());
+
+                        const parts = val.split(",").map((p) => p.trim());
                         if (parts.length === 2) {
                           const lat = parseFloat(parts[0]);
                           const lng = parseFloat(parts[1]);
-                          if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                            setAreaForm(prev => ({ ...prev, coordinate: [lat, lng] }));
+                          if (
+                            !isNaN(lat) &&
+                            !isNaN(lng) &&
+                            lat >= -90 &&
+                            lat <= 90 &&
+                            lng >= -180 &&
+                            lng <= 180
+                          ) {
+                            setAreaForm((prev) => ({
+                              ...prev,
+                              coordinate: [lat, lng],
+                            }));
                           } else if (val === "") {
-                            setAreaForm(prev => ({ ...prev, coordinate: null }));
+                            setAreaForm((prev) => ({
+                              ...prev,
+                              coordinate: null,
+                            }));
                           }
                         } else if (val === "") {
-                          setAreaForm(prev => ({ ...prev, coordinate: null }));
+                          setAreaForm((prev) => ({
+                            ...prev,
+                            coordinate: null,
+                          }));
                         }
                       }}
                       className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
@@ -2390,18 +2410,34 @@ export default function Map() {
                       onChange={(e) => {
                         const val = e.target.value;
                         setSiteCoordinateInput(val);
-                        
-                        const parts = val.split(',').map(p => p.trim());
+
+                        const parts = val.split(",").map((p) => p.trim());
                         if (parts.length === 2) {
                           const lat = parseFloat(parts[0]);
                           const lng = parseFloat(parts[1]);
-                          if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                            setSiteForm(prev => ({ ...prev, marker_coordinate: [lat, lng] }));
+                          if (
+                            !isNaN(lat) &&
+                            !isNaN(lng) &&
+                            lat >= -90 &&
+                            lat <= 90 &&
+                            lng >= -180 &&
+                            lng <= 180
+                          ) {
+                            setSiteForm((prev) => ({
+                              ...prev,
+                              marker_coordinate: [lat, lng],
+                            }));
                           } else if (val === "") {
-                            setSiteForm(prev => ({ ...prev, marker_coordinate: null }));
+                            setSiteForm((prev) => ({
+                              ...prev,
+                              marker_coordinate: null,
+                            }));
                           }
                         } else if (val === "") {
-                          setSiteForm(prev => ({ ...prev, marker_coordinate: null }));
+                          setSiteForm((prev) => ({
+                            ...prev,
+                            marker_coordinate: null,
+                          }));
                         }
                       }}
                       className="w-full text-[.7rem] mt-1 p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
@@ -2501,29 +2537,31 @@ export default function Map() {
             The actual Geoman layer is now controlled via the useEffect above. */}
 
         {/* ✅ Suitable Polygons - respects showAnalysisPolygons */}
-        {showAnalysisPolygons && suitablePolygons && suitablePolygons.features && (
-          <GeoJSON
-            data={{
-              type: suitablePolygons.type,
-              features: suitablePolygons.features,
-            }}
-            style={(feature) => {
-              const isSelected = selectedPotentialSiteIds.includes(
-                feature?.properties?.potential_sites_id,
-              );
-              return {
-                color: isSelected ? "#16a34a" : "#dc2626",
-                weight: 2,
-                fillColor: isSelected ? "#bbf7d0" : "#fecaca",
-                fillOpacity: 0.6,
-              };
-            }}
-            onEachFeature={(feature, layer) => {
-              const props = feature.properties;
-              const isSelected = selectedPotentialSiteIds.includes(
-                props.potential_sites_id,
-              );
-              const popupContent = `
+        {showAnalysisPolygons &&
+          suitablePolygons &&
+          suitablePolygons.features && (
+            <GeoJSON
+              data={{
+                type: suitablePolygons.type,
+                features: suitablePolygons.features,
+              }}
+              style={(feature) => {
+                const isSelected = selectedPotentialSiteIds.includes(
+                  feature?.properties?.potential_sites_id,
+                );
+                return {
+                  color: isSelected ? "#16a34a" : "#dc2626",
+                  weight: 2,
+                  fillColor: isSelected ? "#bbf7d0" : "#fecaca",
+                  fillOpacity: 0.6,
+                };
+              }}
+              onEachFeature={(feature, layer) => {
+                const props = feature.properties;
+                const isSelected = selectedPotentialSiteIds.includes(
+                  props.potential_sites_id,
+                );
+                const popupContent = `
                 <div style="font-size: 12px; min-width: 180px;">
                   <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -2543,68 +2581,70 @@ export default function Map() {
                   <button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer;">View Trends</button>
                 </div>`;
 
-              layer.bindPopup(popupContent);
+                layer.bindPopup(popupContent);
 
-              layer.on("popupopen", () => {
-                const hazardBtn = document.getElementById(
-                  `hazard-report-btn-analyze-${props.potential_sites_id}`,
-                );
-                if (hazardBtn) {
-                  hazardBtn.onclick = () => {
-                    layer.closePopup();
-                    handleGenerateHazardReport(
-                      feature.geometry,
-                      props.site_id || "Potential Site",
-                    );
-                  };
-                }
+                layer.on("popupopen", () => {
+                  const hazardBtn = document.getElementById(
+                    `hazard-report-btn-analyze-${props.potential_sites_id}`,
+                  );
+                  if (hazardBtn) {
+                    hazardBtn.onclick = () => {
+                      layer.closePopup();
+                      handleGenerateHazardReport(
+                        feature.geometry,
+                        props.site_id || "Potential Site",
+                      );
+                    };
+                  }
 
-                const selectBtn = document.getElementById(
-                  `select-site-btn-${props.potential_sites_id}`,
-                );
-                if (selectBtn) {
-                  selectBtn.onclick = () => {
-                    togglePotentialSiteSelection(props.potential_sites_id);
-                    layer.closePopup();
-                  };
-                }
-                const trendBtn = document.getElementById(
-                  `view-trends-btn-${props.site_id}`,
-                );
-                if (trendBtn) {
-                  trendBtn.onclick = () => {
-                    layer.closePopup();
-                    setSelectedSiteGeometry(feature.geometry);
-                    setSelectedSiteId(props.site_id);
-                    setShowSiteTrends(true);
-                  };
-                }
-              });
-            }}
-          />
-        )}
+                  const selectBtn = document.getElementById(
+                    `select-site-btn-${props.potential_sites_id}`,
+                  );
+                  if (selectBtn) {
+                    selectBtn.onclick = () => {
+                      togglePotentialSiteSelection(props.potential_sites_id);
+                      layer.closePopup();
+                    };
+                  }
+                  const trendBtn = document.getElementById(
+                    `view-trends-btn-${props.site_id}`,
+                  );
+                  if (trendBtn) {
+                    trendBtn.onclick = () => {
+                      layer.closePopup();
+                      setSelectedSiteGeometry(feature.geometry);
+                      setSelectedSiteId(props.site_id);
+                      setShowSiteTrends(true);
+                    };
+                  }
+                });
+              }}
+            />
+          )}
 
         {/* ✅ Pending New Sites (Re-analyze Preview) - respects showAnalysisPolygons */}
-        {showAnalysisPolygons && showReplaceConfirm && pendingNewSites.length > 0 && (
-          <GeoJSON
-            key="preview-new-sites"
-            data={{
-              type: "FeatureCollection",
-              features: pendingNewSites.map((f: any) => ({
-                type: "Feature",
-                geometry: f.geometry,
-                properties: f.properties,
-              })),
-            }}
-            style={() => ({
-              color: "#3B82F6",
-              weight: 2,
-              fillColor: "#93C5FD",
-              fillOpacity: 0.4,
-              dashArray: "5, 5",
-            })}
-          />
-        )}
+        {showAnalysisPolygons &&
+          showReplaceConfirm &&
+          pendingNewSites.length > 0 && (
+            <GeoJSON
+              key="preview-new-sites"
+              data={{
+                type: "FeatureCollection",
+                features: pendingNewSites.map((f: any) => ({
+                  type: "Feature",
+                  geometry: f.geometry,
+                  properties: f.properties,
+                })),
+              }}
+              style={() => ({
+                color: "#3B82F6",
+                weight: 2,
+                fillColor: "#93C5FD",
+                fillOpacity: 0.4,
+                dashArray: "5, 5",
+              })}
+            />
+          )}
 
         {/* ✅ Reforestation Areas - controlled by showReforestationMarkers */}
         {showReforestationMarkers &&

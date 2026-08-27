@@ -854,9 +854,9 @@ export default function SidebarGISS() {
                     System Online
                   </span>
                 </div>
-                <span className="text-[9px] text-white/40">v1.0</span>
+                <span className="text-[9px] text-white/40">*</span>
               </div>
-              <p className="text-[9px] text-white/40">ENRO Ormoc City • 2024</p>
+              <p className="text-[9px] text-white/40">ENRO Ormoc City</p>
             </div>
           </div>
         )}
