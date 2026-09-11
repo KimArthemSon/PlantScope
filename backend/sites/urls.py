@@ -16,6 +16,9 @@ urlpatterns = [
     path('update_species/<int:site_id>/', views.update_species_recommendations, name='update_species'),
     path('get_all_sites/', views.get_all_sites, name='get_all_sites'),
     path('site/<int:site_id>/update_coordinates/', views.update_site_coordinates, name='update_site_coordinates'),
+    path('sites/<int:site_id>/update-marker/', update_views.update_site_marker_coordinate, name='update-site-marker'),
+
+
     # ─────────────────────────────────────────
     # MCDA VALIDATION (Simplified Workflow)
     # ─────────────────────────────────────────

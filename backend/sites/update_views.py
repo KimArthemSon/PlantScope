@@ -11,14 +11,71 @@ from accounts.helper import get_user_from_token, get_cloudinary_url, delete_clou
 
 from .models import (
     Sites, Site_images,
-  
 )
-
 
 logger = logging.getLogger(__name__)
 
-# Add this to sites/views.py:
+# ─────────────────────────────────────────────────────────────
+# NEW: Update Site Marker Coordinate
+# ─────────────────────────────────────────────────────────────
+@csrf_exempt
+def update_site_marker_coordinate(request, site_id):
+    """
+    PUT/PATCH/POST: Update the marker_coordinate of a specific site.
+    Expects JSON body: {"marker_coordinate": [lat, lng]}
+    """
+    if request.method not in ["PUT", "PATCH", "POST"]:
+        return JsonResponse({"error": "Method not allowed. Use PUT, PATCH, or POST."}, status=405)
+    
+    try:
+        body = json.loads(request.body)
+        site = get_object_or_404(Sites, site_id=site_id, is_active=True)
+        
+        if 'marker_coordinate' not in body:
+            return JsonResponse({"error": "marker_coordinate is required in request body"}, status=400)
+        
+        coord = body['marker_coordinate']
+        
+        # ✅ VALIDATION: Ensure it's a list of exactly 2 numbers
+        if not isinstance(coord, list) or len(coord) != 2:
+            return JsonResponse({
+                "error": "marker_coordinate must be a list of exactly 2 numbers [lat, lng]"
+            }, status=400)
+        
+        lat, lng = coord[0], coord[1]
+        
+        if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+            return JsonResponse({"error": "Latitude and Longitude must be numeric values"}, status=400)
+        
+        # ✅ VALIDATION: Ensure coordinates are within valid geographic ranges
+        if not (-90 <= lat <= 90):
+            return JsonResponse({"error": "Latitude must be between -90 and 90"}, status=400)
+            
+        if not (-180 <= lng <= 180):
+            return JsonResponse({"error": "Longitude must be between -180 and 180"}, status=400)
+        
+        # ✅ UPDATE: Save the validated coordinate
+        site.marker_coordinate = [float(lat), float(lng)]
+        site.save()
+        
+        logger.info(f"Site {site_id} marker_coordinate updated to {site.marker_coordinate}")
+        
+        return JsonResponse({
+            "message": "Site marker coordinate updated successfully",
+            "site_id": site.site_id,
+            "marker_coordinate": site.marker_coordinate
+        }, status=200)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON format in request body"}, status=400)
+    except Exception as e:
+        logger.error(f"Update site marker coordinate error: {e}", exc_info=True)
+        return JsonResponse({"error": str(e)}, status=500)
 
+
+# ─────────────────────────────────────────────────────────────
+# EXISTING: Update Site Basic Info
+# ─────────────────────────────────────────────────────────────
 @csrf_exempt
 def update_site_basic_info(request, site_id):
     """
@@ -77,8 +134,10 @@ def update_site_basic_info(request, site_id):
         logger.error(f"Update site basic info error: {e}", exc_info=True)
         return JsonResponse({"error": str(e)}, status=500)
     
-# Add these to sites/views.py:
 
+# ─────────────────────────────────────────────────────────────
+# EXISTING: List Site Images
+# ─────────────────────────────────────────────────────────────
 @csrf_exempt
 def list_site_images(request, site_id):
     """GET: List all images for a site."""
@@ -101,6 +160,9 @@ def list_site_images(request, site_id):
     return JsonResponse({'data': data, 'count': len(data)}, status=200)
 
 
+# ─────────────────────────────────────────────────────────────
+# EXISTING: Upload Site Image
+# ─────────────────────────────────────────────────────────────
 @csrf_exempt
 def upload_site_image(request, site_id):
     """POST: Upload a new image for a site."""
@@ -145,6 +207,9 @@ def upload_site_image(request, site_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+# ─────────────────────────────────────────────────────────────
+# EXISTING: Delete Site Image
+# ─────────────────────────────────────────────────────────────
 @csrf_exempt
 def delete_site_image(request, site_image_id):
     """DELETE: Remove an image from a site."""

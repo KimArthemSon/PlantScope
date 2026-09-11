@@ -27,10 +27,10 @@ urlpatterns = [
     path('firms-fire-data/', views_fire.get_firms_fire_data, name='firms_fire_data'),
     path('firms-fire-count/', views_fire.get_firms_fire_count, name='firms_fire_count'),
 
-     path('gis_specialist_dashboard/', report_views.get_gis_specialist_dashboard, name='gis_specialist_dashboard'),
-     path('gis_assessments_list/', report_views.get_gis_assessments_list, name='gis_assessments_list'),
-      path('gis_dashboard/', report_views.get_gis_dashboard, name='gis_dashboard'),
-      path('gis_sites_list/', report_views.get_gis_sites_list, name='gis_sites_list'),
+    path('gis_specialist_dashboard/', report_views.get_gis_specialist_dashboard, name='gis_specialist_dashboard'),
+    path('gis_assessments_list/', report_views.get_gis_assessments_list, name='gis_assessments_list'),
+    path('gis_dashboard/', report_views.get_gis_dashboard, name='gis_dashboard'),
+    path('gis_sites_list/', report_views.get_gis_sites_list, name='gis_sites_list'),
 
       # 🛡️ HAZARD ANALYSIS ENDPOINTS (NEW — organized like the others)
     path('analyze-hazard/', views_hazard_analysis.analyze_hazard_area, name='analyze_hazard_area'),
