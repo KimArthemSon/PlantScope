@@ -31,6 +31,7 @@ import {
   Filter,
   List,
   Globe,
+  ArrowRight,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -1001,12 +1002,13 @@ export default function ReforestationAreaSiteCombined() {
                   <button
                     onClick={() =>
                       navigate(
-                        `${userPath}/analysis/multicriteria-analysis/new?areaId=${selectedArea.reforestation_area_id}`,
+                        `${userPath}/analysis/multicriteria-analysis/new?areaId=${id}`,
                       )
                     }
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm hover:shadow-md hover:shadow-emerald-200"
+                    className="flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white h-10 px-4 py-2 rounded-lg text-[.8rem] font-semibold cursor-pointer transition-all shadow-lg shadow-emerald-200"
                   >
-                    <Plus size={16} /> Add New Site
+                    <BarChart3 size={18} /> MCDA Analysis{" "}
+                    <ArrowRight size={18} />
                   </button>
                 )}
               </div>

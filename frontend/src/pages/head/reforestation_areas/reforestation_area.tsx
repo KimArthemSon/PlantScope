@@ -100,10 +100,9 @@ export default function Reforestation_areas() {
   useEffect(() => {
     const fetchBarangays = async () => {
       try {
-        const res = await fetch(
-          api+"api/get_barangay_list/",
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
+        const res = await fetch(api + "api/get_barangay_list/", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (res.ok) {
           const data = await res.json();
           setBarangays(data.data || []);
@@ -128,7 +127,7 @@ export default function Reforestation_areas() {
         }),
       });
       const response = await fetch(
-        api+`api/get_reforestation_areas/?${params}`,
+        api + `api/get_reforestation_areas/?${params}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!response.ok) throw new Error("Failed");
@@ -160,7 +159,7 @@ export default function Reforestation_areas() {
     if (!deleteId) return;
     try {
       const response = await fetch(
-        api+`api/delete_reforestation_areas/${deleteId}/`,
+        api + `api/delete_reforestation_areas/${deleteId}/`,
         { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
       );
       const data = await response.json();
@@ -266,7 +265,7 @@ export default function Reforestation_areas() {
             }}
             className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
           />
-          
+
           {userRole !== "DataManager" && (
             <button
               onClick={() => navigate(`${useruserRole}/map`)}
@@ -310,7 +309,9 @@ export default function Reforestation_areas() {
                     </td>
                     <td className="py-3 px-5 text-sm text-gray-600 max-w-xs truncate">
                       {area.description || (
-                        <span className="text-gray-400 italic">No description</span>
+                        <span className="text-gray-400 italic">
+                          No description
+                        </span>
                       )}
                     </td>
 
@@ -322,7 +323,9 @@ export default function Reforestation_areas() {
                           <span className="text-xs font-bold text-green-700">
                             {area.site_stats?.accepted_verified ?? 0}
                           </span>
-                          <span className="text-[10px] text-gray-500">verified</span>
+                          <span className="text-[10px] text-gray-500">
+                            verified
+                          </span>
                         </div>
                         <div className="flex gap-2 text-[10px]">
                           <span className="flex items-center gap-0.5 text-blue-600">
@@ -369,7 +372,7 @@ export default function Reforestation_areas() {
                             <User size={18} />
                           </button>
                         )}
-                        {userRole !== "GISSpecialist" && (
+                        {userRole !== "DataManager" && (
                           <button
                             onClick={() =>
                               navigate(

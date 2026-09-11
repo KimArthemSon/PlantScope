@@ -99,7 +99,9 @@ const Terms_and_Conditions = lazy(
   () => import("./pages/HomePage/terms_and_Conditions"),
 );
 const Request = lazy(() => import("./pages/dataManager/monitoring/request"));
-const RequestEval = lazy(() => import("./pages/dataManager/monitoring/SeedlingEvaluation"));
+const RequestEval = lazy(
+  () => import("./pages/dataManager/monitoring/SeedlingEvaluation"),
+);
 const Animals = lazy(() => import("./pages/head/maintain/animals"));
 const Reports = lazy(() => import("./pages/dataManager/reports/reports"));
 const Hazard_areas = lazy(
@@ -284,10 +286,10 @@ export default function App() {
               path="/DataManager/verification/meta-data/:id"
               element={<MetaDataVerification />}
             />
-            <Route
+            {/* <Route
               path="/DataManager/maintenance/reforestation_area_form/:id"
               element={<Reforestation_area_form />}
-            />
+            /> */}
             <Route
               path="/DataManager/maintenance/view_reforestation_area/:id"
               element={<ViewReforestationArea />}
@@ -325,7 +327,10 @@ export default function App() {
               element={<Reforestation_areas />}
             />
             <Route path="/DataManager/request" element={<Request />} />
-             <Route path="/DataManager/request-eval/:id" element={<RequestEval />} />
+            <Route
+              path="/DataManager/request-eval/:id"
+              element={<RequestEval />}
+            />
             <Route
               path="/DataManager/official-reforestation"
               element={<OfficailPlantingSites />}
@@ -399,7 +404,10 @@ export default function App() {
             />
 
             <Route path="/GISS/reforestation/site/:id" element={<Sites />} />
-
+            <Route
+              path="/GISS/maintenance/reforestation_area_form/:id"
+              element={<Reforestation_area_form />}
+            />
             <Route
               path="/GISS/reforestation_area_site"
               element={<ReforestationAreaSiteCombined />}
