@@ -700,6 +700,12 @@ export default function MetaDataVerification() {
   const [landClassifications, setLandClassifications] = useState<
     LandClassificationOption[]
   >([]);
+
+  // ✅ NEW: Land Classification Filter State
+  const [landClassificationFilter, setLandClassificationFilter] = useState<
+    "all" | "public" | "private"
+  >("all");
+
   const [animals, setAnimals] = useState<AnimalOption[]>([]);
 
   const [PSalert, setPSAlert] = useState<{
@@ -748,6 +754,25 @@ export default function MetaDataVerification() {
     (lc) => lc.land_classification_id === verifiedLandClassificationId,
   );
   const derivedOwnershipType = selectedLC?.ownership_type || null;
+
+  // ✅ NEW: Filtered Land Classifications
+  const filteredLandClassifications = landClassifications.filter((lc) => {
+    if (landClassificationFilter === "all") return true;
+    return lc.ownership_type === landClassificationFilter;
+  });
+
+  // ✅ NEW: Handle Filter Change with Auto-Clear
+  const handleFilterChange = (filter: "all" | "public" | "private") => {
+    setLandClassificationFilter(filter);
+    if (verifiedLandClassificationId) {
+      const selected = landClassifications.find(
+        (lc) => lc.land_classification_id === verifiedLandClassificationId,
+      );
+      if (selected && filter !== "all" && selected.ownership_type !== filter) {
+        setVerifiedLandClassificationId("");
+      }
+    }
+  };
 
   const filteredAssessments = fieldAssessments.filter((a) => {
     if (assessmentFilter !== "all" && a.type !== assessmentFilter) return false;
@@ -1772,6 +1797,41 @@ export default function MetaDataVerification() {
                   </p>
                 </div>
               </div>
+
+              {/* ✅ NEW: Ownership Type Filter */}
+              <div className="flex gap-1.5 bg-slate-100 p-1.5 rounded-xl mb-3">
+                <button
+                  onClick={() => handleFilterChange("all")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    landClassificationFilter === "all"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Layers size={14} /> All
+                </button>
+                <button
+                  onClick={() => handleFilterChange("public")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    landClassificationFilter === "public"
+                      ? "bg-white text-blue-700 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Landmark size={14} /> Public
+                </button>
+                <button
+                  onClick={() => handleFilterChange("private")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    landClassificationFilter === "private"
+                      ? "bg-white text-amber-700 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <FileText size={14} /> Private
+                </button>
+              </div>
+
               <select
                 value={verifiedLandClassificationId}
                 onChange={(e) =>
@@ -1780,10 +1840,10 @@ export default function MetaDataVerification() {
                   )
                 }
                 className="w-full border-2 border-slate-300 rounded-lg px-4 py-3 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-medium"
-                disabled={landClassifications.length === 0}
+                disabled={filteredLandClassifications.length === 0}
               >
                 <option value="">-- Select Classification --</option>
-                {landClassifications.map((lc) => (
+                {filteredLandClassifications.map((lc) => (
                   <option
                     key={lc.land_classification_id}
                     value={lc.land_classification_id}
@@ -2291,9 +2351,10 @@ export default function MetaDataVerification() {
         <div className="shrink-0 border-t-2 border-slate-200 px-6 py-4 bg-gradient-to-r from-white to-slate-50 flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="px-4 py-2.5 text-sm text-slate-700 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition-colors font-medium"
+            className="px-4 py-2.5 flex items-center gap-2 text-slate-700 hover:text-red-600 hover:bg-red-50 border border-slate-300 hover:border-red-300 rounded-lg transition-all font-medium text-sm disabled:opacity-40"
             disabled={saving}
           >
+            <X size={16} />
             Cancel
           </button>
           <button
