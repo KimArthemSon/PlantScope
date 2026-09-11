@@ -123,7 +123,7 @@ export default function Application() {
         />
       )}
 
-      <main className="flex-1 p-8 w-full max-w-6xl mx-auto">
+      <main className="flex-1 p-8 w-full max-w-450 mx-auto">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm font-medium text-gray-700">Show entries: </label>

@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, ChevronLeft, FileCheck2, Calendar, Users } from "lucide-react";
+import {
+  ChevronRight,
+  ChevronLeft,
+  FileCheck2,
+  Calendar,
+  Users,
+} from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
@@ -15,7 +21,7 @@ interface Application {
   total_treegrowers_will_participate: number;
   classification: string;
   status: string;
-  orientation_date: string | null; 
+  orientation_date: string | null;
   site_name: string | null;
   created_at: string;
 }
@@ -66,7 +72,7 @@ export default function Application_confirmation() {
         `${api}api/get_applications/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
       if (!response.ok) throw new Error("Failed to fetch Application.");
 
@@ -113,15 +119,21 @@ export default function Application_confirmation() {
         />
       )}
 
-      <main className="flex-1 p-8 w-full max-w-7xl mx-auto">
+      <main className="flex-1 p-8 w-full max-w-450 mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[#0F4A2F]">Head Confirmation Queue</h1>
-          <p className="text-sm text-gray-500 mt-1">Review and approve applications evaluated by the Data Manager.</p>
+          <h1 className="text-2xl font-bold text-[#0F4A2F]">
+            Head Confirmation Queue
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Review and approve applications evaluated by the Data Manager.
+          </p>
         </div>
 
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
-          <label className="text-sm font-medium text-gray-700">Show entries: </label>
+          <label className="text-sm font-medium text-gray-700">
+            Show entries:{" "}
+          </label>
           <select
             value={filter.entries}
             onChange={(e) =>
@@ -138,7 +150,9 @@ export default function Application_confirmation() {
             <option value={50}>50</option>
           </select>
 
-          <label className="text-sm font-medium text-gray-700">Classification:</label>
+          <label className="text-sm font-medium text-gray-700">
+            Classification:
+          </label>
           <select
             value={filter.classification}
             onChange={(e) =>
@@ -181,14 +195,30 @@ export default function Application_confirmation() {
           <table className="relative min-w-full">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">No</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Group</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Title</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Classification</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Growers</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Orientation Date</th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Submitted</th>
-                <th className="py-3 px-5 text-center text-[.85rem] font-semibold">Actions</th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  No
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Group
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Title
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Classification
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Growers
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Orientation Date
+                </th>
+                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                  Submitted
+                </th>
+                <th className="py-3 px-5 text-center text-[.85rem] font-semibold">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -204,7 +234,13 @@ export default function Application_confirmation() {
                     <td className="py-3 px-5">
                       <div className="flex items-center gap-3">
                         <img
-                          src={app.group_profile ? (app.group_profile.startsWith('http') ? app.group_profile : app.group_profile) : 'https://via.placeholder.com/40'}
+                          src={
+                            app.group_profile
+                              ? app.group_profile.startsWith("http")
+                                ? app.group_profile
+                                : app.group_profile
+                              : "https://via.placeholder.com/40"
+                          }
                           className="rounded-full h-10 w-10 object-cover border border-gray-200"
                           alt="group profile"
                         />
@@ -240,8 +276,21 @@ export default function Application_confirmation() {
                     </td>
                     <td className="py-3 px-5 text-[.85rem]">
                       <div className="flex items-center gap-1.5 text-gray-600">
-                        <Calendar size={14} className={app.orientation_date ? "text-green-600" : "text-gray-400"} />
-                        <span className={app.orientation_date ? "font-medium" : "italic text-gray-400"}>
+                        <Calendar
+                          size={14}
+                          className={
+                            app.orientation_date
+                              ? "text-green-600"
+                              : "text-gray-400"
+                          }
+                        />
+                        <span
+                          className={
+                            app.orientation_date
+                              ? "font-medium"
+                              : "italic text-gray-400"
+                          }
+                        >
                           {formatDate(app.orientation_date)}
                         </span>
                       </div>
@@ -252,8 +301,8 @@ export default function Application_confirmation() {
                     <td className="py-3 px-5 text-center">
                       <button
                         onClick={() => {
-                            navigate("/evaluation/" + app.application_id);
-                          }}
+                          navigate("/evaluation/" + app.application_id);
+                        }}
                         className="inline-flex items-center gap-1.5 bg-[#0F4A2F] hover:bg-[#1a6b44] text-white px-3 py-1.5 rounded-md text-[.8rem] font-semibold transition-colors shadow-sm"
                       >
                         <FileCheck2 size={14} />
@@ -301,7 +350,7 @@ export default function Application_confirmation() {
               >
                 {p}
               </button>
-            )
+            ),
           )}
 
           <button

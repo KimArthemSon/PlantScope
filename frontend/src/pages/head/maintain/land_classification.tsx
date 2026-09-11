@@ -268,7 +268,7 @@ export default function Land_classifications() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <main className="flex-1 p-8 w-full max-w-6xl">
+      <main className="flex-1 p-8 w-full max-w-450">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label>Show entries: </label>

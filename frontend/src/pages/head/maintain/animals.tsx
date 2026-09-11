@@ -244,7 +244,7 @@ export default function Animals() {
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
       />
-      <main className="flex-1 p-8 w-full max-w-609">
+      <main className="flex-1 p-8 w-full max-w-450">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
           <label>Show entries: </label>
