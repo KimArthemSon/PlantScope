@@ -181,7 +181,6 @@ export default function App() {
               element={<Multicriteria_analysis />}
             />
 
-          
             <Route
               path="/reforestation/site/:id/information/:site_id"
               element={<Site_information />}
@@ -274,7 +273,7 @@ export default function App() {
             <Route path="/DataManager/applications" element={<Application />} />
             <Route path="/DataManager/monitoring" element={<Monitoring />} />
             <Route
-              path="/DataManager/maintenance_evaluation/:application_id"
+              path="/DataManager/site_monitoring/:site_id"
               element={<Maintenance_report />}
             />
 
@@ -295,7 +294,6 @@ export default function App() {
               element={<ViewReforestationArea />}
             />
 
-          
             <Route
               path="/DataManager/reforestation_analysis/site_analysis/:id"
               element={<Sites_analysis />}
@@ -400,7 +398,6 @@ export default function App() {
               element={<ViewReforestationArea />}
             />
 
-         
             <Route
               path="/GISS/maintenance/reforestation_area_form/:id"
               element={<Reforestation_area_form />}

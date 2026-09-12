@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 from datetime import date
 import cloudinary.uploader
 from django.db import transaction
-from django.db.models import Case, Count, F, Max, Q, Sum, When, fields
+
+from django.db.models import Case, Count, F, Max, Q, Sum, When, Value, fields
 from django.db.models.functions import Coalesce, TruncMonth
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -974,7 +975,7 @@ def create_seedling_request(request):
 
 @csrf_exempt
 def create_progress_report(request):
-    """OnsiteInspector: Submit monitoring report (Initial or Ongoing)"""
+    """OnsiteInspector: Submit monitoring report (Initial, Ongoing, or Inactive Check)"""
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
 
@@ -982,15 +983,15 @@ def create_progress_report(request):
     if not user or user.user_role != 'OnsiteInspector':
         return JsonResponse({'error': 'Unauthorized: OnsiteInspector only'}, status=403)
 
-    app_id = request.POST.get('application_id')
-    visit_type = request.POST.get('visit_type', 'initial')
+    site_id = request.POST.get('site_id')
+    application_id = request.POST.get('application_id')
+    visit_type = request.POST.get('visit_type', 'ongoing')
     description = request.POST.get('description', '').strip()
     report_species_json = request.POST.get('report_species')
     
-    if not app_id or not report_species_json:
-        return JsonResponse({'error': 'application_id and report_species required'}, status=400)
+    if not site_id or not report_species_json:
+        return JsonResponse({'error': 'site_id and report_species required'}, status=400)
 
-    # ✅ ENFORCE PROOF IMAGE FOR ALL VISITS
     if 'proof_image' not in request.FILES:
         return JsonResponse({'error': 'Proof image is required for all monitoring visits'}, status=400)
 
@@ -1001,38 +1002,42 @@ def create_progress_report(request):
     except (ValueError, json.JSONDecodeError) as e:
         return JsonResponse({'error': f'Invalid report_species format: {str(e)}'}, status=400)
 
-    app = get_object_or_404(Application, application_id=app_id)
-    if app.status not in ['accepted', 'under_monitoring']:
-        return JsonResponse({'error': 'Application not under monitoring'}, status=400)
+    site = get_object_or_404(Sites, site_id=site_id)
+    
+    app = None
+    if application_id:
+        app = get_object_or_404(Application, application_id=application_id)
+        if app.site_id != site.site_id:
+            return JsonResponse({'error': 'Application does not belong to this site'}, status=400)
 
-    if visit_type not in ['initial', 'ongoing']:
-        return JsonResponse({'error': 'visit_type must be "initial" or "ongoing"'}, status=400)
+    if visit_type not in ['initial', 'ongoing', 'inactive_check']:
+        return JsonResponse({'error': 'visit_type must be "initial", "ongoing", or "inactive_check"'}, status=400)
 
-    # ✅ Initial visit specific validations
     if visit_type == 'initial':
         if 'agreement_image' not in request.FILES:
             return JsonResponse({'error': 'agreement_image is required for initial visit'}, status=400)
-        
         orientation_conducted = request.POST.get('orientation_conducted', 'false').lower() == 'true'
         if not orientation_conducted:
             return JsonResponse({'error': 'orientation_conducted must be true for initial visit'}, status=400)
+    else:
+        orientation_conducted = False
 
-    # ✅ NEW: PREVENT DUPLICATE PENDING REPORTS
-    # Check if there is already a pending report for this application
-    if ProgressReport.objects.filter(application=app, status='pending').exists():
+    # ✅ PREVENT DUPLICATE PENDING REPORTS PER SITE
+    if ProgressReport.objects.filter(site=site, status='pending').exists():
         return JsonResponse({
-            'error': 'A report for this application is currently pending review. Please wait for the Data Manager to process it before submitting a new one.'
+            'error': 'A report for this site is currently pending review. Please wait for the Data Manager to process it before submitting a new one.'
         }, status=400)
 
     try:
         with transaction.atomic():
             report = ProgressReport.objects.create(
+                site=site,
                 application=app,
                 visit_type=visit_type,
                 description=description,
                 proof_image_monitor_required=request.FILES['proof_image'],
                 agreement_image=request.FILES.get('agreement_image') if visit_type == 'initial' else None,
-                orientation_conducted=(request.POST.get('orientation_conducted', 'false').lower() == 'true') if visit_type == 'initial' else False,
+                orientation_conducted=orientation_conducted,
                 status='pending'
             )
 
@@ -1041,8 +1046,6 @@ def create_progress_report(request):
                     raise ValueError("Each report species must be an object")
                 
                 tree_species_id = item.get('tree_species_id')
-                
-                # ✅ SAFE CASTING: Prevents TypeError if frontend sends null or empty string
                 no_survived = int(item.get('no_survived') or 0)
                 no_dead = int(item.get('no_dead') or 0)
                 no_planted = int(item.get('no_planted') or 0)
@@ -1104,27 +1107,29 @@ def update_progress_report(request, report_id):
             report.status = status
             report.save()
             
-            # ✅ NEW: Auto-transition Application status from 'accepted' to 'under_monitoring'
-            # when approving an INITIAL visit report
-            if status == 'accepted' and report.visit_type == 'initial':
+            # ✅ NEW: Auto-transition Application status ONLY if application exists
+            if report.application and status == 'accepted' and report.visit_type == 'initial':
                 if report.application.status == 'accepted':
                     report.application.status = 'under_monitoring'
                     report.application.save()
             
-            Reason.objects.create(
-                user=user,
-                application=report.application,
-                status_layer='report',
-                reason=reason_text,
-                status=status
-            )
+            if report.application:
+                Reason.objects.create(
+                    user=user,
+                    application=report.application,
+                    status_layer='report',
+                    reason=reason_text,
+                    status=status
+                )
 
+        app_status = report.application.status if report.application else 'No Active Application'
         return JsonResponse({
             'message': f'Report {status}',
-            'application_status': report.application.status  # ✅ Return updated status
+            'application_status': app_status
         }, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
 
 
 @csrf_exempt
@@ -1138,8 +1143,10 @@ def get_progress_reports(request):
 
     status_filter = request.GET.get('status')
     app_id = request.GET.get('application_id')
+    site_id = request.GET.get('site_id') # ✅ NEW
     
     qs = ProgressReport.objects.select_related(
+        'site__reforestation_area',
         'application__user__tree_grower_group'
     ).order_by('-created_at')
     
@@ -1147,14 +1154,18 @@ def get_progress_reports(request):
         qs = qs.filter(status=status_filter)
     if app_id:
         qs = qs.filter(application_id=app_id)
+    if site_id:
+        qs = qs.filter(site_id=site_id) # ✅ NEW
 
     data = [{
         "report_id": r.progress_report_id,
         "visit_type": r.visit_type,
         "orientation_conducted": r.orientation_conducted,
-        "application_id": r.application.application_id,
-        "application_title": r.application.title,
-        "application_status": r.application.status,
+        "site_id": r.site.site_id, # ✅ NEW
+        "site_name": r.site.name,  # ✅ NEW
+        "application_id": r.application.application_id if r.application else None,
+        "application_title": r.application.title if r.application else None,
+        "application_status": r.application.status if r.application else None,
         "total_survived": r.total_survived,
         "total_dead": r.total_dead,
         "total_added_by_grower": r.total_added_by_grower,
@@ -1167,7 +1178,6 @@ def get_progress_reports(request):
     } for r in qs]
 
     return JsonResponse(data, safe=False, status=200)
-
 
 @csrf_exempt
 def create_reapplication(request):
@@ -1962,13 +1972,10 @@ def get_monitoring_stats(request):
         'days_90_plus': days_90_plus,
     }, status=200)
 
+
 @csrf_exempt
-def get_monitoring_baseline(request, application_id):
-    """
-    Fetches the latest accepted progress report for an application.
-    Used by the mobile app to pre-fill the 'Ongoing' monitoring form 
-    with the previous visit's baseline data.
-    """
+def get_monitoring_baseline(request):
+    """Fetches the latest accepted progress report for an application OR site."""
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -1976,13 +1983,20 @@ def get_monitoring_baseline(request, application_id):
     if not user:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-    app = get_object_or_404(Application, application_id=application_id)
+    application_id = request.GET.get('application_id')
+    site_id = request.GET.get('site_id') # ✅ NEW
+
+    if not application_id and not site_id:
+        return JsonResponse({'error': 'application_id or site_id is required'}, status=400)
+
+    qs = ProgressReport.objects.filter(status='accepted').order_by('-created_at')
     
-    # Find the latest ACCEPTED report
-    latest_report = ProgressReport.objects.filter(
-        application=app, 
-        status='accepted'
-    ).order_by('-created_at').first()
+    if application_id:
+        qs = qs.filter(application_id=application_id)
+    elif site_id:
+        qs = qs.filter(site_id=site_id) # ✅ NEW
+
+    latest_report = qs.first()
 
     if not latest_report:
         return JsonResponse({
@@ -1990,7 +2004,6 @@ def get_monitoring_baseline(request, application_id):
             'baseline': None
         }, status=200)
 
-    # Serialize the species data from the last report
     baseline_species = []
     for species_record in latest_report.report_species.select_related('tree_species').all():
         baseline_species.append({
@@ -2006,9 +2019,12 @@ def get_monitoring_baseline(request, application_id):
         'baseline': {
             "report_id": latest_report.progress_report_id,
             "visit_date": latest_report.created_at.isoformat(),
+            "site_id": latest_report.site.site_id, # ✅ NEW
+            "site_name": latest_report.site.name,  # ✅ NEW
             "species_data": baseline_species
         }
     }, status=200)
+
 
 @csrf_exempt
 def update_orientation_date(request, application_id):
@@ -2098,3 +2114,286 @@ def update_orientation_date(request, application_id):
         return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
 
 
+@csrf_exempt
+def get_monitoring_sites(request):
+    """GET: Fetch sites for the monitoring dashboard with urgency metrics."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    reforestation_area_id = request.GET.get('reforestation_area_id', 'all')
+    days_since_filter = request.GET.get('days_since', 'all').strip()
+    needs_initial = request.GET.get('needs_initial', 'false').lower() == 'true'
+    search = request.GET.get('search', '').strip()
+    
+    # ✅ NEW: Program Status Filter
+    program_status = request.GET.get('program_status', 'all').strip()
+
+    try:
+        entries = max(int(request.GET.get('entries', 10)), 10)
+        page = max(int(request.GET.get('page', 1)), 1)
+    except (ValueError, TypeError):
+        entries, page = 10, 1
+
+    active_app_statuses = ['accepted', 'under_monitoring']
+    
+    # Sites with at least one report OR linked to an active application
+    qs = Sites.objects.filter(
+        Q(progress_reports__isnull=False) | 
+        Q(applications__status__in=active_app_statuses)
+    ).distinct().select_related(
+        'reforestation_area__barangay'
+    ).annotate(
+        latest_report_date=Max('progress_reports__created_at'),
+        total_reports=Count('progress_reports', distinct=True),
+        has_initial_report=Exists(
+            ProgressReport.objects.filter(
+                site=OuterRef('pk'),
+                visit_type='initial',
+                status='accepted'
+            )
+        ),
+        active_application_status=Case(
+            When(applications__status__in=active_app_statuses, then=F('applications__status')),
+            default=Value('inactive'), 
+            output_field=fields.CharField()
+        )
+    )
+
+    # ✅ NEW: Apply Program Status Filter
+    if program_status == 'active':
+        qs = qs.filter(active_application_status__in=active_app_statuses)
+    elif program_status == 'inactive':
+        qs = qs.filter(active_application_status='inactive')
+
+    if reforestation_area_id and reforestation_area_id != 'all':
+        qs = qs.filter(reforestation_area_id=reforestation_area_id)
+    
+    if search:
+        qs = qs.filter(Q(name__icontains=search) | Q(reforestation_area__name__icontains=search))
+
+    if needs_initial:
+        qs = qs.filter(has_initial_report=False)
+
+    today = timezone.now().date()
+    
+    # ✅ FIXED: Date Logic
+    if days_since_filter == 'no_report':
+        qs = qs.filter(total_reports=0)
+    elif days_since_filter == '30_plus':
+        cutoff_30 = today - timedelta(days=30)
+        cutoff_60 = today - timedelta(days=60)
+        # Removed "| Q(latest_report_date__isnull=True)" so "Never" reported sites don't show here
+        qs = qs.filter(latest_report_date__gte=cutoff_60, latest_report_date__lt=cutoff_30)
+    elif days_since_filter == '60_plus':
+        cutoff_60 = today - timedelta(days=60)
+        cutoff_90 = today - timedelta(days=90)
+        qs = qs.filter(latest_report_date__gte=cutoff_90, latest_report_date__lt=cutoff_60)
+    elif days_since_filter == '90_plus':
+        cutoff_90 = today - timedelta(days=90)
+        qs = qs.filter(latest_report_date__lt=cutoff_90)
+
+    # Order by latest report date (nulls last)
+    qs = qs.order_by('-latest_report_date')
+
+    total = qs.count()
+    total_page = math.ceil(total / entries) if total > 0 else 1
+    offset = (page - 1) * entries
+
+    data = []
+    for site in qs[offset:offset + entries]:
+        days_since = None
+        if site.latest_report_date:
+            days_since = (today - site.latest_report_date.date()).days
+            
+        data.append({
+            "site_id": site.site_id,
+            "site_name": site.name,
+            "reforestation_area_id": site.reforestation_area_id,
+            "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
+            "barangay_name": site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else None,
+            "total_area_hectares": site.total_area_hectares,
+            "latest_report_date": site.latest_report_date.isoformat() if site.latest_report_date else None,
+            "days_since_last_report": days_since,
+            "total_reports": site.total_reports,
+            "needs_initial": not site.has_initial_report,
+            "active_application_status": site.active_application_status,
+        })
+
+    return JsonResponse({
+        'data': data, 
+        'total_page': total_page, 
+        'page': page, 
+        'entries': entries, 
+        'total': total
+    }, status=200)
+
+
+
+
+@csrf_exempt
+def get_site_monitoring_details(request, site_id):
+    """GET: Fetch comprehensive site details, lifetime metrics, current & historical applications."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    try:
+        site = Sites.objects.select_related(
+            'reforestation_area__barangay',
+            'meta_verification__verified_land_classification'
+        ).get(site_id=site_id)
+    except Sites.DoesNotExist:
+        return JsonResponse({'error': 'Site not found'}, status=404)
+
+    # ── 1. Fetch the LATEST ACTIVE APPLICATION ──
+    active_app = Application.objects.filter(
+        site=site,
+        status__in=['accepted', 'under_monitoring']
+    ).select_related('user__tree_grower_group').order_by('-created_at').first()
+
+    current_application_data = None
+    if active_app:
+        group = getattr(active_app.user, 'tree_grower_group', None)
+        current_application_data = {
+            "application_id": active_app.application_id,
+            "group_name": group.group_name if group else "Unknown Group",
+            "group_contact": getattr(group, 'contact', 'N/A') if group else "N/A",
+            "status": active_app.status,
+        }
+
+    # ── 2. Fetch HISTORICAL APPLICATIONS (Failed, Rejected, Completed) ──
+    historical_apps = Application.objects.filter(
+        site=site
+    ).exclude(
+        status__in=['accepted', 'under_monitoring']
+    ).select_related('user__tree_grower_group').order_by('-created_at')
+
+    historical_applications_data = []
+    for app in historical_apps:
+        group = getattr(app.user, 'tree_grower_group', None)
+        historical_applications_data.append({
+            "application_id": app.application_id,
+            "group_name": group.group_name if group else "Unknown Group",
+            "status": app.status,
+            "created_at": app.created_at.isoformat() if app.created_at else None,
+        })
+
+    # ── 3. Fetch Progress Reports ──
+    reports_qs = ProgressReport.objects.filter(site=site).order_by('-created_at')
+
+    # ── 4. Calculate Lifetime Metrics (Safely from accepted reports) ──
+    accepted_reports = reports_qs.filter(status='accepted')
+    
+    total_planted = 0
+    total_added = 0
+    total_dead = 0
+
+    for report in accepted_reports:
+        for sp in report.report_species.all():
+            total_planted += getattr(sp, 'no_planted', 0) or 0
+            total_added += getattr(sp, 'no_added_by_grower', 0) or 0
+            total_dead += getattr(sp, 'no_dead', 0) or 0
+
+    total_survived = max(0, (total_planted + total_added) - total_dead)
+    total_accounted = total_planted + total_added
+    survival_rate = (total_survived / total_accounted * 100) if total_accounted > 0 else 0.0
+
+    metrics = {
+        "total_planted": total_planted,
+        "total_added": total_added,
+        "total_dead": total_dead,
+        "total_survived": total_survived,
+        "survival_rate": round(survival_rate, 1)
+    }
+
+    # ── 5. Format Progress Reports for Frontend (Web & Mobile) ──
+    progress_reports_data = []
+    for report in reports_qs:
+        app_title = None
+        group_name = "Independent Monitoring" # Default if no app
+        
+        if report.application_id:
+            try:
+                app = Application.objects.select_related('user__tree_grower_group').get(application_id=report.application_id)
+                app_title = app.title
+                group = getattr(app.user, 'tree_grower_group', None)
+                group_name = group.group_name if group else "Unknown Group"
+            except Application.DoesNotExist:
+                pass
+
+        species_data = []
+        if hasattr(report, 'report_species'):
+            for sp in report.report_species.all():
+                species_name = sp.tree_species.name if sp.tree_species else "Unknown Species"
+                species_data.append({
+                    "species_id": sp.tree_species_id,
+                    "species_name": species_name,
+                    "no_planted": sp.no_planted,
+                    "no_added_by_grower": sp.no_added_by_grower,
+                    "no_survived": sp.no_survived,
+                    "no_dead": sp.no_dead,
+                })
+
+        inspector_name = "Unknown Inspector"
+        if hasattr(report, 'inspector') and report.inspector:
+            inspector_name = f"{report.inspector.first_name} {report.inspector.last_name}".strip()
+        elif hasattr(report, 'inspector_name') and report.inspector_name:
+            inspector_name = report.inspector_name
+
+        progress_reports_data.append({
+            "report_id": report.progress_report_id,
+            "visit_type": report.visit_type,
+            "orientation_conducted": report.orientation_conducted,
+            "application_id": report.application_id,
+            "application_title": app_title,
+            "group_name": group_name,  # ✅ NEW: Shows which tree grower did this report
+            "inspector_name": inspector_name,
+            "total_survived": report.total_survived,
+            "total_dead": report.total_dead,
+            "total_added_by_grower": report.total_added_by_grower,
+            "species": species_data,
+            "description": report.description,
+            "status": report.status,
+            "proof_image": report.proof_image_monitor_required.url if report.proof_image_monitor_required else None,
+            "submitted_at": report.submitted_at.isoformat() if report.submitted_at else None,
+            "created_at": report.created_at.isoformat() if report.created_at else None,
+        })
+
+    # ── 6. Format Site Data ──
+    meta_verification = getattr(site, 'meta_verification', None)
+    
+    accessibility_data = None
+    land_classification_name = None
+    
+    if meta_verification:
+        accessibility_data = meta_verification.verified_accessibility
+        if meta_verification.verified_land_classification:
+            land_classification_name = meta_verification.verified_land_classification.name
+
+    site_data = {
+        "site_id": site.site_id,
+        "name": site.name,
+        "description": site.description,
+        "total_area_hectares": site.total_area_hectares,
+        "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
+        "barangay_name": site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else None,
+        "accessibility": accessibility_data,
+        "land_classification_name": land_classification_name,
+        "recommended_species": [],
+    }
+
+    # ── 7. Return Response ──
+    return JsonResponse({
+        "site": site_data,
+        "metrics": metrics,
+        "progress_reports": progress_reports_data,
+        "current_application": current_application_data,
+        "historical_applications": historical_applications_data  # ✅ NEW: Safe additive field
+    }, status=200)

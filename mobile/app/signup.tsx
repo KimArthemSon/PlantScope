@@ -29,8 +29,12 @@ import {
   CheckCircle,
   Calendar,
   Check,
+  Circle,
   Users,
   Image as LucideImage,
+  Clock,
+  MailOpen,
+  ArrowRight,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -63,6 +67,59 @@ const GROUP_TYPES = [
 ];
 
 // ─── Sub-components ───
+
+function PasswordRequirement({
+  isMet,
+  text,
+}: {
+  isMet: boolean;
+  text: string;
+}) {
+  const colorAnim = useRef(new Animated.Value(isMet ? 1 : 0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(colorAnim, {
+        toValue: isMet ? 1 : 0,
+        duration: 200,
+        useNativeDriver: false,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: isMet ? 1.15 : 1,
+        friction: 6,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [isMet]);
+
+  const textColor = colorAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["#9CA3AF", "#22C55E"],
+  });
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+        {isMet ? (
+          <Check size={16} color="#22C55E" strokeWidth={3} />
+        ) : (
+          <Circle size={16} color="#9CA3AF" strokeWidth={2} />
+        )}
+      </Animated.View>
+      <Animated.Text
+        style={[
+          { marginLeft: 8, fontSize: 12, fontWeight: "500" },
+          { color: textColor },
+        ]}
+      >
+        {text}
+      </Animated.Text>
+    </View>
+  );
+}
+
 type FieldProps = {
   label: string;
   icon?: React.ReactNode;
@@ -256,18 +313,23 @@ export default function Signup() {
 
   const cardSlideAnim = useRef(new Animated.Value(300)).current;
   const headlineFade = useRef(new Animated.Value(0)).current;
+  const successIconScale = useRef(new Animated.Value(0)).current;
+  const successFade = useRef(new Animated.Value(0)).current;
+  const successSlideUp = useRef(new Animated.Value(40)).current;
 
-  // Dynamic card height based on step (Adjusted for 4 steps)
+  // Dynamic card height based on step
   const getCardMaxHeight = () => {
     switch (step) {
       case 0:
-        return windowHeight * 0.52;
+        return windowHeight * 0.58;
       case 1:
         return windowHeight * 0.42;
       case 2:
-        return windowHeight * 0.75; // Taller to accommodate combined Group & Project
+        return windowHeight * 0.75;
       case 3:
         return windowHeight * 0.7;
+      case 4:
+        return windowHeight * 0.88;
       default:
         return windowHeight * 0.55;
     }
@@ -308,9 +370,37 @@ export default function Signup() {
     setTimeout(() => {
       scrollViewRef.current?.scrollTo({ y: 0, animated: false });
     }, 100);
+
+    // Animate success screen elements when reaching step 4
+    if (step === 4) {
+      Animated.sequence([
+        Animated.spring(successIconScale, {
+          toValue: 1,
+          friction: 5,
+          tension: 40,
+          useNativeDriver: true,
+          delay: 100,
+        }),
+        Animated.parallel([
+          Animated.timing(successFade, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(successSlideUp, {
+            toValue: 0,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start();
+    } else {
+      successIconScale.setValue(0);
+      successFade.setValue(0);
+      successSlideUp.setValue(40);
+    }
   }, [step]);
 
-  // REMOVED: first_name, middle_name, last_name, birthday, contact, address, gender, profile_img
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -527,7 +617,6 @@ export default function Signup() {
       fd.append("password", formData.password);
       fd.append("user_role", "treeGrowers");
 
-      // Group Data
       fd.append("group_name", formData.group_name);
       fd.append("group_type", formData.group_type);
       fd.append("group_address", formData.group_address);
@@ -540,7 +629,6 @@ export default function Signup() {
         } as any);
       }
 
-      // Application Data
       fd.append("title", formData.title);
       fd.append(
         "total_treegrowers_will_participate",
@@ -573,14 +661,7 @@ export default function Signup() {
         );
         return;
       }
-      alert.success(
-        "Application Submitted! 🌱",
-        "Your group application has been successfully sent and is now under evaluation. You will be notified via email once your application is accepted or rejected.",
-        8000,
-      );
-      setTimeout(() => {
-        router.push("/homepage");
-      }, 2500);
+      setStep(4);
     } catch (e: any) {
       alert.error(
         "Connection Error",
@@ -595,7 +676,14 @@ export default function Signup() {
 
   const renderStep = () => {
     switch (step) {
-      case 0:
+      case 0: {
+        const pwd = formData.password;
+        const hasLength = pwd.length >= 8;
+        const hasUpper = /[A-Z]/.test(pwd);
+        const hasLower = /[a-z]/.test(pwd);
+        const hasNumber = /\d/.test(pwd);
+        const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
+
         return (
           <>
             <Field
@@ -635,9 +723,14 @@ export default function Signup() {
                   )}
                 </TouchableOpacity>
               </View>
-              <Text style={styles.hint}>
-                8+ chars · uppercase · lowercase · number · special char
-              </Text>
+              
+              <View style={styles.passwordRequirements}>
+                <PasswordRequirement isMet={hasLength} text="At least 8 characters" />
+                <PasswordRequirement isMet={hasUpper} text="One uppercase letter" />
+                <PasswordRequirement isMet={hasLower} text="One lowercase letter" />
+                <PasswordRequirement isMet={hasNumber} text="One number" />
+                <PasswordRequirement isMet={hasSpecial} text="One special character" />
+              </View>
             </View>
             <View style={styles.formGroup}>
               <Text style={styles.label}>
@@ -670,6 +763,7 @@ export default function Signup() {
             </View>
           </>
         );
+      }
       case 1:
         return (
           <>
@@ -924,10 +1018,10 @@ export default function Signup() {
                 <View style={styles.viewStatusBox}>
                   <Text style={styles.viewStatusText}>
                     {!hasViewedPrivacy && !hasViewedTerms
-                      ? "📖 Please read both documents before agreeing"
+                      ? " Please read both documents before agreeing"
                       : !hasViewedPrivacy
                         ? "📖 Please read the Privacy Policy first"
-                        : "📖 Please read the Terms & Conditions first"}
+                        : " Please read the Terms & Conditions first"}
                   </Text>
                 </View>
               )}
@@ -966,6 +1060,95 @@ export default function Signup() {
             </View>
           </>
         );
+      case 4:
+        return (
+          <View style={styles.successContainer}>
+            {/* Animated Success Icon */}
+            <Animated.View
+              style={[
+                styles.successIconWrapper,
+                {
+                  transform: [{ scale: successIconScale }],
+                  opacity: successFade,
+                },
+              ]}
+            >
+              <View style={styles.successIconBg}>
+                <View style={styles.successIconInner}>
+                  <Check size={52} color="#22C55E" strokeWidth={2.5} />
+                </View>
+              </View>
+            </Animated.View>
+
+            {/* Animated Content */}
+            <Animated.View
+              style={[
+                styles.successContent,
+                {
+                  opacity: successFade,
+                  transform: [{ translateY: successSlideUp }],
+                },
+              ]}
+            >
+              <Text style={styles.successTitle}>Application Submitted!</Text>
+              <Text style={styles.successSubtitle}>
+                Your tree grower group application has been successfully
+                forwarded and is now under evaluation.
+              </Text>
+
+              {/* Info Cards */}
+              <View style={styles.infoCardsContainer}>
+                {/* Status Card */}
+                <View style={styles.infoCard}>
+                  <View style={styles.infoCardIconBg}>
+                    <Clock size={22} color="#22C55E" strokeWidth={2} />
+                  </View>
+                  <View style={styles.infoCardContent}>
+                    <Text style={styles.infoCardLabel}>Current Status</Text>
+                    <Text style={styles.infoCardValue}>
+                      Waiting for Administrator Evaluation
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Divider */}
+                <View style={styles.infoCardDivider} />
+
+                {/* Notification Card */}
+                <View style={styles.infoCard}>
+                  <View style={styles.infoCardIconBg}>
+                    <MailOpen size={22} color="#22C55E" strokeWidth={2} />
+                  </View>
+                  <View style={styles.infoCardContent}>
+                    <Text style={styles.infoCardLabel}>Email Notification</Text>
+                    <Text style={styles.infoCardValue}>
+                      We'll send an update to{" "}
+                      <Text style={styles.successEmail}>{formData.email}</Text>
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Note Box */}
+              <View style={styles.successNoteBox}>
+                <Text style={styles.successNoteText}>
+                  📧 Please check your inbox and spam folder for updates. The
+                  evaluation process may take a few business days.
+                </Text>
+              </View>
+
+              {/* Back to Login Button */}
+              <TouchableOpacity
+                style={styles.backToLoginButton}
+                onPress={() => router.replace("/homepage")}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.backToLoginText}>Back to Login</Text>
+                <ArrowRight size={18} color="#ffffff" />
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        );
       default:
         return null;
     }
@@ -989,34 +1172,36 @@ export default function Signup() {
         >
           <View style={styles.overlay} />
 
-          <Animated.View
-            style={[
-              styles.topWrapper,
-              { opacity: headlineFade, paddingTop: insets.top },
-            ]}
-          >
-            <Text style={styles.brandText}>PlantScope</Text>
+          {step < 4 && (
+            <Animated.View
+              style={[
+                styles.topWrapper,
+                { opacity: headlineFade, paddingTop: insets.top },
+              ]}
+            >
+              <Text style={styles.brandText}>PlantScope</Text>
 
-            <View style={{ marginTop: windowHeight * 0.12 }}>
-              <Text style={styles.headline}>{STEPS[step].title}</Text>
-              <Text style={styles.stepIndicator}>
-                Step {step + 1} of {STEPS.length} · {STEPS[step].label}
-              </Text>
-            </View>
+              <View style={{ marginTop: windowHeight * 0.12 }}>
+                <Text style={styles.headline}>{STEPS[step].title}</Text>
+                <Text style={styles.stepIndicator}>
+                  Step {step + 1} of {STEPS.length} · {STEPS[step].label}
+                </Text>
+              </View>
 
-            <View style={[styles.dotsContainer, { marginTop: 24 }]}>
-              {STEPS.map((_, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.dot,
-                    i === step && styles.dotActive,
-                    i < step && styles.dotDone,
-                  ]}
-                />
-              ))}
-            </View>
-          </Animated.View>
+              <View style={[styles.dotsContainer, { marginTop: 24 }]}>
+                {STEPS.map((_, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.dot,
+                      i === step && styles.dotActive,
+                      i < step && styles.dotDone,
+                    ]}
+                  />
+                ))}
+              </View>
+            </Animated.View>
+          )}
 
           <Animated.View
             style={[
@@ -1034,76 +1219,80 @@ export default function Signup() {
                 { paddingBottom: 16 + insets.bottom },
               ]}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={true}
+              showsVerticalScrollIndicator={step < 4}
               indicatorStyle="black"
-              bounces={true}
+              bounces={step < 4}
               overScrollMode="always"
             >
               {renderStep()}
 
-              <View style={styles.navRow}>
-                {step > 0 && (
-                  <TouchableOpacity
-                    style={styles.backButton}
-                    onPress={goBack}
-                    activeOpacity={0.7}
-                  >
-                    <ChevronLeft size={18} color="#6B7280" />
-                    <Text style={styles.backButtonText}>Back</Text>
-                  </TouchableOpacity>
-                )}
-
-                {step < 3 ? (
-                  <TouchableOpacity
-                    style={[
-                      styles.nextButton,
-                      step === 0 && styles.nextButtonFull,
-                      (sendingOtp || loading) && styles.nextButtonDisabled,
-                    ]}
-                    onPress={goNext}
-                    disabled={sendingOtp || loading}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.nextButtonText}>
-                      {step === 0 && sendingOtp
-                        ? "Sending Code…"
-                        : step === 1 && loading
-                          ? "Verifying…"
-                          : step === 1
-                            ? "Verify Email"
-                            : "Continue"}
-                    </Text>
-                    {!(sendingOtp || loading) && (
-                      <ChevronRight size={18} color="#fff" />
+              {step < 4 && (
+                <>
+                  <View style={styles.navRow}>
+                    {step > 0 && (
+                      <TouchableOpacity
+                        style={styles.backButton}
+                        onPress={goBack}
+                        activeOpacity={0.7}
+                      >
+                        <ChevronLeft size={18} color="#6B7280" />
+                        <Text style={styles.backButtonText}>Back</Text>
+                      </TouchableOpacity>
                     )}
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[
-                      styles.nextButton,
-                      loading && styles.nextButtonDisabled,
-                    ]}
-                    onPress={handleSubmit}
-                    disabled={loading}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.nextButtonText}>
-                      {loading ? "Submitting…" : "Submit Application"}
-                    </Text>
-                    {!loading && <CheckCircle size={18} color="#fff" />}
-                  </TouchableOpacity>
-                )}
-              </View>
 
-              {step === 0 && (
-                <View style={styles.bottomText}>
-                  <Text style={styles.registerText}>
-                    Already have an account?{" "}
-                  </Text>
-                  <TouchableOpacity onPress={() => router.push("/homepage")}>
-                    <Text style={styles.registerLink}>Sign In</Text>
-                  </TouchableOpacity>
-                </View>
+                    {step < 3 ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.nextButton,
+                          step === 0 && styles.nextButtonFull,
+                          (sendingOtp || loading) && styles.nextButtonDisabled,
+                        ]}
+                        onPress={goNext}
+                        disabled={sendingOtp || loading}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.nextButtonText}>
+                          {step === 0 && sendingOtp
+                            ? "Sending Code…"
+                            : step === 1 && loading
+                              ? "Verifying…"
+                              : step === 1
+                                ? "Verify Email"
+                                : "Continue"}
+                        </Text>
+                        {!(sendingOtp || loading) && (
+                          <ChevronRight size={18} color="#fff" />
+                        )}
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={[
+                          styles.nextButton,
+                          loading && styles.nextButtonDisabled,
+                        ]}
+                        onPress={handleSubmit}
+                        disabled={loading}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.nextButtonText}>
+                          {loading ? "Submitting…" : "Submit Application"}
+                        </Text>
+                        {!loading && <CheckCircle size={18} color="#fff" />}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {step === 0 && (
+                    <View style={styles.bottomText}>
+                      <Text style={styles.registerText}>
+                        Already have an account?{" "}
+                      </Text>
+                      <TouchableOpacity onPress={() => router.push("/homepage")}>
+                        <Text style={styles.registerLink}>Sign In</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
               )}
             </ScrollView>
           </Animated.View>
@@ -1229,6 +1418,14 @@ const styles = StyleSheet.create({
   dateDisplayPlaceholder: { color: "#9CA3AF" },
   eyeButton: { padding: 6 },
   hint: { fontSize: 10, color: "#9CA3AF", marginTop: 3 },
+  passwordRequirements: {
+    marginTop: 8,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
   fileButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1451,4 +1648,140 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   groupTypeChipTextActive: { color: "#1C1C1E" },
+
+  // ─── Success Screen Styles (Redesigned) ───
+  successContainer: {
+    alignItems: "center",
+    paddingTop: 10,
+    paddingBottom: 20,
+  },
+  successIconWrapper: {
+    marginBottom: 28,
+  },
+  successIconBg: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: "rgba(34, 197, 94, 0.08)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "rgba(34, 197, 94, 0.2)",
+  },
+  successIconInner: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "rgba(34, 197, 94, 0.12)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  successContent: {
+    width: "100%",
+    alignItems: "center",
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: 10,
+    letterSpacing: -0.3,
+  },
+  successSubtitle: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 22,
+    paddingHorizontal: 8,
+    marginBottom: 28,
+  },
+  infoCardsContainer: {
+    width: "100%",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    overflow: "hidden",
+    marginBottom: 16,
+  },
+  infoCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 14,
+  },
+  infoCardIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  infoCardContent: {
+    flex: 1,
+  },
+  infoCardLabel: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 3,
+  },
+  infoCardValue: {
+    fontSize: 13,
+    color: "#1F2937",
+    fontWeight: "600",
+    lineHeight: 19,
+  },
+  successEmail: {
+    color: "#22C55E",
+    fontWeight: "700",
+  },
+  infoCardDivider: {
+    height: 1,
+    backgroundColor: "#E5E7EB",
+    marginHorizontal: 16,
+  },
+  successNoteBox: {
+    backgroundColor: "rgba(34, 197, 94, 0.05)",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.12)",
+    width: "100%",
+    marginBottom: 20,
+  },
+  successNoteText: {
+    fontSize: 12,
+    color: "#4B5563",
+    lineHeight: 19,
+    textAlign: "center",
+  },
+  backToLoginButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#22C55E",
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    width: "100%",
+    gap: 8,
+    shadowColor: "#22C55E",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  backToLoginText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
 });
