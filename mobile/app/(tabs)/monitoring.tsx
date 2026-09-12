@@ -9,73 +9,62 @@ import {
   ActivityIndicator,
   RefreshControl,
   TextInput,
-  Dimensions,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const API_BASE_URL = api + "/api";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
-type Application = {
-  application_id: number;
-  title: string;
-  group_name: string;
-  status: string;
-  classification: "new" | "old";
-  site_name: string | null;
-  barangay: string | null;
-  orientation_date: string | null;
-  last_report_date: string | null;
+type MonitoringSite = {
+  site_id: number;
+  site_name: string;
+  reforestation_area_name: string | null;
+  barangay_name: string | null;
+  latest_report_date: string | null;
   days_since_last_report: number | null;
-  total_survived: number;
-  total_dead: number;
-  survival_rate: number;
-  visit_type_hint?: string;
-  created_at?: string;
-};
-
-type StatusFilter = "accepted" | "under_monitoring" | "all";
-type UrgencyFilter = "all" | "30_plus" | "60_plus" | "90_plus";
-
-// ─── Status Config ─────────────────────────────────────────────────────────
-const STATUS_CONFIG = {
-  accepted: {
-    label: "Orientation",
-    color: "#3B82F6",
-    bgColor: "#EFF6FF",
-    borderColor: "#BFDBFE",
-    icon: "calendar-outline",
-  },
-  under_monitoring: {
-    label: "Ongoing",
-    color: "#10B981",
-    bgColor: "#ECFDF5",
-    borderColor: "#A7F3D0",
-    icon: "leaf-outline",
-  },
+  total_reports: number;
+  needs_initial: boolean;
+  active_application_status: "accepted" | "under_monitoring" | "inactive";
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-function formatStat(value: number | null, fallback = "—") {
-  if (value === null || value === undefined) return fallback;
-  return value.toString();
-}
-
-function formatRate(value: number | null) {
-  if (value === null || value === undefined) return "—";
-  return `${value}%`;
+function formatDate(iso: string | null) {
+  if (!iso) return "Never";
+  return new Date(iso).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 // ─── Components ────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: string }) {
-  const config =
-    STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ||
-    STATUS_CONFIG.accepted;
+function StatusBadge({
+  status,
+}: {
+  status: "accepted" | "under_monitoring" | "inactive";
+}) {
+  const isActive = status === "accepted" || status === "under_monitoring";
+  const config = isActive
+    ? {
+        label: "Active Program",
+        color: "#10B981",
+        bgColor: "#ECFDF5",
+        borderColor: "#A7F3D0",
+        icon: "leaf-outline" as const,
+      }
+    : {
+        label: "Inactive / On Hold",
+        color: "#6B7280",
+        bgColor: "#F3F4F6",
+        borderColor: "#E5E7EB",
+        icon: "pause-circle-outline" as const,
+      };
+
   return (
     <View
       style={[
@@ -93,43 +82,54 @@ function StatusBadge({ status }: { status: string }) {
 
 function UrgencyChip({
   days,
-  status,
+  needsInitial,
 }: {
   days: number | null;
-  status: string;
+  needsInitial: boolean;
 }) {
+  if (needsInitial) {
+    return (
+      <View style={[styles.urgencyChip, { backgroundColor: "#DBEAFE" }]}>
+        <Ionicons name="calendar-outline" size={11} color="#2563EB" />
+        <Text style={[styles.urgencyText, { color: "#2563EB" }]}>
+          Needs Initial
+        </Text>
+      </View>
+    );
+  }
+
+  if (days === null) {
+    return (
+      <View style={[styles.urgencyChip, { backgroundColor: "#F3F4F6" }]}>
+        <Ionicons name="time-outline" size={11} color="#6B7280" />
+        <Text style={[styles.urgencyText, { color: "#6B7280" }]}>
+          No Report
+        </Text>
+      </View>
+    );
+  }
+
   let bgColor = "#F3F4F6";
   let textColor = "#6B7280";
-  let label = days !== null ? `${days}d` : "—";
   let iconName: any = "time-outline";
+  let label = `${days}d`;
 
-  if (status === "accepted") {
-    if (days === null || days === 0) {
-      label = "Awaiting Initial";
-      iconName = "time-outline";
-    } else {
-      label = `${days}d`;
-    }
-  } else if (days === null) {
+  if (days >= 90) {
     bgColor = "#FEE2E2";
     textColor = "#DC2626";
-    label = "Overdue";
-    iconName = "alert-circle";
-  } else if (days >= 90) {
-    bgColor = "#FEE2E2";
-    textColor = "#DC2626";
-    label = `${days}d`;
     iconName = "alert-circle";
   } else if (days >= 60) {
     bgColor = "#FED7AA";
     textColor = "#C2410C";
-    label = `${days}d`;
     iconName = "warning";
   } else if (days >= 30) {
     bgColor = "#FEF3C7";
     textColor = "#B45309";
-    label = `${days}d`;
     iconName = "time-outline";
+  } else {
+    bgColor = "#DCFCE7";
+    textColor = "#15803D";
+    iconName = "checkmark-circle";
   }
 
   return (
@@ -171,12 +171,6 @@ function FilterChip({
       >
         {label}
       </Text>
-      <Ionicons
-        name="chevron-down"
-        size={12}
-        color={active ? activeColor : "#9CA3AF"}
-        style={{ marginLeft: 2 }}
-      />
     </TouchableOpacity>
   );
 }
@@ -186,24 +180,20 @@ const OnsiteInspectorMonitoring: React.FC = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [sites, setSites] = useState<MonitoringSite[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const [searchText, setSearchText] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("accepted");
-  const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>("all");
-  const [classificationFilter, setClassificationFilter] = useState<
-    "all" | "new" | "old"
+  const [programStatusFilter, setProgramStatusFilter] = useState<
+    "all" | "active" | "inactive"
   >("all");
-  const [sortBy, setSortBy] = useState<"newest" | "urgent">("urgent");
+  const [urgencyFilter, setUrgencyFilter] = useState<
+    "all" | "30_plus" | "60_plus" | "90_plus"
+  >("all");
+  const [needsInitial, setNeedsInitial] = useState(false);
 
-  // Dropdown states
-  const [openDropdown, setOpenDropdown] = useState<
-    null | "sort" | "classification" | "urgency"
-  >(null);
-
-  const fetchApplications = async (isRefresh = false) => {
+  const fetchSites = async (isRefresh = false) => {
     try {
       if (!isRefresh) setLoading(true);
       else setRefreshing(true);
@@ -212,282 +202,94 @@ const OnsiteInspectorMonitoring: React.FC = () => {
       if (!token) throw new Error("No token found.");
 
       const params = new URLSearchParams();
-      params.append("sort", sortBy);
-      if (classificationFilter !== "all")
-        params.append("classification", classificationFilter);
+      params.append("page", "1");
+      params.append("entries", "50");
+      params.append("program_status", programStatusFilter);
+      params.append("days_since", urgencyFilter);
+      params.append("needs_initial", needsInitial ? "true" : "false");
+      if (searchText.trim()) params.append("search", searchText.trim());
 
       const res = await fetch(
-        `${API_BASE_URL}/get_ongoing_applications/?${params.toString()}`,
+        `${API_BASE_URL}/get_monitoring_sites/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
       );
 
-      if (!res.ok) throw new Error("Failed to load applications.");
+      if (!res.ok) throw new Error("Failed to load sites.");
       const data = await res.json();
-      setApplications(data);
+      setSites(data.data || []);
     } catch (err: any) {
-      console.error("Error fetching applications:", err);
+      console.error("Error fetching sites:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
+  // Debounced fetch on filter changes
   useEffect(() => {
-    fetchApplications();
-  }, [sortBy, classificationFilter]);
+    const timer = setTimeout(() => {
+      fetchSites();
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [programStatusFilter, urgencyFilter, needsInitial, searchText]);
 
-  // Reset urgency when switching to Orientation
-  useEffect(() => {
-    if (statusFilter === "accepted") {
-      setUrgencyFilter("all");
-    }
-  }, [statusFilter]);
-
-  const filteredApps = React.useMemo(() => {
-    let filtered = [...applications];
-
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((app) => app.status === statusFilter);
-    }
-
-    if (searchText.trim()) {
-      const lowerText = searchText.toLowerCase();
-      filtered = filtered.filter(
-        (app) =>
-          app.barangay?.toLowerCase().includes(lowerText) ||
-          app.title.toLowerCase().includes(lowerText) ||
-          app.group_name.toLowerCase().includes(lowerText) ||
-          app.site_name?.toLowerCase().includes(lowerText),
-      );
-    }
-
-    if (statusFilter !== "accepted" && urgencyFilter !== "all") {
-      if (urgencyFilter === "30_plus") {
-        filtered = filtered.filter((app) => {
-          const days = app.days_since_last_report ?? 999;
-          return days >= 30 && days < 60;
-        });
-      } else if (urgencyFilter === "60_plus") {
-        filtered = filtered.filter((app) => {
-          const days = app.days_since_last_report ?? 999;
-          return days >= 60 && days < 90;
-        });
-      } else if (urgencyFilter === "90_plus") {
-        filtered = filtered.filter((app) => {
-          const days = app.days_since_last_report ?? 999;
-          return days >= 90;
-        });
-      }
-    }
-
-    if (sortBy === "urgent") {
-      filtered.sort((a, b) => {
-        const aDays = a.days_since_last_report ?? 999;
-        const bDays = b.days_since_last_report ?? 999;
-        return bDays - aDays;
-      });
-    } else {
-      filtered.sort(
-        (a, b) =>
-          new Date(b.created_at || 0).getTime() -
-          new Date(a.created_at || 0).getTime(),
-      );
-    }
-
-    return filtered;
-  }, [searchText, statusFilter, urgencyFilter, applications, sortBy]);
-
-  const orientationCount = applications.filter(
-    (a) => a.status === "accepted",
-  ).length;
-  const ongoingCount = applications.filter(
-    (a) => a.status === "under_monitoring",
-  ).length;
-
-  const renderAppItem = ({ item }: { item: Application }) => {
-    const statusConfig =
-      STATUS_CONFIG[item.status as keyof typeof STATUS_CONFIG] ||
-      STATUS_CONFIG.accepted;
-
-    const hasNoData =
-      item.total_survived === 0 &&
-      item.total_dead === 0 &&
-      item.survival_rate === 0;
+  const renderSiteItem = ({ item }: { item: MonitoringSite }) => {
+    const isActive =
+      item.active_application_status === "accepted" ||
+      item.active_application_status === "under_monitoring";
+    const borderLeftColor = isActive ? "#10B981" : "#9CA3AF";
 
     return (
       <TouchableOpacity
-        style={[styles.card, { borderLeftColor: statusConfig.color }]}
+        style={[styles.card, { borderLeftColor }]}
         activeOpacity={0.7}
-        onPress={() => router.push(`./monitoring/${item.application_id}`)}
+        onPress={() => router.push(`./monitoring/${item.site_id}` as any)}
       >
         <View style={styles.cardContent}>
           {/* Header */}
           <View style={styles.cardHeader}>
-            <StatusBadge status={item.status} />
+            <StatusBadge status={item.active_application_status} />
             <UrgencyChip
               days={item.days_since_last_report}
-              status={item.status}
+              needsInitial={item.needs_initial}
             />
           </View>
 
-          {/* Title & Group */}
+          {/* Title & Location */}
           <Text style={styles.cardTitle} numberOfLines={2}>
-            {item.title}
+            {item.site_name}
           </Text>
-          <Text style={styles.groupName}>
-            {item.group_name}
-            <Text style={styles.metaDot}> · </Text>
-            <Text style={styles.classificationInline}>
-              {item.classification === "new" ? "First-Time" : "Returning"}
-            </Text>
-          </Text>
-
-          {/* Location */}
           <View style={styles.locationRow}>
             <Ionicons name="location-outline" size={13} color="#9CA3AF" />
             <Text style={styles.locationText} numberOfLines={1}>
-              {item.barangay || "No Barangay"} · {item.site_name || "No Site"}
+              {item.reforestation_area_name || "Unknown Area"}
+              {item.barangay_name ? ` · ${item.barangay_name}` : ""}
             </Text>
           </View>
 
-          {/* Stats */}
+          {/* Stats / Info */}
           <View style={styles.statsRow}>
             <View style={styles.statBlock}>
-              <Text style={styles.survivalNumbers}>
-                <Text style={styles.survivedText}>
-                  {formatStat(item.total_survived)}
-                </Text>
-                <Text style={styles.slashText}> / </Text>
-                <Text style={styles.deadText}>
-                  {formatStat(item.total_dead)}
-                </Text>
+              <Text style={styles.statValue}>
+                {formatDate(item.latest_report_date)}
               </Text>
-              <Text style={styles.statLabel}>Survived / Dead</Text>
+              <Text style={styles.statLabel}>Last Report</Text>
             </View>
 
             <View style={styles.statDivider} />
 
             <View style={styles.statBlock}>
-              <Text
-                style={[styles.rateValue, hasNoData && { color: "#9CA3AF" }]}
-              >
-                {formatRate(item.survival_rate)}
-              </Text>
-              <Text style={styles.statLabel}>Survival Rate</Text>
+              <Text style={styles.statValue}>{item.total_reports}</Text>
+              <Text style={styles.statLabel}>Total Reports</Text>
             </View>
           </View>
         </View>
 
-        {/* Footer — minimal */}
+        {/* Footer */}
         <View style={styles.cardFooter}>
           <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderDropdown = () => {
-    if (!openDropdown) return null;
-
-    const items: { label: string; onPress: () => void }[] = [];
-    let title = "";
-
-    if (openDropdown === "sort") {
-      title = "Sort By";
-      items.push(
-        {
-          label: "Most Urgent",
-          onPress: () => {
-            setSortBy("urgent");
-            setOpenDropdown(null);
-          },
-        },
-        {
-          label: "Newest First",
-          onPress: () => {
-            setSortBy("newest");
-            setOpenDropdown(null);
-          },
-        },
-      );
-    } else if (openDropdown === "classification") {
-      title = "Classification";
-      items.push(
-        {
-          label: "All",
-          onPress: () => {
-            setClassificationFilter("all");
-            setOpenDropdown(null);
-          },
-        },
-        {
-          label: "First-Time",
-          onPress: () => {
-            setClassificationFilter("new");
-            setOpenDropdown(null);
-          },
-        },
-        {
-          label: "Returning",
-          onPress: () => {
-            setClassificationFilter("old");
-            setOpenDropdown(null);
-          },
-        },
-      );
-    } else if (openDropdown === "urgency") {
-      title = "Urgency";
-      items.push(
-        {
-          label: "All",
-          onPress: () => {
-            setUrgencyFilter("all");
-            setOpenDropdown(null);
-          },
-        },
-        {
-          label: "30+ Days",
-          onPress: () => {
-            setUrgencyFilter("30_plus");
-            setOpenDropdown(null);
-          },
-        },
-        {
-          label: "60+ Days",
-          onPress: () => {
-            setUrgencyFilter("60_plus");
-            setOpenDropdown(null);
-          },
-        },
-        {
-          label: "90+ Days",
-          onPress: () => {
-            setUrgencyFilter("90_plus");
-            setOpenDropdown(null);
-          },
-        },
-      );
-    }
-
-    return (
-      <TouchableOpacity
-        style={styles.dropdownOverlay}
-        activeOpacity={1}
-        onPress={() => setOpenDropdown(null)}
-      >
-        <View style={styles.dropdown}>
-          <Text style={styles.dropdownTitle}>{title}</Text>
-          {items.map((item, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={styles.dropdownItem}
-              onPress={item.onPress}
-            >
-              <Text style={styles.dropdownItemText}>{item.label}</Text>
-            </TouchableOpacity>
-          ))}
         </View>
       </TouchableOpacity>
     );
@@ -498,7 +300,7 @@ const OnsiteInspectorMonitoring: React.FC = () => {
       {/* Fixed Header */}
       <View style={styles.header}>
         <Text style={styles.headerEyebrow}>Monitoring</Text>
-        <Text style={styles.headerTitle}>Tree Planting Programs</Text>
+        <Text style={styles.headerTitle}>Site Progress</Text>
 
         {/* Search */}
         <View style={styles.searchContainer}>
@@ -510,7 +312,7 @@ const OnsiteInspectorMonitoring: React.FC = () => {
           />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search programs, groups, sites..."
+            placeholder="Search sites, areas, barangays..."
             value={searchText}
             onChangeText={setSearchText}
             placeholderTextColor="#9CA3AF"
@@ -522,166 +324,100 @@ const OnsiteInspectorMonitoring: React.FC = () => {
           )}
         </View>
 
-        {/* Status Tabs */}
-        <View style={styles.tabRow}>
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              statusFilter === "accepted" && styles.tabActive,
-              {
-                borderColor:
-                  statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
-              },
-            ]}
-            onPress={() => setStatusFilter("accepted")}
+        {/* Program Status Filters */}
+        <View style={styles.filterSection}>
+          <Text style={styles.filterLabel}>Program Status</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipScroll}
           >
-            <Ionicons
-              name="calendar"
-              size={14}
-              color={statusFilter === "accepted" ? "#3B82F6" : "#9CA3AF"}
+            <FilterChip
+              label="All Sites"
+              active={programStatusFilter === "all"}
+              onPress={() => setProgramStatusFilter("all")}
+              activeColor="#3B82F6"
             />
-            <Text
-              style={[
-                styles.tabText,
-                statusFilter === "accepted" && styles.tabTextActive,
-              ]}
-            >
-              Orientation
-            </Text>
-            <View
-              style={[
-                styles.tabBadge,
-                {
-                  backgroundColor:
-                    statusFilter === "accepted" ? "#3B82F6" : "#E5E7EB",
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.tabBadgeText,
-                  {
-                    color: statusFilter === "accepted" ? "#FFFFFF" : "#6B7280",
-                  },
-                ]}
-              >
-                {orientationCount}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              statusFilter === "under_monitoring" && styles.tabActive,
-              {
-                borderColor:
-                  statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
-              },
-            ]}
-            onPress={() => setStatusFilter("under_monitoring")}
-          >
-            <Ionicons
-              name="leaf"
-              size={14}
-              color={
-                statusFilter === "under_monitoring" ? "#10B981" : "#9CA3AF"
-              }
+            <FilterChip
+              label="Active Programs"
+              active={programStatusFilter === "active"}
+              onPress={() => setProgramStatusFilter("active")}
+              activeColor="#10B981"
             />
-            <Text
-              style={[
-                styles.tabText,
-                statusFilter === "under_monitoring" && styles.tabTextActive,
-              ]}
-            >
-              Ongoing
-            </Text>
-            <View
-              style={[
-                styles.tabBadge,
-                {
-                  backgroundColor:
-                    statusFilter === "under_monitoring" ? "#10B981" : "#E5E7EB",
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.tabBadgeText,
-                  {
-                    color:
-                      statusFilter === "under_monitoring"
-                        ? "#FFFFFF"
-                        : "#6B7280",
-                  },
-                ]}
-              >
-                {ongoingCount}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.tab,
-              statusFilter === "all" && styles.tabActiveAll,
-              { borderColor: statusFilter === "all" ? "#6B7280" : "#E5E7EB" },
-            ]}
-            onPress={() => setStatusFilter("all")}
-          >
-            <Ionicons
-              name="grid"
-              size={14}
-              color={statusFilter === "all" ? "#374151" : "#9CA3AF"}
+            <FilterChip
+              label="Inactive / No Program"
+              active={programStatusFilter === "inactive"}
+              onPress={() => setProgramStatusFilter("inactive")}
+              activeColor="#6B7280"
             />
-            <Text
-              style={[
-                styles.tabText,
-                statusFilter === "all" && styles.tabTextActive,
-              ]}
-            >
-              All
-            </Text>
-          </TouchableOpacity>
+          </ScrollView>
         </View>
 
-        {/* Compact Filter Bar */}
-        <View style={styles.filterBar}>
-          {(statusFilter === "under_monitoring" || statusFilter === "all") && (
+        {/* Urgency Filters */}
+        <View style={styles.filterSection}>
+          <Text style={styles.filterLabel}>Urgency & Initial</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipScroll}
+          >
             <FilterChip
-              label={
-                urgencyFilter === "all"
-                  ? "Urgency: All"
-                  : urgencyFilter === "30_plus"
-                    ? "Urgency: 30+"
-                    : urgencyFilter === "60_plus"
-                      ? "Urgency: 60+"
-                      : "Urgency: 90+"
-              }
-              active={openDropdown === "urgency"}
-              activeColor="#DC2626"
-              onPress={() =>
-                setOpenDropdown(openDropdown === "urgency" ? null : "urgency")
-              }
+              label="Needs Initial"
+              active={needsInitial}
+              onPress={() => setNeedsInitial(!needsInitial)}
+              activeColor="#2563EB"
             />
-          )}
+            <FilterChip
+              label="All"
+              active={urgencyFilter === "all" && !needsInitial}
+              onPress={() => {
+                setUrgencyFilter("all");
+                setNeedsInitial(false);
+              }}
+              activeColor="#3B82F6"
+            />
+            <FilterChip
+              label="30+ Days"
+              active={urgencyFilter === "30_plus"}
+              onPress={() => {
+                setUrgencyFilter("30_plus");
+                setNeedsInitial(false);
+              }}
+              activeColor="#F59E0B"
+            />
+            <FilterChip
+              label="60+ Days"
+              active={urgencyFilter === "60_plus"}
+              onPress={() => {
+                setUrgencyFilter("60_plus");
+                setNeedsInitial(false);
+              }}
+              activeColor="#F97316"
+            />
+            <FilterChip
+              label="90+ Days"
+              active={urgencyFilter === "90_plus"}
+              onPress={() => {
+                setUrgencyFilter("90_plus");
+                setNeedsInitial(false);
+              }}
+              activeColor="#EF4444"
+            />
+          </ScrollView>
         </View>
       </View>
-
-      {/* Dropdown Overlay */}
-      {renderDropdown()}
 
       {/* Content */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="small" color="#3B82F6" />
-          <Text style={styles.loadingText}>Loading programs...</Text>
+          <Text style={styles.loadingText}>Loading sites...</Text>
         </View>
       ) : (
         <FlatList
-          data={filteredApps}
-          renderItem={renderAppItem}
-          keyExtractor={(item) => item.application_id.toString()}
+          data={sites}
+          renderItem={renderSiteItem}
+          keyExtractor={(item) => item.site_id.toString()}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -694,22 +430,18 @@ const OnsiteInspectorMonitoring: React.FC = () => {
                   color="#D1D5DB"
                 />
               </View>
-              <Text style={styles.emptyTitle}>No Programs Found</Text>
+              <Text style={styles.emptyTitle}>No Sites Found</Text>
               <Text style={styles.emptySubtitle}>
                 {searchText
                   ? `No results for "${searchText}"`
-                  : statusFilter === "accepted"
-                    ? "No programs in orientation"
-                    : statusFilter === "under_monitoring"
-                      ? "No ongoing programs match this filter"
-                      : "No active applications found."}
+                  : "No sites match the current filters."}
               </Text>
             </View>
           }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => fetchApplications(true)}
+              onRefresh={() => fetchSites(true)}
               tintColor="#3B82F6"
             />
           }
@@ -768,109 +500,35 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontWeight: "500",
   },
-  tabRow: {
-    flexDirection: "row",
-    gap: 8,
+  filterSection: {
     marginBottom: 10,
   },
-  tab: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    backgroundColor: "#FFFFFF",
-  },
-  tabActive: {
-    backgroundColor: "#EFF6FF",
-  },
-  tabActiveAll: {
-    backgroundColor: "#F3F4F6",
-  },
-  tabText: {
-    fontSize: 12,
+  filterLabel: {
+    fontSize: 11,
     fontWeight: "600",
     color: "#6B7280",
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
-  tabTextActive: {
-    color: "#111827",
-    fontWeight: "700",
-  },
-  tabBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 8,
-    marginLeft: 2,
-    minWidth: 18,
-    alignItems: "center",
-  },
-  tabBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  filterBar: {
-    flexDirection: "row",
-    gap: 8,
+  chipScroll: {
+    flexGrow: 0,
   },
   filterChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E5E7EB",
+    marginRight: 8,
   },
   filterChipText: {
     fontSize: 12,
     fontWeight: "500",
     color: "#4B5563",
-  },
-  dropdownOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 50,
-    backgroundColor: "rgba(0,0,0,0.04)",
-  },
-  dropdown: {
-    position: "absolute",
-    top: 190,
-    left: 16,
-    right: 16,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    paddingVertical: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  dropdownTitle: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#9CA3AF",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-  },
-  dropdownItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  dropdownItemText: {
-    fontSize: 14,
-    color: "#374151",
-    fontWeight: "500",
   },
   listContent: {
     padding: 16,
@@ -927,27 +585,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#111827",
-    marginBottom: 3,
+    marginBottom: 4,
     lineHeight: 20,
-  },
-  groupName: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginBottom: 8,
-  },
-  metaDot: {
-    color: "#D1D5DB",
-  },
-  classificationInline: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    fontWeight: "500",
   },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   locationText: {
     fontSize: 12,
@@ -964,31 +609,15 @@ const styles = StyleSheet.create({
   statBlock: {
     flex: 1,
   },
-  survivalNumbers: {
-    fontSize: 15,
+  statValue: {
+    fontSize: 14,
     fontWeight: "700",
-  },
-  survivedText: {
-    color: "#111827",
-    fontWeight: "800",
-  },
-  slashText: {
-    color: "#D1D5DB",
-    fontWeight: "500",
-  },
-  deadText: {
-    color: "#EF4444",
-    fontWeight: "700",
+    color: "#374151",
   },
   statLabel: {
     fontSize: 10,
     color: "#9CA3AF",
     marginTop: 2,
-  },
-  rateValue: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#111827",
   },
   statDivider: {
     width: 1,

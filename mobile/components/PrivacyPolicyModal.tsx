@@ -11,6 +11,7 @@ import {
   NativeSyntheticEvent,
 } from "react-native";
 import { Shield, CheckCircle } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type PrivacyPolicyModalProps = {
   visible: boolean;
@@ -25,6 +26,7 @@ export default function PrivacyPolicyModal({
   onViewed,
   hasViewed = false,
 }: PrivacyPolicyModalProps) {
+  const insets = useSafeAreaInsets();
   const [canConfirm, setCanConfirm] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -50,7 +52,7 @@ export default function PrivacyPolicyModal({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={styles.container}>
+        <View style={[styles.container, { paddingBottom: (Platform.OS === "ios" ? 36 : 24) + insets.bottom }]}>
           <View style={styles.header}>
             <Shield size={18} color="#22C55E" />
             <Text style={styles.title}>Data Privacy Notice</Text>
@@ -396,18 +398,20 @@ export default function PrivacyPolicyModal({
             </View>
           )}
 
-          <TouchableOpacity
-            style={[
-              styles.closeBtn,
-              (!canConfirm && !hasViewed) && styles.closeBtnDisabled,
-            ]}
-            onPress={handleConfirm}
-            disabled={!canConfirm && !hasViewed}
-          >
-            <Text style={styles.closeText}>
-              {hasViewed ? "Close" : "I Have Read and Understand"}
-            </Text>
-          </TouchableOpacity>
+          <View style={{ marginTop: 12 }}>
+            <TouchableOpacity
+              style={[
+                styles.closeBtn,
+                (!canConfirm && !hasViewed) && styles.closeBtnDisabled,
+              ]}
+              onPress={handleConfirm}
+              disabled={!canConfirm && !hasViewed}
+            >
+              <Text style={styles.closeText}>
+                {hasViewed ? "Close" : "I Have Read and Understand"}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -425,7 +429,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    paddingBottom: Platform.OS === "ios" ? 36 : 24,
     maxHeight: "88%",
     borderTopWidth: 1,
     borderTopColor: "rgba(34, 197, 94, 0.3)",
@@ -555,7 +558,6 @@ const styles = StyleSheet.create({
     fontWeight: "600" 
   },
   closeBtn: {
-    marginTop: 12,
     paddingVertical: 14,
     borderRadius: 10,
     backgroundColor: "#22C55E",

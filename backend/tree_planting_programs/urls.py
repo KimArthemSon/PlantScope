@@ -24,6 +24,9 @@ urlpatterns = [
     path('get_progress_reports/', views.get_progress_reports, name='get_progress_reports'),
     path('create_progress_report/', views.create_progress_report, name='create_progress_report'),
     path('update_progress_report/<int:report_id>/', views.update_progress_report, name='update_progress_report'),
+
+    path('get_monitoring_sites/', views.get_monitoring_sites, name='get_monitoring_sites'),
+    path('get_site_monitoring_details/<int:site_id>/', views.get_site_monitoring_details, name='get_site_monitoring_details'),
     
     # ✅ NEW: Fetch baseline from last accepted report (Crucial for Mobile Ongoing Form)
     path('get_monitoring_baseline/<int:application_id>/', views.get_monitoring_baseline, name='get_monitoring_baseline'),

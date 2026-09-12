@@ -8,14 +8,14 @@ from cloudinary.models import CloudinaryField
 
 # ─────────────────────────────────────────────
 # APPLICATION (Tree Planting Program Request)
-# ─────────────────────────────────────────────
+# ────────────────────────────────────────────
 class Application(models.Model):
     """Application model for tree planting program requests"""
 
     STATUS_CHOICES = [
         ('for_evaluation', 'For Evaluation'),
         ('for_head', 'For Head Approval'),
-        ('accepted', 'Accepted - Ready for Orientation'),  # ✅ UPDATED
+        ('accepted', 'Accepted - Ready for Orientation'),
         ('under_monitoring', 'Under Monitoring'),
         ('rejected', 'Rejected'),
         ('cancelled', 'Cancelled'),
@@ -153,7 +153,6 @@ class Application(models.Model):
 # ─────────────────────────────────────────────
 # SEEDLING REQUEST (Main Request Record)
 # ─────────────────────────────────────────────
-
 class SeedlingRequest(models.Model):
     """
     Seedling request model - submitted WITH application or as additional request.
@@ -337,6 +336,10 @@ class ProgressReport(models.Model):
     Progress report model for monitoring visits.
     Handles both Initial (Orientation) and Ongoing monitoring visits.
     Specific species survival data stored in ProgressReportSpecies.
+    
+    ✅ UPDATED: Now supports monitoring sites WITHOUT an active application.
+    - 'site' is now the primary required relationship
+    - 'application' is now optional (null if monitoring abandoned/failed site)
     """
 
     STATUS_CHOICES = [
@@ -345,36 +348,49 @@ class ProgressReport(models.Model):
         ('rejected', 'Rejected'),
     ]
 
-    # ✅ NEW: Visit Type Classification
+    # Visit Type Classification
     VISIT_TYPE_CHOICES = [
         ('initial', 'Initial Visit (Orientation & Baseline)'),
         ('ongoing', 'Ongoing Monitoring Visit'),
+        ('inactive_check', 'Inactive Site Check'),
     ]
 
     # Primary Key
     progress_report_id = models.AutoField(primary_key=True)
 
-    # Foreign Key to Application
-    application = models.ForeignKey(
-        Application,
+    # ✅ NEW: Direct site relationship (REQUIRED)
+    site = models.ForeignKey(
+        Sites,
         on_delete=models.CASCADE,
-        related_name='progress_reports'
+        related_name='progress_reports',
+        null=True,
+        help_text="Site being monitored (required)"
     )
 
-    # ✅ NEW: Visit Type (Critical for distinguishing initial vs ongoing)
+    # ✅ MODIFIED: Make application nullable (optional)
+    application = models.ForeignKey(
+        Application,
+        on_delete=models.SET_NULL,  # Changed from CASCADE to SET_NULL
+        related_name='progress_reports',
+        null=True,
+        blank=True,
+        help_text="Linked application (null if monitoring without active program)"
+    )
+
+    # Visit Type (Critical for distinguishing initial vs ongoing)
     visit_type = models.CharField(
         max_length=20,
         choices=VISIT_TYPE_CHOICES,
         default='initial'
     )
 
-    # ✅ NEW: Initial Visit Specific Fields
+    # Initial Visit Specific Fields
     orientation_conducted = models.BooleanField(
         default=False,
         help_text="Check if orientation was successfully conducted (Initial visit only)"
     )
     
-    # ✅ NEW: Agreement Image (MOVED from Application model)
+    # Agreement Image (MOVED from Application model)
     agreement_image = CloudinaryField(
         'agreement_image',
         folder='agreements',
@@ -383,7 +399,7 @@ class ProgressReport(models.Model):
         help_text="Signed agreement image uploaded during initial orientation visit"
     )
 
-    # ✅ Updated to CloudinaryField
+    # Updated to CloudinaryField
     proof_image_monitor_required = CloudinaryField(
         'proof_image_monitor_required',
         folder='progress_report_proof_images',
@@ -415,13 +431,17 @@ class ProgressReport(models.Model):
         verbose_name_plural = "Progress Reports (Monitoring Visits)"
         ordering = ['-created_at']
         indexes = [
+            models.Index(fields=['site', 'status']),
+            models.Index(fields=['site', 'visit_type']),
             models.Index(fields=['application', 'status']),
             models.Index(fields=['application', 'visit_type']),
             models.Index(fields=['created_at']),
         ]
 
     def __str__(self):
-        return f"{self.get_visit_type_display()} #{self.progress_report_id} for {self.application.title} - {self.get_status_display()}"
+        site_name = self.site.name if self.site else "Unknown Site"
+        app_title = f" ({self.application.title})" if self.application else " (No Active Program)"
+        return f"{self.get_visit_type_display()} #{self.progress_report_id} for {site_name}{app_title} - {self.get_status_display()}"
 
     def save(self, *args, **kwargs):
         """Auto-set submitted_at on first save"""
@@ -464,7 +484,7 @@ class ProgressReport(models.Model):
         return self.visit_type == 'initial'
 
 
-# ─────────────────────────────────────────────
+# ────────────────────────────────────────────
 # PROGRESS REPORT SPECIES (Normalized Species Monitoring) - ✅ UPDATED
 # ─────────────────────────────────────────────
 class ProgressReportSpecies(models.Model):
@@ -545,7 +565,7 @@ class ProgressReportSpecies(models.Model):
 
 # ─────────────────────────────────────────────
 # REASON (Audit Trail)
-# ────────────────────────────────────────────
+# ─────────────────────────────────────────────
 class Reason(models.Model):
     """Model for tracking rejection/approval reasons (audit trail)"""
 
