@@ -26,7 +26,7 @@ import { api } from "@/constant/api";
 interface ApplicationDetail {
   application: {
     application_id: number;
-    email: string; // ✅ Added for Account Information display
+    email: string;
     title: string;
     classification: "new" | "old";
     status: string;
@@ -45,13 +45,13 @@ interface ApplicationDetail {
     group_address: string;
     group_profile: string | null;
   };
-  profile: any | null; // Kept for TS compatibility, but removed from UI
+  profile: any | null;
   assigned_site: {
     site_id: number;
     name: string;
-    description: string | null; // ✅ Added
-    reforestation_area_name: string | null; // ✅ Added
-    barangay_name: string | null; // ✅ Added
+    description: string | null;
+    reforestation_area_name: string | null;
+    barangay_name: string | null;
     polygon_coordinates: any;
   } | null;
   proposed_site: {
@@ -169,7 +169,7 @@ function ConfirmationPreview({
               <strong>
                 {new Date(application.orientation_date).toLocaleDateString(
                   "en-PH",
-                  { month: "short", day: "numeric", year: "numeric" },
+                  { month: "short", day: "numeric", year: "numeric" }
                 )}
               </strong>
             </li>
@@ -231,7 +231,7 @@ export default function Evaluation_confirmation() {
           `${api}api/get_application/${application_id}/`,
           {
             headers: { Authorization: `Bearer ${token}` },
-          },
+          }
         );
 
         if (!res.ok) {
@@ -252,8 +252,8 @@ export default function Evaluation_confirmation() {
               appStatus === "accepted"
                 ? "This application has already been confirmed and is accepted."
                 : appStatus === "rejected"
-                  ? "This application has been rejected."
-                  : "This application is not yet ready for head confirmation.",
+                ? "This application has been rejected."
+                : "This application is not yet ready for head confirmation.",
           });
           setTimeout(() => navigate(-1), 3000);
         }
@@ -289,7 +289,7 @@ export default function Evaluation_confirmation() {
             status,
             reason: decisionForm.reason.trim(),
           }),
-        },
+        }
       );
 
       const data = await res.json();
@@ -303,6 +303,7 @@ export default function Evaluation_confirmation() {
         return;
       }
 
+      // ✅ The backend now returns a detailed message about queue updates
       setPSAlert({
         type: "success",
         title:
@@ -386,7 +387,9 @@ export default function Evaluation_confirmation() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-100">
             <div
-              className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${confirmAction === "confirm" ? "bg-green-100" : "bg-red-100"}`}
+              className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                confirmAction === "confirm" ? "bg-green-100" : "bg-red-100"
+              }`}
             >
               {confirmAction === "confirm" ? (
                 <CheckCircle2 size={32} className="text-green-600" />
@@ -402,8 +405,8 @@ export default function Evaluation_confirmation() {
             </h3>
             <p className="text-sm text-center text-gray-500 mb-5">
               {confirmAction === "confirm"
-                ? "This will activate the tree grower's account and move the application to the accepted phase."
-                : "This will reject the application. The applicant will be notified and can resubmit after corrections."}
+                ? "This will activate the tree grower's account, lock the site, and automatically reject other applicants in the queue."
+                : "This will reject the application. If others are in the queue, the next applicant will be promoted."}
             </p>
 
             <ConfirmationPreview
@@ -423,7 +426,7 @@ export default function Evaluation_confirmation() {
               <button
                 onClick={() =>
                   handleSubmit(
-                    confirmAction === "confirm" ? "accepted" : "rejected",
+                    confirmAction === "confirm" ? "accepted" : "rejected"
                   )
                 }
                 disabled={submitting}
@@ -515,7 +518,7 @@ export default function Evaluation_confirmation() {
       </div>
 
       <main className="max-w-6xl mx-auto p-4 md:p-8">
-        {/* ── TAB 0: Application Details (Merged Account + Group + Project) ── */}
+        {/* ── TAB 0: Application Details ── */}
         {tab === 0 && (
           <div className="flex flex-col gap-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -531,7 +534,7 @@ export default function Evaluation_confirmation() {
                   label="Submitted"
                   value={new Date(application.created_at).toLocaleDateString(
                     "en-PH",
-                    { year: "numeric", month: "long", day: "numeric" },
+                    { year: "numeric", month: "long", day: "numeric" }
                   )}
                 />
                 <InfoRow
@@ -602,7 +605,7 @@ export default function Evaluation_confirmation() {
                   <InfoRow
                     label="Proposed Orientation Date"
                     value={new Date(
-                      application.proposed_orientation_date,
+                      application.proposed_orientation_date
                     ).toLocaleDateString("en-PH", {
                       year: "numeric",
                       month: "long",
@@ -697,7 +700,7 @@ export default function Evaluation_confirmation() {
                         <span className="flex items-center gap-2 text-sm">
                           <Calendar size={14} className="text-gray-400" />
                           {new Date(
-                            application.orientation_date,
+                            application.orientation_date
                           ).toLocaleDateString("en-PH", {
                             weekday: "short",
                             year: "numeric",
@@ -722,14 +725,14 @@ export default function Evaluation_confirmation() {
                       <p className="text-xs text-gray-400 mt-2">
                         Added{" "}
                         {new Date(latest_reason.created).toLocaleDateString(
-                          "en-PH",
+                          "en-PH"
                         )}
                       </p>
                     </div>
                   )}
                 </div>
 
-                {/* Assigned Planting Site (Updated with new fields) */}
+                {/* Assigned Planting Site */}
                 {assigned_site && (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                     <SectionHeader
@@ -767,10 +770,15 @@ export default function Evaluation_confirmation() {
                           <span className="text-xs font-mono text-gray-600 break-all">
                             {typeof assigned_site.polygon_coordinates ===
                             "string"
-                              ? `${assigned_site.polygon_coordinates.substring(0, 50)}...`
-                              : Array.isArray(assigned_site.polygon_coordinates)
-                                ? `${assigned_site.polygon_coordinates.length} coordinate points`
-                                : "GeoJSON data available"}
+                              ? `${assigned_site.polygon_coordinates.substring(
+                                  0,
+                                  50
+                                )}...`
+                              : Array.isArray(
+                                  assigned_site.polygon_coordinates
+                                )
+                              ? `${assigned_site.polygon_coordinates.length} coordinate points`
+                              : "GeoJSON data available"}
                           </span>
                         }
                       />
@@ -816,8 +824,8 @@ export default function Evaluation_confirmation() {
                     <Shield size={14} className="flex-shrink-0 mt-0.5" />
                     <span>
                       <strong>Remember:</strong> Confirming will activate the
-                      applicant's account. They can then request seedlings based
-                      on the assigned site.
+                      applicant's account, lock the site for monitoring, and
+                      automatically notify other applicants in the queue.
                     </span>
                   </p>
                 </div>

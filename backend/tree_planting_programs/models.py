@@ -81,6 +81,14 @@ class Application(models.Model):
         default='for_evaluation'
     )
 
+    # ✅ NEW: Queue Position for Site Allocation
+    queue_position = models.PositiveIntegerField(
+        null=True, 
+        blank=True,
+        db_index=True,
+        help_text="Position in queue (1=under review by Head, 2+=reserved/waiting)"
+    )
+
     # Dates
     # ✅ FINALIZED orientation date (Assigned by DataManager)
     orientation_date = models.DateField(
@@ -134,10 +142,12 @@ class Application(models.Model):
             models.Index(fields=['created_at']),
             models.Index(fields=['user', 'status']),
             models.Index(fields=['classification']),
+            models.Index(fields=['site', 'queue_position']), # ✅ NEW: Index for queue sorting
         ]
 
     def __str__(self):
-        return f"{self.title} - {self.get_status_display()}"
+        queue_info = f" [Queue: {self.queue_position}]" if self.queue_position else ""
+        return f"{self.title} - {self.get_status_display()}{queue_info}"
 
     @property
     def is_returning_grower(self):
@@ -330,7 +340,7 @@ class SeedlingRequestSpecies(models.Model):
 
 # ─────────────────────────────────────────────
 # PROGRESS REPORT (Onsite Monitoring) - ✅ UPDATED
-# ─────────────────────────────────────────────
+# ────────────────────────────────────────────
 class ProgressReport(models.Model):
     """
     Progress report model for monitoring visits.

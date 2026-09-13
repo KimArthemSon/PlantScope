@@ -20,18 +20,42 @@ class Sites(models.Model):
         help_text="Parent area container."
     )
 
+    # ✅ UPDATED: Kept only for GISS/DataManager Verification Decision
     STATUS_CHOICES = (
-        ('pending', 'Pending'), ('under_review', 'Under Review'),
-        ('accepted', 'Accepted'), ('rejected', 'Rejected'),
-        ('completed', 'Completed'), ('under_monitoring', 'Under Monitoring'),
+        ('pending', 'Pending'), 
+        ('under_review', 'Under Review'),
+        ('accepted', 'Accepted'), 
+        ('rejected', 'Rejected'),
     )
+    
+    # ✅ NEW: Separated Monitoring Lifecycle Status
+    MONITORING_STATUS_CHOICES = (
+        ('available', 'Available for New Program'),
+        ('reserved', 'Reserved - Under Review'),
+        ('under_monitoring', 'Under Active Monitoring'),
+        ('completed', 'Program Completed'),
+        ('failed', 'Program Failed'),
+        ('onhold', 'On Hold'),
+    )
+
     description = models.TextField(blank=True, null=True)
+    
+    # GISS Decision Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    
+    # Monitoring Lifecycle Status
+    monitoring_status = models.CharField(
+        max_length=20, 
+        choices=MONITORING_STATUS_CHOICES, 
+        default='available',
+        db_index=True,
+        help_text="Operational status for monitoring lifecycle and queueing"
+    )
+
     name = models.CharField(max_length=100, default='Unnamed Site')
     is_active = models.BooleanField(default=True, db_index=True)
     is_pinned = models.BooleanField(default=False, db_index=True)
     
-    # ✅ CLEANED: Removed center_coordinate, keeping only marker_coordinate
     polygon_coordinates = models.JSONField(
         null=True, 
         blank=True,
@@ -43,7 +67,6 @@ class Sites(models.Model):
         help_text="Single [lat, lng] coordinate for the site marker/pin location."
     )
 
-    # ✅ CLEANED: Removed ndvi_value and total_seedlings_planted
     total_area_hectares = models.FloatField(
         default=0.0,
         help_text="Calculated area from polygon coordinates in hectares."
@@ -53,7 +76,7 @@ class Sites(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.name} [{self.get_status_display()}]"
+        return f"{self.name} [{self.get_monitoring_status_display()}]"
 
     class Meta:
         verbose_name = "Site"
@@ -74,59 +97,42 @@ class Sites(models.Model):
     def calculate_area_from_polygon(self) -> float:
         """
         ✅ IMPROVED: More robust area calculation with coordinate validation
-        
-        IMPORTANT: This method expects coordinates in [lat, lng] format (Leaflet standard).
-        If your database stores [lng, lat] (GeoJSON standard), you'll need to swap the indices.
-        
-        Returns:
-            float: Area in hectares, rounded to 4 decimal places
         """
         if not self.polygon_coordinates or len(self.polygon_coordinates) < 3:
             return 0.0
         
         coords = self.polygon_coordinates
         
-        # ✅ VALIDATION: Check if coordinates are in valid lat/lng ranges
-        # Latitude: -90 to 90, Longitude: -180 to 180
         try:
-            # Check first coordinate to determine format
             first_coord = coords[0]
             if len(first_coord) != 2:
                 return 0.0
             
             val1, val2 = first_coord[0], first_coord[1]
             
-            # If first value is outside lat range but second is within, likely [lng, lat]
             if abs(val1) > 90 and abs(val2) <= 90:
-                # Swap to [lat, lng]
                 coords = [[c[1], c[0]] for c in coords]
             elif abs(val1) <= 90 and abs(val2) <= 90:
-                # Both valid, assume [lat, lng] (Leaflet format)
                 pass
             else:
-                # Invalid coordinates
                 return 0.0
                 
         except (IndexError, TypeError):
             return 0.0
         
-        # Calculate centroid latitude for accurate meter conversion
         lat_rad = math.radians(sum(c[0] for c in coords) / len(coords))
         
-        # Meters per degree at this latitude (WGS84 approximation)
         meters_per_deg_lat = 111132.92 - 559.82 * math.cos(2*lat_rad) + 1.175 * math.cos(4*lat_rad)
         meters_per_deg_lng = 111412.84 * math.cos(lat_rad) - 93.5 * math.cos(3*lat_rad)
         
-        # Convert to local coordinates (meters from first point)
         local_coords = [
             (
-                (c[1] - coords[0][1]) * meters_per_deg_lng,  # x = longitude difference
-                (c[0] - coords[0][0]) * meters_per_deg_lat   # y = latitude difference
+                (c[1] - coords[0][1]) * meters_per_deg_lng,
+                (c[0] - coords[0][0]) * meters_per_deg_lat
             ) 
             for c in coords
         ]
         
-        # Shoelace formula for polygon area
         n = len(local_coords)
         area_sqm = 0
         for i in range(n):
@@ -135,8 +141,6 @@ class Sites(models.Model):
             area_sqm -= local_coords[j][0] * local_coords[i][1]
         
         area_sqm = abs(area_sqm) / 2
-        
-        # Convert square meters to hectares (1 hectare = 10,000 sq meters)
         area_hectares = area_sqm / 10000
         
         return round(area_hectares, 4)

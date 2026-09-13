@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, ChevronLeft, VerifiedIcon } from "lucide-react";
+import { ChevronRight, ChevronLeft, VerifiedIcon, ListOrdered } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import { api } from "@/constant/api";
 
-// ✅ Updated Interface to match new backend response
+// ✅ Updated Interface to match new backend response with queue_position
 interface Application {
   application_id: number;
   group_name: string;
@@ -15,6 +15,7 @@ interface Application {
   total_treegrowers_will_participate: number;
   classification: string; // 'new' (First-Time) or 'old' (Returning)
   status: string;
+  queue_position: number | null; // ✅ NEW: FIFO Queue Position
   created_at: string;
 }
 
@@ -123,7 +124,7 @@ export default function Application() {
         />
       )}
 
-      <main className="flex-1 p-8 w-full max-w-450 mx-auto">
+      <main className="flex-1 p-8 w-full max-w-6xl mx-auto"> {/* ✅ Increased max-width for new column */}
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm font-medium text-gray-700">Show entries: </label>
@@ -212,6 +213,7 @@ export default function Application() {
                 <th className="py-3 px-5 text-left text-[.9rem]">Group</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Title</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Queue</th> {/* ✅ NEW COLUMN */}
                 <th className="py-3 px-5 text-left text-[.9rem]">Classification</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Tree Growers</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Created At</th>
@@ -253,7 +255,19 @@ export default function Application() {
                         {formatStatus(app.status)}
                       </span>
                     </td>
-                    {/* ✅ Shows First-Time or Returning */}
+                    
+                    {/* ✅ NEW: Queue Position Column */}
+                    <td className="py-3 px-5 text-[.9rem]">
+                      {app.status === 'for_head' && app.queue_position ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                          <ListOrdered size={12} />
+                          #{app.queue_position}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">-</span>
+                      )}
+                    </td>
+
                     <td className="py-3 px-5 text-[.9rem]">
                       {getClassificationBadge(app.classification)}
                     </td>
@@ -275,8 +289,9 @@ export default function Application() {
                           </button>
                         )}
                         {app.status === "for_head" && (
-                          <span className="text-blue-600 text-xs font-medium italic px-2 py-1">
-                            Pending Head Approval
+                          <span className="text-blue-600 text-xs font-medium italic px-2 py-1 flex items-center gap-1">
+                            <ListOrdered size={14} />
+                            Awaiting Head
                           </span>
                         )}
                       </div>
@@ -286,7 +301,7 @@ export default function Application() {
               ) : (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9} /* ✅ Updated colSpan to 9 for the new column */
                     className="text-center py-5 text-gray-500 italic"
                   >
                     No applications found.
@@ -309,8 +324,13 @@ export default function Application() {
             <ChevronLeft size={19} />
           </button>
 
-          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map(
-            (p) => (
+          {Array.from({ length: Math.min(filter.total_page, 5) }, (_, i) => {
+            // Smart pagination logic to show max 5 pages
+            let p = i + 1;
+            if (filter.total_page > 5 && filter.page > 3) {
+              p = Math.min(filter.page - 2 + i, filter.total_page);
+            }
+            return (
               <button
                 key={p}
                 onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
@@ -322,8 +342,8 @@ export default function Application() {
               >
                 {p}
               </button>
-            )
-          )}
+            );
+          })}
 
           <button
             disabled={filter.page >= filter.total_page}

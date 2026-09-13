@@ -19,12 +19,18 @@ from animals.models import Animal
 from Field_assessment.models import Field_assessment
 from tree_planting_programs.models import Application
 from django.db.models import Exists, OuterRef, Q
+
 logger = logging.getLogger(__name__)
 
+# ─────────────────────────────────────────────
+# ✅ HELPER: Site Locking & Sanitization
+# ─────────────────────────────────────────────
+LOCKED_MONITORING_STATUSES = ['reserved', 'under_monitoring', 'completed', 'failed', 'onhold']
 
-# ─────────────────────────────────────────────
-# ✅ HELPER: Sanitization for Meta Data
-# ─────────────────────────────────────────────
+def is_site_locked(site):
+    """Check if site is in an active/official state and cannot be modified."""
+    return site.monitoring_status in LOCKED_MONITORING_STATUSES
+
 def _sanitize_legal_documents(legal_docs):
     if not isinstance(legal_docs, dict):
         return legal_docs
@@ -41,7 +47,6 @@ def _sanitize_legal_documents(legal_docs):
         else:
             sanitized[key] = value
     return sanitized
-
 
 def _sanitize_field_assessment_data(data):
     if not isinstance(data, dict):
@@ -79,7 +84,6 @@ def create_site(request):
         polygon_coordinates = body.get('polygon_coordinates')
         marker_coordinate = body.get('marker_coordinate')
         
-        # ✅ Auto-calculate marker coordinate if not provided but polygon exists
         if not marker_coordinate and polygon_coordinates and len(polygon_coordinates) >= 3:
             sum_lat = sum(coord[0] for coord in polygon_coordinates)
             sum_lng = sum(coord[1] for coord in polygon_coordinates)
@@ -87,17 +91,16 @@ def create_site(request):
             logger.info(f"Auto-calculated marker coordinate: {marker_coordinate}")
 
         with transaction.atomic():
-            # ✅ REMOVED: ndvi_value, center_coordinate, manual total_area_hectares
             site = Sites.objects.create(
                 reforestation_area=reforestation_area,
                 name=name,
                 status='pending',
+                monitoring_status='available', # ✅ NEW: Default to available until locked
                 is_active=True,
                 polygon_coordinates=polygon_coordinates,
                 marker_coordinate=marker_coordinate,
             )
             
-            # ✅ Area is auto-calculated in model's save() method, but we ensure marker is set
             if site.polygon_coordinates and not site.marker_coordinate:
                 site.marker_coordinate = site.calculate_marker_coordinate()
                 site.save()
@@ -128,6 +131,7 @@ def create_site(request):
             "message": "Site created successfully", 
             "site_id": site.site_id,
             "status": site.status,
+            "monitoring_status": site.monitoring_status, # ✅ NEW
             "marker_coordinate": site.marker_coordinate,
             "total_area_hectares": site.total_area_hectares
         }, status=201)
@@ -218,11 +222,11 @@ def get_sites(request, reforestation_area_id):
             "reforestation_area_id": s.reforestation_area_id,
             "name": s.name,
             "status": s.status,
+            "monitoring_status": s.monitoring_status, # ✅ NEW
             "is_pinned": s.is_pinned,
             "validation": validation,
             "verification": verification_info,
             "permit_count": s.permit_documents.count(),
-            # ✅ CLEANED: Removed ndvi and seedlings
             "metrics": {
                 "area_hectares": s.total_area_hectares,
             },
@@ -231,23 +235,13 @@ def get_sites(request, reforestation_area_id):
 
     return JsonResponse({"data": data, "total_page": total_page, "page": page, "entries": entries, "total": total}, status=200)
 
-# Only these site statuses are considered "official"
+# Only these site statuses are considered "official" for GISS decision
 OFFICIAL_SITE_STATUSES = ['accepted', 'under_monitoring', 'completed', 'rejected']
-
 ACTIVE_APPLICATION_STATUSES = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
 
 
 @csrf_exempt
 def get_official_sites(request):
-    """
-    GET: Global dashboard of OFFICIAL sites across ALL reforestation areas.
-
-    Rules:
-    - Site must be active and meta-verified.
-    - Site status must be one of: accepted, under_monitoring, completed, rejected.
-    - Optional filters: area, barangay, land classification, program status, pinned, search.
-    - Both area and status filters support "all" to show everything within official scope.
-    """
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
@@ -264,44 +258,22 @@ def get_official_sites(request):
 
     offset = (page - 1) * entries
 
-    # ─────────────────────────────────────────────
-    # 1. BASE QUERYSET (STRICT OFFICIAL RULES)
-    # ─────────────────────────────────────────────
     sites = Sites.objects.filter(
         is_active=True,
         meta_verification__status='verified',
     )
 
-    # ─────────────────────────────────────────────
-    # 2. STATUS FILTER
-    # "all" or empty = show all official statuses
-    # Specific value(s) = filter to those (comma-separated supported)
-    # ─────────────────────────────────────────────
     if status_filter and status_filter != "all":
-        requested_statuses = [
-            s.strip() for s in status_filter.split(',')
-            if s.strip() in OFFICIAL_SITE_STATUSES
-        ]
-        # Only apply filter if we got valid statuses; otherwise fall back to all official
+        requested_statuses = [s.strip() for s in status_filter.split(',') if s.strip() in OFFICIAL_SITE_STATUSES]
         if requested_statuses:
             sites = sites.filter(status__in=requested_statuses)
         else:
             sites = sites.filter(status__in=OFFICIAL_SITE_STATUSES)
     else:
-        # "all" or empty → no restriction beyond official scope
         sites = sites.filter(status__in=OFFICIAL_SITE_STATUSES)
 
-    # ─────────────────────────────────────────────
-    # 3. ANNOTATE PROGRAM STATUS
-    # ─────────────────────────────────────────────
-    active_apps = Application.objects.filter(
-        site=OuterRef('pk'),
-        status__in=ACTIVE_APPLICATION_STATUSES
-    )
-    completed_apps = Application.objects.filter(
-        site=OuterRef('pk'),
-        status='completed'
-    )
+    active_apps = Application.objects.filter(site=OuterRef('pk'), status__in=ACTIVE_APPLICATION_STATUSES)
+    completed_apps = Application.objects.filter(site=OuterRef('pk'), status='completed')
 
     sites = sites.annotate(
         has_active_app=Exists(active_apps),
@@ -316,66 +288,38 @@ def get_official_sites(request):
         'meta_verification__animal_relations',
     ).order_by('-is_pinned', '-created_at')
 
-    # ─────────────────────────────────────────────
-    # 4. OPTIONAL FILTERS
-    # ─────────────────────────────────────────────
     if search:
-        sites = sites.filter(
-            Q(name__icontains=search) |
-            Q(reforestation_area__name__icontains=search)
-        )
+        sites = sites.filter(Q(name__icontains=search) | Q(reforestation_area__name__icontains=search))
 
-    # ✅ AREA FILTER: "all" or empty = no area restriction (show all areas)
     if area_filter and area_filter != "all":
-        try:
-            sites = sites.filter(reforestation_area_id=int(area_filter))
-        except (ValueError, TypeError):
-            pass  # Invalid ID → ignore filter, show all
+        try: sites = sites.filter(reforestation_area_id=int(area_filter))
+        except (ValueError, TypeError): pass
 
     if barangay_filter:
-        try:
-            sites = sites.filter(reforestation_area__barangay_id=int(barangay_filter))
-        except (ValueError, TypeError):
-            pass
+        try: sites = sites.filter(reforestation_area__barangay_id=int(barangay_filter))
+        except (ValueError, TypeError): pass
 
-    if pinned_filter == "true":
-        sites = sites.filter(is_pinned=True)
+    if pinned_filter == "true": sites = sites.filter(is_pinned=True)
 
     if land_classification_filter:
-        try:
-            sites = sites.filter(meta_verification__verified_land_classification_id=int(land_classification_filter))
-        except (ValueError, TypeError):
-            pass
+        try: sites = sites.filter(meta_verification__verified_land_classification_id=int(land_classification_filter))
+        except (ValueError, TypeError): pass
 
-    # ✅ PROGRAM STATUS FILTER
     if program_status_filter == 'ongoing':
         sites = sites.filter(Q(has_active_app=True) | Q(status='under_monitoring'))
     elif program_status_filter == 'completed':
         sites = sites.filter(has_active_app=False).filter(Q(has_completed_app=True) | Q(status='completed'))
     elif program_status_filter == 'available':
         sites = sites.filter(has_active_app=False, has_completed_app=False).exclude(status__in=['completed', 'under_monitoring'])
-    # else: empty or "all" → no program status restriction
 
-    # ─────────────────────────────────────────────
-    # 5. PAGINATION
-    # ─────────────────────────────────────────────
     total = sites.count()
     total_page = max(1, math.ceil(total / entries))
     sites_list = sites[offset: offset + entries]
 
-    # ─────────────────────────────────────────────
-    # 6. SERIALIZE
-    # ─────────────────────────────────────────────
     data = []
     for s in sites_list:
-        # Validation data (from current site_data version)
         current_sd = next((sd for sd in s.site_data_versions.all() if sd.is_current), None)
-        validation = {
-            "has_safety_note": False,
-            "has_survivability_note": False,
-            "final_decision": None,
-            "is_ready_to_finalize": False,
-        }
+        validation = {"has_safety_note": False, "has_survivability_note": False, "final_decision": None, "is_ready_to_finalize": False}
 
         if current_sd and current_sd.site_data:
             validation["has_safety_note"] = bool(current_sd.site_data.get('safety', {}).get('decision_note', '').strip())
@@ -383,24 +327,13 @@ def get_official_sites(request):
             validation["final_decision"] = current_sd.site_data.get('final_decision')
             validation["is_ready_to_finalize"] = bool(validation["final_decision"])
 
-        # Verification metadata
         meta_verification = getattr(s, 'meta_verification', None)
-        verification_info = {
-            "status": "pending",
-            "land_classification": None,
-            "security_concerns_count": 0,
-            "has_accessibility": False,
-            "accessibility_type": None,
-            "verified_animals_count": 0,
-        }
+        verification_info = {"status": "pending", "land_classification": None, "security_concerns_count": 0, "has_accessibility": False, "accessibility_type": None, "verified_animals_count": 0}
 
         if meta_verification:
             verification_info["status"] = meta_verification.status
             if meta_verification.verified_land_classification:
-                verification_info["land_classification"] = {
-                    "id": meta_verification.verified_land_classification.land_classification_id,
-                    "name": meta_verification.verified_land_classification.name,
-                }
+                verification_info["land_classification"] = {"id": meta_verification.verified_land_classification.land_classification_id, "name": meta_verification.verified_land_classification.name}
             if meta_verification.verified_security_concerns:
                 verification_info["security_concerns_count"] = len(meta_verification.verified_security_concerns)
             if meta_verification.verified_accessibility:
@@ -409,7 +342,6 @@ def get_official_sites(request):
                     verification_info["accessibility_type"] = meta_verification.verified_accessibility.get('type', 'Unknown')
             verification_info["verified_animals_count"] = len(meta_verification.animal_relations.all())
 
-        # Program status calculation
         if s.has_active_app or s.status == 'under_monitoring':
             program_status = 'ongoing'
         elif s.has_completed_app or s.status == 'completed':
@@ -417,7 +349,6 @@ def get_official_sites(request):
         else:
             program_status = 'available'
 
-        # Location info
         area = s.reforestation_area
         barangay = area.barangay if area else None
 
@@ -427,25 +358,19 @@ def get_official_sites(request):
             "reforestation_area": area.name if area else 'N/A',
             "barangay": barangay.name if barangay else 'N/A',
             "name": s.name,
-            "status": s.status,                          # ← Site lifecycle status (accepted, completed, etc.)
-            "program_status": program_status,            # ← Program state (available, ongoing, completed)
+            "status": s.status,
+            "monitoring_status": s.monitoring_status, # ✅ NEW
+            "program_status": program_status,
             "is_pinned": s.is_pinned,
             "validation": validation,
-            "verification": verification_info,           # ← Meta verification (verified, pending, etc.)
+            "verification": verification_info,
             "permit_count": len(s.permit_documents.all()),
-            "metrics": {
-                "area_hectares": s.total_area_hectares,
-            },
+            "metrics": {"area_hectares": s.total_area_hectares},
             "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S"),
         })
 
-    return JsonResponse({
-        "data": data,
-        "total_page": total_page,
-        "page": page,
-        "entries": entries,
-        "total": total,
-    }, status=200)
+    return JsonResponse({"data": data, "total_page": total_page, "page": page, "entries": entries, "total": total}, status=200)
+
 
 # ─────────────────────────────────────────────
 # GET SINGLE SITE
@@ -518,8 +443,8 @@ def get_site(request, site_id):
         "name": site.name,
         "description": site.description,
         "status": site.status,
+        "monitoring_status": site.monitoring_status, # ✅ NEW
         "polygon_coordinates": site.polygon_coordinates,
-        # ✅ CLEANED: Replaced center_coordinate with marker_coordinate, removed ndvi_value
         "marker_coordinate": site.marker_coordinate,
         "area_hectares": site.total_area_hectares,
         "potential_sites": potential_sites_data,
@@ -566,8 +491,12 @@ def update_species_recommendations(request, site_id):
     try:
         body = json.loads(request.body)
         site = get_object_or_404(Sites, site_id=site_id, is_active=True)
-        species_list = body.get("species", [])
         
+        # ✅ LOCKING CHECK
+        if is_site_locked(site):
+            return JsonResponse({"error": "Cannot modify species for an official/active site."}, status=403)
+            
+        species_list = body.get("species", [])
         if not isinstance(species_list, list):
             return JsonResponse({"error": "'species' must be an array"}, status=400)
         
@@ -600,14 +529,16 @@ def save_site_polygon(request, site_id):
         body = json.loads(request.body)
         site = get_object_or_404(Sites, site_id=site_id, is_active=True)
         
+        # ✅ LOCKING CHECK
+        if is_site_locked(site):
+            return JsonResponse({"error": "Cannot modify polygon for an official/active site."}, status=403)
+            
         if 'polygon_coordinates' in body:
             site.polygon_coordinates = body['polygon_coordinates']
-            # ✅ total_area_hectares is auto-calculated in save()
             
         if 'marker_coordinate' in body:
             site.marker_coordinate = body['marker_coordinate']
             
-        # ✅ Auto-calculate marker if polygon updated but no marker provided
         if 'polygon_coordinates' in body and not site.marker_coordinate:
             site.marker_coordinate = site.calculate_marker_coordinate()
             
@@ -657,9 +588,9 @@ def get_sites_list(request, reforestation_area_id):
             "site_id": s.site_id,
             "name": s.name,
             "status": s.status,
+            "monitoring_status": s.monitoring_status, # ✅ NEW
             "is_pinned": s.is_pinned,
             "area_hectares": s.total_area_hectares,
-            # ✅ CLEANED: Removed ndvi
             "validation": validation,
             "verification_status": verification_status,
             "created_at": s.created_at.strftime("%Y-%m-%d %H:%M")
@@ -680,6 +611,10 @@ def save_validation_draft(request, site_id):
         body = json.loads(request.body)
         site = get_object_or_404(Sites, site_id=site_id, is_active=True)
         
+        # ✅ LOCKING CHECK
+        if is_site_locked(site):
+            return JsonResponse({"error": "Cannot modify validation for an official/active site."}, status=403)
+            
         sd, created = Site_data.objects.get_or_create(site=site, is_current=True, defaults={'version': 1, 'site_data': {}})
         if not sd.site_data: sd.site_data = {}
         
@@ -712,7 +647,7 @@ def save_validation_draft(request, site_id):
 
 
 # ─────────────────────────────────────────────
-# FINALIZE SITE
+# FINALIZE SITE (GISS MCDA Decision)
 # ─────────────────────────────────────────────
 @csrf_exempt
 def finalize_site(request, site_id):
@@ -728,8 +663,12 @@ def finalize_site(request, site_id):
         
         final_decision_note = body.get("final_decision_note", "").strip()
         site = get_object_or_404(Sites, site_id=site_id, is_active=True)
-        current_sd = site.site_data_versions.filter(is_current=True).first()
         
+        # ✅ LOCKING CHECK
+        if is_site_locked(site):
+            return JsonResponse({"error": "Cannot finalize an official/active site. It is already locked."}, status=403)
+            
+        current_sd = site.site_data_versions.filter(is_current=True).first()
         if not current_sd:
             return JsonResponse({"error": "No active draft found to finalize"}, status=404)
         
@@ -749,11 +688,18 @@ def finalize_site(request, site_id):
             Site_data.objects.create(site=site, version=current_sd.version + 1, is_current=True, site_data={}, field_assessment_snapshot={})
             
             site.status = "accepted" if final_decision == "ACCEPT" else "rejected"
+            
+            # ✅ DUAL-APPROVAL LOGIC: If GISS accepts AND Meta is verified, make it available
+            meta_verification = getattr(site, 'meta_verification', None)
+            if final_decision == "ACCEPT" and meta_verification and meta_verification.status == 'verified':
+                site.monitoring_status = 'available'
+                
             site.save()
         
         return JsonResponse({
             "message": f"Site {final_decision}ED successfully",
             "status": site.status,
+            "monitoring_status": site.monitoring_status, # ✅ NEW
             "site_id": site.site_id,
             "new_version": current_sd.version + 1
         }, status=200)
@@ -774,6 +720,11 @@ def delete_site(request, site_id):
     
     try:
         site = get_object_or_404(Sites, site_id=site_id, is_active=True)
+        
+        # ✅ LOCKING CHECK
+        if is_site_locked(site):
+            return JsonResponse({"error": "Cannot delete an official/active site. It is currently locked."}, status=403)
+            
         deleted_images = 0
         for img in site.site_images.all():
             if img.img:
@@ -890,7 +841,14 @@ def get_site_verification(request, site_id):
             'verified_at': verification.verified_at.isoformat() if verification.verified_at else None,
             'verified_animals': verified_animals,
         },
-        'site_info': {'site_id': site.site_id, 'name': site.name, 'status': site.status, 'reforestation_area_id': site.reforestation_area_id, 'reforestation_area_name': site.reforestation_area.name},
+        'site_info': {
+            'site_id': site.site_id, 
+            'name': site.name, 
+            'status': site.status, 
+            'monitoring_status': site.monitoring_status, # ✅ NEW
+            'reforestation_area_id': site.reforestation_area_id, 
+            'reforestation_area_name': site.reforestation_area.name
+        },
         'field_assessments': assessments_data,
         'assessment_counts': {'total': len(assessments_data), 'specific': len([a for a in assessments_data if a['type'] == 'specific']), 'general': len([a for a in assessments_data if a['type'] == 'general'])}
     }, status=200)
@@ -903,6 +861,10 @@ def update_site_verification(request, site_id):
 
     site = get_object_or_404(Sites, site_id=site_id, is_active=True)
     user = get_user_from_token(request)
+
+    # ✅ LOCKING CHECK
+    if is_site_locked(site):
+        return JsonResponse({'error': 'Cannot modify verification for an official/active site. It is locked.'}, status=403)
 
     try:
         data = json.loads(request.body)
@@ -919,6 +881,11 @@ def update_site_verification(request, site_id):
             verification.verified_by = user
             verification.verified_at = timezone.now()
         verification.save()
+        
+        # ✅ DUAL-APPROVAL LOGIC: If Meta is verified AND GISS accepted, make it available
+        if verification.status == 'verified' and site.status == 'accepted':
+            site.monitoring_status = 'available'
+            site.save()
         
         if 'verified_animals' in data:
             verified_animals = data['verified_animals']
@@ -1010,8 +977,8 @@ def get_all_sites(request):
             "site_id": s.site_id,
             "name": s.name,
             "status": s.status,
+            "monitoring_status": s.monitoring_status, # ✅ NEW
             "reforestation_area_id": s.reforestation_area_id,
-            # ✅ CLEANED: Replaced center_coordinate with marker_coordinate, removed ndvi_value
             "marker_coordinate": s.marker_coordinate,
             "polygon_coordinates": s.polygon_coordinates,
             "total_area_hectares": s.total_area_hectares,
@@ -1035,6 +1002,10 @@ def update_site_coordinates(request, site_id):
         body = json.loads(request.body)
         site = get_object_or_404(Sites, site_id=site_id, is_active=True)
         
+        # ✅ LOCKING CHECK
+        if is_site_locked(site):
+            return JsonResponse({"error": "Cannot modify coordinates for an official/active site."}, status=403)
+            
         polygon_updated = False
         marker_updated = False
         
@@ -1058,7 +1029,6 @@ def update_site_coordinates(request, site_id):
             polygon_updated = True
             logger.info(f"Site {site_id} polygon updated: {len(new_polygon)} vertices, area: {site.total_area_hectares} ha")
         
-        # ✅ CLEANED: Replaced center_coordinate with marker_coordinate
         if 'marker_coordinate' in body:
             new_marker = body['marker_coordinate']
             if not isinstance(new_marker, (list, tuple)) or len(new_marker) != 2:
@@ -1117,13 +1087,24 @@ def get_available_sites(request, reforestation_area_id):
 
     offset = (page - 1) * entries
 
-    sites = Sites.objects.filter(is_active=True).select_related('meta_verification', 'meta_verification__verified_land_classification').order_by("-is_pinned", "-created_at")
+    # ✅ DUAL-APPROVAL FILTER: Only show sites that are fully approved and truly available
+    sites = Sites.objects.filter(
+        is_active=True,
+        monitoring_status='available' # ✅ CRITICAL: Only sites that passed BOTH GISS and Meta Verification
+    ).select_related(
+        'reforestation_area', # ✅ Added to prevent N+1 queries if needed
+        'meta_verification', 
+        'meta_verification__verified_land_classification'
+    ).order_by("-is_pinned", "-created_at")
 
     if all_filter != "true":
         sites = sites.filter(reforestation_area_id=reforestation_area_id)
-    if status_filter != "all": sites = sites.filter(status=status_filter)
-    if verification_filter != "all": sites = sites.filter(meta_verification__status=verification_filter)
-    if pinned_filter == "true": sites = sites.filter(is_pinned=True)
+    if status_filter != "all": 
+        sites = sites.filter(status=status_filter)
+    if verification_filter != "all": 
+        sites = sites.filter(meta_verification__status=verification_filter)
+    if pinned_filter == "true": 
+        sites = sites.filter(is_pinned=True)
     
     if land_classification_filter:
         try:
@@ -1131,10 +1112,13 @@ def get_available_sites(request, reforestation_area_id):
         except (ValueError, TypeError):
             pass
 
-    active_statuses = ['accepted', 'under_monitoring', 'completed', 'failed', 'for_evaluation', 'for_head']
+    # ✅ FIXED: Only exclude sites with TRULY ACTIVE or PENDING applications.
+    # 'completed' and 'failed' applications DO NOT block a site from being available.
+    active_statuses = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
     sites = sites.exclude(applications__status__in=active_statuses)
 
-    if search: sites = sites.filter(name__icontains=search)
+    if search: 
+        sites = sites.filter(name__icontains=search)
 
     total = sites.count()
     total_page = max(1, math.ceil(total / entries))
@@ -1143,7 +1127,12 @@ def get_available_sites(request, reforestation_area_id):
     data = []
     for s in sites_list:
         current_sd = s.site_data_versions.filter(is_current=True).first()
-        validation = {"has_safety_note": False, "has_survivability_note": False, "final_decision": None, "is_ready_to_finalize": False}
+        validation = {
+            "has_safety_note": False, 
+            "has_survivability_note": False, 
+            "final_decision": None, 
+            "is_ready_to_finalize": False
+        }
         if current_sd and current_sd.site_data:
             validation["has_safety_note"] = bool(current_sd.site_data.get('safety', {}).get('decision_note', '').strip())
             validation["has_survivability_note"] = bool(current_sd.site_data.get('survivability', {}).get('decision_note', '').strip())
@@ -1151,11 +1140,21 @@ def get_available_sites(request, reforestation_area_id):
             validation["is_ready_to_finalize"] = bool(validation["final_decision"])
 
         meta_verification = getattr(s, 'meta_verification', None)
-        verification_info = {"status": "pending", "land_classification": None, "security_concerns_count": 0, "has_accessibility": False, "accessibility_type": None, "verified_animals_count": 0}
+        verification_info = {
+            "status": "pending", 
+            "land_classification": None, 
+            "security_concerns_count": 0, 
+            "has_accessibility": False, 
+            "accessibility_type": None, 
+            "verified_animals_count": 0
+        }
         if meta_verification:
             verification_info["status"] = meta_verification.status
             if meta_verification.verified_land_classification:
-                verification_info["land_classification"] = {"id": meta_verification.verified_land_classification.land_classification_id, "name": meta_verification.verified_land_classification.name}
+                verification_info["land_classification"] = {
+                    "id": meta_verification.verified_land_classification.land_classification_id, 
+                    "name": meta_verification.verified_land_classification.name
+                }
             if meta_verification.verified_security_concerns:
                 verification_info["security_concerns_count"] = len(meta_verification.verified_security_concerns)
             if meta_verification.verified_accessibility:
@@ -1169,18 +1168,25 @@ def get_available_sites(request, reforestation_area_id):
             "reforestation_area_id": s.reforestation_area_id,
             "name": s.name,
             "status": s.status,
+            "monitoring_status": s.monitoring_status, # ✅ NEW
             "is_pinned": s.is_pinned,
             "validation": validation,
             "verification": verification_info,
             "permit_count": s.permit_documents.count(),
-            # ✅ CLEANED: Removed ndvi and seedlings
             "metrics": {
                 "area_hectares": s.total_area_hectares,
             },
             "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S")
         })
 
-    return JsonResponse({"data": data, "total_page": total_page, "page": page, "entries": entries, "total": total}, status=200)
+    return JsonResponse({
+        "data": data, 
+        "total_page": total_page, 
+        "page": page, 
+        "entries": entries, 
+        "total": total
+    }, status=200)
+
 
 
 @csrf_exempt
@@ -1193,17 +1199,17 @@ def get_mcda_data(request, reforestation_area_id):
         
         sites_qs = Sites.objects.filter(
             reforestation_area_id=reforestation_area_id, is_active=True
-        ).values('site_id', 'name', 'marker_coordinate', 'polygon_coordinates', 'status', 'is_pinned', 'total_area_hectares', 'created_at')
+        ).values('site_id', 'name', 'marker_coordinate', 'polygon_coordinates', 'status', 'monitoring_status', 'is_pinned', 'total_area_hectares', 'created_at')
         
         sites_data = []
         for s in sites_qs:
             sites_data.append({
                 "site_id": s["site_id"],
                 "name": s["name"],
-                # ✅ CLEANED: Replaced center_coordinate with marker_coordinate
                 "marker_coordinate": s["marker_coordinate"],
                 "polygon_coordinates": s["polygon_coordinates"],
                 "status": s["status"],
+                "monitoring_status": s["monitoring_status"], # ✅ NEW
                 "is_pinned": s["is_pinned"],
                 "created_at": s["created_at"].isoformat() if s["created_at"] else None,
                 "metrics": {"area_hectares": s["total_area_hectares"] or 0.0},
@@ -1222,3 +1228,46 @@ def get_mcda_data(request, reforestation_area_id):
         }, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def update_site_monitoring_status(request, site_id):
+    """DataManager/CityENROHead: Update the operational monitoring status of a site."""
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role not in ['DataManager', 'CityENROHead']:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+        new_status = data.get('monitoring_status')
+        reason = data.get('reason', '').strip()
+        
+        valid_statuses = ['available', 'reserved', 'under_monitoring', 'completed', 'failed', 'onhold']
+        if new_status not in valid_statuses:
+            return JsonResponse({'error': 'Invalid status'}, status=400)
+            
+        site = get_object_or_404(Sites, site_id=site_id)
+        
+        # Safety check: Cannot set to under_monitoring without an active application
+        if new_status == 'under_monitoring':
+            has_active_app = Application.objects.filter(site=site, status__in=['accepted', 'under_monitoring']).exists()
+            if not has_active_app:
+                return JsonResponse({'error': 'Cannot set to under_monitoring without an active application'}, status=400)
+                
+        old_status = site.monitoring_status
+        site.monitoring_status = new_status
+        site.save()
+        
+        # Optional: You could log the 'reason' to a SiteStatusLog model here for audit
+        
+        return JsonResponse({
+            'message': f'Site status updated from {old_status} to {new_status}', 
+            'monitoring_status': site.monitoring_status
+        }, status=200)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+

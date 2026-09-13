@@ -5,6 +5,8 @@ import {
   FileCheck2,
   Calendar,
   Users,
+  MapPin,
+  ListOrdered, // ✅ NEW: For Queue Icon
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { useNavigate } from "react-router-dom";
@@ -21,8 +23,9 @@ interface Application {
   total_treegrowers_will_participate: number;
   classification: string;
   status: string;
+  queue_position: number | null; // ✅ NEW: FIFO Queue Position
+  site_name: string | null;       // ✅ NEW: Assigned Site Context
   orientation_date: string | null;
-  site_name: string | null;
   created_at: string;
 }
 
@@ -119,13 +122,13 @@ export default function Application_confirmation() {
         />
       )}
 
-      <main className="flex-1 p-8 w-full max-w-450 mx-auto">
+      <main className="flex-1 p-8 w-full max-w-6xl mx-auto"> {/* ✅ Increased max-width for new columns */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-[#0F4A2F]">
             Head Confirmation Queue
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Review and approve applications evaluated by the Data Manager.
+            Review and approve applications evaluated by the Data Manager. Applications are ordered by FIFO queue position.
           </p>
         </div>
 
@@ -195,28 +198,28 @@ export default function Application_confirmation() {
           <table className="relative min-w-full">
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
-                  No
+                <th className="py-3 px-4 text-left text-[.85rem] font-semibold">
+                  Queue
                 </th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                <th className="py-3 px-4 text-left text-[.85rem] font-semibold">
                   Group
                 </th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                <th className="py-3 px-4 text-left text-[.85rem] font-semibold">
+                  Assigned Site
+                </th>
+                <th className="py-3 px-4 text-left text-[.85rem] font-semibold">
                   Title
                 </th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                <th className="py-3 px-4 text-left text-[.85rem] font-semibold">
                   Classification
                 </th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                <th className="py-3 px-4 text-left text-[.85rem] font-semibold">
                   Growers
                 </th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
+                <th className="py-3 px-4 text-left text-[.85rem] font-semibold">
                   Orientation Date
                 </th>
-                <th className="py-3 px-5 text-left text-[.85rem] font-semibold">
-                  Submitted
-                </th>
-                <th className="py-3 px-5 text-center text-[.85rem] font-semibold">
+                <th className="py-3 px-4 text-center text-[.85rem] font-semibold">
                   Actions
                 </th>
               </tr>
@@ -228,10 +231,18 @@ export default function Application_confirmation() {
                     key={app.application_id}
                     className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-green-50/30 transition`}
                   >
-                    <td className="py-3 px-5 text-[.85rem] text-gray-600">
-                      {index + 1 + (filter.page - 1) * filter.entries}
+                    {/* ✅ NEW: Queue Position Column */}
+                    <td className="py-3 px-4 text-[.85rem] text-center">
+                      {app.queue_position ? (
+                        <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm border border-indigo-200">
+                          #{app.queue_position}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">-</span>
+                      )}
                     </td>
-                    <td className="py-3 px-5">
+                    
+                    <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
                         <img
                           src={
@@ -254,10 +265,21 @@ export default function Application_confirmation() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-5 text-[.85rem] font-medium text-gray-700 max-w-[150px] truncate">
+
+                    {/* ✅ NEW: Assigned Site Column */}
+                    <td className="py-3 px-4 text-[.85rem] text-gray-700 max-w-[150px]">
+                      <div className="flex items-center gap-1.5">
+                        <MapPin size={14} className="text-gray-400 flex-shrink-0" />
+                        <span className="truncate" title={app.site_name || "No site assigned"}>
+                          {app.site_name || "Not assigned"}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="py-3 px-4 text-[.85rem] font-medium text-gray-700 max-w-[150px] truncate" title={app.title}>
                       {app.title}
                     </td>
-                    <td className="py-3 px-5">
+                    <td className="py-3 px-4">
                       {app.classification === "new" ? (
                         <span className="px-2 py-1 text-[.7rem] font-semibold rounded-full bg-blue-100 text-blue-800">
                           First-Time
@@ -268,13 +290,13 @@ export default function Application_confirmation() {
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-5 text-[.85rem] text-gray-700">
+                    <td className="py-3 px-4 text-[.85rem] text-gray-700">
                       <div className="flex items-center gap-1.5">
                         <Users size={14} className="text-gray-400" />
                         {app.total_treegrowers_will_participate}
                       </div>
                     </td>
-                    <td className="py-3 px-5 text-[.85rem]">
+                    <td className="py-3 px-4 text-[.85rem]">
                       <div className="flex items-center gap-1.5 text-gray-600">
                         <Calendar
                           size={14}
@@ -295,13 +317,10 @@ export default function Application_confirmation() {
                         </span>
                       </div>
                     </td>
-                    <td className="py-3 px-5 text-[.85rem] text-gray-500">
-                      {app.created_at}
-                    </td>
-                    <td className="py-3 px-5 text-center">
+                    <td className="py-3 px-4 text-center">
                       <button
                         onClick={() => {
-                          navigate("/evaluation/" + app.application_id);
+                          navigate(`/evaluation/${app.application_id}`);
                         }}
                         className="inline-flex items-center gap-1.5 bg-[#0F4A2F] hover:bg-[#1a6b44] text-white px-3 py-1.5 rounded-md text-[.8rem] font-semibold transition-colors shadow-sm"
                       >
@@ -337,8 +356,13 @@ export default function Application_confirmation() {
             <ChevronLeft size={19} />
           </button>
 
-          {Array.from({ length: filter.total_page }, (_, i) => i + 1).map(
-            (p) => (
+          {Array.from({ length: Math.min(5, filter.total_page) }, (_, i) => {
+             // ✅ Improved pagination logic for many pages
+             let p = i + 1;
+             if (filter.total_page > 5 && filter.page > 3) {
+               p = Math.min(filter.page - 2 + i, filter.total_page);
+             }
+             return (
               <button
                 key={p}
                 onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
@@ -350,8 +374,8 @@ export default function Application_confirmation() {
               >
                 {p}
               </button>
-            ),
-          )}
+            );
+          })}
 
           <button
             disabled={filter.page >= filter.total_page}

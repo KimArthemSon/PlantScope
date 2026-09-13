@@ -3,15 +3,10 @@ import { useNavigate } from "react-router-dom";
 import {
   ChevronRight,
   ChevronLeft,
-  CheckCircle,
-  Clock,
   Eye,
   Trash2,
   Pin,
   PinOff,
-  XCircle,
-  AlertCircle,
-  FileCheck,
   ShieldCheck,
   Filter as FilterIcon,
   X,
@@ -20,6 +15,10 @@ import {
   Search,
   Globe,
   MapPin,
+  Clock,
+  FileCheck,
+  XCircle,
+  AlertCircle,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -52,8 +51,8 @@ interface Site {
   reforestation_area: string;
   barangay: string;
   name: string;
-  status: string;
-  program_status: "available" | "ongoing" | "completed";
+  // ✅ REMOVED: status and program_status (redundant for Official Sites page)
+  monitoring_status: "available" | "reserved" | "under_monitoring" | "completed" | "failed" | "onhold";
   is_pinned: boolean;
   created_at: string;
   validation: ValidationStatus;
@@ -101,8 +100,7 @@ interface SiteFilter {
   total_page: number;
   pinned_only: boolean;
   land_classification_id: string;
-  program_status: string;
-  status: string;
+  monitoring_status: string; 
 }
 
 const DEFAULT_AREA_FILTER: Omit<AreaFilter, "total_page"> = {
@@ -118,8 +116,7 @@ const DEFAULT_SITE_FILTER: Omit<SiteFilter, "total_page"> = {
   page: 1,
   pinned_only: false,
   land_classification_id: "",
-  program_status: "",
-  status: "all",
+  monitoring_status: "all", 
 };
 
 export default function OfficialSites() {
@@ -231,18 +228,18 @@ export default function OfficialSites() {
         search: siteFilter.search,
         page: siteFilter.page.toString(),
         entries: siteFilter.entries.toString(),
-        status: siteFilter.status,
+        status: "accepted", // ✅ Implicitly enforce accepted/verified for this page
         pinned_only: siteFilter.pinned_only ? "true" : "false",
       });
 
-      // Context: Which area are we looking at?
       if (selectedArea) {
         params.append("reforestation_area_id", selectedArea.reforestation_area_id.toString());
       }
 
-      // Site-specific filters
       if (siteFilter.land_classification_id) params.append("land_classification_id", siteFilter.land_classification_id);
-      if (siteFilter.program_status) params.append("program_status", siteFilter.program_status);
+      if (siteFilter.monitoring_status && siteFilter.monitoring_status !== "all") {
+        params.append("monitoring_status", siteFilter.monitoring_status);
+      }
 
       const response = await fetch(`${api}api/get_official_sites/?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -276,14 +273,12 @@ export default function OfficialSites() {
     siteFilter.entries,
     siteFilter.pinned_only,
     siteFilter.land_classification_id,
-    siteFilter.program_status,
-    siteFilter.status,
+    siteFilter.monitoring_status,
     siteFilter.search,
   ]);
 
   const handleSelectArea = (area: AreaOption | null) => {
     setSelectedArea(area);
-    // Reset child filters when changing parent context
     setSiteFilter({ ...DEFAULT_SITE_FILTER, total_page: 1 });
   };
 
@@ -328,28 +323,29 @@ export default function OfficialSites() {
     setSiteFilter({ ...DEFAULT_SITE_FILTER, total_page: siteFilter.total_page });
   };
 
-  const getSiteStatusBadge = (status: string) => {
-    switch (status) {
-      case "accepted": return { icon: CheckCircle, color: "bg-emerald-100 text-emerald-700", label: "Accepted" };
-      case "under_monitoring": return { icon: Activity, color: "bg-blue-100 text-blue-700", label: "Monitoring" };
-      case "completed": return { icon: FileCheck, color: "bg-purple-100 text-purple-700", label: "Completed" };
-      case "rejected": return { icon: XCircle, color: "bg-red-100 text-red-700", label: "Rejected" };
-      default: return { icon: AlertCircle, color: "bg-slate-100 text-slate-600", label: status };
-    }
-  };
-
-  const getProgramStatusBadge = (ps: string) => {
-    switch (ps) {
-      case "ongoing": return { icon: Clock, color: "bg-blue-100 text-blue-700 border border-blue-300", label: "Ongoing" };
-      case "completed": return { icon: FileCheck, color: "bg-purple-100 text-purple-700 border border-purple-300", label: "Completed" };
-      default: return { icon: ShieldCheck, color: "bg-emerald-100 text-emerald-700 border border-emerald-300", label: "Available" };
+  // ✅ DISTINCT COLORS FOR MONITORING STATUS
+  const getMonitoringStatusBadge = (ms: string) => {
+    switch (ms) {
+      case "available": 
+        return { icon: ShieldCheck, color: "bg-emerald-50 text-emerald-700 border border-emerald-200", label: "Available" };
+      case "reserved": 
+        return { icon: Clock, color: "bg-amber-50 text-amber-700 border border-amber-200", label: "Reserved" };
+      case "under_monitoring": 
+        return { icon: Activity, color: "bg-blue-50 text-blue-700 border border-blue-200", label: "Monitoring" };
+      case "completed": 
+        return { icon: FileCheck, color: "bg-purple-50 text-purple-700 border border-purple-200", label: "Completed" };
+      case "failed": 
+        return { icon: XCircle, color: "bg-red-50 text-red-700 border border-red-200", label: "Failed" };
+      case "onhold": 
+        return { icon: AlertCircle, color: "bg-gray-50 text-gray-700 border border-gray-200", label: "On Hold" };
+      default: 
+        return { icon: AlertCircle, color: "bg-slate-50 text-slate-700 border border-slate-200", label: ms };
     }
   };
 
   const hasActiveFilters =
     siteFilter.land_classification_id !== "" ||
-    siteFilter.program_status !== "" ||
-    siteFilter.status !== "all" ||
+    siteFilter.monitoring_status !== "all" ||
     siteFilter.pinned_only;
 
   return (
@@ -375,7 +371,6 @@ export default function OfficialSites() {
                 </span>
               </div>
               
-              {/* Area Search */}
               <div className="relative mb-2">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
@@ -387,7 +382,6 @@ export default function OfficialSites() {
                 />
               </div>
 
-              {/* Area Barangay Filter */}
               <select
                 value={areaFilter.barangay_id}
                 onChange={(e) => setAreaFilter((prev) => ({ ...prev, barangay_id: e.target.value, page: 1 }))}
@@ -403,7 +397,6 @@ export default function OfficialSites() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {/* "All Reforestation Areas" option */}
               <div
                 onClick={() => handleSelectArea(null)}
                 className={`p-3.5 rounded-lg border cursor-pointer transition-all duration-200 ${
@@ -419,7 +412,6 @@ export default function OfficialSites() {
                 <p className="text-[10px] text-slate-500">View official sites from all areas</p>
               </div>
 
-              {/* Individual Areas */}
               {loadingAreas ? (
                 <LoaderPending />
               ) : areas.length > 0 ? (
@@ -446,7 +438,7 @@ export default function OfficialSites() {
                       </div>
                       <div className="flex gap-2 text-[10px] text-slate-500">
                         <span className="flex items-center gap-0.5 text-emerald-600">
-                          <CheckCircle size={10} />
+                          <ShieldCheck size={10} />
                           {area.site_stats?.accepted_verified ?? 0} verified
                         </span>
                         <span className="text-slate-400">
@@ -464,7 +456,6 @@ export default function OfficialSites() {
               )}
             </div>
 
-            {/* Area Pagination */}
             <div className="p-2.5 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between">
               <button
                 disabled={areaFilter.page <= 1}
@@ -490,7 +481,6 @@ export default function OfficialSites() {
           {/* Right Panel - Official Sites (Child) */}
           {/* ───────────────────────────────────────────── */}
           <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            {/* Header */}
             <div className="p-4 border-b border-slate-200 bg-slate-50/50">
               <div className="flex items-center gap-2 mb-1">
                 <ShieldCheck className="text-emerald-600" size={22} />
@@ -502,12 +492,11 @@ export default function OfficialSites() {
               </div>
               <p className="text-xs text-slate-500 ml-9">
                 {selectedArea
-                  ? "Verified sites in this reforestation area"
-                  : "Verified sites across all reforestation areas"}
+                  ? "Verified and accepted sites in this area"
+                  : "Verified and accepted sites across all areas"}
               </p>
             </div>
 
-            {/* Toolbar */}
             <div className="p-3 border-b border-slate-200 bg-white flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 font-medium">Show:</span>
@@ -533,7 +522,6 @@ export default function OfficialSites() {
                 />
               </div>
 
-              {/* Filter Button & Floating Panel */}
               <div className="relative ml-auto" ref={filterRef}>
                 <button
                   onClick={() => setIsFilterOpen(!isFilterOpen)}
@@ -551,7 +539,7 @@ export default function OfficialSites() {
                 </button>
 
                 {isFilterOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="text-sm font-semibold text-slate-800">Site Filters</h3>
@@ -560,34 +548,21 @@ export default function OfficialSites() {
                         </button>
                       </div>
 
-                      {/* Site Status */}
+                      {/* ✅ Monitoring Status Filter */}
                       <div>
-                        <label className="text-xs font-medium text-slate-700 mb-1.5 block">Site Status</label>
+                        <label className="text-xs font-medium text-slate-700 mb-1.5 block">Monitoring Status</label>
                         <select
-                          value={siteFilter.status}
-                          onChange={(e) => setSiteFilter((prev) => ({ ...prev, status: e.target.value, page: 1 }))}
-                          className="w-full border border-emerald-300 bg-emerald-50 rounded-lg px-2.5 py-2 text-sm text-emerald-800 outline-none focus:ring-2 focus:ring-emerald-400"
-                        >
-                          <option value="all">All Statuses</option>
-                          <option value="accepted">Accepted</option>
-                          <option value="under_monitoring">Under Monitoring</option>
-                          <option value="completed">Completed</option>
-                          <option value="rejected">Rejected</option>
-                        </select>
-                      </div>
-
-                      {/* Program Status */}
-                      <div>
-                        <label className="text-xs font-medium text-slate-700 mb-1.5 block">Program Status</label>
-                        <select
-                          value={siteFilter.program_status}
-                          onChange={(e) => setSiteFilter((prev) => ({ ...prev, program_status: e.target.value, page: 1 }))}
+                          value={siteFilter.monitoring_status}
+                          onChange={(e) => setSiteFilter((prev) => ({ ...prev, monitoring_status: e.target.value, page: 1 }))}
                           className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-400"
                         >
-                          <option value="">All Programs</option>
-                          <option value="available">Available (No Program)</option>
-                          <option value="ongoing">Ongoing Program</option>
-                          <option value="completed">Completed Program</option>
+                          <option value="all">All States</option>
+                          <option value="available">Available</option>
+                          <option value="reserved">Reserved (In Queue)</option>
+                          <option value="under_monitoring">Under Monitoring</option>
+                          <option value="completed">Completed</option>
+                          <option value="failed">Failed</option>
+                          <option value="onhold">On Hold</option>
                         </select>
                       </div>
 
@@ -633,7 +608,7 @@ export default function OfficialSites() {
                           onClick={() => setIsFilterOpen(false)}
                           className="flex-1 px-3 py-2 text-xs font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
                         >
-                          Apply & Close
+                          Apply
                         </button>
                       </div>
                     </div>
@@ -642,7 +617,6 @@ export default function OfficialSites() {
               </div>
             </div>
 
-            {/* Sites Table */}
             <div className="flex-1 overflow-auto">
               {loadingSites && <LoaderPending />}
               <table className="min-w-full">
@@ -655,19 +629,15 @@ export default function OfficialSites() {
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
                       <MapPin size={12} className="inline mr-1 -mt-0.5" /> Location
                     </th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Site Status</th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Program</th>
-                  
+                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Monitoring Status</th>
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {sites.length > 0 ? (
                     sites.map((site, index) => {
-                      const siteBadge = getSiteStatusBadge(site.status);
-                      const SiteIcon = siteBadge.icon;
-                      const programBadge = getProgramStatusBadge(site.program_status);
-                      const ProgramIcon = programBadge.icon;
+                      const monitoringBadge = getMonitoringStatusBadge(site.monitoring_status);
+                      const MonitoringIcon = monitoringBadge.icon;
 
                       return (
                         <tr
@@ -699,16 +669,10 @@ export default function OfficialSites() {
                             </div>
                           </td>
                           <td className="py-2.5 px-3">
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${siteBadge.color}`}>
-                              <SiteIcon size={10} /> {siteBadge.label}
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold ${monitoringBadge.color}`}>
+                              <MonitoringIcon size={12} /> {monitoringBadge.label}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3">
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium ${programBadge.color}`}>
-                              <ProgramIcon size={10} /> {programBadge.label}
-                            </span>
-                          </td>
-                        
                           <td className="py-2.5 px-3">
                             <div className="flex gap-1">
                               <button
@@ -718,7 +682,7 @@ export default function OfficialSites() {
                               >
                                 <Eye size={12} />
                               </button>
-                              {userRole !== "DataManager" && (
+                              {userRole === "DataManager" && (
                                 <button
                                   onClick={() => setDelete(site.site_id)}
                                   className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors border border-red-600"
@@ -734,11 +698,11 @@ export default function OfficialSites() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={7} className="text-center py-12 text-slate-400">
+                      <td colSpan={5} className="text-center py-12 text-slate-400">
                         <div className="flex flex-col items-center gap-2">
                           <ShieldCheck size={32} className="opacity-50" />
                           <p className="text-sm font-medium text-slate-600">No official sites found</p>
-                          <p className="text-xs">Sites must be accepted/official and verified to appear here</p>
+                          <p className="text-xs">Sites must be accepted and verified to appear here</p>
                         </div>
                       </td>
                     </tr>
@@ -747,7 +711,6 @@ export default function OfficialSites() {
               </table>
             </div>
 
-            {/* Site Pagination */}
             <div className="p-2.5 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between">
               <button
                 disabled={siteFilter.page <= 1}

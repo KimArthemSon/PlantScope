@@ -64,5 +64,6 @@ urlpatterns = [
     path('get_available_sites/<int:reforestation_area_id>/', views.get_available_sites, name='get_available_sites'),
 
     path('get_mcda_data/<int:reforestation_area_id>/', views.get_mcda_data, name="get_mcda_data"),
+    path('update_site_monitoring_status/<int:site_id>/', views.update_site_monitoring_status, name='update_site_monitoring_status'),
 
 ]
