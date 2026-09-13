@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
-  User,
   Building2,
   FileText,
   Download,
@@ -28,6 +27,7 @@ import {
   Pin,
   PinOff,
   Globe,
+  ListOrdered, // ✅ NEW: For Queue Icon
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { api } from "@/constant/api";
@@ -42,6 +42,7 @@ interface ApplicationDetail {
     title: string;
     classification: "new" | "old";
     status: string;
+    queue_position: number | null; // ✅ NEW: FIFO Queue Position
     total_treegrowers_will_participate: number;
     orientation_date: string | null;
     proposed_orientation_date: string | null;
@@ -91,6 +92,7 @@ interface Site {
   reforestation_area_id: number;
   name: string;
   status: string;
+  monitoring_status: string; // ✅ NEW: Monitoring Status
   is_pinned: boolean;
   created_at: string;
   validation: {
@@ -109,9 +111,7 @@ interface Site {
   };
   permit_count: number;
   metrics: {
-    ndvi: number | null;
     area_hectares: number;
-    seedlings: number;
   };
 }
 
@@ -523,6 +523,7 @@ function SiteSelectionPanel({
                             {site.name}
                           </p>
                         </div>
+                        {/* ✅ UPDATED: Shows Verification Status */}
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border flex-shrink-0 ${verificationBadge.color}`}
                         >
@@ -530,6 +531,8 @@ function SiteSelectionPanel({
                           {verificationBadge.label}
                         </span>
                       </div>
+                      
+                      {/* ✅ NEW: Shows Monitoring Status & Metrics */}
                       <div className="flex items-center justify-between mt-2">
                         <div className="flex flex-wrap gap-2 text-xs text-gray-500">
                           {site.metrics.area_hectares > 0 && (
@@ -537,13 +540,16 @@ function SiteSelectionPanel({
                               {site.metrics.area_hectares.toFixed(2)} ha
                             </span>
                           )}
-                        
                           {site.verification.land_classification && (
                             <span className="flex items-center gap-1 text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
                               <Layers size={10} />{" "}
                               {site.verification.land_classification.name}
                             </span>
                           )}
+                          {/* ✅ NEW: Monitoring Status Badge */}
+                          <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            <ShieldCheck size={10} /> Available
+                          </span>
                         </div>
                         <div className="flex gap-1.5">
                           <button
@@ -781,6 +787,7 @@ function ReturningEvaluator({
           reforestation_area_id: 0,
           name: detail.proposed_site.name,
           status: "accepted",
+          monitoring_status: "available",
           is_pinned: false,
           created_at: "",
           validation: {
@@ -798,7 +805,7 @@ function ReturningEvaluator({
             verified_animals_count: 0,
           },
           permit_count: 0,
-          metrics: { ndvi: null, area_hectares: 0, seedlings: 0 },
+          metrics: { area_hectares: 0 },
         });
       }
       const dateToUse =
@@ -883,7 +890,6 @@ function ReturningEvaluator({
               className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${!acceptProposed ? "bg-purple-600 text-white shadow-md" : "bg-white text-purple-600 border border-purple-200 hover:bg-purple-50"}`}
               type="button"
             >
-              {" "}
               Override / Select Site
             </button>
           </div>
@@ -1073,6 +1079,7 @@ export default function Evaluation_application() {
             reforestation_area_id: 0,
             name: data.assigned_site.name,
             status: "accepted",
+            monitoring_status: "available",
             is_pinned: false,
             created_at: "",
             validation: {
@@ -1093,9 +1100,7 @@ export default function Evaluation_application() {
             },
             permit_count: 0,
             metrics: {
-              ndvi: null,
               area_hectares: data.assigned_site.total_area_hectares || 0,
-              seedlings: 0,
             },
           });
         }
@@ -1136,7 +1141,6 @@ export default function Evaluation_application() {
     fetchAreas();
   }, [tab, token]);
 
-  // ✅ UPDATED: Fetches from the NEW get_available_sites endpoint
   useEffect(() => {
     if (!selectedArea && !isAllAreas) return;
     const fetchSites = async () => {
@@ -1159,7 +1163,6 @@ export default function Evaluation_application() {
 
         const areaId = isAllAreas ? 0 : selectedArea?.reforestation_area_id;
 
-        // ✅ CHANGED: Points to the new dedicated endpoint
         const res = await fetch(
           `${api}api/get_available_sites/${areaId}/?${params}`,
           {
@@ -1418,6 +1421,17 @@ export default function Evaluation_application() {
               </p>
             </div>
           </div>
+          
+          {/* ✅ NEW: Queue Position Badge in Header */}
+          {application.queue_position && application.status === 'for_head' && (
+            <div className="ml-4 flex items-center gap-1.5 bg-indigo-500/20 border border-indigo-400/30 px-3 py-1.5 rounded-lg">
+              <ListOrdered size={14} className="text-indigo-200" />
+              <span className="text-xs font-bold text-indigo-100">
+                Queue Position: #{application.queue_position}
+              </span>
+            </div>
+          )}
+
           <div className="ml-auto hidden md:flex items-center gap-2">
             {TABS.map((t, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -1588,6 +1602,20 @@ export default function Evaluation_application() {
         )}
         {tab === 1 && (
           <div className="flex flex-col gap-6">
+            {/* ✅ NEW: Re-evaluation Warning */}
+            {application.status === 'for_head' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertTriangle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-bold text-amber-800">Re-evaluating Application</h4>
+                  <p className="text-xs text-amber-700 mt-1">
+                    This application is currently in the queue (Position #{application.queue_position}). 
+                    Updating the site or date will maintain its current queue position.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {application.classification === "new" ? (
               <FirstTimeEvaluator
                 detail={detail}

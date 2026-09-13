@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   CheckCircle2,
@@ -23,11 +23,15 @@ import {
   History,
   Car,
   Layers,
+  PauseCircle,
+  ShieldCheck,
+  Package,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { api } from "@/constant/api.ts";
 
-// ... (Keep all your existing Types and Interfaces exactly as they were) ...
+// ─── Types ─────────────────────────────────────────────────────────────────
+
 interface ProgressReportSpeciesItem {
   species_id: number;
   species_name: string;
@@ -36,6 +40,12 @@ interface ProgressReportSpeciesItem {
   no_survived: number;
   no_dead: number;
   survival_rate: number;
+}
+
+interface SeedlingRequestSpeciesItem {
+  species_id: number;
+  species_name: string;
+  total_requested: number;
 }
 
 interface HistoricalApplication {
@@ -55,6 +65,7 @@ interface SiteMonitoringDetail {
     barangay_name: string | null;
     accessibility: any;
     land_classification_name: string | null;
+    monitoring_status: string;
   };
   metrics: {
     total_planted: number;
@@ -63,6 +74,8 @@ interface SiteMonitoringDetail {
     total_survived: number;
     survival_rate: number;
   };
+  total_seedlings_provided: number;
+  seedling_requests_breakdown: SeedlingRequestSpeciesItem[];
   current_application: {
     application_id: number;
     group_name: string;
@@ -88,7 +101,8 @@ interface SiteMonitoringDetail {
   }>;
 }
 
-// ... (Keep Helpers exactly as they were) ...
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
 const API_BASE = api;
 
 const STATUS_CONFIG: Record<
@@ -112,6 +126,18 @@ const StatusBadge = ({ status }: { status: string }) => {
       {conf.label}
     </span>
   );
+};
+
+const getMonitoringStatusBadge = (status: string) => {
+  switch (status) {
+    case "available": return { icon: ShieldCheck, color: "bg-emerald-50 text-emerald-700 border border-emerald-200", label: "Available" };
+    case "reserved": return { icon: Clock, color: "bg-amber-50 text-amber-700 border border-amber-200", label: "Reserved" };
+    case "under_monitoring": return { icon: Trees, color: "bg-blue-50 text-blue-700 border border-blue-200", label: "Under Monitoring" };
+    case "completed": return { icon: CheckCircle2, color: "bg-purple-50 text-purple-700 border border-purple-200", label: "Completed" };
+    case "failed": return { icon: XCircle, color: "bg-red-50 text-red-700 border border-red-200", label: "Failed" };
+    case "onhold": return { icon: PauseCircle, color: "bg-gray-100 text-gray-700 border border-gray-300", label: "On Hold" };
+    default: return { icon: AlertTriangle, color: "bg-slate-100 text-slate-600 border border-slate-200", label: status };
+  }
 };
 
 const getAccessibilityText = (accessibility: any) => {
@@ -139,7 +165,7 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
   );
 }
 
-// ─── Main Component ─────────────────────────────────────────────────────────
+// ─── Main Component ────────────────────────────────────────────────────────
 
 export default function SiteMonitoringDetails() {
   const { site_id } = useParams<{ site_id: string }>();
@@ -155,13 +181,13 @@ export default function SiteMonitoringDetails() {
   const [alertModal, setAlertModal] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
   const [updateOrientationModal, setUpdateOrientationModal] = useState<{ open: boolean; newDate: string; reason: string }>({ open: false, newDate: "", reason: "" });
+  const [statusChangeModal, setStatusChangeModal] = useState<{ open: boolean; newStatus: string; reason: string }>({ open: false, newStatus: "", reason: "" });
 
   // States
   const [submitting, setSubmitting] = useState(false);
   const [sendingAlert, setSendingAlert] = useState(false);
   const [PSalert, setPSAlert] = useState<{ type: "success" | "failed" | "error"; title: string; message: string } | null>(null);
 
-  // ─── Fetch Site Details ────────────────────────────────────────────────────
   const fetchSiteDetails = async () => {
     if (!site_id) {
       console.error("No site_id in URL params");
@@ -172,24 +198,17 @@ export default function SiteMonitoringDetails() {
 
     setLoading(true);
     try {
-      // ✅ DEBUG: Log the URL being fetched
       const url = `${API_BASE}api/get_site_monitoring_details/${site_id}/`;
-      console.log("Fetching site details from:", url);
-
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log("Response status:", res.status);
-
       if (!res.ok) {
         const errorText = await res.text();
-        console.error("API Error:", errorText);
         throw new Error(`Failed to load site details: ${res.status} ${errorText}`);
       }
 
       const data = await res.json();
-      console.log("Received data:", data);
       setDetail(data);
     } catch (err: any) {
       console.error("Fetch error:", err);
@@ -202,9 +221,6 @@ export default function SiteMonitoringDetails() {
   useEffect(() => {
     fetchSiteDetails();
   }, [site_id]);
-
-  // ... (Keep all your Action Handlers exactly as they were: handleUpdateProgressReport, handleCompleteApplication, etc.) ...
-  // I will include them below to ensure the file is complete.
 
   const handleUpdateProgressReport = async (reportId: number, status: "accepted" | "rejected", reason: string) => {
     setSubmitting(true);
@@ -302,36 +318,84 @@ export default function SiteMonitoringDetails() {
     }
   };
 
-  // ─── Calculations (Species Breakdown) ──────────────────────────────────────
+  const handleUpdateSiteStatus = async () => {
+    if (!statusChangeModal.newStatus || !statusChangeModal.reason.trim()) {
+      setPSAlert({ type: "failed", title: "Missing", message: "Please provide a reason for this status change." });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}api/update_site_monitoring_status/${site_id}/`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ monitoring_status: statusChangeModal.newStatus, reason: statusChangeModal.reason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Action failed");
+      setPSAlert({ type: "success", title: "Status Updated", message: data.message });
+      setStatusChangeModal({ open: false, newStatus: "", reason: "" });
+      fetchSiteDetails();
+    } catch (err: any) {
+      setPSAlert({ type: "failed", title: "Failed", message: err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const calculateSpeciesBreakdown = () => {
     const acceptedReports = detail?.progress_reports.filter((r) => r.status === "accepted") || [];
-    const sorted = [...acceptedReports].sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime());
     
-    const initialReport = sorted.find((r) => r.visit_type === "initial");
-    const ongoingReports = sorted.filter((r) => r.visit_type === "ongoing");
+    const initialReports = acceptedReports.filter((r) => r.visit_type === "initial");
+    const oldestInitialReport = initialReports.length > 0 
+      ? initialReports.sort((a, b) => new Date(a.submitted_at || 0).getTime() - new Date(b.submitted_at || 0).getTime())[0] 
+      : null;
+
+    const ongoingReports = acceptedReports.filter((r) => r.visit_type !== "initial");
 
     const allSpeciesIds = new Set<number>();
     const speciesNameMap = new Map<number, string>();
-    sorted.forEach((report) => report.species.forEach((sp) => { allSpeciesIds.add(sp.species_id); speciesNameMap.set(sp.species_id, sp.species_name); }));
+    acceptedReports.forEach((report) => report.species.forEach((sp) => { 
+      allSpeciesIds.add(sp.species_id); 
+      speciesNameMap.set(sp.species_id, sp.species_name); 
+    }));
 
     const breakdown = [];
     for (const speciesId of allSpeciesIds) {
       const speciesName = speciesNameMap.get(speciesId) || "Unknown";
-      const initialSpecies = initialReport?.species.find((sp) => sp.species_id === speciesId);
+      
+      const initialSpecies = oldestInitialReport?.species.find((sp) => sp.species_id === speciesId);
       const officially_planted = initialSpecies?.no_planted || 0;
 
       let total_added = 0;
-      sorted.forEach((report) => { const sp = report.species.find((s) => s.species_id === speciesId); total_added += sp?.no_added_by_grower || 0; });
+      acceptedReports.forEach((report) => { 
+        const sp = report.species.find((s) => s.species_id === speciesId); 
+        total_added += sp?.no_added_by_grower || 0; 
+      });
 
+      const sortedOngoing = [...ongoingReports].sort((a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime());
       let total_dead = 0;
-      for (let i = 0; i < ongoingReports.length; i++) { const sp = ongoingReports[i].species.find((s) => s.species_id === speciesId); if (sp) { total_dead = sp.no_dead; break; } }
+      for (let i = 0; i < sortedOngoing.length; i++) { 
+        const sp = sortedOngoing[i].species.find((s) => s.species_id === speciesId); 
+        if (sp) { 
+          total_dead = sp.no_dead; 
+          break; 
+        } 
+      }
       if (total_dead === 0 && initialSpecies) total_dead = initialSpecies.no_dead || 0;
 
       const total_accounted = officially_planted + total_added;
       const calculated_survived = Math.max(0, total_accounted - total_dead);
       const survival_rate = total_accounted > 0 ? (calculated_survived / total_accounted) * 100 : 0;
 
-      breakdown.push({ tree_species_id: speciesId, species_name: speciesName, officially_planted, total_added, total_dead, calculated_survived, survival_rate });
+      breakdown.push({ 
+        tree_species_id: speciesId, 
+        species_name: speciesName, 
+        officially_planted, 
+        total_added, 
+        total_dead, 
+        calculated_survived, 
+        survival_rate 
+      });
     }
     return breakdown;
   };
@@ -342,7 +406,19 @@ export default function SiteMonitoringDetails() {
   const appStatus = detail?.current_application?.status || "";
   const isNeedsOrientation = appStatus === "accepted";
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ✅ NEW: Check if an initial orientation report has been accepted
+  const hasAcceptedInitialReport = detail?.progress_reports.some(
+    (r) => r.visit_type === "initial" && r.status === "accepted"
+  );
+
+  // ✅ NEW: Find the baseline report ID (oldest accepted initial report)
+  const baselineReportId = useMemo(() => {
+    if (!detail) return null;
+    const initialReports = detail.progress_reports
+      .filter((r) => r.visit_type === "initial" && r.status === "accepted")
+      .sort((a, b) => new Date(a.submitted_at || 0).getTime() - new Date(b.submitted_at || 0).getTime());
+    return initialReports.length > 0 ? initialReports[0].report_id : null;
+  }, [detail]);
 
   if (loading) {
     return (
@@ -367,13 +443,22 @@ export default function SiteMonitoringDetails() {
     );
   }
 
-  const { site, metrics, current_application, historical_applications, progress_reports } = detail;
+  const { site, metrics, total_seedlings_provided, seedling_requests_breakdown, current_application, historical_applications, progress_reports } = detail;
+  const monitoringBadge = getMonitoringStatusBadge(site.monitoring_status);
+  const MonitoringIcon = monitoringBadge.icon;
 
   return (
     <div className="min-h-screen bg-gray-50" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {PSalert && <PlantScopeAlert type={PSalert.type} title={PSalert.title} message={PSalert.message} onClose={() => setPSAlert(null)} />}
+      {PSalert && (
+        <PlantScopeAlert
+          type={PSalert.type}
+          title={PSalert.title}
+          message={PSalert.message}
+          onClose={() => setPSAlert(null)}
+        />
+      )}
 
-      {/* ─ Header ─ */}
+      {/* ─ Header */}
       <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white px-6 py-5 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
@@ -386,13 +471,18 @@ export default function SiteMonitoringDetails() {
               <p className="text-xs text-green-200 mt-0.5 truncate max-w-md">{site.name} • {site.reforestation_area_name || "Unknown Area"}</p>
             </div>
           </div>
-          <StatusBadge status={current_application ? current_application.status : "inactive"} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={current_application ? current_application.status : "inactive"} />
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${monitoringBadge.color}`}>
+              <MonitoringIcon size={13} /> {monitoringBadge.label}
+            </span>
+          </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto p-6">
         <div className="flex gap-6 flex-col lg:flex-row">
-          {/* ─ Left: Site Info + Metrics + Reports ── */}
+          {/*  Left: Site Info + Metrics + Reports ─ */}
           <div className="flex-1 min-w-0 space-y-6">
             
             {/* Site Information & Tree Growers */}
@@ -423,6 +513,7 @@ export default function SiteMonitoringDetails() {
                     </div>
                     <p className="text-sm font-semibold text-gray-800">{current_application.group_name}</p>
                     <p className="text-xs text-gray-600 mt-1">Contact: {current_application.group_contact || "N/A"}</p>
+                    
                     {isNeedsOrientation && (
                       <div className="mt-3 flex gap-2">
                         <button onClick={() => setUpdateOrientationModal({ open: true, newDate: "", reason: "" })} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors">
@@ -467,16 +558,16 @@ export default function SiteMonitoringDetails() {
               </div>
             </div>
 
-            {/* Lifetime Metrics */}
+            {/* ✅ UPDATED: Lifetime Metrics */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <h3 className="text-sm font-bold text-[#0F4A2F] mb-4 flex items-center gap-2">
                 <TrendingUp size={16} /> Lifetime Site Metrics
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
-                  <Sprout size={20} className="text-emerald-600 mx-auto mb-2" />
-                  <p className="text-2xl font-bold text-emerald-800">{metrics.total_planted.toLocaleString()}</p>
-                  <p className="text-xs text-emerald-600 font-medium">Officially Planted</p>
+                  <Package size={20} className="text-emerald-600 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-emerald-800">{total_seedlings_provided.toLocaleString()}</p>
+                  <p className="text-xs text-emerald-600 font-medium">Total Seedlings Provided</p>
                 </div>
                 <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 text-center">
                   <Trees size={20} className="text-indigo-600 mx-auto mb-2" />
@@ -501,13 +592,33 @@ export default function SiteMonitoringDetails() {
               </div>
             </div>
 
-            {/* Species Breakdown */}
+            {/* ✅ NEW: Seedling Request Breakdown */}
+            {seedling_requests_breakdown.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <SectionHeader icon={<Package size={16} />} title="Seedling Request Breakdown" subtitle="Total accepted seedlings provided by ENRO across all applications" />
+                <div className="space-y-3">
+                  {seedling_requests_breakdown.map((sp, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                          <Leaf size={16} className="text-emerald-600" />
+                        </div>
+                        <span className="font-bold text-gray-800">{sp.species_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl font-bold text-emerald-700">{sp.total_requested.toLocaleString()}</span>
+                        <span className="text-xs text-gray-500 font-medium uppercase">seedlings</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Species Progress Breakdown */}
             {speciesBreakdown.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <h3 className="text-sm font-bold text-[#0F4A2F] flex items-center gap-2"><Trees size={16} /> Species Progress Breakdown</h3>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-500 bg-gray-100 px-2 py-1 rounded-full"><Info size={10} /> Survived is auto-calculated: (Planted + Added) - Dead</div>
-                </div>
+                <SectionHeader icon={<Trees size={16} />} title="Species Progress Breakdown" subtitle="Survived is auto-calculated: (Planted + Added) - Dead" />
                 <div className="space-y-3">
                   {speciesBreakdown.map((sp) => (
                     <div key={sp.tree_species_id} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
@@ -520,9 +631,10 @@ export default function SiteMonitoringDetails() {
                           {sp.survival_rate.toFixed(1)}% Survival
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                         <div><p className="text-xs text-gray-500 mb-1">Officially Planted</p><p className="font-bold text-blue-700">{sp.officially_planted}</p></div>
                         <div><p className="text-xs text-gray-500 mb-1">Added by Grower</p><p className="font-bold text-emerald-700">{sp.total_added}</p></div>
+                        <div><p className="text-xs text-gray-500 mb-1">Total Planted</p><p className="font-bold text-indigo-700">{sp.officially_planted + sp.total_added}</p></div>
                         <div><p className="text-xs text-gray-500 mb-1">Total Dead</p><p className="font-bold text-red-700">{sp.total_dead}</p></div>
                         <div><p className="text-xs text-gray-500 mb-1">Calculated Survived</p><p className="font-bold text-green-700">{sp.calculated_survived}</p></div>
                       </div>
@@ -534,10 +646,7 @@ export default function SiteMonitoringDetails() {
 
             {/* Progress Reports */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-[#0F4A2F] flex items-center gap-2"><FileText size={16} /> Progress Reports</h3>
-                <span className="text-xs text-gray-400">{progress_reports.length} total</span>
-              </div>
+              <SectionHeader icon={<FileText size={16} />} title="Progress Reports" subtitle={`${progress_reports.length} total reports submitted`} />
 
               {progress_reports.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-8">No progress reports submitted yet.</p>
@@ -546,6 +655,8 @@ export default function SiteMonitoringDetails() {
                   {progress_reports.map((report) => {
                     const isPending = report.status === "pending";
                     const isInitial = report.visit_type === "initial";
+                    const isBaseline = isInitial && report.report_id === baselineReportId;
+
                     return (
                       <div key={report.report_id} className={`p-5 rounded-xl border transition-all ${isPending ? "bg-amber-50/50 border-amber-200" : "bg-gray-50 border-gray-100"}`}>
                         <div className="flex items-start justify-between mb-4">
@@ -569,20 +680,71 @@ export default function SiteMonitoringDetails() {
                           <StatusBadge status={report.status} />
                         </div>
 
-                        <div className="grid grid-cols-3 gap-3 mb-4">
-                          <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                            <p className="text-lg font-bold text-emerald-600">{report.total_added_by_grower.toLocaleString()}</p>
-                            <p className="text-[10px] text-gray-500 font-medium uppercase">Added</p>
-                          </div>
-                          <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                            <p className="text-lg font-bold text-green-600">{report.total_survived.toLocaleString()}</p>
-                            <p className="text-[10px] text-gray-500 font-medium uppercase">Survived</p>
-                          </div>
-                          <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                            <p className="text-lg font-bold text-red-600">{report.total_dead.toLocaleString()}</p>
-                            <p className="text-[10px] text-gray-500 font-medium uppercase">Dead</p>
-                          </div>
+                        {/* ✅ UPDATED: 2-Column Grid based on Baseline vs Others */}
+                        <div className="grid grid-cols-2 gap-3 mb-4">
+                          {isBaseline ? (
+                            <>
+                              <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
+                                <p className="text-lg font-bold text-blue-600">
+                                  {report.species.reduce((sum, sp) => sum + sp.no_planted, 0).toLocaleString()}
+                                </p>
+                                <p className="text-[10px] text-gray-500 font-medium uppercase">Officially Planted</p>
+                              </div>
+                              <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
+                                <p className="text-lg font-bold text-red-600">{report.total_dead.toLocaleString()}</p>
+                                <p className="text-[10px] text-gray-500 font-medium uppercase">Dead</p>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
+                                <p className="text-lg font-bold text-emerald-600">{report.total_added_by_grower.toLocaleString()}</p>
+                                <p className="text-[10px] text-gray-500 font-medium uppercase">Added</p>
+                              </div>
+                              <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
+                                <p className="text-lg font-bold text-red-600">{report.total_dead.toLocaleString()}</p>
+                                <p className="text-[10px] text-gray-500 font-medium uppercase">Dead</p>
+                              </div>
+                            </>
+                          )}
                         </div>
+
+                        {report.species && report.species.length > 0 && (
+                          <div className="mt-4 pt-4 border-t border-gray-100">
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+                              Species Details
+                            </p>
+                            <div className="space-y-2">
+                              {report.species.map((sp, idx) => (
+                                <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100">
+                                  <div className="flex items-center gap-2">
+                                    <Trees size={14} className="text-gray-400" />
+                                    <span className="text-sm font-medium text-gray-700">{sp.species_name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-4 text-xs">
+                                    {/* ✅ UPDATED: Show Planted ONLY for baseline, Added for others */}
+                                    {isBaseline && sp.no_planted > 0 && (
+                                      <div className="text-center">
+                                        <p className="text-gray-400">Planted</p>
+                                        <p className="font-semibold text-blue-600">{sp.no_planted}</p>
+                                      </div>
+                                    )}
+                                    {!isBaseline && sp.no_added_by_grower > 0 && (
+                                      <div className="text-center">
+                                        <p className="text-gray-400">Added</p>
+                                        <p className="font-semibold text-emerald-600">{sp.no_added_by_grower}</p>
+                                      </div>
+                                    )}
+                                    <div className="text-center">
+                                      <p className="text-gray-400">Dead</p>
+                                      <p className="font-semibold text-red-600">{sp.no_dead}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {report.description && (
                           <div className="bg-white p-3 rounded-lg border border-gray-100 mb-3">
@@ -651,7 +813,21 @@ export default function SiteMonitoringDetails() {
 
                 <div className="pt-4 border-t border-gray-100">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Status Management</p>
-                  {current_application ? (
+                  
+                  {site.monitoring_status === "available" && (
+                    <button onClick={() => setStatusChangeModal({ open: true, newStatus: "onhold", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gray-600 text-white text-sm font-bold hover:bg-gray-700 transition-colors">
+                      <PauseCircle size={16} /> Put Site On Hold
+                    </button>
+                  )}
+
+                  {site.monitoring_status === "onhold" && (
+                    <button onClick={() => setStatusChangeModal({ open: true, newStatus: "available", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors">
+                      <ShieldCheck size={16} /> Release Site (Make Available)
+                    </button>
+                  )}
+
+                  {/* ✅ UPDATED: Only show Completed/Failed buttons if Initial Report is Accepted */}
+                  {site.monitoring_status === "under_monitoring" && current_application && hasAcceptedInitialReport && (
                     <div className="space-y-2">
                       <button onClick={() => setCompletionModal({ open: true, type: "completed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">
                         <CheckCircle2 size={16} /> Mark Application Completed
@@ -660,14 +836,25 @@ export default function SiteMonitoringDetails() {
                         <XCircle size={16} /> Mark Application Failed
                       </button>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <button className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors">
-                        <CheckCircle2 size={16} /> Mark Site as Completed
+                  )}
+
+                  {(site.monitoring_status === "completed" || site.monitoring_status === "failed") && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                      <p className="text-xs text-slate-600 font-medium">
+                        This site is currently <span className="font-bold capitalize">{site.monitoring_status.replace("_", " ")}</span>. 
+                        Independent monitoring checks are still permitted, but new applications are blocked.
+                      </p>
+                      <button onClick={() => setStatusChangeModal({ open: true, newStatus: "available", reason: "" })} className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors">
+                        <ShieldCheck size={14} /> Re-open Site (Make Available)
                       </button>
-                      <button className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors">
-                        <Users size={16} /> Open for New Applications
-                      </button>
+                    </div>
+                  )}
+                  
+                  {site.monitoring_status === "reserved" && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                      <p className="text-xs text-amber-700 font-medium flex items-center justify-center gap-1">
+                        <Clock size={14} /> Site is reserved — pending Head approval
+                      </p>
                     </div>
                   )}
                 </div>
@@ -696,7 +883,7 @@ export default function SiteMonitoringDetails() {
         </div>
       </main>
 
-      {/*  Update Orientation Date Modal ── */}
+      {/* Modals remain the same... */}
       {updateOrientationModal.open && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -717,7 +904,6 @@ export default function SiteMonitoringDetails() {
         </div>
       )}
 
-      {/* ─ Completion Decision Modal ── */}
       {completionModal.open && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -738,7 +924,6 @@ export default function SiteMonitoringDetails() {
         </div>
       )}
 
-      {/* ── Reject Report Modal ── */}
       {rejectReportModal.open && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -757,7 +942,6 @@ export default function SiteMonitoringDetails() {
         </div>
       )}
 
-      {/* ─ Alert Tree Grower Modal ── */}
       {alertModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -774,6 +958,43 @@ export default function SiteMonitoringDetails() {
               <button onClick={() => { setAlertModal(false); setAlertMessage(""); }} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancel</button>
               <button onClick={handleSendAlert} disabled={sendingAlert || !alertMessage.trim()} className={`flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition-all ${sendingAlert || !alertMessage.trim() ? "opacity-50 cursor-not-allowed" : ""}`}>
                 {sendingAlert ? "Sending…" : "Send Alert"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statusChangeModal.open && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle size={28} className="text-amber-600" />
+            </div>
+            <h3 className="text-lg font-bold text-center text-gray-800 mb-1">Change Site Status?</h3>
+            <p className="text-sm text-center text-gray-500 mb-5">
+              You are about to change the status to <span className="font-bold capitalize">{statusChangeModal.newStatus.replace("_", " ")}</span>.
+            </p>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Reason *</label>
+            <textarea 
+              rows={4} 
+              value={statusChangeModal.reason} 
+              onChange={(e) => setStatusChangeModal((p) => ({ ...p, reason: e.target.value }))} 
+              placeholder="e.g. Land dispute resolved, ready for new applicants..." 
+              className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] mb-5 transition-colors" 
+            />
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setStatusChangeModal({ open: false, newStatus: "", reason: "" })} 
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleUpdateSiteStatus} 
+                disabled={submitting || !statusChangeModal.reason.trim()} 
+                className={`flex-1 py-2.5 rounded-xl text-white text-sm font-bold transition-all ${submitting || !statusChangeModal.reason.trim() ? "opacity-50 cursor-not-allowed bg-gray-400" : "bg-[#0F4A2F] hover:bg-[#1a6b44]"}`}
+              >
+                {submitting ? "Processing…" : "Confirm Change"}
               </button>
             </div>
           </div>

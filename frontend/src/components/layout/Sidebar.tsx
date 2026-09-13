@@ -24,7 +24,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import logo from "../../assets/logo.png";
+import logo from "../../assets/logo2.png";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Logout from "./logout";
 import { Outlet } from "react-router-dom";
