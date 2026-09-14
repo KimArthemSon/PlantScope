@@ -447,6 +447,7 @@ def get_site(request, site_id):
         "polygon_coordinates": site.polygon_coordinates,
         "marker_coordinate": site.marker_coordinate,
         "area_hectares": site.total_area_hectares,
+        "main_image_url": get_cloudinary_url(str(site.main_image)) if site.main_image else None, # ✅ ADD
         "potential_sites": potential_sites_data,
         "meta_verification": verification_data,
         "permits": [{
@@ -1270,4 +1271,80 @@ def update_site_monitoring_status(request, site_id):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+# ─────────────────────────────────────────────
+# UPDATE SITE MAIN IMAGE
+# ─────────────────────────────────────────────
+@csrf_exempt
+def update_site_main_image(request, site_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+    
+    try:
+        site = get_object_or_404(Sites, site_id=site_id, is_active=True)
+        
+        # ✅ LOCKING CHECK: Prevent modification if site is in an active/official state
+        if is_site_locked(site):
+            return JsonResponse({"error": "Cannot modify main image for an official/active site."}, status=403)
 
+        user = get_user_from_token(request)
+        if not user:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+
+        if 'main_image' not in request.FILES:
+            return JsonResponse({"error": "No image file provided"}, status=400)
+        
+        file = request.FILES['main_image']
+        
+        # Constraint: Max 5MB
+        if file.size > 5 * 1024 * 1024:
+            return JsonResponse({"error": "File size exceeds 5MB limit."}, status=400)
+        
+        # Constraint: Must be an image
+        if not file.content_type.startswith('image/'):
+            return JsonResponse({"error": "Only image files are allowed."}, status=400)
+
+        # Clean up old image from Cloudinary to save storage space
+        if site.main_image:
+            delete_cloudinary_resource(str(site.main_image), resource_type='image')
+
+        # Assign and save new image
+        site.main_image = file
+        site.save()
+        
+        return JsonResponse({
+            "message": "Main image updated successfully",
+            "main_image_url": get_cloudinary_url(str(site.main_image)) if site.main_image else None
+        }, status=200)
+        
+    except Exception as e:
+        logger.error(f"Update site main image error: {e}", exc_info=True)
+        return JsonResponse({"error": "Internal server error"}, status=500)
+
+
+# ─────────────────────────────────────────────
+# REMOVE SITE MAIN IMAGE
+# ─────────────────────────────────────────────
+@csrf_exempt
+def remove_site_main_image(request, site_id):
+    if request.method != "DELETE":
+        return JsonResponse({"error": "DELETE only"}, status=405)
+    
+    try:
+        site = get_object_or_404(Sites, site_id=site_id, is_active=True)
+        
+        # ✅ LOCKING CHECK
+        if is_site_locked(site):
+            return JsonResponse({"error": "Cannot modify main image for an official/active site."}, status=403)
+
+        if site.main_image:
+            # Delete from Cloudinary
+            delete_cloudinary_resource(str(site.main_image), resource_type='image')
+            # Remove reference from DB
+            site.main_image = None
+            site.save()
+        
+        return JsonResponse({"message": "Main image removed successfully"}, status=200)
+        
+    except Exception as e:
+        logger.error(f"Remove site main image error: {e}", exc_info=True)
+        return JsonResponse({"error": "Internal server error"}, status=500)
