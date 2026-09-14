@@ -71,7 +71,13 @@ class Sites(models.Model):
         default=0.0,
         help_text="Calculated area from polygon coordinates in hectares."
     )
-
+    main_image = CloudinaryField(
+        'image', 
+        folder='sites/main_images', 
+        blank=True, 
+        null=True,
+        help_text="Main cover image for the site (Recommended: 16:9 ratio, max 5MB)."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

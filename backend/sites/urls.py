@@ -65,5 +65,8 @@ urlpatterns = [
 
     path('get_mcda_data/<int:reforestation_area_id>/', views.get_mcda_data, name="get_mcda_data"),
     path('update_site_monitoring_status/<int:site_id>/', views.update_site_monitoring_status, name='update_site_monitoring_status'),
+    path('update_site_main_image/<int:site_id>/', views.update_site_main_image, name='update_site_main_image'),
+    path('remove_site_main_image/<int:site_id>/', views.remove_site_main_image, name='remove_site_main_image'),
+
 
 ]
