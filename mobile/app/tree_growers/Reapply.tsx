@@ -16,15 +16,19 @@ import {
 import * as SecureStore from "expo-secure-store";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ Added
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 
 export default function Reapply() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const insets = useSafeAreaInsets(); // ✅ Added
+  const insets = useSafeAreaInsets();
+  
   const siteId = params.site_id as string | undefined;
   const siteName = params.site_name as string | undefined;
+
+  // ✅ Determine flow based on presence of site_id
+  const isQuickApply = !siteId;
 
   const [loading, setLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -38,6 +42,7 @@ export default function Reapply() {
       type: string;
     } | null,
     proposed_orientation_date: "",
+    notes: "", // ✅ Added for Quick Apply flow
   });
 
   // ✅ Custom Date Picker State
@@ -158,21 +163,26 @@ export default function Reapply() {
       );
 
       if (formData.maintenance_plan) {
-        fd.append("maintenance_plan", formData.maintenance_plan as any);
+        // @ts-ignore - React Native FormData handles this correctly
+        fd.append("maintenance_plan", formData.maintenance_plan);
       }
 
-      if (siteId) {
+      // ✅ Conditional Payload based on flow
+      if (!isQuickApply && siteId) {
         fd.append("proposed_site_id", siteId);
+        if (formData.proposed_orientation_date.trim()) {
+          fd.append("proposed_orientation_date", formData.proposed_orientation_date.trim());
+        }
+      } else if (isQuickApply && formData.notes.trim()) {
+        fd.append("notes", formData.notes.trim());
       }
 
-      if (formData.proposed_orientation_date.trim()) {
-        fd.append(
-          "proposed_orientation_date",
-          formData.proposed_orientation_date.trim(),
-        );
-      }
+      // ✅ Conditional Endpoint
+      const endpoint = isQuickApply 
+        ? `${api}/api/apply_without_site_selection/` 
+        : `${api}/api/create_reapplication/`;
 
-      const res = await fetch(`${api}/api/create_reapplication/`, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -184,22 +194,28 @@ export default function Reapply() {
 
       if (!res.ok) {
         throw new Error(
-          responseData.error ?? "Failed to submit re-application.",
+          responseData.error ?? "Failed to submit application.",
         );
       }
 
+      // ✅ Conditional Success Message
+      const successTitle = isQuickApply ? "Success! 🌱" : "Success 🌱";
+      const successMessage = isQuickApply
+        ? "Your general application has been submitted! The office will evaluate your request and assign you the best available site."
+        : "Your new tree planting application has been submitted and is now under evaluation!";
+
       Alert.alert(
-        "Success 🌱",
-        "Your new tree planting application has been submitted and is now under evaluation!",
+        successTitle,
+        successMessage,
         [
           {
-            text: "View Application",
+            text: "View Applications",
             onPress: () => router.replace("/tree_growers/application"),
           },
         ],
       );
     } catch (err: any) {
-      console.error("Reapply error:", err);
+      console.error("Application submission error:", err);
       Alert.alert(
         "Submission Failed",
         err.message || "Network error. Please try again.",
@@ -215,12 +231,10 @@ export default function Reapply() {
     const firstDay = getFirstDayOfMonth(tempDate);
     const days = [];
 
-    // Empty slots for days before the first day of the month
     for (let i = 0; i < firstDay; i++) {
       days.push(<View key={`empty-${i}`} style={calendarStyles.dayEmpty} />);
     }
 
-    // Days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       const isSelected = tempDate.getDate() === day;
       const isToday =
@@ -261,7 +275,7 @@ export default function Reapply() {
       style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {/* ✅ Header with Safe Area Insets */}
+      {/* ✅ Dynamic Header */}
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -270,92 +284,67 @@ export default function Reapply() {
         >
           <Ionicons name="arrow-back" size={22} color="#0F4A2F" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>New Application</Text>
+        <Text style={styles.headerTitle}>
+          {isQuickApply ? "Quick Apply" : "New Application"}
+        </Text>
         <View style={{ width: 38 }} />
       </View>
 
-      {/* ✅ Custom Date Picker Modal */}
-      <Modal
-        visible={showDatePicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowDatePicker(false)}
-      >
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.container}>
-            <View style={modalStyles.header}>
-              <Text style={modalStyles.title}>Select Date</Text>
-              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                <Ionicons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
+      {/* ✅ Custom Date Picker Modal (Only used in Proposed Site flow) */}
+      {!isQuickApply && (
+        <Modal
+          visible={showDatePicker}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowDatePicker(false)}
+        >
+          <View style={modalStyles.overlay}>
+            <View style={modalStyles.container}>
+              <View style={modalStyles.header}>
+                <Text style={modalStyles.title}>Select Date</Text>
+                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                  <Ionicons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
 
-            {/* Month/Year Navigation */}
-            <View style={modalStyles.navigation}>
-              <TouchableOpacity
-                onPress={() => adjustYear(-1)}
-                style={modalStyles.navButton}
-              >
-                <Ionicons name="play-skip-back" size={16} color="#0F4A2F" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => adjustMonth(-1)}
-                style={modalStyles.navButton}
-              >
-                <Ionicons name="chevron-back" size={20} color="#0F4A2F" />
-              </TouchableOpacity>
-
-              <Text style={modalStyles.monthYear}>
-                {tempDate.toLocaleDateString("en-PH", {
-                  month: "long",
-                  year: "numeric",
-                })}
-              </Text>
-
-              <TouchableOpacity
-                onPress={() => adjustMonth(1)}
-                style={modalStyles.navButton}
-              >
-                <Ionicons name="chevron-forward" size={20} color="#0F4A2F" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => adjustYear(1)}
-                style={modalStyles.navButton}
-              >
-                <Ionicons name="play-skip-forward" size={16} color="#0F4A2F" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Day Labels */}
-            <View style={modalStyles.dayLabels}>
-              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                <Text key={day} style={modalStyles.dayLabel}>
-                  {day}
+              <View style={modalStyles.navigation}>
+                <TouchableOpacity onPress={() => adjustYear(-1)} style={modalStyles.navButton}>
+                  <Ionicons name="play-skip-back" size={16} color="#0F4A2F" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => adjustMonth(-1)} style={modalStyles.navButton}>
+                  <Ionicons name="chevron-back" size={20} color="#0F4A2F" />
+                </TouchableOpacity>
+                <Text style={modalStyles.monthYear}>
+                  {tempDate.toLocaleDateString("en-PH", { month: "long", year: "numeric" })}
                 </Text>
-              ))}
-            </View>
+                <TouchableOpacity onPress={() => adjustMonth(1)} style={modalStyles.navButton}>
+                  <Ionicons name="chevron-forward" size={20} color="#0F4A2F" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => adjustYear(1)} style={modalStyles.navButton}>
+                  <Ionicons name="play-skip-forward" size={16} color="#0F4A2F" />
+                </TouchableOpacity>
+              </View>
 
-            {/* Calendar Grid */}
-            <View style={modalStyles.calendarGrid}>{renderCalendar()}</View>
+              <View style={modalStyles.dayLabels}>
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                  <Text key={day} style={modalStyles.dayLabel}>{day}</Text>
+                ))}
+              </View>
 
-            {/* Action Buttons */}
-            <View style={modalStyles.actions}>
-              <TouchableOpacity
-                style={modalStyles.cancelButton}
-                onPress={() => setShowDatePicker(false)}
-              >
-                <Text style={modalStyles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={modalStyles.confirmButton}
-                onPress={confirmDate}
-              >
-                <Text style={modalStyles.confirmText}>Confirm</Text>
-              </TouchableOpacity>
+              <View style={modalStyles.calendarGrid}>{renderCalendar()}</View>
+
+              <View style={modalStyles.actions}>
+                <TouchableOpacity style={modalStyles.cancelButton} onPress={() => setShowDatePicker(false)}>
+                  <Text style={modalStyles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={modalStyles.confirmButton} onPress={confirmDate}>
+                  <Text style={modalStyles.confirmText}>Confirm</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
       <ScrollView
         style={styles.scroll}
@@ -363,7 +352,7 @@ export default function Reapply() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* ✅ Selected Site Info Box */}
+        {/* ✅ Selected Site Info Box (Only for Proposed Site flow) */}
         {siteName && (
           <View style={styles.siteInfoBox}>
             <Ionicons name="location" size={20} color="#0F4A2F" />
@@ -375,15 +364,11 @@ export default function Reapply() {
         )}
 
         <View style={styles.infoBox}>
-          <Ionicons
-            name="information-circle-outline"
-            size={20}
-            color="#0F4A2F"
-          />
+          <Ionicons name="information-circle-outline" size={20} color="#0F4A2F" />
           <Text style={styles.infoText}>
-            Your existing account and group details will be reused. Please
-            provide the details for your{" "}
-            <Text style={styles.infoBold}>new</Text> tree planting project.
+            {isQuickApply 
+              ? "Submit a general application without selecting a specific site. Our team will evaluate your request and assign you the best available site."
+              : "Your existing account and group details will be reused. Please provide the details for your new tree planting project."}
           </Text>
         </View>
 
@@ -394,7 +379,7 @@ export default function Reapply() {
           <Text style={styles.label}>Project Title *</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g., Barangay San Isidro Reforestation 2024"
+            placeholder={isQuickApply ? "e.g., General Reforestation Application" : "e.g., Barangay San Isidro Reforestation 2024"}
             value={formData.title}
             onChangeText={(v) => update("title", v)}
             placeholderTextColor="#9CA3AF"
@@ -408,70 +393,63 @@ export default function Reapply() {
             placeholder="e.g., 25 (Minimum 2)"
             keyboardType="numeric"
             value={formData.total_treegrowers_will_participate}
-            onChangeText={(v) =>
-              update("total_treegrowers_will_participate", v)
-            }
+            onChangeText={(v) => update("total_treegrowers_will_participate", v)}
             placeholderTextColor="#9CA3AF"
           />
         </View>
 
-        {/* ✅ Custom Date Picker Field */}
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Proposed Orientation Date (Optional)</Text>
-          <TouchableOpacity
-            style={styles.datePickerBtn}
-            onPress={openDatePicker}
-            activeOpacity={0.7}
-          >
-            <View
-              style={[styles.uploadIconWrap, { backgroundColor: "#E0E7FF" }]}
-            >
-              <Ionicons name="calendar-outline" size={22} color="#3730A3" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.datePickerTitle}>
-                {formData.proposed_orientation_date
-                  ? formatDateDisplay(formData.proposed_orientation_date)
-                  : "Select a date"}
-              </Text>
-              <Text style={styles.datePickerSub}>
-                {formData.proposed_orientation_date
-                  ? "Tap to change date"
-                  : "Tap to select"}
-              </Text>
-            </View>
-            {formData.proposed_orientation_date && (
-              <TouchableOpacity onPress={clearDate} style={styles.clearDateBtn}>
-                <Ionicons name="close-circle" size={22} color="#9CA3AF" />
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-          <Text style={styles.hintText}>
-            Leave blank if you have no specific date in mind.
-          </Text>
-        </View>
+        {/* ✅ Conditional Field: Date Picker OR Notes */}
+        {!isQuickApply ? (
+          // Proposed Site Flow: Show Date Picker
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Proposed Orientation Date (Optional)</Text>
+            <TouchableOpacity style={styles.datePickerBtn} onPress={openDatePicker} activeOpacity={0.7}>
+              <View style={[styles.uploadIconWrap, { backgroundColor: "#E0E7FF" }]}>
+                <Ionicons name="calendar-outline" size={22} color="#3730A3" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.datePickerTitle}>
+                  {formData.proposed_orientation_date ? formatDateDisplay(formData.proposed_orientation_date) : "Select a date"}
+                </Text>
+                <Text style={styles.datePickerSub}>
+                  {formData.proposed_orientation_date ? "Tap to change date" : "Tap to select"}
+                </Text>
+              </View>
+              {formData.proposed_orientation_date && (
+                <TouchableOpacity onPress={clearDate} style={styles.clearDateBtn}>
+                  <Ionicons name="close-circle" size={22} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.hintText}>Leave blank if you have no specific date in mind.</Text>
+          </View>
+        ) : (
+          // Quick Apply Flow: Show Notes Field
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Notes / Preferences (Optional)</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="e.g., Prefer sites near Barangay San Isidro, or any available site is fine."
+              value={formData.notes}
+              onChangeText={(v) => update("notes", v)}
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+            <Text style={styles.hintText}>Help the office understand your preferences for site assignment.</Text>
+          </View>
+        )}
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Maintenance Plan Document *</Text>
-          <TouchableOpacity
-            style={styles.uploadBtn}
-            onPress={pickDocument}
-            activeOpacity={0.7}
-          >
-            <View
-              style={[styles.uploadIconWrap, { backgroundColor: "#E8F5E9" }]}
-            >
-              <Ionicons
-                name="document-text-outline"
-                size={22}
-                color="#0F4A2F"
-              />
+          <TouchableOpacity style={styles.uploadBtn} onPress={pickDocument} activeOpacity={0.7}>
+            <View style={[styles.uploadIconWrap, { backgroundColor: "#E8F5E9" }]}>
+              <Ionicons name="document-text-outline" size={22} color="#0F4A2F" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.uploadTitle}>
-                {formData.maintenance_plan
-                  ? formData.maintenance_plan.name
-                  : "Tap to upload Maintenance Plan"}
+                {formData.maintenance_plan ? formData.maintenance_plan.name : "Tap to upload Maintenance Plan"}
               </Text>
               <Text style={styles.uploadSub}>PDF, Word, or Image</Text>
             </View>
@@ -493,7 +471,9 @@ export default function Reapply() {
           ) : (
             <>
               <Ionicons name="leaf-outline" size={20} color="#fff" />
-              <Text style={styles.submitText}>Submit New Application</Text>
+              <Text style={styles.submitText}>
+                {isQuickApply ? "Submit Quick Application" : "Submit New Application"}
+              </Text>
             </>
           )}
         </TouchableOpacity>
@@ -512,7 +492,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingBottom: 16, // ✅ Padding bottom remains, top is handled dynamically
+    paddingBottom: 16,
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
@@ -575,6 +555,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#111827",
     backgroundColor: "#fff",
+  },
+  textArea: {
+    height: 100,
   },
 
   datePickerBtn: {

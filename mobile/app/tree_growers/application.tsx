@@ -140,6 +140,7 @@ interface AssignedSite {
   barangay_name: string | null;
   accessibility: any;
   land_classification_name: string | null;
+  main_image_url: string | null;
   general_images: { image_url: string | null; caption: string | null }[];
   recommended_species: {
     species_id: number;
@@ -631,7 +632,10 @@ export default function ApplicationPage() {
   const application = detail!.application;
   const group = detail!.group;
   const assigned_site = detail!.assigned_site;
-  const heroImage = assigned_site?.general_images?.[0];
+  const heroImage = assigned_site?.main_image_url
+    ? { image_url: assigned_site.main_image_url, caption: null }
+    : assigned_site?.general_images?.[0];
+
   const galleryImages = assigned_site?.general_images || [];
 
   return (

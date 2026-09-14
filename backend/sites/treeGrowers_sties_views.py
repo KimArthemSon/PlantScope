@@ -139,7 +139,7 @@ def _build_site_history(site):
 
     # ─────────────────────────────────────────────
     # SEEDLING REQUEST HISTORY (aggregate only)
-    # ─────────────────────────────────────────────
+    # ────────────────────────────────────────────
     seedling_requests_qs = (
         SeedlingRequest.objects
         .filter(application__site=site)
@@ -270,6 +270,11 @@ def get_site_details_for_tree_grower(request, site_id):
         )
 
     # ─────────────────────────────────────────────
+    # MAIN IMAGE (NEW)
+    # ─────────────────────────────────────────────
+    main_image_url = get_cloudinary_url(str(site.main_image)) if site.main_image else None
+
+    # ─────────────────────────────────────────────
     # GENERAL IMAGES
     # ─────────────────────────────────────────────
     general_images = []
@@ -297,29 +302,39 @@ def get_site_details_for_tree_grower(request, site_id):
             })
 
     # ─────────────────────────────────────────────
-    # ACCESSIBILITY
+    # ACCESSIBILITY ✅ FIXED
     # ─────────────────────────────────────────────
     accessibility_info = None
 
     if verification.verified_accessibility:
         acc = verification.verified_accessibility
 
-        if isinstance(acc, dict):
+        if isinstance(acc, list):
+            # ✅ FIX: Return the list as-is (JSON serializable)
+            # Normalize each item to a consistent dict format
+            accessibility_info = []
+            for item in acc:
+                if isinstance(item, dict):
+                    accessibility_info.append({
+                        'type': item.get('type', 'Unknown'),
+                        'description': item.get('description', ''),
+                    })
+                elif isinstance(item, str):
+                    accessibility_info.append({
+                        'type': item,
+                        'description': '',
+                    })
+        elif isinstance(acc, dict):
             accessibility_info = {
                 'type': acc.get('type', 'Unknown'),
                 'description': acc.get('description', ''),
             }
         elif isinstance(acc, str):
             accessibility_info = {'type': acc, 'description': ''}
-        elif isinstance(acc, list):
-            accessibility_info = {
-                'type': 'Unknown',
-                'description': ', '.join([str(item) for item in acc]),
-            }
 
     # ─────────────────────────────────────────────
     # LAND CLASSIFICATION
-    # ─────────────────────────────────────────────
+    # ────────────────────────────────────────────
     land_classification = None
 
     if verification.verified_land_classification:
@@ -330,7 +345,7 @@ def get_site_details_for_tree_grower(request, site_id):
 
     # ─────────────────────────────────────────────
     # SITE HISTORY (anonymous, past-only)
-    # ─────────────────────────────────────────────
+    # ────────────────────────────────────────────
     site_history = _build_site_history(site)
 
     # ─────────────────────────────────────────────
@@ -354,6 +369,7 @@ def get_site_details_for_tree_grower(request, site_id):
         'total_area_hectares': site.total_area_hectares,
         'marker_coordinate': site.marker_coordinate,
         'polygon_coordinates': site.polygon_coordinates,
+        'main_image_url': main_image_url,
         'general_images': general_images,
         'recommended_species': recommended_species,
         'accessibility': accessibility_info,
