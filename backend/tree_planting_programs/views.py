@@ -619,6 +619,7 @@ def get_tree_grower_application(request):
                 meta.verified_land_classification.name 
                 if meta and meta.verified_land_classification else None
             ),
+            "main_image_url": get_cloudinary_url(str(site.main_image)) if site.main_image else None,  # ✅ ADD THIS
             "general_images": general_images,
             "recommended_species": recommended_species,
         }
@@ -1747,11 +1748,11 @@ def get_available_sites_for_tree_grower(request):
     search = request.GET.get('search', '').strip()
     barangay_filter = request.GET.get('barangay', '').strip()
 
-    # ✅ DUAL-APPROVAL & FIFO FILTER: Only show sites that are fully approved and truly available
+    # ✅ UPDATED: Include both 'available' and 'reserved' sites
     sites = Sites.objects.filter(
         status='accepted',
         meta_verification__status='verified',
-        monitoring_status='available', # ✅ CRITICAL: Only sites that passed BOTH GISS and Meta Verification
+        monitoring_status__in=['available', 'reserved'], 
         is_active=True
     ).select_related(
         'reforestation_area__barangay',
@@ -1760,7 +1761,7 @@ def get_available_sites_for_tree_grower(request):
         'site_images'
     ).order_by('-is_pinned', '-created_at')
 
-    # ✅ EXCLUDE OCCUPIED/RESERVED SITES
+    # ✅ EXCLUDE OCCUPIED/RESERVED SITES (Sites that already have an active application assigned)
     active_applications = Application.objects.filter(
         site=OuterRef('pk'),
         status__in=ongoing_statuses
@@ -1795,12 +1796,19 @@ def get_available_sites_for_tree_grower(request):
                     'caption': img.caption
                 })
 
+        # ✅ NEW: Extract Main Image URL
+        main_image_url = None
+        if site.main_image:
+            main_image_url = get_cloudinary_url(str(site.main_image))
+
         data.append({
             'site_id': site.site_id,
             'name': site.name,
             'reforestation_area': site.reforestation_area.name if site.reforestation_area else 'N/A',
             'barangay': site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else 'N/A',
             'total_area_hectares': site.total_area_hectares,
+            'monitoring_status': site.monitoring_status, # ✅ NEW: Return status for badge
+            'main_image_url': main_image_url,            # ✅ NEW: Return main image
             'images': images_data,
             'is_pinned': site.is_pinned,
             'created_at': site.created_at.strftime('%Y-%m-%d')
@@ -2637,3 +2645,74 @@ def get_pending_tree_growers(request):
         })
 
     return JsonResponse({"data": data}, status=200)
+
+@csrf_exempt
+def apply_without_site_selection(request):
+    """
+    TreeGrower: Apply for a program WITHOUT selecting a specific site.
+    The DataManager/Office will assign the best available site later.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role != 'treeGrowers':
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    # Check if user is active
+    if not user.is_active:
+        return JsonResponse({
+            'error': 'Your account is currently inactive. Please wait for activation.'
+        }, status=403)
+
+    # Check for ongoing applications
+    active_statuses = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
+    if Application.objects.filter(user=user, status__in=active_statuses).exists():
+        return JsonResponse({
+            'error': 'You already have an active application. Please wait for it to be processed.'
+        }, status=400)
+
+    # Extract required fields
+    title = request.POST.get('title')
+    total_treegrowers = request.POST.get('total_treegrowers_will_participate')
+    maintenance_plan = request.FILES.get('maintenance_plan')
+
+    if not all([title, total_treegrowers, maintenance_plan]):
+        return JsonResponse({
+            'error': 'Missing required fields: title, total_treegrowers_will_participate, maintenance_plan'
+        }, status=400)
+
+    try:
+        total_treegrowers = int(total_treegrowers)
+        if total_treegrowers < 2:
+            return JsonResponse({'error': 'Minimum 2 tree growers required'}, status=400)
+    except ValueError:
+        return JsonResponse({'error': 'total_treegrowers_will_participate must be a valid integer'}, status=400)
+
+    # Determine if this is a 'new' or 'old' (returning) grower
+    has_history = Application.objects.filter(user=user).exists()
+    classification = 'old' if has_history else 'new'
+
+    try:
+        with transaction.atomic():
+            # ✅ Create application with site=None
+            app = Application.objects.create(
+                user=user,
+                title=title,
+                total_treegrowers_will_participate=total_treegrowers,
+                maintenance_plan=maintenance_plan,
+                classification=classification,
+                status='for_evaluation',
+                site=None,            # ✅ No site assigned yet
+                proposed_site=None,   # ✅ No proposed site
+            )
+            
+        return JsonResponse({
+            'message': 'Application submitted successfully. The office will assign you the best available site.',
+            'application_id': app.application_id,
+            'status': app.status
+        }, status=201)
+        
+    except Exception as e:
+        logger.error(f"Error in apply_without_site_selection: {e}")
+        return JsonResponse({'error': str(e)}, status=500)

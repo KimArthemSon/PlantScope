@@ -118,7 +118,7 @@ const OsmMapComponent = ({
   );
 };
 
-// --- Types (✅ Privacy-clean: no active applications, no other growers' info) ---
+// --- Types ---
 interface SiteHistorySummary {
   total_applications: number;
   past_program_count: number;
@@ -167,6 +167,7 @@ interface SiteDetails {
   total_area_hectares: number;
   marker_coordinate: [number, number] | null;
   polygon_coordinates: [number, number][] | null;
+  main_image_url?: string | null;
   general_images: Array<{
     image_id: number;
     url: string | null;
@@ -179,11 +180,109 @@ interface SiteDetails {
     priority_rank: number;
     notes: string | null;
   }>;
-  accessibility: { type: string; description: string } | null;
+  accessibility: any;
   land_classification: { id: number; name: string } | null;
   created_at: string;
   site_history: SiteHistory;
 }
+
+// --- Helper Functions ---
+
+
+const parseAccessibility = (accessibility: any): string[] => {
+  if (!accessibility) return [];
+  
+  // If already an array of objects (from fixed API)
+  if (Array.isArray(accessibility)) {
+    return accessibility
+      .map((item) => {
+        if (typeof item === 'object' && item?.type) {
+          const type = item.type.toLowerCase();
+          if (type === 'unknown') return null;
+          return type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+        }
+        if (typeof item === 'string') {
+          return item.toLowerCase() === 'unknown' ? null : item;
+        }
+        return null;
+      })
+      .filter(Boolean) as string[];
+  }
+  
+  // If it's a single object
+  if (typeof accessibility === 'object') {
+    const type = accessibility.type;
+    if (type && type.toLowerCase() !== 'unknown') {
+      return [type.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())];
+    }
+  }
+  
+  // If it's a string (legacy format)
+  if (typeof accessibility === 'string') {
+    if (accessibility.toLowerCase() === 'unknown') return [];
+    
+    try {
+      // Try parsing as JSON
+      let parsed = JSON.parse(accessibility);
+      if (Array.isArray(parsed)) {
+        return parseAccessibility(parsed);
+      }
+    } catch {
+      // Try fixing Python-style quotes
+      try {
+        let fixed = accessibility
+          .replace(/'/g, '"')
+          .replace(/True/g, 'true')
+          .replace(/False/g, 'false')
+          .replace(/None/g, 'null');
+        
+        if (fixed.includes('},{') || fixed.includes('}, {')) {
+          fixed = fixed.replace(/\}\s*,\s*\{/g, '},{');
+          if (!fixed.startsWith('[')) {
+            fixed = `[${fixed}]`;
+          }
+        }
+        
+        const parsed = JSON.parse(fixed);
+        return parseAccessibility(parsed);
+      } catch {
+        return [];
+      }
+    }
+  }
+  
+  return [];
+};
+
+// Helper to get icon for accessibility type
+const getAccessibilityIcon = (type: string): keyof typeof Ionicons.glyphMap => {
+  const lower = type.toLowerCase();
+  if (lower.includes('vehicle') || lower.includes('car')) return 'car';
+  if (lower.includes('motorcycle') || lower.includes('bike')) return 'bicycle';
+  if (lower.includes('walk') || lower.includes('pedestrian')) return 'walk';
+  if (lower.includes('boat') || lower.includes('water')) return 'boat';
+  if (lower.includes('4wd') || lower.includes('off-road')) return 'jeep';
+  return 'car-sport';
+};
+
+const formatDate = (dateString: string) => {
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Recently";
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "Recently";
+  }
+};
+
+const getValidImageUrl = (url: string | null | undefined): string | null => {
+  if (!url) return null;
+  return url.startsWith("http") ? url : `${api}${url}`;
+};
 
 // --- Main Screen Component ---
 export default function SiteDetails() {
@@ -217,12 +316,11 @@ export default function SiteDetails() {
 
       const res = await fetch(
         `${api}/api/get_site_details_for_tree_grower/${siteId}/`,
-        { headers: { Authorization: `Bearer ${token}` } },
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       const data = await res.json();
-      if (!res.ok)
-        throw new Error(data.error || "Failed to fetch site details");
+      if (!res.ok) throw new Error(data.error || "Failed to fetch site details");
       setErrorMessage(null);
       setDetails(data);
     } catch (err: any) {
@@ -281,20 +379,6 @@ export default function SiteDetails() {
     setGalleryModalVisible(true);
   };
 
-  const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return "Recently listed";
-      return date.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-    } catch {
-      return "Recently listed";
-    }
-  };
-
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -324,16 +408,16 @@ export default function SiteDetails() {
     );
   }
 
-  const heroImage = details.general_images[0];
+  const heroImageUrl = getValidImageUrl(details.main_image_url) || getValidImageUrl(details.general_images[0]?.url);
   const galleryImages = details.general_images;
-  const hasMultipleImages = galleryImages.length > 1;
+  const hasGallery = galleryImages.length > 0;
 
-  // ✅ Past programs count for the "Now Available Again" banner
   const pastPrograms = details.site_history?.summary?.past_program_count || 0;
+  const recentVisits = details.site_history?.recent_monitoring_visits || [];
 
   return (
     <View style={styles.container}>
-      {/* 🖼️ Hero Image */}
+      {/* 🖼️ Hero Image (Main Image) */}
       <Animated.View
         style={[
           styles.heroImageContainer,
@@ -344,13 +428,9 @@ export default function SiteDetails() {
           },
         ]}
       >
-        {heroImage ? (
+        {heroImageUrl ? (
           <Image
-            source={{
-              uri: heroImage.url?.startsWith("http")
-                ? heroImage.url
-                : `${api}${heroImage.url}`,
-            }}
+            source={{ uri: heroImageUrl }}
             style={styles.heroImage}
             resizeMode="cover"
           />
@@ -362,7 +442,7 @@ export default function SiteDetails() {
         <View style={styles.heroGradient} />
       </Animated.View>
 
-      {/* 📌 Sticky Header */}
+      {/*  Sticky Header */}
       <Animated.View
         style={[
           styles.stickyHeader,
@@ -383,14 +463,6 @@ export default function SiteDetails() {
         <Ionicons name="chevron-back" size={22} color="#0F172A" />
       </TouchableOpacity>
 
-      {/* ❤️ Floating Heart Button */}
-      <TouchableOpacity
-        style={[styles.floatingHeartBtn, { top: insets.top + 12 }]}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="heart-outline" size={20} color="#0F172A" />
-      </TouchableOpacity>
-
       {/* 📜 Scrollable Content */}
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
@@ -398,7 +470,7 @@ export default function SiteDetails() {
         scrollEventThrottle={16}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true },
+          { useNativeDriver: true }
         )}
         refreshControl={
           <RefreshControl
@@ -416,7 +488,6 @@ export default function SiteDetails() {
           {/* Header Info */}
           <View style={styles.headerSection}>
             <View style={styles.headerTopRow}>
-              {/* ✅ Always Available — backend guarantees the site is free */}
               <View style={[styles.statusPill, { backgroundColor: "#ECFDF5" }]}>
                 <Ionicons name="checkmark-circle" size={14} color="#10B981" />
                 <Text style={[styles.statusPillText, { color: "#059669" }]}>
@@ -438,34 +509,24 @@ export default function SiteDetails() {
               </Text>
             </View>
 
-            <Text style={styles.dateText}>
-              Listed {formatDate(details.created_at)}
-            </Text>
+            <Text style={styles.dateText}>Listed {formatDate(details.created_at)}</Text>
           </View>
 
-          {/* ✅ Description Section */}
-          {details.description && (
+          {/* Description Section */}
+          {details.description ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>About this Site</Text>
               <Text
                 style={styles.descriptionText}
-                numberOfLines={
-                  descExpanded
-                    ? undefined
-                    : isTruncated
-                      ? DESCRIPTION_LINE_LIMIT
-                      : undefined
-                }
+                numberOfLines={descExpanded ? undefined : isTruncated ? DESCRIPTION_LINE_LIMIT : undefined}
                 onTextLayout={(e) => {
                   if (!descExpanded && !isTruncated) {
-                    if (e.nativeEvent.lines.length > DESCRIPTION_LINE_LIMIT)
-                      setIsTruncated(true);
+                    if (e.nativeEvent.lines.length > DESCRIPTION_LINE_LIMIT) setIsTruncated(true);
                   }
                 }}
               >
                 {details.description}
               </Text>
-
               {isTruncated && (
                 <TouchableOpacity
                   onPress={() => setDescExpanded(!descExpanded)}
@@ -483,14 +544,65 @@ export default function SiteDetails() {
                 </TouchableOpacity>
               )}
             </View>
-          )}
+          ) : null}
 
-          {/* 🌳 Site History Section (anonymous, past-only) */}
+          {/* Key Details Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Key Details</Text>
+            <View style={styles.metricsRow}>
+              <View style={styles.metricItem}>
+                <View style={[styles.metricIconCircle, { backgroundColor: "#ECFDF5" }]}>
+                  <Ionicons name="leaf" size={20} color="#059669" />
+                </View>
+                <Text style={styles.metricValue}>{details.total_area_hectares.toFixed(2)}</Text>
+                <Text style={styles.metricLabel}>Hectares</Text>
+              </View>
+
+              <View style={styles.metricDivider} />
+
+              <View style={styles.metricItem}>
+                <View style={[styles.metricIconCircle, { backgroundColor: "#EFF6FF" }]}>
+                  <Ionicons name="people" size={20} color="#2563EB" />
+                </View>
+                <Text style={styles.metricValue}>{pastPrograms}</Text>
+                <Text style={styles.metricLabel}>Past Programs</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* ✅ UPDATED: Accessibility Section - Card Rows */}
+          {(() => {
+            const accessibilityTypes = parseAccessibility(details.accessibility);
+            if (accessibilityTypes.length === 0) return null;
+            
+            return (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Accessibility</Text>
+                <View style={styles.accessibilityCardsContainer}>
+                  {accessibilityTypes.map((type, index) => {
+                    const iconName = getAccessibilityIcon(type);
+                    return (
+                      <View key={index} style={styles.accessibilityCard}>
+                        <View style={styles.accessibilityCardIconContainer}>
+                          <Ionicons name={iconName} size={24} color="#0F4A2F" />
+                        </View>
+                        <View style={styles.accessibilityCardContent}>
+                          <Text style={styles.accessibilityCardText}>{type}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })()}
+
+          {/* Site History & Reports Section */}
           {details.site_history?.has_history && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Site History</Text>
+              <Text style={styles.sectionTitle}>Site History & Reports</Text>
 
-              {/* ✅ NEW: Positive "Now Available Again" banner */}
               {pastPrograms > 0 && (
                 <View style={styles.historyAvailableBanner}>
                   <Ionicons name="refresh-circle" size={20} color="#047857" />
@@ -500,14 +612,12 @@ export default function SiteDetails() {
                     </Text>
                     <Text style={styles.historyAvailableText}>
                       This site successfully hosted {pastPrograms} past program
-                      {pastPrograms > 1 ? "s" : ""} and is now open for new
-                      applications.
+                      {pastPrograms > 1 ? "s" : ""} and is now open for new applications.
                     </Text>
                   </View>
                 </View>
               )}
 
-              {/* Stats Row */}
               <View style={styles.historyStatsRow}>
                 <View style={styles.historyStatCard}>
                   <Text style={styles.historyStatValue}>
@@ -517,173 +627,48 @@ export default function SiteDetails() {
                 </View>
                 <View style={styles.historyStatCard}>
                   <Text style={styles.historyStatValue}>
-                    {details.site_history.summary.total_seedlings_confirmed ||
-                      0}
+                    {details.site_history.summary.total_seedlings_confirmed || 0}
                   </Text>
                   <Text style={styles.historyStatLabel}>Trees Planted</Text>
                 </View>
               </View>
 
-              {/* Latest Visit Card */}
-              {details.site_history.recent_monitoring_visits &&
-                details.site_history.recent_monitoring_visits.length > 0 && (
-                  <View style={styles.historyVisitCard}>
-                    <View style={styles.historyVisitHeader}>
-                      <Ionicons name="clipboard" size={18} color="#0F4A2F" />
-                      <Text style={styles.historyVisitTitle}>Latest Visit</Text>
-                      <Text style={styles.historyVisitDate}>
-                        {
-                          details.site_history.recent_monitoring_visits[0]
-                            .submitted_at
-                        }
-                      </Text>
-                    </View>
-                    <View style={styles.historyVisitBody}>
-                      <Text style={styles.historyVisitText}>
-                        <Text style={{ fontWeight: "700" }}>
-                          {
-                            details.site_history.recent_monitoring_visits[0]
-                              .total_survived
-                          }
-                        </Text>{" "}
-                        trees thriving
-                      </Text>
-                      <View style={styles.historyVisitDivider} />
-                      <Text style={styles.historyVisitText}>
-                        <Text style={{ fontWeight: "700" }}>
-                          {
-                            details.site_history.recent_monitoring_visits[0]
-                              .survival_rate
-                          }
-                          %
-                        </Text>{" "}
-                        survival rate
-                      </Text>
-                    </View>
+              {recentVisits.length > 0 && (
+                <View style={styles.historyVisitCard}>
+                  <View style={styles.historyVisitHeader}>
+                    <Ionicons name="clipboard" size={18} color="#0F4A2F" />
+                    <Text style={styles.historyVisitTitle}>Latest Monitoring Visit</Text>
+                    <Text style={styles.historyVisitDate}>
+                      {formatDate(recentVisits[0].submitted_at)}
+                    </Text>
                   </View>
-                )}
+                  <View style={styles.historyVisitBody}>
+                    <Text style={styles.historyVisitText}>
+                      <Text style={{ fontWeight: "700" }}>
+                        {recentVisits[0].total_survived}
+                      </Text>{" "}
+                      trees thriving
+                    </Text>
+                    <View style={styles.historyVisitDivider} />
+                    <Text style={styles.historyVisitText}>
+                      <Text style={{ fontWeight: "700" }}>
+                        {recentVisits[0].survival_rate}%
+                      </Text>{" "}
+                      survival rate
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
           )}
 
-          {/* 📊 Key Details Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Key Details</Text>
-            <View style={styles.metricsRow}>
-              <View style={styles.metricItem}>
-                <View
-                  style={[
-                    styles.metricIconCircle,
-                    { backgroundColor: "#ECFDF5" },
-                  ]}
-                >
-                  <Ionicons name="leaf" size={20} color="#059669" />
-                </View>
-                <Text style={styles.metricValue}>
-                  {details.total_area_hectares.toFixed(2)}
-                </Text>
-                <Text style={styles.metricLabel}>Hectares</Text>
-              </View>
-
-              <View style={styles.metricDivider} />
-
-              <View style={styles.metricItem}>
-                <View
-                  style={[
-                    styles.metricIconCircle,
-                    { backgroundColor: "#FEF3C7" },
-                  ]}
-                >
-                  <Ionicons name="pulse" size={20} color="#D97706" />
-                </View>
-                <Text style={styles.metricValue}>
-                  {details.site_history?.summary?.average_survival_rate
-                    ? `${details.site_history.summary.average_survival_rate}%`
-                    : "N/A"}
-                </Text>
-                <Text style={styles.metricLabel}>Survival Rate</Text>
-              </View>
-
-              <View style={styles.metricDivider} />
-
-              <View style={styles.metricItem}>
-                <View
-                  style={[
-                    styles.metricIconCircle,
-                    { backgroundColor: "#EFF6FF" },
-                  ]}
-                >
-                  <Ionicons name="people" size={20} color="#2563EB" />
-                </View>
-                {/* ✅ Uses past_program_count instead of total_applications */}
-                <Text style={styles.metricValue}>{pastPrograms}</Text>
-                <Text style={styles.metricLabel}>Past Programs</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* ️ Land Classification Section */}
-          {details.land_classification && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Land Classification</Text>
-              <View style={styles.classificationCard}>
-                <Ionicons name="earth" size={20} color="#4F46E5" />
-                <Text style={styles.classificationText}>
-                  {details.land_classification.name}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* 🚗 Accessibility Section */}
-          {details.accessibility && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Accessibility</Text>
-              <View style={styles.accessibilityCard}>
-                <View style={styles.accessibilityHeader}>
-                  <Ionicons name="car-sport" size={20} color="#0F4A2F" />
-                  <Text style={styles.accessibilityType}>
-                    {details.accessibility.type}
-                  </Text>
-                </View>
-                {details.accessibility.description ? (
-                  <Text style={styles.accessibilityDesc}>
-                    {details.accessibility.description}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
-          )}
-
-          {/* ️ View Map Button */}
-          {details.marker_coordinate && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Location</Text>
-              <TouchableOpacity
-                style={styles.mapButton}
-                onPress={() => setMapModalVisible(true)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.mapButtonIconBox}>
-                  <Ionicons name="map" size={24} color="#0F4A2F" />
-                </View>
-                <View style={styles.mapButtonTextBox}>
-                  <Text style={styles.mapButtonTitle}>View on Map</Text>
-                  <Text style={styles.mapButtonSubtitle}>
-                    {details.barangay}, {details.reforestation_area}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* 🖼️ Gallery Section */}
-          {hasMultipleImages && (
+          {/* Gallery Section */}
+          {hasGallery && (
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>Gallery</Text>
+                <Text style={styles.sectionTitle}>Site Gallery</Text>
                 <Text style={styles.galleryCountText}>
-                  {galleryImages.length} photos
+                  {galleryImages.length} photo{galleryImages.length !== 1 ? "s" : ""}
                 </Text>
               </View>
               <ScrollView
@@ -700,14 +685,12 @@ export default function SiteDetails() {
                   >
                     <Image
                       source={{
-                        uri: img.url?.startsWith("http")
-                          ? img.url
-                          : `${api}${img.url}`,
+                        uri: getValidImageUrl(img.url) || "",
                       }}
                       style={styles.galleryImage}
                       resizeMode="cover"
                     />
-                    {index === 0 && (
+                    {index === 0 && !details.main_image_url && (
                       <View style={styles.galleryHeroBadge}>
                         <Text style={styles.galleryHeroBadgeText}>Cover</Text>
                       </View>
@@ -718,14 +701,11 @@ export default function SiteDetails() {
             </View>
           )}
 
-          {/* 🌳 Recommended Species Section */}
+          {/* Recommended Species Section */}
           {details.recommended_species.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitle}>Recommended Species</Text>
-                <TouchableOpacity>
-                  <Text style={styles.seeAllText}>See all</Text>
-                </TouchableOpacity>
               </View>
               <ScrollView
                 horizontal
@@ -739,9 +719,7 @@ export default function SiteDetails() {
                     </View>
                     <View style={styles.speciesInfo}>
                       <View style={styles.speciesRankBadge}>
-                        <Text style={styles.rankText}>
-                          #{species.priority_rank}
-                        </Text>
+                        <Text style={styles.rankText}>#{species.priority_rank}</Text>
                       </View>
                       <Text style={styles.speciesName} numberOfLines={1}>
                         {species.name}
@@ -758,13 +736,10 @@ export default function SiteDetails() {
             </View>
           )}
 
-          {/* ✅ Apply Button */}
+          {/* Apply Button */}
           <View style={styles.footerSection}>
             <TouchableOpacity
-              style={[
-                styles.applyButton,
-                hasOngoing && styles.applyButtonDisabled,
-              ]}
+              style={[styles.applyButton, hasOngoing && styles.applyButtonDisabled]}
               activeOpacity={hasOngoing ? 1 : 0.8}
               onPress={handleApply}
               disabled={hasOngoing}
@@ -786,13 +761,11 @@ export default function SiteDetails() {
               )}
             </TouchableOpacity>
 
-            {/* User has ongoing application warning (own application only) */}
             {hasOngoing && (
               <View style={styles.warningBanner}>
                 <Ionicons name="information-circle" size={16} color="#D97706" />
                 <Text style={styles.warningBannerText}>
-                  You have an ongoing application. Please wait for it to be
-                  processed.
+                  You have an ongoing application. Please wait for it to be processed.
                 </Text>
               </View>
             )}
@@ -802,7 +775,7 @@ export default function SiteDetails() {
         </View>
       </Animated.ScrollView>
 
-      {/* ️ Map Modal */}
+      {/* Map Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -811,9 +784,7 @@ export default function SiteDetails() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.mapModalContent}>
-            <View
-              style={[styles.mapModalHeader, { paddingTop: insets.top + 12 }]}
-            >
+            <View style={[styles.mapModalHeader, { paddingTop: insets.top + 12 }]}>
               <TouchableOpacity
                 onPress={() => setMapModalVisible(false)}
                 style={styles.mapModalCloseBtn}
@@ -853,7 +824,7 @@ export default function SiteDetails() {
         </View>
       </Modal>
 
-      {/* 🖼️ Gallery Full Screen Modal */}
+      {/* Gallery Full Screen Modal */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -888,9 +859,7 @@ export default function SiteDetails() {
               <View key={img.image_id} style={styles.galleryFullImageWrapper}>
                 <Image
                   source={{
-                    uri: img.url?.startsWith("http")
-                      ? img.url
-                      : `${api}${img.url}`,
+                    uri: getValidImageUrl(img.url) || "",
                   }}
                   style={styles.galleryFullImage}
                   resizeMode="contain"
@@ -909,7 +878,7 @@ export default function SiteDetails() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────
+// ─── Styles ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8FAFC" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -971,22 +940,6 @@ const styles = StyleSheet.create({
   floatingBackBtn: {
     position: "absolute",
     left: 16,
-    zIndex: 100,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.9)",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
-  floatingHeartBtn: {
-    position: "absolute",
-    right: 16,
     zIndex: 100,
     width: 40,
     height: 40,
@@ -1099,32 +1052,41 @@ const styles = StyleSheet.create({
   },
   metricDivider: { width: 1, height: 40, backgroundColor: "#E2E8F0" },
 
-  mapButton: {
+  // ✅ UPDATED: Accessibility Card Row Styles
+  accessibilityCardsContainer: {
+    gap: 12,
+  },
+  accessibilityCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-  },
-  mapButtonIconBox: {
-    width: 48,
-    height: 48,
     borderRadius: 14,
-    backgroundColor: "#ECFDF5",
+    padding: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  accessibilityCardIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#F0FDF4",
     justifyContent: "center",
     alignItems: "center",
+    marginRight: 14,
   },
-  mapButtonTextBox: { flex: 1 },
-  mapButtonTitle: {
+  accessibilityCardContent: {
+    flex: 1,
+  },
+  accessibilityCardText: {
     fontSize: 15,
-    fontWeight: "700",
+    fontWeight: "600",
     color: "#0F172A",
-    marginBottom: 2,
   },
-  mapButtonSubtitle: { fontSize: 13, color: "#64748B" },
 
   descriptionText: { fontSize: 15, lineHeight: 24, color: "#475569" },
   seeMoreBtn: {
@@ -1135,37 +1097,6 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
   },
   seeMoreText: { fontSize: 14, fontWeight: "700", color: "#0F4A2F" },
-
-  accessibilityCard: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 16,
-    padding: 16,
-  },
-  accessibilityHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 8,
-  },
-  accessibilityType: { fontSize: 15, fontWeight: "700", color: "#065F46" },
-  accessibilityDesc: {
-    fontSize: 14,
-    color: "#64748B",
-    lineHeight: 22,
-    paddingLeft: 30,
-  },
-
-  classificationCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EEF2FF",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 16,
-    gap: 10,
-    alignSelf: "flex-start",
-  },
-  classificationText: { fontSize: 15, fontWeight: "700", color: "#4338CA" },
 
   galleryScrollContent: { gap: 10, paddingRight: 20 },
   galleryThumbnail: {
@@ -1228,7 +1159,6 @@ const styles = StyleSheet.create({
   speciesNotes: { fontSize: 12, color: "#64748B" },
 
   // --- Site History Styles ---
-  // ✅ NEW: Positive green "Now Available Again" banner
   historyAvailableBanner: {
     flexDirection: "row",
     backgroundColor: "#F0FDF4",

@@ -45,13 +45,15 @@ interface SiteImage {
   caption: string | null;
 }
 
-// ✅ MATCHES YOUR REAL API RESPONSE EXACTLY (NDVI Removed)
+// ✅ UPDATED: Added monitoring_status and main_image_url
 interface Site {
   site_id: number;
   name: string;
   reforestation_area: string;
   barangay: string;
   total_area_hectares: number;
+  monitoring_status: 'available' | 'reserved';
+  main_image_url: string | null;
   images: SiteImage[];
   is_pinned: boolean;
   created_at: string;
@@ -63,6 +65,102 @@ interface Barangay {
   description: string | null;
   coordinate: any;
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   QUICK APPLY CARD (NEW)
+   ──────────────────────────────────────────────────────────────── */
+const QuickApplyCard: React.FC<{
+  onPress: () => void;
+  hasOngoingApplication: boolean;
+}> = ({ onPress, hasOngoingApplication }) => {
+  return (
+    <View style={quickApplyStyles.container}>
+      <View style={quickApplyStyles.iconContainer}>
+        <Ionicons name="sparkles" size={24} color="#FFFFFF" />
+      </View>
+      <View style={quickApplyStyles.content}>
+        <Text style={quickApplyStyles.title}>Apply Without Site Selection</Text>
+        <Text style={quickApplyStyles.description}>
+          Submit a general application and our team will assign you the best available site.
+        </Text>
+      </View>
+      <TouchableOpacity
+        style={[
+          quickApplyStyles.button,
+          hasOngoingApplication && quickApplyStyles.buttonDisabled,
+        ]}
+        onPress={onPress}
+        disabled={hasOngoingApplication}
+        activeOpacity={0.8}
+      >
+        <Text style={[
+          quickApplyStyles.buttonText,
+          hasOngoingApplication && quickApplyStyles.buttonTextDisabled,
+        ]}>
+          {hasOngoingApplication ? 'Locked' : 'Quick Apply'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const quickApplyStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: PRIMARY,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    marginHorizontal: 16,
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  content: {
+    flex: 1,
+    marginRight: 12,
+  },
+  title: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  description: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.9)',
+    lineHeight: 16,
+  },
+  button: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  buttonDisabled: {
+    backgroundColor: '#E5E7EB',
+  },
+  buttonText: {
+    color: PRIMARY,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  buttonTextDisabled: {
+    color: MUTED,
+  },
+});
 
 /* ──────────────────────────────────────────────────────────────────
    ANIMATED APPLICATION BADGE + MODAL
@@ -251,7 +349,7 @@ const SitesHeader: React.FC<any> = ({
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   SITE CARD COMPONENT
+   SITE CARD COMPONENT (UPDATED)
    ──────────────────────────────────────────────────────────────── */
 const SiteCard = ({
   item,
@@ -260,19 +358,29 @@ const SiteCard = ({
   item: Site;
   onViewDetails: (site: Site) => void;
 }) => {
-  const firstImage =
-    item.images && item.images.length > 0 ? item.images[0] : null;
+  // ✅ Use main_image_url, fallback to first image in array
+  const imageUrl = item.main_image_url
+    ? (item.main_image_url.startsWith("http") ? item.main_image_url : `${api}${item.main_image_url}`)
+    : (item.images && item.images.length > 0 
+        ? (item.images[0].url.startsWith("http") ? item.images[0].url : `${api}${item.images[0].url}`) 
+        : null);
+
+  // ✅ Dynamic status badge configuration
+  const getStatusConfig = (status: string) => {
+    if (status === 'available') {
+      return { text: 'Available', bgColor: '#ECFDF5', textColor: '#059669', iconColor: '#10B981' };
+    }
+    return { text: 'Reserved - Queue Open', bgColor: '#FFFBEB', textColor: '#D97706', iconColor: '#F59E0B' };
+  };
+
+  const statusConfig = getStatusConfig(item.monitoring_status);
 
   return (
     <View style={styles.card}>
       <View style={styles.imageContainer}>
-        {firstImage ? (
+        {imageUrl ? (
           <Image
-            source={{
-              uri: firstImage.url.startsWith("http")
-                ? firstImage.url
-                : `${api}${firstImage.url}`,
-            }}
+            source={{ uri: imageUrl }}
             style={styles.cardImage}
             resizeMode="cover"
           />
@@ -282,9 +390,12 @@ const SiteCard = ({
           </View>
         )}
 
-        <View style={styles.statusBadge}>
-          <Ionicons name="checkmark-circle" size={12} color="#10B981" />
-          <Text style={styles.statusText}>Available</Text>
+        {/* ✅ Dynamic Status Badge */}
+        <View style={[styles.statusBadge, { backgroundColor: statusConfig.bgColor }]}>
+          <Ionicons name="checkmark-circle" size={12} color={statusConfig.iconColor} />
+          <Text style={[styles.statusText, { color: statusConfig.textColor }]}>
+            {statusConfig.text}
+          </Text>
         </View>
 
         {item.is_pinned && (
@@ -312,7 +423,7 @@ const SiteCard = ({
         </TouchableOpacity>
       </View>
 
-      {/* ✅ Bottom Metric Bar */}
+      {/* Bottom Metric Bar */}
       <View style={styles.metricBar}>
         <View style={styles.metricItem}>
           <Ionicons name="leaf-outline" size={14} color={PRIMARY} />
@@ -456,7 +567,6 @@ export default function Sites() {
         setSites(data.data || []);
       }
 
-      // ✅ Correctly uses `has_next` from your real API
       setHasMore(data.has_next || false);
       setTotal(data.total || 0);
       setHasOngoingApplication(data.has_ongoing_application === true);
@@ -587,6 +697,13 @@ export default function Sites() {
               unreadCount={unreadCount}
               hasOngoingApplication={hasOngoingApplication}
             />
+            
+            {/* ✅ UPDATED: Routes to the correct Reapply.tsx location */}
+            <QuickApplyCard 
+              hasOngoingApplication={hasOngoingApplication}
+              onPress={() => router.push("/tree_growers/Reapply")}
+            />
+
             {selectedBarangay ? (
               <View style={styles.activeFilterRow}>
                 <View style={styles.activeFilterChip}>
@@ -874,7 +991,6 @@ const styles = StyleSheet.create({
     right: 12,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -884,7 +1000,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
   },
-  statusText: { fontSize: 10, fontWeight: "600", color: "#10B981" },
+  statusText: { fontSize: 10, fontWeight: "600" },
   imageInfoOverlay: {
     position: "absolute",
     left: 0,
@@ -944,7 +1060,6 @@ const styles = StyleSheet.create({
   },
   viewButtonText: { fontSize: 13, fontWeight: "700", color: PRIMARY },
 
-  // ✅ Metric Bar Styles
   metricBar: {
     flexDirection: "row",
     justifyContent: "space-around",
