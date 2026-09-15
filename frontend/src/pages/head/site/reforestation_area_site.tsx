@@ -1002,7 +1002,7 @@ export default function ReforestationAreaSiteCombined() {
                   <button
                     onClick={() =>
                       navigate(
-                        `${userPath}/analysis/multicriteria-analysis/new?areaId=${id}`,
+                        `${userPath}/analysis/multicriteria-analysis/new?areaId=${selectedArea.reforestation_area_id}`,
                       )
                     }
                     className="flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white h-10 px-4 py-2 rounded-lg text-[.8rem] font-semibold cursor-pointer transition-all shadow-lg shadow-emerald-200"
