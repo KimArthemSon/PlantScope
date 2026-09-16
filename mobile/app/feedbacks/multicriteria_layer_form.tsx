@@ -16,7 +16,7 @@ import SafetyForm from "@/components/forms/SafetyForm";
 import BoundaryVerificationForm from "@/components/forms/BoundaryVerificationForm";
 import SurvivabilityForm from "@/components/forms/SurvivabilityForm";
 import { useFieldAssessment } from "@/hooks/useFieldAssessment";
-
+import FloatingMapButton from "@/components/FloatingMapButton";
 const API = api;
 
 type LayerId = "safety" | "boundary_verification" | "survivability";
@@ -111,7 +111,10 @@ export default function MulticriteriaLayerForm() {
   }, [loadAssessment]);
 
   // ✅ FIX 1: Added explicit return type Promise<number | null>
-  const handleFormSave = async (data: any, submit: boolean = false): Promise<number | null> => {
+  const handleFormSave = async (
+    data: any,
+    submit: boolean = false,
+  ): Promise<number | null> => {
     const payload = {
       reforestation_area_id: parseInt(areaId),
       site_id: siteId ? parseInt(siteId) : null,
@@ -137,9 +140,9 @@ export default function MulticriteriaLayerForm() {
         },
       });
     }
-    
+
     // ✅ FIX 1b: Return the number or null instead of boolean (!!savedId)
-    return savedId ?? null; 
+    return savedId ?? null;
   };
 
   const renderLayerForm = () => {
@@ -148,7 +151,7 @@ export default function MulticriteriaLayerForm() {
       images,
       onSave: handleFormSave,
       // ✅ FIX 2: Cast opts to 'any' to bypass strict hook typing
-      onUploadImage: (id, opts) => uploadImage(id, opts as any), 
+      onUploadImage: (id, opts) => uploadImage(id, opts as any),
       onDeleteImage: deleteImage,
       saving,
       uploading,
@@ -219,6 +222,10 @@ export default function MulticriteriaLayerForm() {
         {renderLayerForm()}
         <View style={{ height: 30 }} />
       </ScrollView>
+      <FloatingMapButton
+        areaId={parseInt(areaId)}
+        areaName={headerTitle}
+      />
     </View>
   );
 }

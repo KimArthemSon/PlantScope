@@ -616,7 +616,7 @@ const ReforestationAreas: React.FC = () => {
         <View style={{ height: 24 }} />
       </ScrollView>
 
-      {/* Map Modal */}
+           {/* Map Modal */}
       <Modal
         animationType="slide"
         transparent
@@ -624,7 +624,7 @@ const ReforestationAreas: React.FC = () => {
         onRequestClose={closeModal}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom }]}>
             {selectedArea && (
               <>
                 <View style={styles.dragHandle} />
@@ -674,7 +674,7 @@ const ReforestationAreas: React.FC = () => {
                     </View>
                   </View>
                 </ScrollView>
-                <View style={styles.modalBtnRow}>
+                <View style={[styles.modalBtnRow, { paddingBottom: Math.max(insets.bottom, 16) }]}>
                   <Pressable style={styles.closeBtn} onPress={closeModal}>
                     <Text style={styles.closeBtnText}>Close</Text>
                   </Pressable>

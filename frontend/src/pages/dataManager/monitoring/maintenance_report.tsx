@@ -242,7 +242,7 @@ export default function SiteMonitoringDetails() {
     }
   };
 
-  const handleCompleteApplication = async () => {
+   const handleCompleteApplication = async () => {
     if (!detail?.current_application || !completionModal.type) return;
     if (!completionModal.reason.trim()) {
       setPSAlert({ type: "failed", title: "Missing", message: "Please provide a reason for this decision." });
@@ -250,6 +250,7 @@ export default function SiteMonitoringDetails() {
     }
     setSubmitting(true);
     try {
+      // 1. Complete or Fail the application
       const res = await fetch(`${API_BASE}api/complete_application/${detail.current_application.application_id}/`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -257,9 +258,28 @@ export default function SiteMonitoringDetails() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Action failed");
-      setPSAlert({ type: "success", title: completionModal.type === "completed" ? "Completed!" : "Marked as Failed", message: data.message ?? `Application ${completionModal.type}.` });
+
+      // 2. Explicitly update the site's monitoring status to match the application outcome
+      // This ensures the site doesn't remain "under_monitoring" or revert to "available"
+      const newSiteStatus = completionModal.type === "completed" ? "completed" : "failed";
+      
+      await fetch(`${API_BASE}api/update_site_monitoring_status/${site_id}/`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          monitoring_status: newSiteStatus, 
+          reason: `Application marked as ${completionModal.type}: ${completionModal.reason.trim()}` 
+        }),
+      });
+
+      setPSAlert({ 
+        type: "success", 
+        title: completionModal.type === "completed" ? "Completed!" : "Marked as Failed", 
+        message: data.message ?? `Application has been ${completionModal.type} and site status updated.` 
+      });
+      
       setCompletionModal({ open: false, type: null, reason: "" });
-      fetchSiteDetails();
+      fetchSiteDetails(); // Refresh to show the new "failed" or "completed" site status
     } catch (err: any) {
       setPSAlert({ type: "failed", title: "Failed", message: err.message });
     } finally {

@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  // ❌ REMOVED: Alert (was imported but not used in this file)
   ActivityIndicator,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
@@ -17,8 +16,6 @@ import { api } from "@/constants/url_fixed";
 import { HardHat, Scale, Sprout, Database } from "lucide-react-native";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { getOfflineDraftsForContext } from "@/hooks/useOfflineFieldAssessment";
-
-// ✅ ADDED: Import the useAlert hook
 import { useAlert } from "@/components/AlertContext";
 
 const API = api + "/api";
@@ -64,7 +61,6 @@ export default function SiteFieldAssessment() {
     siteName?: string;
   }>();
 
-  // ✅ ADDED: Initialize useAlert so it's ready to use anywhere in this component
   const { success, error, warning, info, confirm } = useAlert();
 
   const [assessments, setAssessments] = useState<any[]>([]);
@@ -88,11 +84,10 @@ export default function SiteFieldAssessment() {
         const networkState = await NetInfo.fetch();
         const actuallyOnline = networkState.isConnected === true;
 
-        // ✅ Always load offline drafts (works both online and offline)
         const drafts = await getOfflineDraftsForContext(
           parseInt(areaId),
           siteId ? parseInt(siteId) : null,
-          "", // Empty string to get all layers
+          "",
         );
         setOfflineDrafts(drafts);
 
@@ -117,8 +112,6 @@ export default function SiteFieldAssessment() {
             } else {
               setAssessments([]);
               setIsOfflineMode(true);
-              // ✅ EXAMPLE: You can now easily add alerts here if needed!
-              // error("Sync Failed", "Could not fetch latest assessments from server.");
             }
           } catch (fetchError) {
             console.error("API fetch failed:", fetchError);
@@ -152,9 +145,7 @@ export default function SiteFieldAssessment() {
     fetchAssessments();
   }, [isOnline]);
 
-  // ✅ UPDATED: Now considers offline drafts too
   const getStatus = (layerId: string): LayerStatus => {
-    // Check online assessments first
     const onlineAssessments = assessments.filter((a) => {
       const layerData = a.field_assessment_data?.[layerId];
       return (
@@ -166,7 +157,6 @@ export default function SiteFieldAssessment() {
 
     if (onlineAssessments.some((a) => a.is_submitted)) return "done";
 
-    // ✅ Check offline drafts for this layer
     const offlineDraftsForLayer = offlineDrafts.filter(
       (d) => d.layer === layerId,
     );
@@ -176,9 +166,7 @@ export default function SiteFieldAssessment() {
     return "pending";
   };
 
-  // ✅ UPDATED: Now counts offline drafts too
   const getCount = (layerId: string, submitted: boolean) => {
-    // Count online assessments
     const onlineCount = assessments.filter((a) => {
       const layerData = a.field_assessment_data?.[layerId];
       const hasData =
@@ -188,7 +176,6 @@ export default function SiteFieldAssessment() {
       return hasData && a.is_submitted === submitted;
     }).length;
 
-    // ✅ Count offline drafts (they're all "not submitted" since they're pending)
     if (!submitted) {
       const offlineCount = offlineDrafts.filter(
         (d) => d.layer === layerId,
@@ -199,10 +186,10 @@ export default function SiteFieldAssessment() {
     return onlineCount;
   };
 
-  const completedCount = LAYERS.filter(
-    (l) => getStatus(l.id) === "done",
-  ).length;
-  const progressPct = (completedCount / LAYERS.length) * 100;
+  // ✅ NEW: Calculate summary statistics
+  const submittedCount = LAYERS.filter((l) => getStatus(l.id) === "done").length;
+  const draftCount = LAYERS.filter((l) => getStatus(l.id) === "draft").length;
+  const pendingCount = LAYERS.filter((l) => getStatus(l.id) === "pending").length;
 
   const handleLayerPress = (layerId: string, layerName: string) => {
     router.push({
@@ -273,44 +260,59 @@ export default function SiteFieldAssessment() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.progressCard}>
-          <View style={styles.progressRow}>
-            <View>
-              <Text style={styles.progressLabel}>Overall Progress</Text>
-              <Text style={styles.progressSub}>
-                {isOfflineMode
-                  ? `${offlineDrafts.length} offline draft(s) saved`
-                  : `${completedCount} of ${LAYERS.length} layers submitted`}
-              </Text>
-            </View>
-            <Text style={styles.progressPct}>
-              {isOfflineMode ? "-" : `${Math.round(progressPct)}%`}
+        {/* ✅ REPLACED: Summary Statistics Card */}
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryHeader}>
+            <Text style={styles.summaryTitle}>Assessment Summary</Text>
+            <Text style={styles.summarySubtitle}>
+              {isOfflineMode ? "Local data only" : "Live sync active"}
             </Text>
           </View>
-          <View style={styles.progressBg}>
-            <View
-              style={[styles.progressFill, { width: `${progressPct}%` as any }]}
-            />
-          </View>
-          <View style={styles.dotRow}>
-            {LAYERS.map((l) => {
-              const s = getStatus(l.id);
-              return (
-                <View key={l.id} style={styles.dotItem}>
-                  <View
-                    style={[
-                      styles.dot,
-                      s === "done" && { backgroundColor: "#5FD08A" },
-                      s === "draft" && { backgroundColor: "#F59E0B" },
-                      s === "pending" && {
-                        backgroundColor: "rgba(255,255,255,0.25)",
-                      },
-                    ]}
-                  />
-                  <Text style={styles.dotLabel}>{l.label.split(" ")[0]}</Text>
-                </View>
-              );
-            })}
+          
+          <View style={styles.statsGrid}>
+            {/* Submitted */}
+            <View style={styles.statBox}>
+              <View style={[styles.statIconWrap, { backgroundColor: "rgba(95, 208, 138, 0.2)" }]}>
+                <Ionicons name="checkmark-circle" size={20} color="#5FD08A" />
+              </View>
+              <View>
+                <Text style={styles.statValue}>{submittedCount}</Text>
+                <Text style={styles.statLabel}>Submitted</Text>
+              </View>
+            </View>
+
+            {/* Saved Offline */}
+            <View style={styles.statBox}>
+              <View style={[styles.statIconWrap, { backgroundColor: "rgba(245, 158, 11, 0.2)" }]}>
+                <Ionicons name="cloud-download" size={20} color="#F59E0B" />
+              </View>
+              <View>
+                <Text style={styles.statValue}>{offlineDrafts.length}</Text>
+                <Text style={styles.statLabel}>Saved Offline</Text>
+              </View>
+            </View>
+
+            {/* In Progress */}
+            <View style={styles.statBox}>
+              <View style={[styles.statIconWrap, { backgroundColor: "rgba(59, 130, 246, 0.2)" }]}>
+                <Ionicons name="create" size={20} color="#3B82F6" />
+              </View>
+              <View>
+                <Text style={styles.statValue}>{draftCount}</Text>
+                <Text style={styles.statLabel}>In Progress</Text>
+              </View>
+            </View>
+
+            {/* Pending */}
+            <View style={styles.statBox}>
+              <View style={[styles.statIconWrap, { backgroundColor: "rgba(156, 163, 175, 0.2)" }]}>
+                <Ionicons name="time" size={20} color="#9CA3AF" />
+              </View>
+              <View>
+                <Text style={styles.statValue}>{pendingCount}</Text>
+                <Text style={styles.statLabel}>Pending</Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -461,40 +463,68 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: "center" },
   headerTitle: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
   headerSub: { fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 1 },
+  
   scroll: { flex: 1 },
   content: { padding: 16 },
-  progressCard: {
+
+  // ✅ NEW: Summary Card Styles
+  summaryCard: {
     backgroundColor: "#0F4A2F",
     borderRadius: 18,
     padding: 18,
     marginBottom: 20,
   },
-  progressRow: {
+  summaryHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  progressLabel: { fontSize: 13, color: "#B7D3C6", fontWeight: "600" },
-  progressSub: { fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 2 },
-  progressPct: { fontSize: 26, fontWeight: "800", color: "#FFFFFF" },
-  progressBg: {
-    height: 6,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderRadius: 3,
-    overflow: "hidden",
-    marginBottom: 14,
+  summaryTitle: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
-  progressFill: { height: "100%", backgroundColor: "#5FD08A", borderRadius: 3 },
-  dotRow: { flexDirection: "row", justifyContent: "space-between" },
-  dotItem: { alignItems: "center", gap: 4 },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "rgba(255,255,255,0.25)",
+  summarySubtitle: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.5)",
+    fontWeight: "500",
   },
-  dotLabel: { fontSize: 9, color: "rgba(255,255,255,0.5)", fontWeight: "600" },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  statBox: {
+    flex: 1,
+    minWidth: "47%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 12,
+    padding: 12,
+  },
+  statIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    lineHeight: 24,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.6)",
+    fontWeight: "500",
+  },
+
   sectionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -509,6 +539,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   countText: { fontSize: 11, color: "#0F4A2F", fontWeight: "700" },
+  
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 16 },
   card: {
     width: "47%",
@@ -576,6 +607,7 @@ const styles = StyleSheet.create({
   },
   badgeDraftText: { fontSize: 10, color: "#92400E", fontWeight: "700" },
   pendingText: { fontSize: 11, color: "#9CA3AF", fontStyle: "italic" },
+  
   infoBanner: {
     flexDirection: "row",
     alignItems: "flex-start",

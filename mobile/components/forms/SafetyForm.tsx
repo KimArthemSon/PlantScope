@@ -2257,14 +2257,7 @@ export default function SafetyForm() {
         visible={showErosionGuide}
         onClose={() => setShowErosionGuide(false)}
       />
-      <FloatingMapButton
-        areaId={parseInt(areaId)}
-        areaName={params.areaName as string}
-        siteId={siteId ? parseInt(siteId) : undefined}
-        siteName={params.siteName as string}
-        userLat={locationLat ? parseFloat(locationLat) : undefined}
-        userLng={locationLng ? parseFloat(locationLng) : undefined}
-      />
+     
     </View>
   );
 }

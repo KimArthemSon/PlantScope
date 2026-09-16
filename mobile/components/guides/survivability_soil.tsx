@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -9,8 +9,10 @@ import {
   StyleSheet,
   Dimensions,
   Platform,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ────────────────────────────────────────────
 // IMAGE IMPORTS
@@ -34,7 +36,50 @@ interface SoilGuideProps {
   onClose: () => void;
 }
 
+// Image data structure
+interface GuideImage {
+  id: string;
+  source: any;
+  category: "good" | "bad";
+  label: string;
+}
+
+const allImages: GuideImage[] = [
+  { id: "good1", source: goodSoil1, category: "good", label: "Good Soil" },
+  { id: "good2", source: goodSoil2, category: "good", label: "Good Soil" },
+  { id: "good3", source: goodSoil3, category: "good", label: "Good Soil" },
+  { id: "good4", source: goodSoil4, category: "good", label: "Good Soil" },
+  { id: "bad1", source: badSoil1, category: "bad", label: "Bad Soil" },
+  { id: "bad2", source: badSoil2, category: "bad", label: "Bad Soil" },
+  { id: "bad3", source: badSoil3, category: "bad", label: "Bad Soil" },
+  { id: "bad4", source: badSoil4, category: "bad", label: "Bad Soil" },
+];
+
 export default function SoilGuide({ visible, onClose }: SoilGuideProps) {
+  const insets = useSafeAreaInsets();
+  const [fullScreenImage, setFullScreenImage] = useState<GuideImage | null>(null);
+  const [imageIndex, setImageIndex] = useState(0);
+
+  const openFullScreen = (image: GuideImage, index: number) => {
+    setFullScreenImage(image);
+    setImageIndex(index);
+  };
+
+  const closeFullScreen = () => {
+    setFullScreenImage(null);
+  };
+
+  const navigateImage = (direction: "prev" | "next") => {
+    const currentIndex = allImages.findIndex(img => img.id === fullScreenImage?.id);
+    let newIndex = direction === "next" ? currentIndex + 1 : currentIndex - 1;
+    
+    if (newIndex < 0) newIndex = allImages.length - 1;
+    if (newIndex >= allImages.length) newIndex = 0;
+    
+    setImageIndex(newIndex);
+    setFullScreenImage(allImages[newIndex]);
+  };
+
   return (
     <Modal
       visible={visible}
@@ -43,7 +88,7 @@ export default function SoilGuide({ visible, onClose }: SoilGuideProps) {
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { paddingBottom: insets.bottom }]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerIconWrap}>
@@ -89,10 +134,42 @@ export default function SoilGuide({ visible, onClose }: SoilGuideProps) {
                 showsHorizontalScrollIndicator={false}
                 style={styles.imageCarousel}
               >
-                <Image source={goodSoil1} style={styles.carouselImage} />
-                <Image source={goodSoil2} style={styles.carouselImage} />
-                <Image source={goodSoil3} style={styles.carouselImage} />
-                <Image source={goodSoil4} style={styles.carouselImage} />
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[0], 0)}
+                >
+                  <Image source={goodSoil1} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#16A34A" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[1], 1)}
+                >
+                  <Image source={goodSoil2} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#16A34A" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[2], 2)}
+                >
+                  <Image source={goodSoil3} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#16A34A" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[3], 3)}
+                >
+                  <Image source={goodSoil4} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#16A34A" />
+                  </View>
+                </TouchableOpacity>
               </ScrollView>
 
               <View style={styles.criteriaList}>
@@ -133,10 +210,42 @@ export default function SoilGuide({ visible, onClose }: SoilGuideProps) {
                 showsHorizontalScrollIndicator={false}
                 style={styles.imageCarousel}
               >
-                <Image source={badSoil1} style={styles.carouselImage} />
-                <Image source={badSoil2} style={styles.carouselImage} />
-                <Image source={badSoil3} style={styles.carouselImage} />
-                <Image source={badSoil4} style={styles.carouselImage} />
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[4], 4)}
+                >
+                  <Image source={badSoil1} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#DC2626" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[5], 5)}
+                >
+                  <Image source={badSoil2} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#DC2626" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[6], 6)}
+                >
+                  <Image source={badSoil3} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#DC2626" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[7], 7)}
+                >
+                  <Image source={badSoil4} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#DC2626" />
+                  </View>
+                </TouchableOpacity>
               </ScrollView>
 
               <View style={styles.criteriaList}>
@@ -196,14 +305,91 @@ export default function SoilGuide({ visible, onClose }: SoilGuideProps) {
           </ScrollView>
 
           {/* Footer Close Button */}
-          <TouchableOpacity
-            style={styles.footerButton}
-            onPress={onClose}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.footerButtonText}>Close Guide</Text>
-          </TouchableOpacity>
+          <View style={[styles.footerContainer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+            <TouchableOpacity
+              style={styles.footerButton}
+              onPress={onClose}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.footerButtonText}>Close Guide</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Full Screen Image Viewer Modal */}
+        <Modal
+          visible={!!fullScreenImage}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={closeFullScreen}
+        >
+          <View style={fullScreenStyles.container}>
+            <TouchableWithoutFeedback onPress={closeFullScreen}>
+              <View style={fullScreenStyles.background} />
+            </TouchableWithoutFeedback>
+            
+            <View style={fullScreenStyles.imageContainer}>
+              {/* Header */}
+              <View style={fullScreenStyles.header}>
+                <TouchableOpacity
+                  style={fullScreenStyles.navButton}
+                  onPress={() => navigateImage("prev")}
+                >
+                  <Ionicons name="chevron-back" size={24} color="#fff" />
+                </TouchableOpacity>
+                
+                <View style={fullScreenStyles.headerInfo}>
+                  <Text style={fullScreenStyles.categoryLabel}>
+                    {fullScreenImage?.label}
+                  </Text>
+                  <Text style={fullScreenStyles.imageCounter}>
+                    {imageIndex + 1} / {allImages.length}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={fullScreenStyles.navButton}
+                  onPress={() => navigateImage("next")}
+                >
+                  <Ionicons name="chevron-forward" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Zoomable Image */}
+              <ScrollView
+                style={fullScreenStyles.scrollContainer}
+                maximumZoomScale={3}
+                minimumZoomScale={1}
+                showsVerticalScrollIndicator={false}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={fullScreenStyles.scrollContent}
+              >
+                <Image
+                  source={fullScreenImage?.source}
+                  style={fullScreenStyles.fullImage}
+                  resizeMode="contain"
+                />
+              </ScrollView>
+
+              {/* Close Button */}
+              <TouchableOpacity
+                style={fullScreenStyles.closeButton}
+                onPress={closeFullScreen}
+              >
+                <View style={fullScreenStyles.closeButtonBg}>
+                  <Ionicons name="close" size={24} color="#fff" />
+                </View>
+              </TouchableOpacity>
+
+              {/* Instructions */}
+              <View style={fullScreenStyles.instructions}>
+                <Text style={fullScreenStyles.instructionsText}>
+                  Pinch to zoom • Swipe to navigate
+                </Text>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -219,7 +405,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: SCREEN_WIDTH > 500 ? "85%" : "92%", // Taller on tablets
+    maxHeight: SCREEN_WIDTH > 500 ? "85%" : "92%",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
@@ -331,6 +517,18 @@ const styles = StyleSheet.create({
     marginRight: 12,
     backgroundColor: "#E2E8F0",
   },
+  imageHint: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
   criteriaList: {
     gap: 8,
   },
@@ -386,10 +584,13 @@ const styles = StyleSheet.create({
     fontStyle: "normal",
     fontWeight: "700",
   },
+  footerContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    backgroundColor: "#F8FAFC",
+  },
   footerButton: {
     backgroundColor: "#0F4A2F",
-    margin: 20,
-    marginTop: 10,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
@@ -403,5 +604,102 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "700",
+  },
+});
+
+// Full screen image viewer styles
+const fullScreenStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.95)",
+  },
+  background: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  imageContainer: {
+    flex: 1,
+    position: "relative",
+  },
+  header: {
+    position: "absolute",
+    top: 50,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    zIndex: 10,
+  },
+  navButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    backdropFilter: "blur(10px)",
+  },
+  headerInfo: {
+    alignItems: "center",
+  },
+  categoryLabel: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  imageCounter: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: "100%",
+  },
+  fullImage: {
+    width: "100%",
+    height: "100%",
+    minHeight: 400,
+  },
+  closeButton: {
+    position: "absolute",
+    bottom: 80,
+    right: 20,
+    zIndex: 10,
+  },
+  closeButtonBg: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#0F4A2F",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  instructions: {
+    position: "absolute",
+    bottom: 30,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  instructionsText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
