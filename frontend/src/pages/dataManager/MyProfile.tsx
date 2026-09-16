@@ -15,6 +15,9 @@ import {
   MapPin,
   CheckCircle2,
   ChevronLeft,
+  X,
+  ZoomIn,
+  Download,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "@/components/layout/loaderSmall";
@@ -65,6 +68,7 @@ export default function MyProfile() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showFullImage, setShowFullImage] = useState(false);
 
   const [passwordConstraints, setPasswordConstraints] =
     useState<PasswordConstraint>({
@@ -95,7 +99,7 @@ export default function MyProfile() {
   useEffect(() => {
     async function load() {
       try {
-        const meRes = await fetch(api+"api/get_me/", {
+        const meRes = await fetch(api + "api/get_me/", {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -106,12 +110,9 @@ export default function MyProfile() {
         const me = await meRes.json();
         setUserId(me.id);
 
-        const pRes = await fetch(
-          api+`api/get_user/${me.id}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+        const pRes = await fetch(api + `api/get_user/${me.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const data = await pRes.json();
         if (!pRes.ok) return;
 
@@ -133,6 +134,21 @@ export default function MyProfile() {
     }
     load();
   }, []);
+
+  // Close full-view modal on ESC key
+  useEffect(() => {
+    if (!showFullImage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowFullImage(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [showFullImage]);
 
   useEffect(() => {
     const p = profile.password;
@@ -195,14 +211,11 @@ export default function MyProfile() {
     if (profileImg) fd.append("profile_img", profileImg);
 
     try {
-      const res = await fetch(
-        api+`api/update_user/${userId}`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: fd,
-        },
-      );
+      const res = await fetch(api + `api/update_user/${userId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
       const data = await res.json();
       if (!res.ok) {
         setPSAlert({ type: "error", title: "Error", message: data.error });
@@ -245,6 +258,8 @@ export default function MyProfile() {
   const labelCls =
     "text-xs font-semibold text-stone-500 uppercase tracking-wider";
 
+  const hasImage = Boolean(profile.preview_profile);
+
   return (
     <>
       <style>{`
@@ -272,6 +287,47 @@ export default function MyProfile() {
           box-shadow: 0 8px 32px rgba(0,0,0,.35);
         }
         .mp-avatar-inner { background: #f4f6f5; border-radius: 50%; padding: 3px; }
+
+        .mp-avatar-wrapper {
+          position: relative;
+        }
+
+        .mp-avatar-overlay {
+          position: absolute;
+          inset: 0;
+          border-radius: 50%;
+          background: rgba(0,0,0,.5);
+          opacity: 0;
+          transition: opacity .25s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+        }
+
+        .mp-avatar-wrapper:hover .mp-avatar-overlay {
+          opacity: 1;
+        }
+
+        .mp-avatar-action-btn {
+          width: 38px;
+          height: 38px;
+          border-radius: 50%;
+          border: 2px solid rgba(255,255,255,.9);
+          background: rgba(255,255,255,.15);
+          backdrop-filter: blur(8px);
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all .2s ease;
+        }
+
+        .mp-avatar-action-btn:hover {
+          background: rgba(255,255,255,.3);
+          transform: scale(1.1);
+        }
 
         .mp-card {
           background: white; border-radius: 20px;
@@ -320,6 +376,72 @@ export default function MyProfile() {
           transition: all .2s;
         }
         .mp-btn-ghost:hover { background: #f5f5f4; border-color: #d6d3d1; }
+
+        /* ── Full-view modal ─ */
+        .mp-modal-backdrop {
+          position: fixed; inset: 0;
+          background: rgba(7, 20, 13, 0.75);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          z-index: 60;
+          display: flex; align-items: center; justify-content: center;
+          padding: 24px;
+          animation: mpFadeIn .25s ease;
+        }
+        @keyframes mpFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes mpZoomIn {
+          from { opacity: 0; transform: scale(.92); }
+          to { opacity: 1; transform: scale(1); }
+        }
+
+        .mp-modal-card {
+          position: relative;
+          max-width: min(90vw, 640px);
+          max-height: 85vh;
+          background: white;
+          border-radius: 20px;
+          overflow: hidden;
+          box-shadow: 0 30px 80px rgba(0,0,0,.5);
+          animation: mpZoomIn .3s cubic-bezier(.2,.8,.2,1);
+          display: flex; flex-direction: column;
+        }
+        .mp-modal-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 14px 18px;
+          background: linear-gradient(135deg, #0f4a2f, #0a2e1c);
+          color: white;
+        }
+        .mp-modal-title {
+          font-size: 14px; font-weight: 600;
+          display: flex; align-items: center; gap: 8px;
+        }
+        .mp-modal-actions { display: flex; align-items: center; gap: 6px; }
+        .mp-modal-icon-btn {
+          width: 32px; height: 32px; border-radius: 10px;
+          background: rgba(255,255,255,.1);
+          border: 1px solid rgba(255,255,255,.15);
+          color: white;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all .2s;
+        }
+        .mp-modal-icon-btn:hover {
+          background: rgba(255,255,255,.2);
+          transform: translateY(-1px);
+        }
+        .mp-modal-body {
+          background: #0a0a0a;
+          display: flex; align-items: center; justify-content: center;
+          overflow: auto;
+        }
+        .mp-modal-body img {
+          display: block;
+          max-width: 100%;
+          max-height: calc(85vh - 60px);
+          object-fit: contain;
+        }
       `}</style>
 
       <div className="mp-page">
@@ -340,27 +462,45 @@ export default function MyProfile() {
               {/* Avatar */}
               <div className="mp-avatar-ring shrink-0">
                 <div className="mp-avatar-inner">
-                  <div className="relative w-24 h-24 rounded-full overflow-hidden">
+                  <div className="mp-avatar-wrapper relative w-24 h-24 rounded-full overflow-hidden">
                     {profile.preview_profile ? (
                       <img
                         src={profile.preview_profile}
                         alt="avatar"
                         className="w-full h-full object-cover"
+                        draggable={false}
                       />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-white text-2xl font-bold">
                         {initials(profile.first_name, profile.last_name)}
                       </div>
                     )}
-                    <label className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 hover:opacity-100 transition-opacity cursor-pointer rounded-full">
-                      <Camera size={20} className="text-white" />
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageChange}
-                        className="hidden"
-                      />
-                    </label>
+
+                    {/* Overlay with two separate buttons */}
+                    {hasImage && (
+                      <div className="mp-avatar-overlay">
+                        {/* View Full Image Button */}
+                        <button
+                          type="button"
+                          className="mp-avatar-action-btn"
+                          onClick={() => setShowFullImage(true)}
+                          title="View full size"
+                        >
+                          <ZoomIn size={18} />
+                        </button>
+
+                        {/* Change Image Button */}
+                        <label className="mp-avatar-action-btn cursor-pointer" title="Change photo">
+                          <Camera size={18} />
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageChange}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -380,27 +520,67 @@ export default function MyProfile() {
                   )}
                   <span className="text-white/45 text-sm">{profile.email}</span>
                 </div>
-                <div className="flex items-center gap-1.5 mt-2.5">
-                  <span
-                    className={`w-2 h-2 rounded-full ${profile.is_active === "true" ? "bg-emerald-400" : "bg-stone-400"}`}
-                  />
-                  <span className="text-white/50 text-xs font-medium">
-                    {profile.is_active === "true"
-                      ? "Active account"
-                      : "Inactive"}
-                  </span>
-                </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* ── FULL-VIEW MODAL ── */}
+        {showFullImage && hasImage && (
+          <div
+            className="mp-modal-backdrop"
+            onClick={() => setShowFullImage(false)}
+          >
+            <div
+              className="mp-modal-card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="mp-modal-header">
+                <div className="mp-modal-title">
+                  <User size={15} />
+                  <span>Profile Picture</span>
+                  <span className="text-white/50 text-xs font-normal ml-1">
+                    {profile.first_name} {profile.last_name}
+                  </span>
+                </div>
+                <div className="mp-modal-actions">
+                  <a
+                    href={profile.preview_profile}
+                    download={`${profile.first_name || "profile"}-avatar.png`}
+                    className="mp-modal-icon-btn"
+                    title="Download image"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Download size={15} />
+                  </a>
+                  <button
+                    type="button"
+                    className="mp-modal-icon-btn"
+                    onClick={() => setShowFullImage(false)}
+                    title="Close (Esc)"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+              {/* Body */}
+              <div className="mp-modal-body">
+                <img
+                  src={profile.preview_profile}
+                  alt={`${profile.first_name} ${profile.last_name}`}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── FORM ── */}
         <form
           onSubmit={handleSubmit}
           className="max-w-3xl mx-auto px-8 pb-16 -mt-6 relative z-20 flex flex-col gap-5"
         >
-          {/* ── PERSONAL INFO ── */}
+          {/* ─ PERSONAL INFO ── */}
           <div className="mp-card p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="mp-section-icon">
@@ -682,7 +862,7 @@ export default function MyProfile() {
             </div>
           </div>
 
-          {/* ── ACTIONS ── */}
+          {/* ─ ACTIONS ── */}
           <div className="flex items-center justify-between pt-1">
             <button
               type="button"

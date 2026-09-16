@@ -120,6 +120,7 @@ type LifetimeSpeciesStat = {
   species_name: string;
   total_planted: number;
   total_added: number;
+  total_planted_sum: number;
   total_dead: number;
   total_survived: number;
   survival_rate: number;
@@ -147,7 +148,7 @@ const getAccessibilityText = (accessibility: any) => {
   return "Specified";
 };
 
-// ── Components ──────────────────────────────────────────────────────────
+// ── Components ─────────────────────────────────────────────────────────
 const StatusBadge = ({ status }: { status: string }) => {
   const config: Record<string, { label: string; bg: string; text: string }> = {
     accepted: { label: "Active Program", bg: "#DCFCE7", text: "#166534" },
@@ -182,7 +183,7 @@ const InfoRow = ({ icon, label, value }: { icon: string; label?: string; value: 
 
 const SectionDivider = () => <View style={styles.divider} />;
 
-// ── Main Component ───────────────────────────────────────────────────────
+// ─ Main Component ───────────────────────────────────────────────────────
 export default function SiteMonitoringDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -215,22 +216,38 @@ export default function SiteMonitoringDetailScreen() {
 
   const [description, setDescription] = useState("");
   const [proofImage, setProofImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  
+  const [speciesWithWarnings, setSpeciesWithWarnings] = useState<number[]>([]);
 
   const hasActiveApplication = !!detail?.current_application;
   const hasPendingReport = detail?.progress_reports.some((r) => r.status === "pending") || false;
   const pendingReport = detail?.progress_reports.find((r) => r.status === "pending");
 
-  // ✅ NEW: Find the oldest initial report (baseline)
+  // ✅ FIX 1: Find the oldest initial report (baseline) - considers ALL statuses
   const getBaselineReportId = (): number | null => {
     if (!detail) return null;
     const initialReports = detail.progress_reports
-      .filter((r) => r.visit_type === "initial" && r.status === "accepted")
+      .filter((r) => r.visit_type === "initial") 
       .sort((a, b) => new Date(a.submitted_at || a.created_at).getTime() - new Date(b.submitted_at || b.created_at).getTime());
     return initialReports.length > 0 ? initialReports[0].report_id : null;
   };
 
   const baselineReportId = getBaselineReportId();
 
+  // ✅ UPDATED: Check ONLY accepted reports for actual planting data (Removed recommended_species check)
+  const checkSpeciesHasPlantingHistory = (speciesId: number): boolean => {
+    if (!detail) return false;
+    return detail.progress_reports
+      .filter(r => r.status === "accepted")
+      .some(report =>
+        report.species.some(sp =>
+          (sp.species_id === speciesId || (sp as any).tree_species_id === speciesId) &&
+          ((sp as any).no_planted > 0 || (sp as any).no_added_by_grower > 0)
+        )
+      );
+  };
+
+  // ✅ FIX 2: Add Total Planted column
   const calculateLifetimeSpeciesBreakdown = (): LifetimeSpeciesStat[] => {
     if (!detail) return [];
     const acceptedReports = detail.progress_reports.filter((r) => r.status === "accepted");
@@ -258,13 +275,27 @@ export default function SiteMonitoringDetailScreen() {
           species_name: data.name,
           total_planted: data.planted,
           total_added: data.added,
+          total_planted_sum: totalAccounted, 
           total_dead: data.dead,
           total_survived: survived,
           survival_rate: rate,
         };
       })
-      .sort((a, b) => b.total_planted - a.total_planted);
+      .sort((a, b) => b.total_planted_sum - a.total_planted_sum);
   };
+
+  useEffect(() => {
+    const warnings: number[] = [];
+    reportSpeciesList.forEach((sp) => {
+      if (sp.no_dead > 0 && sp.no_planted === 0 && sp.no_added_by_grower === 0) {
+        const hasHistory = checkSpeciesHasPlantingHistory(sp.tree_species_id);
+        if (!hasHistory) {
+          warnings.push(sp.tree_species_id);
+        }
+      }
+    });
+    setSpeciesWithWarnings(warnings);
+  }, [reportSpeciesList, detail]);
 
   const fetchDetail = async (isRefresh = false) => {
     if (!currentSiteId) {
@@ -361,6 +392,7 @@ export default function SiteMonitoringDetailScreen() {
     }
   };
 
+  // ✅ FIX 3: STRICT Validation to prevent negative calculations
   const handleAddSpeciesToReport = () => {
     if (!selectedSpeciesId) return Alert.alert("Missing Species", "Please select a tree species.");
 
@@ -373,6 +405,27 @@ export default function SiteMonitoringDetailScreen() {
 
     if (visitType === "inactive_check" && dead === 0) {
       return Alert.alert("Invalid Count", "Please enter the number of dead trees.");
+    }
+
+    const totalAccounted = planted + added;
+    const hasHistory = checkSpeciesHasPlantingHistory(found.tree_specie_id);
+
+    // BLOCK 1: If dead trees exceed the trees accounted for in THIS entry AND there is no history
+    if (dead > totalAccounted && !hasHistory) {
+      return Alert.alert(
+        "Invalid Entry Blocked",
+        `Cannot record ${dead} dead trees for "${found.name}" because only ${totalAccounted} trees were accounted for in this entry, and this species has no previous planting history at this site.\n\nYou cannot have more dead trees than were planted. Please verify the counts.`,
+        [{ text: "OK" }]
+      );
+    }
+
+    // BLOCK 2: Block dead-only entries without actual planting history
+    if (dead > 0 && totalAccounted === 0 && !hasHistory) {
+      return Alert.alert(
+        "Invalid Entry Blocked",
+        `Cannot record ${dead} dead trees for "${found.name}" because this species has never been planted at this site.\n\nDead trees must come from previously planted stock. Please verify the species name or add the planting count first.`,
+        [{ text: "OK" }]
+      );
     }
 
     const existingIndex = reportSpeciesList.findIndex((s) => s.tree_species_id === found.tree_specie_id);
@@ -399,6 +452,14 @@ export default function SiteMonitoringDetailScreen() {
     if (visitType === "initial" && !orientationConducted) return Alert.alert("Missing Requirement", "You must confirm that the orientation was conducted.");
     if (visitType === "initial" && !agreementImage) return Alert.alert("Missing Requirement", "Please upload the signed agreement image.");
     if (!proofImage) return Alert.alert("Missing Requirement", "Please upload a proof image of the site for this visit.");
+    
+    if (speciesWithWarnings.length > 0) {
+      return Alert.alert(
+        "Cannot Submit",
+        `${speciesWithWarnings.length} species have validation errors. Please fix dead-only entries without planting history before submitting.`,
+        [{ text: "OK" }]
+      );
+    }
 
     setSubmitting(true);
     try {
@@ -450,6 +511,7 @@ export default function SiteMonitoringDetailScreen() {
             setTempAdded("");
             setTempDead("");
             setSelectedSpeciesId("");
+            setSpeciesWithWarnings([]);
             fetchDetail(true);
           },
         },
@@ -473,6 +535,8 @@ export default function SiteMonitoringDetailScreen() {
   const { site, metrics, progress_reports, current_application, total_seedlings_provided, seedling_requests_breakdown } = detail;
   const programStatus = current_application ? current_application.status : "inactive";
   const lifetimeSpeciesStats = calculateLifetimeSpeciesBreakdown();
+  
+  const hasBlockingErrors = speciesWithWarnings.length > 0;
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.container}>
@@ -491,7 +555,6 @@ export default function SiteMonitoringDetailScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchDetail(true); }} tintColor={PRIMARY} />}
       >
         <View style={styles.contentArea}>
-          {/* Site Info Card */}
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
               <SectionHeader title="SITE INFORMATION" icon="location-outline" />
@@ -514,7 +577,6 @@ export default function SiteMonitoringDetailScreen() {
 
           <SectionDivider />
 
-          {/* Lifetime Metrics */}
           <View style={styles.metricsSection}>
             <Text style={styles.metricsTitle}>Lifetime Site Metrics</Text>
             <View style={styles.metricsGrid}>
@@ -546,7 +608,6 @@ export default function SiteMonitoringDetailScreen() {
             </View>
           </View>
 
-          {/* Seedling Request Breakdown Section */}
           {seedling_requests_breakdown && seedling_requests_breakdown.length > 0 && (
             <View style={styles.section}>
               <SectionHeader title="Seedling Request Breakdown" icon="leaf-outline" />
@@ -566,7 +627,6 @@ export default function SiteMonitoringDetailScreen() {
             </View>
           )}
 
-          {/* Quick Actions */}
           <View style={styles.quickActionsContainer}>
             <TouchableOpacity style={styles.quickActionCard} onPress={() => setShowSpeciesModal(true)} activeOpacity={0.7}>
               <View style={styles.quickActionIcon}>
@@ -592,7 +652,6 @@ export default function SiteMonitoringDetailScreen() {
 
           <SectionDivider />
 
-          {/* Submit Form OR Pending Alert */}
           <View style={styles.section}>
             <SectionHeader title={hasPendingReport ? "PENDING REPORT" : "SUBMIT NEW REPORT"} icon="create-outline" />
 
@@ -718,21 +777,35 @@ export default function SiteMonitoringDetailScreen() {
                 {reportSpeciesList.length > 0 && (
                   <View style={{ marginBottom: 16 }}>
                     <Text style={{ fontSize: 12, fontWeight: "600", color: INK, marginBottom: 8 }}>Reported Species ({reportSpeciesList.length})</Text>
-                    {reportSpeciesList.map((sp, idx) => (
-                      <View key={idx} style={styles.addedSpeciesItem}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.addedSpeciesName}>{sp.species_name}</Text>
-                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                            {sp.no_planted > 0 && <Text style={styles.countBadgePrimary}>Planted: {sp.no_planted}</Text>}
-                            {sp.no_added_by_grower > 0 && <Text style={styles.countBadge}>Added: {sp.no_added_by_grower}</Text>}
-                            <Text style={styles.countBadgeDanger}>Dead: {sp.no_dead}</Text>
+                    {reportSpeciesList.map((sp, idx) => {
+                      const hasWarning = speciesWithWarnings.includes(sp.tree_species_id);
+                      return (
+                        <View key={idx} style={[
+                          styles.addedSpeciesItem, 
+                          hasWarning && { borderColor: DANGER, borderWidth: 2, backgroundColor: "#FEF2F2" }
+                        ]}>
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={styles.addedSpeciesName}>{sp.species_name}</Text>
+                              {hasWarning && <Ionicons name="warning" size={16} color={DANGER} />}
+                            </View>
+                            {hasWarning && (
+                              <Text style={{ fontSize: 10, color: DANGER, marginTop: 4 }}>
+                                ️ No planting history - verify species
+                              </Text>
+                            )}
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                              {sp.no_planted > 0 && <Text style={styles.countBadgePrimary}>Planted: {sp.no_planted}</Text>}
+                              {sp.no_added_by_grower > 0 && <Text style={styles.countBadge}>Added: {sp.no_added_by_grower}</Text>}
+                              <Text style={styles.countBadgeDanger}>Dead: {sp.no_dead}</Text>
+                            </View>
                           </View>
+                          <TouchableOpacity onPress={() => setReportSpeciesList(reportSpeciesList.filter((_, i) => i !== idx))}>
+                            <Ionicons name="trash-outline" size={20} color={DANGER} />
+                          </TouchableOpacity>
                         </View>
-                        <TouchableOpacity onPress={() => setReportSpeciesList(reportSpeciesList.filter((_, i) => i !== idx))}>
-                          <Ionicons name="trash-outline" size={20} color={DANGER} />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 )}
 
@@ -749,11 +822,23 @@ export default function SiteMonitoringDetailScreen() {
                   )}
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.submitBtn, { opacity: submitting || reportSpeciesList.length === 0 || !proofImage ? 0.6 : 1 }]} onPress={handleSubmitReport} disabled={submitting || reportSpeciesList.length === 0 || !proofImage} activeOpacity={0.8}>
-                  {submitting ? <ActivityIndicator size="small" color={WHITE} /> : (
+                <TouchableOpacity 
+                  style={[
+                    styles.submitBtn, 
+                    { opacity: submitting || reportSpeciesList.length === 0 || !proofImage || hasBlockingErrors ? 0.6 : 1 }
+                  ]} 
+                  onPress={handleSubmitReport} 
+                  disabled={submitting || reportSpeciesList.length === 0 || !proofImage || hasBlockingErrors}
+                  activeOpacity={0.8}
+                >
+                  {submitting ? (
+                    <ActivityIndicator size="small" color={WHITE} />
+                  ) : (
                     <>
                       <Ionicons name="checkmark-circle" size={20} color={WHITE} />
-                      <Text style={styles.submitBtnText}>Submit Report</Text>
+                      <Text style={styles.submitBtnText}>
+                        {hasBlockingErrors ? "Fix Errors Before Submit" : "Submit Report"}
+                      </Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -791,7 +876,7 @@ export default function SiteMonitoringDetailScreen() {
                         </Text>
                       </View>
                     </View>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                       <View style={styles.miniStat}>
                         <Text style={styles.miniStatValue}>{stat.total_planted}</Text>
                         <Text style={styles.miniStatLabel}>Planted</Text>
@@ -799,6 +884,10 @@ export default function SiteMonitoringDetailScreen() {
                       <View style={styles.miniStat}>
                         <Text style={styles.miniStatValue}>{stat.total_added}</Text>
                         <Text style={styles.miniStatLabel}>Added</Text>
+                      </View>
+                      <View style={styles.miniStat}>
+                        <Text style={[styles.miniStatValue, { color: PRIMARY }]}>{stat.total_planted_sum}</Text>
+                        <Text style={styles.miniStatLabel}>Total Planted</Text>
                       </View>
                       <View style={styles.miniStat}>
                         <Text style={[styles.miniStatValue, { color: DANGER }]}>{stat.total_dead}</Text>
@@ -817,7 +906,7 @@ export default function SiteMonitoringDetailScreen() {
         </View>
       </Modal>
 
-      {/* REPORT HISTORY MODAL - ✅ UPDATED */}
+      {/* REPORT HISTORY MODAL */}
       <Modal visible={showHistoryModal} animationType="slide" transparent={true} onRequestClose={() => setShowHistoryModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -837,7 +926,13 @@ export default function SiteMonitoringDetailScreen() {
                 progress_reports.map((report) => {
                   const isInitial = report.visit_type === "initial";
                   const isBaseline = isInitial && report.report_id === baselineReportId;
-                  const showAsOngoing = !isBaseline; // All reports except the first initial show as "ongoing" style
+                  
+                  const statusConfig = {
+                    accepted: { label: "Accepted", bg: "#DCFCE7", text: "#166534" },
+                    rejected: { label: "Rejected", bg: "#FEE2E2", text: "#991B1B" },
+                    pending: { label: "Pending", bg: "#FEF3C7", text: "#92400E" },
+                  };
+                  const currentStatus = statusConfig[report.status] || statusConfig.pending;
 
                   return (
                     <View key={report.report_id} style={styles.modalReportCard}>
@@ -845,20 +940,19 @@ export default function SiteMonitoringDetailScreen() {
                         <Text style={styles.reportDate}>{formatDate(report.submitted_at)}</Text>
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                           <Text style={[styles.reportType, { color: isInitial ? PRIMARY : report.visit_type === "inactive_check" ? MUTED : INFO }]}>
-                            {isInitial ? "Initial" : report.visit_type === "inactive_check" ? "Inactive Check" : "Ongoing"}
+                            {isInitial ? "INITIAL" : report.visit_type === "inactive_check" ? "Inactive Check" : "Ongoing"}
                           </Text>
-                          {report.status === "pending" && (
-                            <View style={styles.pendingBadge}>
-                              <Text style={styles.pendingBadgeText}>Pending</Text>
-                            </View>
-                          )}
+                          <View style={[styles.statusBadge, { backgroundColor: currentStatus.bg }]}>
+                            <Text style={[styles.statusBadgeText, { color: currentStatus.text }]}>
+                              {currentStatus.label}
+                            </Text>
+                          </View>
                         </View>
                       </View>
 
                       <Text style={styles.inspectorName}>By: {report.inspector_name}</Text>
                       {report.application_title && <Text style={styles.applicationLink}>Linked to: {report.application_title}</Text>}
 
-                      {/* ✅ UPDATED: Show different metrics based on whether it's the baseline or not */}
                       <View style={styles.reportStats}>
                         {isBaseline ? (
                           <>
@@ -1013,8 +1107,10 @@ const styles = StyleSheet.create({
   reportType: { fontSize: 11, fontWeight: "700", textTransform: "uppercase" },
   inspectorName: { fontSize: 13, color: INK, fontWeight: "600", marginBottom: 4 },
   applicationLink: { fontSize: 11, color: INFO, fontWeight: "500", marginBottom: 12, fontStyle: "italic" },
-  pendingBadge: { backgroundColor: "#FEF3C7", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  pendingBadgeText: { fontSize: 9, fontWeight: "700", color: WARNING, textTransform: "uppercase" },
+  
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  statusBadgeText: { fontSize: 9, fontWeight: "700", textTransform: "uppercase" },
+  
   reportStats: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   reportStat: { flex: 1, alignItems: "center" },
   reportStatValue: { fontSize: 18, fontWeight: "800", color: PRIMARY },
@@ -1026,7 +1122,7 @@ const styles = StyleSheet.create({
   lifetimeSpeciesName: { fontSize: 15, fontWeight: "700", color: INK },
   survivalBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   survivalBadgeText: { fontSize: 11, fontWeight: "700" },
-  miniStat: { alignItems: "center" },
+  miniStat: { alignItems: "center", minWidth: 60 },
   miniStatValue: { fontSize: 16, fontWeight: "800", color: INK },
   miniStatLabel: { fontSize: 10, color: MUTED, marginTop: 2 },
 

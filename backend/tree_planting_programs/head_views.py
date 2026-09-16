@@ -214,7 +214,7 @@ def get_head_dashboard_data(request):
             "site_name": app.site.name if app.site else "No site assigned",
             "barangay": app.site.reforestation_area.barangay.name if app.site and app.site.reforestation_area and app.site.reforestation_area.barangay else "N/A",
             "area_hectares": round(app.site.total_area_hectares, 2) if app.site else 0,
-            "ndvi_score": round(app.site.ndvi_value * 100, 0) if app.site and app.site.ndvi_value else 0,
+            
             "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
             "days_waiting": days_waiting,
             "created_at": app.created_at.isoformat(),
@@ -995,17 +995,7 @@ def get_geographic_impact_report(request):
     compliance_percentage = round((compliant_count / total_verified * 100), 1) if total_verified > 0 else 0
     
     # ─── NDVI SCORE DISTRIBUTION ───────────────────────────────────────
-    ndvi_scores = Sites.objects.filter(
-        ndvi_value__isnull=False,
-        status__in=['accepted', 'under_monitoring', 'completed']
-    ).values_list('ndvi_value', flat=True)
     
-    ndvi_distribution = {
-        "excellent": len([s for s in ndvi_scores if s >= 0.7]),
-        "good": len([s for s in ndvi_scores if 0.5 <= s < 0.7]),
-        "moderate": len([s for s in ndvi_scores if 0.3 <= s < 0.5]),
-        "poor": len([s for s in ndvi_scores if s < 0.3]),
-    }
     
     return JsonResponse({
         "hectares_by_barangay": list(hectares_by_barangay),
@@ -1014,7 +1004,7 @@ def get_geographic_impact_report(request):
             "distribution": list(land_class_dist),
             "compliance_percentage": compliance_percentage,
         },
-        "ndvi_distribution": ndvi_distribution,
+        
     }, status=200)
 
 
