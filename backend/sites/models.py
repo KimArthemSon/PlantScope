@@ -15,7 +15,7 @@ class Sites(models.Model):
 
     reforestation_area = models.ForeignKey(
         Reforestation_areas,
-        on_delete=models.CASCADE,
+        on_delete=models.RESTRICT,
         related_name='sites',
         help_text="Parent area container."
     )

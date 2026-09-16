@@ -574,29 +574,40 @@ export default function ReforestationAreaSiteCombined() {
     };
   };
 
-  const getAreaStatusBadge = (status?: string) => {
-    switch (status) {
-      case "verified":
-        return {
-          color: "bg-emerald-100 text-emerald-700 border border-emerald-300",
-          label: "Verified",
-        };
-      case "rejected":
-        return {
-          color: "bg-red-100 text-red-700 border border-red-300",
-          label: "Rejected",
-        };
-      case "draft":
-        return {
-          color: "bg-blue-100 text-blue-700 border border-blue-300",
-          label: "Draft",
-        };
-      default:
-        return {
-          color: "bg-amber-100 text-amber-700 border border-amber-300",
-          label: "Pending",
-        };
+  // ✅ NEW: Calculate Area Status and Progress based on Sites
+  const getAreaProgressData = (area: ReforestationArea) => {
+    const areaSites = sites.filter(
+      (s) => s.reforestation_area_id === area.reforestation_area_id
+    );
+    
+    const total = area.site_count ?? areaSites.length;
+    const verified = areaSites.filter(
+      (s) => s.verification.status === "verified"
+    ).length;
+
+    // Check if a site is fully complete (Status accepted/completed AND Verified)
+    const isSiteComplete = (s: Site) =>
+      (s.status === "completed" || s.status === "accepted") &&
+      s.verification.status === "verified";
+
+    let statusLabel = "Pending";
+    let statusColor = "bg-amber-100 text-amber-700 border border-amber-300";
+
+    // If backend explicitly says verified, trust it. 
+    // Otherwise, calculate: if all loaded sites are complete, mark as Completed.
+    if (area.verification_status === "verified") {
+      statusLabel = "Completed";
+      statusColor = "bg-emerald-100 text-emerald-700 border border-emerald-300";
+    } else if (
+      areaSites.length > 0 &&
+      areaSites.every(isSiteComplete) &&
+      areaSites.length === total // Only mark complete if we have all sites loaded
+    ) {
+      statusLabel = "Completed";
+      statusColor = "bg-emerald-100 text-emerald-700 border border-emerald-300";
     }
+
+    return { total, verified, statusLabel, statusColor };
   };
 
   const hasActiveFilters =
@@ -874,12 +885,16 @@ export default function ReforestationAreaSiteCombined() {
                 <LoaderPending />
               ) : areas.length > 0 ? (
                 areas.map((area) => {
-                  const statusBadge = getAreaStatusBadge(
-                    area.verification_status,
-                  );
+                  // ✅ Calculate dynamic status and progress
+                  const { total, verified, statusLabel, statusColor } =
+                    getAreaProgressData(area);
                   const isSelected =
                     selectedArea?.reforestation_area_id ===
                     area.reforestation_area_id;
+                  
+                  const progressPercent =
+                    total > 0 ? Math.round((verified / total) * 100) : 0;
+
                   return (
                     <div
                       key={area.reforestation_area_id}
@@ -895,9 +910,9 @@ export default function ReforestationAreaSiteCombined() {
                           {area.name}
                         </h3>
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusBadge.color}`}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${statusColor}`}
                         >
-                          {statusBadge.label}
+                          {statusLabel}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 mb-2.5">
@@ -925,26 +940,42 @@ export default function ReforestationAreaSiteCombined() {
                           {new Date(area.created_at).toLocaleDateString()}
                         </span>
                       </div>
-                      <div className="flex gap-1.5 pt-2 border-t border-slate-100">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewDetails(area);
-                          }}
-                          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-700 rounded-md transition-colors text-[11px] font-medium"
-                        >
-                          <BarChart3 size={12} /> Details
-                        </button>
+
+                      {/* ✅ Replaced View Details Button with Progress Bar */}
+                      <div className="pt-2 border-t border-slate-100">
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                            <ShieldCheck size={10} /> Verification Progress
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-700">
+                            {verified}/{total} ({progressPercent}%)
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden mb-2">
+                          <div
+                            className={`h-1.5 rounded-full transition-all duration-500 ${
+                              progressPercent === 100
+                                ? "bg-emerald-500"
+                                : "bg-amber-500"
+                            }`}
+                            style={{ width: `${progressPercent}%` }}
+                          ></div>
+                        </div>
+                        
+                        {/* Keep Delete button accessible */}
                         {userRole !== "DataManager" && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDelete(area.reforestation_area_id, "area");
-                            }}
-                            className="px-2.5 py-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div className="flex justify-end">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDelete(area.reforestation_area_id, "area");
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                              title="Delete Area"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -983,7 +1014,7 @@ export default function ReforestationAreaSiteCombined() {
             </div>
           </div>
 
-          {/* ───────────────────────────────────────────── */}
+          {/* ──────────────────────────────────────────── */}
           {/* Right Panel - Sites (Child) */}
           {/* ───────────────────────────────────────────── */}
           <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
