@@ -113,7 +113,7 @@ export default function Homepage() {
     }
 
     window.open(
-      "https://github.com/KimArthemSon/PlantScope/releases/download/v1.0.0/pantscope-v2.0.0.apk",
+      "https://github.com/KimArthemSon/PlantScope/releases/download/v1.0.0/PlantScope.apk",
       "_blank",
     );
   };
