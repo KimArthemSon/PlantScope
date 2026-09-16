@@ -26,7 +26,7 @@ import {
 } from "@/hooks/useOfflineFieldAssessment";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
-import FloatingMapButton from "@/components/FloatingMapButton";
+
 import { useAlert } from "@/components/AlertContext";
 
 // ✅ GUIDE IMPORT: Ready to connect
@@ -2183,14 +2183,14 @@ export default function SurvivabilityForm() {
         onClose={() => setShowSlopeGuide(false)}
       />
 
-      <FloatingMapButton
+      {/* <FloatingMapButton
         areaId={parseInt(areaId)}
         areaName={params.areaName as string}
         siteId={siteId ? parseInt(siteId) : undefined}
         siteName={params.siteName as string}
         userLat={locationLat ? parseFloat(locationLat) : undefined}
         userLng={locationLng ? parseFloat(locationLng) : undefined}
-      />
+      /> */}
     </View>
   );
 }

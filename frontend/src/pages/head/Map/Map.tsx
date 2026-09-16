@@ -8,7 +8,7 @@ import {
   Polygon,
   WMSTileLayer,
 } from "react-leaflet";
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
@@ -83,21 +83,6 @@ const calculateAreaHectares = (coords: [number, number][]): number => {
   return Math.abs((area * R * R) / 2) / 10000;
 };
 
-// ✅ MOVED OUTSIDE to prevent reference changes on re-render (helps React.memo)
-const getHazardColor = (hazardType: string) => {
-  const colors: { [key: string]: { stroke: string; fill: string } } = {
-    LANDSLIDE: { stroke: "#dc2626", fill: "#ef4444" },
-    FLOOD: { stroke: "#2563eb", fill: "#3b82f6" },
-    EARTHQUAKE: { stroke: "#7c3aed", fill: "#8b5cf6" },
-    VOLCANIC: { stroke: "#ea580c", fill: "#f97316" },
-    STORM_SURGE: { stroke: "#0891b2", fill: "#06b6d4" },
-    LIQUEFACTION: { stroke: "#ca8a04", fill: "#eab308" },
-    COASTAL_EROSION: { stroke: "#0d9488", fill: "#14b8a6" },
-    OTHER: { stroke: "#6b7280", fill: "#9ca3af" },
-  };
-  return colors[hazardType] || colors.OTHER;
-};
-
 function MapInitializer({ setMapRef }: { setMapRef: (map: L.Map) => void }) {
   const map = useMap();
   useEffect(() => {
@@ -111,283 +96,6 @@ function MapController({ center }: { center: [number, number] }) {
   map.setView(center, 12);
   return null;
 }
-
-// ✅ FIXED: Throttled MouseTracker to prevent rapid re-renders
-function MouseTracker({
-  onCoordsChange,
-}: {
-  onCoordsChange: (coords: { lat: number; lng: number } | null) => void;
-}) {
-  const map = useMap();
-  const lastUpdate = useRef(0);
-
-  useEffect(() => {
-    const handleMouseMove = (e: L.LeafletMouseEvent) => {
-      const now = Date.now();
-      if (now - lastUpdate.current >= 100) {
-        lastUpdate.current = now;
-        onCoordsChange({ lat: e.latlng.lat, lng: e.latlng.lng });
-      }
-    };
-    const handleMouseOut = () => onCoordsChange(null);
-    map.on("mousemove", handleMouseMove);
-    map.on("mouseout", handleMouseOut);
-    return () => {
-      map.off("mousemove", handleMouseMove);
-      map.off("mouseout", handleMouseOut);
-    };
-  }, [map, onCoordsChange]);
-  return null;
-}
-
-// ✅ FIXED: Memoized Hazard Areas to prevent blinking
-const MemoizedHazardAreas = memo(
-  ({
-    hazard_areas,
-    visibleHazardBarangayId,
-    barangays,
-    setVisibleHazardBarangayId,
-    setPSAlert,
-  }: any) => {
-    if (visibleHazardBarangayId === null) return null;
-    const filteredHazards = hazard_areas.filter(
-      (h: any) => h.barangay_id === visibleHazardBarangayId,
-    );
-
-    return (
-      <>
-        {filteredHazards.map((hazard: any) => {
-          if (!hazard.polygon || !hazard.polygon.coordinates) return null;
-          const colors = getHazardColor(hazard.hazard_type);
-          const barangay = barangays.find(
-            (b: any) => b.barangay_id === hazard.barangay_id,
-          );
-          return (
-            <Polygon
-              key={hazard.hazard_area_id}
-              positions={hazard.polygon.coordinates}
-              pathOptions={{
-                color: colors.stroke,
-                fillColor: colors.fill,
-                fillOpacity: 0.3,
-                weight: 2,
-              }}
-            >
-              <Popup>
-                <div className="text-sm min-w-[200px]">
-                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-200">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: colors.fill }}
-                    ></div>
-                    <strong className="text-base text-gray-800 flex-1">
-                      {hazard.name}
-                    </strong>
-                  </div>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle
-                        size={14}
-                        className="text-gray-500 mt-0.5 flex-shrink-0"
-                      />
-                      <div>
-                        <span className="text-gray-500">Type:</span>
-                        <span
-                          className="ml-1 font-semibold px-2 py-0.5 rounded text-white text-[10px]"
-                          style={{ backgroundColor: colors.fill }}
-                        >
-                          {hazard.hazard_type}
-                        </span>
-                      </div>
-                    </div>
-                    {barangay && (
-                      <div className="flex items-start gap-2">
-                        <MapPin
-                          size={14}
-                          className="text-gray-500 mt-0.5 flex-shrink-0"
-                        />
-                        <div>
-                          <span className="text-gray-500">Barangay:</span>
-                          <span className="ml-1 font-medium text-gray-700">
-                            {barangay.name}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => {
-                      setVisibleHazardBarangayId(null);
-                      setPSAlert({
-                        type: "success",
-                        title: "Hazards Hidden",
-                        message: `Hazard areas hidden.`,
-                      });
-                    }}
-                    className="mt-3 w-full flex items-center justify-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold py-1.5 px-2 rounded transition-colors"
-                  >
-                    <X size={12} /> Hide
-                  </button>
-                </div>
-              </Popup>
-            </Polygon>
-          );
-        })}
-      </>
-    );
-  },
-);
-
-// ✅ FIXED: Robust polygon parser that handles all formats
-const MemoizedClassifiedAreas = memo(
-  ({
-    classifiedAreasForMap,
-    showClassifiedAreasBarangayId,
-    setShowClassifiedAreasBarangayId,
-    setPSAlert,
-  }: any) => {
-    if (
-      showClassifiedAreasBarangayId === null ||
-      classifiedAreasForMap.length === 0
-    )
-      return null;
-
-    // Helper: extract Leaflet-compatible positions from any polygon format
-    const extractPositions = (polygon: any): [number, number][] | null => {
-      if (!polygon) return null;
-
-      let coords: any = null;
-
-      // Case 1: GeoJSON Polygon { type: "Polygon", coordinates: [[[lng,lat],...]] }
-      if (polygon.type === "Polygon" && polygon.coordinates) {
-        coords = polygon.coordinates[0];
-      }
-      // Case 2: GeoJSON Feature { type: "Feature", geometry: {...} }
-      else if (polygon.type === "Feature" && polygon.geometry) {
-        if (
-          polygon.geometry.type === "Polygon" &&
-          polygon.geometry.coordinates
-        ) {
-          coords = polygon.geometry.coordinates[0];
-        }
-      }
-      // Case 3: Plain object with coordinates property
-      else if (polygon.coordinates && Array.isArray(polygon.coordinates)) {
-        // Could be [[[lng,lat],...]] or [[lat,lng],...]
-        if (
-          Array.isArray(polygon.coordinates[0]) &&
-          Array.isArray(polygon.coordinates[0][0])
-        ) {
-          coords = polygon.coordinates[0]; // nested array
-        } else {
-          coords = polygon.coordinates; // flat array
-        }
-      }
-      // Case 4: Already a flat array [[lat,lng],...] or [[lng,lat],...]
-      else if (Array.isArray(polygon)) {
-        coords = polygon;
-      }
-      // Case 5: String that needs parsing
-      else if (typeof polygon === "string") {
-        try {
-          const parsed = JSON.parse(polygon);
-          return extractPositions(parsed); // recursive call
-        } catch {
-          return null;
-        }
-      }
-
-      if (!coords || !Array.isArray(coords)) return null;
-
-      // Convert to Leaflet format [lat, lng]
-      return coords
-        .map((c: any) => {
-          if (Array.isArray(c) && c.length >= 2) {
-            // GeoJSON uses [lng, lat], Leaflet uses [lat, lng]
-            // Detect by checking if first value is in lng range (-180 to 180) and second in lat range (-90 to 90)
-            const first = Number(c[0]);
-            const second = Number(c[1]);
-            if (Math.abs(first) <= 180 && Math.abs(second) <= 90) {
-              return [second, first] as [number, number]; // [lat, lng]
-            }
-            return [first, second] as [number, number];
-          }
-          return null;
-        })
-        .filter((c: any) => c !== null);
-    };
-
-    return (
-      <>
-        {classifiedAreasForMap.map((area: any, index: number) => {
-          const positions = extractPositions(area.polygon);
-          if (!positions || positions.length < 3) {
-            console.warn(
-              `Skipping classified area ${area.name}: invalid polygon`,
-              area.polygon,
-            );
-            return null;
-          }
-
-          return (
-            <Polygon
-              key={`classified-${area.classified_area_id}-${index}`}
-              positions={positions}
-              pathOptions={{
-                color: "#8B5CF6",
-                fillColor: "#A78BFA",
-                fillOpacity: 0.2,
-                weight: 2,
-                dashArray: "4, 4",
-              }}
-            >
-              <Popup>
-                <div className="text-sm min-w-[200px]">
-                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-200">
-                    <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                    <strong className="text-base text-gray-800 flex-1">
-                      {area.name}
-                    </strong>
-                  </div>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex items-start gap-2">
-                      <Layers
-                        size={14}
-                        className="text-gray-500 mt-0.5 flex-shrink-0"
-                      />
-                      <div>
-                        <span className="text-gray-500">Classification:</span>
-                        <span className="ml-1 font-semibold text-purple-700">
-                          {area.land_classification?.name || "Unclassified"}
-                        </span>
-                      </div>
-                    </div>
-                    {area.description && (
-                      <p className="text-gray-600 mt-1">{area.description}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowClassifiedAreasBarangayId(null);
-                      setPSAlert({
-                        type: "success",
-                        title: "Classified Areas Hidden",
-                        message: "Classified areas hidden.",
-                      });
-                    }}
-                    className="mt-3 w-full flex items-center justify-center gap-1 bg-purple-500 hover:bg-purple-600 text-white text-xs font-semibold py-1.5 px-2 rounded transition-colors"
-                  >
-                    <X size={12} /> Hide
-                  </button>
-                </div>
-              </Popup>
-            </Polygon>
-          );
-        })}
-      </>
-    );
-  },
-);
 
 interface PolygonGeometry {
   type: "Polygon";
@@ -562,11 +270,19 @@ export default function Map() {
   const [showSiteMarkers, setShowSiteMarkers] = useState(false);
   const [showAnalysisPolygons, setShowAnalysisPolygons] = useState(true);
 
-  // ✅ NEW: State for Classified Areas on Map
-  const [showClassifiedAreasBarangayId, setShowClassifiedAreasBarangayId] =
-    useState<number | null>(null);
-  const [classifiedAreasForMap, setClassifiedAreasForMap] = useState<any[]>([]);
-  const [isClassifiedLoading, setIsClassifiedLoading] = useState(false);
+  const getHazardColor = (hazardType: string) => {
+    const colors: { [key: string]: { stroke: string; fill: string } } = {
+      LANDSLIDE: { stroke: "#dc2626", fill: "#ef4444" },
+      FLOOD: { stroke: "#2563eb", fill: "#3b82f6" },
+      EARTHQUAKE: { stroke: "#7c3aed", fill: "#8b5cf6" },
+      VOLCANIC: { stroke: "#ea580c", fill: "#f97316" },
+      STORM_SURGE: { stroke: "#0891b2", fill: "#06b6d4" },
+      LIQUEFACTION: { stroke: "#ca8a04", fill: "#eab308" },
+      COASTAL_EROSION: { stroke: "#0d9488", fill: "#14b8a6" },
+      OTHER: { stroke: "#6b7280", fill: "#9ca3af" },
+    };
+    return colors[hazardType] || colors.OTHER;
+  };
 
   const [areaForm, setAreaForm] = useState({
     name: "",
@@ -712,12 +428,14 @@ export default function Map() {
   const [isDrawingAnalysis, setIsDrawingAnalysis] = useState(false);
   const [isEditingAnalysis, setIsEditingAnalysis] = useState(false);
   const [isAnalysisPanelOpen, setIsAnalysisPanelOpen] = useState(false);
+  // ✅ NEW: Track if user is typing in an input field
   const [isTypingInInput, setIsTypingInInput] = useState(false);
 
   useEffect(() => {
     if (!showNDVI) setShowCanopyGuide(false);
   }, [showNDVI]);
 
+  // ✅ NEW: Detect focus on input fields to disable keyboard shortcuts
   useEffect(() => {
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
@@ -747,12 +465,15 @@ export default function Map() {
     };
   }, []);
 
+  // ✅ UPDATED: Keyboard shortcuts with input awareness and Escape key support
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape key closes canopy guide
       if (e.key === "Escape" && showCanopyGuide) {
         setShowCanopyGuide(false);
         return;
       }
+      // 'G' key toggles canopy guide, but ONLY if not typing in an input
       if (
         e.key.toLowerCase() === "g" &&
         showNDVI &&
@@ -1309,7 +1030,7 @@ export default function Map() {
     });
   };
 
-  const renderNDVI = async () => {
+   const renderNDVI = async () => {
     setIsNdviLoading(true);
     try {
       const res = await fetch(`${api}api/ndvi/?start=${start}&end=${end}`, {
@@ -1328,7 +1049,7 @@ export default function Map() {
         setDrawnGeometry(null);
         setSiteStats({ total: 0, totalArea: 0, avgNDVI: 0 });
         setSelectedPotentialSiteIds([]);
-        setAnalysisCoords([]);
+        // ✅ FIXED: Removed setAnalysisCoords([]) so the drawn polygon stays visible
         setPSAlert({
           type: "success",
           title: "NDVI Loaded",
@@ -1503,30 +1224,6 @@ export default function Map() {
     );
   };
 
-  // ✅ NEW: Fetch Classified Areas for Map
-  const fetchClassifiedAreasForBarangay = async (barangayId: number) => {
-    setIsClassifiedLoading(true);
-    try {
-      const res = await fetch(
-        `${api}api/barangay/${barangayId}/classified-areas/`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setClassifiedAreasForMap(data.data || []);
-      } else {
-        setClassifiedAreasForMap([]);
-      }
-    } catch (error) {
-      console.error("Failed to fetch classified areas:", error);
-      setClassifiedAreasForMap([]);
-    } finally {
-      setIsClassifiedLoading(false);
-    }
-  };
-
   useEffect(() => {
     get_classified_area();
     getBarangays();
@@ -1577,32 +1274,6 @@ export default function Map() {
       console.error("Failed to fetch sites:", err);
     }
   }
-
-  // ✅ NEW: Fetch Hazard Areas for a specific Barangay
-  const fetchHazardAreasForBarangay = async (barangayId: number) => {
-    try {
-      const res = await fetch(
-        `${api}api/barangay/${barangayId}/hazard-areas/`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
-      const data = await res.json();
-
-      if (res.ok && data.data) {
-        // Update state: Replace hazards for this barangay to avoid duplicates
-        setHazard_areas((prev) => {
-          const filtered = prev.filter((h) => h.barangay_id !== barangayId);
-          return [...filtered, ...data.data];
-        });
-        return data.data; // Return data for immediate use
-      }
-      return [];
-    } catch (error) {
-      console.error("Failed to fetch hazard areas:", error);
-      return [];
-    }
-  };
 
   function closeAll() {
     setIsNdviPenelOpen(false);
@@ -1908,6 +1579,26 @@ export default function Map() {
       );
     }
   };
+
+  function MouseTracker({
+    onCoordsChange,
+  }: {
+    onCoordsChange: (coords: { lat: number; lng: number } | null) => void;
+  }) {
+    const map = useMap();
+    useEffect(() => {
+      const handleMouseMove = (e: L.LeafletMouseEvent) =>
+        onCoordsChange({ lat: e.latlng.lat, lng: e.latlng.lng });
+      const handleMouseOut = () => onCoordsChange(null);
+      map.on("mousemove", handleMouseMove);
+      map.on("mouseout", handleMouseOut);
+      return () => {
+        map.off("mousemove", handleMouseMove);
+        map.off("mouseout", handleMouseOut);
+      };
+    }, [map, onCoordsChange]);
+    return null;
+  }
 
   (window as any).handleDeletePotentialSite = (potential_sites_id: number) => {
     handleDeletePotentialSite(potential_sites_id);
@@ -2640,6 +2331,7 @@ export default function Map() {
                         className="flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white h-8 px-2 py-1 rounded-lg text-[.7rem] relative group"
                       >
                         <Info size={14} /> Guide
+                        {/* ✅ NEW: Visual hint for keyboard shortcut */}
                         {!isTypingInInput && (
                           <span className="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                             Press G
@@ -2726,7 +2418,9 @@ export default function Map() {
                     </>
                   )}
                 </button>
-                {(drawnGeometry || suitablePolygons) && (
+                
+                {/* ✅ FIX 1: Show button as soon as polygon is drawn */}
+                {analysisCoords.length >= 3 && (
                   <button
                     onClick={() => {
                       setShowAnalysisPolygons(!showAnalysisPolygons);
@@ -2746,6 +2440,7 @@ export default function Map() {
                     {showAnalysisPolygons ? "Hide Analysis" : "Show Analysis"}
                   </button>
                 )}
+                
                 <div className="flex gap-2">
                   <button
                     onClick={cancelDrawing}
@@ -3127,7 +2822,8 @@ export default function Map() {
             attribution="NDVI &copy; GEE"
           />
         )}
-
+        
+        {/* ✅ FIX 2: Wrap drawn polygon with showAnalysisPolygons toggle */}
         {showAnalysisPolygons && analysisCoords.length >= 3 && (
           <Polygon
             positions={analysisCoords}
@@ -3207,20 +2903,20 @@ export default function Map() {
             </Popup>
           </Polygon>
         )}
-
-        {showAnalysisPolygons &&
-          analysisCoords.map((coord, idx) => (
-            <Marker
-              key={`vertex-${idx}`}
-              position={coord}
-              icon={createVertexIcon(idx)}
-              draggable={isEditingAnalysis}
-              eventHandlers={{
-                drag: (e) => handleVertexDrag(idx, e),
-              }}
-            />
-          ))}
-
+        
+        {/* ✅ FIX 3: Wrap vertex markers with showAnalysisPolygons toggle */}
+        {showAnalysisPolygons && analysisCoords.map((coord, idx) => (
+          <Marker
+            key={`vertex-${idx}`}
+            position={coord}
+            icon={createVertexIcon(idx)}
+            draggable={isEditingAnalysis}
+            eventHandlers={{
+              drag: (e) => handleVertexDrag(idx, e),
+            }}
+          />
+        ))}
+        
         {showAnalysisPolygons &&
           suitablePolygons &&
           suitablePolygons.features && (
@@ -3526,105 +3222,52 @@ export default function Map() {
                         {area.name}
                       </strong>
                     </div>
-
-                    {/* ✅ UPDATED: Toggle Button for Classified Areas */}
+                    <button
+                      onClick={() => setSelectedBarangayId(area.barangay_id)}
+                      className="flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 text-white h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm"
+                    >
+                      <AreaChart size={14} /> View Classified Areas
+                    </button>
                     <button
                       onClick={() => {
-                        if (
-                          showClassifiedAreasBarangayId === area.barangay_id
-                        ) {
-                          setShowClassifiedAreasBarangayId(null);
-                          setPSAlert({
-                            type: "success",
-                            title: "Classified Areas Hidden",
-                            message: "Classified areas hidden.",
-                          });
-                        } else {
-                          setShowClassifiedAreasBarangayId(area.barangay_id);
-                          fetchClassifiedAreasForBarangay(area.barangay_id);
-                          setPSAlert({
-                            type: "success",
-                            title: "Classified Areas Loaded",
-                            message: "Showing classified areas on map.",
-                          });
-                        }
-                      }}
-                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${
-                        showClassifiedAreasBarangayId === area.barangay_id
-                          ? "bg-purple-600 hover:bg-purple-700 text-white"
-                          : "bg-red-600 hover:bg-red-700 text-white"
-                      }`}
-                    >
-                      <AreaChart size={14} />{" "}
-                      {showClassifiedAreasBarangayId === area.barangay_id
-                        ? "Hide Classified Areas"
-                        : "View Classified Areas"}
-                    </button>
-
-                    {/* ✅ UPDATED: Toggle Button for Hazard Areas */}
-                    <button
-                      onClick={async () => {
-                        if (visibleHazardBarangayId === area.barangay_id) {
-                          // Hide hazards
-                          setVisibleHazardBarangayId(null);
-                          setPSAlert({
-                            type: "success",
-                            title: "Hazard Areas Hidden",
-                            message: "Hazard areas hidden.",
-                          });
-                        } else {
-                          // ✅ Fetch hazards from API first
-                          const fetchedHazards =
-                            await fetchHazardAreasForBarangay(area.barangay_id);
-
-                          if (fetchedHazards.length > 0) {
-                            setVisibleHazardBarangayId(area.barangay_id);
-
-                            // Calculate bounds to fit map
-                            const allCoords = [];
-                            fetchedHazards.forEach((h) => {
-                              if (h.polygon && h.polygon.coordinates) {
-                                h.polygon.coordinates.forEach((coord) =>
-                                  allCoords.push(coord),
-                                );
-                              }
-                            });
-
-                            if (allCoords.length > 0) {
-                              const bounds = L.latLngBounds(
-                                allCoords.map((c) => L.latLng(c[0], c[1])),
+                        const barangayHazards = hazard_areas.filter(
+                          (h) => h.barangay_id === area.barangay_id,
+                        );
+                        if (barangayHazards.length > 0) {
+                          setVisibleHazardBarangayId(area.barangay_id);
+                          const allCoords: [number, number][] = [];
+                          barangayHazards.forEach((h) => {
+                            if (h.polygon && h.polygon.coordinates) {
+                              h.polygon.coordinates.forEach((coord) =>
+                                allCoords.push(coord),
                               );
-                              mapRef.current?.fitBounds(bounds, {
-                                padding: [50, 50],
-                                maxZoom: 16,
-                              });
                             }
-
-                            setPSAlert({
-                              type: "success",
-                              title: "Hazard Areas Loaded",
-                              message: `Showing ${fetchedHazards.length} hazard area(s).`,
-                            });
-                          } else {
-                            // API returned empty
-                            setPSAlert({
-                              type: "failed",
-                              title: "No Hazard Areas",
-                              message: `No hazard areas found for ${area.name}.`,
+                          });
+                          if (allCoords.length > 0) {
+                            const bounds = L.latLngBounds(
+                              allCoords.map((c) => L.latLng(c[0], c[1])),
+                            );
+                            mapRef.current?.fitBounds(bounds, {
+                              padding: [50, 50],
+                              maxZoom: 16,
                             });
                           }
+                          setPSAlert({
+                            type: "success",
+                            title: "Hazard Areas Loaded",
+                            message: `Showing ${barangayHazards.length} hazard area(s).`,
+                          });
+                        } else {
+                          setPSAlert({
+                            type: "failed",
+                            title: "No Hazard Areas",
+                            message: `No hazard areas found.`,
+                          });
                         }
                       }}
-                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${
-                        visibleHazardBarangayId === area.barangay_id
-                          ? "bg-yellow-600 hover:bg-yellow-700 text-white"
-                          : "bg-yellow-500 hover:bg-yellow-600 text-white"
-                      }`}
+                      className="flex items-center justify-center gap-1.5 bg-yellow-500 hover:bg-yellow-600 text-white h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm"
                     >
-                      <AlertTriangle size={14} />{" "}
-                      {visibleHazardBarangayId === area.barangay_id
-                        ? "Hide Hazard Areas"
-                        : "View Hazard Areas"}
+                      <AlertTriangle size={14} /> View Hazard Areas
                     </button>
                   </div>
                 </Popup>
@@ -3733,24 +3376,6 @@ export default function Map() {
             }}
           />
         )}
-
-        {/* ✅ NEW: Render Classified Areas on Map */}
-        <MemoizedClassifiedAreas
-          classifiedAreasForMap={classifiedAreasForMap}
-          showClassifiedAreasBarangayId={showClassifiedAreasBarangayId}
-          setShowClassifiedAreasBarangayId={setShowClassifiedAreasBarangayId}
-          setPSAlert={setPSAlert}
-        />
-
-        {/* ✅ NEW: Render Hazard Areas on Map (Memoized to prevent blinking) */}
-        <MemoizedHazardAreas
-          hazard_areas={hazard_areas}
-          visibleHazardBarangayId={visibleHazardBarangayId}
-          barangays={barangays}
-          setVisibleHazardBarangayId={setVisibleHazardBarangayId}
-          setPSAlert={setPSAlert}
-        />
-
         <BarangayClassifiedAreas
           barangayId={selectedBarangayId}
           token={token}
@@ -3789,6 +3414,86 @@ export default function Map() {
             maxNativeZoom={17}
           />
         )}
+        {visibleHazardBarangayId !== null &&
+          hazard_areas
+            .filter((h) => h.barangay_id === visibleHazardBarangayId)
+            .map((hazard) => {
+              if (!hazard.polygon || !hazard.polygon.coordinates) return null;
+              const colors = getHazardColor(hazard.hazard_type);
+              const barangay = barangays.find(
+                (b) => b.barangay_id === hazard.barangay_id,
+              );
+              return (
+                <Polygon
+                  key={hazard.hazard_area_id}
+                  positions={hazard.polygon.coordinates}
+                  pathOptions={{
+                    color: colors.stroke,
+                    fillColor: colors.fill,
+                    fillOpacity: 0.3,
+                    weight: 2,
+                  }}
+                >
+                  <Popup>
+                    <div className="text-sm min-w-[200px]">
+                      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-200">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: colors.fill }}
+                        ></div>
+                        <strong className="text-base text-gray-800 flex-1">
+                          {hazard.name}
+                        </strong>
+                      </div>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle
+                            size={14}
+                            className="text-gray-500 mt-0.5 flex-shrink-0"
+                          />
+                          <div>
+                            <span className="text-gray-500">Type:</span>
+                            <span
+                              className="ml-1 font-semibold px-2 py-0.5 rounded text-white text-[10px]"
+                              style={{ backgroundColor: colors.fill }}
+                            >
+                              {hazard.hazard_type}
+                            </span>
+                          </div>
+                        </div>
+                        {barangay && (
+                          <div className="flex items-start gap-2">
+                            <MapPin
+                              size={14}
+                              className="text-gray-500 mt-0.5 flex-shrink-0"
+                            />
+                            <div>
+                              <span className="text-gray-500">Barangay:</span>
+                              <span className="ml-1 font-medium text-gray-700">
+                                {barangay.name}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setVisibleHazardBarangayId(null);
+                          setPSAlert({
+                            type: "success",
+                            title: "Hazards Hidden",
+                            message: `Hazard areas hidden.`,
+                          });
+                        }}
+                        className="mt-3 w-full flex items-center justify-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold py-1.5 px-2 rounded transition-colors"
+                      >
+                        <X size={12} /> Hide
+                      </button>
+                    </div>
+                  </Popup>
+                </Polygon>
+              );
+            })}
       </MapContainer>
       {selectedBarangayForAnalysis && (
         <BarangayHazardAnalysis
