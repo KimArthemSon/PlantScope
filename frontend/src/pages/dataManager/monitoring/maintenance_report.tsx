@@ -343,9 +343,11 @@ export default function SiteMonitoringDetails() {
   };
 
   const calculateSpeciesBreakdown = () => {
-    const acceptedReports = detail?.progress_reports.filter((r) => r.status === "accepted") || [];
+    const allReports = detail?.progress_reports || [];
+    const acceptedReports = allReports.filter((r) => r.status === "accepted");
     
-    const initialReports = acceptedReports.filter((r) => r.visit_type === "initial");
+    // Only consider non-rejected initial reports (pending or accepted) for baseline
+    const initialReports = allReports.filter((r) => r.visit_type === "initial" && r.status !== "rejected");
     const oldestInitialReport = initialReports.length > 0 
       ? initialReports.sort((a, b) => new Date(a.submitted_at || 0).getTime() - new Date(b.submitted_at || 0).getTime())[0] 
       : null;
@@ -354,7 +356,7 @@ export default function SiteMonitoringDetails() {
 
     const allSpeciesIds = new Set<number>();
     const speciesNameMap = new Map<number, string>();
-    acceptedReports.forEach((report) => report.species.forEach((sp) => { 
+    allReports.forEach((report) => report.species.forEach((sp) => { 
       allSpeciesIds.add(sp.species_id); 
       speciesNameMap.set(sp.species_id, sp.species_name); 
     }));
@@ -387,15 +389,18 @@ export default function SiteMonitoringDetails() {
       const calculated_survived = Math.max(0, total_accounted - total_dead);
       const survival_rate = total_accounted > 0 ? (calculated_survived / total_accounted) * 100 : 0;
 
-      breakdown.push({ 
-        tree_species_id: speciesId, 
-        species_name: speciesName, 
-        officially_planted, 
-        total_added, 
-        total_dead, 
-        calculated_survived, 
-        survival_rate 
-      });
+      // FIX: Only include species if they have meaningful data (not all zeros)
+      if (officially_planted > 0 || total_added > 0 || total_dead > 0 || calculated_survived > 0) {
+        breakdown.push({ 
+          tree_species_id: speciesId, 
+          species_name: speciesName, 
+          officially_planted, 
+          total_added, 
+          total_dead, 
+          calculated_survived, 
+          survival_rate 
+        });
+      }
     }
     return breakdown;
   };
@@ -406,16 +411,21 @@ export default function SiteMonitoringDetails() {
   const appStatus = detail?.current_application?.status || "";
   const isNeedsOrientation = appStatus === "accepted";
 
-  // ✅ NEW: Check if an initial orientation report has been accepted
+  // Check for accepted initial report
   const hasAcceptedInitialReport = detail?.progress_reports.some(
     (r) => r.visit_type === "initial" && r.status === "accepted"
   );
 
-  // ✅ NEW: Find the baseline report ID (oldest accepted initial report)
+  // Check for rejected initial report to allow early failure
+  const hasRejectedInitialReport = detail?.progress_reports.some(
+    (r) => r.visit_type === "initial" && r.status === "rejected"
+  );
+
+  // Find the baseline report ID (oldest non-rejected initial report)
   const baselineReportId = useMemo(() => {
     if (!detail) return null;
     const initialReports = detail.progress_reports
-      .filter((r) => r.visit_type === "initial" && r.status === "accepted")
+      .filter((r) => r.visit_type === "initial" && r.status !== "rejected")
       .sort((a, b) => new Date(a.submitted_at || 0).getTime() - new Date(b.submitted_at || 0).getTime());
     return initialReports.length > 0 ? initialReports[0].report_id : null;
   }, [detail]);
@@ -458,7 +468,7 @@ export default function SiteMonitoringDetails() {
         />
       )}
 
-      {/* ─ Header */}
+      {/*  Header */}
       <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white px-6 py-5 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
@@ -558,7 +568,7 @@ export default function SiteMonitoringDetails() {
               </div>
             </div>
 
-            {/* ✅ UPDATED: Lifetime Metrics */}
+            {/* Lifetime Metrics */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <h3 className="text-sm font-bold text-[#0F4A2F] mb-4 flex items-center gap-2">
                 <TrendingUp size={16} /> Lifetime Site Metrics
@@ -592,7 +602,7 @@ export default function SiteMonitoringDetails() {
               </div>
             </div>
 
-            {/* ✅ NEW: Seedling Request Breakdown */}
+            {/* Seedling Request Breakdown */}
             {seedling_requests_breakdown.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                 <SectionHeader icon={<Package size={16} />} title="Seedling Request Breakdown" subtitle="Total accepted seedlings provided by ENRO across all applications" />
@@ -680,7 +690,7 @@ export default function SiteMonitoringDetails() {
                           <StatusBadge status={report.status} />
                         </div>
 
-                        {/* ✅ UPDATED: 2-Column Grid based on Baseline vs Others */}
+                        {/* 2-Column Grid based on Baseline vs Others */}
                         <div className="grid grid-cols-2 gap-3 mb-4">
                           {isBaseline ? (
                             <>
@@ -722,7 +732,6 @@ export default function SiteMonitoringDetails() {
                                     <span className="text-sm font-medium text-gray-700">{sp.species_name}</span>
                                   </div>
                                   <div className="flex items-center gap-4 text-xs">
-                                    {/* ✅ UPDATED: Show Planted ONLY for baseline, Added for others */}
                                     {isBaseline && sp.no_planted > 0 && (
                                       <div className="text-center">
                                         <p className="text-gray-400">Planted</p>
@@ -777,7 +786,7 @@ export default function SiteMonitoringDetails() {
             </div>
           </div>
 
-          {/* ─ Right: Actions Panel ── */}
+          {/*  Right: Actions Panel ── */}
           <div className="w-full lg:w-80 flex-shrink-0">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm sticky top-6">
               <div className="p-5 border-b border-gray-100">
@@ -826,15 +835,21 @@ export default function SiteMonitoringDetails() {
                     </button>
                   )}
 
-                  {/* ✅ UPDATED: Only show Completed/Failed buttons if Initial Report is Accepted */}
-                  {site.monitoring_status === "under_monitoring" && current_application && hasAcceptedInitialReport && (
+                  {/* Show completion/failure buttons based on initial report status */}
+                  {site.monitoring_status === "under_monitoring" && current_application && (
                     <div className="space-y-2">
-                      <button onClick={() => setCompletionModal({ open: true, type: "completed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">
-                        <CheckCircle2 size={16} /> Mark Application Completed
-                      </button>
-                      <button onClick={() => setCompletionModal({ open: true, type: "failed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors">
-                        <XCircle size={16} /> Mark Application Failed
-                      </button>
+                      {/* Only show Complete if there's an accepted initial report */}
+                      {hasAcceptedInitialReport && (
+                        <button onClick={() => setCompletionModal({ open: true, type: "completed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">
+                          <CheckCircle2 size={16} /> Mark Application Completed
+                        </button>
+                      )}
+                      {/* Show Fail if there's either accepted OR rejected initial report */}
+                      {(hasAcceptedInitialReport || hasRejectedInitialReport) && (
+                        <button onClick={() => setCompletionModal({ open: true, type: "failed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors">
+                          <XCircle size={16} /> Mark Application Failed
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -883,7 +898,7 @@ export default function SiteMonitoringDetails() {
         </div>
       </main>
 
-      {/* Modals remain the same... */}
+      {/* Modals */}
       {updateOrientationModal.open && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">

@@ -12,6 +12,9 @@
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.19.0",
     "@tailwindcss/vite": "^4.1.16",
+    "@turf/area": "^7.4.0",
+    "@turf/helpers": "^7.4.0",
+    "@turf/turf": "^7.4.0",
     "chart.js": "^4.5.1",
     "esri-leaflet": "^3.0.19",
     "georaster": "^1.6.0",
