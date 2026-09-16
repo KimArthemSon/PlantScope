@@ -33,7 +33,7 @@ class Classified_areas(models.Model):
     name = models.CharField(max_length=100, unique=True)
     land_classification = models.ForeignKey(
         LandClassification,
-        on_delete=models.CASCADE,
+        on_delete=models.RESTRICT,
         related_name="classified_areas"
     )
 

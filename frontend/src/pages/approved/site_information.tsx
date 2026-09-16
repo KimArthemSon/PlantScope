@@ -164,7 +164,7 @@ interface LandClassificationOption {
 
 // ────────────────────────────────────────────
 // CONSTANTS
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 border-amber-200",
   under_review: "bg-purple-50 text-purple-700 border-purple-200",
@@ -193,7 +193,96 @@ const LAYER_TAG_CONFIG: Record<string, { label: string; color: string; icon: any
 const LOCKED_MONITORING_STATUSES = ['reserved', 'under_monitoring', 'completed', 'failed', 'onhold'];
 
 // ────────────────────────────────────────────
-// IMAGE VIEWER MODAL (NEW)
+// CUSTOM CONFIRMATION MODAL
+// ─────────────────────────────────────────────
+type ConfirmVariant = "danger" | "warning";
+
+interface ConfirmModalProps {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  variant?: ConfirmVariant;
+}
+
+const ConfirmModal: React.FC<ConfirmModalProps> = ({
+  isOpen,
+  title,
+  message,
+  onConfirm,
+  onCancel,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  variant = "danger",
+}) => {
+  if (!isOpen) return null;
+
+  const styles: Record<ConfirmVariant, { icon: any; iconBg: string; iconColor: string; confirmBtn: string }> = {
+    danger: {
+      icon: Trash2,
+      iconBg: "bg-red-100",
+      iconColor: "text-red-600",
+      confirmBtn: "bg-red-600 hover:bg-red-700 text-white",
+    },
+    warning: {
+      icon: RotateCcw,
+      iconBg: "bg-yellow-100",
+      iconColor: "text-yellow-600",
+      confirmBtn: "bg-yellow-500 hover:bg-yellow-600 text-white",
+    },
+  };
+
+  const { icon: Icon, iconBg, iconColor, confirmBtn } = styles[variant];
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-sm mx-4 overflow-hidden animate-slideDown">
+        {/* Header */}
+        <div className="flex items-center gap-4 p-6 pb-4">
+          <div className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${iconBg}`}>
+            <Icon className={`w-6 h-6 ${iconColor}`} />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-bold text-gray-900 text-base">{title}</h3>
+            <p className="text-sm text-gray-500 mt-0.5">{message}</p>
+          </div>
+          <button
+            onClick={onCancel}
+            className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-gray-100" />
+
+        {/* Actions */}
+        <div className="flex gap-3 p-4">
+          <button
+            onClick={onCancel}
+            className="flex-1 border border-gray-300 rounded-xl py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`flex-1 rounded-xl py-2.5 text-sm font-bold transition-colors shadow-sm ${confirmBtn}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────
+// IMAGE VIEWER MODAL
 // ─────────────────────────────────────────────
 const ImageViewerModal: React.FC<{
   imageUrl: string | null;
@@ -315,7 +404,7 @@ const EditableField: React.FC<{
 
 // ────────────────────────────────────────────
 // STAT CARD
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────
 const StatCard: React.FC<{ icon: any; label: string; value: string | number; subtext?: string; accent?: "emerald" | "blue" | "purple" | "gray"; }> = ({ icon: Icon, label, value, subtext, accent = "gray" }) => {
   const accentStyles = {
     emerald: { bg: "bg-emerald-50", border: "border-emerald-100", iconBg: "bg-emerald-100", iconColor: "text-emerald-600", valueColor: "text-emerald-700" },
@@ -363,7 +452,7 @@ function SecurityBadge({ concern }: { concern: string }) {
 
 // ─────────────────────────────────────────────
 // MAP COMPONENT
-// ─────────────────────────────────────────────
+// ────────────────────────────────────────────
 const GoToCenterButton: React.FC<{ center: [number, number] }> = ({ center }) => {
   const map = useMap();
   return (
@@ -403,7 +492,10 @@ const MainImageCard: React.FC<{
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(currentImageUrl);
   const [error, setError] = useState<string | null>(null);
-  const [isViewingFull, setIsViewingFull] = useState(false); // ✅ NEW
+  const [isViewingFull, setIsViewingFull] = useState(false);
+  
+  // ✅ Custom confirmation modal state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => { setPreviewUrl(currentImageUrl); }, [currentImageUrl]);
 
@@ -431,11 +523,12 @@ const MainImageCard: React.FC<{
   };
 
   const handleDelete = async () => {
-    if (!confirm("Are you sure you want to remove the main image?")) return;
     try {
       const res = await fetch(`${API}remove_site_main_image/${siteId}/`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) { onImageUpdate(null); setPreviewUrl(null); setSelectedFile(null); }
-    } catch { setError("Failed to remove image."); }
+    } catch { setError("Failed to remove image."); } finally {
+      setShowDeleteConfirm(false);
+    }
   };
 
   const isUploadingNew = selectedFile !== null;
@@ -447,10 +540,9 @@ const MainImageCard: React.FC<{
           {previewUrl ? (
             <div 
               className="relative group w-full h-[450px] bg-gray-900 rounded-md overflow-hidden border border-gray-200 cursor-zoom-in"
-              onClick={() => setIsViewingFull(true)} // ✅ Click to view full
+              onClick={() => setIsViewingFull(true)}
             >
               <img src={previewUrl} alt="Site Main" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-              {/* Zoom Indicator */}
               <div className="absolute top-3 right-3 bg-black/50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
                 <ZoomIn className="w-4 h-4" />
               </div>
@@ -460,7 +552,10 @@ const MainImageCard: React.FC<{
                     <Upload className="w-3.5 h-3.5" /> Change
                     <input type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
                   </label>
-                  <button onClick={(e) => { e.stopPropagation(); handleDelete(); }} className="bg-red-500 text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-red-600 transition-colors flex items-center gap-1.5 shadow-lg">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }} 
+                    className="bg-red-500 text-white px-3 py-1.5 rounded-md text-xs font-medium hover:bg-red-600 transition-colors flex items-center gap-1.5 shadow-lg"
+                  >
                     <Trash2 className="w-3.5 h-3.5" /> Remove
                   </button>
                 </div>
@@ -492,14 +587,25 @@ const MainImageCard: React.FC<{
           {isLocked && <div className="mt-3 flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs"><ShieldAlert className="w-4 h-4 flex-shrink-0" />Image editing is disabled for active/official sites.</div>}
         </div>
       </BentoCard>
-      {/* ✅ Full View Modal */}
+      
       <ImageViewerModal imageUrl={previewUrl} isOpen={isViewingFull} onClose={() => setIsViewingFull(false)} />
+      
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="Remove Main Image"
+        message="Are you sure you want to remove the main cover image? This action cannot be undone."
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        variant="danger"
+      />
     </>
   );
 };
 
 // ─────────────────────────────────────────────
-// IMAGES GALLERY (UPDATED WITH MODAL)
+// IMAGES GALLERY (UPDATED)
 // ────────────────────────────────────────────
 const SiteImagesGallery: React.FC<{
   siteId: number;
@@ -514,7 +620,11 @@ const SiteImagesGallery: React.FC<{
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [viewingImage, setViewingImage] = useState<string | null>(null); // ✅ NEW
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  
+  // ✅ Custom confirmation modal state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [imageToDelete, setImageToDelete] = useState<number | null>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -534,9 +644,20 @@ const SiteImagesGallery: React.FC<{
     } catch (error) { setUploadError("Upload failed. Please try again."); } finally { setUploading(false); }
   };
 
-  const handleDelete = async (imageId: number) => {
-    if (!confirm("Are you sure you want to delete this image?")) return;
-    try { const res = await fetch(`${API}delete_site_image/${imageId}/`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }); if (res.ok) onImagesUpdate(); } catch (error) { console.error("Delete failed:", error); }
+  const handleDelete = async () => {
+    if (!imageToDelete) return;
+    try { 
+      const res = await fetch(`${API}delete_site_image/${imageToDelete}/`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }); 
+      if (res.ok) onImagesUpdate(); 
+    } catch (error) { console.error("Delete failed:", error); } finally {
+      setShowDeleteConfirm(false);
+      setImageToDelete(null);
+    }
+  };
+
+  const initiateDelete = (imageId: number) => {
+    setImageToDelete(imageId);
+    setShowDeleteConfirm(true);
   };
 
   const groupedImages = images.reduce((acc, img) => { if (!acc[img.layer_tag]) acc[img.layer_tag] = []; acc[img.layer_tag].push(img); return acc; }, {} as Record<string, SiteImage[]>);
@@ -597,20 +718,22 @@ const SiteImagesGallery: React.FC<{
                       <div key={img.site_image_id} className="relative group">
                         <div 
                           className={`aspect-square rounded-md overflow-hidden border ${config.color} bg-white cursor-zoom-in`}
-                          onClick={() => img.img_url && setViewingImage(img.img_url)} // ✅ Click to view full
+                          onClick={() => img.img_url && setViewingImage(img.img_url)}
                         >
                           {img.img_url ? (
                             <img src={`${img.img_url}`} alt={img.caption || "Site image"} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" />
                           ) : (
                             <div className="w-full h-full bg-gray-100 flex items-center justify-center"><ImageIcon className="w-8 h-8 text-gray-300" /></div>
                           )}
-                          {/* Zoom Indicator on Hover */}
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                             <ZoomIn className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
                           </div>
                         </div>
                         {img.caption && <p className="text-xs text-gray-600 mt-1.5 line-clamp-2 px-1">{img.caption}</p>}
-                        <button onClick={() => handleDelete(img.site_image_id)} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow-lg z-10">
+                        <button 
+                          onClick={() => initiateDelete(img.site_image_id)} 
+                          className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow-lg z-10"
+                        >
                           <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
@@ -628,8 +751,19 @@ const SiteImagesGallery: React.FC<{
           </div>
         )}
       </div>
-      {/* ✅ Full View Modal for Gallery */}
+      
       <ImageViewerModal imageUrl={viewingImage} isOpen={!!viewingImage} onClose={() => setViewingImage(null)} />
+      
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="Delete Image"
+        message="Are you sure you want to delete this image? This action cannot be undone."
+        onConfirm={handleDelete}
+        onCancel={() => { setShowDeleteConfirm(false); setImageToDelete(null); }}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+      />
     </>
   );
 };
@@ -990,7 +1124,7 @@ export default function SiteInformation(): JSX.Element {
             </BentoCard>
           </div>
 
-          {/* ROW 2: Site Location Map (6 cols) + Main Cover Image (6 cols) ✅ UPDATED */}
+          {/* ROW 2: Site Location Map (6 cols) + Main Cover Image (6 cols) */}
           <div className="col-span-12 lg:col-span-6">
             <BentoCard header={{ icon: MapIcon, title: "Site Location" }} className="h-full">
               <div className="h-[450px]">
