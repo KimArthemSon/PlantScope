@@ -16,7 +16,7 @@ import SafetyForm from "@/components/forms/SafetyForm";
 import BoundaryVerificationForm from "@/components/forms/BoundaryVerificationForm";
 import SurvivabilityForm from "@/components/forms/SurvivabilityForm";
 import { useFieldAssessment } from "@/hooks/useFieldAssessment";
-import FloatingMapButton from "@/components/FloatingMapButton";
+
 const API = api;
 
 type LayerId = "safety" | "boundary_verification" | "survivability";
@@ -222,10 +222,10 @@ export default function MulticriteriaLayerForm() {
         {renderLayerForm()}
         <View style={{ height: 30 }} />
       </ScrollView>
-      <FloatingMapButton
+      {/* <FloatingMapButton
         areaId={parseInt(areaId)}
         areaName={headerTitle}
-      />
+      /> */}
     </View>
   );
 }
