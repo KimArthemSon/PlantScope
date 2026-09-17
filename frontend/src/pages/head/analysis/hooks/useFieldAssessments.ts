@@ -55,7 +55,7 @@ export interface FieldAssessmentsResponse {
 
 const LAYER_EMOJIS: Record<MCDALayer, string> = {
   safety: "🛡️",
-  boundary_verification: "📏",
+  boundary_verification: "",
   survivability: "🌱",
 };
 
@@ -349,6 +349,14 @@ export function useFieldAssessments(
         </div>
       `);
 
+        // ✅ SNAP: Photo markers also snap during drawing/editing mode
+        marker.on("click", (e: L.LeafletMouseEvent) => {
+          if (isDrawingModeRef.current && onSnapToMarkerRef.current) {
+            // Don't stop propagation - let popup still open
+            onSnapToMarkerRef.current(img.latitude!, img.longitude!);
+          }
+        });
+
         photoMarkers.push(marker);
       });
 
@@ -358,6 +366,18 @@ export function useFieldAssessments(
     },
     [mapRef, removePhotoMarkers],
   );
+
+  // ✅ Update photo markers cursor when drawing mode changes
+  useEffect(() => {
+    photoMarkersRef.current.forEach((markers) => {
+      markers.forEach((marker) => {
+        const el = marker.getElement();
+        if (el) {
+          el.style.cursor = isDrawingMode ? "crosshair" : "pointer";
+        }
+      });
+    });
+  }, [isDrawingMode]);
 
   const fetchLayer = useCallback(
     async (

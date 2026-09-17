@@ -26,6 +26,8 @@ import {
 } from "@/hooks/useOfflineFieldAssessment";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
+// ✅ UPDATED: Import MapPoint type alongside FloatingMapButton
+import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
 
 import { useAlert } from "@/components/AlertContext";
 
@@ -1533,6 +1535,67 @@ export default function SurvivabilityForm() {
     return `${Math.round(gpsReadinessAge / 24)}d ago`;
   };
 
+  // ✅ NEW: Collect all map points for FloatingMapButton
+  const collectMapPoints = (): MapPoint[] => {
+    const points: MapPoint[] = [];
+
+    // 1. Add assessment location (from GPS or manual input)
+    if (locationLat && locationLng) {
+      const lat = parseFloat(locationLat);
+      const lng = parseFloat(locationLng);
+      if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        points.push({
+          id: "assessment-main",
+          type: "assessment",
+          latitude: lat,
+          longitude: lng,
+          label: "Assessment Location",
+          accuracy: locationAccuracy ? parseFloat(locationAccuracy) : undefined,
+          timestamp: new Date().toLocaleString(),
+          description: overallNote || "Main survivability assessment point",
+        });
+      }
+    }
+
+    // 2. Add server photos with GPS
+    const allServerImages = [
+      ...soilImages.map((img) => ({ ...img, category: "Soil" })),
+      ...waterImages.map((img) => ({ ...img, category: "Water" })),
+      ...slopeImages.map((img) => ({ ...img, category: "Slope" })),
+    ];
+
+    allServerImages.forEach((img, index) => {
+      if (img.latitude != null && img.longitude != null && img.latitude !== 0) {
+        points.push({
+          id: `photo-server-${img.image_id}`,
+          type: "photo",
+          latitude: img.latitude,
+          longitude: img.longitude,
+          label: `${img.category} Photo ${index + 1}`,
+          timestamp: img.created_at,
+          description: img.description || `${img.category} survivability observation`,
+        });
+      }
+    });
+
+    // 3. Add local/pending photos with GPS
+    localImages.forEach((img, index) => {
+      if (img.latitude !== 0 && img.longitude !== 0) {
+        const categoryName = img.subLayerCode.charAt(0).toUpperCase() + img.subLayerCode.slice(1);
+        points.push({
+          id: `photo-local-${img.id}`,
+          type: "photo",
+          latitude: img.latitude,
+          longitude: img.longitude,
+          label: `${categoryName} Photo (Pending)`,
+          description: img.description || `${img.subLayerCode} survivability observation`,
+        });
+      }
+    });
+
+    return points;
+  };
+
   if (loading) {
     return (
       <View style={styles.centerContent}>
@@ -1545,6 +1608,8 @@ export default function SurvivabilityForm() {
       </View>
     );
   }
+
+  const headerTitle = siteId ? `Survivability Assessment (Site)` : `Survivability Assessment (Area)`;
 
   return (
     <View style={styles.container}>
@@ -2183,14 +2248,13 @@ export default function SurvivabilityForm() {
         onClose={() => setShowSlopeGuide(false)}
       />
 
-      {/* <FloatingMapButton
+      {/* ✅ NEW: Floating Map Button with Assessment Points */}
+      <FloatingMapButton
         areaId={parseInt(areaId)}
-        areaName={params.areaName as string}
+        areaName={headerTitle}
         siteId={siteId ? parseInt(siteId) : undefined}
-        siteName={params.siteName as string}
-        userLat={locationLat ? parseFloat(locationLat) : undefined}
-        userLng={locationLng ? parseFloat(locationLng) : undefined}
-      /> */}
+        mapPoints={collectMapPoints()}
+      />
     </View>
   );
 }

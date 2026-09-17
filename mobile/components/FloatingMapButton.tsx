@@ -48,6 +48,18 @@ interface Barangay {
   coordinate: [number, number];
 }
 
+// ✅ NEW: MapPoint Interface for Assessment Coordinates
+export interface MapPoint {
+  id: string;
+  type: "assessment" | "photo" | "manual";
+  latitude: number;
+  longitude: number;
+  label: string;
+  accuracy?: number;
+  timestamp?: string;
+  description?: string;
+}
+
 interface FloatingMapButtonProps {
   areaId: number;
   areaName?: string;
@@ -55,6 +67,7 @@ interface FloatingMapButtonProps {
   siteName?: string;
   userLat?: number;
   userLng?: number;
+  mapPoints?: MapPoint[]; // ✅ NEW PROP
 }
 
 type GPSReadiness = "ready" | "aging" | "cold" | "checking";
@@ -408,6 +421,9 @@ const HazardVignette: React.FC<{ visible: boolean }> = ({ visible }) => {
   );
 };
 
+// ─────────────────────────────────────────────
+// 🗺️ MAIN FLOATING MAP BUTTON COMPONENT
+// ─────────────────────────────────────────────
 export default function FloatingMapButton({
   areaId,
   areaName,
@@ -415,6 +431,7 @@ export default function FloatingMapButton({
   siteName,
   userLat,
   userLng,
+  mapPoints = [], // ✅ Default to empty array
 }: FloatingMapButtonProps) {
   const [showMap, setShowMap] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -457,6 +474,9 @@ export default function FloatingMapButton({
   const [showFlood, setShowFlood] = useState(false);
   const [showLandslide, setShowLandslide] = useState(false);
   const [showLayerPanel, setShowLayerPanel] = useState(false);
+
+  // ✅ NEW: Assessment Points State
+  const [showAssessmentPoints, setShowAssessmentPoints] = useState(true);
 
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
   const [showAlertModal, setShowAlertModal] = useState(false);
@@ -501,6 +521,15 @@ export default function FloatingMapButton({
     stop: stopGeofencing,
     refreshPolygonStatus,
   } = usePolygonAlerts();
+
+  // ✅ Filter valid map points (remove 0,0 or NaN)
+  const validMapPoints = mapPoints.filter(
+    (point) =>
+      !isNaN(point.latitude) &&
+      !isNaN(point.longitude) &&
+      point.latitude !== 0 &&
+      point.longitude !== 0
+  );
 
   useEffect(() => {
     if (!showMap) {
@@ -864,6 +893,48 @@ export default function FloatingMapButton({
       console.error("Error parsing WebView message", e);
     }
   };
+
+  // ✅ NEW: Inject Assessment Points to WebView & Auto-Fit
+  useEffect(() => {
+    if (!showMap || validMapPoints.length === 0 || !showAssessmentPoints) {
+      if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(
+          `window.updateMap('clearAssessmentPoints'); true;`
+        );
+      }
+      return;
+    }
+
+    const pointsData = validMapPoints.map((point) => ({
+      id: point.id,
+      type: point.type,
+      lat: point.latitude,
+      lng: point.longitude,
+      label: point.label,
+      accuracy: point.accuracy,
+      timestamp: point.timestamp,
+      description: point.description,
+    }));
+
+    injectToWebView(
+      `window.updateMap('addAssessmentPoints', ${JSON.stringify(pointsData)})`
+    );
+
+    // Auto-fit bounds when points are added
+    if (validMapPoints.length > 0 && !hasFitted.current) {
+      const bounds: [number, number][] = validMapPoints.map((p) => [
+        p.latitude,
+        p.longitude,
+      ]);
+      if (currentLocation) {
+        bounds.push([currentLocation.lat, currentLocation.lng]);
+      }
+      injectToWebView(
+        `window.updateMap('fitBounds', ${JSON.stringify(bounds)})`
+      );
+      hasFitted.current = true;
+    }
+  }, [validMapPoints, showMap, showAssessmentPoints, currentLocation]);
 
   useEffect(() => {
     if (!showMap || loading) return;
@@ -1319,6 +1390,12 @@ export default function FloatingMapButton({
     );
   };
 
+  // ✅ NEW: Clear all assessment points handler
+  const handleClearAllPoints = () => {
+    injectToWebView(`window.updateMap('clearAssessmentPoints')`);
+    alert?.info("Points Cleared", "All assessment points have been removed from the map.");
+  };
+
   const title = siteName
     ? `${siteName} (${areaName || "Area"})`
     : areaName || "Location Map";
@@ -1348,17 +1425,6 @@ export default function FloatingMapButton({
         onRequestClose={() => setShowMap(false)}
       >
         <View style={styles.modalContainer}>
-          {/* 🚨 HAZARD ALERT BANNER — slides in from top */}
-          {/* <HazardAlertBanner
-            alerts={alerts}
-            visible={
-              shouldShowAlertIndicator && isLocationEnabled && alerts.length > 0
-            }
-            onPress={() => {
-              if (alerts.length > 0) handleAlertPress(alerts[0]);
-            }}
-          /> */}
-
           <View style={styles.header}>
             <TouchableOpacity onPress={() => setShowMap(false)}>
               <Ionicons name="close" size={28} color="#0F4A2F" />
@@ -1482,6 +1548,66 @@ export default function FloatingMapButton({
                   <Ionicons name="checkmark" size={18} color="#fff" />
                 )}
               </TouchableOpacity>
+
+              {/* ✅ NEW: Assessment Points Section in Layer Panel */}
+              <View style={styles.assessmentPointsSection}>
+                <Text style={styles.layerPanelTitle}>Assessment Points</Text>
+                <View style={styles.assessmentPointsRow}>
+                  <View style={styles.assessmentPointsInfo}>
+                    <Ionicons
+                      name={showAssessmentPoints ? "eye" : "eye-off"}
+                      size={18}
+                      color={showAssessmentPoints ? "#0F4A2F" : "#6B7280"}
+                    />
+                    <Text style={styles.assessmentPointsText}>
+                      {validMapPoints.length} point{validMapPoints.length !== 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.miniBtn,
+                      validMapPoints.length === 0 && styles.miniBtnDisabled,
+                    ]}
+                    onPress={() => setShowAssessmentPoints(!showAssessmentPoints)}
+                    disabled={validMapPoints.length === 0}
+                  >
+                    <Text style={styles.miniBtnText}>
+                      {showAssessmentPoints ? "Hide" : "Show"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {validMapPoints.length > 0 && (
+                  <View style={styles.assessmentPointsRow}>
+                    <View style={styles.assessmentPointsInfo}>
+                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                      <Text style={[styles.assessmentPointsText, { color: "#EF4444" }]}>
+                        Clear all points
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.miniBtn, styles.miniBtnDanger]}
+                      onPress={handleClearAllPoints}
+                    >
+                      <Text style={styles.miniBtnText}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                
+                <View style={styles.pointLegend}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: "#2563eb" }]} />
+                    <Text style={styles.legendText}>Assessment</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: "#f59e0b" }]} />
+                    <Text style={styles.legendText}>Photo</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: "#7c3aed" }]} />
+                    <Text style={styles.legendText}>Manual</Text>
+                  </View>
+                </View>
+              </View>
 
               <View style={styles.offlineSection}>
                 <Text style={styles.layerPanelTitle}>Offline Data</Text>
@@ -1619,7 +1745,6 @@ export default function FloatingMapButton({
                   )}
                 />
 
-                {/* 🚨 Ambient vignette overlay when inside hazard */}
                 <HazardVignette
                   visible={
                     shouldShowAlertIndicator &&
@@ -1628,7 +1753,6 @@ export default function FloatingMapButton({
                   }
                 />
 
-                {/* 🚨 Enhanced floating hazard indicator — bottom center */}
                 {shouldShowAlertIndicator && isLocationEnabled && (
                   <View style={styles.hazardIndicatorContainer}>
                     <HazardIndicator
@@ -2039,7 +2163,7 @@ export default function FloatingMapButton({
   );
 }
 
-// 🌐 LEAFLET HTML WITH OFFLINE SUPPORT (FIXED)
+// 🌐 LEAFLET HTML WITH OFFLINE SUPPORT & ASSESSMENT POINTS
 const mapHtml = `
 <!DOCTYPE html>
 <html>
@@ -2059,6 +2183,17 @@ const mapHtml = `
     .icon-label { position: absolute; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; transform: rotate(45deg); font-weight: bold; font-size: 12px; color: #000; }
     .pulse-ring { animation: pulse 1.5s ease-out infinite; }
     @keyframes pulse { 0% { opacity: 0.8; transform: scale(1); } 100% { opacity: 0; transform: scale(2.5); } }
+    
+    /* Assessment point popup styles */
+    .point-popup { font-family: sans-serif; min-width: 180px; }
+    .point-popup h4 { margin: 0 0 8px 0; font-size: 13px; font-weight: bold; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+    .point-popup .detail { margin-bottom: 6px; }
+    .point-popup .detail-label { font-size: 10px; color: #6b7280; text-transform: uppercase; font-weight: bold; margin-bottom: 2px; }
+    .point-popup .detail-value { font-size: 12px; font-weight: 600; color: #1f2937; font-family: monospace; }
+    .point-popup .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-top: 4px; }
+    .badge-assessment { background: #dbeafe; color: #1e40af; }
+    .badge-photo { background: #fef3c7; color: #92400e; }
+    .badge-manual { background: #f3e8ff; color: #6b21a8; }
   </style>
 </head>
 <body>
@@ -2070,9 +2205,50 @@ const mapHtml = `
     var polygonLayers = { classified: null, hazards: null };
     var hazardTiles = { flood: null, landslide: null };
     var userPulse = null;
+    var assessmentPointsLayer = null;
 
     function createIcon(colorClass, label) {
       return L.divIcon({ className: 'custom-div-icon', html: '<div class="marker-pin ' + colorClass + '"></div><div class="icon-label">' + label + '</div>', iconSize: [30, 30], iconAnchor: [15, 30] });
+    }
+
+    function createAssessmentPointIcon(type) {
+      const icons = {
+        assessment: { color: '#2563eb', emoji: '📍', size: 32 },
+        photo: { color: '#f59e0b', emoji: '📷', size: 28 },
+        manual: { color: '#7c3aed', emoji: '✏️', size: 28 }
+      };
+      const icon = icons[type] || icons.assessment;
+      return L.divIcon({
+        className: 'custom-assessment-icon',
+        html: '<div style="background:' + icon.color + ';width:' + icon.size + 'px;height:' + icon.size + 'px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:14px;">' + icon.emoji + '</div>',
+        iconSize: [icon.size, icon.size],
+        iconAnchor: [icon.size / 2, icon.size]
+      });
+    }
+
+    function createPointPopup(point) {
+      const typeLabels = { assessment: 'Assessment Location', photo: 'Photo Location', manual: 'Manual Input' };
+      const badgeClasses = { assessment: 'badge-assessment', photo: 'badge-photo', manual: 'badge-manual' };
+      
+      let html = '<div class="point-popup">';
+      html += '<h4 style="color:' + (point.type === 'assessment' ? '#2563eb' : point.type === 'photo' ? '#f59e0b' : '#7c3aed') + '">' + point.label + '</h4>';
+      html += '<span class="badge ' + badgeClasses[point.type] + '">' + typeLabels[point.type] + '</span>';
+      html += '<div class="detail" style="margin-top:8px;">';
+      html += '<div class="detail-label">Coordinates</div>';
+      html += '<div class="detail-value">' + point.lat.toFixed(6) + '°, ' + point.lng.toFixed(6) + '°</div></div>';
+      
+      if (point.accuracy) {
+        html += '<div class="detail"><div class="detail-label">Accuracy</div><div class="detail-value">±' + Math.round(point.accuracy) + 'm</div></div>';
+      }
+      if (point.timestamp) {
+        html += '<div class="detail"><div class="detail-label">Timestamp</div><div class="detail-value">' + point.timestamp + '</div></div>';
+      }
+      if (point.description) {
+        html += '<div class="detail"><div class="detail-label">Description</div><div style="font-size:11px;color:#4b5563;margin-top:2px;">' + point.description + '</div></div>';
+      }
+      
+      html += '</div>';
+      return html;
     }
 
     function sendClick(category, id) {
@@ -2105,13 +2281,39 @@ const mapHtml = `
           userPulse = L.circleMarker([payload.lat, payload.lng], { radius: 20, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.15, weight: 2, className: 'pulse-ring' }).addTo(map);
           setTimeout(function() { if (userPulse) map.removeLayer(userPulse); userPulse = null; }, 1500);
         }
+        else if (action === 'addAssessmentPoints') {
+          if (assessmentPointsLayer) {
+            map.removeLayer(assessmentPointsLayer);
+          }
+          assessmentPointsLayer = L.layerGroup();
+          
+          payload.forEach(point => {
+            try {
+              const marker = L.marker([point.lat, point.lng], {
+                icon: createAssessmentPointIcon(point.type)
+              });
+              const popupContent = createPointPopup(point);
+              marker.bindPopup(popupContent);
+              marker.addTo(assessmentPointsLayer);
+            } catch (e) {
+              console.warn('Error drawing assessment point:', e);
+            }
+          });
+          assessmentPointsLayer.addTo(map);
+        }
+        else if (action === 'clearAssessmentPoints') {
+          if (assessmentPointsLayer) {
+            map.removeLayer(assessmentPointsLayer);
+            assessmentPointsLayer = null;
+          }
+        }
         else if (action === 'flyTo') {
           var zoomLevel = map.getZoom();
           if (payload.zoom) zoomLevel = payload.zoom;
           map.flyTo([payload.lat, payload.lng], zoomLevel);
         }
         else if (action === 'fitBounds') {
-          map.fitBounds(payload, { padding: [50, 50] });
+          map.fitBounds(payload, { padding: [50, 50], maxZoom: 16 });
         }
         else if (action === 'drawClassifiedPolygons') {
           if (polygonLayers.classified) { map.removeLayer(polygonLayers.classified); polygonLayers.classified = null; }
@@ -2825,5 +3027,48 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#92400e",
     fontWeight: "600",
+  },
+
+  // ✅ NEW: Assessment Points Section Styles
+  assessmentPointsSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  assessmentPointsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  assessmentPointsInfo: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 8, 
+    flex: 1 
+  },
+  assessmentPointsText: { 
+    fontSize: 12, 
+    color: "#111", 
+    fontWeight: "500" 
+  },
+  miniBtnDisabled: { 
+    opacity: 0.5,
+    backgroundColor: "#D1D5DB" 
+  },
+  miniBtnDanger: {
+    backgroundColor: "#EF4444",
+  },
+  pointLegend: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
   },
 });
