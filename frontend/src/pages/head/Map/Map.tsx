@@ -2709,7 +2709,7 @@ export default function Map() {
                     </>
                   )}
                 </button>
-                
+
                 {/* ✅ FIX: Show button as soon as polygon is drawn */}
                 {analysisCoords.length >= 3 && (
                   <button
@@ -2731,7 +2731,7 @@ export default function Map() {
                     {showAnalysisPolygons ? "Hide Analysis" : "Show Analysis"}
                   </button>
                 )}
-                
+
                 <div className="flex gap-2">
                   <button
                     onClick={cancelDrawing}
@@ -3089,7 +3089,9 @@ export default function Map() {
       </div>
       <MapContainer
         center={ORMOCCITY}
-        zoom={12}
+        zoom={13}
+        maxZoom={22} // ✅ Allow zooming much closer
+        minZoom={10}
         className="h-full w-full"
         style={{ minHeight: "100vh" }}
       >
@@ -3104,6 +3106,8 @@ export default function Map() {
           url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
           tileSize={512}
           zoomOffset={-1}
+          maxZoom={22} // ✅ Match MapContainer maxZoom
+          maxNativeZoom={19} // ✅ Mapbox supports up to 19-22 depending on location
           attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
         {ndviTileUrl && showNDVI && (
@@ -3113,7 +3117,7 @@ export default function Map() {
             attribution="NDVI &copy; GEE"
           />
         )}
-        
+
         {/* ✅ FIX: Wrap drawn polygon with showAnalysisPolygons toggle */}
         {showAnalysisPolygons && analysisCoords.length >= 3 && (
           <Polygon
@@ -3194,20 +3198,21 @@ export default function Map() {
             </Popup>
           </Polygon>
         )}
-        
+
         {/* ✅ FIX: Wrap vertex markers with showAnalysisPolygons toggle */}
-        {showAnalysisPolygons && analysisCoords.map((coord, idx) => (
-          <Marker
-            key={`vertex-${idx}`}
-            position={coord}
-            icon={createVertexIcon(idx)}
-            draggable={isEditingAnalysis}
-            eventHandlers={{
-              drag: (e) => handleVertexDrag(idx, e),
-            }}
-          />
-        ))}
-        
+        {showAnalysisPolygons &&
+          analysisCoords.map((coord, idx) => (
+            <Marker
+              key={`vertex-${idx}`}
+              position={coord}
+              icon={createVertexIcon(idx)}
+              draggable={isEditingAnalysis}
+              eventHandlers={{
+                drag: (e) => handleVertexDrag(idx, e),
+              }}
+            />
+          ))}
+
         {showAnalysisPolygons &&
           suitablePolygons &&
           suitablePolygons.features && (
@@ -3513,17 +3518,27 @@ export default function Map() {
                         {area.name}
                       </strong>
                     </div>
-                    
+
                     {/* ✅ UPDATED: Toggle Button for Classified Areas */}
                     <button
                       onClick={() => {
-                        if (showClassifiedAreasBarangayId === area.barangay_id) {
+                        if (
+                          showClassifiedAreasBarangayId === area.barangay_id
+                        ) {
                           setShowClassifiedAreasBarangayId(null);
-                          setPSAlert({ type: "success", title: "Classified Areas Hidden", message: "Classified areas hidden." });
+                          setPSAlert({
+                            type: "success",
+                            title: "Classified Areas Hidden",
+                            message: "Classified areas hidden.",
+                          });
                         } else {
                           setShowClassifiedAreasBarangayId(area.barangay_id);
                           fetchClassifiedAreasForBarangay(area.barangay_id);
-                          setPSAlert({ type: "success", title: "Classified Areas Loaded", message: "Showing classified areas on map." });
+                          setPSAlert({
+                            type: "success",
+                            title: "Classified Areas Loaded",
+                            message: "Showing classified areas on map.",
+                          });
                         }
                       }}
                       className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${
@@ -3532,10 +3547,13 @@ export default function Map() {
                           : "bg-red-600 hover:bg-red-700 text-white"
                       }`}
                     >
-                      <AreaChart size={14} /> {showClassifiedAreasBarangayId === area.barangay_id ? "Hide Classified Areas" : "View Classified Areas"}
+                      <AreaChart size={14} />{" "}
+                      {showClassifiedAreasBarangayId === area.barangay_id
+                        ? "Hide Classified Areas"
+                        : "View Classified Areas"}
                     </button>
 
-                                        {/* ✅ UPDATED: Toggle Button for Hazard Areas (Removed auto-fly/fitBounds) */}
+                    {/* ✅ UPDATED: Toggle Button for Hazard Areas (Removed auto-fly/fitBounds) */}
                     <button
                       onClick={async () => {
                         if (visibleHazardBarangayId === area.barangay_id) {
