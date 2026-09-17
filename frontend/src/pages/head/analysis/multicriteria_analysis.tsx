@@ -116,6 +116,7 @@ const createMarkerIcon = (
 ) => {
   let color = "#9CA3AF";
   let iconSvg = "";
+
   switch (type) {
     case "barangay":
       color = "#EAB308";
@@ -134,12 +135,15 @@ const createMarkerIcon = (
       iconSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>`;
       break;
   }
+
   const labelHtml = labelText
     ? `<span style="font-size: 11px; font-weight: 600; color: #1f2937; background: rgba(255, 255, 255, 0.95); padding: 2px 8px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${labelText}</span>`
     : "";
+
   const estimatedWidth = labelText
     ? Math.min(24 + 6 + labelText.length * 7 + 16, 250)
     : 24;
+
   return L.divIcon({
     className: "custom-map-marker",
     html: `
@@ -147,7 +151,7 @@ const createMarkerIcon = (
         <div style="position: relative; width: 24px; height: 30px; flex-shrink: 0;">
           <svg width="24" height="30" viewBox="0 0 24 30" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
             <path d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
-                  fill="${color}" stroke="white" stroke-width="2"/>
+              fill="${color}" stroke="white" stroke-width="2"/>
           </svg>
           <div style="position: absolute; top: 7px; left: 6px; display: flex; align-items: center; justify-content: center;">
             ${iconSvg}
@@ -233,8 +237,10 @@ export default function MulticriteriaAnalysis() {
 
   const [showPotentialSites, setShowPotentialSites] = useState(false);
   const potentialSiteLayersRef = useRef<L.Polygon[]>([]);
+
   const [showSites, setShowSites] = useState(true);
   const [showReforestationArea, setShowReforestationArea] = useState(true);
+
   const [showValidationPanel, setShowValidationPanel] = useState(false);
   const [validatingSite, setValidatingSite] = useState<SiteDetail | null>(null);
 
@@ -244,6 +250,7 @@ export default function MulticriteriaAnalysis() {
   const [selectedSiteIdForFilter, setSelectedSiteIdForFilter] = useState<
     string | null
   >(null);
+
   const [siteName, setSiteName] = useState("");
   const [showNameInput, setShowNameInput] = useState(false);
 
@@ -254,14 +261,78 @@ export default function MulticriteriaAnalysis() {
   } | null>(null);
   const [showDMS, setShowDMS] = useState(false);
 
+  // ✅ NEW: Two-phase drawing flow states
+  const [isDrawingFinished, setIsDrawingFinished] = useState(false);
+  const [areaUnit, setAreaUnit] = useState<"ha" | "sqm">("ha");
+
+  // ✅ NEW: Site View Area Toggle State
+  const [viewAreaUnit, setViewAreaUnit] = useState<"ha" | "sqm">("ha");
+
+  // ✅ Helper: format area based on current unit (for drawing)
+  const displayArea = useCallback(
+    (area: number | null): string => {
+      if (area === null) return "0";
+      return areaUnit === "ha"
+        ? `${area.toFixed(2)} ha`
+        : `${(area * 10000).toFixed(2)} m²`;
+    },
+    [areaUnit],
+  );
+
+  // ✅ Reset view area unit when switching sites
+  useEffect(() => {
+    setViewAreaUnit("ha");
+  }, [viewingSite?.site_id]);
+
+  // ✅ Calculate area for edit mode
+  const calculatePolygonArea = (coords: [number, number][]): number => {
+    if (coords.length < 3) return 0;
+    const latRad =
+      ((coords.reduce((s, c) => s + c[0], 0) / coords.length) * Math.PI) / 180;
+    const mLat =
+      111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
+    const mLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
+    const local = coords.map(([lat, lng]) => [
+      (lng - coords[0][1]) * mLng,
+      (lat - coords[0][0]) * mLat,
+    ]);
+    let area = 0;
+    for (let i = 0; i < local.length; i++) {
+      const [x1, y1] = local[i];
+      const [x2, y2] = local[(i + 1) % local.length];
+      area += x1 * y2 - x2 * y1;
+    }
+    return Math.round((Math.abs(area) / 2 / 10000) * 100) / 100;
+  };
+
+  // ✅ Get display area value - dynamic for edit mode, static for view mode
+  const getDisplayAreaValue = useCallback((): number | null => {
+    if (isEditMode && editedPolygon && editedPolygon.length >= 3) {
+      return calculatePolygonArea(editedPolygon);
+    }
+    return viewingSite?.area_hectares ?? null;
+  }, [isEditMode, editedPolygon, viewingSite?.area_hectares]);
+
+  // ✅ Format display area with unit toggle
+  const formatDisplayArea = useCallback((): string => {
+    const area = getDisplayAreaValue();
+    if (area === null) return "Area not calculated";
+    
+    return viewAreaUnit === "ha"
+      ? `${area.toFixed(2)} ha`
+      : `${(area * 10000).toFixed(2)} m²`;
+  }, [getDisplayAreaValue, viewAreaUnit]);
+
   // ✅ SNAP helper: adds a vertex while drawing a NEW polygon in edit mode
   const addNewPolygonPoint = useCallback(
     (newPoint: [number, number]) => {
       const map = mapRef.current;
       if (!map) return;
+
       const updatedPoints = [...newPolygonPoints, newPoint];
       setEditedPolygon(updatedPoints);
       setNewPolygonPoints(updatedPoints);
+
       const marker = L.marker(newPoint, {
         icon: L.divIcon({
           className: "new-polygon-vertex",
@@ -270,6 +341,7 @@ export default function MulticriteriaAnalysis() {
           iconAnchor: [8, 8],
         }),
       }).addTo(map);
+
       marker.on("dblclick", () => {
         const idx = updatedPoints.findIndex(
           (p) => p[0] === newPoint[0] && p[1] === newPoint[1],
@@ -305,7 +377,9 @@ export default function MulticriteriaAnalysis() {
           });
         }
       });
+
       newPolygonMarkersRef.current.push(marker);
+
       if (newPolygonLineRef.current) map.removeLayer(newPolygonLineRef.current);
       if (updatedPoints.length >= 2) {
         newPolygonLineRef.current = L.polyline(updatedPoints, {
@@ -314,6 +388,7 @@ export default function MulticriteriaAnalysis() {
           dashArray: "5, 5",
         }).addTo(map);
       }
+
       if (updatedPoints.length >= 3) {
         setAlert({
           type: "success",
@@ -330,6 +405,7 @@ export default function MulticriteriaAnalysis() {
     (lat: number, lng: number) => {
       const snapped: [number, number] = [lat, lng];
       const map = mapRef.current;
+
       if (isDrawing) {
         setPolygonCoordinates((prev) => [...prev, snapped]);
         setAlert({
@@ -339,10 +415,12 @@ export default function MulticriteriaAnalysis() {
         });
         return;
       }
+
       if (isDrawingNewPolygon) {
         addNewPolygonPoint(snapped);
         return;
       }
+
       if (isPickingMarkerLocation) {
         if (!map) return;
         setEditedMarker(snapped);
@@ -372,6 +450,7 @@ export default function MulticriteriaAnalysis() {
         });
         return;
       }
+
       if (isPlacingNewMarker) {
         if (!map) return;
         setEditedMarker(snapped);
@@ -398,6 +477,7 @@ export default function MulticriteriaAnalysis() {
         });
         return;
       }
+
       if (isEditMode) {
         if (editedPolygon && editedPolygon.length >= 3) {
           const newCoords = [...editedPolygon, snapped];
@@ -520,12 +600,15 @@ export default function MulticriteriaAnalysis() {
   const handleDropProbe = useCallback((lat: number, lng: number) => {
     const map = mapRef.current;
     if (!map) return;
+
     if (probeMarkerRef.current) map.removeLayer(probeMarkerRef.current);
+
     const latDMS = decimalToDMS(lat, "lat");
     const lngDMS = decimalToDMS(lng, "lng");
+
     const popupContent = `
       <div style="font-family: sans-serif; min-width: 180px;">
-        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #7e22ce; border-bottom: 1px solid #e9d5ff; padding-bottom: 4px;">📍 Dropped Pin</h4>
+        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #7e22ce; border-bottom: 1px solid #e9d5ff; padding-bottom: 4px;"> Dropped Pin</h4>
         <div style="margin-bottom: 8px;">
           <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Latitude</div>
           <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lat.toFixed(6)}</div>
@@ -539,10 +622,13 @@ export default function MulticriteriaAnalysis() {
         <button id="clear-probe-btn" style="width: 100%; padding: 6px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s;">Clear Pin</button>
       </div>
     `;
+
     const marker = L.marker([lat, lng], {
       icon: createMarkerIcon("temp", "Probe"),
     }).addTo(map);
+
     marker.bindPopup(popupContent).openPopup();
+
     marker.on("popupopen", () => {
       const btn = document.getElementById("clear-probe-btn");
       if (btn) {
@@ -556,6 +642,7 @@ export default function MulticriteriaAnalysis() {
         btn.onmouseout = () => (btn.style.background = "#ef4444");
       }
     });
+
     probeMarkerRef.current = marker;
   }, []);
 
@@ -569,6 +656,7 @@ export default function MulticriteriaAnalysis() {
             mapRef.current?.removeLayer(polygonRef.current);
             polygonRef.current = null;
           }
+
           if (
             detail.polygon_coordinates &&
             detail.polygon_coordinates.length > 0
@@ -641,11 +729,14 @@ export default function MulticriteriaAnalysis() {
   const renderAllMarkers = useCallback((coordinates: [number, number][]) => {
     const map = mapRef.current;
     if (!map) return;
+
     vertexMarkersRef.current.forEach((m) => map.removeLayer(m));
     vertexMarkersRef.current = [];
     addVertexMarkersRef.current.forEach((m) => map.removeLayer(m));
     addVertexMarkersRef.current = [];
+
     if (!coordinates || coordinates.length < 3) return;
+
     coordinates.forEach((coord, index) => {
       const vertexMarker = L.marker(coord, {
         draggable: true,
@@ -656,6 +747,7 @@ export default function MulticriteriaAnalysis() {
           iconAnchor: [10, 10],
         }),
       }).addTo(map);
+
       vertexMarker.on("drag", (e) => {
         const latlng = e.target.getLatLng();
         const newCoords = [...coordinates];
@@ -665,6 +757,7 @@ export default function MulticriteriaAnalysis() {
           editablePolygonRef.current.setLatLngs(newCoords);
         renderAllMarkersRef.current(newCoords);
       });
+
       vertexMarker.on("dblclick", () => {
         if (coordinates.length <= 3) {
           setAlert({
@@ -680,16 +773,20 @@ export default function MulticriteriaAnalysis() {
           editablePolygonRef.current.setLatLngs(newCoords);
         renderAllMarkersRef.current(newCoords);
       });
+
       vertexMarker.bindTooltip("Double-click to delete", {
         permanent: false,
         direction: "top",
       });
+
       vertexMarkersRef.current.push(vertexMarker);
     });
+
     for (let i = 0; i < coordinates.length; i++) {
       const nextIndex = (i + 1) % coordinates.length;
       const midLat = (coordinates[i][0] + coordinates[nextIndex][0]) / 2;
       const midLng = (coordinates[i][1] + coordinates[nextIndex][1]) / 2;
+
       const addMarker = L.marker([midLat, midLng], {
         icon: L.divIcon({
           className: "add-vertex-marker",
@@ -698,6 +795,7 @@ export default function MulticriteriaAnalysis() {
           iconAnchor: [9, 9],
         }),
       }).addTo(map);
+
       addMarker.on("click", () => {
         const newCoords = [...coordinates];
         newCoords.splice(i + 1, 0, [midLat, midLng]);
@@ -706,10 +804,12 @@ export default function MulticriteriaAnalysis() {
           editablePolygonRef.current.setLatLngs(newCoords);
         renderAllMarkersRef.current(newCoords);
       });
+
       addMarker.bindTooltip("Click to add vertex", {
         permanent: false,
         direction: "top",
       });
+
       addVertexMarkersRef.current.push(addMarker);
     }
   }, []);
@@ -724,6 +824,7 @@ export default function MulticriteriaAnalysis() {
         zoomControl: true,
         attributionControl: true,
       }).setView([11.00860051288406, 124.60859604113544], 13);
+
       L.tileLayer(
         `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,
         {
@@ -731,20 +832,26 @@ export default function MulticriteriaAnalysis() {
             '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
           tileSize: 512,
           zoomOffset: -1,
-          maxZoom: 19,
+          maxZoom: 22,
+          maxNativeZoom: 19,
         },
       ).addTo(mapRef.current);
+
       L.control
         .scale({ imperial: false, position: "bottomleft" })
         .addTo(mapRef.current);
+
       const handleMouseMove = (e: L.LeafletMouseEvent) => {
         setMouseCoords({ lat: e.latlng.lat, lng: e.latlng.lng });
       };
+
       const handleMouseOut = () => {
         setMouseCoords(null);
       };
+
       mapRef.current.on("mousemove", handleMouseMove);
       mapRef.current.on("mouseout", handleMouseOut);
+
       if (areaId) {
         sites.fetchMCDAData(areaId);
         const initialSiteId = siteId || undefined;
@@ -755,6 +862,7 @@ export default function MulticriteriaAnalysis() {
           initialSiteId,
         );
       }
+
       return () => {
         if (mapRef.current) {
           mapRef.current.off("mousemove", handleMouseMove);
@@ -769,6 +877,7 @@ export default function MulticriteriaAnalysis() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
     const reforestationArea = sites.reforestationArea;
     if (reforestationArea && reforestationArea.coordinate) {
       if (!hasInitialAreaLoadRef.current) {
@@ -782,9 +891,12 @@ export default function MulticriteriaAnalysis() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
     siteMarkersRef.current.forEach((marker) => map.removeLayer(marker));
     siteMarkersRef.current = [];
+
     if (!showSites || !sites.sites.length) return;
+
     sites.sites.forEach((site) => {
       const normalizedCoord = normalizeMarkerCoordinate(site.marker_coordinate);
       if (normalizedCoord) {
@@ -802,6 +914,7 @@ export default function MulticriteriaAnalysis() {
         siteMarkersRef.current.push(marker);
       }
     });
+
     return () => {
       siteMarkersRef.current.forEach((marker) => map.removeLayer(marker));
       siteMarkersRef.current = [];
@@ -811,9 +924,12 @@ export default function MulticriteriaAnalysis() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
     barangayMarkersRef.current.forEach((marker) => map.removeLayer(marker));
     barangayMarkersRef.current = [];
+
     if (!barangayAreas.barangayList.length) return;
+
     barangayAreas.barangayList.forEach((barangay) => {
       const normalizedCoord = normalizeMarkerCoordinate([
         barangay.coordinate[0],
@@ -829,6 +945,7 @@ export default function MulticriteriaAnalysis() {
         barangayMarkersRef.current.push(marker);
       }
     });
+
     return () => {
       barangayMarkersRef.current.forEach((marker) => map.removeLayer(marker));
       barangayMarkersRef.current = [];
@@ -838,11 +955,14 @@ export default function MulticriteriaAnalysis() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !areaId) return;
+
     if (areaMarkerRef.current) {
       map.removeLayer(areaMarkerRef.current);
       areaMarkerRef.current = null;
     }
+
     if (!showReforestationArea) return;
+
     const reforestationArea = sites.reforestationArea;
     if (reforestationArea && reforestationArea.coordinate) {
       const normalizedCoord = normalizeMarkerCoordinate(
@@ -858,6 +978,7 @@ export default function MulticriteriaAnalysis() {
         );
       }
     }
+
     return () => {
       if (areaMarkerRef.current) map.removeLayer(areaMarkerRef.current);
     };
@@ -866,16 +987,20 @@ export default function MulticriteriaAnalysis() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
     potentialSiteLayersRef.current.forEach((layer) => map.removeLayer(layer));
     potentialSiteLayersRef.current = [];
+
     if (!showPotentialSites || !potentialSitesHook.potentialSites.length)
       return;
+
     potentialSitesHook.potentialSites.forEach((site: any) => {
       if (site.polygon_coordinates && site.polygon_coordinates.length >= 3) {
         const score =
           site.suitability_score ?? site.score ?? site.suitability ?? 50;
         let color = "#93C5FD";
         let fillColor = "#BFDBFE";
+
         if (score >= 70) {
           color = "#3B82F6";
           fillColor = "#93C5FD";
@@ -886,6 +1011,7 @@ export default function MulticriteriaAnalysis() {
           color = "#93C5FD";
           fillColor = "#DBEAFE";
         }
+
         const polygon = L.polygon(site.polygon_coordinates, {
           color,
           fillColor,
@@ -893,15 +1019,18 @@ export default function MulticriteriaAnalysis() {
           weight: 2,
           dashArray: "4, 4",
         }).addTo(map);
+
         polygon.bindPopup(`
           <div style="text-align:center;font-family:sans-serif;">
             <strong style="color:#2563eb;font-size:13px;">Potential Site</strong><br/>
             <span style="font-size:11px;color:#666;">Suitability: ${score}%</span>
           </div>
         `);
+
         potentialSiteLayersRef.current.push(polygon);
       }
     });
+
     return () => {
       potentialSiteLayersRef.current.forEach((layer) => map.removeLayer(layer));
       potentialSiteLayersRef.current = [];
@@ -910,8 +1039,10 @@ export default function MulticriteriaAnalysis() {
 
   useEffect(() => {
     if (!isDrawing || !mapRef.current) return;
+
     if (drawingLineRef.current)
       mapRef.current.removeLayer(drawingLineRef.current);
+
     if (polygonCoordinates.length >= 2) {
       drawingLineRef.current = L.polyline(polygonCoordinates, {
         color: "#22C55E",
@@ -920,8 +1051,10 @@ export default function MulticriteriaAnalysis() {
         opacity: 0.8,
       }).addTo(mapRef.current);
     }
+
     drawingPointsRef.current.forEach((m) => mapRef.current!.removeLayer(m));
     drawingPointsRef.current = [];
+
     polygonCoordinates.forEach((coord, idx) => {
       const marker = L.marker(coord, {
         icon: L.divIcon({
@@ -938,6 +1071,7 @@ export default function MulticriteriaAnalysis() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
     const handleMapClick = (e: L.LeafletMouseEvent) => {
       if (isDrawing)
         setPolygonCoordinates((prev) => [
@@ -945,12 +1079,14 @@ export default function MulticriteriaAnalysis() {
           [e.latlng.lat, e.latlng.lng],
         ]);
     };
+
     if (isDrawing) {
       map.on("click", handleMapClick);
       map.getContainer().style.cursor = "crosshair";
     } else {
       map.getContainer().style.cursor = "";
     }
+
     return () => {
       map.off("click", handleMapClick);
       if (!isDrawing) map.getContainer().style.cursor = "";
@@ -998,16 +1134,19 @@ export default function MulticriteriaAnalysis() {
   const startDrawing = () => {
     if (!mapRef.current) return;
     setIsDrawing(true);
+    setIsDrawingFinished(false);
     setShowCoordPanel(true);
     setPolygonCoordinates([]);
     setPolygonArea(null);
     setShowNameInput(false);
+
     if (drawingLineRef.current) {
       mapRef.current.removeLayer(drawingLineRef.current);
       drawingLineRef.current = null;
     }
     drawingPointsRef.current.forEach((m) => mapRef.current?.removeLayer(m));
     drawingPointsRef.current = [];
+
     setAlert({
       type: "success",
       title: "Drawing Mode",
@@ -1015,6 +1154,7 @@ export default function MulticriteriaAnalysis() {
     });
   };
 
+  // ✅ PHASE 1: Finish drawing → show solid polygon preview (don't open name modal yet)
   const finishDrawing = (coords: [number, number][]) => {
     if (!mapRef.current) return;
     if (coords.length < 3) {
@@ -1025,13 +1165,18 @@ export default function MulticriteriaAnalysis() {
       });
       return;
     }
+
     setIsDrawing(false);
+    setIsDrawingFinished(true);
+
     drawingPointsRef.current.forEach((m) => mapRef.current!.removeLayer(m));
     drawingPointsRef.current = [];
+
     if (drawingLineRef.current) {
       mapRef.current.removeLayer(drawingLineRef.current);
       drawingLineRef.current = null;
     }
+
     polygonRef.current?.remove();
     polygonRef.current = L.polygon(coords, {
       color: "#22C55E",
@@ -1039,13 +1184,42 @@ export default function MulticriteriaAnalysis() {
       fillOpacity: 0.6,
       weight: 4,
     }).addTo(mapRef.current!);
+
     updateCreationMarkers(coords);
     setPolygonArea(calculatePolygonArea(coords));
-    setShowNameInput(true);
+
     setAlert({
       type: "success",
-      title: "Polygon Created",
-      message: `${coords.length} points defined. Please name your site.`,
+      title: "Drawing Finished",
+      message: `${coords.length} points defined. Preview the polygon and continue to name your site.`,
+    });
+  };
+
+  // ✅ PHASE 2: Continue from preview to naming modal
+  const continueToNameSite = () => {
+    setShowNameInput(true);
+  };
+
+  // ✅ PHASE 2: Redraw → go back to drawing mode keeping the map clean
+  const redrawPolygon = () => {
+    if (polygonRef.current && mapRef.current) {
+      mapRef.current.removeLayer(polygonRef.current);
+      polygonRef.current = null;
+    }
+    creationVertexMarkersRef.current.forEach((m) =>
+      mapRef.current?.removeLayer(m),
+    );
+    creationVertexMarkersRef.current = [];
+
+    setIsDrawingFinished(false);
+    setIsDrawing(true);
+    setPolygonCoordinates([]);
+    setPolygonArea(null);
+
+    setAlert({
+      type: "success",
+      title: "Redrawing",
+      message: "Click the map to place new vertices.",
     });
   };
 
@@ -1064,31 +1238,13 @@ export default function MulticriteriaAnalysis() {
       mapRef.current?.removeLayer(m),
     );
     creationVertexMarkersRef.current = [];
+
     setPolygonCoordinates([]);
     setPolygonArea(null);
     setIsDrawing(false);
+    setIsDrawingFinished(false);
     setShowNameInput(false);
     setSiteName("");
-  };
-
-  const calculatePolygonArea = (coords: [number, number][]): number => {
-    if (coords.length < 3) return 0;
-    const latRad =
-      ((coords.reduce((s, c) => s + c[0], 0) / coords.length) * Math.PI) / 180;
-    const mLat =
-      111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
-    const mLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
-    const local = coords.map(([lat, lng]) => [
-      (lng - coords[0][1]) * mLng,
-      (lat - coords[0][0]) * mLat,
-    ]);
-    let area = 0;
-    for (let i = 0; i < local.length; i++) {
-      const [x1, y1] = local[i];
-      const [x2, y2] = local[(i + 1) % local.length];
-      area += x1 * y2 - x2 * y1;
-    }
-    return Math.round((Math.abs(area) / 2 / 10000) * 100) / 100;
   };
 
   const handleSaveSite = async () => {
@@ -1100,11 +1256,14 @@ export default function MulticriteriaAnalysis() {
       });
       return;
     }
+
     const nameToUse =
       siteName.trim() || `Site-${Date.now().toString().slice(-4)}`;
+
     const map = mapRef.current;
     const currentZoom = map?.getZoom();
     const currentCenter = map?.getCenter();
+
     try {
       const data = await sites.createSite(
         areaId,
@@ -1150,7 +1309,9 @@ export default function MulticriteriaAnalysis() {
           title: "Loading",
           message: `Loading details for "${site.name}"...`,
         });
+
         const detail = await sites.fetchSiteDetail(site.site_id);
+
         if (sites.error) {
           setAlert({
             type: "error",
@@ -1160,6 +1321,7 @@ export default function MulticriteriaAnalysis() {
           sites.setError(null);
           return;
         }
+
         if (!detail) {
           setAlert({
             type: "error",
@@ -1168,6 +1330,7 @@ export default function MulticriteriaAnalysis() {
           });
           return;
         }
+
         setValidatingSite(detail);
         setShowValidationPanel(true);
         setAlert(null);
@@ -1284,8 +1447,10 @@ export default function MulticriteriaAnalysis() {
   const updateCreationMarkers = useCallback((coords: [number, number][]) => {
     const map = mapRef.current;
     if (!map) return;
+
     creationVertexMarkersRef.current.forEach((m) => map.removeLayer(m));
     creationVertexMarkersRef.current = [];
+
     coords.forEach((coord, i) => {
       const marker = L.marker(coord, {
         icon: L.divIcon({
@@ -1400,17 +1565,21 @@ export default function MulticriteriaAnalysis() {
       });
       return;
     }
+
     const map = mapRef.current;
     if (!map) return;
+
     newPolygonMarkersRef.current.forEach((m) => map.removeLayer(m));
     newPolygonMarkersRef.current = [];
     if (newPolygonLineRef.current) {
       map.removeLayer(newPolygonLineRef.current);
       newPolygonLineRef.current = null;
     }
+
     setEditedPolygon([...newPolygonPoints]);
     setIsDrawingNewPolygon(false);
     setNewPolygonPoints([]);
+
     const editablePolygon = L.polygon(newPolygonPoints, {
       color: "#22C55E",
       fillColor: "#81C784",
@@ -1419,7 +1588,9 @@ export default function MulticriteriaAnalysis() {
       dashArray: "5, 5",
     }).addTo(map);
     editablePolygonRef.current = editablePolygon;
+
     renderAllMarkersRef.current(newPolygonPoints);
+
     setAlert({
       type: "success",
       title: "Polygon Created",
@@ -1431,12 +1602,14 @@ export default function MulticriteriaAnalysis() {
   const handleCancelNewPolygon = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
+
     newPolygonMarkersRef.current.forEach((m) => map.removeLayer(m));
     newPolygonMarkersRef.current = [];
     if (newPolygonLineRef.current) {
       map.removeLayer(newPolygonLineRef.current);
       newPolygonLineRef.current = null;
     }
+
     setIsDrawingNewPolygon(false);
     setNewPolygonPoints([]);
     setEditedPolygon(null);
@@ -1447,9 +1620,11 @@ export default function MulticriteriaAnalysis() {
       if (!isPlacingNewMarker) return;
       const map = mapRef.current;
       if (!map) return;
+
       const newMarker: [number, number] = [e.latlng.lat, e.latlng.lng];
       setEditedMarker(newMarker);
       setIsPlacingNewMarker(false);
+
       const marker = L.marker(newMarker, {
         draggable: true,
         icon: L.divIcon({
@@ -1464,6 +1639,7 @@ export default function MulticriteriaAnalysis() {
         setEditedMarker([latlng.lat, latlng.lng]);
       });
       editableMarkerRef.current = marker;
+
       setAlert({
         type: "success",
         title: "Marker Placed",
@@ -1482,18 +1658,23 @@ export default function MulticriteriaAnalysis() {
       });
       return;
     }
+
     const sumLat = editedPolygon.reduce((sum, p) => sum + p[0], 0);
     const sumLng = editedPolygon.reduce((sum, p) => sum + p[1], 0);
     const marker: [number, number] = [
       sumLat / editedPolygon.length,
       sumLng / editedPolygon.length,
     ];
+
     setEditedMarker(marker);
     setIsPlacingNewMarker(false);
+
     if (editableMarkerRef.current)
       mapRef.current?.removeLayer(editableMarkerRef.current);
+
     const map = mapRef.current;
     if (!map) return;
+
     const markerIcon = L.marker(marker, {
       draggable: true,
       icon: L.divIcon({
@@ -1508,6 +1689,7 @@ export default function MulticriteriaAnalysis() {
       setEditedMarker([latlng.lat, latlng.lng]);
     });
     editableMarkerRef.current = markerIcon;
+
     setAlert({
       type: "success",
       title: "Marker Calculated",
@@ -1526,6 +1708,7 @@ export default function MulticriteriaAnalysis() {
     setShowCoordinateModal(false);
     setShowViewingSitePolygon(true);
     clearEditMarkers();
+
     const map = mapRef.current;
     if (map) {
       newPolygonMarkersRef.current.forEach((m) => map.removeLayer(m));
@@ -1535,6 +1718,7 @@ export default function MulticriteriaAnalysis() {
         newPolygonLineRef.current = null;
       }
     }
+
     if (viewingSite?.polygon_coordinates?.length) {
       polygonRef.current = L.polygon(viewingSite.polygon_coordinates, {
         color: "#22C55E",
@@ -1547,7 +1731,9 @@ export default function MulticriteriaAnalysis() {
 
   const handleEnterEditMode = useCallback(() => {
     if (!viewingSite) return;
+
     setIsEditMode(true);
+
     const initialPolygon =
       viewingSite.polygon_coordinates &&
       viewingSite.polygon_coordinates.length > 0
@@ -1557,12 +1743,15 @@ export default function MulticriteriaAnalysis() {
     setEditedMarker(
       viewingSite.marker_coordinate ? [...viewingSite.marker_coordinate] : null,
     );
+
     if (polygonRef.current) {
       mapRef.current?.removeLayer(polygonRef.current);
       polygonRef.current = null;
     }
+
     const hasPolygon = initialPolygon.length > 0;
     const hasMarker = !!viewingSite.marker_coordinate;
+
     if (hasPolygon) {
       const editablePolygon = L.polygon(viewingSite.polygon_coordinates!, {
         color: "#F97316",
@@ -1583,7 +1772,9 @@ export default function MulticriteriaAnalysis() {
           "Click the map or click an assessment marker to snap a vertex.",
       });
     }
+
     setShowCoordinateModal(true);
+
     if (hasMarker) {
       const marker = L.marker(viewingSite.marker_coordinate!, {
         draggable: true,
@@ -1619,10 +1810,13 @@ export default function MulticriteriaAnalysis() {
       });
       return;
     }
+
     const map = mapRef.current;
     const currentZoom = map?.getZoom();
     const currentCenter = map?.getCenter();
+
     setIsSavingCoordinates(true);
+
     try {
       const result = await sites.updateSiteCoordinates(
         viewingSite.site_id,
@@ -1716,6 +1910,7 @@ export default function MulticriteriaAnalysis() {
       if (axis === "lat") newCoords[index] = [numValue, newCoords[index][1]];
       else newCoords[index] = [newCoords[index][0], numValue];
       setEditedPolygon(newCoords);
+
       if (isDrawingNewPolygon) {
         setNewPolygonPoints(newCoords);
         const map = mapRef.current;
@@ -1745,6 +1940,7 @@ export default function MulticriteriaAnalysis() {
             }).addTo(map);
         }
       }
+
       if (editablePolygonRef.current)
         editablePolygonRef.current.setLatLngs(newCoords);
       renderAllMarkersRef.current(newCoords);
@@ -1764,6 +1960,7 @@ export default function MulticriteriaAnalysis() {
       }
       const newCoords = editedPolygon.filter((_, i) => i !== index);
       setEditedPolygon(newCoords);
+
       if (isDrawingNewPolygon) {
         setNewPolygonPoints(newCoords);
         const map = mapRef.current;
@@ -1793,6 +1990,7 @@ export default function MulticriteriaAnalysis() {
             }).addTo(map);
         }
       }
+
       if (editablePolygonRef.current)
         editablePolygonRef.current.setLatLngs(newCoords);
       renderAllMarkersRef.current(newCoords);
@@ -1810,6 +2008,7 @@ export default function MulticriteriaAnalysis() {
     }
     const newCoords = [...editedPolygon, newPoint];
     setEditedPolygon(newCoords);
+
     if (isDrawingNewPolygon) {
       setNewPolygonPoints(newCoords);
       const map = mapRef.current;
@@ -1839,6 +2038,7 @@ export default function MulticriteriaAnalysis() {
           }).addTo(map);
       }
     }
+
     if (editablePolygonRef.current)
       editablePolygonRef.current.setLatLngs(newCoords);
     renderAllMarkersRef.current(newCoords);
@@ -1863,11 +2063,13 @@ export default function MulticriteriaAnalysis() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
     const handleClick = (e: L.LeafletMouseEvent) => {
       if (isCoordinateProbeMode) {
         handleDropProbe(e.latlng.lat, e.latlng.lng);
         return;
       }
+
       if (isPickingMarkerLocation) {
         const newMarker: [number, number] = [e.latlng.lat, e.latlng.lng];
         setEditedMarker(newMarker);
@@ -1897,6 +2099,7 @@ export default function MulticriteriaAnalysis() {
         });
         return;
       }
+
       if (isDrawingNewPolygon) handleMapClickForNewPolygon(e);
       else if (isPlacingNewMarker) handleMapClickForNewMarker(e);
       else if (barangayAreas.isDrawingHazard)
@@ -1906,6 +2109,7 @@ export default function MulticriteriaAnalysis() {
       else if (fieldAssessments.locationTargetId)
         handleMapClickForFaLocation(e);
     };
+
     const handleDblClick = () => {
       if (
         barangayAreas.isDrawingHazard &&
@@ -1913,6 +2117,7 @@ export default function MulticriteriaAnalysis() {
       )
         barangayAreas.finishDrawingHazard();
     };
+
     const isAnyDrawing =
       isDrawingNewPolygon ||
       isPlacingNewMarker ||
@@ -1921,6 +2126,7 @@ export default function MulticriteriaAnalysis() {
       barangayAreas.isDrawingHazard ||
       (barangayAreas.isMapEditMode && barangayAreas.showHazardForm) ||
       !!fieldAssessments.locationTargetId;
+
     if (isAnyDrawing) {
       map.getContainer().style.cursor = "crosshair";
       map.on("click", handleClick);
@@ -1928,6 +2134,7 @@ export default function MulticriteriaAnalysis() {
     } else {
       map.getContainer().style.cursor = "";
     }
+
     return () => {
       map.off("click", handleClick);
       map.off("dblclick", handleDblClick);
@@ -2081,12 +2288,35 @@ export default function MulticriteriaAnalysis() {
                   <h3 className="font-bold text-gray-800">
                     {viewingSite.name}
                   </h3>
-                  <p className="text-xs text-gray-500">
-                    {viewingSite?.area_hectares
-                      ? `${viewingSite.area_hectares.toFixed(2)} ha`
-                      : "Area not calculated"}{" "}
-                    • {viewingSite.status}
-                  </p>
+                  {/* ✅ UPDATED: Interactive Area Toggle with Edit Mode Support */}
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                    {getDisplayAreaValue() !== null ? (
+                      <button
+                        onClick={() =>
+                          setViewAreaUnit(
+                            viewAreaUnit === "ha" ? "sqm" : "ha",
+                          )
+                        }
+                        className="flex items-center gap-1 hover:text-green-700 hover:bg-green-50 px-1.5 py-0.5 rounded transition cursor-pointer group border border-transparent hover:border-green-200"
+                        title="Click to toggle between hectares and square meters"
+                      >
+                        <Ruler size={10} />
+                        <span className="font-semibold">
+                          {formatDisplayArea()}
+                        </span>
+                        <span className="text-[9px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                          ({viewAreaUnit === "ha" ? "m²" : "ha"})
+                        </span>
+                      </button>
+                    ) : (
+                      <span>
+                        {isEditMode && (!editedPolygon || editedPolygon.length < 3)
+                          ? "Add vertices to calculate area"
+                          : "Area not calculated"}
+                      </span>
+                    )}
+                    <span>• {viewingSite.status}</span>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -2117,7 +2347,7 @@ export default function MulticriteriaAnalysis() {
                 {isEditMode ? (
                   <>
                     <span className="text-xs text-orange-600 font-medium bg-orange-50 px-2 py-1 rounded">
-                      ✏️ Edit Mode
+                      ️ Edit Mode
                     </span>
                     <button
                       onClick={() => setShowCoordinateModal(true)}
@@ -2321,40 +2551,59 @@ export default function MulticriteriaAnalysis() {
                 </div>
               )}
 
-              {polygonArea !== null && !isDrawing && (
-                <div className="absolute bottom-3 left-3 bg-white/95 px-2.5 py-1.5 rounded-lg shadow-md border border-green-200 z-[100]">
-                  <div className="flex items-center gap-1.5">
-                    <Ruler size={12} className="text-green-600" />
-                    <span className="text-xs font-semibold text-gray-800">
-                      {polygonArea.toFixed(2)} ha
-                    </span>
-                  </div>
+              {isDrawingFinished && (
+                <div className="absolute top-3 left-3 bg-white/95 px-3 py-1.5 rounded-lg shadow-md border border-green-300 z-[100]">
+                  <p className="text-xs font-semibold text-green-800">
+                    ✓ Preview Mode
+                  </p>
+                  <p className="text-[10px] text-gray-600">
+                    Polygon complete. Review and continue.
+                  </p>
                 </div>
               )}
 
+              {/* ✅ UPDATED: Area display with ha/sqm toggle */}
+              {polygonArea !== null && (isDrawingFinished || (!isDrawing && polygonCoordinates.length >= 3)) && (
+                <button
+                  onClick={() => setAreaUnit(areaUnit === "ha" ? "sqm" : "ha")}
+                  className="absolute bottom-3 left-3 bg-white/95 px-2.5 py-1.5 rounded-lg shadow-md border border-green-200 z-[100] hover:bg-green-50 transition cursor-pointer"
+                  title="Click to toggle between hectares and square meters"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Ruler size={12} className="text-green-600" />
+                    <span className="text-xs font-semibold text-gray-800">
+                      {displayArea(polygonArea)}
+                    </span>
+                    <span className="text-[9px] text-gray-400 ml-1">
+                      ({areaUnit === "ha" ? "click for m²" : "click for ha"})
+                    </span>
+                  </div>
+                </button>
+              )}
+
               {showPotentialSites &&
-                potentialSitesHook.potentialSites.length > 0 && (
-                  <div className="absolute top-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-blue-200 z-[100]">
-                    <p className="text-[10px] font-bold text-gray-700 mb-1.5 flex items-center gap-1">
-                      <Target size={10} className="text-blue-600" /> Potential
-                      Sites
-                    </p>
-                    <div className="flex flex-col gap-1 text-[9px] text-gray-600">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-sm bg-[#93C5FD] border border-[#3B82F6]" />
-                        <span>≥70% suitability</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-sm bg-[#BFDBFE] border border-[#60A5FA]" />
-                        <span>40–70%</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-sm bg-[#DBEAFE] border border-[#93C5FD]" />
-                        <span>&lt;40%</span>
-                      </div>
+              potentialSitesHook.potentialSites.length > 0 && (
+                <div className="absolute top-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-blue-200 z-[100]">
+                  <p className="text-[10px] font-bold text-gray-700 mb-1.5 flex items-center gap-1">
+                    <Target size={10} className="text-blue-600" /> Potential
+                    Sites
+                  </p>
+                  <div className="flex flex-col gap-1 text-[9px] text-gray-600">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-sm bg-[#93C5FD] border border-[#3B82F6]" />
+                      <span>≥70% suitability</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-sm bg-[#BFDBFE] border border-[#60A5FA]" />
+                      <span>40–70%</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-sm bg-[#DBEAFE] border border-[#93C5FD]" />
+                      <span>&lt;40%</span>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
               {fieldAssessments.locationTargetId && (
                 <div
@@ -2532,6 +2781,7 @@ export default function MulticriteriaAnalysis() {
               )}
             </div>
 
+            {/* ✅ UPDATED: Coordinate Panel with two-phase flow */}
             {isDrawing && showCoordPanel && (
               <div className="fixed top-28 right-6 z-[9999] bg-white p-4 rounded-xl shadow-2xl border-2 border-green-500 w-96 max-h-[65vh] flex flex-col">
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
@@ -2631,12 +2881,137 @@ export default function MulticriteriaAnalysis() {
                   >
                     <Plus size={14} /> Add Final Vertex
                   </button>
+                  {/* ✅ PHASE 1: Finish Drawing button */}
                   <button
                     onClick={() => finishDrawing(polygonCoordinates)}
                     disabled={polygonCoordinates.length < 3}
                     className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-bold rounded-lg transition flex items-center justify-center gap-2 shadow-lg"
                   >
-                    <CheckCircle size={18} /> Finish & Name Site
+                    <CheckCircle size={18} /> Finish Drawing
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ✅ PHASE 2: Preview panel after drawing is finished */}
+            {isDrawingFinished && showCoordPanel && (
+              <div className="fixed top-28 right-6 z-[9999] bg-white p-4 rounded-xl shadow-2xl border-2 border-green-500 w-96 max-h-[65vh] flex flex-col">
+                <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
+                  <h4 className="font-bold text-sm text-green-800 flex items-center gap-2">
+                    <CheckCircle size={16} /> Polygon Preview
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full font-bold">
+                      {polygonCoordinates.length} pts
+                    </span>
+                    <button
+                      onClick={() => setShowCoordPanel(false)}
+                      className="text-gray-500 hover:text-gray-700 hover:bg-gray-100 p-1 rounded transition"
+                      title="Hide coordinate panel"
+                    >
+                      <Eye size={16} className="opacity-50" />
+                    </button>
+                  </div>
+                </div>
+                {/* ✅ Area display with ha/sqm toggle */}
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-lg p-3 mb-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wide">
+                      Total Area
+                    </span>
+                    <div className="flex items-center bg-white rounded-md border border-gray-200 overflow-hidden">
+                      <button
+                        onClick={() => setAreaUnit("ha")}
+                        className={`px-2 py-1 text-[10px] font-bold transition ${areaUnit === "ha" ? "bg-green-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                      >
+                        ha
+                      </button>
+                      <button
+                        onClick={() => setAreaUnit("sqm")}
+                        className={`px-2 py-1 text-[10px] font-bold transition ${areaUnit === "sqm" ? "bg-green-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                      >
+                        m²
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-2xl font-bold text-green-800">
+                    {displayArea(polygonArea)}
+                  </p>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    {areaUnit === "ha"
+                      ? `≈ ${((polygonArea ?? 0) * 10000).toFixed(2)} m²`
+                      : `≈ ${(polygonArea ?? 0).toFixed(2)} ha`}
+                  </p>
+                </div>
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1 mb-3 max-h-[25vh]">
+                  {polygonCoordinates.map((coord, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-green-400 transition"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded">
+                          Vertex {idx + 1}
+                        </span>
+                        <button
+                          onClick={() => handleCreateRemoveVertex(idx)}
+                          className="text-red-500 hover:bg-red-50 p-1 rounded transition"
+                          title="Remove vertex"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-gray-600 font-semibold uppercase">
+                            Latitude
+                          </label>
+                          <input
+                            type="text"
+                            value={coord[0].toFixed(6)}
+                            onChange={(e) =>
+                              handleCreateVertexChange(idx, "lat", e.target.value)
+                            }
+                            className="w-full text-xs border-2 border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none font-mono font-semibold text-gray-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-600 font-semibold uppercase">
+                            Longitude
+                          </label>
+                          <input
+                            type="text"
+                            value={coord[1].toFixed(6)}
+                            onChange={(e) =>
+                              handleCreateVertexChange(idx, "lng", e.target.value)
+                            }
+                            className="w-full text-xs border-2 border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none font-mono font-semibold text-gray-800"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleCreateAddVertex()}
+                        className="w-full mt-2 text-[10px] text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded py-1.5 flex items-center justify-center gap-1 transition font-semibold"
+                      >
+                        <Plus size={12} /> Add vertex
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="border-t-2 border-gray-200 pt-3 space-y-2">
+                  {/* ✅ PHASE 2: Continue to Name Site */}
+                  <button
+                    onClick={continueToNameSite}
+                    className="w-full py-3 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg transition flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <CheckCircle size={18} /> Continue to Name Site
+                  </button>
+                  {/* ✅ PHASE 2: Redraw */}
+                  <button
+                    onClick={redrawPolygon}
+                    className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition flex items-center justify-center gap-2"
+                  >
+                    <Undo2 size={14} /> Redraw Polygon
                   </button>
                 </div>
               </div>
@@ -2655,6 +3030,20 @@ export default function MulticriteriaAnalysis() {
               </button>
             )}
 
+            {isDrawingFinished && !showCoordPanel && (
+              <button
+                onClick={() => setShowCoordPanel(true)}
+                className="fixed top-28 right-6 z-[9999] bg-white p-2.5 rounded-full shadow-xl border-2 border-green-500 hover:bg-green-50 transition flex items-center gap-2 group"
+                title="Show preview panel"
+              >
+                <CheckCircle size={18} className="text-green-600" />
+                <span className="text-xs font-bold text-green-700 pr-1 group-hover:block hidden transition-all">
+                  Show Preview
+                </span>
+              </button>
+            )}
+
+            {/* ✅ UPDATED: Naming modal with two-phase flow */}
             {showNameInput && (
               <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
                 <div className="bg-white p-6 rounded-2xl shadow-2xl border-2 border-green-500 w-[450px] max-w-[90vw] mx-4">
@@ -2671,7 +3060,11 @@ export default function MulticriteriaAnalysis() {
                         <span className="font-semibold text-green-700">
                           {polygonArea?.toFixed(2)} ha
                         </span>{" "}
-                        • Vertices:{" "}
+                        (
+                        <span className="font-semibold text-green-700">
+                          {((polygonArea ?? 0) * 10000).toFixed(2)} m²
+                        </span>
+                        ) • Vertices:{" "}
                         <span className="font-semibold text-green-700">
                           {polygonCoordinates.length}
                         </span>
@@ -2704,7 +3097,7 @@ export default function MulticriteriaAnalysis() {
                       onClick={() => {
                         setShowNameInput(false);
                         setSiteName("");
-                        clearPolygon();
+                        // Keep polygon in finished state - don't clear
                       }}
                       className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-lg transition"
                     >
@@ -2739,16 +3132,24 @@ export default function MulticriteriaAnalysis() {
                     ? `${polygonCoordinates.length} pts`
                     : "No polygon"}
                 </span>
+                {isDrawingFinished && polygonArea !== null && (
+                  <button
+                    onClick={() => setAreaUnit(areaUnit === "ha" ? "sqm" : "ha")}
+                    className="flex items-center gap-1 text-green-700 font-semibold bg-green-50 hover:bg-green-100 px-2 py-0.5 rounded transition cursor-pointer"
+                    title="Click to toggle between hectares and square meters"
+                  >
+                    <Ruler size={12} />
+                    {displayArea(polygonArea)}
+                  </button>
+                )}
                 {showPotentialSites &&
-                  potentialSitesHook.potentialSites.length > 0 && (
-                    <span className="flex items-center gap-1 text-blue-600">
-                      <Target size={12} />{" "}
-                      {potentialSitesHook.potentialSites.length} potential site
-                      {potentialSitesHook.potentialSites.length !== 1
-                        ? "s"
-                        : ""}
-                    </span>
-                  )}
+                potentialSitesHook.potentialSites.length > 0 && (
+                  <span className="flex items-center gap-1 text-blue-600">
+                    <Target size={12} />{" "}
+                    {potentialSitesHook.potentialSites.length} potential site
+                    {potentialSitesHook.potentialSites.length !== 1 ? "s" : ""}
+                  </span>
+                )}
                 {hazardLayers.showMgbFlood && (
                   <span className="flex items-center gap-1 text-blue-600 font-medium">
                     Flood
@@ -2771,6 +3172,7 @@ export default function MulticriteriaAnalysis() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {/* ✅ PHASE 1: Drawing controls */}
                 {isDrawing && (
                   <>
                     <button
@@ -2778,7 +3180,7 @@ export default function MulticriteriaAnalysis() {
                       disabled={polygonCoordinates.length < 3}
                       className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-xs font-semibold rounded transition flex items-center gap-1"
                     >
-                      <CheckCircle size={12} /> Finish
+                      <CheckCircle size={12} /> Finish Drawing
                     </button>
                     <button
                       onClick={() => {
@@ -2792,6 +3194,25 @@ export default function MulticriteriaAnalysis() {
                     </button>
                   </>
                 )}
+
+                {/* ✅ PHASE 2: Preview controls */}
+                {isDrawingFinished && (
+                  <>
+                    <button
+                      onClick={continueToNameSite}
+                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded transition flex items-center gap-1"
+                    >
+                      <CheckCircle size={12} /> Continue to Name
+                    </button>
+                    <button
+                      onClick={redrawPolygon}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded transition flex items-center gap-1"
+                    >
+                      <Undo2 size={12} /> Redraw
+                    </button>
+                  </>
+                )}
+
                 {isDrawingNewPolygon && (
                   <>
                     <button
@@ -2809,6 +3230,7 @@ export default function MulticriteriaAnalysis() {
                     </button>
                   </>
                 )}
+
                 {barangayAreas.isDrawingHazard && (
                   <>
                     <button
@@ -2833,7 +3255,9 @@ export default function MulticriteriaAnalysis() {
                     </button>
                   </>
                 )}
-                {!showNameInput && !isDrawing && !isDrawingNewPolygon && (
+
+                {/* ✅ Draw Polygon button - disabled during drawing and finished states */}
+                {!showNameInput && !isDrawing && !isDrawingFinished && !isDrawingNewPolygon && (
                   <button
                     onClick={startDrawing}
                     disabled={!!fieldAssessments.locationTargetId}
@@ -2842,9 +3266,10 @@ export default function MulticriteriaAnalysis() {
                     <Pen size={12} /> Draw Polygon
                   </button>
                 )}
+
                 <button
                   onClick={clearPolygon}
-                  disabled={!polygonCoordinates.length && !isDrawing}
+                  disabled={!polygonCoordinates.length && !isDrawing && !isDrawingFinished}
                   className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40"
                 >
                   <Trash2 size={12} /> Clear
@@ -3012,6 +3437,7 @@ export default function MulticriteriaAnalysis() {
                       const hasLocation = !!entry.location?.latitude;
                       const isThisPickingLocation =
                         fieldAssessments.locationTargetId === faId;
+
                       return (
                         <button
                           key={idx}
@@ -3054,7 +3480,7 @@ export default function MulticriteriaAnalysis() {
                                 </span>
                                 {entry.images?.length > 0 && (
                                   <span className="text-[10px] text-blue-500 flex items-center gap-0.5">
-                                    📷 {entry.images.length}
+                                     {entry.images.length}
                                   </span>
                                 )}
                               </div>
