@@ -69,6 +69,9 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
         assessment_type = request.GET.get('assessment_type', 'all').lower()
         site_id = request.GET.get('site_id')
 
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
         LAYER_PREFIX_MAP = {
             'safety': 'safety_',
             'survivability': 'surv_',
@@ -76,13 +79,20 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
         }
         layer_prefix = LAYER_PREFIX_MAP.get(layer_name, layer_name)
 
+        # ✅ UPDATED: Sort by sent_date (newest first), fallback to created_at
         base_queryset = Field_assessment.objects.filter(
             assigned_onsite_inspector__reforestation_area_id=reforestation_area_id,
             is_submitted=True
         ).select_related(
             'assigned_onsite_inspector__user__profile',
             'site'
-        ).prefetch_related('images').order_by('-assessment_date')
+        ).prefetch_related('images').order_by('-sent_date', '-created_at')
+
+         # ✅ NEW: Apply date filters
+        if start_date:
+            base_queryset = base_queryset.filter(sent_date__date__gte=start_date)
+        if end_date:
+            base_queryset = base_queryset.filter(sent_date__date__lte=end_date)
 
         if assessment_type == 'specific':
             if site_id:
@@ -134,7 +144,6 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
             try:
                 inspector_profile = a.assigned_onsite_inspector.user.profile
                 full_name = f"{inspector_profile.first_name} {inspector_profile.middle_name or ''} {inspector_profile.last_name}".strip()
-                # ✅ FIX 1: Use helper for profile image
                 profile_img = get_cloudinary_url(str(inspector_profile.profile_img)) if inspector_profile.profile_img else None
             except:
                 full_name = a.assigned_onsite_inspector.user.email
@@ -157,7 +166,6 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
                 "images": [
                     {
                         "id": img.field_assessment_images_id,
-                        # ✅ FIX 2: Use helper for assessment images (Removed API_BASE prefix)
                         "url": get_cloudinary_url(str(img.img)) if img.img else None,
                         "layer": img.layer,
                         "description": img.description,
@@ -168,6 +176,7 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
                 ],
                 "created_at": a.created_at.isoformat(),
                 "updated_at": a.updated_at.isoformat(),
+                "sent_date": a.sent_date.isoformat() if a.sent_date else None,  # ✅ ADDED
             })
 
         return JsonResponse({
@@ -191,12 +200,13 @@ def get_all_site_assessments(request, reforestation_area_id):
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     try:
+        # ✅ UPDATED: Sort by sent_date (newest first), fallback to created_at
         assessments = Field_assessment.objects.filter(
             assigned_onsite_inspector__reforestation_area_id=reforestation_area_id,
             is_submitted=True
         ).select_related(
             'assigned_onsite_inspector__user__profile'
-        ).prefetch_related('images').order_by('-assessment_date')
+        ).prefetch_related('images').order_by('-sent_date', '-created_at')
 
         data = []
         for a in assessments:
@@ -208,7 +218,6 @@ def get_all_site_assessments(request, reforestation_area_id):
                 "inspector": {
                     "email": a.assigned_onsite_inspector.user.email,
                     "full_name": full_name,
-                    # ✅ FIX 3: Use helper for profile image
                     "profile_image": get_cloudinary_url(str(inspector_profile.profile_img)) if inspector_profile.profile_img else None,
                 },
                 "assessment_date": a.assessment_date.isoformat() if a.assessment_date else None,
@@ -217,7 +226,6 @@ def get_all_site_assessments(request, reforestation_area_id):
                 "images": [
                     {
                         "id": img.field_assessment_images_id,
-                        # ✅ FIX 4: Use helper for assessment images (Removed API_BASE prefix)
                         "url": get_cloudinary_url(str(img.img)) if img.img else None,
                         "layer": img.layer,
                         "description": img.description,
@@ -227,6 +235,7 @@ def get_all_site_assessments(request, reforestation_area_id):
                     for img in a.images.all()
                 ],
                 "created_at": a.created_at.isoformat(),
+                "sent_date": a.sent_date.isoformat() if a.sent_date else None,  # ✅ ADDED
             })
 
         return JsonResponse({"data": data, "count": len(data)}, status=200)
