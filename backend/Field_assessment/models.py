@@ -86,6 +86,13 @@ class Field_assessment(models.Model):
     )
 
     assessment_date = models.DateField(null=True, blank=True)
+
+    sent_date = models.DateTimeField(
+        null=True, 
+        blank=True,
+        help_text="Date and time when the assessment was officially sent/submitted."
+    )
+
     location = models.JSONField(
         null=True, blank=True,
         help_text="Optional GPS: {latitude, longitude, gps_accuracy_meters}"

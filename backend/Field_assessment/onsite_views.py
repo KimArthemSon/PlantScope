@@ -4,6 +4,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
+from django.utils import timezone  # ✅ ADDED: For timezone.now()
 from accounts.helper import get_user_from_token, get_cloudinary_url, delete_cloudinary_resource
 from security.views import log_activity
 from .models import (
@@ -96,7 +97,7 @@ def _parse_coordinate(coordinate):
     return default_lat, default_lng, "No Coordinates"
 
 # ─────────────────────────────────────────────
-# 2. GET FIELD ASSESSMENTS (LIST) - Updated to include new fields
+# 2. GET FIELD ASSESSMENTS (LIST) - Updated to include sent_date
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_field_assessments(request):
@@ -150,6 +151,7 @@ def get_field_assessments(request):
                 } if fa.land_classification else None,
                 "created_at": fa.created_at.isoformat(),
                 "updated_at": fa.updated_at.isoformat(),
+                "sent_date": fa.sent_date.isoformat() if fa.sent_date else None,  # ✅ ADDED
             })
         return JsonResponse(data, safe=False, encoder=DjangoJSONEncoder, status=200)
     except Exception as e:
@@ -157,7 +159,7 @@ def get_field_assessments(request):
         return JsonResponse({'error': str(e), 'success': False}, status=500)
 
 # ────────────────────────────────────────────
-# 3. GET FIELD ASSESSMENT DETAIL - Updated to include new fields
+# 3. GET FIELD ASSESSMENT DETAIL - Updated to include sent_date
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_field_assessment_detail(request, field_assessment_id):
@@ -207,6 +209,7 @@ def get_field_assessment_detail(request, field_assessment_id):
             "animals_present": animals_data,
             "created_at": fa.created_at.isoformat(),
             "updated_at": fa.updated_at.isoformat(),
+            "sent_date": fa.sent_date.isoformat() if fa.sent_date else None,  # ✅ ADDED
         }, encoder=DjangoJSONEncoder, status=200)
     except Exception as e: return JsonResponse({'error': str(e)}, status=500)
 
@@ -424,7 +427,7 @@ def update_field_assessment(request, field_assessment_id):
 
 
 # ─────────────────────────────────────────────
-# 6. SUBMIT FIELD ASSESSMENT
+# 6. SUBMIT FIELD ASSESSMENT (Updated to set sent_date)
 # ─────────────────────────────────────────────
 @csrf_exempt
 def submit_field_assessment(request, field_assessment_id):
@@ -444,6 +447,7 @@ def submit_field_assessment(request, field_assessment_id):
             return JsonResponse({'error': 'Cannot submit empty assessment'}, status=400)
 
         fa.is_submitted = True
+        fa.sent_date = timezone.now()  # ✅ ADDED: Stamp the sent date
         fa.save()
 
         _record_activity(
@@ -454,13 +458,14 @@ def submit_field_assessment(request, field_assessment_id):
             entity_label=f'Assessment {field_assessment_id}',
             description=f'Field assessment {field_assessment_id} submitted.',
             old_data={'is_submitted': False},
-            new_data={'is_submitted': True},
-            changed_fields=['is_submitted'],
+            new_data={'is_submitted': True, 'sent_date': fa.sent_date.isoformat()},  # ✅ UPDATED
+            changed_fields=['is_submitted', 'sent_date'],  # ✅ UPDATED
         )
 
         return JsonResponse({
             'message': 'Assessment submitted', 
-            'submitted_at': fa.updated_at.isoformat()
+            'submitted_at': fa.updated_at.isoformat(),
+            'sent_date': fa.sent_date.isoformat()  # ✅ ADDED
         }, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -617,7 +622,7 @@ def delete_field_assessment_image(request, image_id):
 
 
 # ─────────────────────────────────────────────
-# HEAD: UNSENT FIELD ASSESSMENT
+# HEAD: UNSENT FIELD ASSESSMENT (Updated to clear sent_date)
 # ─────────────────────────────────────────────
 @csrf_exempt
 def head_unsent_field_assessment(request, field_assessment_id):
@@ -625,7 +630,7 @@ def head_unsent_field_assessment(request, field_assessment_id):
         return JsonResponse({'error': 'Only POST allowed'}, status=405)
     try:
         user = get_user_from_token(request)
-        allowed_roles = ["DataManager", "CityENROHead"]
+        allowed_roles = ["DataManager", "CityENROHead", "GISSpecialist"]
         if not user or user.user_role not in allowed_roles:
             return JsonResponse({'error': 'Unauthorized'}, status=403)
 
@@ -633,7 +638,11 @@ def head_unsent_field_assessment(request, field_assessment_id):
         if not fa.is_submitted:
             return JsonResponse({'error': 'Assessment is not submitted'}, status=400)
 
+        # ✅ ADDED: Capture old state before modifying
+        old_sent_date = fa.sent_date.isoformat() if fa.sent_date else None
+
         fa.is_submitted = False
+        fa.sent_date = None  # ✅ ADDED: Clear the sent date
         fa.save()
 
         _record_activity(
@@ -643,9 +652,9 @@ def head_unsent_field_assessment(request, field_assessment_id):
             entity_id=field_assessment_id,
             entity_label=f'Assessment {field_assessment_id}',
             description=f'Field assessment {field_assessment_id} marked as unsent by head user.',
-            old_data={'is_submitted': True},
-            new_data={'is_submitted': False},
-            changed_fields=['is_submitted'],
+            old_data={'is_submitted': True, 'sent_date': old_sent_date},  # ✅ UPDATED
+            new_data={'is_submitted': False, 'sent_date': None},          # ✅ UPDATED
+            changed_fields=['is_submitted', 'sent_date'],                 # ✅ UPDATED
         )
 
         return JsonResponse({'message': 'Assessment marked as unsent'}, status=200)
@@ -693,7 +702,7 @@ def head_delete_field_assessment(request, field_assessment_id):
 
 
 # ─────────────────────────────────────────────
-# GET AREA ASSESSMENTS (For GIS/ENRO Review)
+# GET AREA ASSESSMENTS (For GIS/ENRO Review) - Updated to include sent_date
 # ─────────────────────────────────────────────
 @csrf_exempt
 def get_area_meta_data(request, reforestation_area_id):
@@ -779,6 +788,7 @@ def get_area_meta_data(request, reforestation_area_id):
                 "images": images_data,
                 "created_at": fa.created_at.isoformat(),
                 "submitted_at": fa.updated_at.isoformat(),
+                "sent_date": fa.sent_date.isoformat() if fa.sent_date else None,  # ✅ ADDED
             })
 
         return JsonResponse(data, safe=False, encoder=DjangoJSONEncoder, status=200)

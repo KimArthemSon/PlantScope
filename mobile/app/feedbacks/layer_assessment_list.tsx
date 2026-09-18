@@ -478,14 +478,25 @@ export default function LayerAssessmentList() {
 
           <View style={styles.cardActions}>
             {a.is_submitted ? (
-              <TouchableOpacity
-                style={styles.viewBtn}
-                onPress={() => handleViewOnline(a)}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="eye-outline" size={14} color="#0F4A2F" />
-                <Text style={styles.viewBtnText}>View</Text>
-              </TouchableOpacity>
+              <View>
+                <TouchableOpacity
+                  style={styles.viewBtn}
+                  onPress={() => handleViewOnline(a)}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="eye-outline" size={14} color="#0F4A2F" />
+                  <Text style={styles.viewBtnText}>View</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.deleteBtn, isOfflineMode && { opacity: 0.5 }]}
+                  onPress={() => handleDeleteOnline(a.field_assessment_id)}
+                  activeOpacity={0.75}
+                  disabled={isOfflineMode}
+                >
+                  <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                  <Text style={styles.deleteBtnText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               <>
                 <TouchableOpacity
