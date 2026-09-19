@@ -381,74 +381,86 @@ export function useFieldAssessments(
     });
   }, [isDrawingMode]);
 
+  const fetchLayer = useCallback(
+    async (
+      areaId: string,
+      layer: MCDALayer,
+      assessmentType?: AssessmentType,
+      siteId?: string,
+      dateFilter?: { start_date?: string; end_date?: string }, // ✅ ADDED
+    ) => {
+      setLoading((prev) => ({ ...prev, [layer]: true }));
+      try {
+        const token = localStorage.getItem("token");
+        const params = new URLSearchParams();
+        if (assessmentType && assessmentType !== "all")
+          params.append("assessment_type", assessmentType);
+        if (siteId) params.append("site_id", siteId);
 
-const fetchLayer = useCallback(
-  async (
-    areaId: string,
-    layer: MCDALayer,
-    assessmentType?: AssessmentType,
-    siteId?: string,
-    dateFilter?: { start_date?: string; end_date?: string } // ✅ ADDED
-  ) => {
-    setLoading((prev) => ({ ...prev, [layer]: true }));
-    try {
-      const token = localStorage.getItem("token");
-      const params = new URLSearchParams();
-      if (assessmentType && assessmentType !== "all") params.append("assessment_type", assessmentType);
-      if (siteId) params.append("site_id", siteId);
-      
-      // ✅ ADDED: Date filter params
-      if (dateFilter?.start_date) params.append("start_date", dateFilter.start_date);
-      if (dateFilter?.end_date) params.append("end_date", dateFilter.end_date);
+        // ✅ ADDED: Date filter params
+        if (dateFilter?.start_date)
+          params.append("start_date", dateFilter.start_date);
+        if (dateFilter?.end_date)
+          params.append("end_date", dateFilter.end_date);
 
-      const queryString = params.toString();
-      const url = queryString
-        ? api + `api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
-        : api + `api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
+        const queryString = params.toString();
+        const url = queryString
+          ? api +
+            `api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/?${queryString}`
+          : api + `api/get_field_assessments_by_layer_mcda/${areaId}/${layer}/`;
 
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
 
-      const json: FieldAssessmentsResponse = await res.json();
-      const entries = json.data ?? [];
+        const json: FieldAssessmentsResponse = await res.json();
+        const entries = json.data ?? [];
 
-      setAssessments((prev) => ({ ...prev, [layer]: entries }));
-      if (json.counts) setCounts((prev) => ({ ...prev, [layer]: json.counts! }));
+        setAssessments((prev) => ({ ...prev, [layer]: entries }));
+        if (json.counts)
+          setCounts((prev) => ({ ...prev, [layer]: json.counts! }));
 
-      placeMarkers(entries, layer);
-      setActiveLayer(layer);
-      setSelectedIndex(entries.length > 0 ? 0 : null);
-      if (entries.length > 0 && showPhotoMarkers) placePhotoMarkers(entries[0]);
-    } catch (err) {
-      console.error(`fetchLayer(${layer}) error:`, err);
-    } finally {
-      setLoading((prev) => ({ ...prev, [layer]: false }));
-    }
-  },
-  [placeMarkers, placePhotoMarkers, showPhotoMarkers]
-);
+        placeMarkers(entries, layer);
+        setActiveLayer(layer);
+        setSelectedIndex(entries.length > 0 ? 0 : null);
+        if (entries.length > 0 && showPhotoMarkers)
+          placePhotoMarkers(entries[0]);
+      } catch (err) {
+        console.error(`fetchLayer(${layer}) error:`, err);
+      } finally {
+        setLoading((prev) => ({ ...prev, [layer]: false }));
+      }
+    },
+    [placeMarkers, placePhotoMarkers, showPhotoMarkers],
+  );
 
-const unsentAssessment = useCallback(
-  async (fieldAssessmentId: number): Promise<{ success: boolean; message?: string }> => {
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(api + `api/head_unsent_field_assessment/${fieldAssessmentId}/`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      return { success: true, message: json.message };
-    } catch (err: any) {
-      console.error("❌ [useFieldAssessments] unsentAssessment error:", err);
-      return { success: false, message: err.message };
-    }
-  },
-  []
-);
+  const unsentAssessment = useCallback(
+    async (
+      fieldAssessmentId: number,
+    ): Promise<{ success: boolean; message?: string }> => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          api + `api/field_assessments/${fieldAssessmentId}/unsent/`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+        return { success: true, message: json.message };
+      } catch (err: any) {
+        console.error("❌ [useFieldAssessments] unsentAssessment error:", err);
+        return { success: false, message: err.message };
+      }
+    },
+    [],
+  );
 
   const refreshLayer = useCallback(
     async (
@@ -587,6 +599,6 @@ const unsentAssessment = useCallback(
     setShowPhotoMarkers,
     showAssessmentMarkers,
     setShowAssessmentMarkers,
-    unsentAssessment
+    unsentAssessment,
   };
 }
