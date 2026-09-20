@@ -68,6 +68,7 @@ interface FloatingMapButtonProps {
   userLat?: number;
   userLng?: number;
   mapPoints?: MapPoint[]; // ✅ NEW PROP
+  initialOpen?: boolean; // ✅ ADD THIS
 }
 
 type GPSReadiness = "ready" | "aging" | "cold" | "checking";
@@ -431,9 +432,11 @@ export default function FloatingMapButton({
   siteName,
   userLat,
   userLng,
-  mapPoints = [], // ✅ Default to empty array
+  mapPoints = [],
+  initialOpen // ✅ Default to empty array
 }: FloatingMapButtonProps) {
-  const [showMap, setShowMap] = useState(false);
+  const [showMap, setShowMap] = useState(initialOpen); 
+
   const [loading, setLoading] = useState(false);
   const [barangays, setBarangays] = useState<Barangay[]>([]);
   const [areaCoords, setAreaCoords] = useState<{

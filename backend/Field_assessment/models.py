@@ -56,6 +56,14 @@ class Field_assessment(models.Model):
         on_delete=models.CASCADE,
         related_name='field_assessments'
     )
+     # ✅ UPDATED: Added blank, null, and unique
+    title = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+        help_text="A short, descriptive title to identify this field assessment (e.g., 'Baseline Survey - Sector A')."
+    )
     
     # ✅ FIX 1: Removed quotes around LandClassification
     land_classification = models.ForeignKey(
@@ -118,7 +126,11 @@ class Field_assessment(models.Model):
 
     def __str__(self):
         target = f"Site: {self.site.name}" if self.site else f"General Area: {self.assigned_onsite_inspector.reforestation_area.name}"
-        return f"Assessment #{self.field_assessment_id} for '{target}'"
+
+        title_display = f"[{self.title}]" if self.title else "[Untitled]"
+        return f"{title_display} Assessment #{self.field_assessment_id} for '{target}'"
+    
+        
 
 
 class FieldAssessmentAnimal(models.Model):

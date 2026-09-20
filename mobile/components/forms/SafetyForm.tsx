@@ -25,7 +25,6 @@ import {
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useLocalSearchParams, useRouter } from "expo-router";
-// ✅ UPDATED: Import MapPoint type alongside FloatingMapButton
 import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
 import { useAlert } from "@/components/AlertContext";
 import FloodGuide from "@/components/guides/flood";
@@ -424,6 +423,7 @@ function SimpleGeocam({
         </View>
       </View>
     </View>
+    // Note: cam styles are defined at the bottom of the file
   );
 }
 
@@ -845,6 +845,9 @@ export default function SafetyForm() {
   const isOnline = useNetworkStatus();
   const isOfflineMode = !isOnline;
 
+  // ✅ NEW: Title State
+  const [title, setTitle] = useState("");
+
   const [floodNote, setFloodNote] = useState("");
   const [landslideNote, setLandslideNote] = useState("");
   const [erosionNote, setErosionNote] = useState("");
@@ -906,7 +909,7 @@ export default function SafetyForm() {
       (async () => {
         const data = await fetchAssessmentData();
         if (data) {
-          populateForm(data.field_assessment_data || {});
+          populateForm(data);
           if (data.location) {
             setLocationLat(data.location.latitude?.toString() || "");
             setLocationLng(data.location.longitude?.toString() || "");
@@ -985,6 +988,10 @@ export default function SafetyForm() {
         return;
       }
       const payload = draft.payload;
+      
+      // ✅ NEW: Load title from offline draft
+      setTitle(payload.title || "");
+      
       populateForm(payload.field_assessment_data || {});
       if (payload.location) {
         setLocationLat(payload.location.latitude?.toString() || "");
@@ -1014,6 +1021,9 @@ export default function SafetyForm() {
   };
 
   const populateForm = (data: any) => {
+    // ✅ NEW: Load title from server response
+    setTitle(data.title || "");
+    
     const safety = data?.safety?.safety || data?.safety || data || {};
     setFloodNote(safety.flood?.overall_note || "");
     setLandslideNote(safety.landslide?.overall_note || "");
@@ -1255,6 +1265,7 @@ export default function SafetyForm() {
       overall_notes: overallSafetyNote || null,
     };
     return {
+      title: title.trim() || null, // ✅ NEW: Include title in payload
       reforestation_area_id: areaId ? parseInt(areaId) : null,
       site_id: siteId ? parseInt(siteId) : null,
       assessment_date: new Date().toISOString().split("T")[0],
@@ -1264,6 +1275,12 @@ export default function SafetyForm() {
   };
 
   const handleSaveOffline = async (): Promise<string | null> => {
+    // ✅ NEW: Required validation
+    if (!title || title.trim() === "") {
+      warning("Missing Title", "Please enter a descriptive title for this assessment.");
+      return null;
+    }
+
     setSavingOffline(true);
     try {
       const payload = buildPayload();
@@ -1319,6 +1336,12 @@ export default function SafetyForm() {
   };
 
   const handleDraft = async () => {
+    // ✅ NEW: Required validation
+    if (!title || title.trim() === "") {
+      warning("Missing Title", "Please enter a descriptive title for this assessment.");
+      return;
+    }
+
     if (!isOnline) {
       warning(
         "Offline",
@@ -1355,6 +1378,12 @@ export default function SafetyForm() {
   };
 
   const handleSubmit = async () => {
+    // ✅ NEW: Required validation
+    if (!title || title.trim() === "") {
+      warning("Missing Title", "Please enter a descriptive title for this assessment.");
+      return;
+    }
+
     if (!isOnline) {
       warning(
         "Offline",
@@ -1619,6 +1648,26 @@ export default function SafetyForm() {
           </View>
         )}
 
+        {/* ✅ NEW: Title Input Section */}
+        <SectionCard
+          title="Assessment Title"
+          subtitle="A short, descriptive name for this record"
+          iconName="pricetag-outline"
+          iconLib="ion"
+          accentColor="#7C3AED"
+          step={1}
+        >
+          <FieldLabel label="Title" />
+          <TextInput
+            style={[styles.inputSingle, isViewMode && styles.disabledInput]}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="e.g., Baseline Survey - Sector A"
+            placeholderTextColor="#94A3B8"
+            editable={!isViewMode}
+          />
+        </SectionCard>
+
         {/* ✅ FLOOD SECTION WITH GUIDE */}
         <SectionCard
           title="Flood Evidence"
@@ -1626,7 +1675,7 @@ export default function SafetyForm() {
           iconName="water-outline"
           iconLib="ion"
           accentColor="#1D4ED8"
-          step={1}
+          step={2}
           showGuide={true}
           onGuidePress={() => setShowFloodGuide(true)}
         >
@@ -1722,7 +1771,7 @@ export default function SafetyForm() {
           iconName="mountain"
           iconLib="mci"
           accentColor="#854D0E"
-          step={2}
+          step={3}
           showGuide={true}
           onGuidePress={() => setShowLandslideGuide(true)}
         >
@@ -1818,7 +1867,7 @@ export default function SafetyForm() {
           iconName="alert-circle-outline"
           iconLib="ion"
           accentColor="#B91C1C"
-          step={3}
+          step={4}
           showGuide={true}
           onGuidePress={() => setShowErosionGuide(true)}
         >
@@ -1914,7 +1963,7 @@ export default function SafetyForm() {
           iconName="information-circle-outline"
           iconLib="ion"
           accentColor="#6D28D9"
-          step={4}
+          step={5}
         >
           <FieldLabel label="Overall Note" />
           <TextInput
@@ -2007,7 +2056,7 @@ export default function SafetyForm() {
           iconName="locate-outline"
           iconLib="ion"
           accentColor="#0F4A2F"
-          step={5}
+          step={6}
         >
           <View style={styles.coordRow}>
             <View style={styles.coordHalf}>
@@ -2105,7 +2154,7 @@ export default function SafetyForm() {
           iconName="document-text-outline"
           iconLib="ion"
           accentColor="#0F766E"
-          step={6}
+          step={7}
         >
           <FieldLabel label="Overall Notes" />
           <TextInput
@@ -2328,6 +2377,7 @@ export default function SafetyForm() {
         areaName={headerTitle}
         siteId={siteId ? parseInt(siteId) : undefined}
         mapPoints={collectMapPoints()}
+         initialOpen={false}
       />
     </View>
   );
@@ -2531,6 +2581,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   inputField: { flex: 1, fontSize: 14, color: "#1E293B", padding: 0 },
+  // ✅ NEW: Style for the single title input
+  inputSingle: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#1E293B",
+  },
   textArea: {
     backgroundColor: "#F8FAFC",
     borderRadius: 8,

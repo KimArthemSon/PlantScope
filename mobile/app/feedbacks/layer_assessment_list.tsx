@@ -1,16 +1,18 @@
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  // ❌ REMOVED: Alert
+  TextInput,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,9 +23,8 @@ import {
   deleteOfflineDraft,
   OfflineDraft,
 } from "@/hooks/useOfflineFieldAssessment";
-
-// ✅ ADDED: Import the useAlert hook
 import { useAlert } from "@/components/AlertContext";
+import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
 
 const API_BASE = api;
 
@@ -50,6 +51,7 @@ const getLayer = (id: string) =>
 
 type Assessment = {
   field_assessment_id: number;
+  title?: string | null;
   reforestation_area_id: number;
   assessment_date: string | null;
   location: any;
@@ -68,13 +70,20 @@ const getFormPath = (layerId: string) =>
   layerId === "meta_data"
     ? "/feedbacks/meta_data_form"
     : "/feedbacks/multicriteria_layer_form";
-
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString("en-PH", {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
+
+// ✅ Type-safe ID generator
+const getItemId = (item: DisplayItem): string => {
+  if (item.type === "offline") {
+    return `offline-${(item.data as OfflineDraft).local_uuid}`;
+  }
+  return `online-${(item.data as Assessment).field_assessment_id}`;
+};
 
 export default function LayerAssessmentList() {
   const { areaId, siteId, areaName, siteName, layerId, layerName } =
@@ -95,9 +104,7 @@ export default function LayerAssessmentList() {
   const insets = useSafeAreaInsets();
   const layer = getLayer(layerId);
   const isOnline = useNetworkStatus();
-
-  // ✅ ADDED: Initialize useAlert
-  const { success, error: showError, warning, info, confirm } = useAlert();
+  const { success, error: showError, warning, confirm } = useAlert();
 
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [offlineDrafts, setOfflineDrafts] = useState<OfflineDraft[]>([]);
@@ -105,17 +112,126 @@ export default function LayerAssessmentList() {
   const [refreshing, setRefreshing] = useState(false);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
 
-  // ✅ CORE FIX: Use useCallback so it can be reused
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dateFilter, setDateFilter] = useState<
+    "all" | "today" | "last_7_days" | "last_30_days"
+  >("all");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "status">(
+    "newest",
+  );
+  const [showFilterModal, setShowFilterModal] = useState(false);
+
+  // ✅ NEW: Favourite, Selection & Map State
+  const [favourites, setFavourites] = useState<Set<string>>(new Set());
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedForMap, setSelectedForMap] = useState<Set<string>>(new Set());
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [mapPointsToView, setMapPointsToView] = useState<MapPoint[]>([]);
+
+  // ✅ NEW: Load favourites scoped to this specific area/site/layer
+  useEffect(() => {
+    const loadFavs = async () => {
+      try {
+        const key = `favs_${areaId}_${siteId || "nosite"}_${layerId}`;
+        const stored = await AsyncStorage.getItem(key);
+        if (stored) setFavourites(new Set(JSON.parse(stored)));
+      } catch (e) {
+        console.error("Failed to load favourites", e);
+      }
+    };
+    loadFavs();
+  }, [areaId, siteId, layerId]);
+
+  // ✅ NEW: Toggle Favourite
+  const toggleFavourite = async (id: string) => {
+    const newFavs = new Set(favourites);
+    if (newFavs.has(id)) newFavs.delete(id);
+    else newFavs.add(id);
+    setFavourites(newFavs);
+    try {
+      const key = `favs_${areaId}_${siteId || "nosite"}_${layerId}`;
+      await AsyncStorage.setItem(key, JSON.stringify(Array.from(newFavs)));
+    } catch (e) {
+      console.error("Failed to save favourite", e);
+    }
+  };
+
+  // ✅ NEW: Toggle Map Selection
+  const toggleSelection = (id: string) => {
+    const newSel = new Set(selectedForMap);
+    if (newSel.has(id)) newSel.delete(id);
+    else newSel.add(id);
+    setSelectedForMap(newSel);
+  };
+
+  // ✅ NEW: Handle View on Map
+  const handleViewOnMap = () => {
+    const itemsToMap = filteredAndSortedList
+      .filter((item) => selectedForMap.has(getItemId(item)))
+      .map((item) => {
+        if (item.type === "offline") {
+          const draft = item.data as OfflineDraft;
+          const loc = draft.payload?.location;
+          const hasLoc =
+            loc?.latitude &&
+            loc?.longitude &&
+            loc.latitude !== 0 &&
+            loc.longitude !== 0;
+
+          return {
+            id: `offline-${draft.local_uuid}`,
+            type: "assessment" as const,
+            latitude: hasLoc ? loc.latitude : 0,
+            longitude: hasLoc ? loc.longitude : 0,
+            label: draft.payload?.title || "Offline Draft",
+            accuracy: loc?.accuracy,
+            timestamp: draft.created_at,
+            description: "Pending Sync",
+          };
+        } else {
+          const assessment = item.data as Assessment;
+          const loc = assessment.location;
+          const hasLoc =
+            loc?.latitude &&
+            loc?.longitude &&
+            loc.latitude !== 0 &&
+            loc.longitude !== 0;
+
+          return {
+            id: `online-${assessment.field_assessment_id}`,
+            type: "assessment" as const,
+            latitude: hasLoc ? loc.latitude : 0,
+            longitude: hasLoc ? loc.longitude : 0,
+            label:
+              assessment.title ||
+              `Assessment #${assessment.field_assessment_id}`,
+            accuracy: loc?.accuracy,
+            timestamp: assessment.created_at,
+            description: assessment.is_submitted ? "Submitted" : "Draft",
+          };
+        }
+      })
+      .filter((item) => item.latitude !== 0 && item.longitude !== 0);
+
+    if (itemsToMap.length === 0) {
+      warning(
+        "No Coordinates",
+        "The selected assessments do not have valid GPS coordinates to show on the map.",
+      );
+      return;
+    }
+
+    setMapPointsToView(itemsToMap);
+    setShowMapModal(true);
+    setIsSelectMode(false);
+    setSelectedForMap(new Set());
+  };
+
   const fetchAssessments = useCallback(
     async (showRefreshIndicator = false) => {
-      if (showRefreshIndicator) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-
+      if (showRefreshIndicator) setRefreshing(true);
+      else setLoading(true);
       try {
-        // ✅ Always check network directly - never rely on stale state
         const networkState = await NetInfo.fetch();
         const actuallyOnline = networkState.isConnected === true;
 
@@ -132,11 +248,7 @@ export default function LayerAssessmentList() {
           setIsOfflineMode(false);
           const token = await SecureStore.getItemAsync("token");
           let url = `${API_BASE}/api/field_assessments/?reforestation_area_id=${areaId}&layer=${layerId}`;
-
-          if (siteId) {
-            url += `&site_id=${siteId}`;
-          }
-
+          if (siteId) url += `&site_id=${siteId}`;
           try {
             const res = await fetch(url, {
               headers: { Authorization: `Bearer ${token}` },
@@ -144,16 +256,12 @@ export default function LayerAssessmentList() {
             if (res.ok) {
               const data = await res.json();
               setAssessments(Array.isArray(data) ? data : []);
-            } else {
-              setAssessments([]);
-            }
+            } else setAssessments([]);
           } catch (fetchError) {
             console.error("API fetch failed:", fetchError);
             setAssessments([]);
             setIsOfflineMode(true);
           }
-
-          // ✅ Always load offline drafts too
           const drafts = await getOfflineDraftsForContext(
             parseInt(areaId),
             siteId ? parseInt(siteId) : null,
@@ -173,24 +281,18 @@ export default function LayerAssessmentList() {
     [areaId, siteId, layerId],
   );
 
-  // ✅ FIX 1: Initial load
   React.useEffect(() => {
     fetchAssessments();
   }, [fetchAssessments]);
-
-  // ✅ FIX 2: Auto-refresh when screen gains focus (user navigates back)
   useFocusEffect(
     useCallback(() => {
       fetchAssessments();
     }, [fetchAssessments]),
   );
-
-  // ✅ FIX 3: Refresh when network status changes
   React.useEffect(() => {
     fetchAssessments();
   }, [isOnline]);
 
-  // ✅ UPDATED: Converted to use confirm() dialog
   const handleDeleteOffline = (localUuid: string) => {
     confirm(
       "Delete Offline Draft",
@@ -204,21 +306,15 @@ export default function LayerAssessmentList() {
           showError("Error", "Failed to delete offline draft.");
         }
       },
-      {
-        type: "error",
-        confirmText: "Delete",
-        cancelText: "Cancel",
-      },
+      { type: "error", confirmText: "Delete", cancelText: "Cancel" },
     );
   };
 
-  // ✅ UPDATED: Converted to use confirm() dialog and warning()
   const handleDeleteOnline = (id: number) => {
     if (isOfflineMode) {
       warning("Offline Mode", "Cannot delete assessments while offline.");
       return;
     }
-
     confirm(
       "Delete Draft",
       "This cannot be undone. Are you sure?",
@@ -227,25 +323,16 @@ export default function LayerAssessmentList() {
           const token = await SecureStore.getItemAsync("token");
           const res = await fetch(
             `${API_BASE}/api/field_assessments/${id}/delete/`,
-            {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${token}` },
-            },
+            { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
           );
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-          // Added success toast for better UX upon successful deletion
           success("Deleted", "Assessment deleted successfully.");
           fetchAssessments();
         } catch (e: any) {
           showError("Error", e.message ?? "Failed to delete.");
         }
       },
-      {
-        type: "error",
-        confirmText: "Delete",
-        cancelText: "Cancel",
-      },
+      { type: "error", confirmText: "Delete", cancelText: "Cancel" },
     );
   };
 
@@ -293,15 +380,10 @@ export default function LayerAssessmentList() {
 
   const buildDisplayList = (): DisplayItem[] => {
     const items: DisplayItem[] = [];
-
-    offlineDrafts.forEach((draft) => {
-      items.push({ type: "offline", data: draft });
-    });
-
-    assessments.forEach((a) => {
-      items.push({ type: "online", data: a });
-    });
-
+    offlineDrafts.forEach((draft) =>
+      items.push({ type: "offline", data: draft }),
+    );
+    assessments.forEach((a) => items.push({ type: "online", data: a }));
     return items;
   };
 
@@ -309,138 +391,211 @@ export default function LayerAssessmentList() {
   const drafts = assessments.filter((a) => !a.is_submitted);
   const submitted = assessments.filter((a) => a.is_submitted);
 
-  const renderItem = ({ item }: { item: DisplayItem }) => {
-    if (item.type === "offline") {
-      const draft = item.data;
-      const hasLoc =
-        draft.payload?.location?.latitude && draft.payload?.location?.longitude;
-
-      return (
-        <View style={[styles.card, styles.offlineCard]}>
-          <View style={[styles.cardAccent, { backgroundColor: "#F59E0B" }]} />
-          <View style={styles.cardBody}>
-            <View style={styles.cardTopRow}>
-              <View
-                style={[styles.statusBadge, { backgroundColor: "#FEF3C7" }]}
-              >
-                <Ionicons name="cloud-outline" size={12} color="#92400E" />
-                <Text style={[styles.statusText, { color: "#92400E" }]}>
-                  Pending Sync
-                </Text>
-              </View>
-              <Text style={styles.dateText}>
-                {draft.created_at ? fmtDate(draft.created_at) : "Date not set"}
-              </Text>
-            </View>
-
-            <View style={styles.metaRow}>
-              <Ionicons
-                name={hasLoc ? "location" : "location-outline"}
-                size={13}
-                color={hasLoc ? "#0F4A2F" : "#9CA3AF"}
-              />
-              {hasLoc ? (
-                <Text style={[styles.metaText, { color: "#0F4A2F" }]}>
-                  {draft.payload.location.latitude.toFixed(4)},{" "}
-                  {draft.payload.location.longitude.toFixed(4)}
-                </Text>
-              ) : (
-                <Text style={[styles.metaText, { fontStyle: "italic" }]}>
-                  No GPS recorded
-                </Text>
-              )}
-            </View>
-
-            <View style={styles.metaRow}>
-              {draft.images.length > 0 && (
-                <>
-                  <Ionicons name="image-outline" size={13} color="#9CA3AF" />
-                  <Text style={styles.metaText}>
-                    {draft.images.length} photo
-                    {draft.images.length > 1 ? "s" : ""}
-                  </Text>
-                  <Text style={styles.metaDot}>·</Text>
-                </>
-              )}
-              <Ionicons name="time-outline" size={13} color="#9CA3AF" />
-              <Text style={styles.metaText}>
-                Created {fmtDate(draft.created_at)}
-              </Text>
-            </View>
-
-            <View style={styles.cardActions}>
-              <TouchableOpacity
-                style={styles.editBtn}
-                onPress={() => {
-                  const path = getFormPath(layerId);
-                  const params: any = {
-                    areaId,
-                    siteId,
-                    isEdit: "false",
-                    offlineDraftId: draft.local_uuid,
-                  };
-                  if (layerId !== "meta_data") {
-                    params.layerId = layerId;
-                    params.layerName = layerName;
-                  }
-                  router.push({ pathname: path, params });
-                }}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="create-outline" size={14} color="#0F4A2F" />
-                <Text style={styles.editBtnText}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.deleteBtn}
-                onPress={() => handleDeleteOffline(draft.local_uuid)}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="trash-outline" size={14} color="#EF4444" />
-                <Text style={styles.deleteBtnText}>Delete</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      );
+  const filteredAndSortedList = useMemo(() => {
+    let result = [...displayList];
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter((item) => {
+        if (item.type === "online")
+          return (
+            (item.data as Assessment).title ||
+            `Assessment #${(item.data as Assessment).field_assessment_id}`
+          )
+            .toLowerCase()
+            .includes(query);
+        return ((item.data as OfflineDraft).payload?.title || `Offline Draft`)
+          .toLowerCase()
+          .includes(query);
+      });
     }
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const isToday = (d: Date) =>
+        d.getDate() === now.getDate() &&
+        d.getMonth() === now.getMonth() &&
+        d.getFullYear() === now.getFullYear();
+      result = result.filter((item) => {
+        const dateStr =
+          item.type === "online"
+            ? (item.data as Assessment).assessment_date ||
+              (item.data as Assessment).created_at
+            : (item.data as OfflineDraft).created_at;
+        if (!dateStr) return false;
+        const itemDate = new Date(dateStr);
+        if (dateFilter === "today") return isToday(itemDate);
+        const diffDays = Math.ceil(
+          Math.abs(now.getTime() - itemDate.getTime()) / (1000 * 60 * 60 * 24),
+        );
+        if (dateFilter === "last_7_days") return diffDays <= 7;
+        if (dateFilter === "last_30_days") return diffDays <= 30;
+        return true;
+      });
+    }
+    result.sort((a, b) => {
+      const getDate = (item: DisplayItem) =>
+        item.type === "online"
+          ? new Date(
+              (item.data as Assessment).assessment_date ||
+                (item.data as Assessment).created_at,
+            ).getTime()
+          : new Date((item.data as OfflineDraft).created_at).getTime();
+      const dateA = getDate(a),
+        dateB = getDate(b);
+      if (sortBy === "newest") return dateB - dateA;
+      if (sortBy === "oldest") return dateA - dateB;
+      if (sortBy === "status") {
+        const isSubA =
+          a.type === "online" ? (a.data as Assessment).is_submitted : false;
+        const isSubB =
+          b.type === "online" ? (b.data as Assessment).is_submitted : false;
+        if (isSubA === isSubB) return dateB - dateA;
+        return isSubA ? 1 : -1;
+      }
+      return 0;
+    });
+    return result;
+  }, [displayList, searchQuery, dateFilter, sortBy]);
 
-    const a = item.data;
-    const hasLoc = a.location?.latitude && a.location?.longitude;
+  const renderItem = ({ item }: { item: DisplayItem }) => {
+    const id = getItemId(item);
+    const isFav = favourites.has(id);
+    const isSelected = selectedForMap.has(id);
+
+    const isOffline = item.type === "offline";
+    const draft = isOffline ? (item.data as OfflineDraft) : null;
+    const assessment = !isOffline ? (item.data as Assessment) : null;
+
+    const hasLoc = isOffline
+      ? draft?.payload?.location?.latitude &&
+        draft?.payload?.location?.longitude
+      : assessment?.location?.latitude && assessment?.location?.longitude;
+
+    const loc = isOffline ? draft?.payload?.location : assessment?.location;
+
+    const title = isOffline
+      ? draft?.payload?.title || "Offline Draft"
+      : assessment?.title || `Assessment #${assessment?.field_assessment_id}`;
+
+    const isSubmitted = isOffline ? false : assessment?.is_submitted;
+
+    const dateStr = isOffline
+      ? draft?.created_at
+      : assessment?.assessment_date || assessment?.created_at;
+
+    const cardStyle = [
+      styles.card,
+      isOffline && styles.offlineCard,
+      isSubmitted && !isOffline && styles.cardSubmitted,
+      isSelected && styles.cardSelected,
+    ];
 
     return (
-      <View style={[styles.card, a.is_submitted && styles.cardSubmitted]}>
+      <TouchableOpacity
+        style={cardStyle}
+        activeOpacity={0.9}
+        onPress={() => {
+          if (isSelectMode) {
+            toggleSelection(id);
+          } else if (isOffline && draft) {
+            const path = getFormPath(layerId);
+            const params: any = {
+              areaId,
+              siteId,
+              isEdit: "false",
+              offlineDraftId: draft.local_uuid,
+            };
+            if (layerId !== "meta_data") {
+              params.layerId = layerId;
+              params.layerName = layerName;
+            }
+            router.push({ pathname: path, params });
+          } else if (assessment) {
+            isSubmitted
+              ? handleViewOnline(assessment)
+              : handleEditOnline(assessment);
+          }
+        }}
+      >
         <View
           style={[
             styles.cardAccent,
-            { backgroundColor: a.is_submitted ? "#22C55E" : "#F59E0B" },
+            {
+              backgroundColor: isSelected
+                ? "#3B82F6"
+                : isSubmitted
+                  ? "#22C55E"
+                  : "#F59E0B",
+            },
           ]}
         />
         <View style={styles.cardBody}>
+          <View style={styles.cardHeaderRow}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                flex: 1,
+              }}
+            >
+              {isSelectMode && (
+                <Ionicons
+                  name={isSelected ? "checkbox" : "checkbox-outline"}
+                  size={22}
+                  color={isSelected ? "#3B82F6" : "#9CA3AF"}
+                />
+              )}
+              <Text style={styles.cardTitleText} numberOfLines={1}>
+                {title}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => !isSelectMode && toggleFavourite(id)}
+              activeOpacity={0.7}
+              disabled={isSelectMode}
+              style={{ padding: 4 }}
+            >
+              <Ionicons
+                name={isFav ? "heart" : "heart-outline"}
+                size={20}
+                color={isFav ? "#EF4444" : "#9CA3AF"}
+              />
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.cardTopRow}>
             <View
               style={[
                 styles.statusBadge,
-                {
-                  backgroundColor: a.is_submitted ? "#DCFCE7" : "#FEF3C7",
-                },
+                { backgroundColor: isSubmitted ? "#DCFCE7" : "#FEF3C7" },
               ]}
             >
               <Ionicons
-                name={a.is_submitted ? "checkmark-circle" : "create-outline"}
+                name={
+                  isSubmitted
+                    ? "checkmark-circle"
+                    : isOffline
+                      ? "cloud-outline"
+                      : "create-outline"
+                }
                 size={12}
-                color={a.is_submitted ? "#15803D" : "#92400E"}
+                color={isSubmitted ? "#15803D" : "#92400E"}
               />
               <Text
                 style={[
                   styles.statusText,
-                  { color: a.is_submitted ? "#15803D" : "#92400E" },
+                  { color: isSubmitted ? "#15803D" : "#92400E" },
                 ]}
               >
-                {a.is_submitted ? "Submitted" : "Draft"}
+                {isSubmitted
+                  ? "Submitted"
+                  : isOffline
+                    ? "Pending Sync"
+                    : "Draft"}
               </Text>
             </View>
             <Text style={styles.dateText}>
-              {a.assessment_date ? fmtDate(a.assessment_date) : "Date not set"}
+              {dateStr ? fmtDate(dateStr) : "Date not set"}
             </Text>
           </View>
 
@@ -450,10 +605,9 @@ export default function LayerAssessmentList() {
               size={13}
               color={hasLoc ? "#0F4A2F" : "#9CA3AF"}
             />
-            {hasLoc ? (
+            {hasLoc && loc ? (
               <Text style={[styles.metaText, { color: "#0F4A2F" }]}>
-                {a.location.latitude.toFixed(4)},{" "}
-                {a.location.longitude.toFixed(4)}
+                {loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}
               </Text>
             ) : (
               <Text style={[styles.metaText, { fontStyle: "italic" }]}>
@@ -463,75 +617,86 @@ export default function LayerAssessmentList() {
           </View>
 
           <View style={styles.metaRow}>
-            {a.image_count > 0 && (
+            {(isOffline
+              ? draft?.images?.length || 0
+              : assessment?.image_count || 0) > 0 && (
               <>
                 <Ionicons name="image-outline" size={13} color="#9CA3AF" />
                 <Text style={styles.metaText}>
-                  {a.image_count} photo{a.image_count > 1 ? "s" : ""}
+                  {isOffline ? draft?.images?.length : assessment?.image_count}{" "}
+                  photo
+                  {((isOffline
+                    ? draft?.images?.length
+                    : assessment?.image_count) || 0) > 1
+                    ? "s"
+                    : ""}
                 </Text>
                 <Text style={styles.metaDot}>·</Text>
               </>
             )}
             <Ionicons name="time-outline" size={13} color="#9CA3AF" />
-            <Text style={styles.metaText}>Created {fmtDate(a.created_at)}</Text>
+            <Text style={styles.metaText}>
+              Created{" "}
+              {fmtDate(draft?.created_at || assessment?.created_at || "")}
+            </Text>
           </View>
 
-          <View style={styles.cardActions}>
-            {a.is_submitted ? (
-              <View>
+          {!isSelectMode && (
+            <View style={styles.cardActions}>
+              {isSubmitted ? (
                 <TouchableOpacity
                   style={styles.viewBtn}
-                  onPress={() => handleViewOnline(a)}
+                  onPress={() => assessment && handleViewOnline(assessment)}
                   activeOpacity={0.75}
                 >
                   <Ionicons name="eye-outline" size={14} color="#0F4A2F" />
                   <Text style={styles.viewBtnText}>View</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.deleteBtn, isOfflineMode && { opacity: 0.5 }]}
-                  onPress={() => handleDeleteOnline(a.field_assessment_id)}
-                  activeOpacity={0.75}
-                  disabled={isOfflineMode}
-                >
-                  <Ionicons name="trash-outline" size={14} color="#EF4444" />
-                  <Text style={styles.deleteBtnText}>Delete</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <>
-                <TouchableOpacity
-                  style={styles.editBtn}
-                  onPress={() => handleEditOnline(a)}
-                  activeOpacity={0.75}
-                >
-                  <Ionicons name="create-outline" size={14} color="#0F4A2F" />
-                  <Text style={styles.editBtnText}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.deleteBtn, isOfflineMode && { opacity: 0.5 }]}
-                  onPress={() => handleDeleteOnline(a.field_assessment_id)}
-                  activeOpacity={0.75}
-                  disabled={isOfflineMode}
-                >
-                  <Ionicons name="trash-outline" size={14} color="#EF4444" />
-                  <Text style={styles.deleteBtnText}>Delete</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={styles.editBtn}
+                    onPress={() =>
+                      !isOffline && assessment && handleEditOnline(assessment)
+                    }
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="create-outline" size={14} color="#0F4A2F" />
+                    <Text style={styles.editBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.deleteBtn,
+                      isOfflineMode && !isOffline && { opacity: 0.5 },
+                    ]}
+                    onPress={() =>
+                      isOffline && draft
+                        ? handleDeleteOffline(draft.local_uuid)
+                        : assessment &&
+                          handleDeleteOnline(assessment.field_assessment_id)
+                    }
+                    activeOpacity={0.75}
+                    disabled={isOfflineMode && !isOffline}
+                  >
+                    <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                    <Text style={styles.deleteBtnText}>Delete</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
-  if (loading) {
+  if (loading)
     return (
       <View style={styles.loadingScreen}>
         <ActivityIndicator size="large" color="#0F4A2F" />
         <Text style={styles.loadingText}>Loading {layerName} assessments…</Text>
       </View>
     );
-  }
 
   const headerTitle = siteId ? siteName || "Site" : areaName;
   const headerSubText = siteId
@@ -566,34 +731,98 @@ export default function LayerAssessmentList() {
             <Text style={styles.headerSub}>{headerSubText}</Text>
           </View>
         </View>
-        {/* ✅ FIX 4: Manual Refresh Button */}
-        <TouchableOpacity
-          onPress={() => fetchAssessments(true)}
-          style={styles.refreshBtn}
-          activeOpacity={0.7}
-          disabled={refreshing}
-        >
-          <Ionicons
-            name={refreshing ? "refresh-outline" : "refresh"}
-            size={22}
-            color="#FFFFFF"
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => {
+              setIsSelectMode(!isSelectMode);
+              setSelectedForMap(new Set());
+            }}
+            style={styles.refreshBtn}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={isSelectMode ? "close" : "checkbox-outline"}
+              size={22}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => fetchAssessments(true)}
+            style={styles.refreshBtn}
+            activeOpacity={0.7}
+            disabled={refreshing}
+          >
+            <Ionicons
+              name={refreshing ? "refresh-outline" : "refresh"}
+              size={22}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.controlsContainer}>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={18} color="#6B7280" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by title..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#9CA3AF"
           />
-        </TouchableOpacity>
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <Ionicons name="close-circle" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={styles.filterBar}>
+          <TouchableOpacity
+            style={styles.filterBtn}
+            onPress={() => setShowFilterModal(true)}
+          >
+            <Ionicons name="calendar-outline" size={16} color="#0F4A2F" />
+            <Text style={styles.filterBtnText}>
+              {dateFilter === "all"
+                ? "All Time"
+                : dateFilter === "today"
+                  ? "Today"
+                  : dateFilter === "last_7_days"
+                    ? "Last 7 Days"
+                    : "Last 30 Days"}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color="#0F4A2F" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.filterBtn}
+            onPress={() => setShowFilterModal(true)}
+          >
+            <Ionicons name="swap-vertical" size={16} color="#0F4A2F" />
+            <Text style={styles.filterBtnText}>
+              {sortBy === "newest"
+                ? "Newest First"
+                : sortBy === "oldest"
+                  ? "Oldest First"
+                  : "By Status"}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color="#0F4A2F" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
-        data={displayList}
-        keyExtractor={(item, index) => {
-          if (item.type === "offline") {
-            return `offline-${item.data.local_uuid}`;
-          }
-          return `online-${item.data.field_assessment_id}`;
-        }}
+        data={filteredAndSortedList}
+        keyExtractor={(item) => getItemId(item)}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
+        // ✅ CRITICAL FIX 1: Prevents blank cards/stats after Modal closes
+        removeClippedSubviews={false}
+        // ✅ CRITICAL FIX 2: Ensures proper layout height
+        style={{ flex: 1 }}
         contentContainerStyle={[
           styles.listContent,
-          { paddingBottom: insets.bottom + 32 },
+          { paddingBottom: selectedForMap.size > 0 ? 100 : insets.bottom + 32 },
         ]}
         refreshControl={
           <RefreshControl
@@ -640,7 +869,6 @@ export default function LayerAssessmentList() {
                 <Text style={styles.statLabel}>Total</Text>
               </View>
             </View>
-
             <TouchableOpacity
               style={[styles.newBtn, { shadowColor: layer.color }]}
               onPress={handleCreateNew}
@@ -668,7 +896,6 @@ export default function LayerAssessmentList() {
                 color="rgba(255,255,255,0.5)"
               />
             </TouchableOpacity>
-
             {(drafts.length > 0 || offlineDrafts.length > 0) && (
               <View style={styles.sectionRow}>
                 <Text style={styles.sectionLabel}>Drafts</Text>
@@ -693,19 +920,125 @@ export default function LayerAssessmentList() {
               />
             </View>
             <Text style={styles.emptyTitle}>
-              {isOfflineMode
-                ? "No Offline Drafts"
-                : `No ${layerName} Assessments`}
+              {searchQuery || dateFilter !== "all"
+                ? "No Matching Results"
+                : isOfflineMode
+                  ? "No Offline Drafts"
+                  : `No ${layerName} Assessments`}
             </Text>
             <Text style={styles.emptySub}>
-              {isOfflineMode
-                ? "Tap 'New Entry' to create an assessment offline."
-                : `Tap "New ${layerName} Entry" above to start your first assessment.`}
+              {searchQuery || dateFilter !== "all"
+                ? "Try adjusting your search or filter criteria."
+                : isOfflineMode
+                  ? "Tap 'New Entry' to create an assessment offline."
+                  : `Tap "New ${layerName} Entry" above to start your first assessment.`}
             </Text>
           </View>
         }
         ListFooterComponent={<View style={{ height: 8 }} />}
       />
+
+      {selectedForMap.size > 0 && (
+        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
+          <Text style={styles.bottomBarText}>
+            {selectedForMap.size} selected
+          </Text>
+          <TouchableOpacity
+            style={styles.mapBtn}
+            onPress={handleViewOnMap}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="map" size={18} color="#FFFFFF" />
+            <Text style={styles.mapBtnText}>View on Map</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {showMapModal && (
+        <FloatingMapButton
+          areaId={parseInt(areaId)}
+          siteId={siteId ? parseInt(siteId) : undefined}
+          areaName={areaName}
+          siteName={siteName}
+          mapPoints={mapPointsToView}
+          initialOpen={true}
+        />
+      )}
+
+      <Modal visible={showFilterModal} transparent animationType="slide">
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.modal}>
+            <View style={modalStyles.modalHeader}>
+              <Text style={modalStyles.modalTitle}>Filter & Sort</Text>
+              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
+                <Ionicons name="close" size={24} color="#0F2D1C" />
+              </TouchableOpacity>
+            </View>
+            <Text style={modalStyles.sectionTitle}>Date Filter</Text>
+            <View style={modalStyles.optionsRow}>
+              {(["all", "today", "last_7_days", "last_30_days"] as const).map(
+                (opt) => (
+                  <TouchableOpacity
+                    key={opt}
+                    style={[
+                      modalStyles.optionChip,
+                      dateFilter === opt && modalStyles.optionChipActive,
+                    ]}
+                    onPress={() => setDateFilter(opt)}
+                  >
+                    <Text
+                      style={[
+                        modalStyles.optionText,
+                        dateFilter === opt && modalStyles.optionTextActive,
+                      ]}
+                    >
+                      {opt === "all"
+                        ? "All Time"
+                        : opt === "today"
+                          ? "Today"
+                          : opt === "last_7_days"
+                            ? "Last 7 Days"
+                            : "Last 30 Days"}
+                    </Text>
+                  </TouchableOpacity>
+                ),
+              )}
+            </View>
+            <Text style={modalStyles.sectionTitle}>Sort By</Text>
+            <View style={modalStyles.optionsRow}>
+              {(["newest", "oldest", "status"] as const).map((opt) => (
+                <TouchableOpacity
+                  key={opt}
+                  style={[
+                    modalStyles.optionChip,
+                    sortBy === opt && modalStyles.optionChipActive,
+                  ]}
+                  onPress={() => setSortBy(opt)}
+                >
+                  <Text
+                    style={[
+                      modalStyles.optionText,
+                      sortBy === opt && modalStyles.optionTextActive,
+                    ]}
+                  >
+                    {opt === "newest"
+                      ? "Newest First"
+                      : opt === "oldest"
+                        ? "Oldest First"
+                        : "By Status"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={modalStyles.applyBtn}
+              onPress={() => setShowFilterModal(false)}
+            >
+              <Text style={modalStyles.applyBtnText}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -720,7 +1053,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: { color: "#6B7280", fontSize: 14 },
-
   offlineBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -731,7 +1063,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   offlineBannerText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
-
   header: {
     backgroundColor: "#0F4A2F",
     flexDirection: "row",
@@ -748,7 +1079,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  // ✅ NEW: Refresh button style
   refreshBtn: {
     width: 40,
     height: 40,
@@ -767,8 +1097,45 @@ const styles = StyleSheet.create({
   },
   layerDot: { width: 7, height: 7, borderRadius: 4 },
   headerSub: { fontSize: 11, color: "rgba(255,255,255,0.6)" },
+  controlsContainer: {
+    backgroundColor: "#F4F7F5",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#0F2D1C",
+    marginLeft: 8,
+    marginRight: 8,
+  },
+  filterBar: { flexDirection: "row", gap: 10, marginBottom: 16 },
+  filterBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  filterBtnText: { fontSize: 13, fontWeight: "600", color: "#0F4A2F" },
   listContent: { paddingHorizontal: 16 },
-  listHeader: { paddingTop: 16, marginBottom: 4 },
+  listHeader: { paddingTop: 4, marginBottom: 4 },
   statsRow: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
@@ -826,12 +1193,13 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 13, fontWeight: "700", color: "#0F2D1C" },
   sectionBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   sectionBadgeText: { fontSize: 11, fontWeight: "700" },
+  
+  // ✅ CRITICAL FIX: Removed overflow: "hidden" to prevent blank cards after Modal closes
   card: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     marginBottom: 12,
-    overflow: "hidden",
     elevation: 2,
     shadowColor: "#000",
     shadowOpacity: 0.05,
@@ -844,8 +1212,35 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFBEB",
   },
   cardSubmitted: { opacity: 0.92 },
-  cardAccent: { width: 4 },
-  cardBody: { flex: 1, padding: 14 },
+  cardSelected: {
+    borderWidth: 2,
+    borderColor: "#3B82F6",
+    backgroundColor: "#EFF6FF",
+  },
+  // ✅ CRITICAL FIX: Added border radius to children to maintain rounded corners without overflow: hidden
+  cardAccent: { 
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+  },
+  cardBody: { 
+    flex: 1, 
+    padding: 14,
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+  },
+  cardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  cardTitleText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F2D1C",
+    lineHeight: 20,
+    flex: 1,
+  },
   cardTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -926,4 +1321,85 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: 20,
   },
+  bottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#0F4A2F",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 10,
+  },
+  bottomBarText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
+  mapBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#3B82F6",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  mapBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
+});
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modal: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "700", color: "#0F2D1C" },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 10,
+    marginTop: 16,
+  },
+  optionsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  optionChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
+  },
+  optionChipActive: { backgroundColor: "#0F4A2F", borderColor: "#0F4A2F" },
+  optionText: { fontSize: 13, color: "#4B5563", fontWeight: "600" },
+  optionTextActive: { color: "#FFFFFF" },
+  applyBtn: {
+    backgroundColor: "#0F4A2F",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 24,
+  },
+  applyBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
 });

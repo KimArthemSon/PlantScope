@@ -23,6 +23,7 @@ import {
   EyeOff,
   Plus,
   Globe,
+  Search,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
@@ -143,19 +144,19 @@ const createMarkerIcon = (
   return L.divIcon({
     className: "custom-map-marker",
     html: `
-<div style="display: flex; align-items: center; gap: 6px;">
-  <div style="position: relative; width: 24px; height: 30px; flex-shrink: 0;">
-    <svg width="24" height="30" viewBox="0 0 24 30" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
-      <path d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
-      fill="${color}" stroke="white" stroke-width="2"/>
-    </svg>
-    <div style="position: absolute; top: 7px; left: 6px; display: flex; align-items: center; justify-content: center;">
-      ${iconSvg}
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <div style="position: relative; width: 24px; height: 30px; flex-shrink: 0;">
+        <svg width="24" height="30" viewBox="0 0 24 30" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+          <path d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
+          fill="${color}" stroke="white" stroke-width="2"/>
+        </svg>
+        <div style="position: absolute; top: 7px; left: 6px; display: flex; align-items: center; justify-content: center;">
+          ${iconSvg}
+        </div>
+      </div>
+      ${labelHtml}
     </div>
-  </div>
-  ${labelHtml}
-</div>
-`,
+    `,
     iconSize: [estimatedWidth, 30],
     iconAnchor: [12, 30],
     popupAnchor: [0, -30],
@@ -172,8 +173,6 @@ export default function MulticriteriaAnalysis() {
   const [searchParams] = useSearchParams();
   const areaId = searchParams.get("areaId");
   const siteId = searchParams.get("siteId");
-
-  // ✅ NEW: Role check for Unsent feature
   const userRole =
     typeof window !== "undefined" ? localStorage.getItem("user_role") : null;
   const canUnsent = userRole === "GISSpecialist" || userRole === "CityENROHead";
@@ -253,17 +252,21 @@ export default function MulticriteriaAnalysis() {
     lng: number;
   } | null>(null);
   const [showDMS, setShowDMS] = useState(false);
-
-  // ✅ NEW: Two-phase drawing flow states
   const [isDrawingFinished, setIsDrawingFinished] = useState(false);
   const [areaUnit, setAreaUnit] = useState<"ha" | "sqm">("ha");
   const [viewAreaUnit, setViewAreaUnit] = useState<"ha" | "sqm">("ha");
-
-  // ✅ NEW: Date filter state
   const [dateFilter, setDateFilter] = useState<{
     start_date?: string;
     end_date?: string;
   }>({});
+
+  // ✅ NEW: Reassignment State
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [reassignTargetAssessment, setReassignTargetAssessment] =
+    useState<FieldAssessmentEntry | null>(null);
+  const [availableSites, setAvailableSites] = useState<Site[]>([]);
+  const [reassignSearchQuery, setReassignSearchQuery] = useState("");
+  const [isReassigning, setIsReassigning] = useState(false);
 
   const displayArea = useCallback(
     (area: number | null): string => {
@@ -300,9 +303,8 @@ export default function MulticriteriaAnalysis() {
   };
 
   const getDisplayAreaValue = useCallback((): number | null => {
-    if (isEditMode && editedPolygon && editedPolygon.length >= 3) {
+    if (isEditMode && editedPolygon && editedPolygon.length >= 3)
       return calculatePolygonArea(editedPolygon);
-    }
     return viewingSite?.area_hectares ?? null;
   }, [isEditMode, editedPolygon, viewingSite?.area_hectares]);
 
@@ -491,7 +493,6 @@ export default function MulticriteriaAnalysis() {
     isPickingMarkerLocation ||
     isPlacingNewMarker ||
     isEditMode;
-
   const fieldAssessments = useFieldAssessments(
     mapRef,
     true,
@@ -549,7 +550,6 @@ export default function MulticriteriaAnalysis() {
     }
   }, [fieldAssessments.locationTargetId]);
 
-  // ✅ UPDATED: handleFetchLayer now passes dateFilter
   const handleFetchLayer = useCallback(
     (
       layer: MCDALayer,
@@ -582,6 +582,67 @@ export default function MulticriteriaAnalysis() {
     ],
   );
 
+  const openReassignModal = async (assessment: FieldAssessmentEntry) => {
+    setReassignTargetAssessment(assessment);
+    setReassignSearchQuery("");
+    setShowReassignModal(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${api_second}/api/get_all_sites_for_reassignment/${areaId}/`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableSites(data.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sites for reassignment", err);
+    }
+  };
+
+  const handleReassign = async (siteId: number | null) => {
+    if (!reassignTargetAssessment) return;
+    setIsReassigning(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${api_second}/api/field_assessments/${reassignTargetAssessment.field_assessment_id}/reassign/`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ site_id: siteId }),
+        },
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setAlert({ type: "success", title: "Success", message: data.message });
+        setShowReassignModal(false);
+        setReassignTargetAssessment(null);
+        handleFetchLayer(fieldAssessments.activeLayer);
+      } else {
+        setAlert({
+          type: "error",
+          title: "Failed",
+          message: data.error || "Failed to reassign",
+        });
+      }
+    } catch (err: any) {
+      setAlert({
+        type: "error",
+        title: "Error",
+        message: err.message || "Network error",
+      });
+    } finally {
+      setIsReassigning(false);
+    }
+  };
+
   const handleDropProbe = useCallback((lat: number, lng: number) => {
     const map = mapRef.current;
     if (!map) return;
@@ -589,20 +650,20 @@ export default function MulticriteriaAnalysis() {
     const latDMS = decimalToDMS(lat, "lat");
     const lngDMS = decimalToDMS(lng, "lng");
     const popupContent = `
-<div style="font-family: sans-serif; min-width: 180px;">
-  <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #7e22ce; border-bottom: 1px solid #e9d5ff; padding-bottom: 4px;"> Dropped Pin</h4>
-  <div style="margin-bottom: 8px;">
-    <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Latitude</div>
-    <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lat.toFixed(6)}</div>
-    <div style="font-size: 10px; color: #888;">${latDMS}</div>
-  </div>
-  <div style="margin-bottom: 12px;">
-    <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Longitude</div>
-    <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lng.toFixed(6)}</div>
-    <div style="font-size: 10px; color: #888;">${lngDMS}</div>
-  </div>
-  <button id="clear-probe-btn" style="width: 100%; padding: 6px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s;">Clear Pin</button>
-</div>`;
+      <div style="font-family: sans-serif; min-width: 180px;">
+        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #7e22ce; border-bottom: 1px solid #e9d5ff; padding-bottom: 4px;"> Dropped Pin</h4>
+        <div style="margin-bottom: 8px;">
+          <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Latitude</div>
+          <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lat.toFixed(6)}</div>
+          <div style="font-size: 10px; color: #888;">${latDMS}</div>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Longitude</div>
+          <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lng.toFixed(6)}</div>
+          <div style="font-size: 10px; color: #888;">${lngDMS}</div>
+        </div>
+        <button id="clear-probe-btn" style="width: 100%; padding: 6px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s;">Clear Pin</button>
+      </div>`;
     const marker = L.marker([lat, lng], {
       icon: createMarkerIcon("temp", "Probe"),
     }).addTo(map);
@@ -1329,6 +1390,7 @@ export default function MulticriteriaAnalysis() {
   }, []);
 
   const creationVertexMarkersRef = useRef<L.Marker[]>([]);
+
   const updateCreationMarkers = useCallback((coords: [number, number][]) => {
     const map = mapRef.current;
     if (!map) return;
@@ -2863,6 +2925,7 @@ export default function MulticriteriaAnalysis() {
                 </span>
               </button>
             )}
+
             {isDrawingFinished && !showCoordPanel && (
               <button
                 onClick={() => setShowCoordPanel(true)}
@@ -3162,20 +3225,29 @@ export default function MulticriteriaAnalysis() {
                 </div>
               </div>
 
-              {/* ✅ UPDATED: Date Filter UI Added */}
               <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex flex-col gap-2">
                 <div className="flex gap-1 bg-white rounded-lg p-1 border border-gray-200">
+                  {/* ✅ UPDATED: Specific button now respects viewingSite */}
                   <button
                     onClick={() => {
                       setAssessmentType("specific");
+                      const targetSiteId = viewingSite
+                        ? String(viewingSite.site_id)
+                        : selectedSiteIdForFilter;
                       handleFetchLayer(
                         fieldAssessments.activeLayer,
                         "specific",
+                        targetSiteId,
                       );
                     }}
                     className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[10px] font-semibold transition ${assessmentType === "specific" ? "bg-green-500 text-white shadow-sm" : "text-gray-600 hover:bg-gray-100"}`}
                   >
-                    <Target size={10} /> Specific
+                    <Target size={10} /> Specific{" "}
+                    {viewingSite && (
+                      <span className="text-[8px] opacity-80 ml-1">
+                        (This Site)
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => {
@@ -3289,7 +3361,6 @@ export default function MulticriteriaAnalysis() {
                 })}
               </div>
 
-              {/* ✅ UPDATED: Added max-h-[60vh] to fix overflow/stretching issue */}
               <div className="flex-1 overflow-y-auto min-h-0 max-h-[60vh]">
                 {!areaId ? (
                   <div className="p-4 text-center text-gray-400">
@@ -3368,9 +3439,8 @@ export default function MulticriteriaAnalysis() {
                                   </span>
                                 )}
                               </div>
-                              {/* ✅ UPDATED: Added Unsent Button with role check */}
                               <div
-                                className="mt-1.5 flex items-center gap-2"
+                                className="mt-1.5 flex items-center gap-2 flex-wrap"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {isThisPickingLocation ? (
@@ -3395,7 +3465,13 @@ export default function MulticriteriaAnalysis() {
                                       : "Add Location"}
                                   </button>
                                 )}
-
+                                <button
+                                  onClick={() => openReassignModal(entry)}
+                                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100 transition"
+                                  title="Reassign to another site or make general"
+                                >
+                                  <MapPin size={9} /> Reassign
+                                </button>
                                 <button
                                   onClick={async () => {
                                     setConfirmDialog({
@@ -3524,6 +3600,7 @@ export default function MulticriteriaAnalysis() {
           </div>
         </div>
       </main>
+
       <SiteValidationPanel
         site={validatingSite}
         isOpen={showValidationPanel}
@@ -3535,6 +3612,7 @@ export default function MulticriteriaAnalysis() {
         onFinalize={handleFinalizeSite}
         loading={sites.loading}
       />
+
       {barangayAreas.showHazardForm && !barangayAreas.isMapEditMode && (
         <HazardAreaFormPanel
           barangayAreas={barangayAreas}
@@ -3548,6 +3626,123 @@ export default function MulticriteriaAnalysis() {
             setAlert({ type: "error", title: "Error", message: msg });
           }}
         />
+      )}
+
+      {showReassignModal && reassignTargetAssessment && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+              <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-blue-600" /> Reassign Assessment
+              </h3>
+              <button
+                onClick={() => setShowReassignModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-xs text-blue-800 font-medium mb-1">
+                  Currently Assigned To:
+                </p>
+                <p className="text-sm text-blue-900 font-semibold">
+                  {reassignTargetAssessment.assessment_type === "specific" &&
+                  reassignTargetAssessment.site_name
+                    ? `Site: ${reassignTargetAssessment.site_name}`
+                    : "General Area (No specific site)"}
+                </p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1.5 block">
+                  Search Sites in this Area
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={reassignSearchQuery}
+                    onChange={(e) => setReassignSearchQuery(e.target.value)}
+                    placeholder="Type site name..."
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
+                <button
+                  onClick={() => handleReassign(null)}
+                  disabled={
+                    isReassigning ||
+                    reassignTargetAssessment.assessment_type !== "specific"
+                  }
+                  className={`w-full text-left px-4 py-3 flex items-center gap-3 transition ${reassignTargetAssessment.assessment_type !== "specific" ? "opacity-50 cursor-not-allowed bg-gray-50" : "hover:bg-blue-50 cursor-pointer"}`}
+                >
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <Globe className="w-4 h-4 text-gray-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      Make General Assessment
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Remove site assignment (applies to whole area)
+                    </p>
+                  </div>
+                </button>
+                {availableSites
+                  .filter((s) =>
+                    s.name
+                      .toLowerCase()
+                      .includes(reassignSearchQuery.toLowerCase()),
+                  )
+                  .map((site) => (
+                    <button
+                      key={site.site_id}
+                      onClick={() => handleReassign(site.site_id)}
+                      disabled={
+                        isReassigning ||
+                        (reassignTargetAssessment.assessment_type ===
+                          "specific" &&
+                          reassignTargetAssessment.site_name === site.name)
+                      }
+                      className={`w-full text-left px-4 py-3 flex items-center gap-3 transition ${reassignTargetAssessment.assessment_type === "specific" && reassignTargetAssessment.site_name === site.name ? "opacity-50 cursor-not-allowed bg-gray-50" : "hover:bg-blue-50 cursor-pointer"}`}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <MapPin className="w-4 h-4 text-green-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">
+                          {site.name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {site.metrics?.area_hectares?.toFixed(2)} ha
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                {availableSites.filter((s) =>
+                  s.name
+                    .toLowerCase()
+                    .includes(reassignSearchQuery.toLowerCase()),
+                ).length === 0 && (
+                  <div className="p-4 text-center text-gray-500 text-xs">
+                    No sites found matching "{reassignSearchQuery}"
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="px-5 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setShowReassignModal(false)}
+                disabled={isReassigning}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

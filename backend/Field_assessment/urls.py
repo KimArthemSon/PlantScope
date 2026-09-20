@@ -83,11 +83,12 @@ urlpatterns = [
         onsite_views.delete_field_assessment_image,
         name='delete_field_assessment_image'
     ),
-
+    path('field_assessments/<int:field_assessment_id>/reassign/', onsite_views.reassign_field_assessment, name='reassign_field_assessment'),
+    path('get_all_sites_for_reassignment/<int:area_id>/', onsite_views.get_all_sites_for_reassignment, name='get_all_sites_for_reassignment'),
     # ── Web/GIS: Area-Level Assessment Retrieval ───────────────────────
    # ✅ GIS/ENRO Review endpoint (THIS IS WHAT YOU NEED):
     path('area/<int:reforestation_area_id>/meta-data/', onsite_views.get_area_meta_data, name='get_area_meta_data'),
-
+    
     path('inspector/dashboard-stats/', dashboard_views.get_dashboard_stats, name='dashboard-stats'),
     path('inspector/recent-assessments/', dashboard_views.get_recent_assessments, name='recent-assessments'),
     path('inspector/assessments-over-time/', dashboard_views.get_assessments_over_time, name='assessments-over-time'),

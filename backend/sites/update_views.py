@@ -1,7 +1,7 @@
 import json
 import logging
 import math
-
+from reforestation_areas.models import Reforestation_areas
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
@@ -79,7 +79,7 @@ def update_site_marker_coordinate(request, site_id):
 @csrf_exempt
 def update_site_basic_info(request, site_id):
     """
-    PUT/PATCH: Update site name and description.
+    PUT/PATCH: Update site name, description, and reforestation_area.
     """
     if request.method not in ["PUT", "PATCH", "POST"]:
         return JsonResponse({"error": "PUT/PATCH/POST only"}, status=405)
@@ -96,7 +96,7 @@ def update_site_basic_info(request, site_id):
             if not new_name:
                 return JsonResponse({"error": "name cannot be empty"}, status=400)
             
-            # Check uniqueness within the same reforestation area
+            # Check uniqueness within the SAME reforestation area
             if Sites.objects.filter(
                 reforestation_area=site.reforestation_area,
                 name=new_name
@@ -112,6 +112,19 @@ def update_site_basic_info(request, site_id):
         if 'description' in body:
             site.description = body['description'].strip() or None
             updated_fields.append('description')
+            
+        # ✅ NEW: Update reforestation area if provided
+        if 'reforestation_area_id' in body:
+            new_area_id = body['reforestation_area_id']
+            if new_area_id:
+                try:
+                    new_area = Reforestation_areas.objects.get(reforestation_area_id=new_area_id)
+                    site.reforestation_area = new_area
+                    updated_fields.append('reforestation_area')
+                except Reforestation_areas.DoesNotExist:
+                    return JsonResponse({"error": "Invalid reforestation_area_id"}, status=400)
+            else:
+                return JsonResponse({"error": "reforestation_area_id cannot be null"}, status=400)
         
         if not updated_fields:
             return JsonResponse({"error": "No fields to update"}, status=400)
@@ -125,6 +138,8 @@ def update_site_basic_info(request, site_id):
             "site_id": site.site_id,
             "name": site.name,
             "description": site.description,
+            "reforestation_area_id": site.reforestation_area.reforestation_area_id,
+            "reforestation_area_name": site.reforestation_area.name,
             "updated_fields": updated_fields
         }, status=200)
         
