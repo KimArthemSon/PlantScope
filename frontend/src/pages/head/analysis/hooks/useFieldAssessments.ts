@@ -34,7 +34,7 @@ export interface FieldAssessmentEntry {
   field_assessment_id: number;
   assessment_type?: "specific" | "general";
   site_name?: string | null;
-  title?: string | null;
+  title?: string | null; // ✅ Ensure this is populated by backend
   inspector: InspectorInfo;
   assessment_date: string;
   location: AssessmentLocation | null;
@@ -42,8 +42,8 @@ export interface FieldAssessmentEntry {
   images: AssessmentImage[];
   created_at: string;
   updated_at: string;
-  is_submitted?: boolean; // ✅ ADDED
-  sent_date?: string | null; // ✅ ADDED
+  is_submitted?: boolean;
+  sent_date?: string | null;
 }
 
 export interface FieldAssessmentsResponse {
@@ -66,7 +66,6 @@ const PHOTO_MARKER_COLOR = "#3B82F6";
 const SPECIFIC_MARKER_COLOR = "#10B981";
 const GENERAL_MARKER_COLOR = "#3B82F6";
 
-// ✅ Extended: isDrawingMode + onSnapToMarker for snap-to-assessment feature
 export function useFieldAssessments(
   mapRef: React.RefObject<L.Map | null>,
   showCoordinates: boolean = true,
@@ -104,7 +103,6 @@ export function useFieldAssessments(
   const [showPhotoMarkers, setShowPhotoMarkers] = useState(true);
   const [showAssessmentMarkers, setShowAssessmentMarkers] = useState(true);
 
-  // ✅ Refs so marker handlers read latest values without recreating markers
   const isDrawingModeRef = useRef(isDrawingMode);
   const onSnapToMarkerRef = useRef(onSnapToMarker);
   const showAssessmentMarkersRef = useRef(showAssessmentMarkers);
@@ -230,7 +228,6 @@ export function useFieldAssessments(
           }),
         });
 
-        const typeLabel = isSpecific ? "Specific" : "General";
         const siteInfo =
           isSpecific && entry.site_name
             ? `<br/><span style="font-size:10px;color:#666">Site: ${entry.site_name}</span>`
@@ -255,14 +252,19 @@ export function useFieldAssessments(
         `
           : "";
 
+        // ✅ ALIGNMENT FIX: Use the same title logic as the list
+        const displayTitle = entry.title || `Assessment #${entry.field_assessment_id}`;
+
         marker.bindPopup(`
-          <strong>${typeLabel} F${idx + 1} — ${entry.inspector.full_name}</strong>${siteInfo}<br/>
-          <span style="font-size:11px;color:#666">${entry.assessment_date}</span><br/>
-          <span style="font-size:10px;color:#999">GPS ±${loc.gps_accuracy_meters}m</span>
-          ${coordHtml}
+          <div style="font-family: sans-serif; min-width: 150px;">
+            <strong style="font-size: 13px; color: #1f2937;">${displayTitle}</strong><br/>
+            <span style="font-size: 11px; color: #6b7280;">${entry.inspector.full_name} • ${entry.assessment_date}</span>
+            ${siteInfo}
+            <br/><span style="font-size: 10px; color: #9ca3af;">GPS ±${loc.gps_accuracy_meters}m</span>
+            ${coordHtml}
+          </div>
         `);
 
-        // ✅ SNAP: while drawing/editing, click uses this assessment's exact coordinate
         marker.on("click", (e: L.LeafletMouseEvent) => {
           if (isDrawingModeRef.current && onSnapToMarkerRef.current) {
             L.DomEvent.stopPropagation(e);
@@ -270,14 +272,12 @@ export function useFieldAssessments(
           }
         });
 
-        // ✅ Keep popup from opening while snapping
         marker.on("popupopen", () => {
           if (isDrawingModeRef.current) {
             marker.closePopup();
           }
         });
 
-        // ✅ Respect show/hide toggle on placement
         if (showAssessmentMarkersRef.current) {
           marker.addTo(map);
         }
@@ -288,7 +288,6 @@ export function useFieldAssessments(
     [mapRef, removeLayerMarkers, removeAllPhotoMarkers, showCoordinates],
   );
 
-  // ✅ Crosshair cursor on markers while snap mode is active
   useEffect(() => {
     markersRef.current.forEach((marker) => {
       const el = marker.getElement();
@@ -300,7 +299,6 @@ export function useFieldAssessments(
     });
   }, [isDrawingMode]);
 
-  // ✅ Toggle marker visibility live when showAssessmentMarkers OR assessments change
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -352,10 +350,8 @@ export function useFieldAssessments(
         </div>
       `);
 
-        // ✅ SNAP: Photo markers also snap during drawing/editing mode
         marker.on("click", (e: L.LeafletMouseEvent) => {
           if (isDrawingModeRef.current && onSnapToMarkerRef.current) {
-            // Don't stop propagation - let popup still open
             onSnapToMarkerRef.current(img.latitude!, img.longitude!);
           }
         });
@@ -370,7 +366,6 @@ export function useFieldAssessments(
     [mapRef, removePhotoMarkers],
   );
 
-  // ✅ Update photo markers cursor when drawing mode changes
   useEffect(() => {
     photoMarkersRef.current.forEach((markers) => {
       markers.forEach((marker) => {
@@ -388,7 +383,7 @@ export function useFieldAssessments(
       layer: MCDALayer,
       assessmentType?: AssessmentType,
       siteId?: string,
-      dateFilter?: { start_date?: string; end_date?: string }, // ✅ ADDED
+      dateFilter?: { start_date?: string; end_date?: string },
     ) => {
       setLoading((prev) => ({ ...prev, [layer]: true }));
       try {
@@ -398,7 +393,6 @@ export function useFieldAssessments(
           params.append("assessment_type", assessmentType);
         if (siteId) params.append("site_id", siteId);
 
-        // ✅ ADDED: Date filter params
         if (dateFilter?.start_date)
           params.append("start_date", dateFilter.start_date);
         if (dateFilter?.end_date)
@@ -456,7 +450,7 @@ export function useFieldAssessments(
         if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
         return { success: true, message: json.message };
       } catch (err: any) {
-        console.error("❌ [useFieldAssessments] unsentAssessment error:", err);
+        console.error(" [useFieldAssessments] unsentAssessment error:", err);
         return { success: false, message: err.message };
       }
     },
