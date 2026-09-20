@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -24,6 +24,7 @@ import {
   Plus,
   Globe,
   Search,
+  ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
@@ -175,7 +176,7 @@ export default function MulticriteriaAnalysis() {
   const siteId = searchParams.get("siteId");
   const userRole =
     typeof window !== "undefined" ? localStorage.getItem("user_role") : null;
-  const canUnsent = userRole === "GISSpecialist" || userRole === "CityENROHead";
+
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -259,6 +260,12 @@ export default function MulticriteriaAnalysis() {
     start_date?: string;
     end_date?: string;
   }>({});
+
+  // ✅ RESTORED: Search and Sort State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<
+    "date_desc" | "date_asc" | "inspector_asc" | "inspector_desc"
+  >("date_desc");
 
   // ✅ NEW: Reassignment State
   const [showReassignModal, setShowReassignModal] = useState(false);
@@ -1016,8 +1023,7 @@ export default function MulticriteriaAnalysis() {
 
   useEffect(() => {
     if (!isDrawing || !mapRef.current) return;
-    if (drawingLineRef.current)
-      mapRef.current.removeLayer(drawingLineRef.current);
+    if (drawingLineRef.current) mapRef.current.removeLayer(drawingLineRef.current);
     if (polygonCoordinates.length >= 2) {
       drawingLineRef.current = L.polyline(polygonCoordinates, {
         color: "#22C55E",
@@ -1419,8 +1425,7 @@ export default function MulticriteriaAnalysis() {
       setPolygonCoordinates(newCoords);
       if (polygonRef.current) polygonRef.current.setLatLngs(newCoords);
       updateCreationMarkers(newCoords);
-      if (newCoords.length >= 3)
-        setPolygonArea(calculatePolygonArea(newCoords));
+      if (newCoords.length >= 3) setPolygonArea(calculatePolygonArea(newCoords));
     },
     [polygonCoordinates, updateCreationMarkers],
   );
@@ -1439,8 +1444,7 @@ export default function MulticriteriaAnalysis() {
       setPolygonCoordinates(newCoords);
       if (polygonRef.current) polygonRef.current.setLatLngs(newCoords);
       updateCreationMarkers(newCoords);
-      if (newCoords.length >= 3)
-        setPolygonArea(calculatePolygonArea(newCoords));
+      if (newCoords.length >= 3) setPolygonArea(calculatePolygonArea(newCoords));
       else {
         setPolygonArea(null);
         if (polygonRef.current) {
@@ -1958,9 +1962,7 @@ export default function MulticriteriaAnalysis() {
     (axis: "lat" | "lng", value: string) => {
       const numValue = parseFloat(value);
       if (isNaN(numValue)) return;
-      const newMarker: [number, number] = editedMarker
-        ? [...editedMarker]
-        : [0, 0];
+      const newMarker: [number, number] = editedMarker ? [...editedMarker] : [0, 0];
       if (axis === "lat") newMarker[0] = numValue;
       else newMarker[1] = numValue;
       setEditedMarker(newMarker);
@@ -2065,6 +2067,58 @@ export default function MulticriteriaAnalysis() {
   const activeAssessments =
     fieldAssessments.assessments[fieldAssessments.activeLayer] ?? [];
 
+  // ✅ RESTORED: Processed Assessments (Search + Sort + Date Filter)
+  const processedAssessments = useMemo(() => {
+    let result = [...activeAssessments];
+
+    // 1. Search Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((entry) => {
+        const title = (
+          entry.title || `Assessment ${entry.field_assessment_id}`
+        ).toLowerCase();
+        const inspector = entry.inspector.full_name.toLowerCase();
+        const faId = entry.field_assessment_id.toString();
+        return (
+          title.includes(q) || inspector.includes(q) || faId.includes(q)
+        );
+      });
+    }
+
+    // 2. Date Filter (Local refinement)
+    if (dateFilter.start_date || dateFilter.end_date) {
+      result = result.filter((entry) => {
+        const entryDateStr = entry.assessment_date || entry.created_at;
+        if (!entryDateStr) return false;
+        const d = new Date(entryDateStr);
+        if (dateFilter.start_date && d < new Date(dateFilter.start_date))
+          return false;
+        if (
+          dateFilter.end_date &&
+          d > new Date(dateFilter.end_date + "T23:59:59")
+        )
+          return false;
+        return true;
+      });
+    }
+
+    // 3. Sorting
+    result.sort((a, b) => {
+      const dateA = new Date(a.assessment_date || a.created_at).getTime();
+      const dateB = new Date(b.assessment_date || b.created_at).getTime();
+      if (sortBy === "date_desc") return dateB - dateA;
+      if (sortBy === "date_asc") return dateA - dateB;
+      if (sortBy === "inspector_asc")
+        return a.inspector.full_name.localeCompare(b.inspector.full_name);
+      if (sortBy === "inspector_desc")
+        return b.inspector.full_name.localeCompare(a.inspector.full_name);
+      return 0;
+    });
+
+    return result;
+  }, [activeAssessments, searchQuery, sortBy, dateFilter]);
+
   return (
     <div className="flex min-h-screen bg-gray-50 flex-col relative">
       {alert && (
@@ -2102,13 +2156,21 @@ export default function MulticriteriaAnalysis() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setShowSites(!showSites)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${showSites ? "bg-green-600 hover:bg-green-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${
+                showSites
+                  ? "bg-green-600 hover:bg-green-700 text-white"
+                  : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+              }`}
             >
               <MapPin size={12} /> {showSites ? "Hide Sites" : "Show Sites"}
             </button>
             <button
               onClick={() => setShowReforestationArea(!showReforestationArea)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${showReforestationArea ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${
+                showReforestationArea
+                  ? "bg-blue-600 hover:bg-blue-700 text-white"
+                  : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+              }`}
             >
               <Leaf size={12} />{" "}
               {showReforestationArea ? "Hide Area" : "Show Area"}
@@ -2117,19 +2179,27 @@ export default function MulticriteriaAnalysis() {
             <button
               onClick={() => setShowPotentialSites((v) => !v)}
               disabled={potentialSitesHook.loading}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40 ${showPotentialSites ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40 ${
+                showPotentialSites
+                  ? "bg-blue-600 hover:bg-blue-700 text-white"
+                  : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+              }`}
             >
               <Target size={12} />{" "}
               {potentialSitesHook.loading
                 ? "Loading..."
                 : showPotentialSites
-                  ? `Hide Potential (${potentialSitesHook.potentialSites.length})`
-                  : `Potential Sites (${potentialSitesHook.potentialSites.length})`}
+                ? `Hide Potential (${potentialSitesHook.potentialSites.length})`
+                : `Potential Sites (${potentialSitesHook.potentialSites.length})`}
             </button>
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
             <button
               onClick={() => setIsCoordinateProbeMode(!isCoordinateProbeMode)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${isCoordinateProbeMode ? "bg-purple-600 hover:bg-purple-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${
+                isCoordinateProbeMode
+                  ? "bg-purple-600 hover:bg-purple-700 text-white"
+                  : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+              }`}
             >
               <Target size={12} />{" "}
               {isCoordinateProbeMode ? "Exit Probe" : "Drop Pin"}
@@ -2139,7 +2209,11 @@ export default function MulticriteriaAnalysis() {
               onClick={() =>
                 hazardLayers.setIsPanelOpen(!hazardLayers.isPanelOpen)
               }
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${hazardLayers.isPanelOpen ? "bg-red-600 hover:bg-red-700 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${
+                hazardLayers.isPanelOpen
+                  ? "bg-red-600 hover:bg-red-700 text-white"
+                  : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+              }`}
             >
               <Shield size={12} /> Hazards
             </button>
@@ -2169,7 +2243,13 @@ export default function MulticriteriaAnalysis() {
                   barangayAreas.isDrawingHazard ||
                   barangayAreas.showHazardForm
                 }
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${barangayAreas.isDrawingHazard ? "bg-yellow-500 text-white cursor-wait" : !barangayAreas.selectedBarangayId ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-yellow-500 hover:bg-yellow-600 text-white"}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${
+                  barangayAreas.isDrawingHazard
+                    ? "bg-yellow-500 text-white cursor-wait"
+                    : !barangayAreas.selectedBarangayId
+                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    : "bg-yellow-500 hover:bg-yellow-600 text-white"
+                }`}
               >
                 <Pen size={12} />{" "}
                 {barangayAreas.isDrawingHazard ? "Drawing..." : "Draw Hazard"}
@@ -2234,7 +2314,8 @@ export default function MulticriteriaAnalysis() {
                           );
                       } else if (polygonRef.current) {
                         if (show) polygonRef.current.addTo(mapRef.current!);
-                        else mapRef.current?.removeLayer(polygonRef.current);
+                        else
+                          mapRef.current?.removeLayer(polygonRef.current);
                       }
                     }}
                     className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded"
@@ -2355,7 +2436,11 @@ export default function MulticriteriaAnalysis() {
                               "Click the map or an assessment marker to place the site marker.",
                           });
                       }}
-                      className={`flex items-center gap-2 px-4 py-2 text-white text-xs font-semibold rounded-lg transition ${isPickingMarkerLocation ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}
+                      className={`flex items-center gap-2 px-4 py-2 text-white text-xs font-semibold rounded-lg transition ${
+                        isPickingMarkerLocation
+                          ? "bg-red-600 hover:bg-red-700"
+                          : "bg-blue-600 hover:bg-blue-700"
+                      }`}
                     >
                       <MapPin size={14} />{" "}
                       {isPickingMarkerLocation
@@ -2461,9 +2546,7 @@ export default function MulticriteriaAnalysis() {
                 (isDrawingFinished ||
                   (!isDrawing && polygonCoordinates.length >= 3)) && (
                   <button
-                    onClick={() =>
-                      setAreaUnit(areaUnit === "ha" ? "sqm" : "ha")
-                    }
+                    onClick={() => setAreaUnit(areaUnit === "ha" ? "sqm" : "ha")}
                     className="absolute bottom-3 left-3 bg-white/95 px-2.5 py-1.5 rounded-lg shadow-md border border-green-200 z-[100] hover:bg-green-50 transition cursor-pointer"
                     title="Click to toggle between hectares and square meters"
                   >
@@ -2616,12 +2699,13 @@ export default function MulticriteriaAnalysis() {
                         ) {
                           const latlng =
                             tempFaLocationMarkerRef.current.getLatLng();
-                          const result = await fieldAssessments.updateLocation(
-                            fieldAssessments.locationTargetId,
-                            latlng.lat,
-                            latlng.lng,
-                            20,
-                          );
+                          const result =
+                            await fieldAssessments.updateLocation(
+                              fieldAssessments.locationTargetId,
+                              latlng.lat,
+                              latlng.lng,
+                              20,
+                            );
                           if (result.success) {
                             setAlert({
                               type: "success",
@@ -2750,7 +2834,10 @@ export default function MulticriteriaAnalysis() {
                   ))}
                   {polygonCoordinates.length === 0 && (
                     <div className="text-center py-8 text-gray-500 text-sm bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                      <MapPin size={32} className="mx-auto mb-2 opacity-50" />
+                      <MapPin
+                        size={32}
+                        className="mx-auto mb-2 opacity-50"
+                      />
                       <p>Click on the map to place your first vertex</p>
                       <p className="text-xs mt-1 text-gray-400">
                         or manually enter coordinates below
@@ -2812,13 +2899,21 @@ export default function MulticriteriaAnalysis() {
                     <div className="flex items-center bg-white rounded-md border border-gray-200 overflow-hidden">
                       <button
                         onClick={() => setAreaUnit("ha")}
-                        className={`px-2 py-1 text-[10px] font-bold transition ${areaUnit === "ha" ? "bg-green-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                        className={`px-2 py-1 text-[10px] font-bold transition ${
+                          areaUnit === "ha"
+                            ? "bg-green-600 text-white"
+                            : "text-gray-600 hover:bg-gray-100"
+                        }`}
                       >
                         ha
                       </button>
                       <button
                         onClick={() => setAreaUnit("sqm")}
-                        className={`px-2 py-1 text-[10px] font-bold transition ${areaUnit === "sqm" ? "bg-green-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                        className={`px-2 py-1 text-[10px] font-bold transition ${
+                          areaUnit === "sqm"
+                            ? "bg-green-600 text-white"
+                            : "text-gray-600 hover:bg-gray-100"
+                        }`}
                       >
                         m²
                       </button>
@@ -2984,7 +3079,11 @@ export default function MulticriteriaAnalysis() {
                     <button
                       onClick={handleSaveSite}
                       disabled={!polygonArea}
-                      className={`flex-1 py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${polygonArea ? "bg-green-600 hover:bg-green-700 text-white shadow-lg" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+                      className={`flex-1 py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${
+                        polygonArea
+                          ? "bg-green-600 hover:bg-green-700 text-white shadow-lg"
+                          : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      }`}
                     >
                       <Save size={16} /> Save Site
                     </button>
@@ -3028,9 +3127,7 @@ export default function MulticriteriaAnalysis() {
                 </span>
                 {isDrawingFinished && polygonArea !== null && (
                   <button
-                    onClick={() =>
-                      setAreaUnit(areaUnit === "ha" ? "sqm" : "ha")
-                    }
+                    onClick={() => setAreaUnit(areaUnit === "ha" ? "sqm" : "ha")}
                     className="flex items-center gap-1 text-green-700 font-semibold bg-green-50 hover:bg-green-100 px-2 py-0.5 rounded transition cursor-pointer"
                     title="Click to toggle between hectares and square meters"
                   >
@@ -3041,8 +3138,8 @@ export default function MulticriteriaAnalysis() {
                   potentialSitesHook.potentialSites.length > 0 && (
                     <span className="flex items-center gap-1 text-blue-600">
                       <Target size={12} />{" "}
-                      {potentialSitesHook.potentialSites.length} potential site
-                      {potentialSitesHook.potentialSites.length !== 1
+                      {potentialSitesHook.potentialSites.length} potential
+                      site{potentialSitesHook.potentialSites.length !== 1
                         ? "s"
                         : ""}
                     </span>
@@ -3134,7 +3231,9 @@ export default function MulticriteriaAnalysis() {
                     </button>
                     <button
                       onClick={() => barangayAreas.removeLastHazardPoint()}
-                      disabled={barangayAreas.hazardPolygonPoints.length === 0}
+                      disabled={
+                        barangayAreas.hazardPolygonPoints.length === 0
+                      }
                       className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-xs font-semibold rounded transition flex items-center gap-1"
                     >
                       <Undo2 size={12} /> Undo
@@ -3188,7 +3287,11 @@ export default function MulticriteriaAnalysis() {
                         !fieldAssessments.showAssessmentMarkers,
                       )
                     }
-                    className={`p-1 rounded transition ${fieldAssessments.showAssessmentMarkers ? "text-blue-500 hover:bg-blue-50" : "text-gray-400 hover:bg-gray-100"}`}
+                    className={`p-1 rounded transition ${
+                      fieldAssessments.showAssessmentMarkers
+                        ? "text-blue-500 hover:bg-blue-50"
+                        : "text-gray-400 hover:bg-gray-100"
+                    }`}
                     title={
                       fieldAssessments.showAssessmentMarkers
                         ? "Hide assessment markers on map"
@@ -3214,7 +3317,9 @@ export default function MulticriteriaAnalysis() {
                       <Layers
                         size={9}
                         className={
-                          fieldAssessments.loading[fieldAssessments.activeLayer]
+                          fieldAssessments.loading[
+                            fieldAssessments.activeLayer
+                          ]
                             ? "animate-spin"
                             : ""
                         }
@@ -3227,7 +3332,7 @@ export default function MulticriteriaAnalysis() {
 
               <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex flex-col gap-2">
                 <div className="flex gap-1 bg-white rounded-lg p-1 border border-gray-200">
-                  {/* ✅ UPDATED: Specific button now respects viewingSite */}
+                  {/* ✅ UPDATED: Specific button respects viewingSite */}
                   <button
                     onClick={() => {
                       setAssessmentType("specific");
@@ -3240,7 +3345,11 @@ export default function MulticriteriaAnalysis() {
                         targetSiteId,
                       );
                     }}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[10px] font-semibold transition ${assessmentType === "specific" ? "bg-green-500 text-white shadow-sm" : "text-gray-600 hover:bg-gray-100"}`}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[10px] font-semibold transition ${
+                      assessmentType === "specific"
+                        ? "bg-green-500 text-white shadow-sm"
+                        : "text-gray-600 hover:bg-gray-100"
+                    }`}
                   >
                     <Target size={10} /> Specific{" "}
                     {viewingSite && (
@@ -3252,9 +3361,16 @@ export default function MulticriteriaAnalysis() {
                   <button
                     onClick={() => {
                       setAssessmentType("general");
-                      handleFetchLayer(fieldAssessments.activeLayer, "general");
+                      handleFetchLayer(
+                        fieldAssessments.activeLayer,
+                        "general",
+                      );
                     }}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[10px] font-semibold transition ${assessmentType === "general" ? "bg-blue-500 text-white shadow-sm" : "text-gray-600 hover:bg-gray-100"}`}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[10px] font-semibold transition ${
+                      assessmentType === "general"
+                        ? "bg-blue-500 text-white shadow-sm"
+                        : "text-gray-600 hover:bg-gray-100"
+                    }`}
                   >
                     <MapPin size={10} /> General
                   </button>
@@ -3264,11 +3380,51 @@ export default function MulticriteriaAnalysis() {
                       setSelectedSiteIdForFilter(null);
                       handleFetchLayer(fieldAssessments.activeLayer, "all");
                     }}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[10px] font-semibold transition ${assessmentType === "all" ? "bg-gray-700 text-white shadow-sm" : "text-gray-600 hover:bg-gray-100"}`}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded-md text-[10px] font-semibold transition ${
+                      assessmentType === "all"
+                        ? "bg-gray-700 text-white shadow-sm"
+                        : "text-gray-600 hover:bg-gray-100"
+                    }`}
                   >
                     All
                   </button>
                 </div>
+
+                {/* ✅ RESTORED: Search and Sort UI */}
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search
+                      size={12}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search title, inspector, or ID..."
+                      className="w-full text-[10px] border border-gray-300 rounded-md pl-7 pr-8 py-1.5 focus:ring-1 focus:ring-blue-500 outline-none"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as any)}
+                    className="text-[10px] border border-gray-300 rounded-md px-2 py-1.5 focus:ring-1 focus:ring-blue-500 outline-none bg-white flex-shrink-0"
+                  >
+                    <option value="date_desc">Newest First</option>
+                    <option value="date_asc">Oldest First</option>
+                    <option value="inspector_asc">Inspector (A-Z)</option>
+                    <option value="inspector_desc">Inspector (Z-A)</option>
+                  </select>
+                </div>
+
                 <div className="flex items-center gap-2 flex-wrap">
                   <input
                     type="date"
@@ -3335,7 +3491,8 @@ export default function MulticriteriaAnalysis() {
                     color: "text-emerald-600",
                   },
                 ].map((l) => {
-                  const count = fieldAssessments.assessments[l.id]?.length ?? 0;
+                  const count =
+                    fieldAssessments.assessments[l.id]?.length ?? 0;
                   const active = l.id === fieldAssessments.activeLayer;
                   return (
                     <button
@@ -3348,7 +3505,11 @@ export default function MulticriteriaAnalysis() {
                         )
                           handleFetchLayer(l.id);
                       }}
-                      className={`flex-1 py-2 text-xs font-semibold transition relative border-b-2 ${active ? `${l.color} border-current` : "text-gray-400 border-transparent hover:text-gray-600"}`}
+                      className={`flex-1 py-2 text-xs font-semibold transition relative border-b-2 ${
+                        active
+                          ? `${l.color} border-current`
+                          : "text-gray-400 border-transparent hover:text-gray-600"
+                      }`}
                     >
                       {l.short}
                       {count > 0 && (
@@ -3366,41 +3527,67 @@ export default function MulticriteriaAnalysis() {
                   <div className="p-4 text-center text-gray-400">
                     <p className="text-xs">No area selected</p>
                   </div>
-                ) : fieldAssessments.loading[fieldAssessments.activeLayer] ? (
+                ) : fieldAssessments.loading[
+                    fieldAssessments.activeLayer
+                  ] ? (
                   <div className="p-4 text-center text-gray-400">
                     <p className="text-xs">Loading...</p>
                   </div>
-                ) : activeAssessments.length === 0 ? (
+                ) : processedAssessments.length === 0 ? (
                   <div className="p-4 text-center text-gray-400">
-                    <p className="text-xs">No assessments</p>
-                    <button
-                      onClick={() =>
-                        areaId && handleFetchLayer(fieldAssessments.activeLayer)
-                      }
-                      className="mt-2 text-xs text-blue-500 hover:underline"
-                    >
-                      Try again
-                    </button>
+                    <p className="text-xs">
+                      {searchQuery
+                        ? "No matching assessments found."
+                        : "No assessments"}
+                    </p>
+                    {!searchQuery && areaId && (
+                      <button
+                        onClick={() =>
+                          areaId &&
+                          handleFetchLayer(fieldAssessments.activeLayer)
+                        }
+                        className="mt-2 text-xs text-blue-500 hover:underline"
+                      >
+                        Try again
+                      </button>
+                    )}
                   </div>
                 ) : (
-                  activeAssessments.map(
+                  processedAssessments.map(
                     (entry: FieldAssessmentEntry, idx: number) => {
-                      const isSelected = idx === fieldAssessments.selectedIndex;
+                      // Find original index for flyToMarker
+                      const originalIdx = activeAssessments.findIndex(
+                        (a) =>
+                          a.field_assessment_id === entry.field_assessment_id,
+                      );
+                      const isSelected =
+                        originalIdx === fieldAssessments.selectedIndex;
                       const faId = entry.field_assessment_id;
                       const hasLocation = !!entry.location?.latitude;
                       const isThisPickingLocation =
                         fieldAssessments.locationTargetId === faId;
+                      
+                      // ✅ RESTORED: Title Display
+                      const displayTitle =
+                        entry.title || `Assessment #${faId}`;
+
                       return (
                         <button
-                          key={idx}
+                          key={faId}
                           onClick={() => {
-                            fieldAssessments.setSelectedIndex(idx);
-                            fieldAssessments.flyToMarker(
-                              fieldAssessments.activeLayer,
-                              idx,
-                            );
+                            if (originalIdx !== -1) {
+                              fieldAssessments.setSelectedIndex(originalIdx);
+                              fieldAssessments.flyToMarker(
+                                fieldAssessments.activeLayer,
+                                originalIdx,
+                              );
+                            }
                           }}
-                          className={`w-full text-left px-3 py-2.5 border-b border-gray-50 transition ${isSelected ? "bg-blue-50 border-l-2 border-l-blue-500" : "hover:bg-gray-50"}`}
+                          className={`w-full text-left px-3 py-2.5 border-b border-gray-50 transition ${
+                            isSelected
+                              ? "bg-blue-50 border-l-2 border-l-blue-500"
+                              : "hover:bg-gray-50"
+                          }`}
                         >
                           <div className="flex items-center gap-2">
                             {entry.inspector.profile_image && (
@@ -3420,16 +3607,21 @@ export default function MulticriteriaAnalysis() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-1">
                                 <span className="text-xs font-semibold text-gray-800 truncate">
+                                  {displayTitle}
+                                </span>
+                                <span className="text-[10px] font-bold text-gray-400 flex-shrink-0 bg-gray-100 px-1.5 py-0.5 rounded">
                                   {entry.assessment_type === "specific"
                                     ? "Specific"
-                                    : "General"}{" "}
-                                  F{idx + 1} — {entry.inspector.full_name}
-                                </span>
-                                <span className="text-[10px] font-bold text-gray-400 flex-shrink-0">
-                                  F{idx + 1}
+                                    : "General"}
                                 </span>
                               </div>
                               <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[10px] text-gray-600 font-medium">
+                                  {entry.inspector.full_name}
+                                </span>
+                                <span className="text-[10px] text-gray-400">
+                                  •
+                                </span>
                                 <span className="text-[10px] text-gray-500">
                                   {entry.assessment_date}
                                 </span>
@@ -3446,7 +3638,9 @@ export default function MulticriteriaAnalysis() {
                                 {isThisPickingLocation ? (
                                   <button
                                     onClick={() =>
-                                      fieldAssessments.setLocationTargetId(null)
+                                      fieldAssessments.setLocationTargetId(
+                                        null,
+                                      )
                                     }
                                     className="flex items-center gap-1 text-[10px] bg-orange-100 text-orange-700 border border-orange-300 px-2 py-0.5 rounded-full font-medium animate-pulse"
                                   >
@@ -3455,9 +3649,15 @@ export default function MulticriteriaAnalysis() {
                                 ) : (
                                   <button
                                     onClick={() =>
-                                      fieldAssessments.setLocationTargetId(faId)
+                                      fieldAssessments.setLocationTargetId(
+                                        faId,
+                                      )
                                     }
-                                    className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border transition ${hasLocation ? "bg-green-50 text-green-700 border-green-300 hover:bg-green-100" : "bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100"}`}
+                                    className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border transition ${
+                                      hasLocation
+                                        ? "bg-green-50 text-green-700 border-green-300 hover:bg-green-100"
+                                        : "bg-orange-50 text-orange-700 border-orange-300 hover:bg-orange-100"
+                                    }`}
                                   >
                                     <MapPin size={9} />{" "}
                                     {hasLocation
@@ -3472,48 +3672,50 @@ export default function MulticriteriaAnalysis() {
                                 >
                                   <MapPin size={9} /> Reassign
                                 </button>
-                                <button
-                                  onClick={async () => {
-                                    setConfirmDialog({
-                                      title: "Unsent Assessment",
-                                      message:
-                                        "Are you sure you want to mark this assessment as unsent? It will be removed from the submitted list.",
-                                      variant: "warning",
-                                      confirmLabel: "Unsent",
-                                      onConfirm: async () => {
-                                        setConfirmDialog(null);
-                                        const result =
-                                          await fieldAssessments.unsentAssessment(
-                                            entry.field_assessment_id,
-                                          );
-                                        if (result.success) {
-                                          setAlert({
-                                            type: "success",
-                                            title: "Success",
-                                            message:
-                                              result.message ||
-                                              "Assessment marked as unsent.",
-                                          });
-                                          handleFetchLayer(
-                                            fieldAssessments.activeLayer,
-                                          );
-                                        } else {
-                                          setAlert({
-                                            type: "error",
-                                            title: "Failed",
-                                            message:
-                                              result.message ||
-                                              "Could not unsent assessment.",
-                                          });
-                                        }
-                                      },
-                                    });
-                                  }}
-                                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 transition"
-                                  title="Mark as unsent (GISSpecialist)"
-                                >
-                                  <Undo2 size={9} /> Unsent
-                                </button>
+                              
+                                  <button
+                                    onClick={async () => {
+                                      setConfirmDialog({
+                                        title: "Unsent Assessment",
+                                        message:
+                                          "Are you sure you want to mark this assessment as unsent? It will be removed from the submitted list.",
+                                        variant: "warning",
+                                        confirmLabel: "Unsent",
+                                        onConfirm: async () => {
+                                          setConfirmDialog(null);
+                                          const result =
+                                            await fieldAssessments.unsentAssessment(
+                                              entry.field_assessment_id,
+                                            );
+                                          if (result.success) {
+                                            setAlert({
+                                              type: "success",
+                                              title: "Success",
+                                              message:
+                                                result.message ||
+                                                "Assessment marked as unsent.",
+                                            });
+                                            handleFetchLayer(
+                                              fieldAssessments.activeLayer,
+                                            );
+                                          } else {
+                                            setAlert({
+                                              type: "error",
+                                              title: "Failed",
+                                              message:
+                                                result.message ||
+                                                "Could not unsent assessment.",
+                                            });
+                                          }
+                                        },
+                                      });
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 transition"
+                                    title="Mark as unsent (GISSpecialist)"
+                                  >
+                                    <Undo2 size={9} /> Unsent
+                                  </button>
+                                
                               </div>
                             </div>
                           </div>
@@ -3562,7 +3764,10 @@ export default function MulticriteriaAnalysis() {
             {activeAssessments.length === 0 ? (
               <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 min-h-[120px] flex items-center justify-center">
                 <div>
-                  <CheckCircle size={32} className="mx-auto mb-3 opacity-30" />
+                  <CheckCircle
+                    size={32}
+                    className="mx-auto mb-3 opacity-30"
+                  />
                   <p className="text-sm">
                     Select an assessment to view details
                   </p>
@@ -3578,7 +3783,10 @@ export default function MulticriteriaAnalysis() {
                 locationTargetId={fieldAssessments.locationTargetId}
                 onLayerChange={(layer) => {
                   fieldAssessments.setActiveLayer(layer);
-                  if (!fieldAssessments.assessments[layer].length && areaId)
+                  if (
+                    !fieldAssessments.assessments[layer].length &&
+                    areaId
+                  )
                     handleFetchLayer(layer);
                 }}
                 onSelectEntry={(idx) => {
@@ -3633,7 +3841,8 @@ export default function MulticriteriaAnalysis() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
               <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-blue-600" /> Reassign Assessment
+                <MapPin className="w-4 h-4 text-blue-600" /> Reassign
+                Assessment
               </h3>
               <button
                 onClick={() => setShowReassignModal(false)}
@@ -3676,7 +3885,11 @@ export default function MulticriteriaAnalysis() {
                     isReassigning ||
                     reassignTargetAssessment.assessment_type !== "specific"
                   }
-                  className={`w-full text-left px-4 py-3 flex items-center gap-3 transition ${reassignTargetAssessment.assessment_type !== "specific" ? "opacity-50 cursor-not-allowed bg-gray-50" : "hover:bg-blue-50 cursor-pointer"}`}
+                  className={`w-full text-left px-4 py-3 flex items-center gap-3 transition ${
+                    reassignTargetAssessment.assessment_type !== "specific"
+                      ? "opacity-50 cursor-not-allowed bg-gray-50"
+                      : "hover:bg-blue-50 cursor-pointer"
+                  }`}
                 >
                   <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
                     <Globe className="w-4 h-4 text-gray-600" />
@@ -3706,7 +3919,13 @@ export default function MulticriteriaAnalysis() {
                           "specific" &&
                           reassignTargetAssessment.site_name === site.name)
                       }
-                      className={`w-full text-left px-4 py-3 flex items-center gap-3 transition ${reassignTargetAssessment.assessment_type === "specific" && reassignTargetAssessment.site_name === site.name ? "opacity-50 cursor-not-allowed bg-gray-50" : "hover:bg-blue-50 cursor-pointer"}`}
+                      className={`w-full text-left px-4 py-3 flex items-center gap-3 transition ${
+                        reassignTargetAssessment.assessment_type ===
+                          "specific" &&
+                        reassignTargetAssessment.site_name === site.name
+                          ? "opacity-50 cursor-not-allowed bg-gray-50"
+                          : "hover:bg-blue-50 cursor-pointer"
+                      }`}
                     >
                       <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                         <MapPin className="w-4 h-4 text-green-600" />
