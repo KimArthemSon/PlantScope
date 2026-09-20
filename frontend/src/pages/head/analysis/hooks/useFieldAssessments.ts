@@ -34,6 +34,7 @@ export interface FieldAssessmentEntry {
   field_assessment_id: number;
   assessment_type?: "specific" | "general";
   site_name?: string | null;
+  title?: string | null;
   inspector: InspectorInfo;
   assessment_date: string;
   location: AssessmentLocation | null;

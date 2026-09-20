@@ -26,9 +26,7 @@ import {
 } from "@/hooks/useOfflineFieldAssessment";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
-// ✅ UPDATED: Import MapPoint type alongside FloatingMapButton
 import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
-
 import { useAlert } from "@/components/AlertContext";
 
 // ✅ GUIDE IMPORT: Ready to connect
@@ -58,7 +56,7 @@ interface LocationData {
   barangay?: string;
   timestamp: string;
   accuracy?: number;
-  isFallback?: boolean; // ✅ GPS-REFACTOR: Track if this is a cached fallback
+  isFallback?: boolean;
 }
 
 interface SurvivabilityImage {
@@ -98,7 +96,6 @@ function SimpleGeocam({
   const cameraRef = useRef<CameraView>(null);
   const { warning, error: showError } = useAlert();
 
-  // ✅ GPS-REFACTOR: Cleaner timeout + fallback logic
   const getCurrentLocation = async (): Promise<LocationData | null> => {
     try {
       if (!locationPermission?.granted) {
@@ -122,7 +119,6 @@ function SimpleGeocam({
       let isFallback = false;
 
       try {
-        // 1. Try live GPS with strict 30s timeout
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(
             () => reject(new Error("GPS_TIMEOUT")),
@@ -137,7 +133,6 @@ function SimpleGeocam({
           timeoutPromise,
         ]);
       } catch (liveErr: any) {
-        // 2. Live GPS failed or timed out — try last known position
         console.warn(
           "Live GPS failed/timed out, trying fallback:",
           liveErr.message,
@@ -871,6 +866,9 @@ export default function SurvivabilityForm() {
   const isOnline = useNetworkStatus();
   const isOfflineMode = !isOnline;
 
+  // ✅ NEW: Title State
+  const [title, setTitle] = useState("");
+
   const [soilNote, setSoilNote] = useState("");
   const [waterNote, setWaterNote] = useState("");
   const [slopeNote, setSlopeNote] = useState("");
@@ -881,7 +879,6 @@ export default function SurvivabilityForm() {
   const [locationAccuracy, setLocationAccuracy] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
 
-  // ✅ GPS-REFACTOR: Countdown state for UI
   const [gpsCountdown, setGpsCountdown] = useState(30);
 
   const [soilImages, setSoilImages] = useState<SurvivabilityImage[]>([]);
@@ -908,7 +905,6 @@ export default function SurvivabilityForm() {
   const [pendingNote, setPendingNote] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // ✅ GPS-REFACTOR: Readiness state
   const [gpsReadiness, setGpsReadiness] = useState<GPSReadiness>("checking");
   const [gpsReadinessAge, setGpsReadinessAge] = useState<number | null>(null);
 
@@ -917,7 +913,6 @@ export default function SurvivabilityForm() {
   const [showWaterGuide, setShowWaterGuide] = useState(false);
   const [showSlopeGuide, setShowSlopeGuide] = useState(false);
 
-  // ✅ OFFLINE-SAFETY: Prevent API calls on mount if offline and not editing a draft
   useEffect(() => {
     if (isEditingOfflineDraft) {
       loadOfflineDraftData();
@@ -933,7 +928,7 @@ export default function SurvivabilityForm() {
       (async () => {
         const data = await fetchAssessmentData();
         if (data) {
-          populateForm(data.field_assessment_data || {});
+          populateForm(data);
           if (data.location) {
             setLocationLat(data.location.latitude?.toString() || "");
             setLocationLng(data.location.longitude?.toString() || "");
@@ -966,14 +961,12 @@ export default function SurvivabilityForm() {
     }
   }, [assessmentId, offlineDraftId, isOnline]);
 
-  // ✅ GPS-REFACTOR: Check readiness on mount
   useEffect(() => {
     if (!loading) {
       checkGPSReadiness();
     }
   }, [loading]);
 
-  // ✅ GPS-REFACTOR: Readiness checker logic
   const checkGPSReadiness = async () => {
     try {
       const { status } = await Location.getForegroundPermissionsAsync();
@@ -1009,6 +1002,10 @@ export default function SurvivabilityForm() {
         return;
       }
       const payload = draft.payload;
+      
+      // ✅ NEW: Load title from offline draft
+      setTitle(payload.title || "");
+      
       populateForm(payload.field_assessment_data || {});
       if (payload.location) {
         setLocationLat(payload.location.latitude?.toString() || "");
@@ -1038,20 +1035,20 @@ export default function SurvivabilityForm() {
   };
 
   const populateForm = (data: any) => {
-    const surv =
-      data?.survivability?.survivability || data?.survivability || data || {};
+    // ✅ NEW: Load title from server response
+    setTitle(data.title || "");
+    
+    const surv = data?.survivability?.survivability || data?.survivability || data || {};
     setSoilNote(surv.soil?.overall_note || "");
     setWaterNote(surv.water?.overall_note || "");
     setSlopeNote(surv.slope?.overall_note || "");
     setOverallNote(surv.overall_notes || "");
   };
 
-  // ✅ GPS-REFACTOR: Robust location handler with 30s timeout, countdown, and fallback
   const handleGetCurrentLocation = async () => {
     setGettingLocation(true);
     setGpsCountdown(30);
 
-    // Start countdown timer
     const interval = setInterval(() => {
       setGpsCountdown((prev) => {
         if (prev <= 1) {
@@ -1157,7 +1154,6 @@ export default function SurvivabilityForm() {
   ) => {
     setShowGPSCamera(false);
     setPendingPhoto({ uri, location, withGPS });
-    // ✅ GPS-REFACTOR: Pre-fill note if using fallback coordinates
     setPendingNote(
       location?.isFallback
         ? "Note: Live GPS unavailable, using cached coordinates."
@@ -1176,7 +1172,6 @@ export default function SurvivabilityForm() {
       timestamp: new Date().toISOString(),
     };
 
-    // ✅ OFFLINE-SAFETY: Prevent API upload if offline
     if (numericAssessmentId && !isNaN(numericAssessmentId) && isOnline) {
       setUploading(true);
       try {
@@ -1277,6 +1272,7 @@ export default function SurvivabilityForm() {
       overall_notes: overallNote || null,
     };
     return {
+      title: title.trim() || null, // ✅ NEW: Include title in payload
       reforestation_area_id: areaId ? parseInt(areaId) : null,
       site_id: siteId ? parseInt(siteId) : null,
       assessment_date: new Date().toISOString().split("T")[0],
@@ -1286,6 +1282,12 @@ export default function SurvivabilityForm() {
   };
 
   const handleSaveOffline = async (): Promise<string | null> => {
+    // ✅ NEW: Required validation
+    if (!title || title.trim() === "") {
+      warning("Missing Title", "Please enter a descriptive title for this assessment.");
+      return null;
+    }
+
     setSavingOffline(true);
     try {
       const payload = buildPayload();
@@ -1341,8 +1343,13 @@ export default function SurvivabilityForm() {
     }
   };
 
-  // ✅ OFFLINE-SAFETY: Guard against accidental API calls
   const handleDraft = async () => {
+    // ✅ NEW: Required validation
+    if (!title || title.trim() === "") {
+      warning("Missing Title", "Please enter a descriptive title for this assessment.");
+      return;
+    }
+
     if (!isOnline) {
       warning(
         "Offline",
@@ -1377,8 +1384,13 @@ export default function SurvivabilityForm() {
     }
   };
 
-  // ✅ OFFLINE-SAFETY: Guard against accidental API calls
   const handleSubmit = async () => {
+    // ✅ NEW: Required validation
+    if (!title || title.trim() === "") {
+      warning("Missing Title", "Please enter a descriptive title for this assessment.");
+      return;
+    }
+
     if (!isOnline) {
       warning(
         "Offline",
@@ -1400,7 +1412,6 @@ export default function SurvivabilityForm() {
     );
   };
 
-  // ✅ OFFLINE-SAFETY: Prevent deleting from server while offline
   const handleDeleteImage = async (
     img: SurvivabilityImage,
     category: "soil" | "water" | "slope",
@@ -1525,7 +1536,6 @@ export default function SurvivabilityForm() {
     );
   };
 
-  // ✅ GPS-REFACTOR: Helper to format readiness age
   const formatReadinessAge = () => {
     if (gpsReadinessAge === null) return "never";
     if (gpsReadinessAge < 1 / 60) return "just now";
@@ -1535,11 +1545,9 @@ export default function SurvivabilityForm() {
     return `${Math.round(gpsReadinessAge / 24)}d ago`;
   };
 
-  // ✅ NEW: Collect all map points for FloatingMapButton
   const collectMapPoints = (): MapPoint[] => {
     const points: MapPoint[] = [];
 
-    // 1. Add assessment location (from GPS or manual input)
     if (locationLat && locationLng) {
       const lat = parseFloat(locationLat);
       const lng = parseFloat(locationLng);
@@ -1557,7 +1565,6 @@ export default function SurvivabilityForm() {
       }
     }
 
-    // 2. Add server photos with GPS
     const allServerImages = [
       ...soilImages.map((img) => ({ ...img, category: "Soil" })),
       ...waterImages.map((img) => ({ ...img, category: "Water" })),
@@ -1578,7 +1585,6 @@ export default function SurvivabilityForm() {
       }
     });
 
-    // 3. Add local/pending photos with GPS
     localImages.forEach((img, index) => {
       if (img.latitude !== 0 && img.longitude !== 0) {
         const categoryName = img.subLayerCode.charAt(0).toUpperCase() + img.subLayerCode.slice(1);
@@ -1626,7 +1632,6 @@ export default function SurvivabilityForm() {
           </View>
         )}
 
-        {/* ✅ GPS-REFACTOR: Readiness Banner */}
         {!isViewMode && gpsReadiness !== "checking" && (
           <GPSReadinessBanner
             readiness={gpsReadiness}
@@ -1642,6 +1647,26 @@ export default function SurvivabilityForm() {
           </View>
         )}
 
+        {/* ✅ NEW: Title Input Section */}
+        <SectionCard
+          title="Assessment Title"
+          subtitle="A short, descriptive name for this record"
+          iconName="pricetag-outline"
+          iconLib="ion"
+          accentColor="#7C3AED"
+          step={1}
+        >
+          <FieldLabel label="Title" />
+          <TextInput
+            style={[styles.inputSingle, isViewMode && styles.disabledInput]}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="e.g., Baseline Survey - Sector A"
+            placeholderTextColor="#94A3B8"
+            editable={!isViewMode}
+          />
+        </SectionCard>
+
         {/* ✅ SOIL SECTION WITH GUIDE */}
         <SectionCard
           title="Soil"
@@ -1649,7 +1674,7 @@ export default function SurvivabilityForm() {
           iconName="leaf-outline"
           iconLib="ion"
           accentColor="#92400E"
-          step={1}
+          step={2}
           showGuide={true}
           onGuidePress={() => setShowSoilGuide(true)}
         >
@@ -1743,7 +1768,7 @@ export default function SurvivabilityForm() {
           iconName="water-outline"
           iconLib="ion"
           accentColor="#1D4ED8"
-          step={2}
+          step={3}
           showGuide={true}
           onGuidePress={() => setShowWaterGuide(true)}
         >
@@ -1837,7 +1862,7 @@ export default function SurvivabilityForm() {
           iconName="trending-up"
           iconLib="ion"
           accentColor="#B91C1C"
-          step={3}
+          step={4}
           showGuide={true}
           onGuidePress={() => setShowSlopeGuide(true)}
         >
@@ -1931,7 +1956,7 @@ export default function SurvivabilityForm() {
           iconName="locate-outline"
           iconLib="ion"
           accentColor="#0F4A2F"
-          step={4}
+          step={5}
         >
           <View style={styles.coordRow}>
             <View style={styles.coordHalf}>
@@ -2030,7 +2055,7 @@ export default function SurvivabilityForm() {
           iconName="document-text-outline"
           iconLib="ion"
           accentColor="#0F766E"
-          step={5}
+          step={6}
         >
           <FieldLabel label="Overall Notes" />
           <TextInput
@@ -2242,7 +2267,6 @@ export default function SurvivabilityForm() {
         visible={showWaterGuide}
         onClose={() => setShowWaterGuide(false)}
       />
-
       <SlopeGuide
         visible={showSlopeGuide}
         onClose={() => setShowSlopeGuide(false)}
@@ -2254,6 +2278,7 @@ export default function SurvivabilityForm() {
         areaName={headerTitle}
         siteId={siteId ? parseInt(siteId) : undefined}
         mapPoints={collectMapPoints()}
+         initialOpen={false}
       />
     </View>
   );
@@ -2352,8 +2377,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   viewModeBannerText: { color: "#fff", fontWeight: "600", fontSize: 13 },
-
-  // ✅ GPS-REFACTOR: Banner styles
   gpsBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -2374,7 +2397,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   card: {
     backgroundColor: "#fff",
     borderRadius: 14,
@@ -2460,6 +2482,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   inputField: { flex: 1, fontSize: 14, color: "#1E293B", padding: 0 },
+  // ✅ NEW: Style for the single title input
+  inputSingle: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#1E293B",
+  },
   textArea: {
     backgroundColor: "#F8FAFC",
     borderRadius: 8,

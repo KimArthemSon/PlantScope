@@ -22,6 +22,7 @@ export interface AssessmentImage {
 export interface AssessmentResponse {
   field_assessment_id: number;
   is_submitted: boolean;
+  title?: string | null;
   assessment_date: string;
   location: any;
   field_assessment_data: Record<string, any>;
@@ -102,6 +103,13 @@ export const useFieldAssessment = (
       // If we have local images, use multipart upload
       if (localImages.length > 0) {
         const formData = new FormData();
+
+        if (payload.title !== undefined) {
+          formData.append("title", payload.title ?? "");
+        }
+        if (payload.reforestation_area_id != null) {
+          formData.append("reforestation_area_id", payload.reforestation_area_id.toString());
+        }
 
         // Append all payload fields
         if (payload.reforestation_area_id != null) {

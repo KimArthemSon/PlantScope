@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Ruler,
@@ -133,6 +133,7 @@ interface ValidationData {
   validated_at?: string | null;
 }
 
+// ✅ UPDATED: Added reforestation area fields
 interface SiteResponse {
   site_id: number;
   name: string;
@@ -149,6 +150,8 @@ interface SiteResponse {
   permits: PermitItem[];
   site_images: SiteImage[];
   validation_data: ValidationData;
+  reforestation_area_id?: number;
+  reforestation_area_name?: string;
 }
 
 interface TreeSpeciesOption {
@@ -240,7 +243,6 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-sm mx-4 overflow-hidden animate-slideDown">
-        {/* Header */}
         <div className="flex items-center gap-4 p-6 pb-4">
           <div className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${iconBg}`}>
             <Icon className={`w-6 h-6 ${iconColor}`} />
@@ -257,11 +259,7 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        {/* Divider */}
         <div className="border-t border-gray-100" />
-
-        {/* Actions */}
         <div className="flex gap-3 p-4">
           <button
             onClick={onCancel}
@@ -402,6 +400,79 @@ const EditableField: React.FC<{
   );
 };
 
+// ✅ NEW: Editable Select Field Component (Matches EditableField style)
+const EditableSelectField: React.FC<{
+  value: number | null;
+  options: { id: number; label: string }[];
+  onSave: (value: number) => Promise<void>;
+  label?: string;
+  icon?: any;
+  variant?: "default" | "prominent";
+}> = ({ value, options, onSave, label, icon: Icon, variant = "default" }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState<number | null>(value);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setEditValue(value); }, [value]);
+
+  const handleSave = async () => {
+    if (editValue === null) return;
+    setSaving(true);
+    try { 
+      await onSave(editValue); 
+      setIsEditing(false); 
+    } catch (error) { 
+      console.error("Save failed:", error); 
+    } finally { 
+      setSaving(false); 
+    }
+  };
+
+  const handleCancel = () => { setEditValue(value); setIsEditing(false); };
+
+  if (isEditing) {
+    return (
+      <div className={`space-y-3 ${variant === "prominent" ? "bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-4" : ""}`}>
+        {label && <label className="text-xs font-medium text-gray-600 uppercase tracking-wide flex items-center gap-1.5">{Icon && <Icon size={12} />}{label}</label>}
+        <select 
+          value={editValue || ""} 
+          onChange={(e) => setEditValue(e.target.value ? Number(e.target.value) : null)} 
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gray-400 focus:ring-2 focus:ring-gray-100 bg-white"
+          autoFocus
+        >
+          <option value="" disabled>Select an area...</option>
+          {options.map((opt) => (
+            <option key={opt.id} value={opt.id}>{opt.label}</option>
+          ))}
+        </select>
+        <div className="flex gap-2">
+          <button onClick={handleSave} disabled={saving || editValue === null} className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gray-800 text-white rounded-md text-xs font-medium hover:bg-gray-900 transition-colors disabled:opacity-50">
+            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save
+          </button>
+          <button onClick={handleCancel} disabled={saving} className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white text-gray-600 rounded-md text-xs font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 border border-gray-300">
+            <X className="w-3 h-3" /> Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const currentOption = options.find((opt) => opt.id === value);
+  const displayValue = currentOption ? currentOption.label : "Not assigned";
+
+  return (
+    <div onClick={() => setIsEditing(true)} className={`cursor-pointer group ${variant === "prominent" ? "bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-4 hover:border-gray-400 hover:bg-gray-100 transition-all" : "hover:bg-gray-50 rounded-md p-2 -m-2 transition-colors"}`} title="Click to edit">
+      {label && <label className={`text-xs font-medium uppercase tracking-wide flex items-center gap-1.5 mb-2 ${variant === "prominent" ? "text-gray-600" : "text-gray-500"}`}>{Icon && <Icon size={12} />}{label}{variant === "prominent" && <span className="text-[10px] font-normal text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full ml-2">Click to edit</span>}</label>}
+      <div className="flex items-start gap-2">
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm ${variant === "prominent" ? "text-gray-800 font-medium" : "text-gray-700"}`}>{displayValue}</p>
+        </div>
+        <div className={`flex-shrink-0 mt-0.5 ${variant === "prominent" ? "opacity-100 text-gray-400" : "opacity-0 group-hover:opacity-100 text-gray-400 transition-opacity"}`}><Pencil className="w-4 h-4" /></div>
+      </div>
+    </div>
+  );
+};
+
 // ────────────────────────────────────────────
 // STAT CARD
 // ────────────────────────────────────────────
@@ -479,7 +550,7 @@ const SiteMap: React.FC<{ coordinates: [number, number]; polygon?: [number, numb
 };
 
 // ─────────────────────────────────────────────
-// MAIN IMAGE CARD (UPDATED)
+// MAIN IMAGE CARD
 // ────────────────────────────────────────────
 const MainImageCard: React.FC<{
   siteId: number;
@@ -493,8 +564,6 @@ const MainImageCard: React.FC<{
   const [previewUrl, setPreviewUrl] = useState<string | null>(currentImageUrl);
   const [error, setError] = useState<string | null>(null);
   const [isViewingFull, setIsViewingFull] = useState(false);
-  
-  // ✅ Custom confirmation modal state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => { setPreviewUrl(currentImageUrl); }, [currentImageUrl]);
@@ -605,7 +674,7 @@ const MainImageCard: React.FC<{
 };
 
 // ─────────────────────────────────────────────
-// IMAGES GALLERY (UPDATED)
+// IMAGES GALLERY
 // ────────────────────────────────────────────
 const SiteImagesGallery: React.FC<{
   siteId: number;
@@ -621,8 +690,6 @@ const SiteImagesGallery: React.FC<{
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
-  
-  // ✅ Custom confirmation modal state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [imageToDelete, setImageToDelete] = useState<number | null>(null);
 
@@ -1005,12 +1072,29 @@ export default function SiteInformation(): JSX.Element {
   const [siteData, setSiteData] = useState<SiteResponse | null>(null);
   const [landClassificationName, setLandClassificationName] = useState<string | null>(null);
   const [allLandClassifications, setAllLandClassifications] = useState<LandClassificationOption[]>([]);
+  
+  // ✅ NEW: State for reforestation areas
+  const [reforestationAreas, setReforestationAreas] = useState<{ reforestation_area_id: number; name: string }[]>([]);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updateSuccess, setUpdateSuccess] = useState<string | null>(null);
 
   const canEdit = true;
   const resolvedId = site_id || id || "0";
+
+  // ✅ NEW: Fetch reforestation areas on mount
+  const fetchReforestationAreas = async () => {
+    try { 
+      const res = await fetch(`${API}get_all_reforestation_areas/`, { headers: { Authorization: `Bearer ${token}` } }); 
+      if (res.ok) { 
+        const data = await res.json(); 
+        setReforestationAreas(data.data || []); 
+      } 
+    } catch (err) { 
+      console.error("Failed to fetch reforestation areas:", err); 
+    }
+  };
 
   const fetchLandClassifications = async () => {
     try { const res = await fetch(`${API}get_land_classifications_list/`, { headers: { Authorization: `Bearer ${token}` } }); if (res.ok) { const data: LandClassificationOption[] = await res.json(); setAllLandClassifications(data); } } catch (err) { console.error("Failed to fetch land classifications:", err); }
@@ -1034,7 +1118,12 @@ export default function SiteInformation(): JSX.Element {
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to load site data"); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchLandClassifications(); fetchSiteData(); }, [resolvedId]);
+  useEffect(() => { 
+    fetchReforestationAreas(); // ✅ NEW
+    fetchLandClassifications(); 
+    fetchSiteData(); 
+  }, [resolvedId]);
+  
   useEffect(() => { if (siteData?.meta_verification?.verified_land_classification_id && !landClassificationName && allLandClassifications.length > 0) { const lcId = siteData.meta_verification.verified_land_classification_id; const found = allLandClassifications.find((lc) => lc.land_classification_id === lcId); if (found) setLandClassificationName(found.name); } }, [siteData, allLandClassifications, landClassificationName]);
 
   const handleUpdateName = async (newName: string) => {
@@ -1051,6 +1140,33 @@ export default function SiteInformation(): JSX.Element {
       const res = await fetch(`${API}update_site_basic_info/${siteData.site_id}/`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ description: newDescription }) });
       if (res.ok) { setSiteData({ ...siteData, description: newDescription || null }); setUpdateSuccess("Description updated successfully"); setTimeout(() => setUpdateSuccess(null), 3000); } else { const error = await res.json(); throw new Error(error.error || "Failed to update description"); }
     } catch (error) { throw error; }
+  };
+
+  // ✅ NEW: Handle Area Reassignment
+  const handleUpdateArea = async (newAreaId: number) => {
+    if (!siteData) return;
+    try {
+      const res = await fetch(`${API}update_site_basic_info/${siteData.site_id}/`, { 
+        method: "PUT", 
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, 
+        body: JSON.stringify({ reforestation_area_id: newAreaId }) 
+      });
+      if (res.ok) { 
+        const data = await res.json();
+        setSiteData({ 
+          ...siteData, 
+          reforestation_area_id: data.reforestation_area_id,
+          reforestation_area_name: data.reforestation_area_name 
+        }); 
+        setUpdateSuccess("Reforestation area updated successfully"); 
+        setTimeout(() => setUpdateSuccess(null), 3000); 
+      } else { 
+        const error = await res.json(); 
+        throw new Error(error.error || "Failed to update area"); 
+      }
+    } catch (error) { 
+      throw error; 
+    }
   };
 
   if (loading && !siteData) return <SiteSkeleton />;
@@ -1121,6 +1237,27 @@ export default function SiteInformation(): JSX.Element {
           <div className="col-span-12">
             <BentoCard header={{ icon: FileText, title: "Description" }}>
               {canEdit ? (<EditableField value={siteData.description || ""} onSave={handleUpdateDescription} placeholder="Add a description for this site..." multiline label="Site Description" icon={Pencil} variant="prominent" />) : (<p className="text-sm text-gray-700">{siteData.description || <span className="text-gray-400 italic">No description provided</span>}</p>)}
+            </BentoCard>
+          </div>
+
+          {/* ✅ NEW ROW: Reassignment (12 cols) */}
+          <div className="col-span-12">
+            <BentoCard header={{ icon: Leaf, title: "Reforestation Area" }}>
+              {canEdit ? (
+                <EditableSelectField
+                  value={siteData.reforestation_area_id || null}
+                  options={reforestationAreas.map((a) => ({ id: a.reforestation_area_id, label: a.name }))}
+                  onSave={handleUpdateArea}
+                  label="Assigned Area"
+                  icon={Leaf}
+                  variant="prominent"
+                />
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-gray-700">
+                  <Leaf size={16} className="text-gray-500" />
+                  <span className="font-medium">{siteData.reforestation_area_name || "Unknown Area"}</span>
+                </div>
+              )}
             </BentoCard>
           </div>
 

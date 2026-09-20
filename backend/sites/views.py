@@ -372,9 +372,6 @@ def get_official_sites(request):
     return JsonResponse({"data": data, "total_page": total_page, "page": page, "entries": entries, "total": total}, status=200)
 
 
-# ─────────────────────────────────────────────
-# GET SINGLE SITE
-# ─────────────────────────────────────────────
 @csrf_exempt
 def get_site(request, site_id):
     if request.method != "GET": 
@@ -438,16 +435,20 @@ def get_site(request, site_id):
                 "created_at": p.created_at.isoformat() if p.created_at else None,
             })
 
+    # ✅ NEW: Safely extract reforestation area details
+    reforestation_area_id = site.reforestation_area.reforestation_area_id if site.reforestation_area else None
+    reforestation_area_name = site.reforestation_area.name if site.reforestation_area else None
+
     return JsonResponse({
         "site_id": site.site_id,
         "name": site.name,
         "description": site.description,
         "status": site.status,
-        "monitoring_status": site.monitoring_status, # ✅ NEW
+        "monitoring_status": site.monitoring_status,
         "polygon_coordinates": site.polygon_coordinates,
         "marker_coordinate": site.marker_coordinate,
         "area_hectares": site.total_area_hectares,
-        "main_image_url": get_cloudinary_url(str(site.main_image)) if site.main_image else None, # ✅ ADD
+        "main_image_url": get_cloudinary_url(str(site.main_image)) if site.main_image else None,
         "potential_sites": potential_sites_data,
         "meta_verification": verification_data,
         "permits": [{
@@ -461,8 +462,10 @@ def get_site(request, site_id):
         "site_images": images_data,
         "validation_data": validation_data, 
         "created_at": site.created_at.isoformat() if site.created_at else None,
+        # ✅ NEW: Include reforestation area details in the response
+        "reforestation_area_id": reforestation_area_id,
+        "reforestation_area_name": reforestation_area_name,
     })
-
 
 # ─────────────────────────────────────────────
 # TOGGLE PIN

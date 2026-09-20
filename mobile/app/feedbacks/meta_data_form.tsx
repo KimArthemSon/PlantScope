@@ -101,6 +101,9 @@ export default function MetaDataForm() {
   const [networkChecked, setNetworkChecked] = useState(false);
 
   /* Form State */
+  // ✅ NEW: Title State
+  const [title, setTitle] = useState("");
+
   const [assessmentDate, setAssessmentDate] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -264,6 +267,9 @@ export default function MetaDataForm() {
       const payload = draft.payload;
       const meta = payload.field_assessment_data?.meta_data || {};
 
+      // ✅ NEW: Load title from offline draft
+      setTitle(payload.title || "");
+
       setAssessmentDate(
         payload.assessment_date || new Date().toISOString().split("T")[0],
       );
@@ -338,6 +344,9 @@ export default function MetaDataForm() {
       });
       if (!res.ok) throw new Error("Failed to load assessment.");
       const data = await res.json();
+
+      // ✅ NEW: Load title from server response
+      setTitle(data.title || "");
 
       setIsSubmitted(data.is_submitted);
       const meta = data.field_assessment_data?.meta_data || {};
@@ -600,6 +609,7 @@ export default function MetaDataForm() {
         : null;
 
     return {
+      title: title.trim() || null, // ✅ NEW: Include title in payload
       reforestation_area_id: parseInt(areaId),
       site_id: siteId ? parseInt(siteId) : null,
       assessment_date: assessmentDate,
@@ -631,6 +641,11 @@ export default function MetaDataForm() {
   const handleSaveOffline = async (): Promise<string | null> => {
     if (!assessmentDate) {
       warning("Missing Info", "Assessment date is required.");
+      return null;
+    }
+    // ✅ NEW: Required validation
+    if (!title || title.trim() === "") {
+      warning("Missing Title", "Please enter a descriptive title for this assessment.");
       return null;
     }
 
@@ -695,6 +710,12 @@ export default function MetaDataForm() {
       warning("Missing Info", "Assessment date is required.");
       return null;
     }
+    // ✅ NEW: Required validation
+    if (!title || title.trim() === "") {
+      warning("Missing Title", "Please enter a descriptive title for this assessment.");
+      return null;
+    }
+    
     setSaving(true);
     try {
       const token = await SecureStore.getItemAsync("token");
@@ -707,6 +728,8 @@ export default function MetaDataForm() {
       let res;
       if (localImages.length > 0) {
         const fd = new FormData();
+        // ✅ NEW: Append title to FormData
+        fd.append("title", payload.title || "");
         fd.append(
           "reforestation_area_id",
           payload.reforestation_area_id.toString(),
@@ -777,6 +800,12 @@ export default function MetaDataForm() {
   };
 
   const handleSubmit = async () => {
+    // ✅ NEW: Required validation
+    if (!title || title.trim() === "") {
+      warning("Missing Title", "Please enter a descriptive title for this assessment.");
+      return;
+    }
+
     const savedId = await handleSaveDraft();
     if (!savedId) return;
 
@@ -914,6 +943,26 @@ export default function MetaDataForm() {
         ]}
         keyboardShouldPersistTaps="handled"
       >
+        {/* ✅ NEW: Title Input Section */}
+        <SectionCard
+          icon="pricetag-outline"
+          title="Assessment Title"
+          sub="A short, descriptive name for this record"
+        >
+          <FieldLabel label="Title" />
+          {!isReadOnly ? (
+            <TextInput
+              style={styles.inputSingle}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="e.g., Baseline Survey - Sector A"
+              placeholderTextColor="#9CA3AF"
+            />
+          ) : (
+            <Text style={styles.readonlyText}>{title || "No title provided"}</Text>
+          )}
+        </SectionCard>
+
         {/* 1. Legal Documents */}
         <SectionCard
           icon="file-document-outline"
@@ -1787,6 +1836,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+  },
+  // ✅ NEW: Style for the single title input
+  inputSingle: {
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 13,
+    color: "#0F2D1C",
+    marginTop: 6,
   },
   textArea: {
     backgroundColor: "#F9FAFB",
