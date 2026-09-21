@@ -3091,7 +3091,7 @@ export default function Map() {
         center={ORMOCCITY}
         zoom={13}
         maxZoom={22} // ✅ Allow zooming much closer
-        minZoom={10}
+      
         className="h-full w-full"
         style={{ minHeight: "100vh" }}
       >
