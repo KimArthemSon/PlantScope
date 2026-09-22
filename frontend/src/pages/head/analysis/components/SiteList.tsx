@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect  } from "react";
 import {
   MapPin,
   Trash2,
@@ -13,6 +13,7 @@ import {
   Target,
 } from "lucide-react";
 import type { Site } from "../types/siteTypes";
+import { useUserRole } from "@/hooks/authorization";
 
 interface SiteListProps {
   sites: Site[];
@@ -106,6 +107,16 @@ export default function SiteList({
   onSiteSelectForFilter,
 }: SiteListProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const { userRole } = useUserRole();
+  const [userPath, setUserPath] = useState("");
+ 
+   // User role path setup
+   useEffect(() => {
+     if (userRole === "treeGrowers" || userRole === "CityENROHead")
+       setUserPath("");
+     else if (userRole === "GISSpecialist") setUserPath("/GISS");
+     else if (userRole === "DataManager") setUserPath("/DataManager");
+   }, [userRole]);
 
   const filteredSites = sites.filter((site) =>
     site.name.toLowerCase().includes(searchTerm.toLowerCase()),
@@ -211,7 +222,6 @@ export default function SiteList({
                   <Ruler size={10} />
                   {site.metrics.area_hectares.toFixed(2)} ha
                 </span>
-               
               </div>
 
               {/* Validation Status */}
@@ -245,13 +255,29 @@ export default function SiteList({
 
               {/* Actions */}
               <div className="flex items-center gap-1">
+                {/* ✅ RENAMED: View -> Select */}
                 <button
                   onClick={() => onSelectSite(site)}
                   className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-medium px-2 py-1 rounded transition flex items-center justify-center gap-1"
+                  title="Select this site to view on map"
+                >
+                  <Target size={10} />
+                  Select
+                </button>
+
+                {/* ✅ NEW: View button that opens in a new tab */}
+                <button
+                  onClick={() => {
+                    const url = `${userPath}/reforestation/site/${areaId}/information/${site.site_id}`;
+                    window.open(url, '_blank');
+                  }}
+                  className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-medium px-2 py-1 rounded transition flex items-center justify-center gap-1 border border-emerald-200"
+                  title="View Details in new tab"
                 >
                   <Eye size={10} />
                   View
                 </button>
+
                 <button
                   onClick={() => onValidateSite(site)}
                   disabled={

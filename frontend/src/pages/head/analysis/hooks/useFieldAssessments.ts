@@ -34,7 +34,7 @@ export interface FieldAssessmentEntry {
   field_assessment_id: number;
   assessment_type?: "specific" | "general";
   site_name?: string | null;
-  title?: string | null; // ✅ Ensure this is populated by backend
+  title?: string | null;
   inspector: InspectorInfo;
   assessment_date: string;
   location: AssessmentLocation | null;
@@ -58,7 +58,7 @@ export interface FieldAssessmentsResponse {
 
 const LAYER_EMOJIS: Record<MCDALayer, string> = {
   safety: "🛡️",
-  boundary_verification: "",
+  boundary_verification: "📏",
   survivability: "🌱",
 };
 
@@ -71,9 +71,15 @@ export function useFieldAssessments(
   showCoordinates: boolean = true,
   isDrawingMode: boolean = false,
   onSnapToMarker?: (lat: number, lng: number) => void,
+  onMarkerClick?: (fieldAssessmentId: number) => void // ✅ NEW: Callback for map marker clicks
 ) {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const photoMarkersRef = useRef<Map<number, L.Marker[]>>(new Map());
+  const onMarkerClickRef = useRef(onMarkerClick);
+
+  useEffect(() => {
+    onMarkerClickRef.current = onMarkerClick;
+  }, [onMarkerClick]);
 
   const [assessments, setAssessments] = useState<
     Record<MCDALayer, FieldAssessmentEntry[]>
@@ -252,7 +258,6 @@ export function useFieldAssessments(
         `
           : "";
 
-        // ✅ ALIGNMENT FIX: Use the same title logic as the list
         const displayTitle = entry.title || `Assessment #${entry.field_assessment_id}`;
 
         marker.bindPopup(`
@@ -269,6 +274,9 @@ export function useFieldAssessments(
           if (isDrawingModeRef.current && onSnapToMarkerRef.current) {
             L.DomEvent.stopPropagation(e);
             onSnapToMarkerRef.current(loc.latitude, loc.longitude);
+          } else if (!isDrawingModeRef.current && onMarkerClickRef.current) {
+            // ✅ NEW: Notify parent to select this assessment in the UI
+            onMarkerClickRef.current(entry.field_assessment_id);
           }
         });
 
@@ -519,6 +527,17 @@ export function useFieldAssessments(
     [mapRef],
   );
 
+  // ✅ NEW: Open popup without flying
+  const openPopup = useCallback(
+    (layer: MCDALayer, idx: number) => {
+      const marker = markersRef.current.get(`${layer}-${idx}`);
+      if (marker) {
+        marker.openPopup();
+      }
+    },
+    []
+  );
+
   const updateLocation = useCallback(
     async (
       fieldAssessmentId: number,
@@ -585,6 +604,7 @@ export function useFieldAssessments(
     fetchLayer,
     refreshLayer,
     flyToMarker,
+    openPopup, // ✅ NEW
     updateLocation,
     locationTargetId,
     setLocationTargetId,
