@@ -153,6 +153,7 @@ def get_field_assessments_by_layer_mcda(request, reforestation_area_id, layer_na
             
             data.append({
                 "field_assessment_id": a.field_assessment_id,
+                "title": a.title if a.title else f"Assessment #{a.field_assessment_id}",
                 "assessment_type": "specific" if a.site_id else "general",
                 "site_name": a.site.name if a.site else None,
                 "inspector": {
