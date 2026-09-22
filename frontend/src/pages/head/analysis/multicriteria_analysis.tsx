@@ -145,19 +145,19 @@ const createMarkerIcon = (
   return L.divIcon({
     className: "custom-map-marker",
     html: `
-    <div style="display: flex; align-items: center; gap: 6px;">
-      <div style="position: relative; width: 24px; height: 30px; flex-shrink: 0;">
-        <svg width="24" height="30" viewBox="0 0 24 30" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
-          <path d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
-          fill="${color}" stroke="white" stroke-width="2"/>
-        </svg>
-        <div style="position: absolute; top: 7px; left: 6px; display: flex; align-items: center; justify-content: center;">
-          ${iconSvg}
-        </div>
-      </div>
-      ${labelHtml}
+<div style="display: flex; align-items: center; gap: 6px;">
+  <div style="position: relative; width: 24px; height: 30px; flex-shrink: 0;">
+    <svg width="24" height="30" viewBox="0 0 24 30" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+      <path d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
+        fill="${color}" stroke="white" stroke-width="2"/>
+    </svg>
+    <div style="position: absolute; top: 7px; left: 6px; display: flex; align-items: center; justify-content: center;">
+      ${iconSvg}
     </div>
-    `,
+  </div>
+  ${labelHtml}
+</div>
+`,
     iconSize: [estimatedWidth, 30],
     iconAnchor: [12, 30],
     popupAnchor: [0, -30],
@@ -176,7 +176,6 @@ export default function MulticriteriaAnalysis() {
   const siteId = searchParams.get("siteId");
   const userRole =
     typeof window !== "undefined" ? localStorage.getItem("user_role") : null;
-
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -199,10 +198,12 @@ export default function MulticriteriaAnalysis() {
   const [showCoordinateModal, setShowCoordinateModal] = useState(false);
   const [showViewingSitePolygon, setShowViewingSitePolygon] = useState(true);
   const [isPickingMarkerLocation, setIsPickingMarkerLocation] = useState(false);
+  
   const editablePolygonRef = useRef<L.Polygon | null>(null);
   const vertexMarkersRef = useRef<L.Marker[]>([]);
   const addVertexMarkersRef = useRef<L.Marker[]>([]);
   const editableMarkerRef = useRef<L.Marker | null>(null);
+  
   const [isDrawingNewPolygon, setIsDrawingNewPolygon] = useState(false);
   const [newPolygonPoints, setNewPolygonPoints] = useState<[number, number][]>(
     [],
@@ -261,13 +262,11 @@ export default function MulticriteriaAnalysis() {
     end_date?: string;
   }>({});
 
-  // ✅ RESTORED: Search and Sort State
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<
     "date_desc" | "date_asc" | "inspector_asc" | "inspector_desc"
   >("date_desc");
 
-  // ✅ NEW: Reassignment State
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [reassignTargetAssessment, setReassignTargetAssessment] =
     useState<FieldAssessmentEntry | null>(null);
@@ -500,17 +499,40 @@ export default function MulticriteriaAnalysis() {
     isPickingMarkerLocation ||
     isPlacingNewMarker ||
     isEditMode;
+
+  // ✅ NEW: Ref to hold the latest marker click handler to avoid circular dependency
+  const onMarkerClickRef = useRef<(id: number) => void>(() => {});
+
   const fieldAssessments = useFieldAssessments(
     mapRef,
     true,
     isDrawingMode,
     handleSnapToMarker,
+    (id: number) => onMarkerClickRef.current(id) // ✅ Pass ref wrapper
   );
+
+  // ✅ NEW: Handle marker click from the map to select the assessment in the UI
+  const handleMarkerClick = useCallback(
+    (fieldAssessmentId: number) => {
+      const currentAssessments = fieldAssessments.assessments[fieldAssessments.activeLayer];
+      const originalIdx = currentAssessments.findIndex(
+        (a) => a.field_assessment_id === fieldAssessmentId
+      );
+      if (originalIdx !== -1) {
+        fieldAssessments.setSelectedIndex(originalIdx);
+      }
+    },
+    [fieldAssessments.assessments, fieldAssessments.activeLayer, fieldAssessments.setSelectedIndex]
+  );
+
+  useEffect(() => {
+    onMarkerClickRef.current = handleMarkerClick;
+  }, [handleMarkerClick]);
+
   const sites = useSites();
   const potentialSitesHook = usePotentialSites();
   const hazardLayers = useHazardLayers(mapRef);
   const barangayAreas = useBarangayAreas(mapRef);
-
   const tempFaLocationMarkerRef = useRef<L.Marker | null>(null);
   const [tempFaLocationCoords, setTempFaLocationCoords] = useState<
     [number, number] | null
@@ -657,20 +679,20 @@ export default function MulticriteriaAnalysis() {
     const latDMS = decimalToDMS(lat, "lat");
     const lngDMS = decimalToDMS(lng, "lng");
     const popupContent = `
-      <div style="font-family: sans-serif; min-width: 180px;">
-        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #7e22ce; border-bottom: 1px solid #e9d5ff; padding-bottom: 4px;"> Dropped Pin</h4>
-        <div style="margin-bottom: 8px;">
-          <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Latitude</div>
-          <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lat.toFixed(6)}</div>
-          <div style="font-size: 10px; color: #888;">${latDMS}</div>
-        </div>
-        <div style="margin-bottom: 12px;">
-          <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Longitude</div>
-          <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lng.toFixed(6)}</div>
-          <div style="font-size: 10px; color: #888;">${lngDMS}</div>
-        </div>
-        <button id="clear-probe-btn" style="width: 100%; padding: 6px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s;">Clear Pin</button>
-      </div>`;
+<div style="font-family: sans-serif; min-width: 180px;">
+  <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #7e22ce; border-bottom: 1px solid #e9d5ff; padding-bottom: 4px;"> Dropped Pin</h4>
+  <div style="margin-bottom: 8px;">
+    <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Latitude</div>
+    <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lat.toFixed(6)}</div>
+    <div style="font-size: 10px; color: #888;">${latDMS}</div>
+  </div>
+  <div style="margin-bottom: 12px;">
+    <div style="font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; margin-bottom: 2px;">Longitude</div>
+    <div style="font-size: 12px; font-weight: 600; font-family: monospace; color: #1f2937;">${lng.toFixed(6)}</div>
+    <div style="font-size: 10px; color: #888;">${lngDMS}</div>
+  </div>
+  <button id="clear-probe-btn" style="width: 100%; padding: 6px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s;">Clear Pin</button>
+</div>`;
     const marker = L.marker([lat, lng], {
       icon: createMarkerIcon("temp", "Probe"),
     }).addTo(map);
@@ -1396,7 +1418,6 @@ export default function MulticriteriaAnalysis() {
   }, []);
 
   const creationVertexMarkersRef = useRef<L.Marker[]>([]);
-
   const updateCreationMarkers = useCallback((coords: [number, number][]) => {
     const map = mapRef.current;
     if (!map) return;
@@ -2067,11 +2088,8 @@ export default function MulticriteriaAnalysis() {
   const activeAssessments =
     fieldAssessments.assessments[fieldAssessments.activeLayer] ?? [];
 
-  // ✅ RESTORED: Processed Assessments (Search + Sort + Date Filter)
   const processedAssessments = useMemo(() => {
     let result = [...activeAssessments];
-
-    // 1. Search Filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((entry) => {
@@ -2085,8 +2103,6 @@ export default function MulticriteriaAnalysis() {
         );
       });
     }
-
-    // 2. Date Filter (Local refinement)
     if (dateFilter.start_date || dateFilter.end_date) {
       result = result.filter((entry) => {
         const entryDateStr = entry.assessment_date || entry.created_at;
@@ -2102,8 +2118,6 @@ export default function MulticriteriaAnalysis() {
         return true;
       });
     }
-
-    // 3. Sorting
     result.sort((a, b) => {
       const dateA = new Date(a.assessment_date || a.created_at).getTime();
       const dateB = new Date(b.assessment_date || b.created_at).getTime();
@@ -2115,7 +2129,6 @@ export default function MulticriteriaAnalysis() {
         return b.inspector.full_name.localeCompare(a.inspector.full_name);
       return 0;
     });
-
     return result;
   }, [activeAssessments, searchQuery, sortBy, dateFilter]);
 
@@ -3329,10 +3342,8 @@ export default function MulticriteriaAnalysis() {
                   )}
                 </div>
               </div>
-
               <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex flex-col gap-2">
                 <div className="flex gap-1 bg-white rounded-lg p-1 border border-gray-200">
-                  {/* ✅ UPDATED: Specific button respects viewingSite */}
                   <button
                     onClick={() => {
                       setAssessmentType("specific");
@@ -3389,8 +3400,6 @@ export default function MulticriteriaAnalysis() {
                     All
                   </button>
                 </div>
-
-                {/* ✅ RESTORED: Search and Sort UI */}
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Search
@@ -3424,7 +3433,6 @@ export default function MulticriteriaAnalysis() {
                     <option value="inspector_desc">Inspector (Z-A)</option>
                   </select>
                 </div>
-
                 <div className="flex items-center gap-2 flex-wrap">
                   <input
                     type="date"
@@ -3472,7 +3480,6 @@ export default function MulticriteriaAnalysis() {
                   )}
                 </div>
               </div>
-
               <div className="flex border-b border-gray-100 flex-shrink-0">
                 {[
                   {
@@ -3521,7 +3528,6 @@ export default function MulticriteriaAnalysis() {
                   );
                 })}
               </div>
-
               <div className="flex-1 overflow-y-auto min-h-0 max-h-[60vh]">
                 {!areaId ? (
                   <div className="p-4 text-center text-gray-400">
@@ -3555,7 +3561,6 @@ export default function MulticriteriaAnalysis() {
                 ) : (
                   processedAssessments.map(
                     (entry: FieldAssessmentEntry, idx: number) => {
-                      // Find original index for flyToMarker
                       const originalIdx = activeAssessments.findIndex(
                         (a) =>
                           a.field_assessment_id === entry.field_assessment_id,
@@ -3566,21 +3571,15 @@ export default function MulticriteriaAnalysis() {
                       const hasLocation = !!entry.location?.latitude;
                       const isThisPickingLocation =
                         fieldAssessments.locationTargetId === faId;
-                      
-                      // ✅ RESTORED: Title Display
                       const displayTitle =
                         entry.title || `Assessment #${faId}`;
-
                       return (
                         <button
                           key={faId}
                           onClick={() => {
                             if (originalIdx !== -1) {
                               fieldAssessments.setSelectedIndex(originalIdx);
-                              fieldAssessments.flyToMarker(
-                                fieldAssessments.activeLayer,
-                                originalIdx,
-                              );
+                              fieldAssessments.openPopup(fieldAssessments.activeLayer, originalIdx);
                             }
                           }}
                           className={`w-full text-left px-3 py-2.5 border-b border-gray-50 transition ${
@@ -3665,6 +3664,21 @@ export default function MulticriteriaAnalysis() {
                                       : "Add Location"}
                                   </button>
                                 )}
+                                
+                                {/* ✅ NEW: Fly To Button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (originalIdx !== -1) {
+                                      fieldAssessments.flyToMarker(fieldAssessments.activeLayer, originalIdx);
+                                    }
+                                  }}
+                                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100 transition"
+                                  title="Fly to this assessment on the map"
+                                >
+                                  <Navigation size={9} /> Fly To
+                                </button>
+
                                 <button
                                   onClick={() => openReassignModal(entry)}
                                   className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100 transition"
@@ -3672,50 +3686,48 @@ export default function MulticriteriaAnalysis() {
                                 >
                                   <MapPin size={9} /> Reassign
                                 </button>
-                              
-                                  <button
-                                    onClick={async () => {
-                                      setConfirmDialog({
-                                        title: "Unsent Assessment",
-                                        message:
-                                          "Are you sure you want to mark this assessment as unsent? It will be removed from the submitted list.",
-                                        variant: "warning",
-                                        confirmLabel: "Unsent",
-                                        onConfirm: async () => {
-                                          setConfirmDialog(null);
-                                          const result =
-                                            await fieldAssessments.unsentAssessment(
-                                              entry.field_assessment_id,
-                                            );
-                                          if (result.success) {
-                                            setAlert({
-                                              type: "success",
-                                              title: "Success",
-                                              message:
-                                                result.message ||
-                                                "Assessment marked as unsent.",
-                                            });
-                                            handleFetchLayer(
-                                              fieldAssessments.activeLayer,
-                                            );
-                                          } else {
-                                            setAlert({
-                                              type: "error",
-                                              title: "Failed",
-                                              message:
-                                                result.message ||
-                                                "Could not unsent assessment.",
-                                            });
-                                          }
-                                        },
-                                      });
-                                    }}
-                                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 transition"
-                                    title="Mark as unsent (GISSpecialist)"
-                                  >
-                                    <Undo2 size={9} /> Unsent
-                                  </button>
-                                
+                                <button
+                                  onClick={async () => {
+                                    setConfirmDialog({
+                                      title: "Unsent Assessment",
+                                      message:
+                                        "Are you sure you want to mark this assessment as unsent? It will be removed from the submitted list.",
+                                      variant: "warning",
+                                      confirmLabel: "Unsent",
+                                      onConfirm: async () => {
+                                        setConfirmDialog(null);
+                                        const result =
+                                          await fieldAssessments.unsentAssessment(
+                                            entry.field_assessment_id,
+                                          );
+                                        if (result.success) {
+                                          setAlert({
+                                            type: "success",
+                                            title: "Success",
+                                            message:
+                                              result.message ||
+                                              "Assessment marked as unsent.",
+                                          });
+                                          handleFetchLayer(
+                                            fieldAssessments.activeLayer,
+                                          );
+                                        } else {
+                                          setAlert({
+                                            type: "error",
+                                            title: "Failed",
+                                            message:
+                                              result.message ||
+                                              "Could not unsent assessment.",
+                                          });
+                                        }
+                                      },
+                                    });
+                                  }}
+                                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 transition"
+                                  title="Mark as unsent (GISSpecialist)"
+                                >
+                                  <Undo2 size={9} /> Unsent
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -3791,10 +3803,7 @@ export default function MulticriteriaAnalysis() {
                 }}
                 onSelectEntry={(idx) => {
                   fieldAssessments.setSelectedIndex(idx);
-                  fieldAssessments.flyToMarker(
-                    fieldAssessments.activeLayer,
-                    idx,
-                  );
+                  fieldAssessments.openPopup(fieldAssessments.activeLayer, idx);
                 }}
                 onFetchLayer={handleFetchLayer}
                 onAddLocation={(faId) =>
