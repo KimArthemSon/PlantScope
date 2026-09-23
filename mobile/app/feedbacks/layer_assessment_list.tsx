@@ -24,7 +24,6 @@ import {
   OfflineDraft,
 } from "@/hooks/useOfflineFieldAssessment";
 import { useAlert } from "@/components/AlertContext";
-import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
 
 const API_BASE = api;
 
@@ -70,6 +69,7 @@ const getFormPath = (layerId: string) =>
   layerId === "meta_data"
     ? "/feedbacks/meta_data_form"
     : "/feedbacks/multicriteria_layer_form";
+    
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString("en-PH", {
     year: "numeric",
@@ -121,14 +121,12 @@ export default function LayerAssessmentList() {
   );
   const [showFilterModal, setShowFilterModal] = useState(false);
 
-  // ✅ NEW: Favourite, Selection & Map State
+  // ✅ Favourite State
   const [favourites, setFavourites] = useState<Set<string>>(new Set());
-  const [isSelectMode, setIsSelectMode] = useState(false);
-  const [selectedForMap, setSelectedForMap] = useState<Set<string>>(new Set());
-  const [showMapModal, setShowMapModal] = useState(false);
-  const [mapPointsToView, setMapPointsToView] = useState<MapPoint[]>([]);
+  // ✅ NEW: Favourites Filter State
+  const [showOnlyFavourites, setShowOnlyFavourites] = useState(false);
 
-  // ✅ NEW: Load favourites scoped to this specific area/site/layer
+  // ✅ Load favourites scoped to this specific area/site/layer
   useEffect(() => {
     const loadFavs = async () => {
       try {
@@ -142,7 +140,7 @@ export default function LayerAssessmentList() {
     loadFavs();
   }, [areaId, siteId, layerId]);
 
-  // ✅ NEW: Toggle Favourite
+  // ✅ Toggle Favourite
   const toggleFavourite = async (id: string) => {
     const newFavs = new Set(favourites);
     if (newFavs.has(id)) newFavs.delete(id);
@@ -154,77 +152,6 @@ export default function LayerAssessmentList() {
     } catch (e) {
       console.error("Failed to save favourite", e);
     }
-  };
-
-  // ✅ NEW: Toggle Map Selection
-  const toggleSelection = (id: string) => {
-    const newSel = new Set(selectedForMap);
-    if (newSel.has(id)) newSel.delete(id);
-    else newSel.add(id);
-    setSelectedForMap(newSel);
-  };
-
-  // ✅ NEW: Handle View on Map
-  const handleViewOnMap = () => {
-    const itemsToMap = filteredAndSortedList
-      .filter((item) => selectedForMap.has(getItemId(item)))
-      .map((item) => {
-        if (item.type === "offline") {
-          const draft = item.data as OfflineDraft;
-          const loc = draft.payload?.location;
-          const hasLoc =
-            loc?.latitude &&
-            loc?.longitude &&
-            loc.latitude !== 0 &&
-            loc.longitude !== 0;
-
-          return {
-            id: `offline-${draft.local_uuid}`,
-            type: "assessment" as const,
-            latitude: hasLoc ? loc.latitude : 0,
-            longitude: hasLoc ? loc.longitude : 0,
-            label: draft.payload?.title || "Offline Draft",
-            accuracy: loc?.accuracy,
-            timestamp: draft.created_at,
-            description: "Pending Sync",
-          };
-        } else {
-          const assessment = item.data as Assessment;
-          const loc = assessment.location;
-          const hasLoc =
-            loc?.latitude &&
-            loc?.longitude &&
-            loc.latitude !== 0 &&
-            loc.longitude !== 0;
-
-          return {
-            id: `online-${assessment.field_assessment_id}`,
-            type: "assessment" as const,
-            latitude: hasLoc ? loc.latitude : 0,
-            longitude: hasLoc ? loc.longitude : 0,
-            label:
-              assessment.title ||
-              `Assessment #${assessment.field_assessment_id}`,
-            accuracy: loc?.accuracy,
-            timestamp: assessment.created_at,
-            description: assessment.is_submitted ? "Submitted" : "Draft",
-          };
-        }
-      })
-      .filter((item) => item.latitude !== 0 && item.longitude !== 0);
-
-    if (itemsToMap.length === 0) {
-      warning(
-        "No Coordinates",
-        "The selected assessments do not have valid GPS coordinates to show on the map.",
-      );
-      return;
-    }
-
-    setMapPointsToView(itemsToMap);
-    setShowMapModal(true);
-    setIsSelectMode(false);
-    setSelectedForMap(new Set());
   };
 
   const fetchAssessments = useCallback(
@@ -284,11 +211,13 @@ export default function LayerAssessmentList() {
   React.useEffect(() => {
     fetchAssessments();
   }, [fetchAssessments]);
+  
   useFocusEffect(
     useCallback(() => {
       fetchAssessments();
     }, [fetchAssessments]),
   );
+  
   React.useEffect(() => {
     fetchAssessments();
   }, [isOnline]);
@@ -393,6 +322,12 @@ export default function LayerAssessmentList() {
 
   const filteredAndSortedList = useMemo(() => {
     let result = [...displayList];
+    
+    // ✅ NEW: Filter by Favourites
+    if (showOnlyFavourites) {
+      result = result.filter((item) => favourites.has(getItemId(item)));
+    }
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       result = result.filter((item) => {
@@ -453,13 +388,13 @@ export default function LayerAssessmentList() {
       }
       return 0;
     });
+    // ✅ Added favourites and showOnlyFavourites to dependencies
     return result;
-  }, [displayList, searchQuery, dateFilter, sortBy]);
+  }, [displayList, searchQuery, dateFilter, sortBy, showOnlyFavourites, favourites]);
 
   const renderItem = ({ item }: { item: DisplayItem }) => {
     const id = getItemId(item);
     const isFav = favourites.has(id);
-    const isSelected = selectedForMap.has(id);
 
     const isOffline = item.type === "offline";
     const draft = isOffline ? (item.data as OfflineDraft) : null;
@@ -486,7 +421,6 @@ export default function LayerAssessmentList() {
       styles.card,
       isOffline && styles.offlineCard,
       isSubmitted && !isOffline && styles.cardSubmitted,
-      isSelected && styles.cardSelected,
     ];
 
     return (
@@ -494,9 +428,7 @@ export default function LayerAssessmentList() {
         style={cardStyle}
         activeOpacity={0.9}
         onPress={() => {
-          if (isSelectMode) {
-            toggleSelection(id);
-          } else if (isOffline && draft) {
+          if (isOffline && draft) {
             const path = getFormPath(layerId);
             const params: any = {
               areaId,
@@ -520,11 +452,7 @@ export default function LayerAssessmentList() {
           style={[
             styles.cardAccent,
             {
-              backgroundColor: isSelected
-                ? "#3B82F6"
-                : isSubmitted
-                  ? "#22C55E"
-                  : "#F59E0B",
+              backgroundColor: isSubmitted ? "#22C55E" : "#F59E0B",
             },
           ]}
         />
@@ -538,21 +466,13 @@ export default function LayerAssessmentList() {
                 flex: 1,
               }}
             >
-              {isSelectMode && (
-                <Ionicons
-                  name={isSelected ? "checkbox" : "checkbox-outline"}
-                  size={22}
-                  color={isSelected ? "#3B82F6" : "#9CA3AF"}
-                />
-              )}
               <Text style={styles.cardTitleText} numberOfLines={1}>
                 {title}
               </Text>
             </View>
             <TouchableOpacity
-              onPress={() => !isSelectMode && toggleFavourite(id)}
+              onPress={() => toggleFavourite(id)}
               activeOpacity={0.7}
-              disabled={isSelectMode}
               style={{ padding: 4 }}
             >
               <Ionicons
@@ -641,50 +561,48 @@ export default function LayerAssessmentList() {
             </Text>
           </View>
 
-          {!isSelectMode && (
-            <View style={styles.cardActions}>
-              {isSubmitted ? (
+          <View style={styles.cardActions}>
+            {isSubmitted ? (
+              <TouchableOpacity
+                style={styles.viewBtn}
+                onPress={() => assessment && handleViewOnline(assessment)}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="eye-outline" size={14} color="#0F4A2F" />
+                <Text style={styles.viewBtnText}>View</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
                 <TouchableOpacity
-                  style={styles.viewBtn}
-                  onPress={() => assessment && handleViewOnline(assessment)}
+                  style={styles.editBtn}
+                  onPress={() =>
+                    !isOffline && assessment && handleEditOnline(assessment)
+                  }
                   activeOpacity={0.75}
                 >
-                  <Ionicons name="eye-outline" size={14} color="#0F4A2F" />
-                  <Text style={styles.viewBtnText}>View</Text>
+                  <Ionicons name="create-outline" size={14} color="#0F4A2F" />
+                  <Text style={styles.editBtnText}>Edit</Text>
                 </TouchableOpacity>
-              ) : (
-                <>
-                  <TouchableOpacity
-                    style={styles.editBtn}
-                    onPress={() =>
-                      !isOffline && assessment && handleEditOnline(assessment)
-                    }
-                    activeOpacity={0.75}
-                  >
-                    <Ionicons name="create-outline" size={14} color="#0F4A2F" />
-                    <Text style={styles.editBtnText}>Edit</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.deleteBtn,
-                      isOfflineMode && !isOffline && { opacity: 0.5 },
-                    ]}
-                    onPress={() =>
-                      isOffline && draft
-                        ? handleDeleteOffline(draft.local_uuid)
-                        : assessment &&
-                          handleDeleteOnline(assessment.field_assessment_id)
-                    }
-                    activeOpacity={0.75}
-                    disabled={isOfflineMode && !isOffline}
-                  >
-                    <Ionicons name="trash-outline" size={14} color="#EF4444" />
-                    <Text style={styles.deleteBtnText}>Delete</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          )}
+                <TouchableOpacity
+                  style={[
+                    styles.deleteBtn,
+                    isOfflineMode && !isOffline && { opacity: 0.5 },
+                  ]}
+                  onPress={() =>
+                    isOffline && draft
+                      ? handleDeleteOffline(draft.local_uuid)
+                      : assessment &&
+                        handleDeleteOnline(assessment.field_assessment_id)
+                  }
+                  activeOpacity={0.75}
+                  disabled={isOfflineMode && !isOffline}
+                >
+                  <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                  <Text style={styles.deleteBtnText}>Delete</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -733,20 +651,6 @@ export default function LayerAssessmentList() {
         </View>
         <View style={{ flexDirection: "row", gap: 8 }}>
           <TouchableOpacity
-            onPress={() => {
-              setIsSelectMode(!isSelectMode);
-              setSelectedForMap(new Set());
-            }}
-            style={styles.refreshBtn}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={isSelectMode ? "close" : "checkbox-outline"}
-              size={22}
-              color="#FFFFFF"
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
             onPress={() => fetchAssessments(true)}
             style={styles.refreshBtn}
             activeOpacity={0.7}
@@ -777,6 +681,23 @@ export default function LayerAssessmentList() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* ✅ NEW: Favourites Filter Toggle */}
+        <TouchableOpacity
+          style={[styles.favFilterBtn, showOnlyFavourites && styles.favFilterBtnActive]}
+          onPress={() => setShowOnlyFavourites(!showOnlyFavourites)}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name={showOnlyFavourites ? "heart" : "heart-outline"}
+            size={16}
+            color={showOnlyFavourites ? "#FFFFFF" : "#EF4444"}
+          />
+          <Text style={[styles.favFilterText, showOnlyFavourites && styles.favFilterTextActive]}>
+            {showOnlyFavourites ? "Showing Favourites Only" : "Show Favourites Only"}
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.filterBar}>
           <TouchableOpacity
             style={styles.filterBtn}
@@ -816,13 +737,11 @@ export default function LayerAssessmentList() {
         keyExtractor={(item) => getItemId(item)}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
-        // ✅ CRITICAL FIX 1: Prevents blank cards/stats after Modal closes
         removeClippedSubviews={false}
-        // ✅ CRITICAL FIX 2: Ensures proper layout height
         style={{ flex: 1 }}
         contentContainerStyle={[
           styles.listContent,
-          { paddingBottom: selectedForMap.size > 0 ? 100 : insets.bottom + 32 },
+          { paddingBottom: insets.bottom + 32 },
         ]}
         refreshControl={
           <RefreshControl
@@ -896,7 +815,7 @@ export default function LayerAssessmentList() {
                 color="rgba(255,255,255,0.5)"
               />
             </TouchableOpacity>
-            {(drafts.length > 0 || offlineDrafts.length > 0) && (
+            {(drafts.length > 0 || offlineDrafts.length > 0) && !showOnlyFavourites && (
               <View style={styles.sectionRow}>
                 <Text style={styles.sectionLabel}>Drafts</Text>
                 <View
@@ -912,58 +831,35 @@ export default function LayerAssessmentList() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <View style={[styles.emptyIcon, { backgroundColor: layer.bg }]}>
-              <MaterialCommunityIcons
-                name={layer.icon as any}
-                size={36}
-                color={layer.color}
+            <View style={[styles.emptyIcon, { backgroundColor: showOnlyFavourites ? "#FEF2F2" : layer.bg }]}>
+              <Ionicons 
+                name={showOnlyFavourites ? "heart-dislike-circle" : layer.icon as any} 
+                size={36} 
+                color={showOnlyFavourites ? "#EF4444" : layer.color} 
               />
             </View>
             <Text style={styles.emptyTitle}>
-              {searchQuery || dateFilter !== "all"
-                ? "No Matching Results"
-                : isOfflineMode
-                  ? "No Offline Drafts"
-                  : `No ${layerName} Assessments`}
+              {showOnlyFavourites
+                ? "No Favourites Found"
+                : searchQuery || dateFilter !== "all"
+                  ? "No Matching Results"
+                  : isOfflineMode
+                    ? "No Offline Drafts"
+                    : `No ${layerName} Assessments`}
             </Text>
             <Text style={styles.emptySub}>
-              {searchQuery || dateFilter !== "all"
-                ? "Try adjusting your search or filter criteria."
-                : isOfflineMode
-                  ? "Tap 'New Entry' to create an assessment offline."
-                  : `Tap "New ${layerName} Entry" above to start your first assessment.`}
+              {showOnlyFavourites
+                ? "You haven't added any favourites yet, or none match your current filters."
+                : searchQuery || dateFilter !== "all"
+                  ? "Try adjusting your search or filter criteria."
+                  : isOfflineMode
+                    ? "Tap 'New Entry' to create an assessment offline."
+                    : `Tap "New ${layerName} Entry" above to start your first assessment.`}
             </Text>
           </View>
         }
         ListFooterComponent={<View style={{ height: 8 }} />}
       />
-
-      {selectedForMap.size > 0 && (
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
-          <Text style={styles.bottomBarText}>
-            {selectedForMap.size} selected
-          </Text>
-          <TouchableOpacity
-            style={styles.mapBtn}
-            onPress={handleViewOnMap}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="map" size={18} color="#FFFFFF" />
-            <Text style={styles.mapBtnText}>View on Map</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {showMapModal && (
-        <FloatingMapButton
-          areaId={parseInt(areaId)}
-          siteId={siteId ? parseInt(siteId) : undefined}
-          areaName={areaName}
-          siteName={siteName}
-          mapPoints={mapPointsToView}
-          initialOpen={true}
-        />
-      )}
 
       <Modal visible={showFilterModal} transparent animationType="slide">
         <View style={modalStyles.overlay}>
@@ -1120,6 +1016,31 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     marginRight: 8,
   },
+  // ✅ NEW: Favourites Filter Styles
+  favFilterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  favFilterBtnActive: {
+    backgroundColor: "#EF4444",
+    borderColor: "#EF4444",
+  },
+  favFilterText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#EF4444",
+  },
+  favFilterTextActive: {
+    color: "#FFFFFF",
+  },
   filterBar: { flexDirection: "row", gap: 10, marginBottom: 16 },
   filterBtn: {
     flex: 1,
@@ -1194,7 +1115,6 @@ const styles = StyleSheet.create({
   sectionBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   sectionBadgeText: { fontSize: 11, fontWeight: "700" },
   
-  // ✅ CRITICAL FIX: Removed overflow: "hidden" to prevent blank cards after Modal closes
   card: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
@@ -1212,12 +1132,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFBEB",
   },
   cardSubmitted: { opacity: 0.92 },
-  cardSelected: {
-    borderWidth: 2,
-    borderColor: "#3B82F6",
-    backgroundColor: "#EFF6FF",
-  },
-  // ✅ CRITICAL FIX: Added border radius to children to maintain rounded corners without overflow: hidden
   cardAccent: { 
     width: 4,
     borderTopLeftRadius: 16,
@@ -1321,36 +1235,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: 20,
   },
-  bottomBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "#0F4A2F",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 10,
-  },
-  bottomBarText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
-  mapBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#3B82F6",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  mapBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
 });
 
 const modalStyles = StyleSheet.create({

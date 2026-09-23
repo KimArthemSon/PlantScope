@@ -27,7 +27,7 @@ const getImageUrl = (url: string | null): string | null => {
   return api_second+`${url}`;
 };
 
-// ✅ Enhanced LayerDataRenderer with better visual hierarchy
+// ✅ Enhanced LayerDataRenderer with side-by-side notes and polygon support
 const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: number }) => {
   const entries = Object.entries(data);
   
@@ -35,9 +35,66 @@ const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: numbe
     return <p className="text-sm text-gray-400 italic bg-gray-50 p-3 rounded-lg">No data recorded</p>;
   }
 
+  // ✅ Extract specific fields to render side-by-side at the top level
+  const sideBySideKeys = ['overall_note', 'location_context'];
+  const sideBySideEntries = entries.filter(([key]) => sideBySideKeys.includes(key.toLowerCase()));
+  const otherEntries = entries.filter(([key]) => !sideBySideKeys.includes(key.toLowerCase()));
+
   return (
-    <div className={`space-y-3 ${level > 0 ? 'ml-3 border-l-2 border-gray-200 pl-3' : ''}`}>
-      {entries.map(([key, value]) => {
+    <div className={`space-y-4 ${level > 0 ? 'ml-3 border-l-2 border-gray-200 pl-3' : ''}`}>
+      
+      {/* ✅ Render side-by-side fields if they exist at the top level */}
+      {level === 0 && sideBySideEntries.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {sideBySideEntries.map(([key, value]) => (
+            <div key={key} className="flex flex-col gap-1 bg-blue-50 border border-blue-200 p-3 rounded-lg h-full">
+              <span className="text-xs uppercase tracking-wider font-semibold text-blue-700">
+                {key.replace(/_/g, ' ')}
+              </span>
+              <div className="text-sm font-medium leading-relaxed text-blue-900">
+                {value != null && value !== '' 
+                  ? String(value) 
+                  : <span className="text-gray-400 italic">not reported</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ✅ Render the rest of the fields */}
+      {otherEntries.map(([key, value]) => {
+        // ✅ SPECIAL HANDLING FOR POLYGON POINTS
+        if (key === 'polygon_points' && Array.isArray(value)) {
+          return (
+            <div key={key} className="space-y-2">
+              <p className="text-xs font-bold uppercase text-gray-700 flex items-center gap-2">
+                <MapPin size={14} className="text-amber-600" />
+                {key.replace(/_/g, ' ')} ({value.length} points)
+              </p>
+              <div className="space-y-1.5 ml-6">
+                {value.map((point: any, idx: number) => {
+                  const lat = point.latitude?.toFixed(6) || 'N/A';
+                  const lng = point.longitude?.toFixed(6) || 'N/A';
+                  const order = point.order || idx + 1;
+                  const accuracy = point.accuracy ? `±${point.accuracy}m` : '';
+                  
+                  return (
+                    <div key={idx} className="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                      <span className="font-bold text-amber-700 w-6">#{order}</span>
+                      <span className="font-mono text-amber-900 flex-1">
+                        {lat}, {lng}
+                      </span>
+                      {accuracy && (
+                        <span className="text-amber-600 text-[10px]">{accuracy}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
         if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
           return (
             <div key={key} className="space-y-2 bg-gray-50/50 p-3 rounded-lg">

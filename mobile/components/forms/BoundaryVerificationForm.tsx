@@ -31,6 +31,9 @@ import { useAlert } from "@/components/AlertContext";
 const GPS_READY_HOURS = 2;
 const GPS_AGING_HOURS = 6;
 const GPS_LIVE_TIMEOUT_MS = 30000;
+const MAX_POLYGON_POINTS = 50;
+const MIN_POLYGON_POINTS = 3;
+const CLOSE_PROXIMITY_METERS = 10;
 
 interface LocationData {
   latitude: number;
@@ -53,6 +56,22 @@ interface BoundaryImage {
   created_at: string;
 }
 
+interface PolygonPoint {
+  id: string;
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+  description: string;
+  order: number;
+}
+
+interface PolygonPointInput {
+  latitude: string;
+  longitude: string;
+  accuracy: string;
+  description: string;
+}
+
 type GPSReadiness = "ready" | "aging" | "cold" | "checking";
 
 function SimpleGeocam({
@@ -66,8 +85,6 @@ function SimpleGeocam({
   ) => void;
   onClose: () => void;
 }) {
-  // ... (Keep your existing SimpleGeocam code exactly as it was)
-  // Truncated for brevity, paste your existing SimpleGeocam here
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [locationPermission, requestLocationPermission] =
     Location.useForegroundPermissions();
@@ -398,7 +415,6 @@ function SimpleGeocam({
 }
 
 const cam = StyleSheet.create({
-  // ... (Keep your existing cam styles exactly as they were)
   root: { flex: 1, backgroundColor: "#000" },
   camera: { flex: 1 },
   centerFill: {
@@ -770,6 +786,27 @@ const GPSReadinessBanner: React.FC<{
   );
 };
 
+// Haversine distance calculation
+const calculateDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number => {
+  const R = 6371e3;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+};
+
 export default function BoundaryVerificationForm() {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -785,7 +822,7 @@ export default function BoundaryVerificationForm() {
     useFieldAssessment(areaId, layerId, assessmentId);
   const isOnline = useNetworkStatus();
 
-  // ✅ NEW: Title State
+  // Title State
   const [title, setTitle] = useState("");
 
   const [overallNote, setOverallNote] = useState("");
@@ -815,6 +852,19 @@ export default function BoundaryVerificationForm() {
   const [uploading, setUploading] = useState(false);
   const [gpsReadiness, setGpsReadiness] = useState<GPSReadiness>("checking");
   const [gpsReadinessAge, setGpsReadinessAge] = useState<number | null>(null);
+
+  // Polygon states
+  const [polygonPoints, setPolygonPoints] = useState<PolygonPoint[]>([]);
+  const [showAddPointModal, setShowAddPointModal] = useState(false);
+  const [editingPointId, setEditingPointId] = useState<string | null>(null);
+  const [pointForm, setPointForm] = useState<PolygonPointInput>({
+    latitude: "",
+    longitude: "",
+    accuracy: "",
+    description: "",
+  });
+  const [capturingGPSForPoint, setCapturingGPSForPoint] = useState(false);
+  const [polygonWarnings, setPolygonWarnings] = useState<string[]>([]);
 
   useEffect(() => {
     if (isEditingOfflineDraft) {
@@ -846,6 +896,42 @@ export default function BoundaryVerificationForm() {
     if (!loading) checkGPSReadiness();
   }, [loading]);
 
+  // Polygon validation effect
+  useEffect(() => {
+    const warnings: string[] = [];
+
+    if (polygonPoints.length > 0 && polygonPoints.length < MIN_POLYGON_POINTS) {
+      warnings.push(
+        `Need ${MIN_POLYGON_POINTS - polygonPoints.length} more point(s) for valid polygon`,
+      );
+    }
+
+    if (polygonPoints.length > MAX_POLYGON_POINTS - 5) {
+      warnings.push(
+        `Approaching max limit (${MAX_POLYGON_POINTS - polygonPoints.length} remaining)`,
+      );
+    }
+
+    // Check for points too close together
+    for (let i = 0; i < polygonPoints.length; i++) {
+      for (let j = i + 1; j < polygonPoints.length; j++) {
+        const dist = calculateDistance(
+          polygonPoints[i].latitude,
+          polygonPoints[i].longitude,
+          polygonPoints[j].latitude,
+          polygonPoints[j].longitude,
+        );
+        if (dist < CLOSE_PROXIMITY_METERS && dist > 0) {
+          warnings.push(
+            `Points ${i + 1} and ${j + 1} are very close (${dist.toFixed(1)}m apart)`,
+          );
+        }
+      }
+    }
+
+    setPolygonWarnings(warnings);
+  }, [polygonPoints]);
+
   const checkGPSReadiness = async () => {
     try {
       const { status } = await Location.getForegroundPermissionsAsync();
@@ -872,7 +958,7 @@ export default function BoundaryVerificationForm() {
     }
   };
 
-  const loadOfflineDraftData = async () => {
+const loadOfflineDraftData = async () => {
     if (!offlineDraftId) return;
     try {
       const draft = await getOfflineDraft(offlineDraftId);
@@ -882,10 +968,33 @@ export default function BoundaryVerificationForm() {
       }
       const payload = draft.payload;
 
-      // ✅ NEW: Load title from offline draft
       setTitle(payload.title || "");
 
-      populateForm(payload);
+      // Extract boundary verification data from payload
+      const bv = 
+        payload?.field_assessment_data?.boundary_verification ||
+        payload?.boundary_verification ||
+        payload ||
+        {};
+      
+      setOverallNote(bv?.overall_note || "");
+      setLocationContext(bv?.location_context || "");
+      
+      // Load polygon points from offline draft
+      if (bv?.polygon_points && Array.isArray(bv.polygon_points)) {
+        const loadedPoints: PolygonPoint[] = bv.polygon_points.map(
+          (p: any, idx: number) => ({
+            id: p.id || `point-${idx}-${Date.now()}`,
+            latitude: p.latitude,
+            longitude: p.longitude,
+            accuracy: p.accuracy,
+            description: p.description || "",
+            order: p.order || idx + 1,
+          }),
+        );
+        setPolygonPoints(loadedPoints);
+      }
+      
       if (payload.location) {
         setLocationLat(payload.location.latitude?.toString() || "");
         setLocationLng(payload.location.longitude?.toString() || "");
@@ -893,6 +1002,7 @@ export default function BoundaryVerificationForm() {
           payload.location.gps_accuracy_meters?.toString() || "",
         );
       }
+
       if (Array.isArray(draft.images)) {
         const loadedImages: LocalImage[] = draft.images.map((img) => ({
           id: img.id,
@@ -914,19 +1024,47 @@ export default function BoundaryVerificationForm() {
   };
 
   const populateForm = (data: any) => {
-    // ✅ NEW: Load title from server response
     setTitle(data.title || "");
 
-    const bv = data?.boundary_verification || data || {};
+    // Try multiple possible locations for boundary_verification data
+    const bv = 
+      data?.field_assessment_data?.boundary_verification ||
+      data?.boundary_verification ||
+      data ||
+      {};
+    
     setOverallNote(bv?.overall_note || "");
     setLocationContext(bv?.location_context || "");
-    const loc = bv?.location || data?.location || null;
+
+    // Load polygon points
+    if (bv?.polygon_points && Array.isArray(bv.polygon_points)) {
+      const loadedPoints: PolygonPoint[] = bv.polygon_points.map(
+        (p: any, idx: number) => ({
+          id: p.id || `point-${idx}-${Date.now()}`,
+          latitude: p.latitude,
+          longitude: p.longitude,
+          accuracy: p.accuracy,
+          description: p.description || "",
+          order: p.order || idx + 1,
+        }),
+      );
+      setPolygonPoints(loadedPoints);
+    }
+
+    // Load location - check multiple possible locations
+    const loc = 
+      bv?.location ||
+      data?.location ||
+      data?.field_assessment_data?.location ||
+      null;
+    
     if (loc?.latitude != null && loc?.longitude != null) {
       setLocationLat(loc.latitude.toString());
       setLocationLng(loc.longitude.toString());
       setLocationAccuracy(loc.gps_accuracy_meters?.toString() || "");
     }
   };
+
 
   const handleGetCurrentLocation = async () => {
     setGettingLocation(true);
@@ -952,7 +1090,10 @@ export default function BoundaryVerificationForm() {
       const servicesEnabled = await Location.hasServicesEnabledAsync();
       if (!servicesEnabled) {
         clearInterval(interval);
-        warning("Location Services Disabled", "Please enable GPS in settings.");
+        warning(
+          "Location Services Disabled",
+          "Please enable GPS in settings.",
+        );
         setGettingLocation(false);
         return;
       }
@@ -1092,6 +1233,176 @@ export default function BoundaryVerificationForm() {
   const removeLocalImage = (id: string) =>
     setLocalImages(localImages.filter((img) => img.id !== id));
 
+  // Polygon handlers
+  const handleAddPointGPS = async () => {
+    setCapturingGPSForPoint(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        warning("Permission Required", "Location access is disabled.");
+        setCapturingGPSForPoint(false);
+        return;
+      }
+
+      let loc: Location.LocationObject;
+      let usedFallback = false;
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("GPS_TIMEOUT")),
+            GPS_LIVE_TIMEOUT_MS,
+          ),
+        );
+        loc = await Promise.race([
+          Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          }),
+          timeoutPromise,
+        ]);
+      } catch (liveErr: any) {
+        console.warn("Live GPS failed, trying fallback:", liveErr.message);
+        const lastKnown = await Location.getLastKnownPositionAsync();
+        if (!lastKnown) {
+          showError(
+            "GPS Signal Not Found",
+            "Could not lock onto GPS. Please step outside or enter coordinates manually.",
+          );
+          setCapturingGPSForPoint(false);
+          return;
+        }
+        loc = lastKnown;
+        usedFallback = true;
+      }
+
+      setPointForm({
+        latitude: loc.coords.latitude.toFixed(6),
+        longitude: loc.coords.longitude.toFixed(6),
+        accuracy: loc.coords.accuracy?.toFixed(1) || "",
+        description: "",
+      });
+      setEditingPointId(null);
+      setShowAddPointModal(true);
+
+      if (usedFallback) {
+        warning(
+          "Using Cached Location",
+          "Live GPS unavailable. Using last known coordinates.",
+        );
+      }
+    } catch (error) {
+      showError("GPS Error", "Failed to get current location.");
+    } finally {
+      setCapturingGPSForPoint(false);
+    }
+  };
+
+  const handleAddPointManual = () => {
+    setPointForm({
+      latitude: "",
+      longitude: "",
+      accuracy: "",
+      description: "",
+    });
+    setEditingPointId(null);
+    setShowAddPointModal(true);
+  };
+
+  const handleEditPoint = (point: PolygonPoint) => {
+    setPointForm({
+      latitude: point.latitude.toString(),
+      longitude: point.longitude.toString(),
+      accuracy: point.accuracy?.toString() || "",
+      description: point.description,
+    });
+    setEditingPointId(point.id);
+    setShowAddPointModal(true);
+  };
+
+  const handleSavePoint = () => {
+    const lat = parseFloat(pointForm.latitude);
+    const lng = parseFloat(pointForm.longitude);
+
+    if (isNaN(lat) || isNaN(lng)) {
+      warning("Invalid Coordinates", "Please enter valid latitude and longitude.");
+      return;
+    }
+
+    if (lat < -90 || lat > 90) {
+      warning("Invalid Latitude", "Latitude must be between -90 and 90.");
+      return;
+    }
+
+    if (lng < -180 || lng > 180) {
+      warning("Invalid Longitude", "Longitude must be between -180 and 180.");
+      return;
+    }
+
+    if (polygonPoints.length >= MAX_POLYGON_POINTS && !editingPointId) {
+      warning("Max Points Reached", `Cannot add more than ${MAX_POLYGON_POINTS} boundary points.`);
+      return;
+    }
+
+    const newPoint: PolygonPoint = {
+      id: editingPointId || `point-${Date.now()}`,
+      latitude: lat,
+      longitude: lng,
+      accuracy: pointForm.accuracy ? parseFloat(pointForm.accuracy) : undefined,
+      description: pointForm.description,
+      order: editingPointId
+        ? polygonPoints.find((p) => p.id === editingPointId)?.order ||
+          polygonPoints.length + 1
+        : polygonPoints.length + 1,
+    };
+
+    if (editingPointId) {
+      setPolygonPoints(
+        polygonPoints.map((p) => (p.id === editingPointId ? newPoint : p)),
+      );
+      success("Point Updated", "Boundary point updated successfully.");
+    } else {
+      setPolygonPoints([...polygonPoints, newPoint]);
+      success("Point Added", "Boundary point added successfully.");
+    }
+
+    setShowAddPointModal(false);
+    setEditingPointId(null);
+  };
+
+  const handleDeletePoint = (id: string) => {
+    confirm(
+      "Delete Point",
+      "Remove this boundary point?",
+      () => {
+        setPolygonPoints(
+          polygonPoints
+            .filter((p) => p.id !== id)
+            .map((p, idx) => ({ ...p, order: idx + 1 })),
+        );
+      },
+      { type: "error", confirmText: "Delete", cancelText: "Cancel" },
+    );
+  };
+
+  const movePoint = (index: number, direction: "up" | "down") => {
+    if (
+      (direction === "up" && index === 0) ||
+      (direction === "down" && index === polygonPoints.length - 1)
+    ) {
+      return;
+    }
+
+    const newPoints = [...polygonPoints];
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+
+    [newPoints[index], newPoints[newIndex]] = [
+      newPoints[newIndex],
+      newPoints[index],
+    ];
+
+    const reordered = newPoints.map((p, idx) => ({ ...p, order: idx + 1 }));
+    setPolygonPoints(reordered);
+  };
+
   const buildPayload = () => {
     const location =
       locationLat && locationLng
@@ -1104,13 +1415,25 @@ export default function BoundaryVerificationForm() {
           }
         : null;
 
-    const layerData = {
+    const layerData: any = {
       overall_note: overallNote || null,
       location_context: locationContext || null,
     };
 
+    if (polygonPoints.length > 0) {
+      layerData.polygon_points = polygonPoints
+        .sort((a, b) => a.order - b.order)
+        .map((p, idx) => ({
+          latitude: p.latitude,
+          longitude: p.longitude,
+          accuracy: p.accuracy || null,
+          description: p.description,
+          order: idx + 1,
+        }));
+    }
+
     return {
-      title: title.trim() || null, // ✅ NEW: Include title in payload
+      title: title.trim() || null,
       reforestation_area_id: areaId ? parseInt(areaId) : null,
       site_id: siteId ? parseInt(siteId) : null,
       assessment_date: new Date().toISOString().split("T")[0],
@@ -1120,11 +1443,18 @@ export default function BoundaryVerificationForm() {
   };
 
   const handleSaveOffline = async (): Promise<string | null> => {
-    // ✅ NEW: Required validation
     if (!title || title.trim() === "") {
       warning(
         "Missing Title",
         "Please enter a descriptive title for this assessment.",
+      );
+      return null;
+    }
+
+    if (polygonPoints.length < MIN_POLYGON_POINTS) {
+      warning(
+        "Incomplete Polygon",
+        `Please add at least ${MIN_POLYGON_POINTS} boundary points to define the polygon.`,
       );
       return null;
     }
@@ -1177,7 +1507,6 @@ export default function BoundaryVerificationForm() {
   };
 
   const handleDraft = async () => {
-    // ✅ NEW: Required validation
     if (!title || title.trim() === "") {
       warning(
         "Missing Title",
@@ -1206,7 +1535,6 @@ export default function BoundaryVerificationForm() {
   };
 
   const handleSubmit = async () => {
-    // ✅ NEW: Required validation
     if (!title || title.trim() === "") {
       warning(
         "Missing Title",
@@ -1214,6 +1542,15 @@ export default function BoundaryVerificationForm() {
       );
       return;
     }
+
+    if (polygonPoints.length < MIN_POLYGON_POINTS) {
+      warning(
+        "Incomplete Polygon",
+        `Please add at least ${MIN_POLYGON_POINTS} boundary points to define the polygon.`,
+      );
+      return;
+    }
+
     if (!isOnline) {
       warning(
         "Offline",
@@ -1356,6 +1693,20 @@ export default function BoundaryVerificationForm() {
         });
       }
     }
+
+    // Add polygon points
+    polygonPoints.forEach((point, index) => {
+      points.push({
+        id: `polygon-${point.id}`,
+        type: "polygon_vertex",
+        latitude: point.latitude,
+        longitude: point.longitude,
+        label: `Boundary Point ${index + 1}`,
+        accuracy: point.accuracy,
+        description: point.description || `Vertex ${index + 1}`,
+      });
+    });
+
     images.forEach((img, index) => {
       if (img.latitude != null && img.longitude != null && img.latitude !== 0) {
         points.push({
@@ -1429,7 +1780,7 @@ export default function BoundaryVerificationForm() {
           </View>
         )}
 
-        {/* ✅ NEW: Title Input Section */}
+        {/* Title Input Section */}
         <SectionCard
           title="Assessment Title"
           subtitle="A short, descriptive name for this record"
@@ -1691,6 +2042,164 @@ export default function BoundaryVerificationForm() {
           )}
         </SectionCard>
 
+        {/* Boundary Polygon Section */}
+        <SectionCard
+          title="Boundary Polygon"
+          subtitle={`${polygonPoints.length} point${polygonPoints.length !== 1 ? "s" : ""} defined · Tap to add vertices`}
+          iconName="vector-polygon"
+          iconLib="mci"
+          accentColor="#7C3AED"
+          step={5}
+        >
+          {/* Warnings */}
+          {polygonWarnings.length > 0 && (
+            <View style={styles.warningList}>
+              {polygonWarnings.map((warn, idx) => (
+                <View key={idx} style={styles.warningItem}>
+                  <Ionicons name="warning" size={12} color="#F59E0B" />
+                  <Text style={styles.warningText}>{warn}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Points List */}
+          {polygonPoints.length > 0 ? (
+            <View style={styles.polygonPointsList}>
+              {polygonPoints
+                .sort((a, b) => a.order - b.order)
+                .map((point, index) => (
+                  <View key={point.id} style={styles.polygonPointItem}>
+                    <View style={styles.polygonPointHeader}>
+                      <View style={styles.polygonPointNumber}>
+                        <Text style={styles.polygonPointNumberText}>
+                          {index + 1}
+                        </Text>
+                      </View>
+                      <View style={styles.polygonPointCoords}>
+                        <Text style={styles.polygonPointCoordText}>
+                          {point.latitude.toFixed(6)}°, {point.longitude.toFixed(6)}°
+                        </Text>
+                        {point.accuracy != null && (
+                          <Text style={styles.polygonPointAccuracy}>
+                            ±{point.accuracy}m
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    {point.description ? (
+                      <Text style={styles.polygonPointDescription} numberOfLines={2}>
+                        {point.description}
+                      </Text>
+                    ) : (
+                      <Text style={styles.polygonPointNoDesc}>No description</Text>
+                    )}
+                    {!isViewMode && (
+                      <View style={styles.polygonPointActions}>
+                        <TouchableOpacity
+                          style={[
+                            styles.polygonPointActionBtn,
+                            index === 0 && styles.polygonPointActionBtnDisabled,
+                          ]}
+                          onPress={() => movePoint(index, "up")}
+                          disabled={index === 0}
+                        >
+                          <Ionicons name="chevron-up" size={16} color="#7C3AED" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.polygonPointActionBtn,
+                            index === polygonPoints.length - 1 &&
+                              styles.polygonPointActionBtnDisabled,
+                          ]}
+                          onPress={() => movePoint(index, "down")}
+                          disabled={index === polygonPoints.length - 1}
+                        >
+                          <Ionicons name="chevron-down" size={16} color="#7C3AED" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.polygonPointEditBtn}
+                          onPress={() => handleEditPoint(point)}
+                        >
+                          <Ionicons name="pencil" size={14} color="#fff" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.polygonPointDeleteBtn}
+                          onPress={() => handleDeletePoint(point.id)}
+                        >
+                          <Ionicons name="trash" size={14} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                ))}
+            </View>
+          ) : (
+            <View style={styles.polygonEmptyState}>
+              <MaterialCommunityIcons
+                name="vector-polygon"
+                size={48}
+                color="#DDD6FE"
+              />
+              <Text style={styles.polygonEmptyText}>
+                No boundary points defined yet
+              </Text>
+              <Text style={styles.polygonEmptySubtext}>
+                Add at least {MIN_POLYGON_POINTS} points to create a polygon
+              </Text>
+            </View>
+          )}
+
+          {/* Add Buttons */}
+          {!isViewMode && polygonPoints.length < MAX_POLYGON_POINTS && (
+            <View style={styles.polygonAddButtons}>
+              <TouchableOpacity
+                style={styles.polygonAddGPSBtn}
+                onPress={handleAddPointGPS}
+                disabled={capturingGPSForPoint}
+              >
+                {capturingGPSForPoint ? (
+                  <ActivityIndicator size="small" color="#7C3AED" />
+                ) : (
+                  <>
+                    <Ionicons name="locate" size={18} color="#7C3AED" />
+                    <Text style={styles.polygonAddGPSBtnText}>Use GPS</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.polygonAddManualBtn}
+                onPress={handleAddPointManual}
+              >
+                <Ionicons name="add" size={18} color="#fff" />
+                <Text style={styles.polygonAddManualBtnText}>Manual Entry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {polygonPoints.length >= MAX_POLYGON_POINTS && (
+            <View style={styles.polygonMaxReached}>
+              <Ionicons name="information-circle" size={14} color="#F59E0B" />
+              <Text style={styles.polygonMaxReachedText}>
+                Maximum {MAX_POLYGON_POINTS} points reached
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.hintBox}>
+            <Ionicons
+              name="information-circle-outline"
+              size={14}
+              color="#7C3AED"
+            />
+            <Text style={[styles.hintText, { color: "#7C3AED" }]}>
+              Define the boundary by adding vertices in order. Minimum{" "}
+              {MIN_POLYGON_POINTS} points required. Polygon will auto-close on
+              map.
+            </Text>
+          </View>
+        </SectionCard>
+
         <View style={{ height: 100 }} />
       </ScrollView>
 
@@ -1872,6 +2381,97 @@ export default function BoundaryVerificationForm() {
         </View>
       </Modal>
 
+      {/* Add/Edit Polygon Point Modal */}
+      <Modal
+        visible={showAddPointModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAddPointModal(false)}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.modal}>
+            <Text style={modalStyles.title}>
+              {editingPointId ? "Edit Boundary Point" : "Add Boundary Point"}
+            </Text>
+            <Text style={modalStyles.subtitle}>
+              {pointForm.latitude && pointForm.longitude
+                ? "Coordinates filled • Edit if needed"
+                : "Enter coordinates"}
+            </Text>
+
+            <FieldLabel label="Latitude" />
+            <TextInput
+              style={modalStyles.input}
+              keyboardType="decimal-pad"
+              value={pointForm.latitude}
+              onChangeText={(text) =>
+                setPointForm({ ...pointForm, latitude: text })
+              }
+              placeholder="e.g., 11.123456"
+              placeholderTextColor="#9CA3AF"
+            />
+
+            <FieldLabel label="Longitude" />
+            <TextInput
+              style={modalStyles.input}
+              keyboardType="decimal-pad"
+              value={pointForm.longitude}
+              onChangeText={(text) =>
+                setPointForm({ ...pointForm, longitude: text })
+              }
+              placeholder="e.g., 124.654321"
+              placeholderTextColor="#9CA3AF"
+            />
+
+            <FieldLabel label="Accuracy (meters)" optional />
+            <TextInput
+              style={modalStyles.input}
+              keyboardType="numeric"
+              value={pointForm.accuracy}
+              onChangeText={(text) =>
+                setPointForm({ ...pointForm, accuracy: text })
+              }
+              placeholder="e.g., 3.5"
+              placeholderTextColor="#9CA3AF"
+            />
+
+            <FieldLabel label="Description" optional />
+            <TextInput
+              style={[modalStyles.input, { minHeight: 60 }]}
+              value={pointForm.description}
+              onChangeText={(text) =>
+                setPointForm({ ...pointForm, description: text })
+              }
+              placeholder="e.g., Northwest corner - concrete post"
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={2}
+              textAlignVertical="top"
+            />
+
+            <View style={modalStyles.buttons}>
+              <TouchableOpacity
+                style={modalStyles.cancelBtn}
+                onPress={() => {
+                  setShowAddPointModal(false);
+                  setEditingPointId(null);
+                }}
+              >
+                <Text style={modalStyles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={modalStyles.saveBtn}
+                onPress={handleSavePoint}
+              >
+                <Text style={modalStyles.saveBtnText}>
+                  {editingPointId ? "Update" : "Add Point"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <FloatingMapButton
         areaId={parseInt(areaId)}
         areaName={headerTitle}
@@ -1913,14 +2513,14 @@ const modalStyles = StyleSheet.create({
     padding: 12,
     fontSize: 14,
     color: "#1E293B",
-    minHeight: 80,
-    marginBottom: 20,
+    minHeight: 48,
+    marginBottom: 12,
   },
-  buttons: { flexDirection: "row", justifyContent: "flex-end", gap: 12 },
+  buttons: { flexDirection: "row", justifyContent: "flex-end", gap: 12, marginTop: 8 },
   cancelBtn: { paddingVertical: 10, paddingHorizontal: 16 },
   cancelBtnText: { color: "#6B7280", fontWeight: "600", fontSize: 14 },
   saveBtn: {
-    backgroundColor: "#0F4A2F",
+    backgroundColor: "#7C3AED",
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -2065,7 +2665,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   inputField: { flex: 1, fontSize: 14, color: "#1E293B", padding: 0 },
-  // ✅ NEW: Style for the single title input
   inputSingle: {
     backgroundColor: "#F8FAFC",
     borderRadius: 8,
@@ -2313,4 +2912,182 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   previewImage: { width: "100%", height: "80%" },
+  // Polygon styles
+  warningList: {
+    marginBottom: 12,
+    gap: 6,
+  },
+  warningItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  warningText: {
+    fontSize: 11,
+    color: "#92400E",
+    fontWeight: "500",
+    flex: 1,
+  },
+  polygonPointsList: {
+    gap: 10,
+    marginBottom: 12,
+  },
+  polygonPointItem: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    position: "relative",
+  },
+  polygonPointHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 6,
+  },
+  polygonPointNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#7C3AED",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  polygonPointNumberText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  polygonPointCoords: {
+    flex: 1,
+  },
+  polygonPointCoordText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#1E293B",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  polygonPointAccuracy: {
+    fontSize: 10,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  polygonPointDescription: {
+    fontSize: 11,
+    color: "#475569",
+    marginBottom: 4,
+  },
+  polygonPointNoDesc: {
+    fontSize: 11,
+    color: "#94A3B8",
+    fontStyle: "italic",
+    marginBottom: 4,
+  },
+  polygonPointActions: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+  },
+  polygonPointActionBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  polygonPointActionBtnDisabled: {
+    opacity: 0.3,
+  },
+  polygonPointEditBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: "#7C3AED",
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: "auto",
+  },
+  polygonPointDeleteBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: "#EF4444",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  polygonEmptyState: {
+    alignItems: "center",
+    paddingVertical: 24,
+    gap: 8,
+  },
+  polygonEmptyText: {
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  polygonEmptySubtext: {
+    fontSize: 11,
+    color: "#94A3B8",
+  },
+  polygonAddButtons: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  polygonAddGPSBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1.5,
+    borderColor: "#7C3AED",
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  polygonAddGPSBtnText: {
+    color: "#7C3AED",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  polygonAddManualBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#7C3AED",
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  polygonAddManualBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  polygonMaxReached: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  polygonMaxReachedText: {
+    fontSize: 11,
+    color: "#92400E",
+    fontWeight: "600",
+  },
 });

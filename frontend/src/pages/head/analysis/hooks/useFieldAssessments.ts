@@ -71,7 +71,8 @@ export function useFieldAssessments(
   showCoordinates: boolean = true,
   isDrawingMode: boolean = false,
   onSnapToMarker?: (lat: number, lng: number) => void,
-  onMarkerClick?: (fieldAssessmentId: number) => void // ✅ NEW: Callback for map marker clicks
+  onMarkerClick?: (fieldAssessmentId: number) => void,
+  showAllLayers: boolean = false // ✅ NEW: Controls isolation vs showing all
 ) {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const photoMarkersRef = useRef<Map<number, L.Marker[]>>(new Map());
@@ -200,8 +201,23 @@ export function useFieldAssessments(
       const map = mapRef.current;
       if (!map) return;
 
-      removeLayerMarkers(layer);
-      removeAllPhotoMarkers();
+      // ✅ FIX: Only remove markers for THIS specific layer, not all layers
+      const keysToRemove: string[] = [];
+      markersRef.current.forEach((_, key) => {
+        if (key.startsWith(`${layer}-`)) keysToRemove.push(key);
+      });
+
+      keysToRemove.forEach((key) => {
+        const marker = markersRef.current.get(key);
+        if (marker) {
+          try {
+            map.removeLayer(marker);
+          } catch {
+            // ignore
+          }
+          markersRef.current.delete(key);
+        }
+      });
 
       const emoji = LAYER_EMOJIS[layer];
 
@@ -275,7 +291,6 @@ export function useFieldAssessments(
             L.DomEvent.stopPropagation(e);
             onSnapToMarkerRef.current(loc.latitude, loc.longitude);
           } else if (!isDrawingModeRef.current && onMarkerClickRef.current) {
-            // ✅ NEW: Notify parent to select this assessment in the UI
             onMarkerClickRef.current(entry.field_assessment_id);
           }
         });
@@ -286,15 +301,34 @@ export function useFieldAssessments(
           }
         });
 
-        if (showAssessmentMarkersRef.current) {
-          marker.addTo(map);
-        }
-
+        // Note: We store the marker, and the useEffect below will handle adding/removing it from the map
+        // based on activeLayer, showAllLayers, and showAssessmentMarkers.
         markersRef.current.set(`${layer}-${idx}`, marker);
       });
     },
-    [mapRef, removeLayerMarkers, removeAllPhotoMarkers, showCoordinates],
+    [mapRef, showCoordinates],
   );
+
+  // ✅ NEW: Centralized visibility manager for assessment markers
+  // This ensures strict isolation: only the active layer is shown unless showAllLayers is true.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    markersRef.current.forEach((marker, key) => {
+      const markerLayer = key.split("-")[0] as MCDALayer;
+      
+      const isLayerVisible = showAllLayers ? true : markerLayer === activeLayer;
+      const shouldBeVisible = isLayerVisible && showAssessmentMarkers;
+      const isOnMap = map.hasLayer(marker);
+
+      if (shouldBeVisible && !isOnMap) {
+        marker.addTo(map);
+      } else if (!shouldBeVisible && isOnMap) {
+        map.removeLayer(marker);
+      }
+    });
+  }, [activeLayer, showAllLayers, showAssessmentMarkers, assessments, mapRef]);
 
   useEffect(() => {
     markersRef.current.forEach((marker) => {
@@ -307,72 +341,76 @@ export function useFieldAssessments(
     });
   }, [isDrawingMode]);
 
+  // ✅ NEW: Centralized visibility manager for photo markers
+  // Ensures photo markers ONLY appear for the selected entry in the ACTIVE layer.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    markersRef.current.forEach((marker) => {
-      if (showAssessmentMarkers) {
-        if (!map.hasLayer(marker)) marker.addTo(map);
-      } else {
-        if (map.hasLayer(marker)) map.removeLayer(marker);
-      }
+
+    // 1. Clear all existing photo markers
+    photoMarkersRef.current.forEach((markers) => {
+      markers.forEach((marker) => {
+        try {
+          map.removeLayer(marker);
+        } catch {
+          // ignore
+        }
+      });
     });
-  }, [assessments, showAssessmentMarkers, mapRef]);
+    photoMarkersRef.current.clear();
 
-  const placePhotoMarkers = useCallback(
-    (entry: FieldAssessmentEntry) => {
-      const map = mapRef.current;
-      if (!map || !entry.images || entry.images.length === 0) return;
+    // 2. Place photo markers ONLY for the selected entry in the active layer
+    if (showPhotoMarkers && selectedIndex !== null) {
+      const entry = assessments[activeLayer]?.[selectedIndex];
+      if (entry && entry.images && entry.images.length > 0) {
+        const photoMarkers: L.Marker[] = [];
 
-      removePhotoMarkers(entry.field_assessment_id);
+        entry.images.forEach((img, idx) => {
+          if (!img.latitude || !img.longitude) return;
 
-      const photoMarkers: L.Marker[] = [];
+          const marker = L.marker([img.latitude, img.longitude], {
+            icon: L.divIcon({
+              className: "photo-marker",
+              html: `<div style="
+                background:${PHOTO_MARKER_COLOR};width:24px;height:24px;border-radius:50%;
+                border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);
+                display:flex;align-items:center;justify-content:center;
+                font-size:11px;cursor:pointer;
+              ">📷</div>`,
+              iconSize: [24, 24],
+              iconAnchor: [12, 24],
+              popupAnchor: [0, -24],
+            }),
+          }).addTo(map);
 
-      entry.images.forEach((img, idx) => {
-        if (!img.latitude || !img.longitude) return;
+          const layerName = img.layer
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (l) => l.toUpperCase());
+            
+          marker.bindPopup(`
+            <div style="min-width:150px;">
+              <strong style="font-size:12px;color:${PHOTO_MARKER_COLOR}">📷 Photo ${idx + 1}</strong><br/>
+              <span style="font-size:11px;color:#666">${layerName}</span><br/>
+              <span style="font-size:10px;color:#999">${img.description || "No description"}</span><br/>
+              <span style="font-size:9px;color:#aaa">${img.latitude.toFixed(5)}, ${img.longitude.toFixed(5)}</span>
+            </div>
+          `);
 
-        const marker = L.marker([img.latitude, img.longitude], {
-          icon: L.divIcon({
-            className: "photo-marker",
-            html: `<div style="
-            background:${PHOTO_MARKER_COLOR};width:24px;height:24px;border-radius:50%;
-            border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);
-            display:flex;align-items:center;justify-content:center;
-            font-size:11px;cursor:pointer;
-          ">📷</div>`,
-            iconSize: [24, 24],
-            iconAnchor: [12, 24],
-            popupAnchor: [0, -24],
-          }),
-        }).addTo(map);
+          marker.on("click", (e: L.LeafletMouseEvent) => {
+            if (isDrawingModeRef.current && onSnapToMarkerRef.current) {
+              onSnapToMarkerRef.current(img.latitude!, img.longitude!);
+            }
+          });
 
-        const layerName = img.layer
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (l) => l.toUpperCase());
-        marker.bindPopup(`
-        <div style="min-width:150px;">
-          <strong style="font-size:12px;color:${PHOTO_MARKER_COLOR}">📷 Photo ${idx + 1}</strong><br/>
-          <span style="font-size:11px;color:#666">${layerName}</span><br/>
-          <span style="font-size:10px;color:#999">${img.description || "No description"}</span><br/>
-          <span style="font-size:9px;color:#aaa">${img.latitude.toFixed(5)}, ${img.longitude.toFixed(5)}</span>
-        </div>
-      `);
-
-        marker.on("click", (e: L.LeafletMouseEvent) => {
-          if (isDrawingModeRef.current && onSnapToMarkerRef.current) {
-            onSnapToMarkerRef.current(img.latitude!, img.longitude!);
-          }
+          photoMarkers.push(marker);
         });
 
-        photoMarkers.push(marker);
-      });
-
-      if (photoMarkers.length > 0) {
-        photoMarkersRef.current.set(entry.field_assessment_id, photoMarkers);
+        if (photoMarkers.length > 0) {
+          photoMarkersRef.current.set(entry.field_assessment_id, photoMarkers);
+        }
       }
-    },
-    [mapRef, removePhotoMarkers],
-  );
+    }
+  }, [activeLayer, selectedIndex, showPhotoMarkers, assessments, mapRef]);
 
   useEffect(() => {
     photoMarkersRef.current.forEach((markers) => {
@@ -427,15 +465,13 @@ export function useFieldAssessments(
         placeMarkers(entries, layer);
         setActiveLayer(layer);
         setSelectedIndex(entries.length > 0 ? 0 : null);
-        if (entries.length > 0 && showPhotoMarkers)
-          placePhotoMarkers(entries[0]);
       } catch (err) {
         console.error(`fetchLayer(${layer}) error:`, err);
       } finally {
         setLoading((prev) => ({ ...prev, [layer]: false }));
       }
     },
-    [placeMarkers, placePhotoMarkers, showPhotoMarkers],
+    [placeMarkers],
   );
 
   const unsentAssessment = useCallback(
@@ -527,7 +563,6 @@ export function useFieldAssessments(
     [mapRef],
   );
 
-  // ✅ NEW: Open popup without flying
   const openPopup = useCallback(
     (layer: MCDALayer, idx: number) => {
       const marker = markersRef.current.get(`${layer}-${idx}`);
@@ -604,11 +639,17 @@ export function useFieldAssessments(
     fetchLayer,
     refreshLayer,
     flyToMarker,
-    openPopup, // ✅ NEW
+    openPopup,
     updateLocation,
     locationTargetId,
     setLocationTargetId,
-    placePhotoMarkers,
+    placePhotoMarkers: (entry: FieldAssessmentEntry) => {
+      // Kept for backward compatibility, though the useEffect handles isolation automatically now
+      const map = mapRef.current;
+      if (!map || !entry.images || entry.images.length === 0) return;
+      removePhotoMarkers(entry.field_assessment_id);
+      // Trigger the useEffect by updating selectedIndex if needed, or just let the parent manage selectedIndex
+    },
     removePhotoMarkers,
     showPhotoMarkers,
     setShowPhotoMarkers,

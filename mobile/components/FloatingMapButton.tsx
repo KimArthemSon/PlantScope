@@ -36,7 +36,7 @@ const GPS_READY_HOURS = 2;
 const GPS_AGING_HOURS = 6;
 const GPS_LIVE_TIMEOUT_MS = 30000; // 30 seconds
 
-// 🌐 Official Hazard Tile URLs
+//  Official Hazard Tile URLs
 const MGB_FLOOD_TILE_URL =
   "https://controlmap.mgb.gov.ph/arcgis/rest/services/GeospatialDataInventory/GDI_Detailed_Flood_Susceptibility/MapServer/tile/{z}/{y}/{x}";
 const MGB_LANDSLIDE_TILE_URL =
@@ -51,7 +51,7 @@ interface Barangay {
 // ✅ NEW: MapPoint Interface for Assessment Coordinates
 export interface MapPoint {
   id: string;
-  type: "assessment" | "photo" | "manual";
+  type: "assessment" | "photo" | "manual" | "polygon_vertex";
   latitude: number;
   longitude: number;
   label: string;
@@ -231,7 +231,7 @@ const HazardAlertBanner: React.FC<{
 };
 
 // ─────────────────────────────────────────────
-// 🚨 ENHANCED FLOATING HAZARD INDICATOR
+//  ENHANCED FLOATING HAZARD INDICATOR
 // ─────────────────────────────────────────────
 const HazardIndicator: React.FC<{
   alerts: any[];
@@ -478,8 +478,10 @@ export default function FloatingMapButton({
   const [showLandslide, setShowLandslide] = useState(false);
   const [showLayerPanel, setShowLayerPanel] = useState(false);
 
-  // ✅ NEW: Assessment Points State
-  const [showAssessmentPoints, setShowAssessmentPoints] = useState(true);
+  // ✅ UPDATED: Separate visibility states for each point type
+  const [showAssessmentLocation, setShowAssessmentLocation] = useState(true);
+  const [showBoundaryMarkers, setShowBoundaryMarkers] = useState(true);
+  const [showBoundaryPolygon, setShowBoundaryPolygon] = useState(true);
 
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
   const [showAlertModal, setShowAlertModal] = useState(false);
@@ -532,6 +534,17 @@ export default function FloatingMapButton({
       !isNaN(point.longitude) &&
       point.latitude !== 0 &&
       point.longitude !== 0
+  );
+
+  // ✅ Separate points by type
+  const assessmentLocationPoints = validMapPoints.filter(
+    (p) => p.type === "assessment"
+  );
+  const boundaryMarkerPoints = validMapPoints.filter(
+    (p) => p.type === "photo"
+  );
+  const polygonVertices = validMapPoints.filter(
+    (p) => p.type === "polygon_vertex"
   );
 
   useEffect(() => {
@@ -897,35 +910,81 @@ export default function FloatingMapButton({
     }
   };
 
-  // ✅ NEW: Inject Assessment Points to WebView & Auto-Fit
+  // ✅ UPDATED: Separate injection for each point type
   useEffect(() => {
-    if (!showMap || validMapPoints.length === 0 || !showAssessmentPoints) {
+    if (!showMap) {
       if (webViewRef.current) {
         webViewRef.current.injectJavaScript(
-          `window.updateMap('clearAssessmentPoints'); true;`
+          `window.updateMap('clearAssessmentPoints'); window.updateMap('clearBoundaryPolygon'); true;`
         );
       }
       return;
     }
 
-    const pointsData = validMapPoints.map((point) => ({
-      id: point.id,
-      type: point.type,
-      lat: point.latitude,
-      lng: point.longitude,
-      label: point.label,
-      accuracy: point.accuracy,
-      timestamp: point.timestamp,
-      description: point.description,
-    }));
+    // Draw boundary polygon if enabled and has 3+ vertices
+    if (polygonVertices.length >= 3 && showBoundaryPolygon) {
+      const polygonCoords = polygonVertices.map((p) => [p.latitude, p.longitude]);
+      
+      injectToWebView(
+        `window.updateMap('drawBoundaryPolygon', ${JSON.stringify({
+          coordinates: polygonCoords,
+          color: "#7C3AED",
+          fillColor: "rgba(124, 58, 237, 0.2)",
+          name: "Boundary Polygon",
+        })})`
+      );
+    } else {
+      if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(
+          `window.updateMap('clearBoundaryPolygon'); true;`
+        );
+      }
+    }
 
-    injectToWebView(
-      `window.updateMap('addAssessmentPoints', ${JSON.stringify(pointsData)})`
-    );
+    // Prepare points to show based on visibility settings
+    const pointsToShow: MapPoint[] = [];
+    
+    if (showAssessmentLocation) {
+      pointsToShow.push(...assessmentLocationPoints);
+    }
+    
+    if (showBoundaryMarkers) {
+      pointsToShow.push(...boundaryMarkerPoints);
+    }
+    
+    // Always show polygon vertices if polygon is shown
+    if (showBoundaryPolygon && polygonVertices.length >= 3) {
+      pointsToShow.push(...polygonVertices);
+    }
+
+    // Draw points if any
+    if (pointsToShow.length > 0) {
+      const pointsData = pointsToShow.map((point) => ({
+        id: point.id,
+        type: point.type,
+        lat: point.latitude,
+        lng: point.longitude,
+        label: point.label,
+        accuracy: point.accuracy,
+        timestamp: point.timestamp,
+        description: point.description,
+      }));
+
+      injectToWebView(
+        `window.updateMap('addAssessmentPoints', ${JSON.stringify(pointsData)})`
+      );
+    } else {
+      if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(
+          `window.updateMap('clearAssessmentPoints'); true;`
+        );
+      }
+    }
 
     // Auto-fit bounds when points are added
-    if (validMapPoints.length > 0 && !hasFitted.current) {
-      const bounds: [number, number][] = validMapPoints.map((p) => [
+    const allPoints = validMapPoints.length > 0 ? validMapPoints : [];
+    if (allPoints.length > 0 && !hasFitted.current) {
+      const bounds: [number, number][] = allPoints.map((p) => [
         p.latitude,
         p.longitude,
       ]);
@@ -937,7 +996,17 @@ export default function FloatingMapButton({
       );
       hasFitted.current = true;
     }
-  }, [validMapPoints, showMap, showAssessmentPoints, currentLocation]);
+  }, [
+    validMapPoints, 
+    assessmentLocationPoints, 
+    boundaryMarkerPoints, 
+    polygonVertices, 
+    showMap, 
+    showAssessmentLocation, 
+    showBoundaryMarkers, 
+    showBoundaryPolygon, 
+    currentLocation
+  ]);
 
   useEffect(() => {
     if (!showMap || loading) return;
@@ -1393,10 +1462,10 @@ export default function FloatingMapButton({
     );
   };
 
-  // ✅ NEW: Clear all assessment points handler
+  // ✅ UPDATED: Clear all assessment points handler
   const handleClearAllPoints = () => {
-    injectToWebView(`window.updateMap('clearAssessmentPoints')`);
-    alert?.info("Points Cleared", "All assessment points have been removed from the map.");
+    injectToWebView(`window.updateMap('clearAssessmentPoints'); window.updateMap('clearBoundaryPolygon')`);
+    alert?.info("Points Cleared", "All assessment points and boundary polygon have been removed from the map.");
   };
 
   const title = siteName
@@ -1552,33 +1621,103 @@ export default function FloatingMapButton({
                 )}
               </TouchableOpacity>
 
-              {/* ✅ NEW: Assessment Points Section in Layer Panel */}
+              {/* ✅ UPDATED: Separate Assessment Points Section */}
               <View style={styles.assessmentPointsSection}>
                 <Text style={styles.layerPanelTitle}>Assessment Points</Text>
+                
+                {/* Assessment Location */}
                 <View style={styles.assessmentPointsRow}>
                   <View style={styles.assessmentPointsInfo}>
                     <Ionicons
-                      name={showAssessmentPoints ? "eye" : "eye-off"}
+                      name="location"
                       size={18}
-                      color={showAssessmentPoints ? "#0F4A2F" : "#6B7280"}
+                      color="#2563eb"
                     />
                     <Text style={styles.assessmentPointsText}>
-                      {validMapPoints.length} point{validMapPoints.length !== 1 ? 's' : ''}
+                      Assessment Location ({assessmentLocationPoints.length})
                     </Text>
                   </View>
                   <TouchableOpacity
                     style={[
                       styles.miniBtn,
-                      validMapPoints.length === 0 && styles.miniBtnDisabled,
+                      showAssessmentLocation ? styles.miniBtnSuccess : styles.miniBtnSecondary,
                     ]}
-                    onPress={() => setShowAssessmentPoints(!showAssessmentPoints)}
-                    disabled={validMapPoints.length === 0}
+                    onPress={() => setShowAssessmentLocation(!showAssessmentLocation)}
                   >
+                    <Ionicons 
+                      name={showAssessmentLocation ? "eye" : "eye-off"} 
+                      size={14} 
+                      color="#fff" 
+                    />
                     <Text style={styles.miniBtnText}>
-                      {showAssessmentPoints ? "Hide" : "Show"}
+                      {showAssessmentLocation ? "Hide" : "Show"}
                     </Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Boundary Markers (Photos) */}
+                <View style={styles.assessmentPointsRow}>
+                  <View style={styles.assessmentPointsInfo}>
+                    <Ionicons
+                      name="camera"
+                      size={18}
+                      color="#f59e0b"
+                    />
+                    <Text style={styles.assessmentPointsText}>
+                      Boundary Markers ({boundaryMarkerPoints.length})
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.miniBtn,
+                      showBoundaryMarkers ? styles.miniBtnSuccess : styles.miniBtnSecondary,
+                    ]}
+                    onPress={() => setShowBoundaryMarkers(!showBoundaryMarkers)}
+                  >
+                    <Ionicons 
+                      name={showBoundaryMarkers ? "eye" : "eye-off"} 
+                      size={14} 
+                      color="#fff" 
+                    />
+                    <Text style={styles.miniBtnText}>
+                      {showBoundaryMarkers ? "Hide" : "Show"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Boundary Polygon */}
+                <View style={styles.assessmentPointsRow}>
+                  <View style={styles.assessmentPointsInfo}>
+                    <Ionicons
+                      name="draw"
+                      size={18}
+                      color="#7c3aed"
+                    />
+                    <Text style={styles.assessmentPointsText}>
+                      Boundary Polygon ({polygonVertices.length >= 3 ? 'Active' : polygonVertices.length})
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.miniBtn,
+                      showBoundaryPolygon ? styles.miniBtnSuccess : styles.miniBtnSecondary,
+                      polygonVertices.length < 3 && styles.miniBtnDisabled,
+                    ]}
+                    onPress={() => setShowBoundaryPolygon(!showBoundaryPolygon)}
+                    disabled={polygonVertices.length < 3}
+                  >
+                    <Ionicons 
+                      name={showBoundaryPolygon ? "eye" : "eye-off"} 
+                      size={14} 
+                      color="#fff" 
+                    />
+                    <Text style={styles.miniBtnText}>
+                      {showBoundaryPolygon ? "Hide" : "Show"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Clear All Button */}
                 {validMapPoints.length > 0 && (
                   <View style={styles.assessmentPointsRow}>
                     <View style={styles.assessmentPointsInfo}>
@@ -1607,7 +1746,7 @@ export default function FloatingMapButton({
                   </View>
                   <View style={styles.legendItem}>
                     <View style={[styles.legendDot, { backgroundColor: "#7c3aed" }]} />
-                    <Text style={styles.legendText}>Manual</Text>
+                    <Text style={styles.legendText}>Boundary</Text>
                   </View>
                 </View>
               </View>
@@ -1983,7 +2122,7 @@ export default function FloatingMapButton({
           >
             <View style={styles.dragHandle} />
             <Text style={styles.downloadOptionsTitle}>
-              📥 Download Polygons
+               Download Polygons
             </Text>
             <Text style={styles.downloadOptionsSubtitle}>
               Choose what polygons to download for offline detection
@@ -2166,7 +2305,7 @@ export default function FloatingMapButton({
   );
 }
 
-// 🌐 LEAFLET HTML WITH OFFLINE SUPPORT & ASSESSMENT POINTS
+// 🌐 LEAFLET HTML WITH OFFLINE SUPPORT & BOUNDARY POLYGON
 const mapHtml = `
 <!DOCTYPE html>
 <html>
@@ -2197,6 +2336,7 @@ const mapHtml = `
     .badge-assessment { background: #dbeafe; color: #1e40af; }
     .badge-photo { background: #fef3c7; color: #92400e; }
     .badge-manual { background: #f3e8ff; color: #6b21a8; }
+    .badge-vertex { background: #f3e8ff; color: #6b21a8; }
   </style>
 </head>
 <body>
@@ -2205,7 +2345,7 @@ const mapHtml = `
     var map = L.map('map', { center: [11.02, 124.61], zoom: 13, zoomControl: true, fadeAnimation: true, zoomAnimation: true });
     var baseTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OSM' }).addTo(map);
     var markers = { barangay: {}, area: null, site: null, user: null };
-    var polygonLayers = { classified: null, hazards: null };
+    var polygonLayers = { classified: null, hazards: null, boundary: null };
     var hazardTiles = { flood: null, landslide: null };
     var userPulse = null;
     var assessmentPointsLayer = null;
@@ -2218,7 +2358,8 @@ const mapHtml = `
       const icons = {
         assessment: { color: '#2563eb', emoji: '📍', size: 32 },
         photo: { color: '#f59e0b', emoji: '📷', size: 28 },
-        manual: { color: '#7c3aed', emoji: '✏️', size: 28 }
+        manual: { color: '#7c3aed', emoji: '️', size: 28 },
+        polygon_vertex: { color: '#7c3aed', emoji: '🔷', size: 28 }
       };
       const icon = icons[type] || icons.assessment;
       return L.divIcon({
@@ -2230,8 +2371,18 @@ const mapHtml = `
     }
 
     function createPointPopup(point) {
-      const typeLabels = { assessment: 'Assessment Location', photo: 'Photo Location', manual: 'Manual Input' };
-      const badgeClasses = { assessment: 'badge-assessment', photo: 'badge-photo', manual: 'badge-manual' };
+      const typeLabels = { 
+        assessment: 'Assessment Location', 
+        photo: 'Photo Location', 
+        manual: 'Manual Input',
+        polygon_vertex: 'Boundary Vertex'
+      };
+      const badgeClasses = { 
+        assessment: 'badge-assessment', 
+        photo: 'badge-photo', 
+        manual: 'badge-manual',
+        polygon_vertex: 'badge-vertex'
+      };
       
       let html = '<div class="point-popup">';
       html += '<h4 style="color:' + (point.type === 'assessment' ? '#2563eb' : point.type === 'photo' ? '#f59e0b' : '#7c3aed') + '">' + point.label + '</h4>';
@@ -2285,10 +2436,10 @@ const mapHtml = `
           setTimeout(function() { if (userPulse) map.removeLayer(userPulse); userPulse = null; }, 1500);
         }
         else if (action === 'addAssessmentPoints') {
-          if (assessmentPointsLayer) {
-            map.removeLayer(assessmentPointsLayer);
+          if (!assessmentPointsLayer) {
+            assessmentPointsLayer = L.layerGroup();
+            assessmentPointsLayer.addTo(map);
           }
-          assessmentPointsLayer = L.layerGroup();
           
           payload.forEach(point => {
             try {
@@ -2302,12 +2453,42 @@ const mapHtml = `
               console.warn('Error drawing assessment point:', e);
             }
           });
-          assessmentPointsLayer.addTo(map);
         }
         else if (action === 'clearAssessmentPoints') {
           if (assessmentPointsLayer) {
             map.removeLayer(assessmentPointsLayer);
             assessmentPointsLayer = null;
+          }
+        }
+        else if (action === 'drawBoundaryPolygon') {
+          // Remove existing boundary polygon
+          if (polygonLayers.boundary) {
+            map.removeLayer(polygonLayers.boundary);
+            polygonLayers.boundary = null;
+          }
+          
+          // Draw new filled polygon with auto-close
+          if (payload.coordinates && payload.coordinates.length >= 3) {
+            try {
+              const polygon = L.polygon(payload.coordinates, {
+                color: payload.color || '#7C3AED',
+                fillColor: payload.fillColor || 'rgba(124, 58, 237, 0.2)',
+                fillOpacity: 0.3,
+                weight: 3,
+                opacity: 0.8
+              });
+              polygon.bindPopup('<b>' + (payload.name || 'Boundary Polygon') + '</b><br>Vertices: ' + payload.coordinates.length);
+              polygon.addTo(map);
+              polygonLayers.boundary = polygon;
+            } catch (e) {
+              console.error('Error drawing boundary polygon:', e);
+            }
+          }
+        }
+        else if (action === 'clearBoundaryPolygon') {
+          if (polygonLayers.boundary) {
+            map.removeLayer(polygonLayers.boundary);
+            polygonLayers.boundary = null;
           }
         }
         else if (action === 'flyTo') {
@@ -2339,6 +2520,7 @@ const mapHtml = `
         else if (action === 'clearPolygons') {
           if (polygonLayers.classified) { map.removeLayer(polygonLayers.classified); polygonLayers.classified = null; }
           if (polygonLayers.hazards) { map.removeLayer(polygonLayers.hazards); polygonLayers.hazards = null; }
+          if (polygonLayers.boundary) { map.removeLayer(polygonLayers.boundary); polygonLayers.boundary = null; }
         }
       } catch (e) { console.error('updateMap error:', e); }
     };
@@ -2453,7 +2635,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // 🚨 ENHANCED FLOATING HAZARD INDICATOR STYLES
+  //  ENHANCED FLOATING HAZARD INDICATOR STYLES
   hazardIndicatorContainer: {
     position: "absolute",
     bottom: 10,
@@ -2654,14 +2836,15 @@ const styles = StyleSheet.create({
   miniBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
     gap: 4,
   },
   miniBtnPrimary: { backgroundColor: "#0F4A2F" },
   miniBtnSuccess: { backgroundColor: "#16a34a" },
-  miniBtnText: { fontSize: 11, fontWeight: "600", color: "#fff" },
+  miniBtnSecondary: { backgroundColor: "#6B7280" },
+  miniBtnText: { fontSize: 10, fontWeight: "600", color: "#fff" },
   iconBtn: {
     width: 32,
     height: 32,
@@ -3032,7 +3215,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  // ✅ NEW: Assessment Points Section Styles
+  // ✅ UPDATED: Assessment Points Section Styles
   assessmentPointsSection: {
     marginTop: 12,
     paddingTop: 12,
@@ -3046,6 +3229,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#F3F4F6",
+    gap: 8,
   },
   assessmentPointsInfo: { 
     flexDirection: "row", 
@@ -3054,12 +3238,12 @@ const styles = StyleSheet.create({
     flex: 1 
   },
   assessmentPointsText: { 
-    fontSize: 12, 
+    fontSize: 11, 
     color: "#111", 
     fontWeight: "500" 
   },
   miniBtnDisabled: { 
-    opacity: 0.5,
+    opacity: 0.4,
     backgroundColor: "#D1D5DB" 
   },
   miniBtnDanger: {
