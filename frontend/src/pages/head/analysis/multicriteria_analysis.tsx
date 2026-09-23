@@ -149,7 +149,7 @@ const createMarkerIcon = (
   <div style="position: relative; width: 24px; height: 30px; flex-shrink: 0;">
     <svg width="24" height="30" viewBox="0 0 24 30" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
       <path d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z"
-        fill="${color}" stroke="white" stroke-width="2"/>
+      fill="${color}" stroke="white" stroke-width="2"/>
     </svg>
     <div style="position: absolute; top: 7px; left: 6px; display: flex; align-items: center; justify-content: center;">
       ${iconSvg}
@@ -186,6 +186,11 @@ export default function MulticriteriaAnalysis() {
   const areaMarkerRef = useRef<L.Marker | null>(null);
   const probeMarkerRef = useRef<L.Marker | null>(null);
 
+  // ✅ NEW: Refs and state for showing assessment boundary polygons
+  const boundaryPolygonRef = useRef<L.Polygon | null>(null);
+  const boundaryVertexMarkersRef = useRef<L.Marker[]>([]);
+  const [showingPolygonId, setShowingPolygonId] = useState<number | null>(null);
+
   const [viewingSite, setViewingSite] = useState<SiteDetail | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedPolygon, setEditedPolygon] = useState<[number, number][] | null>(
@@ -198,12 +203,12 @@ export default function MulticriteriaAnalysis() {
   const [showCoordinateModal, setShowCoordinateModal] = useState(false);
   const [showViewingSitePolygon, setShowViewingSitePolygon] = useState(true);
   const [isPickingMarkerLocation, setIsPickingMarkerLocation] = useState(false);
-  
+
   const editablePolygonRef = useRef<L.Polygon | null>(null);
   const vertexMarkersRef = useRef<L.Marker[]>([]);
   const addVertexMarkersRef = useRef<L.Marker[]>([]);
   const editableMarkerRef = useRef<L.Marker | null>(null);
-  
+
   const [isDrawingNewPolygon, setIsDrawingNewPolygon] = useState(false);
   const [newPolygonPoints, setNewPolygonPoints] = useState<[number, number][]>(
     [],
@@ -211,6 +216,7 @@ export default function MulticriteriaAnalysis() {
   const [isPlacingNewMarker, setIsPlacingNewMarker] = useState(false);
   const newPolygonMarkersRef = useRef<L.Marker[]>([]);
   const newPolygonLineRef = useRef<L.Polyline | null>(null);
+
   const renderAllMarkersRef = useRef<(coords: [number, number][]) => void>(
     () => {},
   );
@@ -233,6 +239,7 @@ export default function MulticriteriaAnalysis() {
   const [showCoordPanel, setShowCoordPanel] = useState(true);
   const drawingLineRef = useRef<L.Polyline | null>(null);
   const drawingPointsRef = useRef<L.Marker[]>([]);
+
   const [isPlacingMarker, setIsPlacingMarker] = useState(false);
   const [showPotentialSites, setShowPotentialSites] = useState(false);
   const potentialSiteLayersRef = useRef<L.Polygon[]>([]);
@@ -240,6 +247,7 @@ export default function MulticriteriaAnalysis() {
   const [showReforestationArea, setShowReforestationArea] = useState(true);
   const [showValidationPanel, setShowValidationPanel] = useState(false);
   const [validatingSite, setValidatingSite] = useState<SiteDetail | null>(null);
+
   const [assessmentType, setAssessmentType] = useState<
     "specific" | "general" | "all"
   >("all");
@@ -248,6 +256,7 @@ export default function MulticriteriaAnalysis() {
   >(null);
   const [siteName, setSiteName] = useState("");
   const [showNameInput, setShowNameInput] = useState(false);
+
   const [isCoordinateProbeMode, setIsCoordinateProbeMode] = useState(false);
   const [mouseCoords, setMouseCoords] = useState<{
     lat: number;
@@ -257,11 +266,11 @@ export default function MulticriteriaAnalysis() {
   const [isDrawingFinished, setIsDrawingFinished] = useState(false);
   const [areaUnit, setAreaUnit] = useState<"ha" | "sqm">("ha");
   const [viewAreaUnit, setViewAreaUnit] = useState<"ha" | "sqm">("ha");
+
   const [dateFilter, setDateFilter] = useState<{
     start_date?: string;
     end_date?: string;
   }>({});
-
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<
     "date_desc" | "date_asc" | "inspector_asc" | "inspector_desc"
@@ -500,7 +509,6 @@ export default function MulticriteriaAnalysis() {
     isPlacingNewMarker ||
     isEditMode;
 
-  // ✅ NEW: Ref to hold the latest marker click handler to avoid circular dependency
   const onMarkerClickRef = useRef<(id: number) => void>(() => {});
 
   const fieldAssessments = useFieldAssessments(
@@ -508,31 +516,166 @@ export default function MulticriteriaAnalysis() {
     true,
     isDrawingMode,
     handleSnapToMarker,
-    (id: number) => onMarkerClickRef.current(id) // ✅ Pass ref wrapper
+    (id: number) => onMarkerClickRef.current(id),
   );
 
-  // ✅ NEW: Handle marker click from the map to select the assessment in the UI
   const handleMarkerClick = useCallback(
     (fieldAssessmentId: number) => {
-      const currentAssessments = fieldAssessments.assessments[fieldAssessments.activeLayer];
+      const currentAssessments =
+        fieldAssessments.assessments[fieldAssessments.activeLayer];
       const originalIdx = currentAssessments.findIndex(
-        (a) => a.field_assessment_id === fieldAssessmentId
+        (a) => a.field_assessment_id === fieldAssessmentId,
       );
       if (originalIdx !== -1) {
         fieldAssessments.setSelectedIndex(originalIdx);
       }
     },
-    [fieldAssessments.assessments, fieldAssessments.activeLayer, fieldAssessments.setSelectedIndex]
+    [
+      fieldAssessments.assessments,
+      fieldAssessments.activeLayer,
+      fieldAssessments.setSelectedIndex,
+    ],
   );
 
   useEffect(() => {
     onMarkerClickRef.current = handleMarkerClick;
   }, [handleMarkerClick]);
 
+  // ✅ UPDATED: Effect to draw/remove the boundary polygon with clickable vertices
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Clean up previous polygon and markers
+    if (boundaryPolygonRef.current) {
+      map.removeLayer(boundaryPolygonRef.current);
+      boundaryPolygonRef.current = null;
+    }
+    boundaryVertexMarkersRef.current.forEach((marker) => {
+      map.removeLayer(marker);
+    });
+    boundaryVertexMarkersRef.current = [];
+
+    if (showingPolygonId) {
+      const allAssessments = Object.values(fieldAssessments.assessments).flat();
+      const entry = allAssessments.find(
+        (a) => a.field_assessment_id === showingPolygonId,
+      );
+
+      if (entry) {
+        const polygonPoints = entry.layer_data?.polygon_points;
+        if (Array.isArray(polygonPoints) && polygonPoints.length >= 3) {
+          const sortedPoints = [...polygonPoints].sort(
+            (a, b) => (a.order || 0) - (b.order || 0),
+          );
+          const coords: [number, number][] = sortedPoints.map((p) => [
+            p.latitude,
+            p.longitude,
+          ]);
+
+          // Draw the polygon
+          const polygon = L.polygon(coords, {
+            color: "#7C3AED",
+            fillColor: "rgba(124, 58, 237, 0.15)",
+            fillOpacity: 0.4,
+            weight: 3,
+            dashArray: "5, 5",
+          }).addTo(map);
+
+          polygon.bindPopup(
+            `<div style="font-family:sans-serif;"><strong>Boundary Polygon</strong><br/>Vertices: ${coords.length}</div>`,
+          );
+          boundaryPolygonRef.current = polygon;
+
+          // ✅ NEW: Add clickable vertex markers
+          coords.forEach((coord, idx) => {
+            const vertexMarker = L.marker(coord, {
+              icon: L.divIcon({
+                className: "boundary-vertex-marker",
+                html: `<div style="background:#7C3AED;width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;color:white;font-weight:bold;cursor:pointer;">${idx + 1}</div>`,
+                iconSize: [18, 18],
+                iconAnchor: [9, 9],
+              }),
+            }).addTo(map);
+
+            vertexMarker.bindTooltip(
+              isDrawing ? "Click to add vertex" : `Vertex ${idx + 1}`,
+              { permanent: false, direction: "top" },
+            );
+
+            vertexMarker.on("click", (e: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(e);
+              if (isDrawing) {
+                setPolygonCoordinates((prev) => [...prev, coord]);
+                setAlert({
+                  type: "success",
+                  title: "Vertex Added",
+                  message: `Added vertex ${idx + 1} from boundary polygon.`,
+                });
+              }
+            });
+
+            boundaryVertexMarkersRef.current.push(vertexMarker);
+          });
+        }
+      }
+    }
+  }, [showingPolygonId, fieldAssessments.assessments, isDrawing]);
+
+  // ✅ NEW: Handler to use all coordinates from boundary polygon
+  const handleUseAllPolygonCoordinates = useCallback(() => {
+    if (!showingPolygonId) return;
+
+    const allAssessments = Object.values(fieldAssessments.assessments).flat();
+    const entry = allAssessments.find(
+      (a) => a.field_assessment_id === showingPolygonId,
+    );
+
+    if (entry) {
+      const polygonPoints = entry.layer_data?.polygon_points;
+      if (Array.isArray(polygonPoints) && polygonPoints.length >= 3) {
+        const sortedPoints = [...polygonPoints].sort(
+          (a, b) => (a.order || 0) - (b.order || 0),
+        );
+        const coords: [number, number][] = sortedPoints.map((p) => [
+          p.latitude,
+          p.longitude,
+        ]);
+
+        // If user already has some vertices, ask for confirmation
+        if (polygonCoordinates.length > 0) {
+          setConfirmDialog({
+            title: "Replace Current Vertices?",
+            message: `You have ${polygonCoordinates.length} vertex/vertices. Do you want to replace them with all ${coords.length} vertices from the boundary polygon?`,
+            variant: "warning",
+            confirmLabel: "Replace All",
+            onConfirm: () => {
+              setPolygonCoordinates(coords);
+              setConfirmDialog(null);
+              setAlert({
+                type: "success",
+                title: "Vertices Copied",
+                message: `Added all ${coords.length} vertices from boundary polygon.`,
+              });
+            },
+          });
+        } else {
+          setPolygonCoordinates(coords);
+          setAlert({
+            type: "success",
+            title: "Vertices Copied",
+            message: `Added all ${coords.length} vertices from boundary polygon.`,
+          });
+        }
+      }
+    }
+  }, [showingPolygonId, fieldAssessments.assessments, polygonCoordinates]);
+
   const sites = useSites();
   const potentialSitesHook = usePotentialSites();
   const hazardLayers = useHazardLayers(mapRef);
   const barangayAreas = useBarangayAreas(mapRef);
+
   const tempFaLocationMarkerRef = useRef<L.Marker | null>(null);
   const [tempFaLocationCoords, setTempFaLocationCoords] = useState<
     [number, number] | null
@@ -1146,7 +1289,7 @@ export default function MulticriteriaAnalysis() {
     setAlert({
       type: "success",
       title: "Drawing Mode",
-      message: "Click the map or click an assessment marker to snap a vertex.",
+      message: "Click the map, snap to markers, or click boundary polygon vertices.",
     });
   };
 
@@ -2535,13 +2678,14 @@ export default function MulticriteriaAnalysis() {
                   </button>
                 </div>
               </div>
+
               {isDrawing && (
                 <div className="absolute top-3 left-3 bg-white/95 px-3 py-1.5 rounded-lg shadow-md border border-green-200 z-[100]">
                   <p className="text-xs font-semibold text-green-800">
                     Drawing Mode
                   </p>
                   <p className="text-[10px] text-gray-600">
-                    Click map or snap to assessment markers
+                    Click map, snap to markers, or click boundary polygon vertices
                   </p>
                 </div>
               )}
@@ -2853,7 +2997,7 @@ export default function MulticriteriaAnalysis() {
                       />
                       <p>Click on the map to place your first vertex</p>
                       <p className="text-xs mt-1 text-gray-400">
-                        or manually enter coordinates below
+                        or click boundary polygon vertices if visible
                       </p>
                     </div>
                   )}
@@ -3033,7 +3177,6 @@ export default function MulticriteriaAnalysis() {
                 </span>
               </button>
             )}
-
             {isDrawingFinished && !showCoordPanel && (
               <button
                 onClick={() => setShowCoordPanel(true)}
@@ -3342,6 +3485,7 @@ export default function MulticriteriaAnalysis() {
                   )}
                 </div>
               </div>
+
               <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex flex-col gap-2">
                 <div className="flex gap-1 bg-white rounded-lg p-1 border border-gray-200">
                   <button
@@ -3400,6 +3544,7 @@ export default function MulticriteriaAnalysis() {
                     All
                   </button>
                 </div>
+
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Search
@@ -3433,6 +3578,7 @@ export default function MulticriteriaAnalysis() {
                     <option value="inspector_desc">Inspector (Z-A)</option>
                   </select>
                 </div>
+
                 <div className="flex items-center gap-2 flex-wrap">
                   <input
                     type="date"
@@ -3480,6 +3626,7 @@ export default function MulticriteriaAnalysis() {
                   )}
                 </div>
               </div>
+
               <div className="flex border-b border-gray-100 flex-shrink-0">
                 {[
                   {
@@ -3507,7 +3654,7 @@ export default function MulticriteriaAnalysis() {
                       onClick={() => {
                         fieldAssessments.setActiveLayer(l.id);
                         if (
-                          !fieldAssessments.assessments[l.id].length &&
+                          !fieldAssessments.assessments[l.id]?.length &&
                           areaId
                         )
                           handleFetchLayer(l.id);
@@ -3528,6 +3675,7 @@ export default function MulticriteriaAnalysis() {
                   );
                 })}
               </div>
+
               <div className="flex-1 overflow-y-auto min-h-0 max-h-[60vh]">
                 {!areaId ? (
                   <div className="p-4 text-center text-gray-400">
@@ -3573,6 +3721,12 @@ export default function MulticriteriaAnalysis() {
                         fieldAssessments.locationTargetId === faId;
                       const displayTitle =
                         entry.title || `Assessment #${faId}`;
+
+                      // ✅ Check for polygon points in layer_data
+                      const polygonPoints = entry.layer_data?.polygon_points;
+                      const hasPolygon = Array.isArray(polygonPoints) && polygonPoints.length >= 3;
+                      const isShowingPolygon = showingPolygonId === faId;
+
                       return (
                         <button
                           key={faId}
@@ -3664,8 +3818,42 @@ export default function MulticriteriaAnalysis() {
                                       : "Add Location"}
                                   </button>
                                 )}
-                                
-                                {/* ✅ NEW: Fly To Button */}
+
+                                {/* ✅ UPDATED: Show/Hide Polygon Button */}
+                                {hasPolygon && (
+                                  <>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowingPolygonId(isShowingPolygon ? null : faId);
+                                      }}
+                                      className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border transition ${
+                                        isShowingPolygon
+                                          ? "bg-purple-100 text-purple-700 border-purple-300 hover:bg-purple-200"
+                                          : "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
+                                      }`}
+                                      title={isShowingPolygon ? "Hide boundary polygon on map" : "Show boundary polygon on map"}
+                                    >
+                                      <Layers size={9} /> {isShowingPolygon ? "Hide Polygon" : "Show Polygon"}
+                                      <span className="text-[8px] opacity-75">({polygonPoints.length})</span>
+                                    </button>
+
+                                    {/* ✅ NEW: Use All Coordinates Button - only shows when in drawing mode */}
+                                    {isDrawing && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleUseAllPolygonCoordinates();
+                                        }}
+                                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-green-50 text-green-700 border-green-300 hover:bg-green-100 transition"
+                                        title="Copy all vertices from this polygon to your drawing"
+                                      >
+                                        <CheckCircle size={9} /> Use All ({polygonPoints.length})
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
