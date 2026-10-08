@@ -44,6 +44,7 @@ import {
   Pencil,
   Save,
   Ban,
+  Copy,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { useUserRole } from "@/hooks/authorization";
@@ -566,6 +567,9 @@ export default function Map() {
   });
   const [areaCoordinateInput, setAreaCoordinateInput] = useState("");
   const [siteCoordinateInput, setSiteCoordinateInput] = useState("");
+  const [sitePolygonPoints, setSitePolygonPoints] = useState<
+    { lat: string; lng: string }[]
+  >([]);
   const [selectedPotentialSiteIds, setSelectedPotentialSiteIds] = useState<
     number[]
   >([]);
@@ -1587,6 +1591,79 @@ export default function Map() {
     }
   }
 
+  const formatPolygonCoords = (coords: [number, number][]) =>
+    coords.map((c) => `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`).join("\n");
+
+  // Rows left fully blank are ignored; any partial/out-of-range row makes the polygon invalid (null)
+  const sitePolygonCoords = ((): [number, number][] | null => {
+    const coords: [number, number][] = [];
+    for (const p of sitePolygonPoints) {
+      if (p.lat.trim() === "" && p.lng.trim() === "") continue;
+      const lat = parseFloat(p.lat);
+      const lng = parseFloat(p.lng);
+      if (
+        isNaN(lat) ||
+        isNaN(lng) ||
+        lat < -90 ||
+        lat > 90 ||
+        lng < -180 ||
+        lng > 180
+      )
+        return null;
+      coords.push([lat, lng]);
+    }
+    return coords;
+  })();
+  const isSitePolygonValid =
+    sitePolygonCoords !== null &&
+    (sitePolygonCoords.length === 0 || sitePolygonCoords.length >= 3);
+
+  const updateSitePolygonPoint = (
+    index: number,
+    field: "lat" | "lng",
+    value: string,
+  ) =>
+    setSitePolygonPoints((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
+    );
+
+  const copyAnalysisCoords = async () => {
+    if (analysisCoords.length < 3) return;
+    try {
+      await navigator.clipboard.writeText(formatPolygonCoords(analysisCoords));
+      setPSAlert({
+        type: "success",
+        title: "Copied",
+        message: `${analysisCoords.length} coordinates copied to clipboard.`,
+      });
+    } catch {
+      setPSAlert({
+        type: "failed",
+        title: "Copy Failed",
+        message: "Could not access the clipboard.",
+      });
+    }
+  };
+
+  const fillSitePolygonFromAnalysis = () => {
+    if (analysisCoords.length < 3) return;
+    setSitePolygonPoints(
+      analysisCoords.map((c) => ({
+        lat: c[0].toFixed(6),
+        lng: c[1].toFixed(6),
+      })),
+    );
+    if (!siteForm.marker_coordinate) {
+      const lat =
+        analysisCoords.reduce((s, c) => s + c[0], 0) / analysisCoords.length;
+      const lng =
+        analysisCoords.reduce((s, c) => s + c[1], 0) / analysisCoords.length;
+      setSiteForm((prev) => ({ ...prev, marker_coordinate: [lat, lng] }));
+      setSiteCoordinateInput(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+      setSiteMarkerPosition([lat, lng]);
+    }
+  };
+
   function closeAll() {
     setIsNdviPenelOpen(false);
     setIsAreaFormPenelOpen(false);
@@ -1657,15 +1734,26 @@ export default function Map() {
 
   async function onSubmitSite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!isSitePolygonValid) {
+      setPSAlert({
+        type: "failed",
+        title: "Validation Error",
+        message:
+          'Polygon needs at least 3 valid points, one "lat, lng" pair per line.',
+      });
+      return;
+    }
+    const polygonCoords = sitePolygonCoords ?? [];
     if (
       !siteForm.name.trim() ||
       !siteForm.reforestation_area_id ||
-      !siteForm.marker_coordinate
+      (!siteForm.marker_coordinate && polygonCoords.length === 0)
     ) {
       setPSAlert({
         type: "failed",
         title: "Validation Error",
-        message: "Name, Parent Area, and Center Coordinate are required",
+        message:
+          "Name, Parent Area, and a Center Coordinate (or Polygon) are required",
       });
       return;
     }
@@ -1674,6 +1762,9 @@ export default function Map() {
         name: siteForm.name.trim(),
         reforestation_area_id: siteForm.reforestation_area_id,
         marker_coordinate: siteForm.marker_coordinate,
+        ...(polygonCoords.length >= 3 && {
+          polygon_coordinates: polygonCoords,
+        }),
       };
       const res = await fetch(`${api}api/sites/create_site/`, {
         method: "POST",
@@ -1721,6 +1812,7 @@ export default function Map() {
         marker_coordinate: null,
       });
       setSiteCoordinateInput("");
+      setSitePolygonPoints([]);
       setSiteMarkerPosition(null);
       setSelectedPotentialSiteIds([]);
       setIsSiteFormPenelOpen(false);
@@ -2068,6 +2160,14 @@ export default function Map() {
               className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
             >
               <Plus size={12} /> Add Coordinate
+            </button>
+            <button
+              onClick={copyAnalysisCoords}
+              disabled={analysisCoords.length < 3}
+              title="Copy coordinates for Create Site"
+              className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1 disabled:opacity-50"
+            >
+              <Copy size={12} /> Copy Coordinates
             </button>
           </div>
           <p className="text-[10px] text-gray-500 mb-2 flex items-center gap-1">
@@ -2693,6 +2793,15 @@ export default function Map() {
                     <Pencil size={16} /> Edit Analysis Area
                   </button>
                 )}
+                {analysisCoords.length >= 3 && (
+                  <button
+                    onClick={copyAnalysisCoords}
+                    title="Copy coordinates for Create Site"
+                    className="flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 h-10 px-3 py-2 rounded-lg text-sm font-medium"
+                  >
+                    <Copy size={16} /> Copy Coordinates
+                  </button>
+                )}
                 <button
                   onClick={analyzeArea}
                   disabled={isProcessing}
@@ -2935,7 +3044,7 @@ export default function Map() {
             <div className="relative">
               <form
                 onSubmit={onSubmitSite}
-                className={`absolute ${suitablePolygons?.features?.length ? "top-[-400px]" : "top-[-295px]"} right-0 w-[14rem] flex flex-col gap-2 p-2 bg-white border border-green-600 rounded-md shadow-xl transition-all duration-200 ${isSiteFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+                className={`absolute bottom-full mb-3 right-0 w-[16rem] max-h-[75vh] overflow-y-auto flex flex-col gap-2 p-2 bg-white border border-green-600 rounded-md shadow-xl transition-all duration-200 ${isSiteFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
               >
                 <div className="text-center font-bold w-full p-1 bg-green-700 rounded-md">
                   <h2 className="text-white text-[.8rem] flex items-center justify-center gap-2">
@@ -2986,6 +3095,9 @@ export default function Map() {
                 <div>
                   <label className="text-[.7rem] text-gray-600">
                     Center Coordinate
+                    {sitePolygonCoords && sitePolygonCoords.length >= 3 && (
+                      <span className="text-gray-400"> (optional)</span>
+                    )}
                   </label>
                   <div className="flex gap-2">
                     <input
@@ -3033,6 +3145,100 @@ export default function Map() {
                     </button>
                   </div>
                 </div>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[.7rem] text-gray-600">
+                      Polygon Coordinates{" "}
+                      <span className="text-gray-400">(optional)</span>
+                    </label>
+                    {sitePolygonPoints.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSitePolygonPoints([])}
+                        title="Clear polygon"
+                        className="text-[.6rem] text-red-500 hover:text-red-700"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1 mt-1 max-h-40 overflow-y-auto pr-0.5">
+                    {sitePolygonPoints.map((point, idx) => (
+                      <div key={idx} className="flex gap-1 items-center">
+                        <span className="text-[.6rem] font-bold text-white bg-green-600 w-5 h-5 flex items-center justify-center rounded-full shrink-0">
+                          {idx + 1}
+                        </span>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          placeholder="Lat"
+                          value={point.lat}
+                          onChange={(e) =>
+                            updateSitePolygonPoint(idx, "lat", e.target.value)
+                          }
+                          className="w-full min-w-0 text-[.7rem] p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
+                        />
+                        <input
+                          type="number"
+                          step="0.000001"
+                          placeholder="Lng"
+                          value={point.lng}
+                          onChange={(e) =>
+                            updateSitePolygonPoint(idx, "lng", e.target.value)
+                          }
+                          className="w-full min-w-0 text-[.7rem] p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSitePolygonPoints((prev) =>
+                              prev.filter((_, i) => i !== idx),
+                            )
+                          }
+                          className="text-red-500 hover:text-red-700 p-0.5 shrink-0"
+                          title="Delete"
+                        >
+                          <Trash size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-1 mt-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSitePolygonPoints((prev) => [
+                          ...prev,
+                          { lat: "", lng: "" },
+                        ])
+                      }
+                      className="flex-1 flex items-center justify-center gap-0.5 text-[.65rem] text-gray-700 bg-gray-100 hover:bg-gray-200 py-1 rounded"
+                    >
+                      <Plus size={10} /> Add Point
+                    </button>
+                    {analysisCoords.length >= 3 && (
+                      <button
+                        type="button"
+                        onClick={fillSitePolygonFromAnalysis}
+                        title="Fill with the polygon drawn in Analysis Tools"
+                        className="flex-1 flex items-center justify-center gap-0.5 text-[.65rem] text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 py-1 rounded"
+                      >
+                        <Pen size={10} /> Use Drawn Area
+                      </button>
+                    )}
+                  </div>
+                  {sitePolygonPoints.length > 0 && (
+                    <p
+                      className={`text-[.6rem] mt-1 ${isSitePolygonValid ? "text-gray-500" : "text-red-500"}`}
+                    >
+                      {sitePolygonCoords === null
+                        ? "Some points have invalid lat/lng"
+                        : sitePolygonCoords.length < 3
+                          ? `${sitePolygonCoords.length} pts — need at least 3`
+                          : `${sitePolygonCoords.length} points · ${calculateAreaHectares(sitePolygonCoords).toFixed(2)} ha`}
+                    </p>
+                  )}
+                </div>
                 {suitablePolygons && suitablePolygons.features && (
                   <div className="border-t border-gray-200 pt-2 mt-1">
                     <label className="text-[.7rem] text-gray-600 block mb-1">
@@ -3059,6 +3265,7 @@ export default function Map() {
                         marker_coordinate: null,
                       });
                       setSiteCoordinateInput("");
+                      setSitePolygonPoints([]);
                       setSiteMarkerPosition(null);
                       setSelectedPotentialSiteIds([]);
                     }}
@@ -3614,6 +3821,19 @@ export default function Map() {
             </Popup>
           </Marker>
         )}
+        {isSiteFormPenelOpen &&
+          sitePolygonCoords &&
+          sitePolygonCoords.length >= 3 && (
+            <Polygon
+              positions={sitePolygonCoords}
+              pathOptions={{
+                color: "#16a34a",
+                weight: 2,
+                dashArray: "6 4",
+                fillOpacity: 0.15,
+              }}
+            />
+          )}
         {siteMarkerPosition && (
           <Marker
             position={siteMarkerPosition}
