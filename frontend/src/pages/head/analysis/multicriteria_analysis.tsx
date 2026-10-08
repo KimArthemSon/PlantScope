@@ -279,7 +279,14 @@ export default function MulticriteriaAnalysis() {
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [reassignTargetAssessment, setReassignTargetAssessment] =
     useState<FieldAssessmentEntry | null>(null);
-  const [availableSites, setAvailableSites] = useState<Site[]>([]);
+  const [availableSites, setAvailableSites] = useState<
+    { site_id: number; name: string; area_hectares?: number }[]
+  >([]);
+  const [reassignAreas, setReassignAreas] = useState<
+    { reforestation_area_id: number; name: string; is_current: boolean }[]
+  >([]);
+  const [reassignAreaId, setReassignAreaId] = useState<number | null>(null);
+  const [isLoadingReassignSites, setIsLoadingReassignSites] = useState(false);
   const [reassignSearchQuery, setReassignSearchQuery] = useState("");
   const [isReassigning, setIsReassigning] = useState(false);
 
@@ -754,14 +761,13 @@ export default function MulticriteriaAnalysis() {
     ],
   );
 
-  const openReassignModal = async (assessment: FieldAssessmentEntry) => {
-    setReassignTargetAssessment(assessment);
-    setReassignSearchQuery("");
-    setShowReassignModal(true);
+  const fetchReassignSites = async (targetAreaId: number | string) => {
+    setIsLoadingReassignSites(true);
+    setAvailableSites([]);
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
-        `${api_second}/api/get_all_sites_for_reassignment/${areaId}/`,
+        `${api_second}/api/get_all_sites_for_reassignment/${targetAreaId}/`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -772,8 +778,50 @@ export default function MulticriteriaAnalysis() {
       }
     } catch (err) {
       console.error("Failed to fetch sites for reassignment", err);
+    } finally {
+      setIsLoadingReassignSites(false);
     }
   };
+
+  const openReassignModal = async (assessment: FieldAssessmentEntry) => {
+    setReassignTargetAssessment(assessment);
+    setReassignSearchQuery("");
+    setReassignAreas([]);
+    setReassignAreaId(areaId ? Number(areaId) : null);
+    setShowReassignModal(true);
+    if (areaId) fetchReassignSites(areaId);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${api_second}/api/field_assessments/${assessment.field_assessment_id}/reassignment_areas/`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setReassignAreas(data.data || []);
+        if (data.current_area_id && data.current_area_id !== Number(areaId)) {
+          setReassignAreaId(data.current_area_id);
+          fetchReassignSites(data.current_area_id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch inspector areas for reassignment", err);
+    }
+  };
+
+  const handleReassignAreaChange = (targetAreaId: number) => {
+    setReassignAreaId(targetAreaId);
+    setReassignSearchQuery("");
+    fetchReassignSites(targetAreaId);
+  };
+
+  const currentReassignAreaId =
+    reassignAreas.find((a) => a.is_current)?.reforestation_area_id ??
+    (areaId ? Number(areaId) : null);
+  const isReassignToOtherArea =
+    reassignAreaId !== null && reassignAreaId !== currentReassignAreaId;
 
   const handleReassign = async (siteId: number | null) => {
     if (!reassignTargetAssessment) return;
@@ -788,7 +836,10 @@ export default function MulticriteriaAnalysis() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ site_id: siteId }),
+          body: JSON.stringify({
+            site_id: siteId,
+            reforestation_area_id: reassignAreaId,
+          }),
         },
       );
       const data = await res.json();
@@ -4059,10 +4110,53 @@ export default function MulticriteriaAnalysis() {
                     ? `Site: ${reassignTargetAssessment.site_name}`
                     : "General Area (No specific site)"}
                 </p>
+                {reassignAreas.find((a) => a.is_current) && (
+                  <p className="text-xs text-blue-700 mt-0.5">
+                    Reforestation Area:{" "}
+                    {reassignAreas.find((a) => a.is_current)?.name}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1.5 block">
-                  Search Sites in this Area
+                  Reforestation Area
+                  <span className="text-gray-400 font-normal">
+                    {" "}
+                    (assigned to this inspector)
+                  </span>
+                </label>
+                <select
+                  value={reassignAreaId ?? ""}
+                  onChange={(e) =>
+                    handleReassignAreaChange(Number(e.target.value))
+                  }
+                  disabled={isReassigning || reassignAreas.length === 0}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white disabled:bg-gray-50"
+                >
+                  {reassignAreas.length === 0 && (
+                    <option value={reassignAreaId ?? ""}>Loading areas...</option>
+                  )}
+                  {reassignAreas.map((a) => (
+                    <option
+                      key={a.reforestation_area_id}
+                      value={a.reforestation_area_id}
+                    >
+                      {a.name}
+                      {a.is_current ? " (current)" : ""}
+                    </option>
+                  ))}
+                </select>
+                {isReassignToOtherArea && (
+                  <p className="text-xs text-amber-700 mt-1.5">
+                    This assessment will be moved to another reforestation
+                    area and will no longer appear in this one.
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1.5 block">
+                  Search Sites in{" "}
+                  {isReassignToOtherArea ? "Selected" : "this"} Area
                 </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -4080,9 +4174,11 @@ export default function MulticriteriaAnalysis() {
                   onClick={() => handleReassign(null)}
                   disabled={
                     isReassigning ||
-                    reassignTargetAssessment.assessment_type !== "specific"
+                    (!isReassignToOtherArea &&
+                      reassignTargetAssessment.assessment_type !== "specific")
                   }
                   className={`w-full text-left px-4 py-3 flex items-center gap-3 transition ${
+                    !isReassignToOtherArea &&
                     reassignTargetAssessment.assessment_type !== "specific"
                       ? "opacity-50 cursor-not-allowed bg-gray-50"
                       : "hover:bg-blue-50 cursor-pointer"
@@ -4096,7 +4192,9 @@ export default function MulticriteriaAnalysis() {
                       Make General Assessment
                     </p>
                     <p className="text-xs text-gray-500">
-                      Remove site assignment (applies to whole area)
+                      {isReassignToOtherArea
+                        ? "Applies to the whole selected area"
+                        : "Remove site assignment (applies to whole area)"}
                     </p>
                   </div>
                 </button>
@@ -4112,11 +4210,13 @@ export default function MulticriteriaAnalysis() {
                       onClick={() => handleReassign(site.site_id)}
                       disabled={
                         isReassigning ||
-                        (reassignTargetAssessment.assessment_type ===
-                          "specific" &&
+                        (!isReassignToOtherArea &&
+                          reassignTargetAssessment.assessment_type ===
+                            "specific" &&
                           reassignTargetAssessment.site_name === site.name)
                       }
                       className={`w-full text-left px-4 py-3 flex items-center gap-3 transition ${
+                        !isReassignToOtherArea &&
                         reassignTargetAssessment.assessment_type ===
                           "specific" &&
                         reassignTargetAssessment.site_name === site.name
@@ -4132,19 +4232,28 @@ export default function MulticriteriaAnalysis() {
                           {site.name}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {site.metrics?.area_hectares?.toFixed(2)} ha
+                          {site.area_hectares?.toFixed(2)} ha
                         </p>
                       </div>
                     </button>
                   ))}
-                {availableSites.filter((s) =>
-                  s.name
-                    .toLowerCase()
-                    .includes(reassignSearchQuery.toLowerCase()),
-                ).length === 0 && (
-                  <div className="p-4 text-center text-gray-500 text-xs">
-                    No sites found matching "{reassignSearchQuery}"
+                {isLoadingReassignSites ? (
+                  <div className="p-4 flex items-center justify-center gap-2 text-gray-500 text-xs">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading
+                    sites...
                   </div>
+                ) : (
+                  availableSites.filter((s) =>
+                    s.name
+                      .toLowerCase()
+                      .includes(reassignSearchQuery.toLowerCase()),
+                  ).length === 0 && (
+                    <div className="p-4 text-center text-gray-500 text-xs">
+                      {reassignSearchQuery
+                        ? `No sites found matching "${reassignSearchQuery}"`
+                        : "No sites in this area"}
+                    </div>
+                  )
                 )}
               </div>
             </div>
