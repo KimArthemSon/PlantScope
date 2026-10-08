@@ -801,31 +801,84 @@ def reassign_field_assessment(request, field_assessment_id):
     try:
         body = json.loads(request.body)
         new_site_id = body.get("site_id")  # Can be an integer or None
-        
+        new_area_id = body.get("reforestation_area_id")  # Optional: move to another area
+
         assessment = get_object_or_404(Field_assessment, field_assessment_id=field_assessment_id)
-        
+        current_assignment = assessment.assigned_onsite_inspector
+        target_assignment = current_assignment
+
+        if new_area_id is not None and int(new_area_id) != current_assignment.reforestation_area_id:
+            # Inspector must also be assigned to the target reforestation area
+            target_assignment = Assigned_onsite_inspector.objects.filter(
+                user_id=current_assignment.user_id,
+                reforestation_area_id=new_area_id,
+            ).first()
+            if not target_assignment:
+                return JsonResponse(
+                    {"error": "The inspector is not assigned to the selected reforestation area"},
+                    status=400,
+                )
+
         if new_site_id is not None:
             # Validate site exists and is active
             site = get_object_or_404(Sites, site_id=new_site_id, is_active=True)
-            # Ensure site belongs to the same reforestation area
-            if site.reforestation_area != assessment.assigned_onsite_inspector.reforestation_area:
-                return JsonResponse({"error": "Site does not belong to the same reforestation area"}, status=400)
+            # Ensure site belongs to the target reforestation area
+            if site.reforestation_area_id != target_assignment.reforestation_area_id:
+                return JsonResponse({"error": "Site does not belong to the selected reforestation area"}, status=400)
             assessment.site = site
         else:
             # Make it general by nulling the site field
             assessment.site = None
-            
+
+        assessment.assigned_onsite_inspector = target_assignment
         assessment.save()
-        
+
         return JsonResponse({
             "success": True,
             "message": "Assessment reassigned successfully",
+            "reforestation_area_id": target_assignment.reforestation_area_id,
+            "reforestation_area_name": target_assignment.reforestation_area.name,
             "site_id": assessment.site.site_id if assessment.site else None,
             "site_name": assessment.site.name if assessment.site else "General Area"
         }, status=200)
         
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def get_assessment_reassignment_areas(request, field_assessment_id):
+    """
+    Get the reforestation areas the assessment's onsite inspector is assigned to.
+    Only these areas are valid targets for reassignment.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET only"}, status=405)
+
+    try:
+        assessment = get_object_or_404(
+            Field_assessment.objects.select_related('assigned_onsite_inspector'),
+            field_assessment_id=field_assessment_id,
+        )
+        current_assignment = assessment.assigned_onsite_inspector
+        assignments = Assigned_onsite_inspector.objects.filter(
+            user_id=current_assignment.user_id
+        ).select_related('reforestation_area').order_by('reforestation_area__name')
+
+        areas_data = [{
+            "reforestation_area_id": a.reforestation_area_id,
+            "name": a.reforestation_area.name,
+            "is_current": a.reforestation_area_id == current_assignment.reforestation_area_id,
+        } for a in assignments]
+
+        return JsonResponse({
+            "data": areas_data,
+            "current_area_id": current_assignment.reforestation_area_id,
+            "count": len(areas_data)
+        }, status=200)
+
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
