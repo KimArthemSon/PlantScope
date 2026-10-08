@@ -1035,10 +1035,12 @@ export default function SurvivabilityForm() {
   };
 
   const populateForm = (data: any) => {
-    // ✅ NEW: Load title from server response
-    setTitle(data.title || "");
-    
-    const surv = data?.survivability?.survivability || data?.survivability || data || {};
+    // Only touch the title when the source actually carries one — callers that pass
+    // just field_assessment_data (offline drafts, post-save refresh) must not wipe it.
+    if (data && "title" in data) setTitle(data.title || "");
+
+    const src = data?.field_assessment_data || data || {};
+    const surv = src?.survivability?.survivability || src?.survivability || src;
     setSoilNote(surv.soil?.overall_note || "");
     setWaterNote(surv.water?.overall_note || "");
     setSlopeNote(surv.slope?.overall_note || "");
@@ -1363,7 +1365,7 @@ export default function SurvivabilityForm() {
       setLocalImages([]);
       const data = await fetchAssessmentData();
       if (data) {
-        populateForm(data.field_assessment_data || {});
+        populateForm(data);
         const allImages = data.images || [];
         setSoilImages(
           allImages.filter(

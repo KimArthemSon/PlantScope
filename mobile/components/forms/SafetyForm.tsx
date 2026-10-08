@@ -1021,10 +1021,12 @@ export default function SafetyForm() {
   };
 
   const populateForm = (data: any) => {
-    // ✅ NEW: Load title from server response
-    setTitle(data.title || "");
-    
-    const safety = data?.safety?.safety || data?.safety || data || {};
+    // Only touch the title when the source actually carries one — callers that pass
+    // just field_assessment_data (offline drafts, post-save refresh) must not wipe it.
+    if (data && "title" in data) setTitle(data.title || "");
+
+    const src = data?.field_assessment_data || data || {};
+    const safety = src?.safety?.safety || src?.safety || src;
     setFloodNote(safety.flood?.overall_note || "");
     setLandslideNote(safety.landslide?.overall_note || "");
     setErosionNote(safety.erosion?.overall_note || "");
@@ -1355,7 +1357,7 @@ export default function SafetyForm() {
       setLocalImages([]);
       const data = await fetchAssessmentData();
       if (data) {
-        populateForm(data.field_assessment_data || {});
+        populateForm(data);
         const allImages = data.images || [];
         setFloodImages(
           allImages.filter((img: SafetyImage) => img.layer === "safety_flood"),
