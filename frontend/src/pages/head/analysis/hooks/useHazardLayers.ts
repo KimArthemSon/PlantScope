@@ -4,6 +4,15 @@ import { api, api_second } from "@/constant/api";
 
 export type FirmsTimeRange = "today" | "24hrs" | "7days";
 
+export interface HazardNotice {
+  type: "success" | "error";
+  title: string;
+  message: string;
+}
+
+const formatDate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
 export interface HazardLayersState {
   // Official Gov Maps
   showMgbFlood: boolean;
@@ -19,6 +28,16 @@ export interface HazardLayersState {
   fireCount: number;
   firmsTimeRange: FirmsTimeRange;
   setFirmsTimeRange: (v: FirmsTimeRange) => void;
+  isFirmsLoading: boolean;
+
+  // FIRMS custom date range
+  firmsStartDate: string;
+  setFirmsStartDate: (v: string) => void;
+  firmsEndDate: string;
+  setFirmsEndDate: (v: string) => void;
+  useCustomDateRange: boolean;
+  setUseCustomDateRange: (v: boolean) => void;
+  applyCustomDateRange: () => void;
 
   // Panel
   isPanelOpen: boolean;
@@ -27,12 +46,19 @@ export interface HazardLayersState {
   // Actions
   toggleFirms: () => void;
   updateFirmsTimeRange: (range: FirmsTimeRange) => void;
-  fetchFirmsData: (range?: FirmsTimeRange) => Promise<void>;
+  fetchFirmsData: (
+    range?: FirmsTimeRange,
+    startDate?: string,
+    endDate?: string,
+  ) => Promise<void>;
 }
 
 export function useHazardLayers(
   mapRef: React.MutableRefObject<L.Map | null>,
+  onNotify?: (notice: HazardNotice) => void,
 ): HazardLayersState {
+  const onNotifyRef = useRef(onNotify);
+  onNotifyRef.current = onNotify;
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   // ── State ────────────────────────────────────────────────────────────────
@@ -43,6 +69,14 @@ export function useHazardLayers(
   const [fireCount, setFireCount] = useState(0);
   const [firmsTimeRange, setFirmsTimeRange] = useState<FirmsTimeRange>("today");
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [isFirmsLoading, setIsFirmsLoading] = useState(false);
+  const [firmsStartDate, setFirmsStartDate] = useState(() =>
+    formatDate(new Date()),
+  );
+  const [firmsEndDate, setFirmsEndDate] = useState(() =>
+    formatDate(new Date()),
+  );
+  const [useCustomDateRange, setUseCustomDateRange] = useState(false);
 
   // ── Layer Refs ───────────────────────────────────────────────────────────
   const mgbFloodLayerRef = useRef<L.TileLayer | null>(null);
@@ -146,11 +180,18 @@ export function useHazardLayers(
 
   // ── FIRMS: Fetch fire data ───────────────────────────────────────────────
   const fetchFirmsData = useCallback(
-    async (range?: FirmsTimeRange) => {
+    async (range?: FirmsTimeRange, startDate?: string, endDate?: string) => {
       const map = mapRef.current;
-      if (!map) return;
+      if (!map) {
+        setIsFirmsLoading(false);
+        return;
+      }
 
       const effectiveRange = range || firmsTimeRange;
+      const isExplicitCustom = startDate !== undefined && endDate !== undefined;
+      const dateInfo = isExplicitCustom
+        ? `${startDate} to ${endDate}`
+        : effectiveRange;
 
       try {
         const bounds = map.getBounds();
@@ -165,6 +206,10 @@ export function useHazardLayers(
           body: JSON.stringify({
             bbox,
             time_range: effectiveRange,
+            ...(isExplicitCustom && {
+              start_date: startDate,
+              end_date: endDate,
+            }),
           }),
         });
 
@@ -237,11 +282,29 @@ export function useHazardLayers(
                 `);
               },
             }).addTo(map);
+            onNotifyRef.current?.({
+              type: "success",
+              title: "Fires Detected",
+              message: `Found ${data.fires.length} active fire hotspot${data.fires.length > 1 ? "s" : ""} (${dateInfo})`,
+            });
+          } else {
+            onNotifyRef.current?.({
+              type: "success",
+              title: "All Clear",
+              message: `No active fires detected in current view (${dateInfo})`,
+            });
           }
         }
       } catch (error: any) {
         console.error("FIRMS fetch error:", error);
         setFireCount(0);
+        onNotifyRef.current?.({
+          type: "error",
+          title: "FIRMS Error",
+          message: error?.message || "Failed to connect to fire data service",
+        });
+      } finally {
+        setIsFirmsLoading(false);
       }
     },
     [firmsTimeRange, mapRef.current, token],
@@ -255,22 +318,50 @@ export function useHazardLayers(
     if (!newState) {
       removeLayer(firmsLayerRef);
       setFireCount(0);
+      setIsFirmsLoading(false);
     } else {
-      setTimeout(() => fetchFirmsData(), 300);
+      setIsFirmsLoading(true);
+      setTimeout(() => {
+        if (useCustomDateRange)
+          fetchFirmsData(firmsTimeRange, firmsStartDate, firmsEndDate);
+        else fetchFirmsData();
+      }, 300);
     }
-  }, [showFirms, fetchFirmsData]);
+  }, [
+    showFirms,
+    fetchFirmsData,
+    useCustomDateRange,
+    firmsTimeRange,
+    firmsStartDate,
+    firmsEndDate,
+  ]);
 
   // ── FIRMS: Update time range ─────────────────────────────────────────────
   const updateFirmsTimeRange = useCallback(
     (range: FirmsTimeRange) => {
       setFirmsTimeRange(range);
+      setUseCustomDateRange(false);
       if (showFirms) {
         removeLayer(firmsLayerRef);
+        setIsFirmsLoading(true);
         setTimeout(() => fetchFirmsData(range), 200);
       }
     },
     [showFirms, fetchFirmsData],
   );
+
+  // ── FIRMS: Apply custom date range ───────────────────────────────────────
+  const applyCustomDateRange = useCallback(() => {
+    setUseCustomDateRange(true);
+    if (showFirms) {
+      removeLayer(firmsLayerRef);
+      setIsFirmsLoading(true);
+      setTimeout(
+        () => fetchFirmsData(firmsTimeRange, firmsStartDate, firmsEndDate),
+        200,
+      );
+    }
+  }, [showFirms, fetchFirmsData, firmsTimeRange, firmsStartDate, firmsEndDate]);
 
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
@@ -294,6 +385,14 @@ export function useHazardLayers(
     fireCount,
     firmsTimeRange,
     setFirmsTimeRange,
+    isFirmsLoading,
+    firmsStartDate,
+    setFirmsStartDate,
+    firmsEndDate,
+    setFirmsEndDate,
+    useCustomDateRange,
+    setUseCustomDateRange,
+    applyCustomDateRange,
     isPanelOpen,
     setIsPanelOpen,
     toggleFirms,

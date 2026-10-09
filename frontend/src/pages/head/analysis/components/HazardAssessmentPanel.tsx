@@ -20,6 +20,16 @@ interface HazardAssessmentPanelProps {
   fireCount: number;
   onToggleFirms: () => void;
   onUpdateFirmsTimeRange: (range: FirmsTimeRange) => void;
+  isFirmsLoading: boolean;
+
+  // FIRMS custom date range
+  firmsStartDate: string;
+  setFirmsStartDate: (v: string) => void;
+  firmsEndDate: string;
+  setFirmsEndDate: (v: string) => void;
+  useCustomDateRange: boolean;
+  setUseCustomDateRange: (v: boolean) => void;
+  onApplyCustomDateRange: () => void;
 }
 
 // 🏛️ Official MGB & PHIVOLCS Guide Data
@@ -113,6 +123,14 @@ export default function HazardAssessmentPanel({
   fireCount,
   onToggleFirms,
   onUpdateFirmsTimeRange,
+  isFirmsLoading,
+  firmsStartDate,
+  setFirmsStartDate,
+  firmsEndDate,
+  setFirmsEndDate,
+  useCustomDateRange,
+  setUseCustomDateRange,
+  onApplyCustomDateRange,
 }: HazardAssessmentPanelProps) {
   const [activeInfo, setActiveInfo] = useState<
     "mgbFlood" | "mgbLandslide" | "eil" | "firms" | null
@@ -161,9 +179,9 @@ export default function HazardAssessmentPanel({
   };
 
   return (
-    <div className="absolute top-36 right-10 w-[18rem] max-h-[85vh] overflow-y-auto flex flex-col gap-3 p-3 bg-white border border-[#0f4a2fe0] rounded-lg shadow-2xl z-[1000]">
+    <div className="absolute top-16 right-4 w-64 max-w-[calc(100%-2rem)] max-h-[calc(75vh-5rem)] flex flex-col overflow-hidden bg-white border border-[#0f4a2fe0] rounded-lg shadow-2xl z-[1000]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0 px-3 py-2 border-b border-gray-200">
         <h1 className="text-sm font-bold text-[#0f4a2f] flex items-center gap-2">
           <Shield size={16} /> Hazard Assessment
         </h1>
@@ -175,262 +193,417 @@ export default function HazardAssessmentPanel({
         </button>
       </div>
 
-      {/* Official Gov Maps Section */}
-      <div className="border-b border-gray-200 pb-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-1.5">
-            <Map size={12} className="text-blue-600" />
-            <span className="text-[.7rem] font-bold text-blue-800">
-              Official Gov Maps
-            </span>
-            <span className="text-[.5rem] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-bold">
-              FREE
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <button
-            onClick={() => setShowMgbFlood(!showMgbFlood)}
-            className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
-              showMgbFlood
-                ? "bg-blue-600 text-white shadow-md"
-                : "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              {showMgbFlood ? <Eye size={12} /> : <EyeOff size={12} />}
-              🌊 MGB Flood Map
-            </span>
-            {showMgbFlood && (
-              <span className="text-[.5rem] bg-white/20 px-1.5 py-0.5 rounded">
-                ON
+      {/* Scrollable body */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-3 p-3">
+        {/* Official Gov Maps Section */}
+        <div className="border-b border-gray-200 pb-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Map size={12} className="text-blue-600" />
+              <span className="text-[.7rem] font-bold text-blue-800">
+                Official Gov Maps
               </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setShowMgbLandslide(!showMgbLandslide)}
-            className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
-              showMgbLandslide
-                ? "bg-orange-600 text-white shadow-md"
-                : "bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100"
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              {showMgbLandslide ? <Eye size={12} /> : <EyeOff size={12} />}
-              ⛰️ MGB Rain-Landslide
-            </span>
-            {showMgbLandslide && (
-              <span className="text-[.5rem] bg-white/20 px-1.5 py-0.5 rounded">
-                ON
+              <span className="text-[.5rem] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-bold">
+                FREE
               </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setShowEil(!showEil)}
-            className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
-              showEil
-                ? "bg-purple-600 text-white shadow-md"
-                : "bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100"
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              {showEil ? <Eye size={12} /> : <EyeOff size={12} />}
-              🌋 PHIVOLCS Quake Landslide
-            </span>
-            {showEil && (
-              <span className="text-[.5rem] bg-white/20 px-1.5 py-0.5 rounded">
-                ON
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Official Maps Info Guides */}
-        <div className="mt-2 space-y-2">
-          <button
-            onClick={() =>
-              setActiveInfo(activeInfo === "mgbFlood" ? null : "mgbFlood")
-            }
-            className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[.62rem] font-medium transition-all ${
-              activeInfo === "mgbFlood"
-                ? "bg-blue-100 text-blue-700 border border-blue-300"
-                : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              <Info size={10} /> MGB Flood Guide
-            </span>
-            <span className="text-[.5rem]">
-              {activeInfo === "mgbFlood" ? "▲" : "▼"}
-            </span>
-          </button>
-          {activeInfo === "mgbFlood" && <OfficialInfoGuide type="mgbFlood" />}
-
-          <button
-            onClick={() =>
-              setActiveInfo(
-                activeInfo === "mgbLandslide" ? null : "mgbLandslide",
-              )
-            }
-            className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[.62rem] font-medium transition-all ${
-              activeInfo === "mgbLandslide"
-                ? "bg-orange-100 text-orange-700 border border-orange-300"
-                : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              <Info size={10} /> MGB Landslide Guide
-            </span>
-            <span className="text-[.5rem]">
-              {activeInfo === "mgbLandslide" ? "▲" : "▼"}
-            </span>
-          </button>
-          {activeInfo === "mgbLandslide" && (
-            <OfficialInfoGuide type="mgbLandslide" />
-          )}
-
-          <button
-            onClick={() => setActiveInfo(activeInfo === "eil" ? null : "eil")}
-            className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[.62rem] font-medium transition-all ${
-              activeInfo === "eil"
-                ? "bg-purple-100 text-purple-700 border border-purple-300"
-                : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              <Info size={10} /> PHIVOLCS EIL Guide
-            </span>
-            <span className="text-[.5rem]">
-              {activeInfo === "eil" ? "▲" : "▼"}
-            </span>
-          </button>
-          {activeInfo === "eil" && <OfficialInfoGuide type="eil" />}
-        </div>
-
-        <p className="text-[.55rem] text-gray-500 mt-2 italic">
-          Official maps from MGB & PHIVOLCS. No computation needed.
-        </p>
-      </div>
-
-      {/* ================= NASA FIRMS SECTION ================= */}
-      <div className="pb-1">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-1.5">
-            <Map size={12} className="text-red-600" />
-            <span className="text-[.7rem] font-bold text-red-800">
-              NASA FIRMS - Live Fires
-            </span>
-            <span className="text-[.5rem] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold">
-              LIVE
-            </span>
-          </div>
-        </div>
-
-        <button
-          onClick={onToggleFirms}
-          className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
-            showFirms
-              ? "bg-red-600 text-white shadow-md"
-              : "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
-          }`}
-        >
-          <span className="flex items-center gap-1.5">
-            {showFirms ? <Eye size={12} /> : <EyeOff size={12} />}
-            🔥 Active Fire Hotspots
-          </span>
-          {showFirms && (
-            <span className="text-[.5rem] bg-white/20 px-1.5 py-0.5 rounded">
-              {fireCount} fires
-            </span>
-          )}
-        </button>
-
-        {showFirms && (
-          <div className="mt-2 space-y-2">
-            {/* Time Range Selector */}
-            <div className="flex gap-1">
-              {(["today", "24hrs", "7days"] as const).map((range) => (
-                <button
-                  key={range}
-                  onClick={() => onUpdateFirmsTimeRange(range)}
-                  className={`flex-1 text-[.6rem] py-1 px-1 rounded transition-all ${
-                    firmsTimeRange === range
-                      ? "bg-red-600 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-                >
-                  {range === "today"
-                    ? "TODAY"
-                    : range === "24hrs"
-                      ? "24H"
-                      : "7D"}
-                </button>
-              ))}
             </div>
+          </div>
 
-            {/* Fire Info */}
-            <div className="bg-red-50 border border-red-200 rounded p-2 text-[.6rem]">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-gray-600">Active Fires:</span>
-                <span className="font-bold text-red-700">{fireCount}</span>
-              </div>
-              <div className="text-gray-500 text-[.55rem]">
-                Source: NASA VIIRS/MODIS
-              </div>
-              <div className="mt-2 text-[.55rem] text-gray-600 italic">
-                ⚠️ Fire hotspots detected by satellite
-              </div>
-            </div>
-
-            {/* FIRMS Guide */}
+          <div className="flex flex-col gap-1.5">
             <button
-              onClick={() =>
-                setActiveInfo(activeInfo === "firms" ? null : "firms")
-              }
-              className="w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[.62rem] font-medium bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200"
+              onClick={() => setShowMgbFlood(!showMgbFlood)}
+              className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
+                showMgbFlood
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+              }`}
             >
               <span className="flex items-center gap-1.5">
-                <Info size={10} /> Fire Detection Guide
+                {showMgbFlood ? <Eye size={12} /> : <EyeOff size={12} />}
+                🌊 MGB Flood Map
               </span>
-              <span className="text-[.5rem]">
-                {activeInfo === "firms" ? "▲" : "▼"}
-              </span>
+              {showMgbFlood && (
+                <span className="text-[.5rem] bg-white/20 px-1.5 py-0.5 rounded">
+                  ON
+                </span>
+              )}
             </button>
 
-            {activeInfo === "firms" && (
-              <div className="p-2 bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-md text-[.6rem] space-y-2">
-                <p className="font-bold text-red-900 text-[.65rem]">
-                  NASA FIRMS Fire Detection
-                </p>
-                <div className="space-y-1.5">
-                  <div className="flex gap-2 items-start">
-                    <div className="w-2 h-2 bg-red-600 rounded-full flex-shrink-0"></div>
-                    <p className="text-gray-700">
-                      <strong>VIIRS:</strong> 375m resolution, detects smaller
-                      fires
-                    </p>
+            <button
+              onClick={() => setShowMgbLandslide(!showMgbLandslide)}
+              className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
+                showMgbLandslide
+                  ? "bg-orange-600 text-white shadow-md"
+                  : "bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100"
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                {showMgbLandslide ? <Eye size={12} /> : <EyeOff size={12} />}
+                ⛰️ MGB Rain-Landslide
+              </span>
+              {showMgbLandslide && (
+                <span className="text-[.5rem] bg-white/20 px-1.5 py-0.5 rounded">
+                  ON
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setShowEil(!showEil)}
+              className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
+                showEil
+                  ? "bg-purple-600 text-white shadow-md"
+                  : "bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100"
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                {showEil ? <Eye size={12} /> : <EyeOff size={12} />}
+                🌋 PHIVOLCS Quake Landslide
+              </span>
+              {showEil && (
+                <span className="text-[.5rem] bg-white/20 px-1.5 py-0.5 rounded">
+                  ON
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Official Maps Info Guides */}
+          <div className="mt-2 space-y-2">
+            <button
+              onClick={() =>
+                setActiveInfo(activeInfo === "mgbFlood" ? null : "mgbFlood")
+              }
+              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[.62rem] font-medium transition-all ${
+                activeInfo === "mgbFlood"
+                  ? "bg-blue-100 text-blue-700 border border-blue-300"
+                  : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Info size={10} /> MGB Flood Guide
+              </span>
+              <span className="text-[.5rem]">
+                {activeInfo === "mgbFlood" ? "▲" : "▼"}
+              </span>
+            </button>
+            {activeInfo === "mgbFlood" && <OfficialInfoGuide type="mgbFlood" />}
+
+            <button
+              onClick={() =>
+                setActiveInfo(
+                  activeInfo === "mgbLandslide" ? null : "mgbLandslide",
+                )
+              }
+              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[.62rem] font-medium transition-all ${
+                activeInfo === "mgbLandslide"
+                  ? "bg-orange-100 text-orange-700 border border-orange-300"
+                  : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Info size={10} /> MGB Landslide Guide
+              </span>
+              <span className="text-[.5rem]">
+                {activeInfo === "mgbLandslide" ? "▲" : "▼"}
+              </span>
+            </button>
+            {activeInfo === "mgbLandslide" && (
+              <OfficialInfoGuide type="mgbLandslide" />
+            )}
+
+            <button
+              onClick={() => setActiveInfo(activeInfo === "eil" ? null : "eil")}
+              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[.62rem] font-medium transition-all ${
+                activeInfo === "eil"
+                  ? "bg-purple-100 text-purple-700 border border-purple-300"
+                  : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Info size={10} /> PHIVOLCS EIL Guide
+              </span>
+              <span className="text-[.5rem]">
+                {activeInfo === "eil" ? "▲" : "▼"}
+              </span>
+            </button>
+            {activeInfo === "eil" && <OfficialInfoGuide type="eil" />}
+          </div>
+
+          <p className="text-[.55rem] text-gray-500 mt-2 italic">
+            Official maps from MGB & PHIVOLCS. No computation needed.
+          </p>
+        </div>
+
+        {/* ================= NASA FIRMS SECTION ================= */}
+        <div className="pb-1">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Map size={12} className="text-red-600" />
+              <span className="text-[.7rem] font-bold text-red-800">
+                NASA FIRMS - Live Fires
+              </span>
+              <span className="text-[.5rem] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold">
+                LIVE
+              </span>
+            </div>
+          </div>
+
+          {/* ✅ UPDATED: Button with Loading State */}
+          <button
+            onClick={() => onToggleFirms()}
+            disabled={isFirmsLoading}
+            className={`flex items-center justify-between w-full h-8 px-2 rounded-md text-[.65rem] font-medium transition-all ${
+              showFirms
+                ? "bg-red-600 text-white shadow-md"
+                : "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+            } ${isFirmsLoading ? "opacity-70 cursor-not-allowed" : ""}`}
+          >
+            <span className="flex items-center gap-1.5">
+              {isFirmsLoading ? (
+                <svg
+                  className="animate-spin h-3 w-3 text-white"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+              ) : showFirms ? (
+                <Eye size={12} />
+              ) : (
+                <EyeOff size={12} />
+              )}
+              {isFirmsLoading ? "Loading Fires..." : "🔥 Active Fire Hotspots"}
+            </span>
+            {showFirms && !isFirmsLoading && (
+              <span className="text-[.5rem] bg-white/20 px-1.5 py-0.5 rounded">
+                {fireCount} fires
+              </span>
+            )}
+          </button>
+
+          {showFirms && !isFirmsLoading && (
+            <div className="mt-2 space-y-2">
+              {/* Preset Time Range Buttons */}
+              <div className="flex gap-1">
+                {(["today", "24hrs", "7days"] as const).map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => {
+                      setUseCustomDateRange(false);
+                      onUpdateFirmsTimeRange(range);
+                    }}
+                    className={`flex-1 text-[.6rem] py-1 px-1 rounded transition-all ${
+                      firmsTimeRange === range && !useCustomDateRange
+                        ? "bg-red-600 text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {range === "today"
+                      ? "TODAY"
+                      : range === "24hrs"
+                        ? "24H"
+                        : "7D"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom Date Range Toggle */}
+              <button
+                onClick={() => setUseCustomDateRange(!useCustomDateRange)}
+                className={`w-full text-[.6rem] py-1.5 px-2 rounded-md transition-all flex items-center justify-center gap-1 ${
+                  useCustomDateRange
+                    ? "bg-red-100 text-red-700 border border-red-300"
+                    : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
+                }`}
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                {useCustomDateRange ? "Hide Date Range" : "Custom Date Range"}
+              </button>
+
+              {/* Custom Date Range Inputs */}
+              {useCustomDateRange && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-2 space-y-2">
+                  <div>
+                    <label className="text-[.55rem] text-gray-600 block mb-1">
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={firmsStartDate}
+                      onChange={(e) => setFirmsStartDate(e.target.value)}
+                      disabled={isFirmsLoading} // ✅ Disable while loading
+                      className="w-full text-[.6rem] p-1 border border-red-200 rounded bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      max={new Date().toISOString().split("T")[0]}
+                    />
                   </div>
-                  <div className="flex gap-2 items-start">
-                    <div className="w-2 h-2 bg-orange-500 rounded-full flex-shrink-0"></div>
-                    <p className="text-gray-700">
-                      <strong>MODIS:</strong> 1km resolution, broader coverage
-                    </p>
+                  <div>
+                    <label className="text-[.55rem] text-gray-600 block mb-1">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={firmsEndDate}
+                      onChange={(e) => setFirmsEndDate(e.target.value)}
+                      disabled={isFirmsLoading} // ✅ Disable while loading
+                      className="w-full text-[.6rem] p-1 border border-red-200 rounded bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      max={new Date().toISOString().split("T")[0]}
+                    />
                   </div>
+                  {/* ✅ UPDATED: Apply Date Range Button with Loading Animation */}
+                  <button
+                    onClick={onApplyCustomDateRange}
+                    disabled={isFirmsLoading}
+                    className={`w-full text-[.6rem] font-medium py-1.5 px-2 rounded-md transition-colors flex items-center justify-center gap-1.5 ${
+                      isFirmsLoading
+                        ? "bg-red-300 text-white cursor-not-allowed"
+                        : "bg-red-600 hover:bg-red-700 text-white"
+                    }`}
+                  >
+                    {isFirmsLoading ? (
+                      <>
+                        <svg
+                          className="animate-spin h-3 w-3 text-white"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          ></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                        <span>Applying...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <rect
+                            x="3"
+                            y="4"
+                            width="18"
+                            height="18"
+                            rx="2"
+                            ry="2"
+                          ></rect>
+                          <line x1="16" y1="2" x2="16" y2="6"></line>
+                          <line x1="8" y1="2" x2="8" y2="6"></line>
+                          <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                        <span>Apply Date Range</span>
+                      </>
+                    )}
+                  </button>
                 </div>
-                <div className="mt-2 pt-2 border-t border-red-200 text-[.55rem] text-red-700">
-                  <strong>Update Frequency:</strong> Near real-time (within 3
-                  hours)
+              )}
+
+              {/* Fire Info */}
+              <div className="bg-red-50 border border-red-200 rounded p-2 text-[.6rem]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-gray-600">Active Fires:</span>
+                  <span className="font-bold text-red-700">{fireCount}</span>
                 </div>
-                <div className="text-[.55rem] text-red-600 italic">
-                  Source: NASA Fire Information for Resource Management System
+                <div className="text-gray-500 text-[.55rem]">
+                  Source: NASA VIIRS/MODIS
+                </div>
+                {useCustomDateRange && (
+                  <div className="mt-1 text-[.55rem] text-red-700 font-medium">
+                    📅 {firmsStartDate} to {firmsEndDate}
+                  </div>
+                )}
+                <div className="mt-1 text-[.55rem] text-gray-600 italic">
+                  ⚠️ Fire hotspots detected by satellite
                 </div>
               </div>
-            )}
-          </div>
-        )}
+
+              {/* FIRMS Guide */}
+              <button
+                onClick={() =>
+                  setActiveInfo(activeInfo === "firms" ? null : "firms")
+                }
+                className="w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[.62rem] font-medium bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Info size={10} /> Fire Detection Guide
+                </span>
+                <span className="text-[.5rem]">
+                  {activeInfo === "firms" ? "▲" : "▼"}
+                </span>
+              </button>
+
+              {activeInfo === "firms" && (
+                <div className="p-2 bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-md text-[.6rem] space-y-2">
+                  <p className="font-bold text-red-900 text-[.65rem]">
+                    NASA FIRMS Fire Detection
+                  </p>
+                  <div className="space-y-1.5">
+                    <div className="flex gap-2 items-start">
+                      <div className="w-2 h-2 bg-red-600 rounded-full flex-shrink-0"></div>
+                      <p className="text-gray-700">
+                        <strong>VIIRS:</strong> 375m resolution, detects smaller
+                        fires
+                      </p>
+                    </div>
+                    <div className="flex gap-2 items-start">
+                      <div className="w-2 h-2 bg-orange-500 rounded-full flex-shrink-0"></div>
+                      <p className="text-gray-700">
+                        <strong>MODIS:</strong> 1km resolution, broader coverage
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-red-200 text-[.55rem] text-red-700">
+                    <strong>Update Frequency:</strong> Near real-time (within 3
+                    hours)
+                  </div>
+                  <div className="text-[.55rem] text-red-600 italic">
+                    Source: NASA Fire Information for Resource Management System
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
