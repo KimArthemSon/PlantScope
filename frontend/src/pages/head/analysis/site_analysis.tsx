@@ -297,7 +297,7 @@ export default function MulticriteriaAnalysis() {
   );
   const sites = useSites();
   const potentialSitesHook = usePotentialSites();
-  const hazardLayers = useHazardLayers(mapRef);
+  const hazardLayers = useHazardLayers(mapRef, setAlert);
   const barangayAreas = useBarangayAreas(mapRef);
 
   const tempFaLocationMarkerRef = useRef<L.Marker | null>(null);
@@ -2738,6 +2738,14 @@ export default function MulticriteriaAnalysis() {
               fireCount={hazardLayers.fireCount}
               onToggleFirms={hazardLayers.toggleFirms}
               onUpdateFirmsTimeRange={hazardLayers.updateFirmsTimeRange}
+              isFirmsLoading={hazardLayers.isFirmsLoading}
+              firmsStartDate={hazardLayers.firmsStartDate}
+              setFirmsStartDate={hazardLayers.setFirmsStartDate}
+              firmsEndDate={hazardLayers.firmsEndDate}
+              setFirmsEndDate={hazardLayers.setFirmsEndDate}
+              useCustomDateRange={hazardLayers.useCustomDateRange}
+              setUseCustomDateRange={hazardLayers.setUseCustomDateRange}
+              onApplyCustomDateRange={hazardLayers.applyCustomDateRange}
             />
 
             <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between flex-shrink-0">

@@ -37,7 +37,6 @@ import SiteValidationPanel from "./components/SiteValidationPanel";
 import HazardAreaFormPanel from "./components/HazardAreaFormPanel";
 import { api_second } from "@/constant/api";
 import { useBarangayAreas } from "./hooks/useBarangayAreas";
-import { usePotentialSites } from "./hooks/usePotentialSites";
 import type { PotentialSite } from "./hooks/usePotentialSites";
 import { useFieldAssessments } from "./hooks/useFieldAssessments";
 import type {
@@ -242,7 +241,11 @@ export default function MulticriteriaAnalysis() {
 
   const [isPlacingMarker, setIsPlacingMarker] = useState(false);
   const [showPotentialSites, setShowPotentialSites] = useState(false);
-  const potentialSiteLayersRef = useRef<L.Polygon[]>([]);
+  const potentialSiteLayersRef = useRef<L.Layer[]>([]);
+  const potentialSites = useMemo<PotentialSite[]>(
+    () => (viewingSite as any)?.potential_sites ?? [],
+    [viewingSite],
+  );
   const [showSites, setShowSites] = useState(true);
   const [showReforestationArea, setShowReforestationArea] = useState(true);
   const [showValidationPanel, setShowValidationPanel] = useState(false);
@@ -679,8 +682,7 @@ export default function MulticriteriaAnalysis() {
   }, [showingPolygonId, fieldAssessments.assessments, polygonCoordinates]);
 
   const sites = useSites();
-  const potentialSitesHook = usePotentialSites();
-  const hazardLayers = useHazardLayers(mapRef);
+  const hazardLayers = useHazardLayers(mapRef, setAlert);
   const barangayAreas = useBarangayAreas(mapRef);
 
   const tempFaLocationMarkerRef = useRef<L.Marker | null>(null);
@@ -1200,10 +1202,12 @@ export default function MulticriteriaAnalysis() {
     if (!map) return;
     potentialSiteLayersRef.current.forEach((layer) => map.removeLayer(layer));
     potentialSiteLayersRef.current = [];
-    if (!showPotentialSites || !potentialSitesHook.potentialSites.length)
+    if (!showPotentialSites || !potentialSites.length)
       return;
-    potentialSitesHook.potentialSites.forEach((site: any) => {
-      if (site.polygon_coordinates && site.polygon_coordinates.length >= 3) {
+    potentialSites.forEach((site: any) => {
+      const geometry = site.polygon_coordinates;
+      const isLatLngArray = Array.isArray(geometry) && geometry.length >= 3;
+      if (isLatLngArray || geometry?.type) {
         const score =
           site.suitability_score ?? site.score ?? site.suitability ?? 50;
         let color = "#93C5FD";
@@ -1218,13 +1222,18 @@ export default function MulticriteriaAnalysis() {
           color = "#93C5FD";
           fillColor = "#DBEAFE";
         }
-        const polygon = L.polygon(site.polygon_coordinates, {
+        const style = {
           color,
           fillColor,
           fillOpacity: 0.5,
           weight: 2,
           dashArray: "4, 4",
-        }).addTo(map);
+        };
+        const polygon = (
+          isLatLngArray
+            ? L.polygon(geometry, style)
+            : L.geoJSON(geometry, { style: () => style })
+        ).addTo(map);
         polygon.bindPopup(
           `<div style="text-align:center;font-family:sans-serif;"><strong style="color:#2563eb;font-size:13px;">Potential Site</strong><br/><span style="font-size:11px;color:#666;">Suitability: ${score}%</span></div>`,
         );
@@ -1235,7 +1244,11 @@ export default function MulticriteriaAnalysis() {
       potentialSiteLayersRef.current.forEach((layer) => map.removeLayer(layer));
       potentialSiteLayersRef.current = [];
     };
-  }, [showPotentialSites, potentialSitesHook.potentialSites]);
+  }, [showPotentialSites, potentialSites]);
+
+  useEffect(() => {
+    if (!viewingSite) setShowPotentialSites(false);
+  }, [viewingSite]);
 
   useEffect(() => {
     if (!isDrawing || !mapRef.current) return;
@@ -2385,19 +2398,24 @@ export default function MulticriteriaAnalysis() {
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
             <button
               onClick={() => setShowPotentialSites((v) => !v)}
-              disabled={potentialSitesHook.loading}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40 ${
+              disabled={!viewingSite}
+              title={
+                viewingSite
+                  ? undefined
+                  : "Select a site to view its potential sites"
+              }
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed ${
                 showPotentialSites
                   ? "bg-blue-600 hover:bg-blue-700 text-white"
                   : "bg-gray-100 hover:bg-gray-200 text-gray-700"
               }`}
             >
               <Target size={12} />{" "}
-              {potentialSitesHook.loading
-                ? "Loading..."
+              {!viewingSite
+                ? "Potential Sites"
                 : showPotentialSites
-                ? `Hide Potential (${potentialSitesHook.potentialSites.length})`
-                : `Potential Sites (${potentialSitesHook.potentialSites.length})`}
+                ? `Hide Potential (${potentialSites.length})`
+                : `Potential Sites (${potentialSites.length})`}
             </button>
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
             <button
@@ -2770,7 +2788,7 @@ export default function MulticriteriaAnalysis() {
                   </button>
                 )}
               {showPotentialSites &&
-                potentialSitesHook.potentialSites.length > 0 && (
+                potentialSites.length > 0 && (
                   <div className="absolute top-3 right-3 bg-white/95 p-2.5 rounded-lg shadow-md border border-blue-200 z-[100]">
                     <p className="text-[10px] font-bold text-gray-700 mb-1.5 flex items-center gap-1">
                       <Target size={10} className="text-blue-600" /> Potential
@@ -3322,6 +3340,14 @@ export default function MulticriteriaAnalysis() {
               fireCount={hazardLayers.fireCount}
               onToggleFirms={hazardLayers.toggleFirms}
               onUpdateFirmsTimeRange={hazardLayers.updateFirmsTimeRange}
+              isFirmsLoading={hazardLayers.isFirmsLoading}
+              firmsStartDate={hazardLayers.firmsStartDate}
+              setFirmsStartDate={hazardLayers.setFirmsStartDate}
+              firmsEndDate={hazardLayers.firmsEndDate}
+              setFirmsEndDate={hazardLayers.setFirmsEndDate}
+              useCustomDateRange={hazardLayers.useCustomDateRange}
+              setUseCustomDateRange={hazardLayers.setUseCustomDateRange}
+              onApplyCustomDateRange={hazardLayers.applyCustomDateRange}
             />
 
             <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 flex items-center justify-between flex-shrink-0">
@@ -3342,11 +3368,11 @@ export default function MulticriteriaAnalysis() {
                   </button>
                 )}
                 {showPotentialSites &&
-                  potentialSitesHook.potentialSites.length > 0 && (
+                  potentialSites.length > 0 && (
                     <span className="flex items-center gap-1 text-blue-600">
                       <Target size={12} />{" "}
-                      {potentialSitesHook.potentialSites.length} potential
-                      site{potentialSitesHook.potentialSites.length !== 1
+                      {potentialSites.length} potential
+                      site{potentialSites.length !== 1
                         ? "s"
                         : ""}
                     </span>
