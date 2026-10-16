@@ -107,23 +107,19 @@ class Sites(models.Model):
         if not self.polygon_coordinates or len(self.polygon_coordinates) < 3:
             return 0.0
         
-        coords = self.polygon_coordinates
-        
         try:
-            first_coord = coords[0]
-            if len(first_coord) != 2:
-                return 0.0
-            
-            val1, val2 = first_coord[0], first_coord[1]
-            
-            if abs(val1) > 90 and abs(val2) <= 90:
-                coords = [[c[1], c[0]] for c in coords]
-            elif abs(val1) <= 90 and abs(val2) <= 90:
-                pass
-            else:
-                return 0.0
-                
-        except (IndexError, TypeError):
+            coords = [[float(c[0]), float(c[1])] for c in self.polygon_coordinates]
+        except (IndexError, TypeError, ValueError):
+            return 0.0
+
+        val1, val2 = coords[0]
+
+        # Expected [lat, lng] (lat ≤ 90, lng ≤ 180); swap if stored as [lng, lat]
+        if abs(val1) <= 90 and abs(val2) <= 180:
+            pass
+        elif abs(val1) <= 180 and abs(val2) <= 90:
+            coords = [[c[1], c[0]] for c in coords]
+        else:
             return 0.0
         
         lat_rad = math.radians(sum(c[0] for c in coords) / len(coords))
