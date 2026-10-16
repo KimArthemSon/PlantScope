@@ -19,6 +19,7 @@ import {
   Edit3,
   Loader2,
   Navigation,
+  FileText,
   Eye,
   EyeOff,
   Plus,
@@ -29,6 +30,8 @@ import {
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 import SiteCoordinatesEditor from "./components/SiteCoordinatesEditor";
+import AssessmentBoundaryImporter from "./components/AssessmentBoundaryImporter";
+import SiteReportModal from "./components/SiteReportModal";
 import BarangayAreasPanel from "./BarangayAreasPanel";
 import FieldAssessmentPanel from "./components/Fieldassessmentpanel";
 import HazardAssessmentPanel from "./components/HazardAssessmentPanel";
@@ -191,6 +194,7 @@ export default function MulticriteriaAnalysis() {
   const [showingPolygonId, setShowingPolygonId] = useState<number | null>(null);
 
   const [viewingSite, setViewingSite] = useState<SiteDetail | null>(null);
+  const [showSiteReport, setShowSiteReport] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedPolygon, setEditedPolygon] = useState<[number, number][] | null>(
     null,
@@ -632,54 +636,70 @@ export default function MulticriteriaAnalysis() {
     }
   }, [showingPolygonId, fieldAssessments.assessments, isDrawing]);
 
-  // ✅ NEW: Handler to use all coordinates from boundary polygon
-  const handleUseAllPolygonCoordinates = useCallback(() => {
-    if (!showingPolygonId) return;
+  // All field assessments (across loaded layers) that carry a boundary polygon
+  const assessmentBoundaryPolygons = useMemo(() => {
+    const seen = new Set<number>();
+    const result: { id: number; label: string; coords: [number, number][] }[] =
+      [];
+    Object.entries(fieldAssessments.assessments).forEach(([layer, list]) => {
+      list.forEach((a) => {
+        const pts = a.layer_data?.polygon_points;
+        if (!Array.isArray(pts) || pts.length < 3) return;
+        if (seen.has(a.field_assessment_id)) return;
+        seen.add(a.field_assessment_id);
+        const coords: [number, number][] = [...pts]
+          .sort((x, y) => (x.order || 0) - (y.order || 0))
+          .map((p) => [Number(p.latitude), Number(p.longitude)] as [number, number])
+          .filter(isValidLatLng);
+        if (coords.length < 3) return;
+        result.push({
+          id: a.field_assessment_id,
+          label: `${a.title || `Assessment #${a.field_assessment_id}`} • ${layer.toUpperCase()} • ${coords.length} pts`,
+          coords,
+        });
+      });
+    });
+    return result;
+  }, [fieldAssessments.assessments]);
 
-    const allAssessments = Object.values(fieldAssessments.assessments).flat();
-    const entry = allAssessments.find(
-      (a) => a.field_assessment_id === showingPolygonId,
-    );
+  // Use all vertices of an assessment boundary polygon while creating a site
+  const handleUseAllPolygonCoordinates = useCallback(
+    (assessmentId?: number | null) => {
+      const id = assessmentId ?? showingPolygonId;
+      if (!id) return;
+      const found = assessmentBoundaryPolygons.find((p) => p.id === id);
+      if (!found) return;
+      const coords = found.coords;
 
-    if (entry) {
-      const polygonPoints = entry.layer_data?.polygon_points;
-      if (Array.isArray(polygonPoints) && polygonPoints.length >= 3) {
-        const sortedPoints = [...polygonPoints].sort(
-          (a, b) => (a.order || 0) - (b.order || 0),
-        );
-        const coords: [number, number][] = sortedPoints.map((p) => [
-          p.latitude,
-          p.longitude,
-        ]);
+      const apply = () => {
+        setPolygonCoordinates(coords);
+        mapRef.current?.fitBounds(L.latLngBounds(coords), {
+          padding: [50, 50],
+        });
+        setAlert({
+          type: "success",
+          title: "Vertices Copied",
+          message: `Added all ${coords.length} vertices from boundary polygon.`,
+        });
+      };
 
-        // If user already has some vertices, ask for confirmation
-        if (polygonCoordinates.length > 0) {
-          setConfirmDialog({
-            title: "Replace Current Vertices?",
-            message: `You have ${polygonCoordinates.length} vertex/vertices. Do you want to replace them with all ${coords.length} vertices from the boundary polygon?`,
-            variant: "warning",
-            confirmLabel: "Replace All",
-            onConfirm: () => {
-              setPolygonCoordinates(coords);
-              setConfirmDialog(null);
-              setAlert({
-                type: "success",
-                title: "Vertices Copied",
-                message: `Added all ${coords.length} vertices from boundary polygon.`,
-              });
-            },
-          });
-        } else {
-          setPolygonCoordinates(coords);
-          setAlert({
-            type: "success",
-            title: "Vertices Copied",
-            message: `Added all ${coords.length} vertices from boundary polygon.`,
-          });
-        }
+      if (polygonCoordinates.length > 0) {
+        setConfirmDialog({
+          title: "Replace Current Vertices?",
+          message: `You have ${polygonCoordinates.length} vertex/vertices. Do you want to replace them with all ${coords.length} vertices from the boundary polygon?`,
+          variant: "warning",
+          confirmLabel: "Replace All",
+          onConfirm: () => {
+            apply();
+            setConfirmDialog(null);
+          },
+        });
+      } else {
+        apply();
       }
-    }
-  }, [showingPolygonId, fieldAssessments.assessments, polygonCoordinates]);
+    },
+    [showingPolygonId, assessmentBoundaryPolygons, polygonCoordinates],
+  );
 
   const sites = useSites();
   const hazardLayers = useHazardLayers(mapRef, setAlert);
@@ -1978,7 +1998,13 @@ export default function MulticriteriaAnalysis() {
           message: "Site coordinates updated successfully.",
         });
         exitEditMode();
-        await sites.fetchSiteDetail(viewingSite.site_id);
+        const refreshed = await sites.fetchSiteDetail(viewingSite.site_id);
+        if (refreshed) {
+          // Pick up the server-calculated area and redraw the saved shape
+          setViewingSite(refreshed);
+          if (polygonRef.current && refreshed.polygon_coordinates?.length)
+            polygonRef.current.setLatLngs(refreshed.polygon_coordinates);
+        }
         if (areaId) await sites.fetchMCDAData(areaId);
         setTimeout(() => {
           if (map && currentZoom !== undefined && currentCenter) {
@@ -2049,6 +2075,66 @@ export default function MulticriteriaAnalysis() {
       }
     }
   }, [isEditMode, exitEditMode]);
+
+  // Replace the edited site's polygon with an assessment boundary polygon
+  const applyBoundaryToEditedPolygon = useCallback(
+    (assessmentId: number) => {
+      const found = assessmentBoundaryPolygons.find((p) => p.id === assessmentId);
+      const map = mapRef.current;
+      if (!found || !map) return;
+      const coords = found.coords.map(
+        (c) => [c[0], c[1]] as [number, number],
+      );
+
+      const apply = () => {
+        // Drop any in-progress "new polygon" drawing
+        newPolygonMarkersRef.current.forEach((m) => map.removeLayer(m));
+        newPolygonMarkersRef.current = [];
+        if (newPolygonLineRef.current) {
+          map.removeLayer(newPolygonLineRef.current);
+          newPolygonLineRef.current = null;
+        }
+        setIsDrawingNewPolygon(false);
+        setNewPolygonPoints([]);
+
+        setEditedPolygon(coords);
+        if (editablePolygonRef.current) {
+          editablePolygonRef.current.setLatLngs(coords);
+        } else {
+          editablePolygonRef.current = L.polygon(coords, {
+            color: "#F97316",
+            fillColor: "#FDBA74",
+            fillOpacity: 0.4,
+            weight: 3,
+            dashArray: "5, 5",
+          }).addTo(map);
+        }
+        renderAllMarkersRef.current(coords);
+        map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
+        setAlert({
+          type: "success",
+          title: "Boundary Applied",
+          message: `Polygon replaced with ${coords.length} vertices from the field assessment boundary.`,
+        });
+      };
+
+      if (editedPolygon && editedPolygon.length > 0) {
+        setConfirmDialog({
+          title: "Replace Current Vertices?",
+          message: `This site has ${editedPolygon.length} vertex/vertices. Replace them with ${coords.length} vertices from the assessment boundary?`,
+          variant: "warning",
+          confirmLabel: "Replace All",
+          onConfirm: () => {
+            apply();
+            setConfirmDialog(null);
+          },
+        });
+      } else {
+        apply();
+      }
+    },
+    [assessmentBoundaryPolygons, editedPolygon],
+  );
 
   const handleEditVertexChange = useCallback(
     (index: number, axis: "lat" | "lng", value: string) => {
@@ -2587,6 +2673,12 @@ export default function MulticriteriaAnalysis() {
                 ) : (
                   <>
                     <button
+                      onClick={() => setShowSiteReport(true)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded"
+                    >
+                      <FileText size={12} /> Generate Report
+                    </button>
+                    <button
                       onClick={handleEnterEditMode}
                       className="flex items-center gap-1 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium rounded"
                     >
@@ -2603,6 +2695,15 @@ export default function MulticriteriaAnalysis() {
               </div>
             </div>
           </div>
+        )}
+
+        {showSiteReport && viewingSite && (
+          <SiteReportModal
+            site={viewingSite}
+            areaName={sites.reforestationArea?.name}
+            barangayName={sites.reforestationArea?.barangay?.name}
+            onClose={() => setShowSiteReport(false)}
+          />
         )}
 
         {showCoordinateModal && editedPolygon && (
@@ -2631,6 +2732,11 @@ export default function MulticriteriaAnalysis() {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-6">
+                <AssessmentBoundaryImporter
+                  polygons={assessmentBoundaryPolygons}
+                  onApply={applyBoundaryToEditedPolygon}
+                  accent="orange"
+                />
                 <SiteCoordinatesEditor
                   coordinates={editedPolygon}
                   center={editedMarker}
@@ -3004,6 +3110,11 @@ export default function MulticriteriaAnalysis() {
                     </button>
                   </div>
                 </div>
+                <AssessmentBoundaryImporter
+                  polygons={assessmentBoundaryPolygons}
+                  onApply={(id) => handleUseAllPolygonCoordinates(id)}
+                  accent="green"
+                />
                 <div className="flex-1 overflow-y-auto space-y-2 pr-1 mb-3 max-h-[35vh]">
                   {polygonCoordinates.map((coord, idx) => (
                     <div
@@ -3920,7 +4031,7 @@ export default function MulticriteriaAnalysis() {
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          handleUseAllPolygonCoordinates();
+                                          handleUseAllPolygonCoordinates(faId);
                                         }}
                                         className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-green-50 text-green-700 border-green-300 hover:bg-green-100 transition"
                                         title="Copy all vertices from this polygon to your drawing"

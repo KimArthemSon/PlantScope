@@ -19,6 +19,8 @@
     "esri-leaflet": "^3.0.19",
     "georaster": "^1.6.0",
     "georaster-layer-for-leaflet": "^4.1.2",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
     "leaflet": "^1.9.4",
     "leaflet-draw": "^1.0.4",
     "lucide-react": "^0.552.0",
