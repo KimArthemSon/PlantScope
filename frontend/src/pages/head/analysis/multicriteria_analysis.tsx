@@ -32,6 +32,7 @@ import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 import SiteCoordinatesEditor from "./components/SiteCoordinatesEditor";
 import AssessmentBoundaryImporter from "./components/AssessmentBoundaryImporter";
 import SiteReportModal from "./components/SiteReportModal";
+import CoordinateSearch from "./components/CoordinateSearch";
 import BarangayAreasPanel from "./BarangayAreasPanel";
 import FieldAssessmentPanel from "./components/Fieldassessmentpanel";
 import HazardAssessmentPanel from "./components/HazardAssessmentPanel";
@@ -912,7 +913,7 @@ export default function MulticriteriaAnalysis() {
     const marker = L.marker([lat, lng], {
       icon: createMarkerIcon("temp", "Probe"),
     }).addTo(map);
-    marker.bindPopup(popupContent).openPopup();
+    marker.bindPopup(popupContent);
     marker.on("popupopen", () => {
       const btn = document.getElementById("clear-probe-btn");
       if (btn) {
@@ -927,7 +928,18 @@ export default function MulticriteriaAnalysis() {
       }
     });
     probeMarkerRef.current = marker;
+    marker.openPopup();
   }, []);
+
+  const handleGoToCoordinate = useCallback(
+    (lat: number, lng: number) => {
+      const map = mapRef.current;
+      if (!map) return;
+      map.flyTo([lat, lng], Math.max(map.getZoom(), 17), { duration: 1.2 });
+      map.once("moveend", () => handleDropProbe(lat, lng));
+    },
+    [handleDropProbe],
+  );
 
   const handleViewSite = useCallback(
     async (site: Site) => {
@@ -2530,6 +2542,7 @@ export default function MulticriteriaAnalysis() {
             </button>
             <div className="flex items-center gap-2">
               <BarangayAreasPanel barangayAreas={barangayAreas} />
+              <CoordinateSearch onGo={handleGoToCoordinate} />
               <button
                 onClick={() => {
                   if (!barangayAreas.selectedBarangayId) {
