@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useRouter } from "expo-router";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
 import {
   View,
   Text,
@@ -7,36 +7,33 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Alert,
   Image,
   FlatList,
   RefreshControl,
   ScrollView,
-  Dimensions,
   Animated,
-  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
+import { useAlert } from "@/components/AlertContext";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-const BG = "#F5F6F8";
+const BG = "#F4F7F5";
 const PRIMARY = "#0F4A2F";
 const INK = "#111827";
 const MUTED = "#6B7280";
 const FAINT = "#9CA3AF";
 const YELLOW = "#F59E0B";
 const WHITE = "#FFFFFF";
+const BORDER = "#E5E7EB";
 
 const cardShadow = {
   shadowColor: "#0F172A",
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.03,
-  shadowRadius: 8,
-  elevation: 1,
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.06,
+  shadowRadius: 10,
+  elevation: 2,
 };
 
 interface SiteImage {
@@ -45,14 +42,13 @@ interface SiteImage {
   caption: string | null;
 }
 
-// ✅ UPDATED: Added monitoring_status and main_image_url
 interface Site {
   site_id: number;
   name: string;
   reforestation_area: string;
   barangay: string;
   total_area_hectares: number;
-  monitoring_status: 'available' | 'reserved';
+  monitoring_status: "available" | "reserved";
   main_image_url: string | null;
   images: SiteImage[];
   is_pinned: boolean;
@@ -66,409 +62,242 @@ interface Barangay {
   coordinate: any;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   QUICK APPLY CARD (NEW)
-   ──────────────────────────────────────────────────────────────── */
-const QuickApplyCard: React.FC<{
-  onPress: () => void;
-  hasOngoingApplication: boolean;
-}> = ({ onPress, hasOngoingApplication }) => {
-  return (
-    <View style={quickApplyStyles.container}>
-      <View style={quickApplyStyles.iconContainer}>
-        <Ionicons name="sparkles" size={24} color="#FFFFFF" />
-      </View>
-      <View style={quickApplyStyles.content}>
-        <Text style={quickApplyStyles.title}>Apply Without Site Selection</Text>
-        <Text style={quickApplyStyles.description}>
-          Submit a general application and our team will assign you the best available site.
-        </Text>
-      </View>
-      <TouchableOpacity
-        style={[
-          quickApplyStyles.button,
-          hasOngoingApplication && quickApplyStyles.buttonDisabled,
-        ]}
-        onPress={onPress}
-        disabled={hasOngoingApplication}
-        activeOpacity={0.8}
-      >
-        <Text style={[
-          quickApplyStyles.buttonText,
-          hasOngoingApplication && quickApplyStyles.buttonTextDisabled,
-        ]}>
-          {hasOngoingApplication ? 'Locked' : 'Quick Apply'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
+const formatListed = (raw: string) => {
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
 };
 
-const quickApplyStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: PRIMARY,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    marginHorizontal: 16,
-    shadowColor: PRIMARY,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  content: {
-    flex: 1,
-    marginRight: 12,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  description: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.9)',
-    lineHeight: 16,
-  },
-  button: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  buttonDisabled: {
-    backgroundColor: '#E5E7EB',
-  },
-  buttonText: {
-    color: PRIMARY,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  buttonTextDisabled: {
-    color: MUTED,
-  },
-});
+const resolveUrl = (url: string) => (url.startsWith("http") ? url : `${api}${url}`);
 
 /* ──────────────────────────────────────────────────────────────────
-   ANIMATED APPLICATION BADGE + MODAL
+   HEADER
    ──────────────────────────────────────────────────────────────── */
-const ApplicationBadge: React.FC = () => {
-  const [expanded, setExpanded] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const animWidth = useRef(new Animated.Value(40)).current;
-  const autoShrinkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handlePress = () => {
-    if (!expanded) {
-      if (autoShrinkTimer.current) clearTimeout(autoShrinkTimer.current);
-      Animated.spring(animWidth, {
-        toValue: 195,
-        useNativeDriver: false,
-        friction: 7,
-        tension: 40,
-      }).start();
-      setExpanded(true);
-      autoShrinkTimer.current = setTimeout(() => {
-        Animated.spring(animWidth, {
-          toValue: 40,
-          useNativeDriver: false,
-          friction: 8,
-          tension: 50,
-        }).start();
-        setExpanded(false);
-      }, 2500);
-    } else {
-      if (autoShrinkTimer.current) clearTimeout(autoShrinkTimer.current);
-      setShowModal(true);
-      Animated.spring(animWidth, {
-        toValue: 40,
-        useNativeDriver: false,
-        friction: 8,
-        tension: 50,
-      }).start();
-      setExpanded(false);
-    }
-  };
-
-  return (
-    <>
-      <Animated.View style={[appBadge.container, { width: animWidth }]}>
-        <TouchableOpacity
-          onPress={handlePress}
-          style={appBadge.touchable}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="time-outline" size={18} color={YELLOW} />
-          {expanded && (
-            <Animated.Text
-              style={[
-                appBadge.text,
-                {
-                  opacity: animWidth.interpolate({
-                    inputRange: [40, 120],
-                    outputRange: [0, 1],
-                  }),
-                },
-              ]}
-              numberOfLines={1}
-            >
-              Application in progress
-            </Animated.Text>
-          )}
-        </TouchableOpacity>
-      </Animated.View>
-
-      <Modal
-        visible={showModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowModal(false)}
-      >
-        <TouchableOpacity
-          style={modalStyles.overlay}
-          activeOpacity={1}
-          onPress={() => setShowModal(false)}
-        >
-          <View style={modalStyles.modalContainer}>
-            <View style={modalStyles.iconContainer}>
-              <Ionicons name="information-circle" size={32} color={YELLOW} />
-            </View>
-            <Text style={modalStyles.title}>Application in Progress</Text>
-            <Text style={modalStyles.message}>
-              You cannot apply for a new site because you have an ongoing
-              application. Please wait for your current application to be
-              processed.
-            </Text>
-            <TouchableOpacity
-              style={modalStyles.closeButton}
-              onPress={() => setShowModal(false)}
-              activeOpacity={0.8}
-            >
-              <Text style={modalStyles.closeButtonText}>Got it</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    </>
-  );
-};
-
-/* ─────────────────────────────────────────────────────────────────
-   SITES HEADER
-   ────────────────────────────────────────────────────────────── */
-const SitesHeader: React.FC<any> = ({
-  search,
-  setSearch,
-  onSearch,
-  showBarangayDropdown,
-  setShowBarangayDropdown,
-  selectedBarangay,
-  unreadCount,
-  hasOngoingApplication,
-}) => {
+const SitesHeader: React.FC<{
+  search: string;
+  setSearch: (v: string) => void;
+  onSearch: (value?: string) => void;
+  unreadCount: number;
+  total: number;
+  loading: boolean;
+}> = ({ search, setSearch, onSearch, unreadCount, total, loading }) => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
 
   return (
-    <View style={[sitesHdr.wrap, { paddingTop: insets.top + 20 }]}>
-      <View style={sitesHdr.topRow}>
-        <Text style={sitesHdr.title}>Explore Sites</Text>
-        <View style={sitesHdr.rightActions}>
-          {hasOngoingApplication && <ApplicationBadge />}
-          <TouchableOpacity
-            style={sitesHdr.iconBtn}
-            activeOpacity={0.6}
-            onPress={() => router.push("/(tabs)/notifications")}
-          >
-            <Ionicons name="notifications-outline" size={20} color={MUTED} />
-            {unreadCount > 0 && (
-              <View style={sitesHdr.badge}>
-                <Text style={sitesHdr.badgeText}>{badgeText}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={sitesHdr.searchRow}>
-        <View style={sitesHdr.searchPill}>
-          <Ionicons name="search" size={18} color={MUTED} />
-          <TextInput
-            style={sitesHdr.searchInput}
-            placeholder="Search sites..."
-            value={search}
-            onChangeText={setSearch}
-            placeholderTextColor={FAINT}
-            onSubmitEditing={onSearch}
-            returnKeyType="search"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity
-              onPress={() => {
-                setSearch("");
-                onSearch();
-              }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close-circle" size={18} color={FAINT} />
-            </TouchableOpacity>
-          )}
+    <View style={[hdr.wrap, { paddingTop: insets.top + 12 }]}>
+      <View style={hdr.topRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={hdr.eyebrow}>Reforestation</Text>
+          <Text style={hdr.title}>Explore Sites</Text>
+          <Text style={hdr.subtitle}>
+            {loading ? "Finding sites near you…" : `${total} ${total === 1 ? "site" : "sites"} open for tree growers`}
+          </Text>
         </View>
         <TouchableOpacity
-          style={[
-            sitesHdr.filterBtn,
-            selectedBarangay && sitesHdr.filterBtnActive,
-          ]}
-          onPress={() => setShowBarangayDropdown(!showBarangayDropdown)}
-          activeOpacity={0.8}
+          style={hdr.iconBtn}
+          activeOpacity={0.7}
+          onPress={() => router.push("/tree_growers/notifications" as any)}
         >
-          <Ionicons
-            name="options-outline"
-            size={20}
-            color={selectedBarangay ? "#fff" : PRIMARY}
-          />
-          {!!selectedBarangay && <View style={sitesHdr.filterBadge} />}
+          <Ionicons name="notifications-outline" size={20} color={WHITE} />
+          {unreadCount > 0 && (
+            <View style={hdr.badge}>
+              <Text style={hdr.badgeText}>{badgeText}</Text>
+            </View>
+          )}
         </TouchableOpacity>
+      </View>
+
+      <View style={hdr.searchPill}>
+        <Ionicons name="search" size={18} color={MUTED} />
+        <TextInput
+          style={hdr.searchInput}
+          placeholder="Search by site or area name…"
+          value={search}
+          onChangeText={setSearch}
+          placeholderTextColor={FAINT}
+          onSubmitEditing={() => onSearch()}
+          returnKeyType="search"
+        />
+        {search.length > 0 && (
+          <TouchableOpacity
+            onPress={() => {
+              setSearch("");
+              onSearch("");
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="close-circle" size={18} color={FAINT} />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
 };
 
 /* ──────────────────────────────────────────────────────────────────
-   SITE CARD COMPONENT (UPDATED)
+   QUICK APPLY / ONGOING APPLICATION
    ──────────────────────────────────────────────────────────────── */
-const SiteCard = ({
-  item,
-  onViewDetails,
-}: {
-  item: Site;
-  onViewDetails: (site: Site) => void;
+const QuickApplyCard: React.FC<{ onPress: () => void; hasOngoingApplication: boolean }> = ({
+  onPress,
+  hasOngoingApplication,
 }) => {
-  // ✅ Use main_image_url, fallback to first image in array
-  const imageUrl = item.main_image_url
-    ? (item.main_image_url.startsWith("http") ? item.main_image_url : `${api}${item.main_image_url}`)
-    : (item.images && item.images.length > 0 
-        ? (item.images[0].url.startsWith("http") ? item.images[0].url : `${api}${item.images[0].url}`) 
-        : null);
-
-  // ✅ Dynamic status badge configuration
-  const getStatusConfig = (status: string) => {
-    if (status === 'available') {
-      return { text: 'Available', bgColor: '#ECFDF5', textColor: '#059669', iconColor: '#10B981' };
-    }
-    return { text: 'Reserved - Queue Open', bgColor: '#FFFBEB', textColor: '#D97706', iconColor: '#F59E0B' };
-  };
-
-  const statusConfig = getStatusConfig(item.monitoring_status);
+  if (hasOngoingApplication) {
+    return (
+      <View style={qa.lockedCard}>
+        <View style={qa.lockedIcon}>
+          <Ionicons name="hourglass-outline" size={20} color={YELLOW} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={qa.lockedTitle}>Application in progress</Text>
+          <Text style={qa.lockedText}>
+            You can browse sites, but new applications are locked until your current one is processed.
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.card}>
-      <View style={styles.imageContainer}>
+    <TouchableOpacity style={qa.card} onPress={onPress} activeOpacity={0.88}>
+      <View style={qa.iconWrap}>
+        <Ionicons name="sparkles" size={20} color={WHITE} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={qa.title}>Not sure which site?</Text>
+        <Text style={qa.text}>Apply without choosing — ENRO will assign the best available site.</Text>
+      </View>
+      <View style={qa.cta}>
+        <Text style={qa.ctaText}>Quick Apply</Text>
+        <Ionicons name="arrow-forward" size={14} color={PRIMARY} />
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+/* ──────────────────────────────────────────────────────────────────
+   BARANGAY CHIPS
+   ──────────────────────────────────────────────────────────────── */
+const BarangayChips: React.FC<{
+  barangays: Barangay[];
+  selected: string;
+  onSelect: (name: string) => void;
+}> = ({ barangays, selected, onSelect }) => (
+  <View style={chips.wrap}>
+    <View style={chips.labelRow}>
+      <Ionicons name="location-outline" size={14} color={MUTED} />
+      <Text style={chips.label}>Filter by barangay</Text>
+    </View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={chips.row}>
+      {[{ barangay_id: 0, name: "" } as Barangay, ...barangays].map((b) => {
+        const active = selected === b.name;
+        return (
+          <TouchableOpacity
+            key={b.barangay_id}
+            style={[chips.chip, active && chips.chipActive]}
+            onPress={() => onSelect(b.name)}
+            activeOpacity={0.75}
+          >
+            {active && b.name !== "" && <Ionicons name="checkmark" size={13} color={WHITE} />}
+            <Text style={[chips.chipText, active && chips.chipTextActive]}>{b.name || "All"}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  </View>
+);
+
+/* ──────────────────────────────────────────────────────────────────
+   SITE CARD
+   ──────────────────────────────────────────────────────────────── */
+const SiteCard = ({ item, onViewDetails }: { item: Site; onViewDetails: (site: Site) => void }) => {
+  const imageUrl = item.main_image_url
+    ? resolveUrl(item.main_image_url)
+    : item.images && item.images.length > 0
+      ? resolveUrl(item.images[0].url)
+      : null;
+
+  const available = item.monitoring_status === "available";
+  const photoCount = item.images?.length || 0;
+
+  return (
+    <TouchableOpacity style={card.wrap} activeOpacity={0.92} onPress={() => onViewDetails(item)}>
+      <View style={card.imageBox}>
         {imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
-            style={styles.cardImage}
-            resizeMode="cover"
-          />
+          <Image source={{ uri: imageUrl }} style={card.image} resizeMode="cover" />
         ) : (
-          <View style={[styles.cardImage, styles.placeholderImage]}>
-            <Ionicons name="images-outline" size={32} color="#CBD5E1" />
+          <View style={[card.image, card.placeholder]}>
+            <Ionicons name="image-outline" size={34} color="#CBD5E1" />
+            <Text style={card.placeholderText}>No photo yet</Text>
           </View>
         )}
 
-        {/* ✅ Dynamic Status Badge */}
-        <View style={[styles.statusBadge, { backgroundColor: statusConfig.bgColor }]}>
-          <Ionicons name="checkmark-circle" size={12} color={statusConfig.iconColor} />
-          <Text style={[styles.statusText, { color: statusConfig.textColor }]}>
-            {statusConfig.text}
+        <View style={[card.status, { backgroundColor: available ? "#ECFDF5" : "#FFFBEB" }]}>
+          <View style={[card.statusDot, { backgroundColor: available ? "#10B981" : YELLOW }]} />
+          <Text style={[card.statusText, { color: available ? "#047857" : "#B45309" }]}>
+            {available ? "Available" : "Reserved · Queue open"}
           </Text>
         </View>
 
         {item.is_pinned && (
-          <View style={styles.pinnedBadge}>
-            <Ionicons name="star" size={12} color="#fff" />
+          <View style={card.pinned}>
+            <Ionicons name="star" size={11} color="#FDE68A" />
+            <Text style={card.pinnedText}>Featured</Text>
           </View>
         )}
 
-        <View style={styles.imageInfoOverlay}>
-          <Text style={styles.overlaySiteName} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Text style={styles.overlayLocationText} numberOfLines={1}>
-            {item.barangay}, {item.reforestation_area}
+        {photoCount > 1 && (
+          <View style={card.photoCount}>
+            <Ionicons name="images-outline" size={11} color={WHITE} />
+            <Text style={card.photoCountText}>{photoCount}</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={card.body}>
+        <Text style={card.name} numberOfLines={1}>{item.name}</Text>
+        <View style={card.locationRow}>
+          <Ionicons name="location" size={13} color={PRIMARY} />
+          <Text style={card.location} numberOfLines={1}>
+            Brgy. {item.barangay} · {item.reforestation_area}
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.viewButton}
-          onPress={() => onViewDetails(item)}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.viewButtonText}>View Details</Text>
-          <Ionicons name="arrow-forward" size={16} color={PRIMARY} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Bottom Metric Bar */}
-      <View style={styles.metricBar}>
-        <View style={styles.metricItem}>
-          <Ionicons name="leaf-outline" size={14} color={PRIMARY} />
-          <Text style={styles.metricText}>
-            {item.total_area_hectares.toFixed(2)} Hectares
-          </Text>
-        </View>
-        <View style={styles.metricDivider} />
-        <View style={styles.metricItem}>
-          <Ionicons name="calendar-outline" size={14} color={PRIMARY} />
-          <Text style={styles.metricText}>Listed {item.created_at}</Text>
+        <View style={card.footer}>
+          <View style={card.metaRow}>
+            <View style={card.meta}>
+              <Ionicons name="resize-outline" size={13} color={MUTED} />
+              <Text style={card.metaText}>{item.total_area_hectares.toFixed(2)} ha</Text>
+            </View>
+            <View style={card.meta}>
+              <Ionicons name="calendar-outline" size={13} color={MUTED} />
+              <Text style={card.metaText}>{formatListed(item.created_at)}</Text>
+            </View>
+          </View>
+          <View style={card.viewBtn}>
+            <Text style={card.viewBtnText}>View</Text>
+            <Ionicons name="arrow-forward" size={14} color={WHITE} />
+          </View>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
-/* ─────────────────────────────────────────────────────────────────
-   FLOATING BACK TO TOP BUTTON
+/* ──────────────────────────────────────────────────────────────────
+   BACK TO TOP
    ──────────────────────────────────────────────────────────────── */
-const BackToTopButton: React.FC<{
-  scrollY: Animated.Value;
-  onScrollToTop: () => void;
-}> = ({ scrollY, onScrollToTop }) => {
-  const opacity = scrollY.interpolate({
-    inputRange: [200, 300],
-    outputRange: [0, 1],
-    extrapolate: "clamp",
-  });
-  const scale = scrollY.interpolate({
-    inputRange: [200, 300],
-    outputRange: [0.8, 1],
-    extrapolate: "clamp",
-  });
-
+const BackToTopButton: React.FC<{ scrollY: Animated.Value; onScrollToTop: () => void }> = ({
+  scrollY,
+  onScrollToTop,
+}) => {
+  const opacity = scrollY.interpolate({ inputRange: [300, 400], outputRange: [0, 1], extrapolate: "clamp" });
+  const scale = scrollY.interpolate({ inputRange: [300, 400], outputRange: [0.8, 1], extrapolate: "clamp" });
   return (
-    <Animated.View
-      style={[styles.backToTopContainer, { opacity, transform: [{ scale }] }]}
-    >
-      <TouchableOpacity
-        style={styles.backToTopButton}
-        onPress={onScrollToTop}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="chevron-up" size={24} color={WHITE} />
+    <Animated.View style={[styles.backToTopContainer, { opacity, transform: [{ scale }] }]}>
+      <TouchableOpacity style={styles.backToTopButton} onPress={onScrollToTop} activeOpacity={0.8}>
+        <Ionicons name="chevron-up" size={22} color={WHITE} />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -479,6 +308,7 @@ const BackToTopButton: React.FC<{
    ──────────────────────────────────────────────────────────────── */
 export default function Sites() {
   const router = useRouter();
+  const { error: showError } = useAlert();
   const flatListRef = useRef<FlatList>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -490,7 +320,6 @@ export default function Sites() {
   const [search, setSearch] = useState("");
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [availableBarangays, setAvailableBarangays] = useState<Barangay[]>([]);
-  const [showBarangayDropdown, setShowBarangayDropdown] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [hasOngoingApplication, setHasOngoingApplication] = useState(false);
@@ -535,44 +364,38 @@ export default function Sites() {
     isLoadMore = false,
     currentSearch = search,
     currentBarangay = selectedBarangay,
+    silent = false,
   ) => {
     try {
-      if (isRefresh) setRefreshing(true);
+      if (silent) {
+        // background reload: keep the current list on screen
+      } else if (isRefresh) setRefreshing(true);
       else if (isLoadMore) setLoadingMore(true);
       else setLoading(true);
 
       const token = await SecureStore.getItemAsync("token");
       if (!token) throw new Error("No authentication token found.");
 
-      const params = new URLSearchParams({
-        page: pageNum.toString(),
-        entries: "10",
-      });
+      const params = new URLSearchParams({ page: pageNum.toString(), entries: "10" });
       if (currentSearch.trim()) params.append("search", currentSearch.trim());
       if (currentBarangay) params.append("barangay", currentBarangay);
 
-      const res = await fetch(
-        `${api}/api/get_available_sites_for_tree_grower/?${params.toString()}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      );
+      const res = await fetch(`${api}/api/get_available_sites_for_tree_grower/?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to fetch sites");
 
-      if (isLoadMore) {
-        setSites((prev) => [...prev, ...(data.data || [])]);
-      } else {
-        setSites(data.data || []);
-      }
+      if (isLoadMore) setSites((prev) => [...prev, ...(data.data || [])]);
+      else setSites(data.data || []);
 
       setHasMore(data.has_next || false);
       setTotal(data.total || 0);
       setHasOngoingApplication(data.has_ongoing_application === true);
       setPage(pageNum);
     } catch (err: any) {
-      Alert.alert("Error", err.message);
+      if (!silent) showError("Couldn't load sites", err.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -585,14 +408,30 @@ export default function Sites() {
     fetchSites(1, false, false, "", "");
   }, []);
 
-  const handleSearch = () => {
+  // Tabs keep this screen mounted. Reload quietly whenever it regains focus
+  // so sites that were re-opened (made available again) show up right away.
+  const filtersRef = useRef({ search, selectedBarangay });
+  filtersRef.current = { search, selectedBarangay };
+  const hasFocusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnce.current) {
+        hasFocusedOnce.current = true; // initial load handled above
+        return;
+      }
+      const { search: q, selectedBarangay: b } = filtersRef.current;
+      fetchSites(1, false, false, q, b, true);
+    }, []),
+  );
+
+  const handleSearch = (value: string = search) => {
     setPage(1);
     setSites([]);
-    fetchSites(1, false, false, search, selectedBarangay);
+    fetchSites(1, false, false, value, selectedBarangay);
   };
   const handleBarangayFilter = (barangay: string) => {
+    if (barangay === selectedBarangay) return;
     setSelectedBarangay(barangay);
-    setShowBarangayDropdown(false);
     setPage(1);
     setSites([]);
     fetchSites(1, false, false, search, barangay);
@@ -608,10 +447,8 @@ export default function Sites() {
     setPage(1);
     fetchSites(1, true, false, search, selectedBarangay);
   };
-
   const handleLoadMore = () => {
-    if (!loadingMore && hasMore)
-      fetchSites(page + 1, false, true, search, selectedBarangay);
+    if (!loadingMore && !loading && hasMore) fetchSites(page + 1, false, true, search, selectedBarangay);
   };
 
   const handleViewDetails = (site: Site) => {
@@ -624,39 +461,51 @@ export default function Sites() {
     });
   };
 
-  const handleScrollToTop = () =>
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-  const handleScroll = Animated.event(
-    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-    { useNativeDriver: false },
-  );
+  const handleScrollToTop = () => flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+  const handleScroll = Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+    useNativeDriver: false,
+  });
 
-  const renderFooter = () =>
-    !loadingMore ? null : (
-      <View style={styles.footer}>
-        <ActivityIndicator size="small" color={PRIMARY} />
-      </View>
-    );
+  const hasFilters = !!search.trim() || !!selectedBarangay;
+
+  const renderFooter = () => {
+    if (loadingMore) {
+      return (
+        <View style={styles.footer}>
+          <ActivityIndicator size="small" color={PRIMARY} />
+        </View>
+      );
+    }
+    if (!loading && sites.length > 0 && !hasMore) {
+      return <Text style={styles.endText}>You've seen all {total} sites</Text>;
+    }
+    return null;
+  };
 
   const renderEmpty = () => {
-    if (loading) return null;
+    if (loading) {
+      return (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="large" color={PRIMARY} />
+          <Text style={styles.loadingText}>Loading sites…</Text>
+        </View>
+      );
+    }
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="map-outline" size={48} color="#D1D5DB" />
-        <Text style={styles.emptyTitle}>
-          {search || selectedBarangay ? "No sites found" : "No available sites"}
-        </Text>
+        <View style={styles.emptyIcon}>
+          <Ionicons name={hasFilters ? "search-outline" : "map-outline"} size={30} color={PRIMARY} />
+        </View>
+        <Text style={styles.emptyTitle}>{hasFilters ? "No matching sites" : "No sites available yet"}</Text>
         <Text style={styles.emptySubtitle}>
-          {search || selectedBarangay
-            ? "Try adjusting your filters"
-            : "Check back later for new sites"}
+          {hasFilters
+            ? "Try another barangay or search term."
+            : "New reforestation sites are added regularly — check back soon."}
         </Text>
-        {(search || selectedBarangay) && (
-          <TouchableOpacity
-            style={styles.clearFiltersButton}
-            onPress={clearFilters}
-          >
-            <Text style={styles.clearFiltersText}>Clear Filters</Text>
+        {hasFilters && (
+          <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+            <Ionicons name="refresh" size={14} color={WHITE} />
+            <Text style={styles.clearFiltersText}>Clear filters</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -668,19 +517,12 @@ export default function Sites() {
       <FlatList
         ref={flatListRef}
         data={sites}
-        renderItem={({ item }) => (
-          <SiteCard item={item} onViewDetails={handleViewDetails} />
-        )}
+        renderItem={({ item }) => <SiteCard item={item} onViewDetails={handleViewDetails} />}
         keyExtractor={(item) => item.site_id.toString()}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={PRIMARY}
-          />
-        }
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={PRIMARY} />}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         ListFooterComponent={renderFooter}
@@ -691,73 +533,34 @@ export default function Sites() {
               search={search}
               setSearch={setSearch}
               onSearch={handleSearch}
-              showBarangayDropdown={showBarangayDropdown}
-              setShowBarangayDropdown={setShowBarangayDropdown}
-              selectedBarangay={selectedBarangay}
               unreadCount={unreadCount}
-              hasOngoingApplication={hasOngoingApplication}
+              total={total}
+              loading={loading}
             />
-            
-            {/* ✅ UPDATED: Routes to the correct Reapply.tsx location */}
-            <QuickApplyCard 
-              hasOngoingApplication={hasOngoingApplication}
-              onPress={() => router.push("/tree_growers/Reapply")}
-            />
-
-            {selectedBarangay ? (
-              <View style={styles.activeFilterRow}>
-                <View style={styles.activeFilterChip}>
-                  <Ionicons name="location" size={12} color={PRIMARY} />
-                  <Text style={styles.activeFilterChipText}>
-                    {selectedBarangay}
+            <View style={styles.headerBody}>
+              <QuickApplyCard
+                hasOngoingApplication={hasOngoingApplication}
+                onPress={() => router.push("/tree_growers/Reapply")}
+              />
+              <BarangayChips
+                barangays={availableBarangays}
+                selected={selectedBarangay}
+                onSelect={handleBarangayFilter}
+              />
+              {!loading && sites.length > 0 && (
+                <View style={styles.resultsRow}>
+                  <Text style={styles.resultsText}>
+                    {hasFilters ? "Results" : "All sites"}
+                    <Text style={styles.resultsCount}>  {total}</Text>
                   </Text>
-                  <TouchableOpacity
-                    onPress={() => handleBarangayFilter("")}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons name="close" size={14} color={PRIMARY} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : null}
-            {showBarangayDropdown && (
-              <View style={styles.dropdownContainer}>
-                <ScrollView showsVerticalScrollIndicator={false}>
-                  <TouchableOpacity
-                    style={styles.dropdownItem}
-                    onPress={() => handleBarangayFilter("")}
-                  >
-                    <Text style={styles.dropdownItemText}>All Barangays</Text>
-                  </TouchableOpacity>
-                  {availableBarangays.map((barangay) => (
-                    <TouchableOpacity
-                      key={barangay.barangay_id}
-                      style={[
-                        styles.dropdownItem,
-                        selectedBarangay === barangay.name &&
-                          styles.dropdownItemActive,
-                      ]}
-                      onPress={() => handleBarangayFilter(barangay.name)}
-                    >
-                      <Text
-                        style={[
-                          styles.dropdownItemText,
-                          selectedBarangay === barangay.name &&
-                            styles.dropdownItemTextActive,
-                        ]}
-                      >
-                        {barangay.name}
-                      </Text>
+                  {hasFilters && (
+                    <TouchableOpacity onPress={clearFilters} hitSlop={8}>
+                      <Text style={styles.resultsClear}>Clear</Text>
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-            {!loading && sites.length > 0 && (
-              <Text style={styles.resultsText}>
-                Showing {sites.length} of {total} sites
-              </Text>
-            )}
+                  )}
+                </View>
+              )}
+            </View>
           </>
         }
         onScroll={handleScroll}
@@ -770,336 +573,238 @@ export default function Sites() {
 
 /* ──────────────────────────────────────────────────────────────────
    STYLES
-   ──────────────────────────────────────────────────────────── */
-const sitesHdr = StyleSheet.create({
-  wrap: { backgroundColor: BG, paddingHorizontal: 0, paddingBottom: 20 },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
+   ──────────────────────────────────────────────────────────────── */
+const hdr = StyleSheet.create({
+  wrap: {
+    backgroundColor: PRIMARY,
+    paddingHorizontal: 20,
+    paddingBottom: 46,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    marginHorizontal: -16,
   },
-  title: { fontSize: 28, fontWeight: "800", color: INK, letterSpacing: -0.5 },
-  rightActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  topRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 18 },
+  eyebrow: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.65)", textTransform: "uppercase", letterSpacing: 1 },
+  title: { fontSize: 28, fontWeight: "800", color: WHITE, letterSpacing: -0.5, marginTop: 2 },
+  subtitle: { fontSize: 13, color: "rgba(255,255,255,0.8)", marginTop: 3 },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-    ...cardShadow,
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
   badge: {
     position: "absolute",
     top: 2,
     right: 2,
-    minWidth: 16,
-    height: 16,
+    minWidth: 17,
+    height: 17,
     paddingHorizontal: 4,
-    borderRadius: 8,
+    borderRadius: 9,
     backgroundColor: "#EF4444",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#FFFFFF",
+    borderColor: PRIMARY,
   },
-  badgeText: { color: "#FFFFFF", fontSize: 9, fontWeight: "700" },
-  searchRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  badgeText: { color: WHITE, fontSize: 9, fontWeight: "800" },
   searchPill: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  searchInput: { flex: 1, fontSize: 14, color: INK, paddingVertical: 0 },
-  filterBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  filterBtnActive: { backgroundColor: PRIMARY },
-  filterBadge: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: YELLOW,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-  },
-});
-
-const appBadge = StyleSheet.create({
-  container: {
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 2.5,
-    borderColor: YELLOW,
-    overflow: "hidden",
-    shadowColor: YELLOW,
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
-  touchable: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  text: { fontSize: 12, fontWeight: "800", color: YELLOW },
-});
-
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  modalContainer: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 24,
-    width: "100%",
-    maxWidth: 320,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
-  },
-  iconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#FEF3C7",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: INK,
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  message: {
-    fontSize: 14,
-    color: MUTED,
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 20,
-  },
-  closeButton: {
-    backgroundColor: YELLOW,
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 12,
-    width: "100%",
-  },
-  closeButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-});
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
-  activeFilterRow: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  activeFilterChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#F0FDF4",
-    borderWidth: 1,
-    borderColor: "#BBF7D0",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  activeFilterChipText: { fontSize: 12, fontWeight: "600", color: PRIMARY },
-  dropdownContainer: {
-    marginHorizontal: 20,
-    marginTop: 8,
-    marginBottom: 16,
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    maxHeight: 220,
-    ...cardShadow,
-  },
-  dropdownItem: { paddingHorizontal: 14, paddingVertical: 10 },
-  dropdownItemActive: { backgroundColor: "#F0FDF4" },
-  dropdownItemText: { fontSize: 13, color: INK },
-  dropdownItemTextActive: { color: PRIMARY, fontWeight: "600" },
-  resultsText: { marginTop: 8, marginBottom: 16, fontSize: 12, color: MUTED },
-  listContent: { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 100 },
-  footer: { paddingVertical: 16, alignItems: "center" },
-  card: {
-    marginBottom: 24,
-    borderRadius: 16,
-    ...cardShadow,
-    overflow: "hidden",
     backgroundColor: WHITE,
+    paddingHorizontal: 14,
+    height: 48,
+    borderRadius: 14,
+    gap: 10,
   },
-  imageContainer: { position: "relative", height: 220 },
-  cardImage: { width: "100%", height: "100%" },
-  placeholderImage: {
-    backgroundColor: "#F3F4F6",
-    justifyContent: "center",
+  searchInput: { flex: 1, fontSize: 14.5, color: INK, paddingVertical: 0 },
+});
+
+const qa = StyleSheet.create({
+  card: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 12,
+    backgroundColor: WHITE,
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+    ...cardShadow,
   },
-  statusBadge: {
+  iconWrap: { width: 42, height: 42, borderRadius: 13, backgroundColor: PRIMARY, justifyContent: "center", alignItems: "center" },
+  title: { fontSize: 14.5, fontWeight: "800", color: INK },
+  text: { fontSize: 12, color: MUTED, marginTop: 2, lineHeight: 16 },
+  cta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  ctaText: { fontSize: 12, fontWeight: "800", color: PRIMARY },
+
+  lockedCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFFBEB",
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  lockedIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: "#FEF3C7", justifyContent: "center", alignItems: "center" },
+  lockedTitle: { fontSize: 14.5, fontWeight: "800", color: "#92400E" },
+  lockedText: { fontSize: 12, color: "#A16207", marginTop: 2, lineHeight: 16 },
+});
+
+const chips = StyleSheet.create({
+  wrap: { marginTop: 18 },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 8 },
+  label: { fontSize: 12, fontWeight: "700", color: MUTED, textTransform: "uppercase", letterSpacing: 0.5 },
+  row: { gap: 8, paddingRight: 16 },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  chipActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
+  chipText: { fontSize: 13, fontWeight: "600", color: INK },
+  chipTextActive: { color: WHITE },
+});
+
+const card = StyleSheet.create({
+  wrap: { marginBottom: 16, borderRadius: 20, backgroundColor: WHITE, overflow: "hidden", ...cardShadow },
+  imageBox: { height: 170, position: "relative" },
+  image: { width: "100%", height: "100%" },
+  placeholder: { backgroundColor: "#F1F5F9", justifyContent: "center", alignItems: "center", gap: 4 },
+  placeholderText: { fontSize: 12, color: FAINT, fontWeight: "600" },
+  status: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  statusText: { fontSize: 11, fontWeight: "800" },
+  pinned: {
     position: "absolute",
     top: 12,
     right: 12,
     flexDirection: "row",
     alignItems: "center",
+    gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 12,
-    gap: 3,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+    backgroundColor: "rgba(15,74,47,0.88)",
   },
-  statusText: { fontSize: 10, fontWeight: "600" },
-  imageInfoOverlay: {
+  pinnedText: { fontSize: 11, fontWeight: "800", color: WHITE },
+  photoCount: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 60,
-    paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: 12,
-  },
-  overlaySiteName: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#fff",
-    marginBottom: 4,
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  overlayLocationText: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.95)",
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  pinnedBadge: {
-    position: "absolute",
-    top: 12,
-    left: 12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "rgba(15, 74, 47, 0.85)",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  viewButton: {
-    position: "absolute",
-    bottom: 12,
-    left: 16,
+    bottom: 10,
+    right: 10,
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: WHITE,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
-  viewButtonText: { fontSize: 13, fontWeight: "700", color: PRIMARY },
-
-  metricBar: {
+  photoCountText: { fontSize: 11, fontWeight: "700", color: WHITE },
+  body: { padding: 14 },
+  name: { fontSize: 17, fontWeight: "800", color: INK, letterSpacing: -0.2 },
+  locationRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+  location: { fontSize: 13, color: MUTED, flex: 1 },
+  footer: {
     flexDirection: "row",
-    justifyContent: "space-around",
     alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    backgroundColor: WHITE,
+    justifyContent: "space-between",
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: "#F1F5F9",
   },
-  metricItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  metricText: { fontSize: 12, fontWeight: "600", color: INK },
-  metricDivider: { width: 1, height: 16, backgroundColor: "#E2E8F0" },
-
-  emptyState: { alignItems: "center", marginTop: 80, gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: "600", color: "#374151" },
-  emptySubtitle: {
-    fontSize: 13,
-    color: MUTED,
-    textAlign: "center",
-    paddingHorizontal: 32,
-  },
-  clearFiltersButton: {
-    marginTop: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 14, flex: 1 },
+  meta: { flexDirection: "row", alignItems: "center", gap: 4 },
+  metaText: { fontSize: 12, fontWeight: "600", color: "#374151" },
+  viewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     backgroundColor: PRIMARY,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
-  clearFiltersText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  backToTopContainer: {
-    position: "absolute",
-    bottom: 24,
-    right: 20,
-    zIndex: 10,
+  viewBtnText: { fontSize: 13, fontWeight: "800", color: WHITE },
+});
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: BG },
+  listContent: { paddingHorizontal: 16, paddingBottom: 110 },
+  headerBody: { marginTop: -28 },
+  resultsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 20,
+    marginBottom: 12,
   },
+  resultsText: { fontSize: 16, fontWeight: "800", color: INK },
+  resultsCount: { fontSize: 14, fontWeight: "700", color: FAINT },
+  resultsClear: { fontSize: 13, fontWeight: "700", color: PRIMARY },
+  footer: { paddingVertical: 16, alignItems: "center" },
+  endText: { textAlign: "center", fontSize: 12, color: FAINT, paddingVertical: 12 },
+  loadingBox: { alignItems: "center", marginTop: 60, gap: 10 },
+  loadingText: { fontSize: 13, color: MUTED },
+
+  emptyState: { alignItems: "center", marginTop: 50, paddingHorizontal: 24 },
+  emptyIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#ECFDF5",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  emptyTitle: { fontSize: 17, fontWeight: "800", color: INK },
+  emptySubtitle: { fontSize: 13, color: MUTED, textAlign: "center", marginTop: 4, lineHeight: 18 },
+  clearFiltersButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: PRIMARY,
+    borderRadius: 12,
+  },
+  clearFiltersText: { color: WHITE, fontSize: 13, fontWeight: "700" },
+
+  backToTopContainer: { position: "absolute", bottom: 100, right: 20, zIndex: 10 },
   backToTopButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: PRIMARY,
     justifyContent: "center",
     alignItems: "center",

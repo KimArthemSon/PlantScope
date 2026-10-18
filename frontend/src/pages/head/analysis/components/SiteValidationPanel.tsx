@@ -38,20 +38,23 @@ export default function SiteValidationPanel({
   const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; variant: "danger" | "warning"; confirmLabel: string; onConfirm: () => void } | null>(null);
 
   // Load existing data when site changes
+  // Drafts are saved under validation_data.site_data; always reset so one
+  // site's notes never carry over to another site
   useEffect(() => {
-    if (!site?.validation_data) return;
-    setSafetyNote(site.validation_data.safety?.decision_note || "");
-    setSurvivabilityNote(site.validation_data.survivability?.decision_note || "");
-    setFinalNote(site.validation_data.final_decision_note || "");
+    const saved = site?.validation_data?.site_data;
+    setSafetyNote(saved?.safety?.decision_note || "");
+    setSurvivabilityNote(saved?.survivability?.decision_note || "");
+    setFinalNote(saved?.final_decision_note || "");
   }, [site]);
 
   const handleSaveDraft = async () => {
     setSaving(true);
     try {
       const success = await onSaveDraft({
-        safety_note: safetyNote.trim() || undefined,
-        survivability_note: survivabilityNote.trim() || undefined,
-        final_note: finalNote.trim() || undefined,
+        // Send empty strings too, so clearing a note is saved
+        safety_note: safetyNote.trim(),
+        survivability_note: survivabilityNote.trim(),
+        final_note: finalNote.trim(),
       });
       setPsAlert(
         success

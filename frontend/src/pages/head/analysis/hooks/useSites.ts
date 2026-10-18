@@ -259,26 +259,26 @@ export function useSites() {
     [fetchWithAuth, fetchSiteDetail, selectedSite],
   );
 
+  // Callers pass the site being validated explicitly: selectedSite can be
+  // replaced by other detail fetches (e.g. the site open in View)
   const saveValidationDraft = useCallback(
-    async (data: {
+    async (siteId: number, data: {
       safety_note?: string;
       survivability_note?: string;
       final_note?: string;
     }) => {
       try {
-        if (!selectedSite) return false;
         const payload: Record<string, any> = {};
-        if (data.safety_note)
+        if (data.safety_note !== undefined)
           payload.safety = { decision_note: data.safety_note };
-        if (data.survivability_note)
+        if (data.survivability_note !== undefined)
           payload.survivability = { decision_note: data.survivability_note };
-        if (data.final_note) payload.final_decision_note = data.final_note;
+        if (data.final_note !== undefined) payload.final_decision_note = data.final_note;
 
         const result = await fetchWithAuth(
-          `${BASE_URL}/api/site/${selectedSite.site_id}/validation/draft/`,
+          `${BASE_URL}/api/site/${siteId}/validation/draft/`,
           { method: "PUT", body: JSON.stringify(payload) },
         );
-        await fetchSiteDetail(selectedSite.site_id);
         return !!result;
       } catch (err: any) {
         console.error("❌ [useSites] saveValidationDraft error:", err);
@@ -286,15 +286,14 @@ export function useSites() {
         return false;
       }
     },
-    [fetchWithAuth, selectedSite, fetchSiteDetail],
+    [fetchWithAuth],
   );
 
   const finalizeSite = useCallback(
-    async (decision: "ACCEPT" | "REJECT", note: string) => {
+    async (siteId: number, decision: "ACCEPT" | "REJECT", note: string) => {
       try {
-        if (!selectedSite) return false;
         const result = await fetchWithAuth(
-          `${BASE_URL}/api/site/${selectedSite.site_id}/validation/finalize/`,
+          `${BASE_URL}/api/site/${siteId}/validation/finalize/`,
           {
             method: "POST",
             body: JSON.stringify({
@@ -316,7 +315,7 @@ export function useSites() {
         return false;
       }
     },
-    [fetchWithAuth, selectedSite, fetchSites],
+    [fetchWithAuth, fetchSites],
   );
 
   const togglePin = useCallback(

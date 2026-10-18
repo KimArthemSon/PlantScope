@@ -120,7 +120,7 @@ const formatDescription = (desc: string | null | undefined) => {
     .replace(/<[^>]+>/g, "");
 };
 
-const formatDate = (iso: string) =>
+const formatDate = (iso: string | null | undefined) =>
   !iso
     ? "—"
     : new Date(iso).toLocaleDateString("en-PH", {
@@ -499,8 +499,17 @@ export default function ApplicationDetailScreen() {
     }
   };
 
+  // This screen stays mounted inside Tabs, so clear the previous
+  // application's data whenever a different id is opened.
   useEffect(() => {
-    if (id) fetchData();
+    if (!id) return;
+    setDetail(null);
+    setActiveTab("about");
+    setDescExpanded(false);
+    setIsTruncated(false);
+    setShowSeedlingHistory(false);
+    setShowReportHistory(false);
+    fetchData();
   }, [id]);
 
   const onRefresh = () => {
@@ -561,7 +570,7 @@ export default function ApplicationDetailScreen() {
   );
   const reportCount = detail?.progress_reports?.length || 0;
 
-  if (loading) {
+  if (loading || (!detail && !error)) {
     return (
       <View style={[styles.center, { paddingTop: insets.top + 40 }]}>
         <ActivityIndicator size="large" color={PRIMARY} />

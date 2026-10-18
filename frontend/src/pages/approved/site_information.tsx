@@ -149,6 +149,7 @@ interface SiteResponse {
   meta_verification: MetaVerification | null;
   permits: PermitItem[];
   site_images: SiteImage[];
+  species_recommendations?: SpeciesRecommendation[];
   validation_data: ValidationData;
   reforestation_area_id?: number;
   reforestation_area_name?: string;
@@ -958,14 +959,30 @@ const MetadataVerificationCard: React.FC<{ verification: MetaVerification | null
 // ─────────────────────────────────────────────
 // SPECIES RECOMMENDATIONS
 // ─────────────────────────────────────────────
-const SpeciesRecommendationsPanel: React.FC<{ siteId: number; initialSpecies: SpeciesRecommendation[]; token: string | null; canEdit?: boolean; }> = ({ siteId, initialSpecies, token, canEdit = false }) => {
+const serializeSpecies = (list: SpeciesRecommendation[]) =>
+  JSON.stringify(list.map((s) => [s.id, s.notes || ""]));
+
+const SpeciesRecommendationsPanel: React.FC<{ siteId: number; initialSpecies: SpeciesRecommendation[]; token: string | null; canEdit?: boolean; lockedReason?: string | null; }> = ({ siteId, initialSpecies, token, canEdit = false, lockedReason = null }) => {
   const [species, setSpecies] = useState<SpeciesRecommendation[]>(initialSpecies);
+  // Last list confirmed by the server; used to detect unsaved changes
+  const [savedSpecies, setSavedSpecies] = useState<SpeciesRecommendation[]>(initialSpecies);
   const [allSpecies, setAllSpecies] = useState<TreeSpeciesOption[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingSpecies, setLoadingSpecies] = useState(false);
   const notify = React.useContext(NotifyContext);
+
+  // Load saved recommendations when the site data arrives / is refetched
+  const initialKey = serializeSpecies(initialSpecies);
+  useEffect(() => {
+    setSpecies(initialSpecies);
+    setSavedSpecies(initialSpecies);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId, initialKey]);
+
+  const isDirty = serializeSpecies(species) !== serializeSpecies(savedSpecies);
+  const rerank = (list: SpeciesRecommendation[]) => list.map((s, i) => ({ ...s, rank: i + 1 }));
 
   useEffect(() => {
     const fetchAllSpecies = async () => {
@@ -980,18 +997,40 @@ const SpeciesRecommendationsPanel: React.FC<{ siteId: number; initialSpecies: Sp
     if (!selectedId) return;
     const found = allSpecies.find((s) => s.tree_specie_id === Number(selectedId));
     if (!found || species.find((s) => s.id === found.tree_specie_id)) return;
-    setSpecies((prev) => [...prev, { id: found.tree_specie_id, name: found.name, rank: prev.length + 1, notes: notes || null }]);
+    setSpecies((prev) => [...prev, { id: found.tree_specie_id, name: found.name, rank: prev.length + 1, notes: notes.trim() || null }]);
     setSelectedId(""); setNotes("");
   };
-  const handleRemove = (id: number) => { setSpecies((prev) => prev.filter((s) => s.id !== id).map((s, i) => ({ ...s, rank: i + 1 }))); };
+  const handleRemove = (id: number) => { setSpecies((prev) => rerank(prev.filter((s) => s.id !== id))); };
+  const handleMove = (index: number, dir: -1 | 1) => {
+    setSpecies((prev) => {
+      const target = index + dir;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return rerank(next);
+    });
+  };
+  const handleDiscard = () => setSpecies(savedSpecies);
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${API}update_species/${siteId}/`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ species: species.map((s) => ({ tree_species_id: s.id, priority_rank: s.rank, notes: s.notes || "" })) }) });
-      if (res.ok) notify("success", "Species saved", "Recommended species saved successfully.");
-      else notify("error", "Save failed", "Could not save the species list.");
-    } catch { notify("error", "Save failed", "Could not save the species list."); }
-    setSaving(false);
+      const res = await fetch(`${API}update_species/${siteId}/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ species: species.map((s) => ({ tree_species_id: s.id, priority_rank: s.rank, notes: s.notes || "" })) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Could not save the species list (${res.status}).`);
+      // Use what the server actually stored as the new baseline
+      const stored: SpeciesRecommendation[] = Array.isArray(data.species) ? data.species : species;
+      setSpecies(stored);
+      setSavedSpecies(stored);
+      notify("success", "Species saved", stored.length ? `${stored.length} recommended species saved.` : "Recommendations cleared.");
+    } catch (err: any) {
+      notify("error", "Save failed", err?.message || "Could not save the species list.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1000,7 +1039,7 @@ const SpeciesRecommendationsPanel: React.FC<{ siteId: number; initialSpecies: Sp
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-md bg-gray-100"><Leaf className="w-4 h-4 text-gray-600" /></div>
-            <div><h2 className="text-sm font-medium text-gray-800 flex items-center gap-2">Species Recommendations{canEdit && <span className="text-[10px] font-normal text-gray-600 bg-gray-200 px-2 py-0.5 rounded">Editable</span>}</h2><p className="text-xs text-gray-500 mt-0.5">{species.length > 0 ? `${species.length} species configured` : "Add recommended tree species"}</p></div>
+            <div><h2 className="text-sm font-medium text-gray-800 flex items-center gap-2">Species Recommendations{canEdit ? (isDirty ? <span className="text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Unsaved changes</span> : <span className="text-[10px] font-normal text-gray-600 bg-gray-200 px-2 py-0.5 rounded">Editable</span>) : lockedReason ? <span className="text-[10px] font-normal text-gray-600 bg-gray-200 px-2 py-0.5 rounded">Locked</span> : null}</h2><p className="text-xs text-gray-500 mt-0.5">{species.length > 0 ? `${species.length} species configured` : "Add recommended tree species"}</p></div>
           </div>
           {species.length > 0 && <span className="px-2.5 py-1 rounded-md text-xs bg-gray-800 text-white font-medium">{species.length}</span>}
         </div>
@@ -1008,18 +1047,27 @@ const SpeciesRecommendationsPanel: React.FC<{ siteId: number; initialSpecies: Sp
       <div className="p-4 space-y-4">
         {species.length > 0 ? (
           <div className="space-y-2">
-            {species.map((sp) => (
+            {species.map((sp, index) => (
               <div key={sp.id} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-md px-3 py-2.5 hover:border-gray-300 transition-colors">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <div className="w-7 h-7 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs font-bold flex-shrink-0">{sp.rank}</div>
                   <div className="min-w-0 flex-1"><p className="text-sm font-medium text-gray-800 truncate">{sp.name}</p>{sp.notes && <p className="text-xs text-gray-500 truncate">{sp.notes}</p>}</div>
                 </div>
-                {canEdit && (<button onClick={() => handleRemove(sp.id)} className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded-md transition-colors flex-shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>)}
+                {canEdit && (
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} title="Move up" className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-30 disabled:hover:bg-transparent"><ChevronUp className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleMove(index, 1)} disabled={index === species.length - 1} title="Move down" className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-30 disabled:hover:bg-transparent"><ChevronDown className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleRemove(sp.id)} title="Remove" className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded-md transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
         ) : (
-          <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-md border border-dashed border-gray-200"><Leaf className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm font-medium text-gray-600">No species recommended yet</p><p className="text-xs mt-1">Add species below to get started</p></div>
+          <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-md border border-dashed border-gray-200"><Leaf className="w-10 h-10 mx-auto mb-2 opacity-30" /><p className="text-sm font-medium text-gray-600">No species recommended yet</p><p className="text-xs mt-1">{canEdit ? "Add species below to get started" : "Nothing has been configured for this site"}</p></div>
+        )}
+        {!canEdit && lockedReason && (
+          <div className="flex items-start gap-2 p-3 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800"><AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" /><span>{lockedReason}</span></div>
         )}
         {canEdit && (
           <div className="bg-gray-50 rounded-md border-2 border-dashed border-gray-300 p-4 space-y-3">
@@ -1032,7 +1080,12 @@ const SpeciesRecommendationsPanel: React.FC<{ siteId: number; initialSpecies: Sp
             <button onClick={handleAdd} disabled={!selectedId} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-md text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"><Plus className="w-4 h-4" /> Add Species</button>
           </div>
         )}
-        {canEdit && species.length > 0 && (<button onClick={handleSave} disabled={saving} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-md text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-50">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}{saving ? "Saving..." : "Save Recommendations"}</button>)}
+        {canEdit && (isDirty || saving) && (
+          <div className="flex gap-2">
+            <button onClick={handleDiscard} disabled={saving} className="flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"><RotateCcw className="w-4 h-4" /> Discard</button>
+            <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-md text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-50">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}{saving ? "Saving..." : "Save Recommendations"}</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1347,7 +1400,13 @@ export default function SiteInformation(): JSX.Element {
           </div>
 
           <div className="col-span-12 lg:col-span-6">
-            <SpeciesRecommendationsPanel siteId={siteData.site_id} initialSpecies={[]} token={token} canEdit={canEdit} />
+            <SpeciesRecommendationsPanel
+              siteId={siteData.site_id}
+              initialSpecies={siteData.species_recommendations ?? []}
+              token={token}
+              canEdit={canEdit && !isLocked}
+              lockedReason={isLocked ? `Species can't be changed while the site is ${siteData.monitoring_status.replace(/_/g, " ")}. Make the site available first.` : null}
+            />
           </div>
 
           {/* ROW 4: Images (Full Width) */}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, ChevronLeft, VerifiedIcon, ListOrdered } from "lucide-react";
+import { ChevronRight, ChevronLeft, VerifiedIcon, ListOrdered, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "../../../components/layout/loaderSmall";
@@ -26,7 +26,18 @@ interface Filter {
   total_page: number;
   status: string;
   classification: string;
+  sort_by: SortKey | ""; // "" keeps the backend's workflow order (FIFO / queue)
+  order: "asc" | "desc";
 }
+
+type SortKey =
+  | "group_name"
+  | "title"
+  | "status"
+  | "queue_position"
+  | "classification"
+  | "total_treegrowers"
+  | "created_at";
 
 export default function Application() {
   const [application, setApplication] = useState<Application[]>([]);
@@ -37,6 +48,8 @@ export default function Application() {
     total_page: 1,
     status: "for_evaluation",
     classification: "All",
+    sort_by: "",
+    order: "asc",
   });
 
   const [loading, setLoading] = useState(false);
@@ -59,6 +72,8 @@ export default function Application() {
         entries: filter.entries.toString(),
         classification: filter.classification.toString(),
         status: filter.status.toString(),
+        sort_by: filter.sort_by,
+        order: filter.order,
       });
 
       const response = await fetch(
@@ -85,7 +100,36 @@ export default function Application() {
 
   useEffect(() => {
     fetchApplication();
-  }, [filter.page, filter.entries, filter.classification, filter.status]);
+  }, [filter.page, filter.entries, filter.classification, filter.status, filter.sort_by, filter.order]);
+
+  // Clicking the active column flips the order; a new column starts ascending
+  const handleSort = (key: SortKey) => {
+    setFilter((prev) => ({
+      ...prev,
+      sort_by: key,
+      order: prev.sort_by === key && prev.order === "asc" ? "desc" : "asc",
+      page: 1,
+    }));
+  };
+
+  const SortableHeader = ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
+    <th className="py-3 px-5 text-left text-[.9rem]">
+      <button
+        type="button"
+        onClick={() => handleSort(sortKey)}
+        className="flex items-center gap-1.5 cursor-pointer hover:text-green-200"
+      >
+        {label}
+        {filter.sort_by !== sortKey ? (
+          <ArrowUpDown size={14} className="opacity-50" />
+        ) : filter.order === "asc" ? (
+          <ArrowUp size={14} />
+        ) : (
+          <ArrowDown size={14} />
+        )}
+      </button>
+    </th>
+  );
 
   // ✅ Helper to format status text (e.g., "for_evaluation" -> "For Evaluation")
   const formatStatus = (status: string) => {
@@ -124,7 +168,7 @@ export default function Application() {
         />
       )}
 
-      <main className="flex-1 p-8 w-full max-w-6xl mx-auto"> {/* ✅ Increased max-width for new column */}
+      <main className="flex-1 p-8 w-full mx-auto"> {/* Full width so the table stretches when zoomed out */}
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label className="text-sm font-medium text-gray-700">Show entries: </label>
@@ -210,13 +254,13 @@ export default function Application() {
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Group</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Title</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Queue</th> {/* ✅ NEW COLUMN */}
-                <th className="py-3 px-5 text-left text-[.9rem]">Classification</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Tree Growers</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created At</th>
+                <SortableHeader label="Group" sortKey="group_name" />
+                <SortableHeader label="Title" sortKey="title" />
+                <SortableHeader label="Status" sortKey="status" />
+                <SortableHeader label="Queue" sortKey="queue_position" />
+                <SortableHeader label="Classification" sortKey="classification" />
+                <SortableHeader label="Tree Growers" sortKey="total_treegrowers" />
+                <SortableHeader label="Created At" sortKey="created_at" />
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>

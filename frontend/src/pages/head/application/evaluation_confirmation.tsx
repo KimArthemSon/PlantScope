@@ -17,6 +17,8 @@ import {
   Shield,
   AlertTriangle,
   Clock,
+  Loader2,
+  ExternalLink,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { api } from "@/constant/api";
@@ -50,6 +52,7 @@ interface ApplicationDetail {
     site_id: number;
     name: string;
     description: string | null;
+    reforestation_area_id: number | null;
     reforestation_area_name: string | null;
     barangay_name: string | null;
     polygon_coordinates: any;
@@ -212,6 +215,7 @@ export default function Evaluation_confirmation() {
 
   const [decisionForm, setDecisionForm] = useState({ reason: "" });
   const [submitting, setSubmitting] = useState(false);
+  const [downloadingPlan, setDownloadingPlan] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
     "confirm" | "reject" | null
   >(null);
@@ -366,6 +370,41 @@ export default function Evaluation_confirmation() {
       </div>
     );
   }
+
+  const handleDownloadMaintenancePlan = async () => {
+    if (downloadingPlan) return; // ignore extra clicks while a download runs
+    setDownloadingPlan(true);
+    try {
+      const response = await fetch(
+        `${api}api/application/${detail.application.application_id}/download-maintenance-plan/`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Download failed");
+      }
+      const blob = await response.blob();
+      if (blob.size === 0) throw new Error("Downloaded file is empty");
+      // Plans can be PDF or Word; name the file after the type the server sent
+      const ext = blob.type.includes("wordprocessingml") ? "docx" : blob.type === "application/msword" ? "doc" : "pdf";
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `maintenance_plan_${detail.application.application_id}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setPSAlert({
+        type: "error",
+        title: "Download Failed",
+        message: error.message,
+      });
+    } finally {
+      setDownloadingPlan(false);
+    }
+  };
 
   const { application, group, assigned_site, latest_reason } = detail;
 
@@ -626,12 +665,11 @@ export default function Evaluation_confirmation() {
                   Maintenance Plan
                 </p>
                 {application.maintenance_plan ? (
-                  <a
-                    href={`${api}api/application/${application.application_id}/download-maintenance-plan/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                    className="w-full md:w-auto flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={handleDownloadMaintenancePlan}
+                    disabled={downloadingPlan}
+                    className="w-full md:w-auto flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group cursor-pointer disabled:cursor-wait disabled:opacity-80"
                   >
                     <div className="w-9 h-9 rounded-lg bg-[#0F4A2F] flex items-center justify-center flex-shrink-0">
                       <FileText size={16} className="text-white" />
@@ -642,14 +680,18 @@ export default function Evaluation_confirmation() {
                           "Maintenance Plan"}
                       </p>
                       <p className="text-xs text-green-600">
-                        Click to download
+                        {downloadingPlan ? "Downloading..." : "Click to download"}
                       </p>
                     </div>
-                    <Download
-                      size={16}
-                      className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
-                    />
-                  </a>
+                    {downloadingPlan ? (
+                      <Loader2 size={16} className="text-[#0F4A2F] animate-spin" />
+                    ) : (
+                      <Download
+                        size={16}
+                        className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
+                      />
+                    )}
+                  </button>
                 ) : (
                   <div className="flex items-center gap-2 text-gray-300 text-sm py-3">
                     <FileText size={18} />
@@ -783,6 +825,20 @@ export default function Evaluation_confirmation() {
                         }
                       />
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.open(
+                          `/reforestation/site/${assigned_site.reforestation_area_id ?? 0}/information/${assigned_site.site_id}`,
+                          "_blank",
+                        )
+                      }
+                      className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#0F4A2F] text-[#0F4A2F] text-sm font-semibold hover:bg-green-50 transition-colors cursor-pointer"
+                      title="Open site information in a new tab"
+                    >
+                      <ExternalLink size={16} /> View Site Information
+                    </button>
                   </div>
                 )}
               </div>

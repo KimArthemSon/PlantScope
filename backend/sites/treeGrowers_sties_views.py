@@ -4,7 +4,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 
 from accounts.helper import get_cloudinary_url
 from .models import Sites
@@ -34,10 +34,10 @@ ACTIVE_APPLICATION_STATUSES = [
 # HELPERS
 # ─────────────────────────────────────────────
 def _format_date(value):
-    """Format date/datetime for JSON response."""
+    """ISO date/datetime for JSON (the mobile client formats it for display)."""
     if not value:
         return None
-    return value.strftime('%B %d, %Y')
+    return value.isoformat()
 
 
 def _build_site_history(site):
@@ -67,17 +67,41 @@ def _build_site_history(site):
     )
 
     # ─────────────────────────────────────────────
+    # PAST PROGRAMS (anonymous: outcome + dates + survival only)
+    # ─────────────────────────────────────────────
+    past_programs = []
+    for app in applications_qs.filter(status__in=['completed', 'failed']).order_by('-updated_at'):
+        agg = app.progress_reports.filter(status='accepted').aggregate(
+            planted=Sum('report_species__no_planted'),
+            added=Sum('report_species__no_added_by_grower'),
+        )
+        latest = app.progress_reports.filter(status='accepted').order_by('-submitted_at', '-created_at').first()
+        planted = (agg.get('planted') or 0) + (agg.get('added') or 0)
+        dead = latest.total_dead if latest else 0
+        survived = max(0, planted - dead)
+        past_programs.append({
+            'status': app.status,
+            'started_at': _format_date(app.confirmed_at or app.created_at),
+            'ended_at': _format_date(app.updated_at),
+            'trees_planted': planted,
+            'trees_survived': survived,
+            'survival_rate': round(survived / planted * 100, 1) if planted else 0.0,
+        })
+
+    # ─────────────────────────────────────────────
     # MONITORING / PROGRESS REPORT HISTORY
+    # Reports link to the site directly; older ones only via their application.
+    # Inactive-site checks have no application at all.
     # ─────────────────────────────────────────────
     progress_qs = (
         ProgressReport.objects
-        .filter(application__site=site)
+        .filter(Q(site=site) | Q(application__site=site))
         .exclude(status='rejected')
     )
 
     total_monitoring_visits = progress_qs.count()
     initial_visit_count = progress_qs.filter(visit_type='initial').count()
-    ongoing_visit_count = progress_qs.filter(visit_type='ongoing').count()
+    ongoing_visit_count = progress_qs.exclude(visit_type='initial').count()
 
     latest_monitoring = (
         progress_qs
@@ -88,7 +112,8 @@ def _build_site_history(site):
     recent_progress_reports = (
         progress_qs
         .annotate(
-            total_survived_sum=Sum('report_species__no_survived'),
+            planted_sum=Sum('report_species__no_planted'),
+            added_sum=Sum('report_species__no_added_by_grower'),
             total_dead_sum=Sum('report_species__no_dead'),
         )
         .order_by('-submitted_at', '-created_at')[:5]
@@ -97,13 +122,15 @@ def _build_site_history(site):
     recent_monitoring_visits = []
 
     for report in recent_progress_reports:
-        total_survived = report.total_survived_sum or 0
+        # Same rule as the rest of the app: survived = (planted + added) - dead
+        total_planted = (report.planted_sum or 0) + (report.added_sum or 0)
         total_dead = report.total_dead_sum or 0
-        total_plants = total_survived + total_dead
+        total_survived = max(0, total_planted - total_dead)
+        total_plants = total_planted
 
         survival_rate = 0.0
         if total_plants > 0:
-            survival_rate = round((total_survived / total_plants) * 100, 2)
+            survival_rate = round((total_survived / total_plants) * 100, 1)
 
         recent_monitoring_visits.append({
             'progress_report_id': report.progress_report_id,
@@ -113,6 +140,8 @@ def _build_site_history(site):
             'status_label': report.get_status_display(),
             'orientation_conducted': report.orientation_conducted,
             'submitted_at': _format_date(report.submitted_at or report.created_at),
+            'total_planted': report.planted_sum or 0,
+            'total_added': report.added_sum or 0,
             'total_survived': total_survived,
             'total_dead': total_dead,
             'total_plants': total_plants,
@@ -120,22 +149,13 @@ def _build_site_history(site):
         })
 
     # Survival rate based only on accepted progress reports
-    accepted_monitoring_agg = (
-        ProgressReport.objects
-        .filter(application__site=site, status='accepted')
-        .aggregate(
-            total_survived=Sum('report_species__no_survived'),
-            total_dead=Sum('report_species__no_dead'),
-        )
-    )
-
-    accepted_survived = accepted_monitoring_agg.get('total_survived') or 0
-    accepted_dead = accepted_monitoring_agg.get('total_dead') or 0
-    accepted_total_plants = accepted_survived + accepted_dead
+    # Lifetime trees planted and average survival come from past programs
+    total_trees_planted = sum(p['trees_planted'] for p in past_programs)
+    total_trees_survived = sum(p['trees_survived'] for p in past_programs)
 
     average_survival_rate = 0.0
-    if accepted_total_plants > 0:
-        average_survival_rate = round((accepted_survived / accepted_total_plants) * 100, 2)
+    if total_trees_planted > 0:
+        average_survival_rate = round((total_trees_survived / total_trees_planted) * 100, 1)
 
     # ─────────────────────────────────────────────
     # SEEDLING REQUEST HISTORY (aggregate only)
@@ -192,7 +212,7 @@ def _build_site_history(site):
     # FINAL HISTORY OBJECT (anonymous, past-only)
     # ─────────────────────────────────────────────
     has_history = (
-        total_applications > 0 or
+        past_program_count > 0 or
         total_monitoring_visits > 0 or
         total_seedling_requests > 0
     )
@@ -214,10 +234,13 @@ def _build_site_history(site):
                 latest_monitoring.submitted_at or latest_monitoring.created_at
             ) if latest_monitoring else None,
             'average_survival_rate': average_survival_rate,
+            'total_trees_planted': total_trees_planted,
+            'total_trees_survived': total_trees_survived,
             'total_seedling_requests': total_seedling_requests,
             'total_seedlings_requested': total_seedlings_requested,
             'total_seedlings_confirmed': total_seedlings_confirmed,
         },
+        'past_programs': past_programs,
         'recent_monitoring_visits': recent_monitoring_visits,
         'seedling_summary': seedling_summary,
     }
@@ -367,6 +390,7 @@ def get_site_details_for_tree_grower(request, site_id):
         'reforestation_area': reforestation_area_name,
         'barangay': barangay_name,
         'total_area_hectares': site.total_area_hectares,
+        'monitoring_status': site.monitoring_status,
         'marker_coordinate': site.marker_coordinate,
         'polygon_coordinates': site.polygon_coordinates,
         'main_image_url': main_image_url,

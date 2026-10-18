@@ -17,6 +17,7 @@ import { api } from "@/constants/url_fixed";
 const PRIMARY = "#0F4A2F";
 const INK = "#111827";
 const MUTED = "#6B7280";
+const FAINT_TEXT = "#9CA3AF";
 const WHITE = "#FFFFFF";
 const BG = "#F5F6F8";
 
@@ -45,6 +46,9 @@ interface SeedlingRequest {
   fulfillment_type: "pickup" | "deliver" | null;
   no_request_seedling: number;
   submitted_at: string | null;
+  description?: string | null;
+  reason_accepted?: string | null;
+  created_by_admin?: boolean;
   species: SeedlingSpeciesItem[];
 }
 
@@ -79,6 +83,8 @@ export default function SeedlingRequestsPage() {
   const [requests, setRequests] = useState<SeedlingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // ✅ New requests only allowed while the application is under monitoring
+  const [canCreate, setCanCreate] = useState(false);
 
   const fetchData = async (isRefresh = false) => {
     try {
@@ -86,12 +92,23 @@ export default function SeedlingRequestsPage() {
       const token = await SecureStore.getItemAsync("token");
       if (!token) return;
 
-      const res = await fetch(`${api}/api/requests/my-requests/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const [res, appRes] = await Promise.all([
+        fetch(`${api}/api/requests/my-requests/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${api}/api/get_tree_grower_application/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
       if (!res.ok) throw new Error("Failed to load requests");
       const data = await res.json();
       setRequests(data);
+      if (appRes.ok) {
+        const appData = await appRes.json();
+        setCanCreate(appData.application?.status === "under_monitoring");
+      } else {
+        setCanCreate(false);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -107,6 +124,10 @@ export default function SeedlingRequestsPage() {
   const acceptedRequests = requests.filter((r) => r.status === "accepted" || r.status === "confirmed");
   const pendingRequests = requests.filter((r) => r.status === "pending");
   const rejectedRequests = requests.filter((r) => r.status === "rejected" || r.status === "cancelled");
+  // ✅ Seedlings ENRO assigned to the grower, awaiting handover — shown on top
+  const isEnroAwaiting = (r: SeedlingRequest) => r.created_by_admin && r.status === "accepted";
+  const enroPendingRequests = requests.filter(isEnroAwaiting);
+  const otherRequests = requests.filter((r) => !isEnroAwaiting(r));
 
   const totalApprovedSeedlings = acceptedRequests.reduce(
     (sum, r) => sum + getTotalSeedlings(r.species),
@@ -159,50 +180,140 @@ export default function SeedlingRequestsPage() {
       >
         {/* Summary Cards */}
         <View style={styles.summaryRow}>
+          {/* All three cards count REQUESTS; seedling totals go in the subtitle */}
           <View style={[styles.summaryCard, { backgroundColor: "#F0FDF4" }]}>
             <Text style={[styles.summaryValue, { color: "#16A34A" }]}>
-              {totalApprovedSeedlings.toLocaleString()}
+              {acceptedRequests.length}
             </Text>
             <Text style={styles.summaryLabel}>Approved</Text>
+            <Text style={styles.summarySub}>
+              {totalApprovedSeedlings.toLocaleString()} seedlings
+            </Text>
           </View>
           <View style={[styles.summaryCard, { backgroundColor: "#FFF8E1" }]}>
             <Text style={[styles.summaryValue, { color: "#F59E0B" }]}>
               {pendingRequests.length}
             </Text>
             <Text style={styles.summaryLabel}>Pending</Text>
+            <Text style={styles.summarySub}>awaiting review</Text>
           </View>
           <View style={[styles.summaryCard, { backgroundColor: "#FEF2F2" }]}>
             <Text style={[styles.summaryValue, { color: "#DC2626" }]}>
               {rejectedRequests.length}
             </Text>
             <Text style={styles.summaryLabel}>Rejected</Text>
+            <Text style={styles.summarySub}>incl. cancelled</Text>
           </View>
         </View>
 
-        {/* New Request Button */}
-        <TouchableOpacity
-          style={styles.newRequestBtn}
-          onPress={() => router.push("/tree_growers/CreateSeedlingRequest")}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add-circle" size={20} color="#fff" />
-          <Text style={styles.newRequestText}>New Seedling Request</Text>
-        </TouchableOpacity>
+        {/* New Request Button — only during monitoring */}
+        {canCreate ? (
+          <TouchableOpacity
+            style={styles.newRequestBtn}
+            onPress={() => router.push("/tree_growers/CreateSeedlingRequest")}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add-circle" size={20} color="#fff" />
+            <Text style={styles.newRequestText}>New Seedling Request</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.lockedNotice}>
+            <Ionicons name="lock-closed-outline" size={18} color={MUTED} />
+            <Text style={styles.lockedNoticeText}>
+              You can submit new seedling requests once your site is under
+              monitoring. You can still view your ongoing requests below.
+            </Text>
+          </View>
+        )}
+
+        {/* ✅ Pending requests prepared by ENRO */}
+        {enroPendingRequests.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.enroHeader}>
+              <Ionicons name="gift-outline" size={18} color={PRIMARY} />
+              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                Prepared for You by ENRO
+              </Text>
+              <View style={styles.enroCount}>
+                <Text style={styles.enroCountText}>{enroPendingRequests.length}</Text>
+              </View>
+            </View>
+            {enroPendingRequests.map((req) => (
+              <TouchableOpacity
+                key={req.request_id}
+                style={[styles.card, styles.enroCard]}
+                activeOpacity={0.85}
+                onPress={() => handleViewDetails(req.request_id)}
+              >
+                <View style={styles.cardHeader}>
+                  <View style={[styles.statusBadge, { backgroundColor: statusConfig.accepted.bg }]}>
+                    <View style={[styles.statusDot, { backgroundColor: statusConfig.accepted.dot }]} />
+                    <Text style={[styles.statusText, { color: statusConfig.accepted.text }]}>Awaiting Handover</Text>
+                  </View>
+                  <Text style={styles.requestDate}>{formatDate(req.submitted_at || "")}</Text>
+                </View>
+                <Text style={styles.appTitle} numberOfLines={1}>
+                  {req.application_title}
+                </Text>
+                {req.species.map((s) => (
+                  <View key={s.species_id} style={styles.enroSpeciesRow}>
+                    <Ionicons name="leaf" size={13} color={PRIMARY} />
+                    <Text style={styles.enroSpeciesName} numberOfLines={1}>
+                      {s.species_name}
+                    </Text>
+                    <Text style={styles.enroSpeciesQty}>
+                      × {s.quantity.toLocaleString()}
+                    </Text>
+                  </View>
+                ))}
+                <View style={styles.enroTotalRow}>
+                  <Text style={styles.speciesSummaryText}>Total seedlings</Text>
+                  <Text style={styles.enroTotal}>
+                    {getTotalSeedlings(req.species).toLocaleString()}
+                  </Text>
+                </View>
+                {req.fulfillment_type && (
+                  <View style={styles.fulfillmentBadge}>
+                    <Ionicons
+                      name={req.fulfillment_type === "deliver" ? "car-outline" : "home-outline"}
+                      size={14}
+                      color={PRIMARY}
+                    />
+                    <Text style={styles.fulfillmentText}>
+                      {req.fulfillment_type === "deliver" ? "ENRO will deliver to your site" : "Pick up at ENRO Nursery"}
+                    </Text>
+                  </View>
+                )}
+                {req.reason_accepted ? (
+                  <Text style={styles.enroNote} numberOfLines={2}>
+                    “{req.reason_accepted}”
+                  </Text>
+                ) : null}
+                <View style={styles.viewButton}>
+                  <Text style={styles.viewButtonText}>View Details</Text>
+                  <Ionicons name="arrow-forward" size={16} color={PRIMARY} />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Requests List */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Your Requests</Text>
-          
+
           {requests.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="leaf-outline" size={48} color="#D1D5DB" />
               <Text style={styles.emptyTitle}>No Requests Yet</Text>
               <Text style={styles.emptySubtitle}>
-                Tap "New Seedling Request" to get started.
+                {canCreate
+                  ? 'Tap "New Seedling Request" to get started.'
+                  : "Seedling requests will be available once your site is under monitoring."}
               </Text>
             </View>
           ) : (
-            requests.map((req) => {
+            otherRequests.map((req) => {
               const conf = statusConfig[req.status] || statusConfig.pending;
               return (
                 <View key={req.request_id} style={styles.card}>
@@ -221,6 +332,12 @@ export default function SeedlingRequestsPage() {
                   <Text style={styles.appTitle} numberOfLines={1}>
                     {req.application_title}
                   </Text>
+                  {req.created_by_admin && (
+                    <View style={styles.enroTag}>
+                      <Ionicons name="shield-checkmark" size={11} color={PRIMARY} />
+                      <Text style={styles.enroTagText}>Created by ENRO</Text>
+                    </View>
+                  )}
                   
                   {/* Seedling Summary */}
                   <View style={styles.speciesSummary}>
@@ -295,6 +412,7 @@ const styles = StyleSheet.create({
   summaryCard: { flex: 1, borderRadius: 16, padding: 14, alignItems: "center", borderWidth: 1, borderColor: "rgba(0,0,0,0.03)" },
   summaryValue: { fontSize: 20, fontWeight: "800", marginBottom: 2 },
   summaryLabel: { fontSize: 11, color: MUTED, fontWeight: "600" },
+  summarySub: { fontSize: 10, color: FAINT_TEXT, marginTop: 2 },
 
   newRequestBtn: {
     flexDirection: "row",
@@ -313,6 +431,19 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   newRequestText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  lockedNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginHorizontal: 20,
+    marginTop: 20,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  lockedNoticeText: { flex: 1, fontSize: 12.5, color: MUTED, lineHeight: 18 },
 
   section: { marginTop: 24, paddingHorizontal: 20 },
   sectionTitle: {
@@ -406,6 +537,46 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: PRIMARY,
   },
+
+  enroHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  enroCount: {
+    backgroundColor: "#F59E0B",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  enroCountText: { color: WHITE, fontSize: 11, fontWeight: "800" },
+  enroCard: { borderWidth: 1.5, borderColor: "#FCD34D", backgroundColor: "#FFFDF5" },
+  enroSpeciesRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 3 },
+  enroSpeciesName: { flex: 1, fontSize: 13, color: INK, fontWeight: "500" },
+  enroSpeciesQty: { fontSize: 13, color: PRIMARY, fontWeight: "700" },
+  enroTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#FDE68A",
+    marginTop: 8,
+    paddingTop: 8,
+    marginBottom: 8,
+  },
+  enroTotal: { fontSize: 16, fontWeight: "800", color: PRIMARY },
+  enroNote: { fontSize: 12, color: MUTED, fontStyle: "italic", marginBottom: 10 },
+  enroTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  enroTagText: { fontSize: 10.5, fontWeight: "700", color: PRIMARY },
 
   emptyState: { alignItems: "center", marginTop: 60, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: "600", color: "#374151" },

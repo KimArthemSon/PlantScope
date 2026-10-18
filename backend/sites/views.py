@@ -248,7 +248,7 @@ def get_sites(request, reforestation_area_id):
     return JsonResponse({"data": data, "total_page": total_page, "page": page, "entries": entries, "total": total}, status=200)
 
 # Only these site statuses are considered "official" for GISS decision
-OFFICIAL_SITE_STATUSES = ['accepted', 'under_monitoring', 'completed', 'rejected']
+OFFICIAL_SITE_STATUSES = ['accepted', 'under_monitoring', 'completed', 'failed', 'rejected']
 ACTIVE_APPLICATION_STATUSES = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
 
 
@@ -267,6 +267,7 @@ def get_official_sites(request):
     area_filter = request.GET.get("reforestation_area_id", "").strip()
     barangay_filter = request.GET.get("barangay_id", "").strip()
     program_status_filter = request.GET.get("program_status", "").strip().lower()
+    monitoring_status_filter = request.GET.get("monitoring_status", "").strip().lower()
 
     offset = (page - 1) * entries
 
@@ -277,6 +278,10 @@ def get_official_sites(request):
 
     if status_filter and status_filter != "all":
         requested_statuses = [s.strip() for s in status_filter.split(',') if s.strip() in OFFICIAL_SITE_STATUSES]
+        # Older finished sites had their approval status overwritten with
+        # 'completed'/'failed'; they are still accepted sites.
+        if 'accepted' in requested_statuses:
+            requested_statuses += ['completed', 'failed']
         if requested_statuses:
             sites = sites.filter(status__in=requested_statuses)
         else:
@@ -329,12 +334,18 @@ def get_official_sites(request):
         try: sites = sites.filter(meta_verification__verified_land_classification_id=int(land_classification_filter))
         except (ValueError, TypeError): pass
 
+    if monitoring_status_filter and monitoring_status_filter != 'all':
+        sites = sites.filter(monitoring_status=monitoring_status_filter)
+
+    # program_status follows the monitoring lifecycle, so a re-opened site
+    # (monitoring_status='available') counts as available again even if it
+    # had a completed program in the past.
     if program_status_filter == 'ongoing':
-        sites = sites.filter(Q(has_active_app=True) | Q(status='under_monitoring'))
+        sites = sites.filter(Q(has_active_app=True) | Q(monitoring_status__in=['under_monitoring', 'reserved']))
     elif program_status_filter == 'completed':
-        sites = sites.filter(has_active_app=False).filter(Q(has_completed_app=True) | Q(status='completed'))
+        sites = sites.filter(has_active_app=False, monitoring_status__in=['completed', 'failed'])
     elif program_status_filter == 'available':
-        sites = sites.filter(has_active_app=False, has_completed_app=False).exclude(status__in=['completed', 'under_monitoring'])
+        sites = sites.filter(has_active_app=False, monitoring_status='available')
 
     total = sites.count()
     total_page = max(1, math.ceil(total / entries))
@@ -366,9 +377,9 @@ def get_official_sites(request):
                     verification_info["accessibility_type"] = meta_verification.verified_accessibility.get('type', 'Unknown')
             verification_info["verified_animals_count"] = len(meta_verification.animal_relations.all())
 
-        if s.has_active_app or s.status == 'under_monitoring':
+        if s.has_active_app or s.monitoring_status in ('under_monitoring', 'reserved'):
             program_status = 'ongoing'
-        elif s.has_completed_app or s.status == 'completed':
+        elif s.monitoring_status in ('completed', 'failed'):
             program_status = 'completed'
         else:
             program_status = 'available'
@@ -484,7 +495,13 @@ def get_site(request, site_id):
             "uploaded_by": p.uploaded_by.email if p.uploaded_by else None,
         } for p in site.permit_documents.all()],
         "site_images": images_data,
-        "validation_data": validation_data, 
+        "species_recommendations": [{
+            "id": rec.tree_species.tree_specie_id,
+            "name": rec.tree_species.name,
+            "rank": rec.priority_rank,
+            "notes": rec.notes or None,
+        } for rec in site.species_recommendations.select_related('tree_species').order_by('priority_rank') if rec.tree_species],
+        "validation_data": validation_data,
         "created_at": site.created_at.isoformat() if site.created_at else None,
         # ✅ NEW: Include reforestation area details in the response
         "reforestation_area_id": reforestation_area_id,
@@ -527,17 +544,37 @@ def update_species_recommendations(request, site_id):
         species_list = body.get("species", [])
         if not isinstance(species_list, list):
             return JsonResponse({"error": "'species' must be an array"}, status=400)
-        
+
+        # Validate first so a bad row doesn't wipe the existing list
+        seen = set()
+        cleaned = []
+        for sp in species_list:
+            try:
+                tree_species_id = int(sp.get("tree_species_id"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if tree_species_id in seen:
+                continue  # unique_species_per_site
+            tree_species = Tree_species.objects.filter(tree_specie_id=tree_species_id).first()
+            if not tree_species:
+                return JsonResponse({"error": f"Tree species #{tree_species_id} no longer exists."}, status=400)
+            seen.add(tree_species_id)
+            cleaned.append((tree_species, (sp.get("notes") or "").strip()))
+
         with transaction.atomic():
             site.species_recommendations.all().delete()
-            for i, sp in enumerate(species_list):
-                tree_species_id = sp.get("tree_species_id")
-                if not tree_species_id: continue
-                tree_species = get_object_or_404(Tree_species, tree_specie_id=tree_species_id)
+            for rank, (tree_species, notes) in enumerate(cleaned, start=1):
                 Site_species_recommendation.objects.create(
-                    site=site, tree_species=tree_species, priority_rank=sp.get("priority_rank", i + 1), notes=sp.get("notes", "")
+                    site=site, tree_species=tree_species, priority_rank=rank, notes=notes
                 )
-        return JsonResponse({"message": "Species recommendations updated."}, status=200)
+
+        saved = [{
+            "id": rec.tree_species.tree_specie_id,
+            "name": rec.tree_species.name,
+            "rank": rec.priority_rank,
+            "notes": rec.notes or None,
+        } for rec in site.species_recommendations.select_related('tree_species').order_by('priority_rank') if rec.tree_species]
+        return JsonResponse({"message": "Species recommendations updated.", "species": saved}, status=200)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON format"}, status=400)
     except Exception as e:
@@ -1285,8 +1322,21 @@ def update_site_monitoring_status(request, site_id):
             if not has_active_app:
                 return JsonResponse({'error': 'Cannot set to under_monitoring without an active application'}, status=400)
                 
+        # Cannot re-open a site that still has a running program
+        if new_status == 'available':
+            has_active_app = Application.objects.filter(site=site, status__in=['accepted', 'under_monitoring']).exists()
+            if has_active_app:
+                return JsonResponse({'error': 'Cannot make site available while it has an active application'}, status=400)
+
         old_status = site.monitoring_status
         site.monitoring_status = new_status
+
+        # Repair sites finished before the fix: they had site.status set to
+        # 'completed'/'failed', which hides them from official lists and from
+        # tree growers. Re-opening restores the accepted approval status.
+        if new_status == 'available' and site.status in ('completed', 'failed', 'under_monitoring'):
+            site.status = 'accepted'
+
         site.save()
         
         # Optional: You could log the 'reason' to a SiteStatusLog model here for audit

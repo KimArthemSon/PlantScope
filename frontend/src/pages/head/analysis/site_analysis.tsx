@@ -1140,7 +1140,7 @@ export default function MulticriteriaAnalysis() {
     }): Promise<boolean> => {
       if (!validatingSite) return false;
       try {
-        const result = await sites.saveValidationDraft(data);
+        const result = await sites.saveValidationDraft(validatingSite.site_id, data);
         if (result) {
           await sites.fetchSiteDetail(validatingSite.site_id);
           return true;
@@ -1162,7 +1162,7 @@ export default function MulticriteriaAnalysis() {
     async (decision: "ACCEPT" | "REJECT", note: string): Promise<boolean> => {
       if (!validatingSite) return false;
       try {
-        const result = await sites.finalizeSite(decision, note);
+        const result = await sites.finalizeSite(validatingSite.site_id, decision, note);
         if (result) {
           if (areaId) await sites.fetchSites(areaId);
           return true;

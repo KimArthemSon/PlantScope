@@ -5,7 +5,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.db.models import Q, Sum, F
+from django.db.models import Count, Q, Sum, F
 
 from accounts.helper import get_user_from_token, create_notification
 from accounts.models import User
@@ -45,6 +45,7 @@ def serialize_seedling_request(req):
         "proof_of_delivery": req.proof_of_delivery.url if req.proof_of_delivery else None,
         "submitted_at": req.submitted_at.isoformat() if req.submitted_at else None,
         "assigned_inspector": inspector_data,
+        "created_by_admin": req.created_by_id is not None,
         "species": [{
             "species_id": s.tree_species.tree_specie_id,
             "species_name": s.tree_species.name,
@@ -160,7 +161,7 @@ def cancel_seedling_request(request, request_id):
             type='info',
             title='📋 Request Cancelled',
             description=f'Your seedling request for "{req.application.title}" has been cancelled.',
-            link='/tree-growers/requests'
+            link=f'/tree_growers/SeedlingRequestDetail?id={req.seedling_request_id}'
         )
 
         return JsonResponse({'message': 'Request cancelled successfully'}, status=200)
@@ -218,6 +219,7 @@ def get_manager_seedling_requests(request):
             "fulfillment_type": req.fulfillment_type,
             "inspector_name": f"{inspector_profile.first_name} {inspector_profile.last_name}".strip() if inspector_profile else "Unassigned",
             "submitted_at": req.submitted_at.isoformat() if req.submitted_at else None,
+            "created_by_admin": req.created_by_id is not None,
             # ✅ ADDED: Species breakdown for the rich frontend table
             "species": [{
                 "species_id": s.tree_species.tree_specie_id,
@@ -228,6 +230,206 @@ def get_manager_seedling_requests(request):
         })
 
     return JsonResponse(data, safe=False, status=200)
+
+
+SEEDLING_ELIGIBLE_STATUSES = ['accepted', 'under_monitoring']
+
+
+@csrf_exempt
+def get_request_eligible_growers(request):
+    """DataManager: Tree growers with an active application that can receive seedlings"""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role not in ['DataManager', 'CityENROHead']:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    apps = Application.objects.filter(
+        status__in=SEEDLING_ELIGIBLE_STATUSES,
+        user__is_active=True,
+    ).select_related(
+        'user__tree_grower_group',
+        'site__reforestation_area__barangay',
+    ).order_by('user__tree_grower_group__group_name', '-created_at')
+
+    data = []
+    for app in apps:
+        group = getattr(app.user, 'tree_grower_group', None)
+        site = app.site
+        area = site.reforestation_area if site else None
+        data.append({
+            "user_id": app.user.id,
+            "email": app.user.email,
+            "group_name": group.group_name if group else app.user.email,
+            "application_id": app.application_id,
+            "application_title": app.title,
+            "application_status": app.get_status_display(),
+            "site_name": site.name if site else None,
+            "barangay": area.barangay.name if area and area.barangay else None,
+            "pending_requests": app.seedling_requests.filter(status='pending').count(),
+        })
+
+    return JsonResponse(data, safe=False, status=200)
+
+
+@csrf_exempt
+def admin_create_seedling_request(request):
+    """
+    DataManager: Create a seedling request on behalf of a tree grower.
+    Since the admin is the one providing, the request is created already
+    ACCEPTED with fulfillment + inspector assigned (no separate approval step).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role != 'DataManager':
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    application_id = data.get('application_id')
+    species_items = data.get('species') or []
+    description = (data.get('description') or '').strip()
+    inspector_id = data.get('inspector_id')
+    fulfillment_type = data.get('fulfillment_type')
+
+    if not application_id:
+        return JsonResponse({'error': 'application_id is required'}, status=400)
+    if fulfillment_type not in dict(SeedlingRequest.FULFILLMENT_CHOICES):
+        return JsonResponse({'error': 'fulfillment_type must be "pickup" or "deliver"'}, status=400)
+    if not inspector_id:
+        return JsonResponse({'error': 'inspector_id is required'}, status=400)
+    inspector = User.objects.filter(id=inspector_id, user_role='OnsiteInspector', is_active=True).first()
+    if not inspector:
+        return JsonResponse({'error': 'Selected inspector was not found or is inactive'}, status=400)
+    if not isinstance(species_items, list) or not species_items:
+        return JsonResponse({'error': 'Add at least one seedling species'}, status=400)
+
+    app = get_object_or_404(
+        Application.objects.select_related('user'),
+        application_id=application_id,
+    )
+    if app.status not in SEEDLING_ELIGIBLE_STATUSES:
+        return JsonResponse({'error': 'Application is not active (must be accepted or under monitoring).'}, status=400)
+
+    # Validate species rows
+    cleaned = {}
+    for item in species_items:
+        try:
+            species_id = int(item.get('tree_species_id'))
+            quantity = int(item.get('quantity', 0))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Invalid species or quantity'}, status=400)
+        if quantity <= 0:
+            return JsonResponse({'error': 'Quantity must be greater than 0'}, status=400)
+        if species_id in cleaned:
+            return JsonResponse({'error': 'Each species can only be added once'}, status=400)
+        cleaned[species_id] = {
+            'species': get_object_or_404(Tree_species, tree_specie_id=species_id),
+            'quantity': quantity,
+            'provided_by': (item.get('provided_by') or 'ENRO Nursery').strip() or 'ENRO Nursery',
+        }
+
+    try:
+        with transaction.atomic():
+            req = SeedlingRequest.objects.create(
+                application=app,
+                reason_accepted=description or None,
+                status='accepted',
+                fulfillment_type=fulfillment_type,
+                assigned_inspector=inspector,
+                created_by=user,
+                no_request_seedling=sum(c['quantity'] for c in cleaned.values()),
+            )
+            for c in cleaned.values():
+                SeedlingRequestSpecies.objects.create(
+                    seedling_request=req,
+                    tree_species=c['species'],
+                    quantity=c['quantity'],
+                    provided_by=c['provided_by'],
+                )
+
+        create_notification(
+            user=app.user,
+            type='success',
+            title='🌱 Seedlings Prepared For You',
+            description=(
+                f'ENRO has prepared {req.no_request_seedling} seedlings for "{app.title}". '
+                f'Fulfillment: {req.get_fulfillment_type_display()}. Tap to view details.'
+            ),
+            link=f'/tree_growers/SeedlingRequestDetail?id={req.seedling_request_id}'
+        )
+
+        create_notification(
+            user=inspector,
+            type='info',
+            title='📋 New Inspection Task',
+            description=f'You have been assigned to verify seedling delivery for "{app.title}".',
+            link='/inspector/tasks'
+        )
+
+        return JsonResponse({
+            'message': 'Seedling request created successfully',
+            'request_id': req.seedling_request_id,
+        }, status=201)
+    except Exception as e:
+        logger.error(f"Admin create request error: {str(e)}")
+        return JsonResponse({'error': 'Server error'}, status=500)
+
+
+@csrf_exempt
+def alert_tree_grower(request):
+    """DataManager: Send an alert notification to the tree grower of an application"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+    try:
+        user = get_user_from_token(request)
+    except Exception:
+        return JsonResponse({'error': 'Unauthorized'}, status=401)
+    if user.user_role != 'DataManager':
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    # Accept both multipart/form-data and JSON bodies
+    if request.content_type and request.content_type.startswith('application/json'):
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    else:
+        data = request.POST
+
+    application_id = data.get('application_id')
+    message = (data.get('message') or '').strip()
+
+    if not application_id:
+        return JsonResponse({'error': 'application_id is required'}, status=400)
+    if not message:
+        return JsonResponse({'error': 'Message is required'}, status=400)
+
+    app = get_object_or_404(
+        Application.objects.select_related('user'),
+        application_id=application_id,
+    )
+    if not app.user:
+        return JsonResponse({'error': 'This application has no tree grower account linked'}, status=400)
+
+    notification = create_notification(
+        user=app.user,
+        type='alert',
+        title=f'⚠️ Alert from ENRO: {app.title}',
+        description=message,
+        link='/tree_growers/application'
+    )
+    if not notification:
+        return JsonResponse({'error': 'Failed to send alert'}, status=500)
+
+    return JsonResponse({'message': 'Alert sent to tree grower'}, status=201)
 
 
 @csrf_exempt
@@ -289,7 +491,7 @@ def approve_seedling_request(request, request_id):
             type='success',
             title='🌱 Seedling Request Approved',
             description=f'Your request for {req.no_request_seedling} seedlings has been approved. Fulfillment: {req.get_fulfillment_type_display()}.',
-            link='/tree-growers/requests'
+            link=f'/tree_growers/SeedlingRequestDetail?id={req.seedling_request_id}'
         )
 
         create_notification(
@@ -340,7 +542,7 @@ def reject_seedling_request(request, request_id):
             type='alert',
             title='❌ Seedling Request Rejected',
             description=f'Your seedling request was rejected. Reason: {reason_text}',
-            link='/tree-growers/requests'
+            link=f'/tree_growers/SeedlingRequestDetail?id={req.seedling_request_id}'
         )
 
         return JsonResponse({'message': 'Request rejected successfully'}, status=200)
@@ -436,7 +638,7 @@ def confirm_seedling_delivery(request, request_id):
             type='success',
             title='✅ Seedlings Confirmed',
             description=f'Onsite Inspector has confirmed the receipt of your seedlings for "{req.application.title}".',
-            link='/tree-growers/requests'
+            link=f'/tree_growers/SeedlingRequestDetail?id={req.seedling_request_id}'
         )
 
         return JsonResponse({'message': 'Delivery confirmed successfully'}, status=200)
@@ -444,6 +646,49 @@ def confirm_seedling_delivery(request, request_id):
         logger.error(f"Confirm delivery error: {str(e)}")
         return JsonResponse({'error': 'Server error'}, status=500)
     
+
+@csrf_exempt
+def inspector_cancel_seedling_delivery(request, request_id):
+    """OnsiteInspector: Cancel an assigned delivery that is still awaiting handover"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role != 'OnsiteInspector':
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    reason_text = (data.get('reason') or '').strip()
+    if len(reason_text) < 5:
+        return JsonResponse({'error': 'Please provide a valid reason (min 5 characters).'}, status=400)
+
+    req = get_object_or_404(SeedlingRequest, seedling_request_id=request_id, assigned_inspector=user)
+    if req.status != 'accepted':
+        return JsonResponse({'error': 'Only deliveries awaiting handover can be cancelled.'}, status=400)
+
+    try:
+        with transaction.atomic():
+            req.status = 'cancelled'
+            req.reason = reason_text
+            req.save()
+
+        create_notification(
+            user=req.application.user,
+            type='alert',
+            title='❌ Seedling Delivery Cancelled',
+            description=f'The seedling delivery for "{req.application.title}" was cancelled by the inspector. Reason: {reason_text}',
+            link=f'/tree_growers/SeedlingRequestDetail?id={req.seedling_request_id}'
+        )
+
+        return JsonResponse({'message': 'Delivery cancelled successfully'}, status=200)
+    except Exception as e:
+        logger.error(f"Inspector cancel error: {str(e)}")
+        return JsonResponse({'error': 'Server error'}, status=500)
+
 
 @csrf_exempt
 def get_available_inspectors(request):
@@ -455,20 +700,28 @@ def get_available_inspectors(request):
     if not user:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
+    # ✅ Ongoing workload = seedling requests assigned but not yet confirmed
     inspectors = User.objects.filter(
         user_role='OnsiteInspector',
         is_active=True
-    ).select_related('profile').values(
+    ).select_related('profile').annotate(
+        ongoing_count=Count(
+            'assigned_seedling_requests',
+            filter=Q(assigned_seedling_requests__status='accepted'),
+        )
+    ).values(
         'id',
         'email',
+        'ongoing_count',
         first_name=F('profile__first_name'),
         last_name=F('profile__last_name')
-    )
+    ).order_by('ongoing_count', 'profile__first_name')
 
     data = [{
         "id": insp['id'],
         "name": f"{insp['first_name'] or ''} {insp['last_name'] or ''}".strip() or insp['email'],
-        "email": insp['email']
+        "email": insp['email'],
+        "ongoing_count": insp['ongoing_count'],
     } for insp in inspectors]
 
     return JsonResponse(data, safe=False, status=200)
