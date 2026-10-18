@@ -14,6 +14,11 @@ urlpatterns = [
         name='get_unassigned_inspectors'
     ),
     path(
+        'get_inspector_details/<int:user_id>/',
+        views.get_inspector_details,
+        name='get_inspector_details'
+    ),
+    path(
         'assign_inspector/',
         views.assign_inspector,
         name='assign_inspector'

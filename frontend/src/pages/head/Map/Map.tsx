@@ -349,7 +349,7 @@ const MemoizedClassifiedAreas = memo(
                       </div>
                     </div>
                     {area.description && (
-                      <p className="text-gray-600 mt-1">{area.description}</p>
+                      <p className="text-gray-600 mt-1 whitespace-pre-line">{area.description}</p>
                     )}
                   </div>
                   <button
@@ -2023,6 +2023,32 @@ export default function Map() {
 
   const totalAreaHectares = calculateAreaHectares(analysisCoords);
 
+  // Search box results: reforestation areas and sites matching the query
+  const searchQuery = areaSearchQuery.trim().toLowerCase();
+  const matchedAreas = searchQuery
+    ? reforestation_areas.filter((area) =>
+        area.name.toLowerCase().includes(searchQuery),
+      )
+    : [];
+  const matchedSites = searchQuery
+    ? sites.filter((site) => site.name?.toLowerCase().includes(searchQuery))
+    : [];
+
+  const focusSite = (site: Site) => {
+    const coord = normalizeMarkerCoordinate(site.marker_coordinate);
+    if (coord) {
+      const lat = Number(coord[0]);
+      const lng = Number(coord[1]);
+      if (!isNaN(lat) && !isNaN(lng)) mapRef.current?.setView([lat, lng], 17);
+    }
+    // Site markers are off by default, and an area filter could hide this one
+    setShowSiteMarkers(true);
+    if (filteredAreaId !== null && filteredAreaId !== site.reforestation_area_id)
+      setFilteredAreaId(null);
+    setAreaSearchQuery(site.name);
+    setShowAreaDropdown(false);
+  };
+
   return (
     <div className="relative h-screen w-full">
       {PSalert && (
@@ -2298,7 +2324,7 @@ export default function Map() {
             <Search size={15} className="text-gray-400 flex-shrink-0" />
             <input
               type="text"
-              placeholder="Search reforestation areas..."
+              placeholder="Search areas or sites..."
               value={areaSearchQuery}
               onChange={(e) => {
                 setAreaSearchQuery(e.target.value);
@@ -2325,18 +2351,15 @@ export default function Map() {
           </div>
           {showAreaDropdown && (
             <div className="border-t border-gray-100 max-h-[300px] overflow-y-auto rounded-b-xl">
-              {reforestation_areas.filter((area) =>
-                area.name.toLowerCase().includes(areaSearchQuery.toLowerCase()),
-              ).length > 0 ? (
-                reforestation_areas
-                  .filter((area) =>
-                    area.name
-                      .toLowerCase()
-                      .includes(areaSearchQuery.toLowerCase()),
-                  )
-                  .map((area, idx) => (
+              {matchedAreas.length > 0 && (
+                <div className="sticky top-0 bg-gray-50 px-3 py-1 text-[.6rem] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  Reforestation Areas ({matchedAreas.length})
+                </div>
+              )}
+              {matchedAreas.map((area) => (
                     <button
-                      key={idx}
+                      key={`area-${area.reforestation_area_id}`}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => {
                         if (area.coordinate) {
@@ -2364,10 +2387,43 @@ export default function Map() {
                         </span>
                       )}
                     </button>
-                  ))
-              ) : (
+                  ))}
+              {matchedSites.length > 0 && (
+                <div className="sticky top-0 bg-gray-50 px-3 py-1 text-[.6rem] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  Sites ({matchedSites.length})
+                </div>
+              )}
+              {matchedSites.map((site) => {
+                const parentArea = reforestation_areas.find(
+                  (a) => a.reforestation_area_id === site.reforestation_area_id,
+                );
+                return (
+                  <button
+                    key={`site-${site.site_id}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => focusSite(site)}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 flex flex-col gap-0.5 border-b border-gray-50 last:border-b-0 transition-colors"
+                  >
+                    <span className="text-[.75rem] font-semibold text-[#0f4a2f] truncate">
+                      {site.name}
+                    </span>
+                    {parentArea && (
+                      <span className="text-[.65rem] text-gray-500 truncate">
+                        in {parentArea.name}
+                      </span>
+                    )}
+                    {site.status && (
+                      <span className="text-[.6rem] text-gray-400 capitalize">
+                        {site.status}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {matchedAreas.length === 0 && matchedSites.length === 0 && (
                 <div className="px-3 py-3 text-[.75rem] text-gray-500 text-center">
-                  No areas found
+                  No areas or sites found
                 </div>
               )}
             </div>
@@ -2911,9 +2967,9 @@ export default function Map() {
             <div className="relative">
               <form
                 onSubmit={onSubmitArea}
-                className={`absolute top-[-360px] right-0 w-[14rem] flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isAreaFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+                className={`absolute bottom-full mb-3 right-0 w-[14rem] max-h-[min(60vh,32rem)] overflow-y-auto flex flex-col gap-2 p-2 bg-white border border-[#0f4a2fe0] rounded-md ${isAreaFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
               >
-                <div className="text-center font-bold w-full p-1 bg-[#0f4a2fe0] border border-[#0f4a2fe0] rounded-md">
+                <div className="sticky top-0 z-10 text-center font-bold w-full p-1 bg-[#0f4a2f] border border-[#0f4a2fe0] rounded-md shrink-0">
                   <h2 className="text-white text-[.8rem] flex items-center justify-center gap-2">
                     <File size={16} /> Create Reforestation Area
                   </h2>
@@ -2935,15 +2991,19 @@ export default function Map() {
                   <label className="text-[.7rem] text-gray-600">
                     Description
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: North sector"
+                  <textarea
+                    placeholder="Ex: North sector, near the river. Mostly grassland with some existing native trees."
                     value={areaForm.description}
                     onChange={(e) =>
                       setAreaForm({ ...areaForm, description: e.target.value })
                     }
-                    className="w-full text-[.7rem] mt-1 p-1 border rounded-md focus:ring-2 focus:ring-green-500"
+                    rows={3}
+                    maxLength={255} // matches the backend column limit
+                    className="w-full text-[.7rem] mt-1 p-1.5 border rounded-md focus:ring-2 focus:ring-green-500 resize-y min-h-16 max-h-40 leading-relaxed"
                   />
+                  <p className="text-[.6rem] text-gray-400 text-right">
+                    {areaForm.description.length}/255
+                  </p>
                 </div>
                 <div>
                   <label className="text-[.7rem] text-gray-600">Barangay</label>

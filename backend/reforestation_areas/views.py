@@ -4,6 +4,7 @@ import logging
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
+from django.db.models import Count, Q
 from .models import Reforestation_areas
 from sites.models import Potential_sites, Sites
 
@@ -78,8 +79,24 @@ def get_reforestation_areas(request):
         return JsonResponse({'error': 'Invalid pagination values'}, status=400)
 
     offset = (page - 1) * entries
-    areas = Reforestation_areas.objects.all().order_by('-created_at')
-    
+
+    # Map allowed sort keys to fields so user input can't pick arbitrary columns
+    sortable_fields = {
+        'name': 'name',
+        'barangay': 'barangay__name',
+        'description': 'description',
+        'sites': 'site_count',
+        'created_at': 'created_at',
+    }
+    sort_field = sortable_fields.get(request.GET.get('sort_by', ''), 'created_at')
+    prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
+
+    areas = Reforestation_areas.objects.all()
+    if sort_field == 'site_count':
+        # Same count shown in the Sites column (active sites only)
+        areas = areas.annotate(site_count=Count('sites', filter=Q(sites__is_active=True)))
+    areas = areas.order_by(f'{prefix}{sort_field}', f'{prefix}pk')
+
     # Apply filters
     if search:
         areas = areas.filter(name__icontains=search)

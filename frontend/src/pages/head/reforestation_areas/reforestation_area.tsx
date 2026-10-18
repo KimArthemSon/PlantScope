@@ -9,6 +9,9 @@ import {
   Eye,
   CheckCircle,
   Clock,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -49,13 +52,19 @@ interface Filter {
   page: number;
   total_page: number;
   barangay_id: string;
+  sort_by: SortKey;
+  order: "asc" | "desc";
 }
+
+type SortKey = "name" | "barangay" | "description" | "sites" | "created_at";
 
 const DEFAULT_FILTER: Omit<Filter, "total_page"> = {
   search: "",
   entries: 10,
   page: 1,
   barangay_id: "All",
+  sort_by: "created_at",
+  order: "desc",
 };
 
 export default function Reforestation_areas() {
@@ -122,6 +131,8 @@ export default function Reforestation_areas() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
+        sort_by: filter.sort_by,
+        order: filter.order,
         ...(filter.barangay_id !== "All" && {
           barangay_id: filter.barangay_id,
         }),
@@ -147,7 +158,36 @@ export default function Reforestation_areas() {
 
   useEffect(() => {
     fetchAreas();
-  }, [filter.page, filter.entries, filter.barangay_id]);
+  }, [filter.page, filter.entries, filter.barangay_id, filter.sort_by, filter.order]);
+
+  // Clicking the active column flips the order; a new column starts ascending
+  const handleSort = (key: SortKey) => {
+    setFilter((prev) => ({
+      ...prev,
+      sort_by: key,
+      order: prev.sort_by === key && prev.order === "asc" ? "desc" : "asc",
+      page: 1,
+    }));
+  };
+
+  const SortableHeader = ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
+    <th className="py-3 px-5 text-left">
+      <button
+        type="button"
+        onClick={() => handleSort(sortKey)}
+        className="flex items-center gap-1.5 cursor-pointer hover:text-green-200"
+      >
+        {label}
+        {filter.sort_by !== sortKey ? (
+          <ArrowUpDown size={14} className="opacity-50" />
+        ) : filter.order === "asc" ? (
+          <ArrowUp size={14} />
+        ) : (
+          <ArrowDown size={14} />
+        )}
+      </button>
+    </th>
+  );
 
   // ── Delete ─────────────────────────────────────────────────
   const setDelete = (id: number) => {
@@ -283,11 +323,11 @@ export default function Reforestation_areas() {
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left">No</th>
-                <th className="py-3 px-5 text-left">Name</th>
-                <th className="py-3 px-5 text-left">Barangay</th>
-                <th className="py-3 px-5 text-left">Description</th>
-                <th className="py-3 px-5 text-left">Sites</th>
-                <th className="py-3 px-5 text-left">Created At</th>
+                <SortableHeader label="Name" sortKey="name" />
+                <SortableHeader label="Barangay" sortKey="barangay" />
+                <SortableHeader label="Description" sortKey="description" />
+                <SortableHeader label="Sites" sortKey="sites" />
+                <SortableHeader label="Created At" sortKey="created_at" />
                 <th className="py-3 px-5 text-left">Actions</th>
               </tr>
             </thead>

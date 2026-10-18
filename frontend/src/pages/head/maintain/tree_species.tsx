@@ -6,6 +6,9 @@ import {
   ChevronRight,
   ChevronLeft,
   Info,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
@@ -28,7 +31,11 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
+  sort_by: SortKey;
+  order: "asc" | "desc";
 }
+
+type SortKey = "name" | "description" | "created_at";
 
 export default function Tree_species() {
   const [tree_species, setTree_species] = useState<Tree_species[]>([]);
@@ -41,6 +48,8 @@ export default function Tree_species() {
     entries: 10,
     page: 1,
     total_page: 1,
+    sort_by: "created_at",
+    order: "desc",
   });
 
   const [isOpenAddEditModal, setIsOpenAddEditModal] = useState(false);
@@ -76,6 +85,8 @@ export default function Tree_species() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
+        sort_by: filter.sort_by,
+        order: filter.order,
       });
 
       const response = await fetch(
@@ -102,7 +113,36 @@ export default function Tree_species() {
 
   useEffect(() => {
     fetchtree_species();
-  }, [filter.page, filter.entries]); // refetch when filters change
+  }, [filter.page, filter.entries, filter.sort_by, filter.order]); // refetch when filters change
+
+  // Clicking the active column flips the order; a new column starts ascending
+  const handleSort = (key: SortKey) => {
+    setFilter((prev) => ({
+      ...prev,
+      sort_by: key,
+      order: prev.sort_by === key && prev.order === "asc" ? "desc" : "asc",
+      page: 1,
+    }));
+  };
+
+  const SortableHeader = ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
+    <th className="py-3 px-5 text-left text-[.9rem]">
+      <button
+        type="button"
+        onClick={() => handleSort(sortKey)}
+        className="flex items-center gap-1.5 cursor-pointer hover:text-green-200"
+      >
+        {label}
+        {filter.sort_by !== sortKey ? (
+          <ArrowUpDown size={14} className="opacity-50" />
+        ) : filter.order === "asc" ? (
+          <ArrowUp size={14} />
+        ) : (
+          <ArrowDown size={14} />
+        )}
+      </button>
+    </th>
+  );
 
   const setDelete = (tree_specie_id: number) => {
     settree_specie_IdDelete(tree_specie_id);
@@ -302,11 +342,9 @@ export default function Tree_species() {
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Name</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Description
-                </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created at</th>
+                <SortableHeader label="Name" sortKey="name" />
+                <SortableHeader label="Description" sortKey="description" />
+                <SortableHeader label="Created at" sortKey="created_at" />
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>

@@ -19,6 +19,9 @@ import {
   FileCheck,
   XCircle,
   AlertCircle,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -90,7 +93,29 @@ interface AreaFilter {
   page: number;
   total_page: number;
   barangay_id: string;
+  sort: AreaSort;
 }
+
+type SortOrder = "asc" | "desc";
+type SiteSortKey = "name" | "location" | "monitoring_status" | "created_at";
+
+// "<field>:<order>" so the area list can use a single dropdown
+type AreaSort =
+  | "created_at:desc"
+  | "created_at:asc"
+  | "name:asc"
+  | "name:desc"
+  | "barangay:asc"
+  | "sites:desc";
+
+const AREA_SORT_OPTIONS: { value: AreaSort; label: string }[] = [
+  { value: "created_at:desc", label: "Newest first" },
+  { value: "created_at:asc", label: "Oldest first" },
+  { value: "name:asc", label: "Name (A–Z)" },
+  { value: "name:desc", label: "Name (Z–A)" },
+  { value: "barangay:asc", label: "Barangay (A–Z)" },
+  { value: "sites:desc", label: "Most sites" },
+];
 
 // Child Level Filters (Sites)
 interface SiteFilter {
@@ -100,7 +125,9 @@ interface SiteFilter {
   total_page: number;
   pinned_only: boolean;
   land_classification_id: string;
-  monitoring_status: string; 
+  monitoring_status: string;
+  sort_by: SiteSortKey;
+  order: SortOrder;
 }
 
 const DEFAULT_AREA_FILTER: Omit<AreaFilter, "total_page"> = {
@@ -108,6 +135,7 @@ const DEFAULT_AREA_FILTER: Omit<AreaFilter, "total_page"> = {
   entries: 10,
   page: 1,
   barangay_id: "all",
+  sort: "created_at:desc",
 };
 
 const DEFAULT_SITE_FILTER: Omit<SiteFilter, "total_page"> = {
@@ -116,7 +144,9 @@ const DEFAULT_SITE_FILTER: Omit<SiteFilter, "total_page"> = {
   page: 1,
   pinned_only: false,
   land_classification_id: "",
-  monitoring_status: "all", 
+  monitoring_status: "all",
+  sort_by: "created_at",
+  order: "desc",
 };
 
 export default function OfficialSites() {
@@ -199,6 +229,8 @@ export default function OfficialSites() {
         search: areaFilter.search,
         page: areaFilter.page.toString(),
         entries: areaFilter.entries.toString(),
+        sort_by: areaFilter.sort.split(":")[0],
+        order: areaFilter.sort.split(":")[1],
       });
       if (areaFilter.barangay_id && areaFilter.barangay_id !== "all") {
         params.append("barangay_id", areaFilter.barangay_id);
@@ -230,6 +262,8 @@ export default function OfficialSites() {
         entries: siteFilter.entries.toString(),
         status: "accepted", // ✅ Implicitly enforce accepted/verified for this page
         pinned_only: siteFilter.pinned_only ? "true" : "false",
+        sort_by: siteFilter.sort_by,
+        order: siteFilter.order,
       });
 
       if (selectedArea) {
@@ -261,7 +295,7 @@ export default function OfficialSites() {
   useEffect(() => {
     const timer = setTimeout(() => { fetchAreas(); }, 400);
     return () => clearTimeout(timer);
-  }, [areaFilter.page, areaFilter.entries, areaFilter.barangay_id, areaFilter.search]);
+  }, [areaFilter.page, areaFilter.entries, areaFilter.barangay_id, areaFilter.search, areaFilter.sort]);
 
   // Triggers for Child (Sites)
   useEffect(() => {
@@ -275,12 +309,44 @@ export default function OfficialSites() {
     siteFilter.land_classification_id,
     siteFilter.monitoring_status,
     siteFilter.search,
+    siteFilter.sort_by,
+    siteFilter.order,
   ]);
 
   const handleSelectArea = (area: AreaOption | null) => {
     setSelectedArea(area);
-    setSiteFilter({ ...DEFAULT_SITE_FILTER, total_page: 1 });
+    // Reset filters for the new area but keep the user's chosen sort
+    setSiteFilter((prev) => ({
+      ...DEFAULT_SITE_FILTER,
+      total_page: 1,
+      sort_by: prev.sort_by,
+      order: prev.order,
+    }));
   };
+
+  // Clicking the active column flips the order; a new column starts ascending
+  const handleSiteSort = (key: SiteSortKey) => {
+    setSiteFilter((prev) => ({
+      ...prev,
+      sort_by: key,
+      order: prev.sort_by === key && prev.order === "asc" ? "desc" : "asc",
+      page: 1,
+    }));
+  };
+
+  const SiteSortIcon = ({ sortKey }: { sortKey: SiteSortKey }) =>
+    siteFilter.sort_by !== sortKey ? (
+      <ArrowUpDown size={11} className="inline opacity-50" />
+    ) : siteFilter.order === "asc" ? (
+      <ArrowUp size={11} className="inline" />
+    ) : (
+      <ArrowDown size={11} className="inline" />
+    );
+
+  const sortableThClass =
+    "py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider";
+  const sortButtonClass =
+    "inline-flex items-center gap-1 uppercase tracking-wider cursor-pointer hover:text-emerald-200";
 
   const handleTogglePin = async (siteId: number, currentPin: boolean) => {
     try {
@@ -394,6 +460,22 @@ export default function OfficialSites() {
                   </option>
                 ))}
               </select>
+
+              <div className="flex items-center gap-2 mt-2">
+                <ArrowUpDown size={13} className="text-slate-400 shrink-0" />
+                <select
+                  value={areaFilter.sort}
+                  onChange={(e) => setAreaFilter((prev) => ({ ...prev, sort: e.target.value as AreaSort, page: 1 }))}
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                  title="Sort areas"
+                >
+                  {AREA_SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      Sort: {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -623,13 +705,35 @@ export default function OfficialSites() {
                 <thead className="bg-[#0F4A2F] text-white sticky top-0">
                   <tr>
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">No</th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
-                      <Pin size={12} className="inline mr-1 -mt-0.5" /> Name
+                    <th className={sortableThClass}>
+                      <button
+                        type="button"
+                        onClick={() => handleSiteSort("name")}
+                        className={sortButtonClass}
+                        title="Pinned sites always stay on top"
+                      >
+                        <Pin size={12} className="-mt-0.5" /> Name <SiteSortIcon sortKey="name" />
+                      </button>
                     </th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
-                      <MapPin size={12} className="inline mr-1 -mt-0.5" /> Location
+                    <th className={sortableThClass}>
+                      <button
+                        type="button"
+                        onClick={() => handleSiteSort("location")}
+                        className={sortButtonClass}
+                        title="Sorts by barangay, then reforestation area"
+                      >
+                        <MapPin size={12} className="-mt-0.5" /> Location <SiteSortIcon sortKey="location" />
+                      </button>
                     </th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Monitoring Status</th>
+                    <th className={sortableThClass}>
+                      <button
+                        type="button"
+                        onClick={() => handleSiteSort("monitoring_status")}
+                        className={sortButtonClass}
+                      >
+                        Monitoring Status <SiteSortIcon sortKey="monitoring_status" />
+                      </button>
+                    </th>
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>

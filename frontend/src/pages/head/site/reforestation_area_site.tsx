@@ -32,6 +32,9 @@ import {
   List,
   Globe,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -125,7 +128,29 @@ interface Filter {
   page: number;
   total_page: number;
   barangay_id: string;
+  sort: AreaSort;
 }
+
+type SortOrder = "asc" | "desc";
+type SiteSortKey = "name" | "status" | "verification" | "created_at";
+
+// "<field>:<order>" so the area list can use a single dropdown
+type AreaSort =
+  | "created_at:desc"
+  | "created_at:asc"
+  | "name:asc"
+  | "name:desc"
+  | "barangay:asc"
+  | "sites:desc";
+
+const AREA_SORT_OPTIONS: { value: AreaSort; label: string }[] = [
+  { value: "created_at:desc", label: "Newest first" },
+  { value: "created_at:asc", label: "Oldest first" },
+  { value: "name:asc", label: "Name (A–Z)" },
+  { value: "name:desc", label: "Name (Z–A)" },
+  { value: "barangay:asc", label: "Barangay (A–Z)" },
+  { value: "sites:desc", label: "Most sites" },
+];
 
 interface SiteFilter {
   search: string;
@@ -136,6 +161,8 @@ interface SiteFilter {
   pinned_only: boolean;
   verification_status: string;
   land_classification_id: string;
+  sort_by: SiteSortKey;
+  order: SortOrder;
 }
 
 interface AreaDetails {
@@ -163,6 +190,7 @@ const DEFAULT_AREA_FILTER: Omit<Filter, "total_page"> = {
   entries: 10,
   page: 1,
   barangay_id: "all",
+  sort: "created_at:desc",
 };
 
 const DEFAULT_SITE_FILTER: Omit<SiteFilter, "total_page"> = {
@@ -173,6 +201,8 @@ const DEFAULT_SITE_FILTER: Omit<SiteFilter, "total_page"> = {
   pinned_only: false,
   verification_status: "all",
   land_classification_id: "",
+  sort_by: "created_at",
+  order: "desc",
 };
 
 const COLORS = ["#10B981", "#F59E0B", "#EF4444", "#3B82F6"];
@@ -281,6 +311,8 @@ export default function ReforestationAreaSiteCombined() {
         search: areaFilter.search,
         page: areaFilter.page.toString(),
         entries: areaFilter.entries.toString(),
+        sort_by: areaFilter.sort.split(":")[0],
+        order: areaFilter.sort.split(":")[1],
       });
       if (areaFilter.barangay_id && areaFilter.barangay_id !== "all") {
         params.append("barangay_id", areaFilter.barangay_id);
@@ -316,6 +348,8 @@ export default function ReforestationAreaSiteCombined() {
         status: siteFilter.status,
         pinned_only: siteFilter.pinned_only ? "true" : "false",
         verification_status: siteFilter.verification_status,
+        sort_by: siteFilter.sort_by,
+        order: siteFilter.order,
       });
 
       if (siteFilter.land_classification_id) {
@@ -364,6 +398,7 @@ export default function ReforestationAreaSiteCombined() {
     areaFilter.entries,
     areaFilter.barangay_id,
     areaFilter.search,
+    areaFilter.sort,
   ]);
 
   // Triggers for Child (Sites) with Debounce
@@ -381,12 +416,44 @@ export default function ReforestationAreaSiteCombined() {
     siteFilter.verification_status,
     siteFilter.land_classification_id,
     siteFilter.search,
+    siteFilter.sort_by,
+    siteFilter.order,
   ]);
 
   const handleSelectArea = (area: ReforestationArea | null) => {
     setSelectedArea(area);
-    setSiteFilter({ ...DEFAULT_SITE_FILTER, total_page: 1 });
+    // Reset filters for the new area but keep the user's chosen sort
+    setSiteFilter((prev) => ({
+      ...DEFAULT_SITE_FILTER,
+      total_page: 1,
+      sort_by: prev.sort_by,
+      order: prev.order,
+    }));
   };
+
+  // Clicking the active column flips the order; a new column starts ascending
+  const handleSiteSort = (key: SiteSortKey) => {
+    setSiteFilter((prev) => ({
+      ...prev,
+      sort_by: key,
+      order: prev.sort_by === key && prev.order === "asc" ? "desc" : "asc",
+      page: 1,
+    }));
+  };
+
+  const SiteSortIcon = ({ sortKey }: { sortKey: SiteSortKey }) =>
+    siteFilter.sort_by !== sortKey ? (
+      <ArrowUpDown size={11} className="inline opacity-50" />
+    ) : siteFilter.order === "asc" ? (
+      <ArrowUp size={11} className="inline" />
+    ) : (
+      <ArrowDown size={11} className="inline" />
+    );
+
+  const sortableThClass =
+    "py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider";
+  const sortButtonClass =
+    "inline-flex items-center gap-1 uppercase tracking-wider cursor-pointer hover:text-emerald-200";
 
   const handleTogglePin = async (siteId: number, currentPin: boolean) => {
     try {
@@ -861,6 +928,28 @@ export default function ReforestationAreaSiteCombined() {
                   </option>
                 ))}
               </select>
+
+              <div className="flex items-center gap-2">
+                <ArrowUpDown size={13} className="text-slate-400 shrink-0" />
+                <select
+                  value={areaFilter.sort}
+                  onChange={(e) =>
+                    setAreaFilter((prev) => ({
+                      ...prev,
+                      sort: e.target.value as AreaSort,
+                      page: 1,
+                    }))
+                  }
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400 bg-white"
+                  title="Sort areas"
+                >
+                  {AREA_SORT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      Sort: {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -1235,17 +1324,43 @@ export default function ReforestationAreaSiteCombined() {
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
                       No
                     </th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
-                      <Pin size={12} className="inline mr-1 -mt-0.5" /> Name
+                    <th className={sortableThClass}>
+                      <button
+                        type="button"
+                        onClick={() => handleSiteSort("name")}
+                        className={sortButtonClass}
+                        title="Pinned sites always stay on top"
+                      >
+                        <Pin size={12} className="-mt-0.5" /> Name{" "}
+                        <SiteSortIcon sortKey="name" />
+                      </button>
                     </th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
-                      Status
+                    <th className={sortableThClass}>
+                      <button
+                        type="button"
+                        onClick={() => handleSiteSort("status")}
+                        className={sortButtonClass}
+                      >
+                        Status <SiteSortIcon sortKey="status" />
+                      </button>
                     </th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
-                      Verification
+                    <th className={sortableThClass}>
+                      <button
+                        type="button"
+                        onClick={() => handleSiteSort("verification")}
+                        className={sortButtonClass}
+                      >
+                        Verification <SiteSortIcon sortKey="verification" />
+                      </button>
                     </th>
-                    <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
-                      Created
+                    <th className={sortableThClass}>
+                      <button
+                        type="button"
+                        onClick={() => handleSiteSort("created_at")}
+                        className={sortButtonClass}
+                      >
+                        Created <SiteSortIcon sortKey="created_at" />
+                      </button>
                     </th>
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
                       Actions
