@@ -23,7 +23,7 @@ import {
   deleteOfflineDraft,
   OfflineDraft,
 } from "@/hooks/useOfflineFieldAssessment";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 
 const API_BASE = api;
 
@@ -934,6 +934,7 @@ export default function LayerAssessmentList() {
             </TouchableOpacity>
           </View>
         </View>
+        <ToastHost />
       </Modal>
     </View>
   );

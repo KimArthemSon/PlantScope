@@ -20,7 +20,7 @@ import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 import { usePolygonAlerts } from "@/hooks/usePolygonAlerts";
 import PolygonAlertModal from "@/components/map/PolygonAlertModal";
 import PolygonDownloadService from "@/services/PolygonDownloadService";
@@ -2003,6 +2003,7 @@ export default function FloatingMapButton({
             </TouchableOpacity>
           </View>
         </View>
+        <ToastHost />
       </Modal>
 
       <Modal
@@ -2095,6 +2096,7 @@ export default function FloatingMapButton({
             </TouchableOpacity>
           </Pressable>
         </Pressable>
+        <ToastHost />
       </Modal>
 
       <PolygonAlertModal
@@ -2265,6 +2267,7 @@ export default function FloatingMapButton({
             </View>
           </Pressable>
         </Pressable>
+        <ToastHost />
       </Modal>
 
       <Modal
@@ -2300,6 +2303,7 @@ export default function FloatingMapButton({
             )}
           </View>
         </View>
+        <ToastHost />
       </Modal>
     </>
   );

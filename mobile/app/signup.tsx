@@ -68,6 +68,39 @@ const GROUP_TYPES = [
 
 // ─── Sub-components ───
 
+// Requests give up after this long so buttons never stay stuck on
+// "Sending Code…" when the connection or tunnel stalls.
+const REQUEST_TIMEOUT_MS = 45_000;
+const UPLOAD_TIMEOUT_MS = 120_000; // registration uploads documents
+
+async function fetchJson(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<{ ok: boolean; json: any }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    const text = await res.text();
+    let json: any = {};
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      // e.g. an ngrok error page when the backend tunnel is down
+      throw new Error("The server sent an unexpected response. Please try again later.");
+    }
+    return { ok: res.ok, json };
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new Error("The server took too long to respond. Please check your connection and try again.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function PasswordRequirement({
   isMet,
   text,
@@ -490,13 +523,12 @@ export default function Signup() {
   const sendOtp = async () => {
     setSendingOtp(true);
     try {
-      const res = await fetch(api + "/api/send_otp/", {
+      const { ok, json } = await fetchJson(api + "/api/send_otp/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: formData.email }),
       });
-      const json = await res.json();
-      if (!res.ok) {
+      if (!ok) {
         alert.error(
           "OTP Failed",
           json.error ?? "Failed to send verification code.",
@@ -528,13 +560,12 @@ export default function Signup() {
     }
     setLoading(true);
     try {
-      const res = await fetch(api + "/api/verify_otp/", {
+      const { ok, json } = await fetchJson(api + "/api/verify_otp/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: formData.email, otp }),
       });
-      const json = await res.json();
-      if (!res.ok) {
+      if (!ok) {
         alert.error("Verification Failed", json.error ?? "Incorrect code.");
         return;
       }
@@ -648,12 +679,12 @@ export default function Signup() {
         } as any);
       }
 
-      const res = await fetch(api + "/api/register_tree_grower/", {
-        method: "POST",
-        body: fd,
-      });
-      const json = await res.json();
-      if (!res.ok) {
+      const { ok, json } = await fetchJson(
+        api + "/api/register_tree_grower/",
+        { method: "POST", body: fd },
+        UPLOAD_TIMEOUT_MS,
+      );
+      if (!ok) {
         alert.error(
           "Registration Failed",
           json.error ?? "Something went wrong. Please try again.",

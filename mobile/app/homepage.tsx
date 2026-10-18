@@ -11,6 +11,7 @@ import {
   Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { ArrowRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context"; // 👈 Add this
 import LoginModal from "@/components/LoginModal";
 import * as SecureStore from "expo-secure-store";
@@ -216,11 +217,12 @@ export default function HomePage() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.createAccountContainer}
+            style={styles.createAccountButton}
             onPress={() => router.push("/signup")}
             activeOpacity={0.7}
           >
-            <Text style={styles.createAccountText}>Or Create Account</Text>
+            <Text style={styles.createAccountText}>Create Account</Text>
+            <ArrowRight size={18} color="#15803D" strokeWidth={2.5} />
           </TouchableOpacity>
         </Animated.View>
       </ImageBackground>
@@ -316,29 +318,29 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 14,
     alignItems: "center",
-    marginBottom: 18,
+    marginBottom: 12,
   },
   signInButtonText: {
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
   },
-  createAccountContainer: {
+  // Secondary action: same size as Sign in, outlined so Sign in stays primary
+  createAccountButton: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-    paddingVertical: 4,
+    paddingVertical: 15,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#22C55E",
+    backgroundColor: "#FFFFFF",
   },
   createAccountText: {
-    color: "#1C1C1E",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  arrow: {
-    color: "#1C1C1E",
+    color: "#15803D",
     fontSize: 16,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   loadingContainer: {
     flex: 1,

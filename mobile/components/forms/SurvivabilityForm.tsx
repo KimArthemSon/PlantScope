@@ -27,7 +27,7 @@ import {
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 
 // ✅ GUIDE IMPORT: Ready to connect
 import SoilGuide from "@/components/guides/survivability_soil";
@@ -2180,6 +2180,7 @@ export default function SurvivabilityForm() {
             resizeMode="contain"
           />
         </View>
+        <ToastHost />
       </Modal>
 
       <Modal
@@ -2195,6 +2196,7 @@ export default function SurvivabilityForm() {
             setActiveCategory(null);
           }}
         />
+        <ToastHost />
       </Modal>
 
       <Modal
@@ -2258,6 +2260,7 @@ export default function SurvivabilityForm() {
             </View>
           </View>
         </View>
+        <ToastHost />
       </Modal>
 
       {/* ✅ GUIDE MODALS */}

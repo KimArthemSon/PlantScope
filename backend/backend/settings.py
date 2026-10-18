@@ -142,6 +142,11 @@ else:
     }
     print("💻 Using LOCAL database (PostgreSQL)")
 
+# Fail fast if the database can't be reached. Without this, a stalled
+# connection waits for the OS TCP timeout (often longer than clients wait),
+# so requests like send_otp hang with no response at all.
+DATABASES['default'].setdefault('OPTIONS', {})['connect_timeout'] = 10
+
 # Cloudinary Configuration (For file uploads - Images, PDFs, Word docs)
 CLOUDINARY_STORAGE = {
     'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME', default=''),

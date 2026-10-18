@@ -26,7 +26,7 @@ import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 import FloodGuide from "@/components/guides/flood";
 import LandslideGuide from "@/components/guides/landslide";
 import ErosionGuide from "@/components/guides/erosion";
@@ -2279,6 +2279,7 @@ export default function SafetyForm() {
             resizeMode="contain"
           />
         </View>
+        <ToastHost />
       </Modal>
 
       <Modal
@@ -2294,6 +2295,7 @@ export default function SafetyForm() {
             setActiveCategory(null);
           }}
         />
+        <ToastHost />
       </Modal>
 
       <Modal
@@ -2357,6 +2359,7 @@ export default function SafetyForm() {
             </View>
           </View>
         </View>
+        <ToastHost />
       </Modal>
 
       {/* ✅ GUIDE MODALS */}

@@ -26,7 +26,7 @@ import {
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 
 const GPS_READY_HOURS = 2;
 const GPS_AGING_HOURS = 6;
@@ -2305,6 +2305,7 @@ const loadOfflineDraftData = async () => {
             resizeMode="contain"
           />
         </View>
+        <ToastHost />
       </Modal>
 
       <Modal
@@ -2317,6 +2318,7 @@ const loadOfflineDraftData = async () => {
           onCapture={handleGPSPhotoCaptured}
           onClose={() => setShowGPSCamera(false)}
         />
+        <ToastHost />
       </Modal>
 
       <Modal
@@ -2379,6 +2381,7 @@ const loadOfflineDraftData = async () => {
             </View>
           </View>
         </View>
+        <ToastHost />
       </Modal>
 
       {/* Add/Edit Polygon Point Modal */}
@@ -2470,6 +2473,7 @@ const loadOfflineDraftData = async () => {
             </View>
           </View>
         </View>
+        <ToastHost />
       </Modal>
 
       <FloatingMapButton

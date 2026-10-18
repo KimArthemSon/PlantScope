@@ -28,7 +28,7 @@ import {
   OfflineImage,
 } from "@/hooks/useOfflineFieldAssessment";
 import { useNetworkStatus } from "@/utils/networkStatus";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 
 const API_BASE = api;
 
@@ -1531,6 +1531,7 @@ export default function MetaDataForm() {
             </TouchableOpacity>
           </View>
         </View>
+        <ToastHost />
       </Modal>
 
       {/* Animal Selector Modal */}
@@ -1584,6 +1585,7 @@ export default function MetaDataForm() {
             </TouchableOpacity>
           </View>
         </View>
+        <ToastHost />
       </Modal>
     </View>
   );

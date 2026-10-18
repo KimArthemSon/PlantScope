@@ -22,7 +22,7 @@ import { WebView } from "react-native-webview";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 
 const screenHeight = Dimensions.get("window").height;
 const API_BASE_URL = api + "/api";
@@ -689,6 +689,7 @@ const ReforestationAreas: React.FC = () => {
             )}
           </View>
         </View>
+        <ToastHost />
       </Modal>
 
       {/* Assessment Type Action Sheet */}
@@ -754,6 +755,7 @@ const ReforestationAreas: React.FC = () => {
             </Pressable>
           </Pressable>
         </Pressable>
+        <ToastHost />
       </Modal>
     </View>
   );

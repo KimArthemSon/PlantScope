@@ -19,7 +19,7 @@ import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 
 // ✅ ADDED: Import the useAlert hook
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 
 const API_BASE = api;
 const OFFLINE_SITES_KEY = "@plantscope_offline_sites";
@@ -425,6 +425,7 @@ export default function SelectSite() {
             </TouchableOpacity>
           </View>
         </View>
+        <ToastHost />
       </Modal>
     </View>
   );

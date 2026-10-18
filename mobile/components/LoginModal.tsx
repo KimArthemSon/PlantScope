@@ -18,7 +18,7 @@ import { useRouter } from "expo-router";
 import { Mail, Lock, Eye, EyeOff, X } from "lucide-react-native";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 
 // ✅ Cross-platform Storage Keys
 const TOKEN_KEY = "token";
@@ -445,6 +445,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
+      <ToastHost />
     </Modal>
   );
 }
