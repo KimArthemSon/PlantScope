@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { useRouter } from "expo-router";
+import React, { useState, useCallback } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
 import {
   View,
   Text,
@@ -98,10 +98,9 @@ export default function OnsiteInspectorDelivery() {
         if (!token) throw new Error("No authentication token found.");
 
         // ✅ Pass the activeTab to the backend as a status filter
-        const params = new URLSearchParams();
-        if (activeTab !== "all") {
-          params.append("status", activeTab);
-        }
+        // Always send it: the backend defaults to "accepted" when omitted,
+        // which made the "All" tab show only pending deliveries.
+        const params = new URLSearchParams({ status: activeTab });
 
         const queryString = params.toString();
         const url = `${api}/api/requests/inspector-tasks/${queryString ? `?${queryString}` : ""}`;
@@ -139,9 +138,13 @@ export default function OnsiteInspectorDelivery() {
     [activeTab] // ✅ Re-fetch when tab changes
   );
 
-  useEffect(() => {
-    fetchDeliveries();
-  }, [fetchDeliveries]);
+  // ✅ Refetch whenever the screen gains focus (e.g. back from confirming a
+  // delivery) as well as when the tab changes
+  useFocusEffect(
+    useCallback(() => {
+      fetchDeliveries();
+    }, [fetchDeliveries]),
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -219,7 +222,9 @@ export default function OnsiteInspectorDelivery() {
         </View>
 
         <View style={styles.cardFooter}>
-          <Text style={styles.cardFooterText}>View Details & Confirm</Text>
+          <Text style={styles.cardFooterText}>
+            {item.status === "accepted" ? "View Details & Confirm" : "View Details"}
+          </Text>
           <Ionicons name="chevron-forward" size={18} color={PRIMARY} />
         </View>
       </TouchableOpacity>

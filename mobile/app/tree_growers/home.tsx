@@ -100,22 +100,13 @@ const carouselItems = [
   },
 ];
 
-const availableSites = [
-  {
-    id: 0,
-    name: "Punta Reforestation Area",
-    barangay: "Brgy. Punta",
-    area: "2.5 ha",
-    status: "Available",
-  },
-  {
-    id: 1,
-    name: "Uwak Community Site",
-    barangay: "Brgy. Uwak",
-    area: "1.8 ha",
-    status: "Available",
-  },
-];
+type RecommendedSite = {
+  id: number;
+  name: string;
+  barangay: string;
+  area: string;
+  status: string;
+};
 
 // ─── STYLES ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
@@ -361,65 +352,138 @@ const styles = StyleSheet.create({
   },
   carouselIndicator: { width: 8, height: 8, borderRadius: 4 },
 
-  // Modal Styles
+  // Notification Sheet Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
   },
-  modalContent: {
+  sheet: {
     backgroundColor: C.white,
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 24,
     width: "100%",
-    maxWidth: 400,
-    alignItems: "center",
+    maxWidth: 420,
+    overflow: "hidden",
   },
-  modalIconWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  sheetBell: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: C.greenLight,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: C.primary,
-    textAlign: "center",
-    marginBottom: 8,
+  sheetBellBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: C.red,
+    borderWidth: 2,
+    borderColor: C.white,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  modalDesc: {
-    fontSize: 14,
-    color: C.gray,
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 20,
+  sheetTitle: { fontSize: 17, fontWeight: "800", color: C.primary },
+  sheetSubtitle: { fontSize: 12, color: C.gray, marginTop: 1 },
+  sheetClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: C.bg,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  modalButton: {
-    backgroundColor: C.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 32,
+  notifItem: {
+    flexDirection: "row",
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 10,
+    backgroundColor: C.white,
+  },
+  notifIconWrap: {
+    width: 38,
+    height: 38,
     borderRadius: 12,
-    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  modalButtonText: {
-    color: C.white,
-    fontSize: 16,
-    fontWeight: "bold",
-    textAlign: "center",
+  notifTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
   },
+  notifTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: C.navy },
+  notifTime: { fontSize: 11, color: C.grayLight, fontWeight: "500" },
+  notifDesc: { fontSize: 12.5, color: C.gray, lineHeight: 18, marginTop: 3 },
+  notifLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    marginTop: 6,
+  },
+  notifLinkText: { fontSize: 12, fontWeight: "700", color: C.primary },
+  sheetFooter: {
+    flexDirection: "row",
+    gap: 10,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  sheetBtnSecondary: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: C.bg,
+    alignItems: "center",
+  },
+  sheetBtnSecondaryText: { color: C.primary, fontSize: 14, fontWeight: "700" },
+  sheetBtnPrimary: {
+    flex: 1.4,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: C.primary,
+  },
+  sheetBtnPrimaryText: { color: C.white, fontSize: 14, fontWeight: "700" },
 });
 
 // ─── COMPONENTS ──────────────────────────────────────────────────────────────
 
-function SiteCard({ item }: { item: (typeof availableSites)[0] }) {
+function SiteCard({
+  item,
+  onPress,
+}: {
+  item: RecommendedSite;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.courseCard}>
+    <TouchableOpacity
+      style={styles.courseCard}
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
       <View style={[styles.courseThumbnail, { backgroundColor: C.primary }]}>
         <Icon name="map-marker-radius" size={32} color="white" />
       </View>
@@ -435,7 +499,7 @@ function SiteCard({ item }: { item: (typeof availableSites)[0] }) {
           <Text style={styles.studentText}>{item.status}</Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -549,33 +613,132 @@ function CarouselCard({
   );
 }
 
+type HomeNotification = {
+  notification_id: number;
+  type: "alert" | "success" | "warning" | "info";
+  title: string;
+  description: string;
+  link: string | null;
+  created_at: string;
+};
+
+const NOTIF_STYLE = {
+  alert: { icon: "alert-circle" as const, color: "#EF4444", bg: "#FEF2F2", border: "#FECACA" },
+  success: { icon: "check-circle" as const, color: "#10B981", bg: "#ECFDF5", border: "#A7F3D0" },
+  warning: { icon: "alert" as const, color: "#F59E0B", bg: "#FFFBEB", border: "#FDE68A" },
+  info: { icon: "information" as const, color: "#3B82F6", bg: "#EFF6FF", border: "#BFDBFE" },
+};
+
+const timeAgo = (iso: string): string => {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (isNaN(diff)) return "";
+  if (diff < 60) return "Just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+};
+
 function NotificationModal({
   visible,
-  notification,
+  notifications,
   onClose,
+  onMarkAllRead,
+  onOpen,
+  onViewAll,
 }: {
   visible: boolean;
-  notification: any;
+  notifications: HomeNotification[];
   onClose: () => void;
+  onMarkAllRead: () => void;
+  onOpen: (notif: HomeNotification) => void;
+  onViewAll: () => void;
 }) {
-  if (!visible || !notification) return null;
+  if (!visible || notifications.length === 0) return null;
+  const count = notifications.length;
+  const { height: screenHeight } = Dimensions.get("window");
+
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalIconWrap}>
-            <Icon name="bell-ring" size={32} color={C.primary} />
+        <View style={styles.sheet}>
+          {/* Header */}
+          <View style={styles.sheetHeader}>
+            <View style={styles.sheetBell}>
+              <Icon name="bell-ring" size={22} color={C.primary} />
+              <View style={styles.sheetBellBadge}>
+                <Text style={styles.badgeText}>{count > 99 ? "99+" : count}</Text>
+              </View>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sheetTitle}>
+                {count === 1 ? "New Update" : `${count} New Updates`}
+              </Text>
+              <Text style={styles.sheetSubtitle}>
+                {count > 1
+                  ? "Scroll to see everything you missed"
+                  : "Here is what's new for your group"}
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.sheetClose} onPress={onClose} hitSlop={8}>
+              <Ionicons name="close" size={18} color={C.gray} />
+            </TouchableOpacity>
           </View>
-          <Text style={styles.modalTitle}>
-            {notification.title || "Important Update"}
-          </Text>
-          <Text style={styles.modalDesc}>
-            {notification.description ||
-              "You have a new update regarding your application."}
-          </Text>
-          <TouchableOpacity style={styles.modalButton} onPress={onClose}>
-            <Text style={styles.modalButtonText}>Got it</Text>
-          </TouchableOpacity>
+
+          {/* Scrollable list */}
+          <ScrollView
+            style={{ maxHeight: screenHeight * 0.5 }}
+            contentContainerStyle={{ padding: 16, paddingBottom: 6 }}
+            showsVerticalScrollIndicator={count > 2}
+          >
+            {notifications.map((n) => {
+              const conf = NOTIF_STYLE[n.type] || NOTIF_STYLE.info;
+              return (
+                <TouchableOpacity
+                  key={n.notification_id}
+                  style={[styles.notifItem, { borderColor: conf.border }]}
+                  activeOpacity={0.8}
+                  onPress={() => onOpen(n)}
+                >
+                  <View style={[styles.notifIconWrap, { backgroundColor: conf.bg }]}>
+                    <Icon name={conf.icon} size={20} color={conf.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.notifTitleRow}>
+                      <Text style={styles.notifTitle} numberOfLines={2}>
+                        {n.title || "Update"}
+                      </Text>
+                      <Text style={styles.notifTime}>{timeAgo(n.created_at)}</Text>
+                    </View>
+                    {!!n.description && (
+                      <Text style={styles.notifDesc} numberOfLines={3}>
+                        {n.description}
+                      </Text>
+                    )}
+                    {n.link && (
+                      <View style={styles.notifLink}>
+                        <Text style={styles.notifLinkText}>View details</Text>
+                        <Icon name="chevron-right" size={14} color={C.primary} />
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Footer */}
+          <View style={styles.sheetFooter}>
+            <TouchableOpacity style={styles.sheetBtnSecondary} onPress={onViewAll}>
+              <Text style={styles.sheetBtnSecondaryText}>View All</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetBtnPrimary} onPress={onMarkAllRead}>
+              <Icon name="check-all" size={16} color={C.white} />
+              <Text style={styles.sheetBtnPrimaryText}>
+                {count === 1 ? "Got it" : "Mark all as read"}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -598,7 +761,11 @@ export default function Home() {
 
   const [mySite, setMySite] = useState<MySiteData>(null);
   const [showNotifModal, setShowNotifModal] = useState(false);
-  const [latestNotif, setLatestNotif] = useState<any>(null);
+  const [unreadNotifs, setUnreadNotifs] = useState<HomeNotification[]>([]);
+
+  const [recommendedSites, setRecommendedSites] = useState<RecommendedSite[]>([]);
+  const [userBarangay, setUserBarangay] = useState<string | null>(null);
+  const [loadingRecommended, setLoadingRecommended] = useState(true);
 
   useEffect(() => {
     fetchUserData();
@@ -631,6 +798,9 @@ export default function Home() {
         if (data.user_role === "treeGrowers") {
           fetchTreeGrowerSite(token);
           fetchLatestNotification(token);
+          fetchRecommendedSites(token);
+        } else {
+          setLoadingRecommended(false);
         }
       } else {
         console.warn("Failed to fetch user data:", res.status);
@@ -681,11 +851,38 @@ export default function Home() {
     }
   };
 
-  // ✅ FIXED: Correctly parse response.data array
+  // ✅ Top Recommended: only sites in the same barangay as the tree grower
+  const fetchRecommendedSites = async (token: string) => {
+    try {
+      const res = await fetch(
+        `${api}/api/get_available_sites_for_tree_grower/?nearby=1&page=1&entries=10`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setUserBarangay(data.user_barangay || null);
+        setRecommendedSites(
+          (data.data || []).slice(0, 3).map((s: any) => ({
+            id: s.site_id,
+            name: s.name,
+            barangay: `Brgy. ${s.barangay}`,
+            area: `${s.total_area_hectares} ha`,
+            status: s.monitoring_status === "reserved" ? "Reserved" : "Available",
+          })),
+        );
+      }
+    } catch (error) {
+      console.error("Error fetching recommended sites:", error);
+    } finally {
+      setLoadingRecommended(false);
+    }
+  };
+
+  // ✅ Load ALL unread notifications so the pop-up can show them as a list
   const fetchLatestNotification = async (token: string) => {
     try {
       const res = await fetch(
-        `${api}/api/notifications/?unread_only=true&page=1&entries=1`,
+        `${api}/api/notifications/?unread_only=true&page=1&entries=50`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -693,7 +890,7 @@ export default function Home() {
       if (res.ok) {
         const response = await res.json();
         if (response.data && response.data.length > 0) {
-          setLatestNotif(response.data[0]);
+          setUnreadNotifs(response.data);
           setShowNotifModal(true);
         }
       }
@@ -702,32 +899,60 @@ export default function Home() {
     }
   };
 
-  // ✅ NEW: Mark as read when user clicks "Got it"
-  const handleDismissNotification = async () => {
-    setShowNotifModal(false);
-    if (latestNotif) {
-      try {
-        const token = await getToken();
-        // Matches your urls.py: path('notifications/<int:notification_id>/read/', ...)
-        const res = await fetch(
-          `${api}/api/notifications/${latestNotif.notification_id}/read/`,
-          {
-            method: "PUT",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          },
-        );
-
-        if (res.ok) {
-          // Decrement the unread badge count locally
-          setUnreadCount((prev) => Math.max(0, prev - 1));
-        }
-      } catch (error) {
-        console.error("Error marking notification as read:", error);
-      }
+  const markOneRead = async (id: number) => {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${api}/api/notifications/${id}/read/`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (res.ok) setUnreadCount((prev) => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
     }
+  };
+
+  // Tap a notification: mark it read, drop it from the list, follow its link
+  const handleOpenNotification = (notif: HomeNotification) => {
+    markOneRead(notif.notification_id);
+    const remaining = unreadNotifs.filter(
+      (n) => n.notification_id !== notif.notification_id,
+    );
+    setUnreadNotifs(remaining);
+    if (notif.link) {
+      setShowNotifModal(false);
+      router.push(notif.link as any);
+    } else if (remaining.length === 0) {
+      setShowNotifModal(false);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    setShowNotifModal(false);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${api}/api/notifications/mark-all-read/`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (res.ok) {
+        setUnreadNotifs([]);
+        setUnreadCount(0);
+      }
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+    }
+  };
+
+  const handleViewAllNotifications = () => {
+    setShowNotifModal(false);
+    router.push("/tree_growers/notifications" as any);
   };
 
   const fetchUnreadCount = async () => {
@@ -951,7 +1176,9 @@ export default function Home() {
                 Top Recommended
               </Text>
               <Text style={styles.sectionTitleSub}>
-                in your nearest location
+                {userBarangay
+                  ? `in Brgy. ${userBarangay}`
+                  : "in your nearest location"}
               </Text>
             </View>
             <TouchableOpacity
@@ -964,17 +1191,34 @@ export default function Home() {
               <Icon name="chevron-right" size={14} color={C.primary} />
             </TouchableOpacity>
           </View>
-          {availableSites.map((site) => (
-            <SiteCard key={site.id} item={site} />
-          ))}
+          {loadingRecommended ? (
+            <ActivityIndicator size="small" color={C.primary} />
+          ) : recommendedSites.length === 0 ? (
+            <Text style={styles.courseLevel}>
+              {userBarangay
+                ? `No available sites in Brgy. ${userBarangay} right now.`
+                : "No sites found in your barangay. Make sure your group address includes your barangay."}
+            </Text>
+          ) : (
+            recommendedSites.map((site) => (
+              <SiteCard
+                key={site.id}
+                item={site}
+                onPress={() => router.push("/tree_growers/sites" as any)}
+              />
+            ))
+          )}
         </View>
       </ScrollView>
 
       {/* ✅ Notification Modal */}
       <NotificationModal
         visible={showNotifModal}
-        notification={latestNotif}
-        onClose={handleDismissNotification}
+        notifications={unreadNotifs}
+        onClose={() => setShowNotifModal(false)}
+        onMarkAllRead={handleMarkAllRead}
+        onOpen={handleOpenNotification}
+        onViewAll={handleViewAllNotifications}
       />
     </SafeAreaView>
   );

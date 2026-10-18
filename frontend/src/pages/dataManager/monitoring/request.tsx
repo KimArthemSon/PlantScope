@@ -3,8 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   ChevronRight,
   ChevronLeft,
-  Package,
-  Sprout,
   MapPin,
   User,
   Truck,
@@ -12,6 +10,11 @@ import {
   Eye,
   CheckCircle2,
   Search,
+  Plus,
+  ShieldCheck,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import LoaderPending from "../../../components/layout/loaderSmall";
@@ -39,7 +42,59 @@ interface SeedlingRequest {
   fulfillment_type: "pickup" | "deliver" | null;
   inspector_name: string;
   submitted_at: string | null;
+  created_by_admin?: boolean;
 }
+
+type SortKey =
+  | "group"
+  | "site"
+  | "seedlings"
+  | "fulfillment"
+  | "inspector"
+  | "submitted_at"
+  | "status";
+
+interface SortState {
+  key: SortKey;
+  dir: "asc" | "desc";
+}
+
+// Workflow order, so "status" sorts pending → accepted → confirmed → ...
+const STATUS_ORDER: Record<string, number> = {
+  pending: 0,
+  accepted: 1,
+  confirmed: 2,
+  rejected: 3,
+  cancelled: 4,
+};
+
+const sortValue = (req: SeedlingRequest, key: SortKey): string | number => {
+  switch (key) {
+    case "group":
+      return `${req.group_name} ${req.application_title}`.toLowerCase();
+    case "site":
+      return (req.site_name || "").toLowerCase();
+    case "seedlings":
+      return req.no_request_seedling;
+    case "fulfillment":
+      return req.fulfillment_type || "";
+    case "inspector":
+      return req.inspector_name === "Unassigned" ? "" : req.inspector_name.toLowerCase();
+    case "submitted_at":
+      return req.submitted_at ? new Date(req.submitted_at).getTime() : 0;
+    case "status":
+      return STATUS_ORDER[req.status] ?? 99;
+  }
+};
+
+const formatDate = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleDateString("en-PH", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : "—";
 
 interface Filter {
   search: string;
@@ -133,15 +188,70 @@ export default function SeedlingRequestsPage() {
   }, [filter.search]); // Only refetch when search changes
 
   // ─── Client-Side Filtering & Pagination ───────────────────────────────────
+  // ─── Sorting (newest first by default) ────────────────────────────────────
+  const [sort, setSort] = useState<SortState>({ key: "submitted_at", dir: "desc" });
+
+  const handleSort = (key: SortKey) => {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : // Numbers/dates read best biggest/newest first; text A→Z
+          { key, dir: key === "seedlings" || key === "submitted_at" ? "desc" : "asc" },
+    );
+    setFilter((prev) => ({ ...prev, page: 1 }));
+  };
+
   const filteredRequests = useMemo(() => {
-    return requests.filter((req) => {
+    const filtered = requests.filter((req) => {
       const matchesStatus = filter.status === "all" || req.status === filter.status;
-      const matchesSearch = 
+      const matchesSearch =
         req.application_title.toLowerCase().includes(filter.search.toLowerCase()) ||
         req.group_name.toLowerCase().includes(filter.search.toLowerCase());
       return matchesStatus && matchesSearch;
     });
-  }, [requests, filter.status, filter.search]);
+    const factor = sort.dir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const va = sortValue(a, sort.key);
+      const vb = sortValue(b, sort.key);
+      // Keep empty values (no site / unassigned) at the bottom either way
+      if (va === "" && vb !== "") return 1;
+      if (vb === "" && va !== "") return -1;
+      if (va < vb) return -1 * factor;
+      if (va > vb) return 1 * factor;
+      return b.request_id - a.request_id;
+    });
+  }, [requests, filter.status, filter.search, sort]);
+
+  const SortTh = ({
+    label,
+    sortKey,
+    align = "left",
+  }: {
+    label: string;
+    sortKey: SortKey;
+    align?: "left" | "right";
+  }) => {
+    const active = sort.key === sortKey;
+    const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+    return (
+      <th
+        className={`py-3 px-5 ${align === "right" ? "text-right" : "text-left"} text-[.85rem] font-semibold`}
+        aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      >
+        <button
+          type="button"
+          onClick={() => handleSort(sortKey)}
+          className={`inline-flex items-center gap-1.5 cursor-pointer select-none hover:text-green-200 transition-colors ${
+            active ? "text-white" : "text-white/90"
+          }`}
+          title={`Sort by ${label.toLowerCase()}`}
+        >
+          {label}
+          <Icon size={13} className={active ? "opacity-100" : "opacity-50"} />
+        </button>
+      </th>
+    );
+  };
 
   const totalPages = Math.ceil(filteredRequests.length / filter.entries);
   const paginatedRequests = filteredRequests.slice(
@@ -189,9 +299,17 @@ export default function SeedlingRequestsPage() {
 
       <main className="flex-1 p-8 max-w-7xl mx-auto w-full">
         {/* Header */}
-        <div className="mb-7">
-          <h1 className="text-2xl font-bold text-[#0F4A2F]">Seedling Requests</h1>
-          <p className="text-sm text-gray-500">Review, assign, and manage Tree Grower seedling assistance requests.</p>
+        <div className="mb-7 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-[#0F4A2F]">Seedling Requests</h1>
+            <p className="text-sm text-gray-500">Review, assign, and manage Tree Grower seedling assistance requests.</p>
+          </div>
+          <button
+            onClick={() => navigate("/DataManager/request-eval/new")}
+            className="inline-flex items-center gap-2 bg-[#0F4A2F] hover:bg-[#0c3d26] text-white text-sm font-semibold px-4 py-2.5 rounded-lg shadow-sm transition-colors cursor-pointer"
+          >
+            <Plus size={16} /> Create Request
+          </button>
         </div>
 
         {/* Tab Filters */}
@@ -214,7 +332,7 @@ export default function SeedlingRequestsPage() {
                     : "bg-gray-100 text-gray-600"
                 }`}
               >
-                {stats[status]}
+                {status === "all" ? stats.total : stats[status]}
               </span>
             </button>
           ))}
@@ -269,12 +387,13 @@ export default function SeedlingRequestsPage() {
               <thead className="bg-[#0f4a2fe0] text-white">
                 <tr>
                   <th className="py-3 px-5 text-left text-[.85rem] font-semibold">No</th>
-                  <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Application / Group</th>
-                  <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Site</th>
-                  <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Seedlings</th>
-                  <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Fulfillment</th>
-                  <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Inspector</th>
-                  <th className="py-3 px-5 text-left text-[.85rem] font-semibold">Status</th>
+                  <SortTh label="Application / Group" sortKey="group" />
+                  <SortTh label="Site" sortKey="site" />
+                  <SortTh label="Seedlings" sortKey="seedlings" />
+                  <SortTh label="Fulfillment" sortKey="fulfillment" />
+                  <SortTh label="Inspector" sortKey="inspector" />
+                  <SortTh label="Submitted" sortKey="submitted_at" />
+                  <SortTh label="Status" sortKey="status" />
                   <th className="py-3 px-5 text-right text-[.85rem] font-semibold">Actions</th>
                 </tr>
               </thead>
@@ -298,6 +417,11 @@ export default function SeedlingRequestsPage() {
                           <span className="text-[.7rem] text-gray-500">
                             {req.group_name}
                           </span>
+                          {req.created_by_admin && (
+                            <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[.65rem] font-semibold border border-emerald-200">
+                              <ShieldCheck size={10} /> Created by ENRO
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="py-3 px-5 text-[.85rem]">
@@ -353,6 +477,9 @@ export default function SeedlingRequestsPage() {
                           )}
                         </div>
                       </td>
+                      <td className="py-3 px-5 text-[.85rem] text-gray-600 whitespace-nowrap">
+                        {formatDate(req.submitted_at)}
+                      </td>
                       <td className="py-3 px-5">
                         <span className={getStatusBadge(req.status)}>
                           {getStatusLabel(req.status)}
@@ -383,7 +510,7 @@ export default function SeedlingRequestsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="text-center py-10 text-gray-500 italic bg-gray-50">
+                    <td colSpan={9} className="text-center py-10 text-gray-500 italic bg-gray-50">
                       {filter.search
                         ? `No results for "${filter.search}"`
                         : "No seedling requests found."}

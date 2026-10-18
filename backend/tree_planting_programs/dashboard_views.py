@@ -96,7 +96,7 @@ def get_dashboard_data(request):
     pending = Application.objects.filter(status__in=['for_evaluation', 'for_head']).count()
     rejected = Application.objects.filter(status__in=['rejected', 'failed', 'cancelled']).count()
     completed_applications = Application.objects.filter(status='completed').count()
-    completed_sites = Sites.objects.filter(status='completed').count()
+    completed_sites = Sites.objects.filter(monitoring_status='completed').count()
 
     areas_assessed = SiteMetaDataVerification.objects.filter(status='verified').count()
     assessors_count = User.objects.filter(user_role='OnsiteInspector', is_active=True).count()

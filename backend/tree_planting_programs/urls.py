@@ -68,12 +68,16 @@ urlpatterns = [
     # ─── DATAMANAGER SEEDLING REQUESTS ──────────────────────────────
     path('requests/manager-list/', request_views.get_manager_seedling_requests, name='get_manager_seedling_requests'),
     path('requests/inspectors/', request_views.get_available_inspectors, name='get_available_inspectors'),
+    path('requests/eligible-growers/', request_views.get_request_eligible_growers, name='get_request_eligible_growers'),
+    path('requests/admin-create/', request_views.admin_create_seedling_request, name='admin_create_seedling_request'),
     path('requests/<int:request_id>/approve/', request_views.approve_seedling_request, name='approve_seedling_request'),
     path('requests/<int:request_id>/reject/', request_views.reject_seedling_request, name='reject_seedling_request'),
+    path('alert_tree_grower/', request_views.alert_tree_grower, name='alert_tree_grower'),
 
     # ─── ONSITE INSPECTOR SEEDLING TASKS ────────────────────────────
     path('requests/inspector-tasks/', request_views.get_inspector_seedling_tasks, name='get_inspector_seedling_tasks'),
     path('requests/<int:request_id>/confirm/', request_views.confirm_seedling_delivery, name='confirm_seedling_delivery'),
+    path('requests/<int:request_id>/inspector-cancel/', request_views.inspector_cancel_seedling_delivery, name='inspector_cancel_seedling_delivery'),
     
     # ─── SITE APPLICATIONS ──────────────────────────────────────────
     path('get_site_applications/<int:site_id>/', views.get_site_applications, name='get_site_applications'),

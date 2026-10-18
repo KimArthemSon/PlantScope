@@ -28,6 +28,7 @@ import {
   PinOff,
   Globe,
   ListOrdered, // ✅ NEW: For Queue Icon
+  Loader2,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { api } from "@/constant/api";
@@ -659,35 +660,6 @@ function FirstTimeEvaluator({
         )}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader
-            icon={<FileText size={18} />}
-            title="Evaluation Notes"
-            subtitle="Provide reason or remarks for this decision"
-          />
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-            Reason / Remarks
-          </label>
-          <textarea
-            rows={4}
-            value={decisionForm.reason}
-            onChange={(e) =>
-              setDecisionForm((p: any) => ({ ...p, reason: e.target.value }))
-            }
-            placeholder="Enter your evaluation remarks…"
-            className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] transition-colors"
-          />
-          {latestReason && (
-            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-xs font-semibold text-amber-700">
-                Previous Note:
-              </p>
-              <p className="text-sm text-amber-800 mt-1">
-                {latestReason.reason}
-              </p>
-            </div>
-          )}
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <SectionHeader
             icon={<Calendar size={18} />}
             title="Schedule Orientation"
             subtitle="Set the date for the tree grower orientation"
@@ -723,6 +695,35 @@ function FirstTimeEvaluator({
           >
             <Calendar size={16} /> Open Calendar to Select Date
           </button>
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <SectionHeader
+            icon={<FileText size={18} />}
+            title="Evaluation Notes"
+            subtitle="Provide reason or remarks for this decision"
+          />
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Reason / Remarks
+          </label>
+          <textarea
+            rows={4}
+            value={decisionForm.reason}
+            onChange={(e) =>
+              setDecisionForm((p: any) => ({ ...p, reason: e.target.value }))
+            }
+            placeholder="Enter your evaluation remarks…"
+            className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] transition-colors"
+          />
+          {latestReason && (
+            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-xs font-semibold text-amber-700">
+                Previous Note:
+              </p>
+              <p className="text-sm text-amber-800 mt-1">
+                {latestReason.reason}
+              </p>
+            </div>
+          )}
         </div>
       </div>
       <SiteSelectionPanel
@@ -899,35 +900,6 @@ function ReturningEvaluator({
         <div className="flex flex-col gap-5">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <SectionHeader
-              icon={<FileText size={18} />}
-              title="Evaluation Notes"
-              subtitle="Provide reason or remarks for this decision"
-            />
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-              Reason / Remarks
-            </label>
-            <textarea
-              rows={4}
-              value={decisionForm.reason}
-              onChange={(e) =>
-                setDecisionForm((p: any) => ({ ...p, reason: e.target.value }))
-              }
-              placeholder="Enter your evaluation remarks…"
-              className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] transition-colors"
-            />
-            {latestReason && (
-              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-xs font-semibold text-amber-700">
-                  Previous Note:
-                </p>
-                <p className="text-sm text-amber-800 mt-1">
-                  {latestReason.reason}
-                </p>
-              </div>
-            )}
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <SectionHeader
               icon={<Calendar size={18} />}
               title="Schedule Orientation"
               subtitle="Set the date for the tree grower orientation"
@@ -963,6 +935,35 @@ function ReturningEvaluator({
             >
               <Calendar size={16} /> Open Calendar to Select Date
             </button>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <SectionHeader
+              icon={<FileText size={18} />}
+              title="Evaluation Notes"
+              subtitle="Provide reason or remarks for this decision"
+            />
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Reason / Remarks
+            </label>
+            <textarea
+              rows={4}
+              value={decisionForm.reason}
+              onChange={(e) =>
+                setDecisionForm((p: any) => ({ ...p, reason: e.target.value }))
+              }
+              placeholder="Enter your evaluation remarks…"
+              className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] transition-colors"
+            />
+            {latestReason && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs font-semibold text-amber-700">
+                  Previous Note:
+                </p>
+                <p className="text-sm text-amber-800 mt-1">
+                  {latestReason.reason}
+                </p>
+              </div>
+            )}
           </div>
         </div>
         {showSiteSelectionPanel && (
@@ -1261,7 +1262,8 @@ export default function Evaluation_application() {
             ? "Application forwarded to Head for confirmation."
             : "Application has been rejected."),
       });
-      setTimeout(() => navigate(-1), 1800);
+      // Go to the list explicitly: history may contain the calendar picker
+      setTimeout(() => navigate("/DataManager/applications"), 1800);
     } catch (err) {
       console.error(err);
       setPSAlert({
@@ -1275,7 +1277,10 @@ export default function Evaluation_application() {
     }
   };
 
+  const [downloadingPlan, setDownloadingPlan] = useState(false);
+
   const handleDownloadMaintenancePlan = async () => {
+    if (downloadingPlan) return; // ignore extra clicks while a download runs
     if (!detail?.application?.maintenance_plan) {
       setPSAlert({
         type: "failed",
@@ -1284,6 +1289,7 @@ export default function Evaluation_application() {
       });
       return;
     }
+    setDownloadingPlan(true);
     try {
       const response = await fetch(
         `${api}api/application/${detail.application.application_id}/download-maintenance-plan/`,
@@ -1298,7 +1304,9 @@ export default function Evaluation_application() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `maintenance_plan_${detail.application.application_id}.pdf`;
+      // Plans can be PDF or Word; name the file after the type the server sent
+      const ext = blob.type.includes("wordprocessingml") ? "docx" : blob.type === "application/msword" ? "doc" : "pdf";
+      link.download = `maintenance_plan_${detail.application.application_id}.${ext}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1314,6 +1322,8 @@ export default function Evaluation_application() {
         title: "Download Failed",
         message: error.message,
       });
+    } finally {
+      setDownloadingPlan(false);
     }
   };
 
@@ -1405,7 +1415,7 @@ export default function Evaluation_application() {
       <header className="bg-gradient-to-r from-[#0F4A2F] to-[#1a6b44] text-white px-6 py-5 shadow-lg">
         <div className="max-w-6xl mx-auto flex items-center gap-4">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate("/DataManager/applications")}
             className="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
           >
             <ArrowLeft size={18} />
@@ -1562,8 +1572,9 @@ export default function Evaluation_application() {
                 {application.maintenance_plan ? (
                   <button
                     onClick={handleDownloadMaintenancePlan}
-                    className="w-full md:w-auto flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group cursor-pointer"
+                    className="w-full md:w-auto flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group cursor-pointer disabled:cursor-wait disabled:opacity-80"
                     type="button"
+                    disabled={downloadingPlan}
                   >
                     <div className="w-9 h-9 rounded-lg bg-[#0F4A2F] flex items-center justify-center flex-shrink-0">
                       <FileText size={16} className="text-white" />
@@ -1574,13 +1585,17 @@ export default function Evaluation_application() {
                           "Maintenance Plan"}
                       </p>
                       <p className="text-xs text-green-600">
-                        Click to download
+                        {downloadingPlan ? "Downloading..." : "Click to download"}
                       </p>
                     </div>
-                    <Download
-                      size={16}
-                      className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
-                    />
+                    {downloadingPlan ? (
+                      <Loader2 size={16} className="text-[#0F4A2F] animate-spin" />
+                    ) : (
+                      <Download
+                        size={16}
+                        className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
+                      />
+                    )}
                   </button>
                 ) : (
                   <div className="flex items-center gap-2 text-gray-300 text-sm py-3">

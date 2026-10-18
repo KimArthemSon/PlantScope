@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import re
 from datetime import datetime, timedelta
 from datetime import date
 import cloudinary.uploader
@@ -20,10 +21,11 @@ from accounts.helper import (
     get_user_from_token,
 )
 from accounts.models import User
+from barangay.models import Barangay
 from reforestation_areas.models import Reforestation_areas
 from sites.models import SiteMetaDataVerification, Sites
 from tree_species.models import Tree_species
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, OuterRef, Prefetch, Q
 
 from .email_service import (
     send_application_accepted_email,
@@ -160,6 +162,22 @@ def get_applications(request):
         # Default (Completed, Rejected, etc.): Newest first
         qs = qs.order_by('-created_at')
 
+    # Optional column sort from the table header; overrides the workflow order above
+    sort_fields = {
+        'group_name': 'user__tree_grower_group__group_name',
+        'title': 'title',
+        'status': 'status',
+        'queue_position': 'queue_position',
+        'classification': 'classification',
+        'total_treegrowers': 'total_treegrowers_will_participate',
+        'created_at': 'created_at',
+    }
+    sort_by = request.GET.get('sort_by', '')
+    if sort_by in sort_fields:
+        field = F(sort_fields[sort_by])
+        ordered = field.desc(nulls_last=True) if request.GET.get('order') == 'desc' else field.asc(nulls_last=True)
+        qs = qs.order_by(ordered, 'application_id')
+
     total = qs.count()
     total_page = math.ceil(total / entries) if total > 0 else 1
     offset = (page - 1) * entries
@@ -252,6 +270,7 @@ def get_application(request, application_id):
             "description": site.description,
             "total_area_hectares": site.total_area_hectares,
             "polygon_coordinates": site.polygon_coordinates,
+            "reforestation_area_id": site.reforestation_area.reforestation_area_id if site.reforestation_area else None,
             "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
             "barangay_name": (site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else None),
             "accessibility": meta.verified_accessibility if meta else None,
@@ -968,14 +987,11 @@ def complete_application(request, application_id):
             )
             
             if app.site:
-                if new_status == 'completed':
-                    app.site.status = 'completed'
-                elif new_status == 'failed':
-                    app.site.status = 'failed'
-                
-                # Free the site for future use
-                app.site.monitoring_status = 'available'
-                app.site.save()
+                # Only the monitoring lifecycle changes. site.status is the GIS
+                # approval decision and must stay 'accepted', otherwise the site
+                # can never be listed as official/available again after a re-open.
+                app.site.monitoring_status = new_status  # 'completed' or 'failed'
+                app.site.save(update_fields=['monitoring_status'])
 
         try:
             if new_status == 'completed':
@@ -1372,33 +1388,74 @@ def get_tree_grower_application_history(request):
     if not user or user.user_role != 'treeGrowers':
         return JsonResponse({'error': 'Unauthorized: TreeGrowers only'}, status=403)
 
-    applications = Application.objects.filter(user=user).order_by('-created_at')
-    
+    # Prefetch everything up front so the loop below doesn't hit the DB per app/report
+    applications = (
+        Application.objects.filter(user=user)
+        .select_related('site')
+        .prefetch_related(
+            Prefetch(
+                'progress_reports',
+                queryset=ProgressReport.objects.order_by('-created_at').prefetch_related(
+                    'report_species__tree_species'
+                ),
+            ),
+            'seedling_requests__seedling_species',
+        )
+        .order_by('-created_at')
+    )
+
     history_data = []
-    
+
     for app in applications:
-        reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
-        
+        reports = list(app.progress_reports.all())
+        seedling_requests = list(app.seedling_requests.all())
+
         total_planted = 0
         total_survived = 0
         for r in reports:
             if r.status == 'accepted':
                 total_planted += r.total_plants
                 total_survived += r.total_survived
-        
-        seedling_requests = SeedlingRequest.objects.filter(application=app)
-        total_requested = sum(sr.no_request_seedling for sr in seedling_requests)
-        
-        total_provided = 0
-        for sr in seedling_requests:
-            if sr.status == 'accepted':
-                total_provided += sum(s.quantity for s in sr.seedling_species.all())
-        
-        app_data = {
+
+        total_requested = sum(sr.no_request_seedling or 0 for sr in seedling_requests)
+        total_provided = sum(
+            s.quantity
+            for sr in seedling_requests if sr.status == 'accepted'
+            for s in sr.seedling_species.all()
+        )
+
+        report_list = []
+        for r in reports:
+            species_rows = list(r.report_species.all())
+            report_list.append({
+                "report_id": r.progress_report_id,
+                "visit_type": r.visit_type,
+                "orientation_conducted": r.orientation_conducted,
+                "description": r.description or "No description provided",
+                "status": r.status,
+                "total_survived": sum(s.no_survived for s in species_rows),
+                "total_dead": sum(s.no_dead for s in species_rows),
+                "total_added_by_grower": sum(s.no_added_by_grower for s in species_rows),
+                "species": [{
+                    "species_id": s.tree_species.tree_specie_id,
+                    "species_name": s.tree_species.name,
+                    "no_planted": s.no_planted,
+                    "no_added_by_grower": s.no_added_by_grower,
+                    "no_survived": s.no_survived,
+                    "no_dead": s.no_dead,
+                    "survival_rate": s.survival_rate,
+                } for s in species_rows],
+                "proof_image": get_cloudinary_url(str(r.proof_image_monitor_required)) if r.proof_image_monitor_required else None,
+                "created_at": r.created_at.isoformat(),
+                "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+            })
+
+        history_data.append({
             "application_id": app.application_id,
             "title": app.title,
             "status": app.status,
             "classification": app.classification,
+            "site_name": app.site.name if app.site else None,
             "created_at": app.created_at.isoformat(),
             "updated_at": app.updated_at.isoformat(),
             "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
@@ -1407,19 +1464,8 @@ def get_tree_grower_application_history(request):
             "total_seedling_provided": total_provided,
             "total_seedling_planted": total_planted,
             "total_seedling_survived": total_survived,
-            "reports": [{
-                "report_id": r.progress_report_id,
-                "visit_type": r.visit_type,
-                "description": r.description or "No description provided",
-                "status": r.status,
-                "total_seedling_planted": r.total_plants,
-                "total_seedling_survived": r.total_survived,
-                "species": serialize_progress_report_species(r),
-                "created_at": r.created_at.isoformat(),
-                "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
-            } for r in reports]
-        }
-        history_data.append(app_data)
+            "reports": report_list,
+        })
     
     return JsonResponse({
         "applications": history_data,
@@ -1514,7 +1560,7 @@ def get_general_report_data(request):
     total_survived = progress_stats['total_survived'] or 0
     total_dead = progress_stats['total_dead'] or 0
 
-    site_stats = Sites.objects.filter(status='completed').aggregate(
+    site_stats = Sites.objects.filter(monitoring_status='completed').aggregate(
         total_area=Sum('total_area_hectares')
     )
     total_area = site_stats['total_area'] or 0.0
@@ -1722,6 +1768,20 @@ def delete_application(request, application_id):
         return JsonResponse({'error': f'Failed to delete application: {str(e)}'}, status=500)
 
 
+def _resolve_barangay_from_address(address):
+    """Find the Barangay whose name appears in a free-text address (longest match wins)."""
+    if not address:
+        return None
+    address_lower = address.lower()
+    best = None
+    for brgy in Barangay.objects.all():
+        name = brgy.name.strip().lower()
+        if name and re.search(r'\b' + re.escape(name) + r'\b', address_lower):
+            if best is None or len(name) > len(best.name):
+                best = brgy
+    return best
+
+
 @csrf_exempt
 def get_available_sites_for_tree_grower(request):
     """GET: Fetch sites available for tree grower application with pagination."""
@@ -1779,6 +1839,16 @@ def get_available_sites_for_tree_grower(request):
             reforestation_area__barangay__name__icontains=barangay_filter
         )
 
+    # ✅ NEARBY: only sites in the same barangay as the tree grower's group address
+    user_barangay = None
+    if request.GET.get('nearby') in ('1', 'true'):
+        group = getattr(user, 'tree_grower_group', None)
+        user_barangay = _resolve_barangay_from_address(group.address if group else '')
+        if user_barangay:
+            sites = sites.filter(reforestation_area__barangay=user_barangay)
+        else:
+            sites = sites.none()
+
     total = sites.count()
     total_page = math.ceil(total / entries) if total > 0 else 1
     offset = (page - 1) * entries
@@ -1821,7 +1891,8 @@ def get_available_sites_for_tree_grower(request):
         'page': page,
         'entries': entries,
         'has_next': has_next,
-        'has_ongoing_application': has_ongoing
+        'has_ongoing_application': has_ongoing,
+        'user_barangay': user_barangay.name if user_barangay else None
     }, status=200)
 
 

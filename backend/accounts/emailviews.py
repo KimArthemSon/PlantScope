@@ -12,6 +12,9 @@ from .models import User
 
 # ✅ Initialize Resend with your API key from settings
 resend.api_key = settings.RESEND_API_KEY
+# Give up on Resend well before the mobile app's 45s request timeout, so a
+# stalled send returns a clear error instead of "server took too long".
+resend.default_http_client = resend.RequestsClient(timeout=15)
 
 @csrf_exempt
 def send_otp(request):

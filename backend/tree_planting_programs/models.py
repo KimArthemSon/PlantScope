@@ -230,6 +230,16 @@ class SeedlingRequest(models.Model):
         help_text="Inspector assigned to verify receipt"
     )
 
+    # ✅ Who created the request (null = submitted by the tree grower themselves)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_seedling_requests',
+        help_text="Admin (DataManager) who created this request on behalf of the tree grower"
+    )
+
     # ✅ NEW: Reason & Proof Fields
     reason = models.TextField(
         blank=True,

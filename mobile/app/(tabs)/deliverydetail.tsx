@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import React, { useState, useCallback } from "react";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Alert,
   Image,
   ScrollView,
   KeyboardAvoidingView,
@@ -21,6 +20,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
+import { useAlert } from "@/components/AlertContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -35,6 +35,7 @@ const WHITE = "#FFFFFF";
 const BG = "#F4F7F5";
 const BORDER = "#E5E7EB";
 const WARNING = "#D97706";
+const INFO_C = "#2563EB";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type DeliveryStatus =
@@ -129,6 +130,18 @@ const formatDate = (iso: string) =>
         month: "long",
         day: "numeric",
       });
+
+// reason_accepted is stored as "<manager notes> | Inspector Notes: <notes>"
+const splitNotes = (raw: string | null) => {
+  if (!raw) return { manager: "", inspector: "" };
+  const marker = "Inspector Notes:";
+  const idx = raw.indexOf(marker);
+  if (idx === -1) return { manager: raw.trim(), inspector: "" };
+  return {
+    manager: raw.slice(0, idx).replace(/\|\s*$/, "").trim(),
+    inspector: raw.slice(idx + marker.length).trim(),
+  };
+};
 
 // ─── Components ───────────────────────────────────────────────────────────
 
@@ -271,6 +284,7 @@ export default function DeliveryDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { success, error: showError, warning } = useAlert();
 
   const [detail, setDetail] = useState<DeliveryDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -310,49 +324,57 @@ export default function DeliveryDetailScreen() {
       const data = await res.json();
       setDetail(data);
     } catch (err: any) {
-      Alert.alert("Error", err.message || "Failed to load delivery details.", [
-        { text: "OK", onPress: () => router.replace("/(tabs)/delivery") },
-      ]);
+      showError("Couldn't load delivery", err.message || "Failed to load delivery details.");
+      router.replace("/(tabs)/delivery");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    fetchDetail();
-  }, [id]);
+  // ✅ This tab screen stays mounted, so refetch + reset the action form every
+  // time it gains focus. Otherwise reopening a delivery that was just
+  // confirmed/cancelled shows stale "accepted" data with the action buttons.
+  useFocusEffect(
+    useCallback(() => {
+      setDetail(null);
+      setProofImage(null);
+      setProofSource(null);
+      setDeliveryNotes("");
+      setShowCancelForm(false);
+      setCancelReason("");
+      fetchDetail();
+    }, [id]),
+  );
 
   // ─── Image Picker ────────────────────────────────────────────────────────
-  const handlePickImage = () => {
-    Alert.alert("Proof of Delivery", "Choose a photo source", [
-      { text: "Take Photo", onPress: () => launchPicker("camera") },
-      { text: "Choose from Library", onPress: () => launchPicker("library") },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  };
+  const [proofSource, setProofSource] = useState<"camera" | "library" | null>(
+    null,
+  );
+  const [picking, setPicking] = useState<"camera" | "library" | null>(null);
 
   const launchPicker = async (source: "camera" | "library") => {
+    if (picking) return;
+    setPicking(source);
     try {
       if (source === "camera") {
         const perm = await ImagePicker.requestCameraPermissionsAsync();
         if (!perm.granted) {
-          Alert.alert(
-            "Permission Needed",
-            "Camera access is required to take a photo.",
-          );
+          warning("Camera permission needed", "Allow camera access to take a photo.");
           return;
         }
         const result = await ImagePicker.launchCameraAsync({
           quality: 0.7,
           allowsEditing: true,
         });
-        if (!result.canceled && result.assets?.[0])
+        if (!result.canceled && result.assets?.[0]) {
           setProofImage(result.assets[0]);
+          setProofSource("camera");
+        }
       } else {
         const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!perm.granted) {
-          Alert.alert("Permission Needed", "Photo library access is required.");
+          warning("Photo access needed", "Allow photo library access to choose a photo.");
           return;
         }
         const result = await ImagePicker.launchImageLibraryAsync({
@@ -360,13 +382,22 @@ export default function DeliveryDetailScreen() {
           quality: 0.7,
           allowsEditing: true,
         });
-        if (!result.canceled && result.assets?.[0])
+        if (!result.canceled && result.assets?.[0]) {
           setProofImage(result.assets[0]);
+          setProofSource("library");
+        }
       }
     } catch (err) {
       console.error("❌ Image picker error:", err);
-      Alert.alert("Error", "Something went wrong selecting the image.");
+      showError("Photo error", "Something went wrong selecting the image.");
+    } finally {
+      setPicking(null);
     }
+  };
+
+  const handleRemoveProof = () => {
+    setProofImage(null);
+    setProofSource(null);
   };
 
   // ─── Confirm Delivery ──────────────────────────────────────────────────
@@ -395,13 +426,10 @@ export default function DeliveryDetailScreen() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to confirm delivery.");
 
-      Alert.alert(
-        "✓ Delivery Confirmed",
-        "The delivery has been marked as completed.",
-        [{ text: "OK", onPress: () => router.replace("/(tabs)/delivery") }],
-      );
+      success("Delivery confirmed", "The delivery has been marked as completed.");
+      router.replace("/(tabs)/delivery");
     } catch (err: any) {
-      Alert.alert("Error", err.message || "Failed to confirm delivery.");
+      showError("Confirmation failed", err.message || "Failed to confirm delivery.");
     } finally {
       setConfirming(false);
     }
@@ -429,31 +457,13 @@ export default function DeliveryDetailScreen() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to cancel delivery.");
 
-      Alert.alert(
-        "Delivery Canceled",
-        "This delivery has been marked as canceled.",
-        [{ text: "OK", onPress: () => router.replace("/(tabs)/delivery") }],
-      );
+      success("Delivery canceled", "The grower has been notified.");
+      router.replace("/(tabs)/delivery");
     } catch (err: any) {
-      Alert.alert("Error", err.message || "Failed to cancel delivery.");
+      showError("Cancellation failed", err.message || "Failed to cancel delivery.");
     } finally {
       setCancelling(false);
     }
-  };
-
-  const handleContactGrower = (contact: string | undefined) => {
-    if (!contact) {
-      Alert.alert(
-        "No Contact",
-        "No contact number is available for this grower.",
-      );
-      return;
-    }
-    Alert.alert("Contact Grower", contact, [
-      { text: "Call", onPress: () => Linking.openURL(`tel:${contact}`) },
-      { text: "Message", onPress: () => Linking.openURL(`sms:${contact}`) },
-      { text: "Cancel", style: "cancel" },
-    ]);
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────
@@ -462,17 +472,13 @@ export default function DeliveryDetailScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.container}
     >
-      {/* Compact Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.replace("/(tabs)/delivery")}
-        >
-          <Ionicons name="chevron-back" size={22} color={INK} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Delivery Details</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      {(loading || !detail) && (
+        <View style={[styles.plainHeader, { paddingTop: insets.top + 8 }]}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.replace("/(tabs)/delivery")}>
+            <Ionicons name="chevron-back" size={22} color={INK} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {loading || !detail ? (
         <View style={styles.center}>
@@ -495,147 +501,140 @@ export default function DeliveryDetailScreen() {
             />
           }
         >
-          {/* Floating Progress Timeline */}
+          {/* ── Hero ── */}
+          <View style={[styles.hero, { paddingTop: insets.top + 8 }]}>
+            <View style={styles.heroTopRow}>
+              <TouchableOpacity style={styles.heroBack} onPress={() => router.replace("/(tabs)/delivery")}>
+                <Ionicons name="chevron-back" size={20} color={WHITE} />
+              </TouchableOpacity>
+              <StatusBadge status={detail.status} />
+            </View>
+            <Text style={styles.heroEyebrow}>Delivery #{detail.request_id}</Text>
+            <Text style={styles.heroTitle} numberOfLines={2}>{detail.grower_info.group_name}</Text>
+            <Text style={styles.heroSub} numberOfLines={1}>{detail.application_title}</Text>
+
+            <View style={styles.heroStatsRow}>
+              <View style={styles.heroStat}>
+                <Text style={styles.heroStatValue}>{detail.no_request_seedling.toLocaleString()}</Text>
+                <Text style={styles.heroStatLabel}>Seedlings</Text>
+              </View>
+              <View style={styles.heroStatDivider} />
+              <View style={styles.heroStat}>
+                <Text style={styles.heroStatValue}>{detail.species.length}</Text>
+                <Text style={styles.heroStatLabel}>Species</Text>
+              </View>
+              <View style={styles.heroStatDivider} />
+              <View style={styles.heroStat}>
+                <Ionicons
+                  name={detail.fulfillment_type === "deliver" ? "car" : "home"}
+                  size={18}
+                  color={WHITE}
+                />
+                <Text style={styles.heroStatLabel}>{detail.fulfillment_type === "deliver" ? "Deliver" : "Pickup"}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Progress */}
           <View style={styles.timelineWrapper}>
             <FloatingProgressTimeline status={detail.status} />
           </View>
 
-          {/* Content Area (flat, no radius, flush) */}
           <View style={styles.contentArea}>
-            {/* ── Application Info ── */}
+            {/* ── Delivery info ── */}
             <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <SectionHeader
-                  title="APPLICATION"
-                  icon="document-text-outline"
-                />
-                <StatusBadge status={detail.status} />
+              <SectionHeader title="DELIVERY INFO" icon="information-circle-outline" />
+              <View style={[styles.fulfillmentBanner, detail.fulfillment_type === "deliver" ? styles.fulfillmentDeliver : styles.fulfillmentPickup]}>
+                <View style={[styles.fulfillmentIcon, { backgroundColor: detail.fulfillment_type === "deliver" ? INFO_C : "#7C3AED" }]}>
+                  <Ionicons name={detail.fulfillment_type === "deliver" ? "car" : "home"} size={18} color={WHITE} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fulfillmentTitle}>
+                    {detail.fulfillment_type === "deliver" ? "Deliver to Site" : "Grower Pickup"}
+                  </Text>
+                  <Text style={styles.fulfillmentSub}>
+                    {detail.fulfillment_type === "deliver"
+                      ? "Bring the seedlings to the planting site below."
+                      : "The grower picks up the seedlings at the ENRO Nursery."}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.appTitle} numberOfLines={2}>
-                {detail.application_title}
-              </Text>
-              <InfoRow
-                icon="business-outline"
-                label="Group"
-                value={detail.grower_info.group_name}
-              />
               <InfoRow
                 icon="location-outline"
                 label="Site"
-                value={`${detail.site_info.site_name}, ${detail.site_info.barangay}`}
+                value={`${detail.site_info.site_name}${detail.site_info.barangay && detail.site_info.barangay !== "N/A" ? ` · Brgy. ${detail.site_info.barangay}` : ""}`}
               />
               {detail.submitted_at && (
-                <InfoRow
-                  icon="calendar-outline"
-                  label="Submitted"
-                  value={formatDate(detail.submitted_at)}
-                />
+                <InfoRow icon="calendar-outline" label="Assigned" value={formatDate(detail.submitted_at)} />
               )}
             </View>
 
-            <SectionDivider />
-
-            {/* ── Grower Contact ── */}
+            {/* ── Grower contact ── */}
             <View style={styles.section}>
               <SectionHeader title="GROWER CONTACT" icon="person-outline" />
-
               <View style={styles.inspectorRow}>
                 <View style={styles.inspectorAvatar}>
-                  <Ionicons name="person" size={22} color={PRIMARY} />
+                  <Ionicons name="people" size={20} color={PRIMARY} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.inspectorName}>
-                    {detail.grower_info.representative_name}
-                  </Text>
+                  <Text style={styles.inspectorName}>{detail.grower_info.group_name}</Text>
                   <Text style={styles.inspectorEmail} numberOfLines={1}>
-                    {detail.grower_info.group_name}
+                    {detail.grower_info.representative_name && detail.grower_info.representative_name !== "N/A"
+                      ? detail.grower_info.representative_name
+                      : detail.grower_info.representative_contact || detail.grower_info.group_contact || "No contact on file"}
                   </Text>
                 </View>
               </View>
-
-              {detail.grower_info.representative_contact ||
-              detail.grower_info.group_contact ? (
+              {detail.grower_info.representative_contact || detail.grower_info.group_contact ? (
                 <View style={styles.actionButtonsRow}>
                   <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() =>
-                      Linking.openURL(
-                        `tel:${detail.grower_info.representative_contact || detail.grower_info.group_contact}`,
-                      )
-                    }
+                    style={[styles.actionBtn, styles.actionBtnPrimary]}
+                    onPress={() => Linking.openURL(`tel:${detail.grower_info.representative_contact || detail.grower_info.group_contact}`)}
+                    activeOpacity={0.8}
                   >
-                    <Ionicons name="call-outline" size={18} color={PRIMARY} />
-                    <Text style={styles.actionBtnText}>Call</Text>
+                    <Ionicons name="call" size={16} color={WHITE} />
+                    <Text style={[styles.actionBtnText, { color: WHITE }]}>Call</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.actionBtn}
-                    onPress={() =>
-                      Linking.openURL(
-                        `sms:${detail.grower_info.representative_contact || detail.grower_info.group_contact}`,
-                      )
-                    }
+                    onPress={() => Linking.openURL(`sms:${detail.grower_info.representative_contact || detail.grower_info.group_contact}`)}
+                    activeOpacity={0.8}
                   >
-                    <Ionicons
-                      name="chatbubble-outline"
-                      size={18}
-                      color={PRIMARY}
-                    />
+                    <Ionicons name="chatbubble-outline" size={16} color={PRIMARY} />
                     <Text style={styles.actionBtnText}>Message</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
-                <Text style={styles.noContactText}>
-                  No contact number provided.
-                </Text>
+                <Text style={styles.noContactText}>No contact number provided.</Text>
               )}
             </View>
 
-            <SectionDivider />
-
-            {/* ── Seedling Breakdown ── */}
+            {/* ── Seedlings ── */}
             <View style={styles.section}>
-              <SectionHeader title="SEEDLING BREAKDOWN" icon="leaf-outline" />
+              <SectionHeader title="SEEDLINGS TO HAND OVER" icon="leaf-outline" />
               {detail.species.length > 0 ? (
                 detail.species.map((sp, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.speciesRow,
-                      i === detail.species.length - 1 && {
-                        borderBottomWidth: 0,
-                      },
-                    ]}
-                  >
+                  <View key={i} style={[styles.speciesRow, i === detail.species.length - 1 && { borderBottomWidth: 0 }]}>
                     <View style={styles.speciesIconWrap}>
                       <Ionicons name="leaf" size={16} color={PRIMARY} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.speciesName}>{sp.species_name}</Text>
-                      {sp.provided_by && (
-                        <Text style={styles.speciesProvider}>
-                          Provided by {sp.provided_by}
-                        </Text>
-                      )}
+                      {sp.provided_by && <Text style={styles.speciesProvider}>From {sp.provided_by}</Text>}
                     </View>
-                    <Text style={styles.speciesQty}>
-                      x{sp.quantity.toLocaleString()}
-                    </Text>
+                    <View style={styles.qtyPill}>
+                      <Text style={styles.speciesQty}>×{sp.quantity.toLocaleString()}</Text>
+                    </View>
                   </View>
                 ))
               ) : (
-                <Text style={styles.emptyText}>
-                  No species details available.
-                </Text>
+                <Text style={styles.emptyText}>No species details available.</Text>
               )}
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>Total Seedlings</Text>
-                <Text style={styles.totalValue}>
-                  {detail.no_request_seedling.toLocaleString()}
-                </Text>
+                <Text style={styles.totalValue}>{detail.no_request_seedling.toLocaleString()}</Text>
               </View>
-              {detail.description ? (
-                <Text style={styles.descText}>{detail.description}</Text>
-              ) : null}
+              {detail.description ? <Text style={styles.descText}>{detail.description}</Text> : null}
             </View>
 
             {/* ── Action Section — only for deliveries awaiting action ── */}
@@ -648,39 +647,140 @@ export default function DeliveryDetailScreen() {
                     icon="checkmark-circle-outline"
                   />
 
-                  <TouchableOpacity
-                    style={styles.uploadBox}
-                    activeOpacity={0.7}
-                    onPress={handlePickImage}
-                  >
-                    {proofImage ? (
-                      <Image
-                        source={{ uri: proofImage.uri }}
-                        style={styles.uploadPreview}
-                      />
-                    ) : (
-                      <>
-                        <Ionicons
-                          name="camera-outline"
-                          size={28}
-                          color={FAINT}
-                        />
-                        <Text style={styles.uploadText}>
-                          Upload Proof of Delivery
-                        </Text>
-                        <Text style={styles.uploadSubtext}>
-                          Tap to take or choose a photo
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                  {proofImage && (
-                    <TouchableOpacity
-                      style={styles.changePhotoBtn}
-                      onPress={handlePickImage}
+                  {/* Proof of delivery — step label */}
+                  <View style={styles.proofLabelRow}>
+                    <Text style={styles.proofLabel}>Proof of Delivery</Text>
+                    <View
+                      style={[
+                        styles.proofRequiredPill,
+                        proofImage && styles.proofDonePill,
+                      ]}
                     >
-                      <Text style={styles.changePhotoText}>Change Photo</Text>
-                    </TouchableOpacity>
+                      <Ionicons
+                        name={proofImage ? "checkmark-circle" : "alert-circle-outline"}
+                        size={12}
+                        color={proofImage ? SUCCESS : WARNING}
+                      />
+                      <Text
+                        style={[
+                          styles.proofRequiredText,
+                          proofImage && { color: SUCCESS },
+                        ]}
+                      >
+                        {proofImage ? "Attached" : "Required"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {proofImage ? (
+                    /* ── Preview with actions ── */
+                    <View style={styles.previewCard}>
+                      <View>
+                        <Image
+                          source={{ uri: proofImage.uri }}
+                          style={styles.uploadPreview}
+                        />
+                        <View style={styles.previewBadge}>
+                          <Ionicons
+                            name={proofSource === "camera" ? "camera" : "images"}
+                            size={12}
+                            color={WHITE}
+                          />
+                          <Text style={styles.previewBadgeText}>
+                            {proofSource === "camera" ? "Taken with camera" : "From library"}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.previewRemove}
+                          onPress={handleRemoveProof}
+                          hitSlop={8}
+                        >
+                          <Ionicons name="close" size={16} color={WHITE} />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.previewActions}>
+                        <TouchableOpacity
+                          style={styles.previewActionBtn}
+                          onPress={() => launchPicker("camera")}
+                          disabled={!!picking}
+                          activeOpacity={0.7}
+                        >
+                          {picking === "camera" ? (
+                            <ActivityIndicator size="small" color={PRIMARY} />
+                          ) : (
+                            <Ionicons name="camera-outline" size={16} color={PRIMARY} />
+                          )}
+                          <Text style={styles.previewActionText}>Retake</Text>
+                        </TouchableOpacity>
+                        <View style={styles.previewActionDivider} />
+                        <TouchableOpacity
+                          style={styles.previewActionBtn}
+                          onPress={() => launchPicker("library")}
+                          disabled={!!picking}
+                          activeOpacity={0.7}
+                        >
+                          {picking === "library" ? (
+                            <ActivityIndicator size="small" color={PRIMARY} />
+                          ) : (
+                            <Ionicons name="images-outline" size={16} color={PRIMARY} />
+                          )}
+                          <Text style={styles.previewActionText}>Choose Another</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    /* ── Source chooser ── */
+                    <>
+                      <View style={styles.sourceRow}>
+                        <TouchableOpacity
+                          style={[styles.sourceCard, styles.sourceCardPrimary]}
+                          onPress={() => launchPicker("camera")}
+                          disabled={!!picking}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.sourceIcon, styles.sourceIconPrimary]}>
+                            {picking === "camera" ? (
+                              <ActivityIndicator size="small" color={WHITE} />
+                            ) : (
+                              <Ionicons name="camera" size={24} color={WHITE} />
+                            )}
+                          </View>
+                          <Text style={[styles.sourceTitle, { color: WHITE }]}>
+                            Take Photo
+                          </Text>
+                          <Text style={[styles.sourceSub, { color: "rgba(255,255,255,0.75)" }]}>
+                            Use camera on site
+                          </Text>
+                          <View style={styles.sourceRecommended}>
+                            <Text style={styles.sourceRecommendedText}>Recommended</Text>
+                          </View>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.sourceCard}
+                          onPress={() => launchPicker("library")}
+                          disabled={!!picking}
+                          activeOpacity={0.8}
+                        >
+                          <View style={styles.sourceIcon}>
+                            {picking === "library" ? (
+                              <ActivityIndicator size="small" color={PRIMARY} />
+                            ) : (
+                              <Ionicons name="images" size={24} color={PRIMARY} />
+                            )}
+                          </View>
+                          <Text style={styles.sourceTitle}>Choose from Library</Text>
+                          <Text style={styles.sourceSub}>Pick an existing photo</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.proofHint}>
+                        <Ionicons name="bulb-outline" size={14} color={MUTED} />
+                        <Text style={styles.proofHintText}>
+                          Make sure the seedlings and the grower (or site) are
+                          clearly visible in the photo.
+                        </Text>
+                      </View>
+                    </>
                   )}
 
                   <TextInput
@@ -836,34 +936,33 @@ export default function DeliveryDetailScreen() {
                 </>
               )}
 
-            {/* ── Data Manager Notes ── */}
-            {detail.reason_accepted &&
-              detail.status !== "cancelled" &&
-              detail.status !== "rejected" && (
+            {/* ── Notes (Data Manager / Inspector) ── */}
+            {(() => {
+              if (detail.status === "cancelled" || detail.status === "rejected") return null;
+              const { manager, inspector } = splitNotes(detail.reason_accepted);
+              return (
                 <>
-                  <SectionDivider />
-                  <View style={[styles.section, styles.noteSection]}>
-                    <View style={styles.sectionHeaderRow}>
-                      <Ionicons
-                        name="information-circle"
-                        size={18}
-                        color={PRIMARY}
-                      />
-                      <Text
-                        style={[
-                          styles.sectionTitle,
-                          { marginLeft: 8, color: INK },
-                        ]}
-                      >
-                        DATA MANAGER NOTES
-                      </Text>
+                  {!!manager && (
+                    <View style={[styles.section, styles.noteSection]}>
+                      <View style={styles.sectionHeaderRow}>
+                        <Ionicons name="chatbox-ellipses-outline" size={16} color={PRIMARY} />
+                        <Text style={[styles.sectionTitle, { marginLeft: 8, color: PRIMARY }]}>DATA MANAGER NOTES</Text>
+                      </View>
+                      <Text style={styles.reasonText}>{manager}</Text>
                     </View>
-                    <Text style={styles.reasonText}>
-                      {detail.reason_accepted}
-                    </Text>
-                  </View>
+                  )}
+                  {!!inspector && (
+                    <View style={[styles.section, styles.inspectorNoteSection]}>
+                      <View style={styles.sectionHeaderRow}>
+                        <Ionicons name="clipboard-outline" size={16} color={WARNING} />
+                        <Text style={[styles.sectionTitle, { marginLeft: 8, color: WARNING }]}>INSPECTOR NOTES</Text>
+                      </View>
+                      <Text style={styles.reasonText}>{inspector}</Text>
+                    </View>
+                  )}
                 </>
-              )}
+              );
+            })()}
 
             <View style={{ height: 40 }} />
           </View>
@@ -909,46 +1008,85 @@ const styles = StyleSheet.create({
   },
 
   // ── Timeline Wrapper ──
+  // Pulled up so the progress card overlaps the bottom of the green hero
   timelineWrapper: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: BG,
+    paddingHorizontal: 16,
+    marginTop: -30,
+    marginBottom: 14,
   },
 
   // ── Content Area (flat, no radius, flush) ──
   contentArea: {
-    backgroundColor: WHITE,
-    paddingHorizontal: 20,
-    paddingTop: 8,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    gap: 14,
     minHeight: SCREEN_WIDTH,
   },
 
   // Section
   section: {
-    paddingVertical: 20,
+    backgroundColor: WHITE,
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
 
   // Section with accent background
   rejectSection: {
     backgroundColor: "#FEF2F2",
-    marginHorizontal: -20,
-    paddingHorizontal: 20,
     borderLeftWidth: 4,
     borderLeftColor: DANGER,
   },
   noteSection: {
     backgroundColor: "#F0FDF4",
-    marginHorizontal: -20,
-    paddingHorizontal: 20,
     borderLeftWidth: 4,
     borderLeftColor: PRIMARY,
   },
+  inspectorNoteSection: {
+    backgroundColor: "#FFFBEB",
+    borderLeftWidth: 4,
+    borderLeftColor: WARNING,
+  },
+
+  // Hero
+  plainHeader: { paddingHorizontal: 16, paddingBottom: 8, backgroundColor: BG },
+  hero: {
+    backgroundColor: PRIMARY,
+    paddingHorizontal: 20,
+    paddingBottom: 44,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+  },
+  heroTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+  heroBack: { width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
+  heroEyebrow: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.65)", textTransform: "uppercase", letterSpacing: 1 },
+  heroTitle: { fontSize: 24, fontWeight: "800", color: WHITE, letterSpacing: -0.4, marginTop: 4 },
+  heroSub: { fontSize: 13, color: "rgba(255,255,255,0.8)", marginTop: 2 },
+  heroStatsRow: { flexDirection: "row", alignItems: "center", marginTop: 18, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 16, paddingVertical: 12 },
+  heroStat: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: 40 },
+  heroStatValue: { fontSize: 20, fontWeight: "800", color: WHITE },
+  heroStatLabel: { fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: "600", marginTop: 2 },
+  heroStatDivider: { width: 1, height: 30, backgroundColor: "rgba(255,255,255,0.18)" },
+
+  // Fulfillment banner
+  fulfillmentBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 14, borderWidth: 1, marginBottom: 6 },
+  fulfillmentDeliver: { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" },
+  fulfillmentPickup: { backgroundColor: "#F5F3FF", borderColor: "#DDD6FE" },
+  fulfillmentIcon: { width: 36, height: 36, borderRadius: 11, justifyContent: "center", alignItems: "center" },
+  fulfillmentTitle: { fontSize: 14, fontWeight: "800", color: INK },
+  fulfillmentSub: { fontSize: 12, color: MUTED, marginTop: 1 },
+  qtyPill: { backgroundColor: "#ECFDF5", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, borderColor: "#A7F3D0" },
+  actionBtnPrimary: { backgroundColor: PRIMARY, borderColor: PRIMARY },
 
   // Divider
+  // Cards are separated by contentArea's gap, so dividers collapse
   divider: {
-    height: 1,
-    backgroundColor: BORDER,
-    marginHorizontal: -20,
+    height: 0,
+    marginTop: -14,
   },
 
   // Section Header
@@ -1074,22 +1212,120 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 14, color: MUTED, fontStyle: "italic" },
 
   // Upload
-  uploadBox: {
+  uploadPreview: { width: "100%", height: 200 },
+
+  // Proof of delivery — chooser
+  proofLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  proofLabel: { fontSize: 14, fontWeight: "700", color: INK },
+  proofRequiredPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: "#FFFBEB",
+  },
+  proofDonePill: { backgroundColor: "#F0FDF4" },
+  proofRequiredText: { fontSize: 11, fontWeight: "700", color: WARNING },
+  sourceRow: { flexDirection: "row", gap: 12 },
+  sourceCard: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 18,
+    paddingHorizontal: 10,
+    borderRadius: 16,
     borderWidth: 1.5,
     borderColor: BORDER,
-    borderStyle: "dashed",
-    borderRadius: 14,
-    minHeight: 140,
+    backgroundColor: WHITE,
+  },
+  sourceCardPrimary: { backgroundColor: PRIMARY, borderColor: PRIMARY },
+  sourceIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "#ECFDF5",
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: 10,
+  },
+  sourceIconPrimary: { backgroundColor: "rgba(255,255,255,0.15)" },
+  sourceTitle: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: INK,
+    textAlign: "center",
+  },
+  sourceSub: { fontSize: 11.5, color: MUTED, marginTop: 2, textAlign: "center" },
+  sourceRecommended: {
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  sourceRecommendedText: { fontSize: 10, fontWeight: "700", color: WHITE },
+  proofHint: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 2,
+  },
+  proofHintText: { flex: 1, fontSize: 11.5, color: MUTED, lineHeight: 16 },
+
+  // Proof of delivery — preview
+  previewCard: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#BBF7D0",
     backgroundColor: WHITE,
     overflow: "hidden",
   },
-  uploadPreview: { width: "100%", height: 180, borderRadius: 12 },
-  uploadText: { fontSize: 14, fontWeight: "700", color: MUTED, marginTop: 8 },
-  uploadSubtext: { fontSize: 12, color: FAINT, marginTop: 2 },
-  changePhotoBtn: { alignSelf: "center", marginTop: 8 },
-  changePhotoText: { fontSize: 13, fontWeight: "700", color: PRIMARY },
+  previewBadge: {
+    position: "absolute",
+    left: 10,
+    bottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  previewBadgeText: { fontSize: 11, fontWeight: "600", color: WHITE },
+  previewRemove: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  previewActions: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
+  previewActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+  },
+  previewActionDivider: { width: 1, backgroundColor: BORDER },
+  previewActionText: { fontSize: 13, fontWeight: "700", color: PRIMARY },
 
   // Input
   input: {

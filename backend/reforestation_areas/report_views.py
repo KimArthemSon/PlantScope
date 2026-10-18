@@ -53,8 +53,8 @@ def get_gis_specialist_dashboard(request):
             under_review=Count('site_id', filter=Q(status='under_review')),
             accepted=Count('site_id', filter=Q(status='accepted')),
             rejected=Count('site_id', filter=Q(status='rejected')),
-            completed=Count('site_id', filter=Q(status='completed')),
-            under_monitoring=Count('site_id', filter=Q(status='under_monitoring')),
+            completed=Count('site_id', filter=Q(monitoring_status='completed')),
+            under_monitoring=Count('site_id', filter=Q(monitoring_status='under_monitoring')),
         )
         total_sites = Sites.objects.count()
 
@@ -287,7 +287,7 @@ def get_gis_assessments_list(request):
             if site_status == 'general_only':
                 qs = qs.filter(site__isnull=True)
             elif site_status == 'completed':
-                qs = qs.filter(site__status='completed')
+                qs = qs.filter(site__monitoring_status='completed')
             elif site_status == 'accepted':
                 qs = qs.filter(site__status='accepted')
             elif site_status == 'pending':

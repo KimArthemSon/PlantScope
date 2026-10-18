@@ -9,6 +9,10 @@ import {
   BadgeCheck,
   Power,
   Users,
+  Activity,
+  History,
+  MapPin,
+  FileText,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
@@ -28,6 +32,12 @@ interface TreeGrower {
   group_contact?: string;
   group_address?: string;
   group_img?: string | null;
+  current_site?: {
+    site_id: number;
+    site_name: string;
+    barangay: string | null;
+    app_status: string;
+  } | null;
   // legacy fallbacks (old API shape)
   contact_number?: string;
   address?: string;
@@ -46,16 +56,34 @@ interface GrowerGroup {
   profile_img?: string | null;
 }
 
+interface GrowerApplication {
+  application_id: number;
+  title: string;
+  status: string;
+  status_display: string;
+  classification: string;
+  participants: number;
+  site_name: string | null;
+  barangay: string | null;
+  orientation_date: string | null;
+  created_at: string;
+  updated_at: string;
+  is_ongoing: boolean;
+}
+
 interface GrowerDetail {
   id: number;
   email: string;
   is_active: boolean;
   created_at: string;
   group: GrowerGroup | null;
+  applications?: GrowerApplication[];
+  current_application?: GrowerApplication | null;
 }
 
 interface Filter {
   search: string;
+  site_status: "" | "with_site" | "without_site";
   entries: number;
   page: number;
   total_page: number;
@@ -74,6 +102,32 @@ const GROUP_TYPE_COLORS: Record<string, string> = {
   community_group: "bg-green-100 text-green-700 border-green-200",
   informal_group: "bg-gray-100 text-gray-700 border-gray-200",
 };
+
+const APP_STATUS_COLORS: Record<string, string> = {
+  for_evaluation: "bg-amber-100 text-amber-700 border-amber-200",
+  for_head: "bg-orange-100 text-orange-700 border-orange-200",
+  accepted: "bg-blue-100 text-blue-700 border-blue-200",
+  under_monitoring: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  completed: "bg-green-100 text-green-800 border-green-300",
+  rejected: "bg-red-100 text-red-700 border-red-200",
+  failed: "bg-red-100 text-red-700 border-red-200",
+  cancelled: "bg-gray-100 text-gray-600 border-gray-200",
+};
+
+const APP_STATUS_DOT: Record<string, string> = {
+  for_evaluation: "bg-amber-400",
+  for_head: "bg-orange-400",
+  accepted: "bg-blue-500",
+  under_monitoring: "bg-emerald-500",
+  completed: "bg-green-600",
+  rejected: "bg-red-500",
+  failed: "bg-red-500",
+  cancelled: "bg-gray-400",
+};
+
+function appStatusColor(status: string): string {
+  return APP_STATUS_COLORS[status] || "bg-gray-100 text-gray-600 border-gray-200";
+}
 
 function groupTypeLabel(raw?: string, display?: string): string {
   return display || GROUP_TYPE_LABELS[raw ?? ""] || raw || "—";
@@ -137,6 +191,7 @@ export default function TreeGrowersAccounts() {
   const [treeGrowers, setTreeGrowers] = useState<TreeGrower[]>([]);
   const [filter, setFilter] = useState<Filter>({
     search: "",
+    site_status: "",
     entries: 10,
     page: 1,
     total_page: 1,
@@ -166,6 +221,7 @@ export default function TreeGrowersAccounts() {
     try {
       const params = new URLSearchParams({
         search: filter.search,
+        site_status: filter.site_status,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
       });
@@ -189,7 +245,7 @@ export default function TreeGrowersAccounts() {
 
   useEffect(() => {
     fetchTreeGrowers();
-  }, [filter.page, filter.entries]);
+  }, [filter.page, filter.entries, filter.site_status]);
 
   // ── Fetch detail ─────────────────────────────────────────────────────────────
 
@@ -420,6 +476,123 @@ export default function TreeGrowersAccounts() {
                       </div>
                     )}
                   </div>
+
+                  {/* Current Application */}
+                  <SectionCard
+                    icon={<Activity size={15} />}
+                    title="Current Application"
+                  >
+                    {viewDetail.current_application ? (
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="relative flex h-2.5 w-2.5">
+                                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                              </span>
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                                Currently Active
+                              </span>
+                            </div>
+                            <p className="text-sm font-bold text-gray-800 mt-1.5 truncate">
+                              {viewDetail.current_application.title}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
+                              <MapPin size={12} />
+                              {viewDetail.current_application.site_name
+                                ? `${viewDetail.current_application.site_name}${
+                                    viewDetail.current_application.barangay
+                                      ? ` • Brgy. ${viewDetail.current_application.barangay}`
+                                      : ""
+                                  }`
+                                : "No site assigned yet"}
+                            </p>
+                          </div>
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${appStatusColor(viewDetail.current_application.status)}`}
+                          >
+                            {viewDetail.current_application.status_display}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-emerald-100 text-xs">
+                          <div>
+                            <p className="text-gray-400 font-semibold">Applied</p>
+                            <p className="text-gray-700 font-medium">
+                              {formatDate(viewDetail.current_application.created_at)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-400 font-semibold">Orientation</p>
+                            <p className="text-gray-700 font-medium">
+                              {formatDate(viewDetail.current_application.orientation_date)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-400 font-semibold">Participants</p>
+                            <p className="text-gray-700 font-medium">
+                              {viewDetail.current_application.participants}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400">
+                        No active application — this group is not currently in a
+                        program.
+                      </div>
+                    )}
+                  </SectionCard>
+
+                  {/* Application History */}
+                  <SectionCard
+                    icon={<History size={15} />}
+                    title={`Application History (${viewDetail.applications?.length ?? 0})`}
+                  >
+                    {viewDetail.applications && viewDetail.applications.length > 0 ? (
+                      <ol className="relative border-l-2 border-gray-100 ml-1.5">
+                        {viewDetail.applications.map((app) => (
+                          <li key={app.application_id} className="ml-4 pb-4 last:pb-0">
+                            <span
+                              className={`absolute -left-1.75 mt-1.5 w-3 h-3 rounded-full ring-4 ring-white ${APP_STATUS_DOT[app.status] || "bg-gray-400"}`}
+                            />
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-gray-800 truncate">
+                                  {app.title}
+                                  {app.is_ongoing && (
+                                    <span className="ml-2 text-[10px] font-bold uppercase text-emerald-600">
+                                      • Active
+                                    </span>
+                                  )}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  {app.site_name
+                                    ? `${app.site_name}${app.barangay ? ` • Brgy. ${app.barangay}` : ""}`
+                                    : "No site assigned"}
+                                  {" · "}
+                                  {app.classification}
+                                </p>
+                                <p className="text-[11px] text-gray-400 mt-0.5">
+                                  Applied {formatDate(app.created_at)} · Updated{" "}
+                                  {formatDate(app.updated_at)}
+                                </p>
+                              </div>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border whitespace-nowrap ${appStatusColor(app.status)}`}
+                              >
+                                {app.status_display}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <div className="flex items-center justify-center gap-2 py-4 text-sm text-gray-400">
+                        <FileText size={16} /> No applications submitted yet.
+                      </div>
+                    )}
+                  </SectionCard>
                 </>
               ) : null}
             </div>
@@ -447,6 +620,23 @@ export default function TreeGrowersAccounts() {
             <option value={25}>25</option>
             <option value={50}>50</option>
             <option value={100}>100</option>
+          </select>
+
+          <label>Site:</label>
+          <select
+            value={filter.site_status}
+            onChange={(e) =>
+              setFilter((prev) => ({
+                ...prev,
+                site_status: e.target.value as Filter["site_status"],
+                page: 1,
+              }))
+            }
+            className="border border-black p-2 rounded-md text-[.8rem]"
+          >
+            <option value="">All</option>
+            <option value="with_site">Currently has a site</option>
+            <option value="without_site">No current site</option>
           </select>
 
           <input
@@ -479,6 +669,7 @@ export default function TreeGrowersAccounts() {
                 <th className="py-3 px-5 text-left text-[.9rem]">Email</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Contact</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Address</th>
+                <th className="py-3 px-5 text-left text-[.9rem]">Current Site</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
@@ -531,6 +722,29 @@ export default function TreeGrowersAccounts() {
                         {grower.group_address || grower.address || "—"}
                       </td>
                       <td className="py-3 px-5 text-[.9rem]">
+                        {grower.current_site ? (
+                          <div
+                            className="flex flex-col"
+                            title={grower.current_site.app_status}
+                          >
+                            <span className="inline-flex items-center gap-1 font-medium text-[#0F4A2F]">
+                              <MapPin size={13} className="shrink-0" />
+                              {grower.current_site.site_name}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {grower.current_site.barangay
+                                ? `Brgy. ${grower.current_site.barangay} · `
+                                : ""}
+                              {grower.current_site.app_status}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500 whitespace-nowrap">
+                            No site
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-5 text-[.9rem]">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-semibold ${
                             grower.is_active
@@ -575,7 +789,7 @@ export default function TreeGrowersAccounts() {
               ) : (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="text-center py-5 text-gray-500 italic"
                   >
                     No tree growers found.

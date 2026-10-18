@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
 import {
   View,
@@ -10,6 +10,8 @@ import {
   RefreshControl,
   TextInput,
   ScrollView,
+  Modal,
+  Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
@@ -30,6 +32,43 @@ type MonitoringSite = {
   needs_initial: boolean;
   monitoring_status: "available" | "reserved" | "under_monitoring" | "completed" | "failed" | "onhold";
 };
+
+// ─── Sorting ───────────────────────────────────────────────────────────────
+type SortKey = "urgent" | "recent" | "most_reports" | "fewest_reports" | "name_asc" | "name_desc";
+
+const SORT_OPTIONS: { key: SortKey; label: string; hint: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: "urgent", label: "Most urgent", hint: "Needs initial, then longest since last report", icon: "alert-circle-outline" },
+  { key: "recent", label: "Recently reported", hint: "Latest report first", icon: "time-outline" },
+  { key: "most_reports", label: "Most reports", hint: "Highest report count first", icon: "trending-up-outline" },
+  { key: "fewest_reports", label: "Fewest reports", hint: "Lowest report count first", icon: "trending-down-outline" },
+  { key: "name_asc", label: "Site name A–Z", hint: "Alphabetical", icon: "text-outline" },
+  { key: "name_desc", label: "Site name Z–A", hint: "Reverse alphabetical", icon: "text-outline" },
+];
+
+// Higher = more urgent. Needs-initial first, then never reported, then by days.
+const urgencyScore = (s: MonitoringSite) =>
+  s.needs_initial ? 1e9 : s.days_since_last_report === null ? 1e8 : s.days_since_last_report;
+
+function sortSites(list: MonitoringSite[], key: SortKey): MonitoringSite[] {
+  const byName = (a: MonitoringSite, b: MonitoringSite) => a.site_name.localeCompare(b.site_name);
+  const time = (iso: string | null) => (iso ? new Date(iso).getTime() : 0);
+  return [...list].sort((a, b) => {
+    switch (key) {
+      case "urgent":
+        return urgencyScore(b) - urgencyScore(a) || byName(a, b);
+      case "recent":
+        return time(b.latest_report_date) - time(a.latest_report_date) || byName(a, b);
+      case "most_reports":
+        return b.total_reports - a.total_reports || byName(a, b);
+      case "fewest_reports":
+        return a.total_reports - b.total_reports || byName(a, b);
+      case "name_asc":
+        return byName(a, b);
+      case "name_desc":
+        return byName(b, a);
+    }
+  });
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 function formatDate(iso: string | null) {
@@ -134,6 +173,11 @@ const OnsiteInspectorMonitoring: React.FC = () => {
   const [siteStatusFilter, setSiteStatusFilter] = useState<"all" | "available" | "reserved" | "under_monitoring" | "completed" | "failed" | "onhold">("all");
   const [urgencyFilter, setUrgencyFilter] = useState<"all" | "30_plus" | "60_plus" | "90_plus">("all");
   const [needsInitial, setNeedsInitial] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("urgent");
+  const [showSort, setShowSort] = useState(false);
+
+  const sortedSites = useMemo(() => sortSites(sites, sortKey), [sites, sortKey]);
+  const activeSort = SORT_OPTIONS.find((o) => o.key === sortKey)!;
 
   const fetchSites = async (isRefresh = false) => {
     try {
@@ -260,7 +304,52 @@ const OnsiteInspectorMonitoring: React.FC = () => {
             <FilterChip label="90+ Days" active={urgencyFilter === "90_plus"} onPress={() => { setUrgencyFilter("90_plus"); setNeedsInitial(false); }} activeColor="#EF4444" />
           </ScrollView>
         </View>
+
+        {/* Result count + sort */}
+        <View style={styles.sortBar}>
+          <Text style={styles.resultCount}>
+            {loading ? "Loading…" : `${sites.length} ${sites.length === 1 ? "site" : "sites"}`}
+          </Text>
+          <TouchableOpacity style={styles.sortButton} onPress={() => setShowSort(true)} activeOpacity={0.7}>
+            <Ionicons name="swap-vertical" size={14} color="#0F4A2F" />
+            <Text style={styles.sortButtonText} numberOfLines={1}>{activeSort.label}</Text>
+            <Ionicons name="chevron-down" size={14} color="#0F4A2F" />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Sort bottom sheet */}
+      <Modal visible={showSort} transparent animationType="fade" onRequestClose={() => setShowSort(false)}>
+        <Pressable style={styles.sheetBackdrop} onPress={() => setShowSort(false)}>
+          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Sort sites by</Text>
+            {SORT_OPTIONS.map((opt) => {
+              const selected = opt.key === sortKey;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.sheetOption, selected && styles.sheetOptionActive]}
+                  onPress={() => {
+                    setSortKey(opt.key);
+                    setShowSort(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.sheetOptionIcon, selected && { backgroundColor: "#0F4A2F" }]}>
+                    <Ionicons name={opt.icon} size={16} color={selected ? "#FFFFFF" : "#6B7280"} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.sheetOptionLabel, selected && { color: "#0F4A2F" }]}>{opt.label}</Text>
+                    <Text style={styles.sheetOptionHint}>{opt.hint}</Text>
+                  </View>
+                  {selected && <Ionicons name="checkmark-circle" size={20} color="#0F4A2F" />}
+                </TouchableOpacity>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {loading ? (
         <View style={styles.center}>
@@ -269,7 +358,7 @@ const OnsiteInspectorMonitoring: React.FC = () => {
         </View>
       ) : (
         <FlatList
-          data={sites}
+          data={sortedSites}
           renderItem={renderSiteItem}
           keyExtractor={(item) => item.site_id.toString()}
           contentContainerStyle={styles.listContent}
@@ -303,6 +392,19 @@ const styles = StyleSheet.create({
   filterSection: { marginBottom: 10 },
   filterLabel: { fontSize: 11, fontWeight: "600", color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
   chipScroll: { flexGrow: 0 },
+  sortBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+  resultCount: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
+  sortButton: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: "#ECFDF5", borderWidth: 1, borderColor: "#A7F3D0", maxWidth: "65%" },
+  sortButtonText: { fontSize: 12, fontWeight: "700", color: "#0F4A2F" },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(15, 23, 42, 0.45)", justifyContent: "flex-end" },
+  sheet: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 16, paddingTop: 10 },
+  sheetHandle: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: "#E5E7EB", marginBottom: 12 },
+  sheetTitle: { fontSize: 16, fontWeight: "800", color: "#111827", marginBottom: 10, paddingHorizontal: 4 },
+  sheetOption: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12, marginBottom: 4 },
+  sheetOptionActive: { backgroundColor: "#ECFDF5" },
+  sheetOptionIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
+  sheetOptionLabel: { fontSize: 14, fontWeight: "700", color: "#111827" },
+  sheetOptionHint: { fontSize: 11.5, color: "#9CA3AF", marginTop: 1 },
   filterChip: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E5E7EB", marginRight: 8 },
   filterChipText: { fontSize: 12, fontWeight: "500", color: "#4B5563" },
   listContent: { padding: 16, paddingBottom: 100 },

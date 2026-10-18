@@ -357,18 +357,23 @@ const FloatingProgressTimeline = ({ status }: { status: string }) => {
 const FloatingQuickLinks = ({
   applicationStatus,
   totalApprovedSeedlings,
+  ongoingRequestCount,
   reportCount,
   onSeedlingPress,
   onReportPress,
 }: {
   applicationStatus: string;
   totalApprovedSeedlings: number;
+  ongoingRequestCount: number;
   reportCount: number;
   onSeedlingPress: () => void;
   onReportPress: () => void;
 }) => {
   const [expanded, setExpanded] = useState(false);
   const canRequestSeedlings = applicationStatus === "under_monitoring";
+  // ✅ During orientation (accepted) growers can't create requests, but can
+  // still view ongoing ones (e.g. seedlings ENRO already assigned to them)
+  const canViewSeedlings = canRequestSeedlings || ongoingRequestCount > 0;
 
   return (
     <View style={fabStyles.container}>
@@ -378,24 +383,24 @@ const FloatingQuickLinks = ({
             style={[
               fabStyles.fabItem,
               { marginBottom: 10 },
-              !canRequestSeedlings && { opacity: 0.6 },
+              !canViewSeedlings && { opacity: 0.6 },
             ]}
             onPress={() => {
-              if (canRequestSeedlings) {
+              if (canViewSeedlings) {
                 onSeedlingPress();
                 setExpanded(false);
               }
             }}
             activeOpacity={0.8}
-            disabled={!canRequestSeedlings}
+            disabled={!canViewSeedlings}
           >
             <View style={fabStyles.fabItemIcon}>
               <Ionicons
                 name={
-                  canRequestSeedlings ? "leaf-outline" : "lock-closed-outline"
+                  canViewSeedlings ? "leaf-outline" : "lock-closed-outline"
                 }
                 size={20}
-                color={canRequestSeedlings ? PRIMARY : MUTED}
+                color={canViewSeedlings ? PRIMARY : MUTED}
               />
             </View>
             <View style={fabStyles.fabItemLabel}>
@@ -405,7 +410,9 @@ const FloatingQuickLinks = ({
                   ? totalApprovedSeedlings > 0
                     ? `${totalApprovedSeedlings} approved`
                     : "Request seedlings"
-                  : "Available during monitoring"}
+                  : canViewSeedlings
+                    ? `${ongoingRequestCount} ongoing · view only`
+                    : "Available during monitoring"}
               </Text>
             </View>
           </TouchableOpacity>
@@ -566,6 +573,10 @@ export default function ApplicationPage() {
     (sum, req) => sum + getTotalSeedlings(req.species),
     0,
   );
+  const ongoingRequestCount =
+    detail?.seedling_requests?.filter(
+      (r) => r.status === "pending" || r.status === "accepted",
+    ).length || 0;
   const reportCount = detail?.progress_reports?.length || 0;
 
   if (loading) {
@@ -997,6 +1008,7 @@ export default function ApplicationPage() {
       <FloatingQuickLinks
         applicationStatus={application?.status || ""}
         totalApprovedSeedlings={totalApprovedSeedlings}
+        ongoingRequestCount={ongoingRequestCount}
         reportCount={reportCount}
         onSeedlingPress={() => router.push("/tree_growers/seedlingRequests")}
         onReportPress={() => router.push("/tree_growers/progressReports")}

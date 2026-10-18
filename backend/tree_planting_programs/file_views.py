@@ -1,9 +1,9 @@
 import cloudinary.api
 import cloudinary.utils
+import mimetypes
 import requests
 import re
 import logging
-from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
@@ -72,57 +72,53 @@ def download_maintenance_plan(request, application_id):
     
     try:
         stored_value = str(app.maintenance_plan)
-        public_id, version = extract_public_id_and_version(stored_value)
-        
+        public_id, _ = extract_public_id_and_version(stored_value)
+
         if not public_id:
             return JsonResponse({
                 'error': 'Invalid file reference',
                 'details': 'Could not extract public_id from database.'
             }, status=404)
-        
-        logger.info(f"Looking for: {public_id}, version: {version}")
-        
-        # Find the file in Cloudinary
+
+        # Raw Cloudinary files keep their extension in the public_id, and plans
+        # can be PDF or Word, so try the stored format first, then the others.
+        base_id = re.sub(r'\.(pdf|docx?)$', '', public_id)
+        stored_format = getattr(app.maintenance_plan, 'format', None)
+        candidates = []
+        for ext in [stored_format, 'pdf', 'docx', 'doc', None]:
+            candidate = f"{base_id}.{ext}" if ext else base_id
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+        logger.info(f"Looking for maintenance plan, candidates: {candidates}")
+
         actual_public_id = None
-        
-        # Try with .pdf
-        try:
-            resource = cloudinary.api.resource(public_id, resource_type='raw')
-            actual_public_id = resource.get('public_id')
-            logger.info(f"✅ Found: {actual_public_id}")
-        except cloudinary.exceptions.NotFound:
-            # Try without .pdf
+        for candidate in candidates:
             try:
-                public_id_no_ext = public_id.rsplit('.', 1)[0]
-                resource = cloudinary.api.resource(public_id_no_ext, resource_type='raw')
+                resource = cloudinary.api.resource(candidate, resource_type='raw')
                 actual_public_id = resource.get('public_id')
-                logger.info(f"✅ Found (no ext): {actual_public_id}")
-            except Exception as e2:
-                logger.error(f"File not found: {e2}")
-                return JsonResponse({
-                    'error': 'File not found in Cloudinary',
-                    'details': f'Could not locate {public_id} in Cloudinary storage.'
-                }, status=404)
-        
-        # ✅ Get the secure URL from Cloudinary API
-        secure_url = cloudinary.utils.cloudinary_url(
-            actual_public_id,
-            resource_type='raw',
-            secure=True
-        )[0]
-        
-        logger.info(f"Downloading from Cloudinary: {secure_url}")
-        
-        # ✅ Download file content using Cloudinary API credentials
-        response = requests.get(
-            secure_url,
-            auth=(
-                settings.CLOUDINARY_STORAGE['API_KEY'],
-                settings.CLOUDINARY_STORAGE['API_SECRET']
-            ),
-            timeout=30
+                logger.info(f"✅ Found: {actual_public_id}")
+                break
+            except cloudinary.exceptions.NotFound:
+                continue
+
+        if not actual_public_id:
+            logger.error(f"File not found, tried: {candidates}")
+            return JsonResponse({
+                'error': 'File not found in Cloudinary',
+                'details': f'Could not locate {base_id} in Cloudinary storage.'
+            }, status=404)
+
+        # Signed API download URL: works even when the account blocks public
+        # PDF delivery (the plain delivery URL returns 401 for PDFs)
+        download_url = cloudinary.utils.private_download_url(
+            actual_public_id, '', resource_type='raw', type='upload'
         )
-        
+
+        logger.info(f"Downloading from Cloudinary: {actual_public_id}")
+
+        response = requests.get(download_url, timeout=60)
+
         if response.status_code != 200:
             logger.error(f"Failed to download from Cloudinary: {response.status_code}")
             return JsonResponse({
@@ -131,11 +127,13 @@ def download_maintenance_plan(request, application_id):
             }, status=500)
         
         # ✅ Serve the file directly to the user
-        filename = f"maintenance_plan_{application_id}.pdf"
-        
+        ext = actual_public_id.rsplit('.', 1)[-1] if '.' in actual_public_id.rsplit('/', 1)[-1] else 'pdf'
+        filename = f"maintenance_plan_{application_id}.{ext}"
+        content_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+
         return HttpResponse(
             response.content,
-            content_type='application/pdf',
+            content_type=content_type,
             headers={
                 'Content-Disposition': f'attachment; filename="{filename}"',
                 'Content-Length': len(response.content),

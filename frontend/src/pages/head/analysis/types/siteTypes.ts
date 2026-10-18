@@ -27,17 +27,21 @@ export interface Site {
 }
 
 // ✅ SIMPLIFIED: Just decision notes + final decision
+// Shape returned by get_site: the notes live inside site_data
 export interface ValidationData {
-  safety?: {
-    decision_note: string;
+  version?: number;
+  site_data?: {
+    safety?: {
+      decision_note?: string;
+    };
+    survivability?: {
+      decision_note?: string;
+    };
+    final_decision?: "ACCEPT" | "REJECT";
+    final_decision_note?: string;
   };
-  survivability?: {
-    decision_note: string;
-  };
-  final_decision?: "ACCEPT" | "REJECT";
-  final_decision_note?: string;
-  validated_at?: string;
-  validated_by?: string;
+  validated_at?: string | null;
+  validated_by?: string | null;
 }
 
 // ✅ Mobile spec data structures

@@ -522,6 +522,7 @@ export default function Signup() {
 
   const sendOtp = async () => {
     setSendingOtp(true);
+    console.log("[sendOtp] POST", api + "/api/send_otp/"); // TEMP: confirm which backend the bundle uses
     try {
       const { ok, json } = await fetchJson(api + "/api/send_otp/", {
         method: "POST",

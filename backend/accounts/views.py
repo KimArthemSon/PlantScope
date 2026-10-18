@@ -613,6 +613,7 @@ def list_tree_growers(request):
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     search = request.GET.get('search', '').strip()
+    site_filter = request.GET.get('site_status', '').strip()  # 'with_site' | 'without_site' | ''
 
     try:
         page = max(1, int(request.GET.get('page', 1)))
@@ -620,17 +621,32 @@ def list_tree_growers(request):
     except (TypeError, ValueError):
         page, entries = 1, 10
 
+    # ✅ "Currently taken a site" = has an ongoing application with an assigned site
+    ongoing_statuses = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
+    has_site_sql = (
+        'EXISTS (SELECT 1 FROM tree_planting_programs_application AS a '
+        'WHERE a.user_id = u.id AND a.site_id IS NOT NULL '
+        'AND a.status IN (' + ', '.join(['%s'] * len(ongoing_statuses)) + '))'
+    )
+    where_sql = 'u.user_role = %s AND (u.email LIKE %s OR g.group_name LIKE %s)'
+    where_params = ["treeGrowers", f"%{search}%", f"%{search}%"]
+    if site_filter == 'with_site':
+        where_sql += ' AND ' + has_site_sql
+        where_params += ongoing_statuses
+    elif site_filter == 'without_site':
+        where_sql += ' AND NOT ' + has_site_sql
+        where_params += ongoing_statuses
+
     with connection.cursor() as cursor:
-        # 1️⃣ Total count (search: email OR group name)
+        # 1️⃣ Total count (search: email OR group name, + site filter)
         cursor.execute(
-            '''
+            f'''
             SELECT COUNT(*)
             FROM accounts_user AS u
             LEFT JOIN accounts_treegrowergroup AS g ON u.id = g.users_id
-            WHERE u.user_role = %s
-              AND (u.email LIKE %s OR g.group_name LIKE %s)
+            WHERE {where_sql}
             ''',
-            ["treeGrowers", f"%{search}%", f"%{search}%"]
+            where_params
         )
         total_count_row = cursor.fetchone()
         total_count = total_count_row[0] if total_count_row else 0
@@ -639,7 +655,7 @@ def list_tree_growers(request):
         # 2️⃣ Paginated rows (account + group only)
         offset = (page - 1) * entries
         cursor.execute(
-            '''
+            f'''
             SELECT u.id, u.email, u.is_active, u.created_at,
                    g.group_name, g.group_type,
                    CASE g.group_type
@@ -652,16 +668,34 @@ def list_tree_growers(request):
                    g.profile_img   AS group_img
             FROM accounts_user AS u
             LEFT JOIN accounts_treegrowergroup AS g ON u.id = g.users_id
-            WHERE u.user_role = %s
-              AND (u.email LIKE %s OR g.group_name LIKE %s)
+            WHERE {where_sql}
             ORDER BY u.created_at DESC
             LIMIT %s OFFSET %s
             ''',
-            ["treeGrowers", f"%{search}%", f"%{search}%", entries, offset]
+            where_params + [entries, offset]
         )
 
         columns = [col[0] for col in cursor.description]
         rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        # 3️⃣ Current site per grower on this page
+        from tree_planting_programs.models import Application
+        current_sites = {}
+        current_apps = Application.objects.filter(
+            user_id__in=[row['id'] for row in rows],
+            site__isnull=False,
+            status__in=ongoing_statuses,
+        ).select_related('site__reforestation_area__barangay').order_by('-created_at')
+        for app in current_apps:
+            if app.user_id in current_sites:
+                continue
+            area = app.site.reforestation_area
+            current_sites[app.user_id] = {
+                'site_id':     app.site.site_id,
+                'site_name':   app.site.name,
+                'barangay':    area.barangay.name if area and area.barangay else None,
+                'app_status':  app.get_status_display(),
+            }
 
         tree_growers = [
             {
@@ -675,6 +709,7 @@ def list_tree_growers(request):
                 'group_contact':      row['group_contact'] or '',
                 'group_address':      row['group_address'] or '',
                 'group_img':          get_cloudinary_url(row['group_img']) if row['group_img'] else None,
+                'current_site':       current_sites.get(row['id']),
             }
             for row in rows
         ]
@@ -702,11 +737,41 @@ def get_tree_grower_detail(request, user_id):
     if group and group.profile_img:
         group_img_url = get_cloudinary_url(str(group.profile_img))
 
+    # ✅ Application history (newest first) + current active application
+    from tree_planting_programs.models import Application
+    ongoing_statuses = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
+    apps = Application.objects.filter(user=user).select_related(
+        'site__reforestation_area__barangay'
+    ).order_by('-created_at')
+
+    applications = []
+    for app in apps:
+        site = app.site
+        area = site.reforestation_area if site else None
+        applications.append({
+            'application_id':   app.application_id,
+            'title':            app.title,
+            'status':           app.status,
+            'status_display':   app.get_status_display(),
+            'classification':   app.get_classification_display(),
+            'participants':     app.total_treegrowers_will_participate,
+            'site_name':        site.name if site else None,
+            'barangay':         area.barangay.name if area and area.barangay else None,
+            'orientation_date': str(app.orientation_date) if app.orientation_date else None,
+            'created_at':       str(app.created_at),
+            'updated_at':       str(app.updated_at),
+            'is_ongoing':       app.status in ongoing_statuses,
+        })
+
+    current = next((a for a in applications if a['is_ongoing']), None)
+
     return JsonResponse({
         'id':         user.id,
         'email':      user.email,
         'is_active':  user.is_active,
         'created_at': str(user.created_at),
+        'applications':        applications,
+        'current_application': current,
         'group': {
             'group_id':           group.group_id,
             'group_name':         group.group_name,
