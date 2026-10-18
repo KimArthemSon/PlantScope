@@ -4,6 +4,7 @@ import "@/assets/homepage/homepage.css";
 import logoImg from "@/assets/homepage/logo.jpg";
 import heroVideo from "@/assets/homepage/hero.mp4";
 import { api } from "@/constant/api";
+import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 
 import {
   ArrowRight,
@@ -51,6 +52,12 @@ const MOBILE_NAV_LINKS: NavLink[] = [
 ];
 
 export default function Homepage() {
+  const [PSalert, setPSAlert] = useState<{
+    type: "success" | "failed" | "error";
+    title: string;
+    message: string;
+    duration?: number;
+  } | null>(null);
   const [loaderVisible, setLoaderVisible] = useState(true);
   const [loaderFading, setLoaderFading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -107,9 +114,13 @@ export default function Homepage() {
       );
 
     if (isMobile) {
-      alert(
-        'The APK will download. After it finishes, open your Downloads folder and tap the file to install. You may need to enable "Install from unknown sources" in settings.',
-      );
+      setPSAlert({
+        type: "success",
+        title: "Downloading PlantScope",
+        message:
+          'After it finishes, open your Downloads folder and tap the file to install. You may need to enable "Install from unknown sources" in settings.',
+        duration: 12000, // longer, since these are install steps to read
+      });
     }
 
     window.open(
@@ -224,11 +235,24 @@ export default function Homepage() {
 
   const handleFormSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    alert("Thank you for your interest! We will contact you soon.");
+    setPSAlert({
+      type: "success",
+      title: "Thank you!",
+      message: "Thank you for your interest! We will contact you soon.",
+    });
   };
 
   return (
     <>
+      {PSalert && (
+        <PlantScopeAlert
+          type={PSalert.type}
+          title={PSalert.title}
+          message={PSalert.message}
+          duration={PSalert.duration}
+          onClose={() => setPSAlert(null)}
+        />
+      )}
       {loaderVisible && (
         <div
           id="loader"

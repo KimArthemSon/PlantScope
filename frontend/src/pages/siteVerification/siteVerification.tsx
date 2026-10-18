@@ -10,8 +10,19 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
+import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 
 export default function SiteVerification() {
+  const [PSalert, setPSAlert] = useState<{
+    type: "success" | "failed" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
+  const [pendingDecision, setPendingDecision] = useState<{
+    id: number;
+    action: "validate" | "reject";
+  } | null>(null);
   const [selectedSite, setSelectedSite] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -92,33 +103,53 @@ export default function SiteVerification() {
   }, [assignedSites, search, statusFilter, officerFilter, barangayFilter]);
 
   // Admin decision handlers
-  const handleValidate = (id: number) => {
-    if (confirm("Approve this site for official reforestation listing?")) {
-      setAssignedSites((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, status: "Validated" } : s
-        )
-      );
-      alert("✅ Site validated successfully.");
-      setSelectedSite(null);
-    }
-  };
+  // Buttons ask for confirmation first; applyDecision runs once confirmed
+  const handleValidate = (id: number) => setPendingDecision({ id, action: "validate" });
+  const handleReject = (id: number) => setPendingDecision({ id, action: "reject" });
 
-  const handleReject = (id: number) => {
-    if (confirm("Reject this site and mark as not suitable?")) {
-      setAssignedSites((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, status: "Rejected" } : s
-        )
-      );
-      alert("❌ Site rejected and removed from candidate list.");
-      setSelectedSite(null);
-    }
+  const applyDecision = () => {
+    if (!pendingDecision) return;
+    const { id, action } = pendingDecision;
+    const validate = action === "validate";
+    setAssignedSites((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, status: validate ? "Validated" : "Rejected" } : s
+      )
+    );
+    setPSAlert(
+      validate
+        ? { type: "success", title: "Site validated", message: "Site validated successfully." }
+        : { type: "failed", title: "Site rejected", message: "Site rejected and removed from candidate list." }
+    );
+    setPendingDecision(null);
+    setSelectedSite(null);
   };
 
   return (
     <div className="flex h-screen overflow-hidden">
-      
+      {PSalert && (
+        <PlantScopeAlert
+          type={PSalert.type}
+          title={PSalert.title}
+          message={PSalert.message}
+          onClose={() => setPSAlert(null)}
+        />
+      )}
+      {pendingDecision && (
+        <PlantScopeConfirm
+          title={pendingDecision.action === "validate" ? "Validate site?" : "Reject site?"}
+          message={
+            pendingDecision.action === "validate"
+              ? "Approve this site for official reforestation listing?"
+              : "Reject this site and mark as not suitable?"
+          }
+          confirmLabel={pendingDecision.action === "validate" ? "Validate" : "Reject"}
+          variant={pendingDecision.action === "validate" ? "warning" : "danger"}
+          onConfirm={applyDecision}
+          onCancel={() => setPendingDecision(null)}
+        />
+      )}
+
       <main className="flex-1 bg-gray-50 p-8 overflow-y-auto">
         {/* Header */}
         <h1 className="text-3xl font-bold text-[#052e87] mb-2">
@@ -222,7 +253,7 @@ export default function SiteVerification() {
                       <MessageSquare size={18} />
                     </button>
                     <button
-                      onClick={() => alert(`Viewing details for ${site.siteName}`)}
+                      onClick={() => setSelectedSite(site)}
                       className="text-gray-600 hover:text-gray-800"
                       title="View Details"
                     >

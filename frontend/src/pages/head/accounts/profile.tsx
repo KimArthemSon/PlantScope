@@ -193,7 +193,11 @@ export function Profile() {
       }
     }
     if (profile.password !== profile.confirm_pass) {
-      alert("Password & Confirm Password do not match!");
+      setPSAlert({
+        type: "error",
+        title: "Passwords don't match",
+        message: "Password and Confirm Password must be the same.",
+      });
       setIsLoading(false);
       return;
     }

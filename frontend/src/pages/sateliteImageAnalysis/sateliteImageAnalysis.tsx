@@ -3,8 +3,14 @@ import { useState } from "react";
 import { MapPin, Satellite, Calendar, Upload, Search, ImageIcon } from "lucide-react";
 import Sidebar from "../../components/layout/Sidebar";
 import GenMap from "../../components/map/GenMap";
+import PlantScopeAlert from "../../components/alert/PlantScopeAlert";
 
 export default function SatelliteImageAnalysis() {
+  const [PSalert, setPSAlert] = useState<{
+    type: "success" | "failed" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
   const [selectedSatellite, setSelectedSatellite] = useState("Sentinel-2");
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
@@ -18,18 +24,34 @@ export default function SatelliteImageAnalysis() {
 
   const handleAnalyze = () => {
     if (uploadedFiles.length === 0) {
-      alert("Please upload at least one satellite image.");
+      setPSAlert({
+        type: "failed",
+        title: "No images",
+        message: "Please upload at least one satellite image.",
+      });
       return;
     }
     setAnalyzing(true);
     setTimeout(() => {
-      alert("Satellite image analysis complete — potential reforestation areas identified.");
+      setPSAlert({
+        type: "success",
+        title: "Analysis complete",
+        message: "Potential reforestation areas identified.",
+      });
       setAnalyzing(false);
     }, 2000);
   };
 
   return (
     <div className="flex min-h-screen">
+      {PSalert && (
+        <PlantScopeAlert
+          type={PSalert.type}
+          title={PSalert.title}
+          message={PSalert.message}
+          onClose={() => setPSAlert(null)}
+        />
+      )}
       <Sidebar />
 
       <main className="flex-1 bg-gray-50 p-6 overflow-y-auto">
