@@ -5,24 +5,18 @@ import {
   Eye,
   ChevronRight,
   ChevronLeft,
-  Leaf,
   Pin,
   PinOff,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
   FileText,
-  Shield,
   Car,
   MapPin,
   FileCheck,
   ShieldAlert,
   ShieldCheck,
   ShieldX,
-  Target,
   Ruler,
   Layers,
-  Filter as FilterIcon,
+  Filter,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -301,48 +295,7 @@ export default function OfficialSites() {
     }
   };
 
-  const getValidationBadge = (validation: ValidationStatus) => {
-    if (validation.final_decision === "ACCEPT") {
-      return {
-        icon: CheckCircle,
-        color: "bg-green-100 text-green-700",
-        label: "Accepted",
-      };
-    }
-    if (validation.final_decision === "REJECT") {
-      return {
-        icon: XCircle,
-        color: "bg-red-100 text-red-700",
-        label: "Rejected",
-      };
-    }
-    if (validation.is_ready_to_finalize) {
-      return {
-        icon: FileText,
-        color: "bg-blue-100 text-blue-700",
-        label: "Ready",
-      };
-    }
-    if (validation.has_safety_note && validation.has_survivability_note) {
-      return {
-        icon: FileText,
-        color: "bg-purple-100 text-purple-700",
-        label: "Notes Added",
-      };
-    }
-    if (validation.has_safety_note || validation.has_survivability_note) {
-      return {
-        icon: AlertCircle,
-        color: "bg-yellow-100 text-yellow-700",
-        label: "In Progress",
-      };
-    }
-    return {
-      icon: AlertCircle,
-      color: "bg-gray-100 text-gray-700",
-      label: "Not Started",
-    };
-  };
+ 
 
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">

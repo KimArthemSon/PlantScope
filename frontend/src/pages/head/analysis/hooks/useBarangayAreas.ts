@@ -44,7 +44,26 @@ export const HAZARD_TYPES = [
   { value: "OTHER", label: "Other" },
 ];
 
-export function useBarangayAreas(mapRef: React.RefObject<L.Map | null>) {
+// The page supplies its own PlantScope confirm/alert so the hook never uses
+// the browser's native confirm()/alert() popups.
+export interface BarangayAreasUI {
+  confirm: (opts: {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  }) => void;
+  notify: (type: "success" | "error", title: string, message: string) => void;
+}
+
+export function useBarangayAreas(
+  mapRef: React.RefObject<L.Map | null>,
+  ui: BarangayAreasUI,
+) {
+  // Map popup callbacks are created inside effects; a ref keeps them on the latest UI
+  const uiRef = useRef(ui);
+  uiRef.current = ui;
+
   // ── States ──────────────────────────────────────────────────────────────
   const [barangayList, setBarangayList] = useState<Barangay[]>([]);
   const [selectedBarangayId, setSelectedBarangayId] = useState<number | null>(null);
@@ -699,15 +718,21 @@ export function useBarangayAreas(mapRef: React.RefObject<L.Map | null>) {
       };
 
       (window as any)[`__deleteHazardArea_${area.hazard_area_id}`] = () => {
-        if (confirm(`Delete hazard area "${area.name}"? This cannot be undone.`)) {
-          deleteHazardArea(area.hazard_area_id).then((result) => {
-            if (result.success) {
-              alert("✅ " + result.message);
-            } else {
-              alert("❌ " + result.message);
-            }
-          });
-        }
+        map.closePopup();
+        uiRef.current.confirm({
+          title: "Delete Hazard Area",
+          message: `Delete hazard area "${area.name}"? This cannot be undone.`,
+          confirmLabel: "Delete",
+          onConfirm: () => {
+            deleteHazardArea(area.hazard_area_id).then((result) => {
+              uiRef.current.notify(
+                result.success ? "success" : "error",
+                result.success ? "Hazard Area Deleted" : "Delete Failed",
+                result.message,
+              );
+            });
+          },
+        });
       };
 
       hazardLayersRef.current.push(poly);

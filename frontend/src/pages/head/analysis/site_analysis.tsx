@@ -298,7 +298,20 @@ export default function MulticriteriaAnalysis() {
   const sites = useSites();
   const potentialSitesHook = usePotentialSites();
   const hazardLayers = useHazardLayers(mapRef, setAlert);
-  const barangayAreas = useBarangayAreas(mapRef);
+  const barangayAreas = useBarangayAreas(mapRef, {
+    confirm: ({ title, message, confirmLabel, onConfirm }) =>
+      setConfirmDialog({
+        title,
+        message,
+        variant: "danger",
+        confirmLabel,
+        onConfirm: () => {
+          setConfirmDialog(null);
+          onConfirm();
+        },
+      }),
+    notify: (type, title, message) => setAlert({ type, title, message }),
+  });
 
   const tempFaLocationMarkerRef = useRef<L.Marker | null>(null);
   const [tempFaLocationCoords, setTempFaLocationCoords] = useState<

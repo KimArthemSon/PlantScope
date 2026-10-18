@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { api } from "@/constant/api.ts";
+import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 
 interface OrientationDate {
   application_id: number;
@@ -26,6 +27,11 @@ const toLocalDateStr = (date: Date): string => {
 };
 
 export default function Calendar() {
+  const [PSalert, setPSAlert] = useState<{
+    type: "success" | "failed" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -196,7 +202,11 @@ export default function Calendar() {
       navigate(`/DataManager/evaluation/${applicationId}`);
     } catch (error) {
       console.error("Failed to save orientation date:", error);
-      alert("Failed to save orientation date. Please try again.");
+      setPSAlert({
+        type: "error",
+        title: "Save failed",
+        message: "Failed to save orientation date. Please try again.",
+      });
     } finally {
       setSavingSchedule(false);
     }
@@ -399,6 +409,14 @@ export default function Calendar() {
         background: "#f4f5f7",
       }}
     >
+      {PSalert && (
+        <PlantScopeAlert
+          type={PSalert.type}
+          title={PSalert.title}
+          message={PSalert.message}
+          onClose={() => setPSAlert(null)}
+        />
+      )}
       {/* ── Left Sidebar ── */}
       <aside className="w-72 shrink-0 bg-white border-r border-gray-100 flex flex-col p-5 gap-6">
         <div className="flex items-center gap-2 px-1 pt-1">

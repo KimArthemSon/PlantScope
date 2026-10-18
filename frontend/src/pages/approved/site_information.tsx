@@ -37,7 +37,6 @@ import {
   Sparkles,
   PenLine,
   ImagePlus,
-  FileCheck,
   ExternalLink,
   Pencil,
   ChevronLeft,
@@ -56,6 +55,7 @@ import L from "leaflet";
 import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 import { api } from "@/constant/api";
+import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -350,6 +350,7 @@ const EditableField: React.FC<{
   icon?: any;
   variant?: "default" | "prominent";
 }> = ({ value, placeholder = "Click to edit...", onSave, multiline = false, className = "", label, icon: Icon, variant = "default" }) => {
+  const notify = React.useContext(NotifyContext);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value);
   const [saving, setSaving] = useState(false);
@@ -358,7 +359,7 @@ const EditableField: React.FC<{
 
   const handleSave = async () => {
     setSaving(true);
-    try { await onSave(editValue); setIsEditing(false); } catch (error) { console.error("Save failed:", error); } finally { setSaving(false); }
+    try { await onSave(editValue); setIsEditing(false); } catch (error) { notify("error", "Save failed", errorMessage(error, "Could not save changes.")); } finally { setSaving(false); }
   };
 
   const handleCancel = () => { setEditValue(value); setIsEditing(false); };
@@ -409,6 +410,7 @@ const EditableSelectField: React.FC<{
   icon?: any;
   variant?: "default" | "prominent";
 }> = ({ value, options, onSave, label, icon: Icon, variant = "default" }) => {
+  const notify = React.useContext(NotifyContext);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState<number | null>(value);
   const [saving, setSaving] = useState(false);
@@ -418,12 +420,12 @@ const EditableSelectField: React.FC<{
   const handleSave = async () => {
     if (editValue === null) return;
     setSaving(true);
-    try { 
-      await onSave(editValue); 
-      setIsEditing(false); 
-    } catch (error) { 
-      console.error("Save failed:", error); 
-    } finally { 
+    try {
+      await onSave(editValue);
+      setIsEditing(false);
+    } catch (error) {
+      notify("error", "Save failed", errorMessage(error, "Could not save changes."));
+    } finally {
       setSaving(false); 
     }
   };
@@ -499,6 +501,78 @@ const StatCard: React.FC<{ icon: any; label: string; value: string | number; sub
 };
 
 // ─────────────────────────────────────────────
+// PAGE ALERTS
+// ─────────────────────────────────────────────
+// Sub-components report results through this so every message uses the
+// shared PlantScopeAlert instead of its own inline banner.
+type NotifyFn = (type: "success" | "failed" | "error", title: string, message: string) => void;
+const NotifyContext = React.createContext<NotifyFn>(() => {});
+const errorMessage = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
+
+// ─────────────────────────────────────────────
+// AREA UNIT CONVERTER
+// ─────────────────────────────────────────────
+// Areas are stored in hectares; these convert for display only.
+const AREA_UNITS = {
+  ha: { label: "Hectares", short: "ha", perHectare: 1, decimals: 2 },
+  m2: { label: "Square meters", short: "m²", perHectare: 10_000, decimals: 0 },
+  km2: { label: "Square kilometers", short: "km²", perHectare: 0.01, decimals: 4 },
+  ac: { label: "Acres", short: "ac", perHectare: 2.4710538, decimals: 2 },
+  ft2: { label: "Square feet", short: "ft²", perHectare: 107_639.104, decimals: 0 },
+} as const;
+
+type AreaUnit = keyof typeof AREA_UNITS;
+const AREA_UNIT_STORAGE_KEY = "plantscope.areaUnit";
+
+function formatArea(hectares: number, unit: AreaUnit): string {
+  const { perHectare, decimals, short } = AREA_UNITS[unit];
+  const value = (hectares * perHectare).toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  return `${value} ${short}`;
+}
+
+function loadAreaUnit(): AreaUnit {
+  try {
+    const saved = localStorage.getItem(AREA_UNIT_STORAGE_KEY);
+    if (saved && saved in AREA_UNITS) return saved as AreaUnit;
+  } catch {
+    // Storage unavailable; fall back to hectares
+  }
+  return "ha";
+}
+
+const AreaStatCard: React.FC<{ hectares: number; unit: AreaUnit; onUnitChange: (u: AreaUnit) => void }> = ({ hectares, unit, onUnitChange }) => (
+  <div className="p-4 rounded-lg border bg-emerald-50 border-emerald-100">
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Area</p>
+        <p className="text-xl font-semibold text-emerald-700 mt-1 truncate" title={formatArea(hectares, unit)}>
+          {formatArea(hectares, unit)}
+        </p>
+        <select
+          value={unit}
+          onChange={(e) => onUnitChange(e.target.value as AreaUnit)}
+          className="mt-1 text-[11px] text-emerald-800 bg-white border border-emerald-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400 cursor-pointer"
+          title="Convert area unit"
+        >
+          {(Object.keys(AREA_UNITS) as AreaUnit[]).map((u) => (
+            <option key={u} value={u}>
+              {AREA_UNITS[u].label} ({AREA_UNITS[u].short})
+            </option>
+          ))}
+        </select>
+        {unit !== "ha" && (
+          <p className="text-[10px] text-gray-500 mt-0.5">= {formatArea(hectares, "ha")}</p>
+        )}
+      </div>
+      <div className="p-1.5 rounded-md bg-emerald-100 flex-shrink-0"><Ruler className="w-4 h-4 text-emerald-600" /></div>
+    </div>
+  </div>
+);
+
+// ─────────────────────────────────────────────
 // HELPERS
 // ────────────────────────────────────────────
 function VerificationStatusBadge({ status }: { status: string }) {
@@ -562,7 +636,8 @@ const MainImageCard: React.FC<{
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(currentImageUrl);
-  const [error, setError] = useState<string | null>(null);
+  const notify = React.useContext(NotifyContext);
+  const showError = (message: string) => notify("error", "Main image", message);
   const [isViewingFull, setIsViewingFull] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -571,31 +646,30 @@ const MainImageCard: React.FC<{
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { setError("File size exceeds 5MB limit."); return; }
-      if (!file.type.startsWith('image/')) { setError("Only image files are allowed."); return; }
+      if (file.size > 5 * 1024 * 1024) { showError("File size exceeds 5MB limit."); return; }
+      if (!file.type.startsWith('image/')) { showError("Only image files are allowed."); return; }
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
-      setError(null);
     }
   };
 
   const handleUpload = async () => {
     if (!selectedFile) return;
-    setUploading(true); setError(null);
+    setUploading(true);
     const formData = new FormData();
     formData.append("main_image", selectedFile);
     try {
       const res = await fetch(`${API}update_site_main_image/${siteId}/`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData });
       const data = await res.json();
-      if (res.ok) { onImageUpdate(data.main_image_url); setSelectedFile(null); } else { setError(data.error || "Upload failed"); setPreviewUrl(currentImageUrl); }
-    } catch { setError("Network error. Please try again."); setPreviewUrl(currentImageUrl); } finally { setUploading(false); }
+      if (res.ok) { onImageUpdate(data.main_image_url); setSelectedFile(null); notify("success", "Main image updated", "The site's main image was uploaded."); } else { showError(data.error || "Upload failed"); setPreviewUrl(currentImageUrl); }
+    } catch { showError("Network error. Please try again."); setPreviewUrl(currentImageUrl); } finally { setUploading(false); }
   };
 
   const handleDelete = async () => {
     try {
       const res = await fetch(`${API}remove_site_main_image/${siteId}/`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) { onImageUpdate(null); setPreviewUrl(null); setSelectedFile(null); }
-    } catch { setError("Failed to remove image."); } finally {
+      if (res.ok) { onImageUpdate(null); setPreviewUrl(null); setSelectedFile(null); notify("success", "Main image removed", "The site's main image was removed."); } else { showError("Failed to remove image."); }
+    } catch { showError("Failed to remove image."); } finally {
       setShowDeleteConfirm(false);
     }
   };
@@ -644,7 +718,6 @@ const MainImageCard: React.FC<{
             </div>
           )}
 
-          {error && <div className="mt-3 flex items-center gap-2 text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-xs"><AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}</div>}
           {isUploadingNew && (
             <div className="mt-3 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
               <div className="flex items-center gap-2"><ImageIcon className="w-4 h-4 text-blue-600" /><span className="text-xs text-blue-800 truncate max-w-[150px]">{selectedFile?.name}</span></div>
@@ -687,36 +760,35 @@ const SiteImagesGallery: React.FC<{
   const [caption, setCaption] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const notify = React.useContext(NotifyContext);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [imageToDelete, setImageToDelete] = useState<number | null>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) { setSelectedFile(file); setPreviewUrl(URL.createObjectURL(file)); setUploadError(null); }
+    if (file) { setSelectedFile(file); setPreviewUrl(URL.createObjectURL(file)); }
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) { setUploadError("Please select an image file"); return; }
-    setUploading(true); setUploadError(null); setUploadSuccess(false);
+    if (!selectedFile) { notify("failed", "No image selected", "Please select an image file."); return; }
+    setUploading(true);
     const formData = new FormData();
     formData.append("img", selectedFile);
     formData.append("layer_tag", selectedLayer);
     formData.append("caption", caption);
     try {
       const res = await fetch(`${API}upload_site_image/${siteId}/`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData });
-      if (res.ok) { setUploadSuccess(true); setSelectedFile(null); setPreviewUrl(null); setCaption(""); onImagesUpdate(); setTimeout(() => setUploadSuccess(false), 3000); } else { const error = await res.json(); setUploadError(error.error || "Upload failed"); }
-    } catch (error) { setUploadError("Upload failed. Please try again."); } finally { setUploading(false); }
+      if (res.ok) { setSelectedFile(null); setPreviewUrl(null); setCaption(""); onImagesUpdate(); notify("success", "Image uploaded", "Image uploaded successfully!"); } else { const error = await res.json(); notify("error", "Upload failed", error.error || "Upload failed"); }
+    } catch { notify("error", "Upload failed", "Upload failed. Please try again."); } finally { setUploading(false); }
   };
 
   const handleDelete = async () => {
     if (!imageToDelete) return;
-    try { 
-      const res = await fetch(`${API}delete_site_image/${imageToDelete}/`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }); 
-      if (res.ok) onImagesUpdate(); 
-    } catch (error) { console.error("Delete failed:", error); } finally {
+    try {
+      const res = await fetch(`${API}delete_site_image/${imageToDelete}/`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) { onImagesUpdate(); notify("success", "Image deleted", "The image was removed."); } else { notify("error", "Delete failed", "Could not delete the image."); }
+    } catch { notify("error", "Delete failed", "Could not delete the image."); } finally {
       setShowDeleteConfirm(false);
       setImageToDelete(null);
     }
@@ -760,8 +832,6 @@ const SiteImagesGallery: React.FC<{
                 <button onClick={() => { setSelectedFile(null); setPreviewUrl(null); }} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full hover:bg-red-600 transition-colors shadow-lg"><X className="w-4 h-4" /></button>
               </div>
             )}
-            {uploadError && <div className="flex items-center gap-2 text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2 text-xs"><AlertCircle className="w-4 h-4 flex-shrink-0" /> {uploadError}</div>}
-            {uploadSuccess && <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 text-xs"><CheckCircle className="w-4 h-4" /> Image uploaded successfully!</div>}
             <button onClick={handleUpload} disabled={uploading || !selectedFile} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-md text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               {uploading ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading...</> : <><Upload className="w-4 h-4" /> Upload Image</>}
             </button>
@@ -895,7 +965,7 @@ const SpeciesRecommendationsPanel: React.FC<{ siteId: number; initialSpecies: Sp
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingSpecies, setLoadingSpecies] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const notify = React.useContext(NotifyContext);
 
   useEffect(() => {
     const fetchAllSpecies = async () => {
@@ -915,11 +985,12 @@ const SpeciesRecommendationsPanel: React.FC<{ siteId: number; initialSpecies: Sp
   };
   const handleRemove = (id: number) => { setSpecies((prev) => prev.filter((s) => s.id !== id).map((s, i) => ({ ...s, rank: i + 1 }))); };
   const handleSave = async () => {
-    setSaving(true); setSaveSuccess(false);
+    setSaving(true);
     try {
       const res = await fetch(`${API}update_species/${siteId}/`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ species: species.map((s) => ({ tree_species_id: s.id, priority_rank: s.rank, notes: s.notes || "" })) }) });
-      if (res.ok) { setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 3000); }
-    } catch { /* silent */ }
+      if (res.ok) notify("success", "Species saved", "Recommended species saved successfully.");
+      else notify("error", "Save failed", "Could not save the species list.");
+    } catch { notify("error", "Save failed", "Could not save the species list."); }
     setSaving(false);
   };
 
@@ -961,36 +1032,9 @@ const SpeciesRecommendationsPanel: React.FC<{ siteId: number; initialSpecies: Sp
             <button onClick={handleAdd} disabled={!selectedId} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-md text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"><Plus className="w-4 h-4" /> Add Species</button>
           </div>
         )}
-        {saveSuccess && (<div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 text-xs font-medium"><CheckCircle className="w-4 h-4" /> Saved successfully</div>)}
         {canEdit && species.length > 0 && (<button onClick={handleSave} disabled={saving} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-md text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-50">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}{saving ? "Saving..." : "Save Recommendations"}</button>)}
       </div>
     </div>
-  );
-};
-
-// ─────────────────────────────────────────────
-// PERMITS
-// ───────────────────────────────────────────
-const PermitsCard: React.FC<{ permits: PermitItem[] }> = ({ permits }) => {
-  return (
-    <BentoCard header={{ icon: FileCheck, title: "Legal Documents", badge: permits.length > 0 ? `${permits.length}` : undefined }}>
-      {permits.length > 0 ? (
-        <div className="space-y-2">
-          {permits.map((permit) => (
-            <div key={permit.permit_id} className="flex flex-col p-3 bg-gray-50 rounded-md border border-gray-200 hover:bg-gray-100 transition-colors">
-              <div className="flex items-start gap-2.5 w-full">
-                <div className="p-1.5 bg-blue-100 rounded-md flex-shrink-0 mt-0.5"><FileText className="w-4 h-4 text-blue-600" /></div>
-                <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-gray-800 capitalize block">{permit.document_type.replace(/_/g, " ")}</span>
-                  {permit.notes && <p className="text-xs text-gray-600 mt-1 italic break-words">"{permit.notes}"</p>}
-                  <div className="flex items-center gap-2 text-[10px] text-gray-500 mt-1.5">{permit.uploaded_at && <span>Added: {new Date(permit.uploaded_at).toLocaleDateString()}</span>}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (<div className="text-center py-6 text-gray-400"><FileText className="w-8 h-8 mx-auto mb-2 opacity-30" /><p className="text-sm">No documents recorded</p></div>)}
-    </BentoCard>
   );
 };
 
@@ -1021,7 +1065,7 @@ const ValidationDataCard: React.FC<{ validationData: ValidationData | null }> = 
 // ────────────────────────────────────────────
 // POTENTIAL SITES
 // ─────────────────────────────────────────────
-const PotentialSitesCard: React.FC<{ sites: PotentialSite[] }> = ({ sites }) => {
+const PotentialSitesCard: React.FC<{ sites: PotentialSite[]; unit: AreaUnit }> = ({ sites, unit }) => {
   if (sites.length === 0) return null;
   return (
     <BentoCard header={{ icon: MapPin, title: "Consolidated Potential Sites", badge: `${sites.length}` }}>
@@ -1030,7 +1074,7 @@ const PotentialSitesCard: React.FC<{ sites: PotentialSite[] }> = ({ sites }) => 
           <div key={site.potential_sites_id} className="p-3 bg-gray-50 rounded-md border border-gray-200 hover:border-gray-300 transition-colors">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-sm font-medium text-gray-800">{site.site_id || `Potential #${site.potential_sites_id}`}</span>
-              <span className="text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded">{site.area_hectares.toFixed(2)} ha</span>
+              <span className="text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded">{formatArea(site.area_hectares, unit)}</span>
             </div>
             <div className="flex gap-3 text-xs text-gray-600">
               <span className="flex items-center gap-1"><Leaf size={10} /> NDVI: {site.avg_ndvi.toFixed(3)}</span>
@@ -1070,6 +1114,15 @@ export default function SiteInformation(): JSX.Element {
   const navigate = useNavigate();
 
   const [siteData, setSiteData] = useState<SiteResponse | null>(null);
+  const [areaUnit, setAreaUnit] = useState<AreaUnit>(loadAreaUnit);
+  const handleAreaUnitChange = (unit: AreaUnit) => {
+    setAreaUnit(unit);
+    try {
+      localStorage.setItem(AREA_UNIT_STORAGE_KEY, unit);
+    } catch {
+      // Not critical if the preference can't be saved
+    }
+  };
   const [landClassificationName, setLandClassificationName] = useState<string | null>(null);
   const [allLandClassifications, setAllLandClassifications] = useState<LandClassificationOption[]>([]);
   
@@ -1078,7 +1131,8 @@ export default function SiteInformation(): JSX.Element {
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [updateSuccess, setUpdateSuccess] = useState<string | null>(null);
+  const [PSalert, setPSAlert] = useState<{ type: "success" | "failed" | "error"; title: string; message: string } | null>(null);
+  const notify = useCallback<NotifyFn>((type, title, message) => setPSAlert({ type, title, message }), []);
 
   const canEdit = true;
   const resolvedId = site_id || id || "0";
@@ -1130,7 +1184,7 @@ export default function SiteInformation(): JSX.Element {
     if (!siteData) return;
     try {
       const res = await fetch(`${API}update_site_basic_info/${siteData.site_id}/`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: newName }) });
-      if (res.ok) { setSiteData({ ...siteData, name: newName }); setUpdateSuccess("Name updated successfully"); setTimeout(() => setUpdateSuccess(null), 3000); } else { const error = await res.json(); throw new Error(error.error || "Failed to update name"); }
+      if (res.ok) { setSiteData({ ...siteData, name: newName }); notify("success", "Name updated", "Name updated successfully"); } else { const error = await res.json(); throw new Error(error.error || "Failed to update name"); }
     } catch (error) { throw error; }
   };
 
@@ -1138,7 +1192,7 @@ export default function SiteInformation(): JSX.Element {
     if (!siteData) return;
     try {
       const res = await fetch(`${API}update_site_basic_info/${siteData.site_id}/`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ description: newDescription }) });
-      if (res.ok) { setSiteData({ ...siteData, description: newDescription || null }); setUpdateSuccess("Description updated successfully"); setTimeout(() => setUpdateSuccess(null), 3000); } else { const error = await res.json(); throw new Error(error.error || "Failed to update description"); }
+      if (res.ok) { setSiteData({ ...siteData, description: newDescription || null }); notify("success", "Description updated", "Description updated successfully"); } else { const error = await res.json(); throw new Error(error.error || "Failed to update description"); }
     } catch (error) { throw error; }
   };
 
@@ -1158,8 +1212,7 @@ export default function SiteInformation(): JSX.Element {
           reforestation_area_id: data.reforestation_area_id,
           reforestation_area_name: data.reforestation_area_name 
         }); 
-        setUpdateSuccess("Reforestation area updated successfully"); 
-        setTimeout(() => setUpdateSuccess(null), 3000); 
+        notify("success", "Area updated", "Reforestation area updated successfully");
       } else { 
         const error = await res.json(); 
         throw new Error(error.error || "Failed to update area"); 
@@ -1188,7 +1241,16 @@ export default function SiteInformation(): JSX.Element {
   const isLocked = LOCKED_MONITORING_STATUSES.includes(siteData.monitoring_status);
 
   return (
+    <NotifyContext.Provider value={notify}>
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800">
+      {PSalert && (
+        <PlantScopeAlert
+          type={PSalert.type}
+          title={PSalert.title}
+          message={PSalert.message}
+          onClose={() => setPSAlert(null)}
+        />
+      )}
       <div className="max-w-7xl mx-auto">
         {/* ── HEADER ── */}
         <div className="mb-6">
@@ -1210,7 +1272,6 @@ export default function SiteInformation(): JSX.Element {
                   <span className="w-1 h-1 bg-gray-300 rounded-full" />
                   <span className="font-mono bg-gray-100 px-2 py-1 rounded border border-gray-200">Area #{id}</span>
                 </div>
-                {updateSuccess && (<div className="mt-3 flex items-center gap-2 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 text-xs font-medium w-fit"><CheckCircle className="w-4 h-4" /> {updateSuccess}</div>)}
               </div>
               <div className="flex gap-2 flex-shrink-0">
                 <button onClick={fetchSiteData} disabled={loading} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-50 inline-flex items-center gap-2 shadow-sm">
@@ -1227,7 +1288,7 @@ export default function SiteInformation(): JSX.Element {
           {/* ROW 1: Stats Cards (12 cols) */}
           <div className="col-span-12">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <StatCard icon={Ruler} label="Area" value={`${siteData.area_hectares.toFixed(2)} ha`} accent="emerald" />
+              <AreaStatCard hectares={siteData.area_hectares} unit={areaUnit} onUnitChange={handleAreaUnitChange} />
               <StatCard icon={FileText} label="Documents" value={siteData.permits.length} subtext="recorded" accent="blue" />
               <StatCard icon={PawPrint} label="Animals" value={siteData.meta_verification?.verified_animals?.length || 0} subtext="verified" accent="purple" />
             </div>
@@ -1296,23 +1357,20 @@ export default function SiteInformation(): JSX.Element {
             </BentoCard>
           </div>
 
-          {/* ROW 5: Documents (6 cols) + Validation (6 cols) */}
-          <div className="col-span-12 lg:col-span-6">
-            <PermitsCard permits={siteData.permits} />
-          </div>
-
-          <div className="col-span-12 lg:col-span-6">
+          {/* ROW 5: Validation (Full Width) */}
+          <div className="col-span-12">
             <ValidationDataCard validationData={siteData.validation_data} />
           </div>
 
           {/* ROW 6: Potential Sites (Full Width) */}
           {siteData.potential_sites.length > 0 && (
             <div className="col-span-12">
-              <PotentialSitesCard sites={siteData.potential_sites} />
+              <PotentialSitesCard sites={siteData.potential_sites} unit={areaUnit} />
             </div>
           )}
         </div>
       </div>
     </div>
+    </NotifyContext.Provider>
   );
 }
