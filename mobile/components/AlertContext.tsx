@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from "react";
-import { View, StyleSheet, Platform, Modal } from "react-native";
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
+import { View, StyleSheet, Platform } from "react-native";
 import CustomToast from "./CustomToast";
 import CustomDialog from "./CustomDialog";
 
@@ -44,10 +44,63 @@ type AlertContextType = {
 
 const AlertContext = createContext<AlertContextType | undefined>(undefined);
 
+// Toasts are drawn by <ToastHost /> overlays instead of a native <Modal>,
+// because a Modal is a full-screen window that blocks every touch until the
+// toast disappears. The provider renders one host over the app; screens that
+// open their own <Modal> render another <ToastHost /> inside it so toasts still
+// appear on top. Only the most recently mounted host draws, so toasts never
+// show twice.
+type ToastHostContextType = {
+  toasts: ToastMessage[];
+  removeToast: (id: string) => void;
+  activeHostId: number | undefined;
+  registerHost: (id: number) => void;
+  unregisterHost: (id: number) => void;
+};
+
+const ToastHostContext = createContext<ToastHostContextType | undefined>(undefined);
+let nextHostId = 0;
+
+export const ToastHost: React.FC = () => {
+  const ctx = useContext(ToastHostContext);
+  const hostId = useRef(nextHostId++).current;
+
+  useEffect(() => {
+    if (!ctx) return;
+    ctx.registerHost(hostId);
+    return () => ctx.unregisterHost(hostId);
+    // register/unregister are stable; run once per host
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!ctx || ctx.activeHostId !== hostId || ctx.toasts.length === 0) return null;
+
+  return (
+    <View style={styles.toastContainer} pointerEvents="box-none">
+      {ctx.toasts.map((toast, index) => (
+        <CustomToast
+          key={toast.id}
+          toast={toast}
+          index={index}
+          onClose={() => ctx.removeToast(toast.id)}
+        />
+      ))}
+    </View>
+  );
+};
+
 export const AlertProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [dialog, setDialog] = useState<DialogMessage | null>(null);
+  const [hostIds, setHostIds] = useState<number[]>([]);
   const idCounter = useRef(0);
+
+  const registerHost = useCallback((id: number) => {
+    setHostIds((prev) => [...prev, id]);
+  }, []);
+  const unregisterHost = useCallback((id: number) => {
+    setHostIds((prev) => prev.filter((h) => h !== id));
+  }, []);
 
   const generateId = () => `alert_${Date.now()}_${idCounter.current++}`;
 
@@ -119,30 +172,23 @@ export const AlertProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <AlertContext.Provider value={{ success, error, warning, info, confirm }}>
-      {children}
-
-      {/* Toast Modal - Renders above everything including other modals */}
-      <Modal
-        transparent
-        visible={toasts.length > 0}
-        statusBarTranslucent
-        animationType="none"
-        pointerEvents="box-none"
+      <ToastHostContext.Provider
+        value={{
+          toasts,
+          removeToast,
+          activeHostId: hostIds[hostIds.length - 1],
+          registerHost,
+          unregisterHost,
+        }}
       >
-        <View style={styles.toastModalContainer}>
-          {toasts.map((toast, index) => (
-            <CustomToast
-              key={toast.id}
-              toast={toast}
-              index={index}
-              onClose={() => removeToast(toast.id)}
-            />
-          ))}
-        </View>
-      </Modal>
+        {children}
 
-      {/* Dialog */}
-      {dialog && <CustomDialog dialog={dialog} onClose={closeDialog} />}
+        {/* App-level toast overlay; touches pass through everywhere except the toast itself */}
+        <ToastHost />
+
+        {/* Dialog */}
+        {dialog && <CustomDialog dialog={dialog} onClose={closeDialog} />}
+      </ToastHostContext.Provider>
     </AlertContext.Provider>
   );
 };
@@ -156,12 +202,14 @@ export const useAlert = () => {
 };
 
 const styles = StyleSheet.create({
-  toastModalContainer: {
+  toastContainer: {
     position: "absolute",
     top: Platform.OS === "ios" ? 60 : 40,
     left: 0,
     right: 0,
     alignItems: "center",
     paddingHorizontal: 16,
+    zIndex: 9999,
+    elevation: 9999, // Android draws by elevation, so keep toasts above screen content
   },
 });

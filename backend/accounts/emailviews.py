@@ -1,5 +1,6 @@
 import random
 import string
+import time
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.core.cache import cache
@@ -26,7 +27,16 @@ def send_otp(request):
     if not email or not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
         return JsonResponse({'error': 'A valid email is required.'}, status=400)
 
-    if User.objects.filter(email=email).exists():
+    # Timings are printed so a slow or stuck request shows which step stalled
+    started = time.monotonic()
+    try:
+        already_registered = User.objects.filter(email=email).exists()
+    except Exception as e:
+        print(f"[send_otp] database check failed after {time.monotonic() - started:.1f}s: {e}")
+        return JsonResponse({'error': 'Could not reach the database. Please try again shortly.'}, status=503)
+    print(f"[send_otp] database check took {time.monotonic() - started:.1f}s")
+
+    if already_registered:
         return JsonResponse({'error': 'This email is already registered. Please use another email or log in.'}, status=400)
 
     if cache.get(f'otp_cooldown_{email}'):
@@ -99,6 +109,7 @@ def send_otp(request):
     </html>
     """
 
+    send_started = time.monotonic()
     try:
         # ✅ Send email using Resend API with your verified domain
         params = {
@@ -109,11 +120,12 @@ def send_otp(request):
         }
 
         resend.Emails.send(params)
+        print(f"[send_otp] Resend send took {time.monotonic() - send_started:.1f}s")
 
     except Exception as e:
         cache.delete(f'otp_{email}')
         cache.delete(f'otp_cooldown_{email}')
-        print(f"Resend Error: {str(e)}")
+        print(f"Resend Error after {time.monotonic() - send_started:.1f}s: {str(e)}")
         return JsonResponse({'error': f'Failed to send email: {str(e)}'}, status=500)
 
     return JsonResponse({'message': 'Verification code sent to your email.'}, status=200)

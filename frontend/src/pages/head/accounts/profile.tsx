@@ -16,6 +16,9 @@ import {
   Shield,
   User,
   RotateCcw,
+  ZoomIn,
+  Download,
+  X,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState, type FormEvent } from "react";
@@ -59,6 +62,22 @@ export function Profile() {
   const { id } = useParams();
   const [profile_img, setProfile_img] = useState<File | null>(null);
   const [useDefaultImg, setUseDefaultImg] = useState(false);
+  const [showFullImage, setShowFullImage] = useState(false);
+
+  // Close full-view modal on ESC key and lock page scroll while it's open
+  useEffect(() => {
+    if (!showFullImage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowFullImage(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [showFullImage]);
   const [isLoading, setIsLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -358,6 +377,93 @@ export function Profile() {
           padding: 3px;
         }
 
+        .avatar-overlay {
+          position: absolute; inset: 0;
+          border-radius: 50%;
+          background: rgba(0,0,0,.5);
+          opacity: 0;
+          transition: opacity .25s ease;
+          display: flex; align-items: center; justify-content: center;
+          gap: 8px;
+        }
+        .avatar-overlay:hover { opacity: 1; }
+        .avatar-action-btn {
+          width: 34px; height: 34px;
+          border-radius: 50%;
+          border: 2px solid rgba(255,255,255,.9);
+          background: rgba(255,255,255,.15);
+          backdrop-filter: blur(8px);
+          color: white;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer;
+          transition: all .2s ease;
+        }
+        .avatar-action-btn:hover {
+          background: rgba(255,255,255,.3);
+          transform: scale(1.1);
+        }
+
+        .pf-modal-backdrop {
+          position: fixed; inset: 0;
+          background: rgba(7, 20, 13, 0.75);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          z-index: 60;
+          display: flex; align-items: center; justify-content: center;
+          padding: 24px;
+          animation: pfFadeIn .25s ease;
+        }
+        @keyframes pfFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes pfZoomIn {
+          from { opacity: 0; transform: scale(.92); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .pf-modal-card {
+          position: relative;
+          max-width: min(90vw, 640px);
+          max-height: 85vh;
+          background: white;
+          border-radius: 20px;
+          overflow: hidden;
+          box-shadow: 0 30px 80px rgba(0,0,0,.5);
+          animation: pfZoomIn .3s cubic-bezier(.2,.8,.2,1);
+          display: flex; flex-direction: column;
+        }
+        .pf-modal-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 14px 18px;
+          background: linear-gradient(135deg, #0f4a2f, #0a2e1c);
+          color: white;
+        }
+        .pf-modal-title {
+          font-size: 14px; font-weight: 600;
+          display: flex; align-items: center; gap: 8px;
+        }
+        .pf-modal-actions { display: flex; align-items: center; gap: 6px; }
+        .pf-modal-icon-btn {
+          width: 32px; height: 32px; border-radius: 10px;
+          background: rgba(255,255,255,.1);
+          border: 1px solid rgba(255,255,255,.15);
+          color: white;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all .2s;
+        }
+        .pf-modal-icon-btn:hover {
+          background: rgba(255,255,255,.2);
+          transform: translateY(-1px);
+        }
+        .pf-modal-body {
+          background: #0a0a0a;
+          display: flex; align-items: center; justify-content: center;
+          overflow: auto;
+        }
+        .pf-modal-body img {
+          display: block;
+          max-width: 100%;
+          max-height: calc(85vh - 60px);
+          object-fit: contain;
+        }
+
         .upload-btn {
           background: rgba(255,255,255,0.12);
           border: 1px solid rgba(255,255,255,0.2);
@@ -492,16 +598,27 @@ export function Profile() {
                       src={profile.preview_profile || defaultProfile}
                       alt="profile"
                       className="w-full h-full object-cover bg-white"
+                      draggable={false}
                     />
-                    <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity cursor-pointer rounded-full">
-                      <Camera size={20} className="text-white" />
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageChange}
-                        className="hidden"
-                      />
-                    </label>
+                    <div className="avatar-overlay">
+                      <button
+                        type="button"
+                        className="avatar-action-btn"
+                        onClick={() => setShowFullImage(true)}
+                        title="View full size"
+                      >
+                        <ZoomIn size={16} />
+                      </button>
+                      <label className="avatar-action-btn" title="Change photo">
+                        <Camera size={16} />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageChange}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -539,6 +656,59 @@ export function Profile() {
             </div>
           </div>
         </div>
+
+        {/* ── FULL-VIEW MODAL ── */}
+        {showFullImage && (
+          <div
+            className="pf-modal-backdrop"
+            onClick={() => setShowFullImage(false)}
+          >
+            <div
+              className="pf-modal-card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="pf-modal-header">
+                <div className="pf-modal-title">
+                  <User size={15} />
+                  <span>Profile Picture</span>
+                  {(profile.first_name || profile.last_name) && (
+                    <span className="text-white/50 text-xs font-normal ml-1">
+                      {profile.first_name} {profile.last_name}
+                    </span>
+                  )}
+                </div>
+                <div className="pf-modal-actions">
+                  {/* Only a real photo is worth downloading, not the default avatar */}
+                  {profile.preview_profile && (
+                    <a
+                      href={profile.preview_profile}
+                      download={`${profile.first_name || "profile"}-avatar.png`}
+                      className="pf-modal-icon-btn"
+                      title="Download image"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Download size={15} />
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className="pf-modal-icon-btn"
+                    onClick={() => setShowFullImage(false)}
+                    title="Close (Esc)"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+              <div className="pf-modal-body">
+                <img
+                  src={profile.preview_profile || defaultProfile}
+                  alt={`${profile.first_name} ${profile.last_name}`.trim() || "Profile picture"}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── FORM ── */}
         <form

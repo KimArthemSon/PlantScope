@@ -18,7 +18,7 @@ import * as SecureStore from "expo-secure-store";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { api } from "@/constants/url_fixed";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 
 const API_BASE_URL = api + "/api";
 const { height: screenHeight, width: screenWidth } = Dimensions.get("window");
@@ -906,6 +906,7 @@ export default function MapScreen() {
             </TouchableOpacity>
           </Pressable>
         </Pressable>
+        <ToastHost />
       </Modal>
 
       {/* 🟢 AREA SHEET */}
@@ -974,6 +975,7 @@ export default function MapScreen() {
             </TouchableOpacity>
           </Pressable>
         </Pressable>
+        <ToastHost />
       </Modal>
 
       {/* 🔵 SITE SHEET */}
@@ -1115,6 +1117,7 @@ export default function MapScreen() {
             )}
           </Pressable>
         </Pressable>
+        <ToastHost />
       </Modal>
 
       {/* 📋 ASSESSMENT ACTION SHEET */}
@@ -1180,6 +1183,7 @@ export default function MapScreen() {
             </Pressable>
           </Pressable>
         </Pressable>
+        <ToastHost />
       </Modal>
     </View>
   );

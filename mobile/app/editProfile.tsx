@@ -20,7 +20,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
-import { useAlert } from "@/components/AlertContext";
+import { useAlert, ToastHost } from "@/components/AlertContext";
 import CustomPicker from "@/components/CustomPicker";
 
 const API = api + "/api";
@@ -244,6 +244,7 @@ const DatePickerModal: React.FC<{
           </View>
         </View>
       </View>
+      <ToastHost />
     </Modal>
   );
 };
