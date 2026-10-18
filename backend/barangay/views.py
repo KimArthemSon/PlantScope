@@ -95,7 +95,13 @@ def get_barangays(request):
 
     offset = (page - 1) * entries
 
-    barangays = Barangay.objects.all().order_by('-created_at')
+    # Only allow known fields so user input can't pick arbitrary columns
+    sort_by = request.GET.get('sort_by', 'created_at')
+    if sort_by not in ('name', 'description', 'created_at'):
+        sort_by = 'created_at'
+    prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
+
+    barangays = Barangay.objects.all().order_by(f'{prefix}{sort_by}', f'{prefix}barangay_id')
 
     if search:
         barangays = barangays.filter(name__icontains=search)

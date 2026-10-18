@@ -8,6 +8,10 @@ import {
   Info,
   MapPin,
   X,
+  Maximize2,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
@@ -15,7 +19,13 @@ import LoaderPending from "../../../components/layout/loaderSmall";
 import { api } from "@/constant/api";
 
 // 🗺️ Leaflet Imports
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  useMapEvents,
+  useMap,
+} from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -29,6 +39,39 @@ L.Icon.Default.mergeOptions({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
+
+// 📍 Pin + label markers, matching the style used on the main Map page
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+const createMarkerIcon = (type: "barangay" | "selected", labelText = "") => {
+  const color = type === "barangay" ? "#EAB308" : "#EF4444";
+  const icon =
+    type === "barangay"
+      ? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>`
+      : `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>`;
+  const label = escapeHtml(labelText);
+  const html = `
+<div style="display: flex; align-items: center; gap: 4px;">
+  <div style="position: relative; width: 24px; height: 30px; flex-shrink: 0;">
+    <svg width="24" height="30" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z" fill="${color}" stroke="white" stroke-width="2"/>
+    </svg>
+    <div style="position: absolute; top: 5px; left: 6px; width: 12px; height: 12px; display: flex; align-items: center; justify-content: center;">
+      ${icon}
+    </div>
+  </div>
+  ${label ? `<span style="font-size: 11px; font-weight: 600; color: #1f2937; background: rgba(255,255,255,0.9); padding: 2px 6px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); white-space: nowrap;">${label}</span>` : ""}
+</div>
+`;
+  return L.divIcon({
+    html,
+    className: "custom-marker-icon-small",
+    iconSize: [label ? Math.min(200, 28 + labelText.length * 7) : 24, 30],
+    iconAnchor: [12, 30],
+    popupAnchor: [0, -30],
+  });
+};
 
 // 🖱️ Handles map clicks to update coordinates
 function MapClickHandler({ setBarangay }: any) {
@@ -55,6 +98,47 @@ function MapResizer() {
   return null;
 }
 
+// 🗺️ Shared map contents for the modal map and the full-screen map
+function BarangayMapLayers({
+  barangay,
+  setBarangay,
+  existing,
+}: {
+  barangay: BarangayForm;
+  setBarangay: React.Dispatch<React.SetStateAction<BarangayForm>>;
+  existing: Barangay[];
+}) {
+  return (
+    <>
+      <TileLayer
+        url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
+        tileSize={512}
+        zoomOffset={-1}
+        attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      />
+      <MapClickHandler setBarangay={setBarangay} />
+      <MapResizer />
+      {/* Already-created barangays; marker clicks don't bubble, so they won't move the pin */}
+      {existing
+        .filter((b) => b.coordinate?.[0] != null && b.coordinate?.[1] != null)
+        .map((b) => (
+          <Marker
+            key={b.barangay_id}
+            position={[b.coordinate[0], b.coordinate[1]]}
+            icon={createMarkerIcon("barangay", b.name)}
+          />
+        ))}
+      {(barangay.lat !== 0 || barangay.lng !== 0) && (
+        <Marker
+          position={[barangay.lat, barangay.lng]}
+          icon={createMarkerIcon("selected", barangay.name || "New location")}
+          zIndexOffset={1000}
+        />
+      )}
+    </>
+  );
+}
+
 interface Barangay {
   barangay_id: number;
   name: string;
@@ -75,7 +159,11 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
+  sort_by: SortKey;
+  order: "asc" | "desc";
 }
+
+type SortKey = "name" | "description" | "created_at";
 
 export default function Barangays() {
   const [barangays, setBarangays] = useState<Barangay[]>([]);
@@ -91,8 +179,12 @@ export default function Barangays() {
     entries: 10,
     page: 1,
     total_page: 1,
+    sort_by: "created_at",
+    order: "desc",
   });
 
+  const [allBarangays, setAllBarangays] = useState<Barangay[]>([]);
+  const [isFullMapOpen, setIsFullMapOpen] = useState(false);
   const [isOpenAddEditModal, setIsOpenAddEditModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form_loading, setForm_loading] = useState(false);
@@ -124,6 +216,8 @@ export default function Barangays() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
+        sort_by: filter.sort_by,
+        order: filter.order,
       });
 
       const response = await fetch(
@@ -146,11 +240,65 @@ export default function Barangays() {
     } finally {
       setLoading(false);
     }
+    fetchAllBarangays();
+  };
+
+  // Unpaginated list used to plot every existing barangay on the map
+  const fetchAllBarangays = async () => {
+    try {
+      const response = await fetch(api + "api/get_barangay_list/", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setAllBarangays(data.data);
+    } catch {
+      // Map markers are optional; the table still works without them
+    }
   };
 
   useEffect(() => {
     fetchBarangays();
-  }, [filter.page, filter.entries]);
+  }, [filter.page, filter.entries, filter.sort_by, filter.order]);
+
+  // Clicking the active column flips the order; a new column starts ascending
+  const handleSort = (key: SortKey) => {
+    setFilter((prev) => ({
+      ...prev,
+      sort_by: key,
+      order: prev.sort_by === key && prev.order === "asc" ? "desc" : "asc",
+      page: 1,
+    }));
+  };
+
+  const SortableHeader = ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
+    <th className="py-3 px-5 text-left text-[.9rem]">
+      <button
+        type="button"
+        onClick={() => handleSort(sortKey)}
+        className="flex items-center gap-1.5 cursor-pointer hover:text-green-200"
+      >
+        {label}
+        {filter.sort_by !== sortKey ? (
+          <ArrowUpDown size={14} className="opacity-50" />
+        ) : filter.order === "asc" ? (
+          <ArrowUp size={14} />
+        ) : (
+          <ArrowDown size={14} />
+        )}
+      </button>
+    </th>
+  );
+
+  // Don't reopen straight into the full map next time the modal opens
+  useEffect(() => {
+    if (!isOpenAddEditModal) setIsFullMapOpen(false);
+  }, [isOpenAddEditModal]);
+
+  // Hide the barangay being edited so it only shows as the draggable pin
+  const otherBarangays = allBarangays.filter(
+    (b) => action === "Add" || b.barangay_id !== editBarangayId,
+  );
 
   const setDelete = (id: number) => {
     setBarangayIdDelete(id);
@@ -342,12 +490,10 @@ export default function Barangays() {
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Name</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Description
-                </th>
+                <SortableHeader label="Name" sortKey="name" />
+                <SortableHeader label="Description" sortKey="description" />
                 <th className="py-3 px-5 text-left text-[.9rem]">Coordinate</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created at</th>
+                <SortableHeader label="Created at" sortKey="created_at" />
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -605,16 +751,24 @@ export default function Barangays() {
 
               {/* Right Column - Map */}
               <div className="lg:w-92 bg-gray-50 border-l border-gray-200 flex flex-col">
-                <div className="p-3 bg-white border-b border-gray-200">
+                <div className="p-3 bg-white border-b border-gray-200 flex items-center justify-between">
                   <h3 className="font-semibold text-gray-800 text-xs flex items-center gap-1.5">
                     <MapPin size={14} className="text-green-600" />
                     Location Map
                   </h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsFullMapOpen(true)}
+                    className="flex items-center gap-1 text-xs font-medium text-green-700 hover:text-green-800 hover:bg-green-50 px-2 py-1 rounded-md cursor-pointer"
+                  >
+                    <Maximize2 size={13} />
+                    View full map
+                  </button>
                 </div>
                 <div className="flex-1 p-3">
                   <div className="h-full min-h-64 rounded-md overflow-hidden border border-gray-300">
                     {/* ✅ Only render map when modal is open */}
-                    {isOpenAddEditModal && (
+                    {isOpenAddEditModal && !isFullMapOpen && (
                       <MapContainer
                         center={[barangay.lat || 11.007, barangay.lng || 124.602]}
                         zoom={barangay.lat && barangay.lng ? 15 : 13}
@@ -622,17 +776,11 @@ export default function Barangays() {
                         key={`map-${isOpenAddEditModal}-${editBarangayId}`}
                         scrollWheelZoom={true}
                       >
-                        <TileLayer
-                          url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`}
-                          tileSize={512}
-                          zoomOffset={-1}
-                          attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        <BarangayMapLayers
+                          barangay={barangay}
+                          setBarangay={setBarangay}
+                          existing={otherBarangays}
                         />
-                        <MapClickHandler setBarangay={setBarangay} />
-                        <MapResizer />
-                        {(barangay.lat !== 0 || barangay.lng !== 0) && (
-                          <Marker position={[barangay.lat, barangay.lng]} />
-                        )}
                       </MapContainer>
                     )}
                   </div>
@@ -669,6 +817,49 @@ export default function Barangays() {
           </form>
         </div>
       </div>
+
+      {/* Full-screen Map */}
+      {isOpenAddEditModal && isFullMapOpen && (
+        <div className="fixed inset-0 z-60 flex flex-col bg-black/70 p-6">
+          <div className="flex items-center justify-between bg-green-600 px-5 py-3 rounded-t-lg">
+            <div className="text-white">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <MapPin size={18} /> Location Map
+              </h2>
+              <p className="text-green-100 text-xs">
+                Click the map to set the location ·{" "}
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 border border-white align-middle" />{" "}
+                selected ·{" "}
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-500 border border-white align-middle" />{" "}
+                existing barangays
+                {(barangay.lat !== 0 || barangay.lng !== 0) &&
+                  ` · Selected: ${barangay.lat.toFixed(5)}, ${barangay.lng.toFixed(5)}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsFullMapOpen(false)}
+              className="bg-white text-green-700 hover:bg-green-50 px-4 py-2 rounded-md text-sm font-semibold cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+          <div className="flex-1 rounded-b-lg overflow-hidden">
+            <MapContainer
+              center={[barangay.lat || 11.007, barangay.lng || 124.602]}
+              zoom={barangay.lat && barangay.lng ? 15 : 13}
+              style={{ height: "100%", width: "100%" }}
+              scrollWheelZoom={true}
+            >
+              <BarangayMapLayers
+                barangay={barangay}
+                setBarangay={setBarangay}
+                existing={otherBarangays}
+              />
+            </MapContainer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

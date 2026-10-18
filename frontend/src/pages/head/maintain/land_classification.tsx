@@ -6,6 +6,9 @@ import {
   ChevronRight,
   ChevronLeft,
   Info,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
@@ -33,7 +36,11 @@ interface Filter {
   page: number;
   total_page: number;
   ownership_type: string; // '', 'public', or 'private'
+  sort_by: SortKey;
+  order: "asc" | "desc";
 }
+
+type SortKey = "name" | "description" | "ownership_type" | "created_at";
 
 export default function Land_classifications() {
   const [Land_classifications, setLand_classifications] = useState<
@@ -54,6 +61,8 @@ export default function Land_classifications() {
     page: 1,
     total_page: 1,
     ownership_type: "", // ✅ UPDATED
+    sort_by: "created_at",
+    order: "desc",
   });
 
   const [isOpenAddEditModal, setIsOpenAddEditModal] = useState(false);
@@ -89,6 +98,8 @@ export default function Land_classifications() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
+        sort_by: filter.sort_by,
+        order: filter.order,
       });
 
       // ✅ UPDATED: Append ownership_type instead of for_reforestation
@@ -122,7 +133,36 @@ export default function Land_classifications() {
   // ✅ UPDATED: Dependency array uses ownership_type
   useEffect(() => {
     fetchLand_classifications();
-  }, [filter.page, filter.entries, filter.ownership_type]);
+  }, [filter.page, filter.entries, filter.ownership_type, filter.sort_by, filter.order]);
+
+  // Clicking the active column flips the order; a new column starts ascending
+  const handleSort = (key: SortKey) => {
+    setFilter((prev) => ({
+      ...prev,
+      sort_by: key,
+      order: prev.sort_by === key && prev.order === "asc" ? "desc" : "asc",
+      page: 1,
+    }));
+  };
+
+  const SortableHeader = ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
+    <th className="py-3 px-5 text-left text-[.9rem]">
+      <button
+        type="button"
+        onClick={() => handleSort(sortKey)}
+        className="flex items-center gap-1.5 cursor-pointer hover:text-green-200"
+      >
+        {label}
+        {filter.sort_by !== sortKey ? (
+          <ArrowUpDown size={14} className="opacity-50" />
+        ) : filter.order === "asc" ? (
+          <ArrowUp size={14} />
+        ) : (
+          <ArrowDown size={14} />
+        )}
+      </button>
+    </th>
+  );
 
   const setDelete = (Land_classification_id: number) => {
     setLand_classification_idDelete(Land_classification_id);
@@ -347,10 +387,10 @@ export default function Land_classifications() {
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Name</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Description</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Ownership Type</th> {/* ✅ UPDATED */}
-                <th className="py-3 px-5 text-left text-[.9rem]">Created At</th>
+                <SortableHeader label="Name" sortKey="name" />
+                <SortableHeader label="Description" sortKey="description" />
+                <SortableHeader label="Ownership Type" sortKey="ownership_type" />
+                <SortableHeader label="Created At" sortKey="created_at" />
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>

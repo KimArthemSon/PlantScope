@@ -5,6 +5,9 @@ import {
   Plus,
   ChevronRight,
   ChevronLeft,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
@@ -32,7 +35,11 @@ interface Filter {
   entries: number;
   page: number;
   total_page: number;
+  sort_by: SortKey;
+  order: "asc" | "desc";
 }
+
+type SortKey = "email" | "user_role" | "is_active" | "created_at";
 
 export default function Accounts() {
   const [users, setUsers] = useState<User[]>([]);
@@ -42,6 +49,8 @@ export default function Accounts() {
     entries: 10,
     page: 1,
     total_page: 1,
+    sort_by: "created_at",
+    order: "desc",
   });
   const [loading, setLoading] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -63,6 +72,8 @@ export default function Accounts() {
         role: filter.role,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
+        sort_by: filter.sort_by,
+        order: filter.order,
       });
 
       const response = await fetch(
@@ -91,7 +102,36 @@ export default function Accounts() {
 
   useEffect(() => {
     fetchUsers();
-  }, [filter.role, filter.page, filter.entries]); // refetch when filters change
+  }, [filter.role, filter.page, filter.entries, filter.sort_by, filter.order]); // refetch when filters change
+
+  // Clicking the active column flips the order; a new column starts ascending
+  const handleSort = (key: SortKey) => {
+    setFilter((prev) => ({
+      ...prev,
+      sort_by: key,
+      order: prev.sort_by === key && prev.order === "asc" ? "desc" : "asc",
+      page: 1,
+    }));
+  };
+
+  const SortableHeader = ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
+    <th className="py-3 px-5 text-left text-[.9rem]">
+      <button
+        type="button"
+        onClick={() => handleSort(sortKey)}
+        className="flex items-center gap-1.5 cursor-pointer hover:text-green-200"
+      >
+        {label}
+        {filter.sort_by !== sortKey ? (
+          <ArrowUpDown size={14} className="opacity-50" />
+        ) : filter.order === "asc" ? (
+          <ArrowUp size={14} />
+        ) : (
+          <ArrowDown size={14} />
+        )}
+      </button>
+    </th>
+  );
 
   const setDelete = (id: number) => {
     setIdDelete(id);
@@ -218,10 +258,10 @@ export default function Accounts() {
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
                 <th className="py-3 px-5 text-left text-[.9rem]">Profile</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Email</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Role</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created at</th>
+                <SortableHeader label="Email" sortKey="email" />
+                <SortableHeader label="Role" sortKey="user_role" />
+                <SortableHeader label="Status" sortKey="is_active" />
+                <SortableHeader label="Created at" sortKey="created_at" />
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
 
               </tr>

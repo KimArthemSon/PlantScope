@@ -73,7 +73,13 @@ def get_tree_species(request):
 
     offset = (page - 1) * entries
 
-    tree_species = Tree_species.objects.all().order_by('-created_at')
+    # Only allow known fields so user input can't pick arbitrary columns
+    sort_by = request.GET.get('sort_by', 'created_at')
+    if sort_by not in ('name', 'description', 'created_at'):
+        sort_by = 'created_at'
+    prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
+
+    tree_species = Tree_species.objects.all().order_by(f'{prefix}{sort_by}', f'{prefix}pk')
 
     if search:
         tree_species = tree_species.filter(name__icontains=search)

@@ -71,7 +71,13 @@ def get_animals(request):
 
     offset = (page - 1) * entries
 
-    animals = Animal.objects.all().order_by('-created_at')
+    # Only allow known fields so user input can't pick arbitrary columns
+    sort_by = request.GET.get('sort_by', 'created_at')
+    if sort_by not in ('name', 'scientific_name', 'description', 'created_at'):
+        sort_by = 'created_at'
+    prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
+
+    animals = Animal.objects.all().order_by(f'{prefix}{sort_by}', f'{prefix}pk')
     if search:
         animals = animals.filter(name__icontains=search)
 

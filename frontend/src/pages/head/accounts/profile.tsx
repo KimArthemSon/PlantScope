@@ -15,12 +15,14 @@ import {
   Camera,
   Shield,
   User,
+  RotateCcw,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState, type FormEvent } from "react";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import { api } from "@/constant/api.ts";
+import defaultProfile from "@/assets/default-profile.png";
 
 type UserRole =
   | "CityENROHead"
@@ -56,6 +58,7 @@ interface PasswordConstraint {
 export function Profile() {
   const { id } = useParams();
   const [profile_img, setProfile_img] = useState<File | null>(null);
+  const [useDefaultImg, setUseDefaultImg] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -142,8 +145,10 @@ export function Profile() {
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
+    e.target.value = ""; // allow re-selecting the same file after a reset
     setProfile_img(file);
     if (file) {
+      setUseDefaultImg(false);
       const reader = new FileReader();
       reader.onloadend = () => {
         setProfile((prev) => ({
@@ -157,20 +162,15 @@ export function Profile() {
     }
   };
 
+  const resetToDefaultImage = () => {
+    setProfile_img(null);
+    setUseDefaultImg(true);
+    setProfile((prev) => ({ ...prev, preview_profile: "" }));
+  };
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsLoading(true);
-
-    // Manual validation for profile image on Create
-    if (action === "Create" && !profile.preview_profile && !profile_img) {
-      setIsLoading(false);
-      setPSAlert({
-        type: "error",
-        title: "Missing Photo",
-        message: "Please upload a profile photo.",
-      });
-      return;
-    }
 
     if (
       (action == "Update" && profile.password.length != 0) ||
@@ -211,6 +211,14 @@ export function Profile() {
     form_data.append("is_active", profile.is_active);
 
     if (profile_img) form_data.append("profile_img", profile_img);
+    else if (action === "Create" || useDefaultImg) {
+      // No photo chosen: upload the default avatar so one isn't required
+      const blob = await (await fetch(defaultProfile)).blob();
+      form_data.append(
+        "profile_img",
+        new File([blob], "default-profile.png", { type: blob.type }),
+      );
+    }
     if (action === "Create") handleCreate(form_data);
     else handleUpdate(form_data);
   }
@@ -476,26 +484,11 @@ export function Profile() {
               <div className="avatar-ring shrink-0">
                 <div className="avatar-inner">
                   <div className="relative w-24 h-24 rounded-full overflow-hidden">
-                    {profile.preview_profile ? (
-                      <img
-                        src={profile.preview_profile}
-                        alt="profile"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div
-                        className={`w-full h-full flex flex-col items-center justify-center ${
-                          action === "Create"
-                            ? "bg-emerald-50 text-emerald-600 border-2 border-dashed border-emerald-500"
-                            : "bg-stone-50 text-stone-400 border-2 border-dashed border-stone-300"
-                        }`}
-                      >
-                        <Camera size={24} strokeWidth={2.5} />
-                        <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-center leading-tight px-1">
-                          {action === "Create" ? "Add Photo *" : "Upload"}
-                        </span>
-                      </div>
-                    )}
+                    <img
+                      src={profile.preview_profile || defaultProfile}
+                      alt="profile"
+                      className="w-full h-full object-cover bg-white"
+                    />
                     <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity cursor-pointer rounded-full">
                       <Camera size={20} className="text-white" />
                       <input
@@ -528,6 +521,16 @@ export function Profile() {
                     </span>
                   )}
                 </div>
+                {profile.preview_profile && (
+                  <button
+                    type="button"
+                    onClick={resetToDefaultImage}
+                    className="upload-btn mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-white px-3 py-1.5 rounded-lg cursor-pointer"
+                  >
+                    <RotateCcw size={13} />
+                    Reset to default photo
+                  </button>
+                )}
               </div>
             </div>
           </div>

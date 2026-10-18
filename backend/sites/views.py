@@ -162,16 +162,28 @@ def get_sites(request, reforestation_area_id):
 
     offset = (page - 1) * entries
 
+    # Map allowed sort keys to fields so user input can't pick arbitrary columns.
+    # Pinned sites always stay on top; the chosen sort applies within each group.
+    sortable_fields = {
+        'name': 'name',
+        'status': 'status',
+        'verification': 'meta_verification__status',
+        'created_at': 'created_at',
+    }
+    sort_field = sortable_fields.get(request.GET.get("sort_by", ""), 'created_at')
+    prefix = '' if request.GET.get("order", "desc").lower() == 'asc' else '-'
+    ordering = ("-is_pinned", f"{prefix}{sort_field}", f"{prefix}pk")
+
     if all_filter == "true":
         sites = Sites.objects.filter(is_active=True).select_related(
             'meta_verification', 'meta_verification__verified_land_classification'
-        ).order_by("-is_pinned", "-created_at")
+        ).order_by(*ordering)
     else:
         sites = Sites.objects.filter(
             reforestation_area_id=reforestation_area_id, is_active=True
         ).select_related(
             'meta_verification', 'meta_verification__verified_land_classification'
-        ).order_by("-is_pinned", "-created_at")
+        ).order_by(*ordering)
 
     if search: sites = sites.filter(name__icontains=search)
     if status_filter != "all": sites = sites.filter(status=status_filter)
@@ -286,7 +298,19 @@ def get_official_sites(request):
         'site_data_versions',
         'permit_documents',
         'meta_verification__animal_relations',
-    ).order_by('-is_pinned', '-created_at')
+    )
+
+    # Map allowed sort keys to fields so user input can't pick arbitrary columns.
+    # Pinned sites always stay on top; the chosen sort applies within each group.
+    official_sortable_fields = {
+        'name': ('name',),
+        'location': ('reforestation_area__barangay__name', 'reforestation_area__name'),
+        'monitoring_status': ('monitoring_status',),
+        'created_at': ('created_at',),
+    }
+    sort_fields = official_sortable_fields.get(request.GET.get("sort_by", ""), ('created_at',))
+    prefix = '' if request.GET.get("order", "desc").lower() == 'asc' else '-'
+    sites = sites.order_by('-is_pinned', *[f'{prefix}{f}' for f in sort_fields], f'{prefix}pk')
 
     if search:
         sites = sites.filter(Q(name__icontains=search) | Q(reforestation_area__name__icontains=search))

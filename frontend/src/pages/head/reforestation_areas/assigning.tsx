@@ -1,6 +1,22 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { X, Plus, Trash2, Save, Search, ArrowLeft, Users, UserCheck } from "lucide-react";
+import {
+  X,
+  Plus,
+  Trash2,
+  Save,
+  Search,
+  ArrowLeft,
+  Users,
+  UserCheck,
+  Info,
+  Mail,
+  Phone,
+  MapPin,
+  Cake,
+  Trees,
+  Eye,
+} from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api.ts";
@@ -11,6 +27,22 @@ interface Inspector {
   email: string;
   profile_img?: string;
 }
+
+interface InspectorDetails extends Inspector {
+  is_active: boolean;
+  contact: string | null;
+  address: string | null;
+  gender: "M" | "F" | "O" | null;
+  birthday: string | null;
+  assigned_areas: {
+    reforestation_area_id: number;
+    name: string;
+    barangay: string | null;
+    assigned_at: string | null;
+  }[];
+}
+
+const GENDER_LABEL = { M: "Male", F: "Female", O: "Other" } as const;
 
 function Avatar({ inspector }: { inspector: Inspector }) {
   const initials = inspector.full_name
@@ -83,7 +115,36 @@ export default function Assign_onsite_inspector() {
       setLoading(false);
     };
     load();
-  }, []);
+  }, [reforestation_area_id]);
+
+  // ── Inspector details modal ────────────────────────────────
+  const [details, setDetails] = useState<InspectorDetails | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+  const openDetails = async (inspector: Inspector) => {
+    setDetailsOpen(true);
+    setDetailsLoading(true);
+    setDetails(null);
+    try {
+      const res = await fetch(
+        api + `api/get_inspector_details/${inspector.user_id}/`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setDetails(data);
+    } catch {
+      setDetailsOpen(false);
+      setPSAlert({
+        type: "error",
+        title: "Error",
+        message: "Failed to load inspector details.",
+      });
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
 
   const { userRole } = useUserRole();
   const [useruserRole, setUseruserRole] = useState("");
@@ -280,13 +341,22 @@ export default function Assign_onsite_inspector() {
                       <p className="text-xs text-gray-500 truncate">{inspector.email}</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleRemove(inspector)}
-                    className="ml-2 p-2 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
-                    title="Remove assignment"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  <div className="flex items-center ml-2 shrink-0">
+                    <button
+                      onClick={() => openDetails(inspector)}
+                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-green-700 transition-colors"
+                      title="View inspector details"
+                    >
+                      <Info size={15} />
+                    </button>
+                    <button
+                      onClick={() => handleRemove(inspector)}
+                      className="p-2 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                      title="Remove assignment"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -363,19 +433,177 @@ export default function Assign_onsite_inspector() {
                       <p className="text-xs text-gray-500 truncate">{inspector.email}</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleAssign(inspector)}
-                    className="ml-2 p-2 rounded-lg text-green-500 hover:bg-green-100 hover:text-green-700 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
-                    title="Assign inspector"
-                  >
-                    <Plus size={15} />
-                  </button>
+                  <div className="flex items-center ml-2 shrink-0">
+                    <button
+                      onClick={() => openDetails(inspector)}
+                      className="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-green-700 transition-colors"
+                      title="View inspector details"
+                    >
+                      <Info size={15} />
+                    </button>
+                    <button
+                      onClick={() => handleAssign(inspector)}
+                      className="p-2 rounded-lg text-green-500 hover:bg-green-100 hover:text-green-700 transition-colors opacity-0 group-hover:opacity-100"
+                      title="Assign inspector"
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
                 </div>
               ))
             )}
           </div>
         </div>
       </div>
+
+      {/* Inspector Details Modal */}
+      {detailsOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setDetailsOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-linear-to-r from-green-700 to-green-600 px-5 py-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-white">Inspector Details</h2>
+              <button
+                onClick={() => setDetailsOpen(false)}
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-md transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {detailsLoading || !details ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="overflow-y-auto p-5 space-y-5">
+                {/* Identity */}
+                <div className="flex items-center gap-4">
+                  {details.profile_img ? (
+                    <img
+                      src={details.profile_img}
+                      alt={details.full_name}
+                      className="w-16 h-16 rounded-full object-cover ring-2 ring-green-100"
+                    />
+                  ) : (
+                    <Avatar inspector={details} />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-lg font-semibold text-gray-800 truncate">
+                      {details.full_name}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full">
+                        Onsite Inspector
+                      </span>
+                      <span
+                        className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                          details.is_active
+                            ? "bg-green-100 text-green-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {details.is_active ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Contact info */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  {[
+                    { icon: Mail, label: "Email", value: details.email },
+                    { icon: Phone, label: "Contact", value: details.contact },
+                    { icon: MapPin, label: "Address", value: details.address },
+                    { icon: Cake, label: "Birthday", value: details.birthday },
+                    {
+                      icon: UserCheck,
+                      label: "Gender",
+                      value: details.gender ? GENDER_LABEL[details.gender] : null,
+                    },
+                  ].map(({ icon: Icon, label, value }) => (
+                    <div key={label} className="flex items-start gap-2.5 bg-gray-50 rounded-lg p-2.5 min-w-0">
+                      <Icon size={15} className="text-green-600 mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[11px] text-gray-400 uppercase tracking-wide">{label}</p>
+                        <p className="text-gray-800 wrap-break-word">
+                          {value || <span className="text-gray-400 italic">Not set</span>}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Assigned areas */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2 mb-2">
+                    <Trees size={16} className="text-green-600" />
+                    Assigned Reforestation Areas
+                    <span className="bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                      {details.assigned_areas.length}
+                    </span>
+                  </h3>
+                  {details.assigned_areas.length === 0 ? (
+                    <p className="text-sm text-gray-400 italic bg-gray-50 rounded-lg p-3 text-center">
+                      Not assigned to any reforestation area yet
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {details.assigned_areas.map((area) => {
+                        const isCurrent = area.reforestation_area_id === reforestation_area_id;
+                        return (
+                          <li
+                            key={area.reforestation_area_id}
+                            className={`flex items-center justify-between gap-3 p-3 rounded-lg border ${
+                              isCurrent ? "bg-green-50 border-green-200" : "bg-white border-gray-200"
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">
+                                {area.name}
+                                {isCurrent && (
+                                  <span className="ml-2 text-[10px] font-semibold uppercase text-green-700">
+                                    This area
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-xs text-gray-500 flex items-center gap-1">
+                                <MapPin size={11} />
+                                {area.barangay || "No barangay"}
+                                {area.assigned_at && <> · Assigned {area.assigned_at}</>}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() =>
+                                navigate(
+                                  `${useruserRole}/maintenance/view_reforestation_area/${area.reforestation_area_id}`,
+                                )
+                              }
+                              className="p-2 rounded-lg text-gray-400 hover:bg-green-50 hover:text-green-700 transition-colors shrink-0"
+                              title="View reforestation area"
+                            >
+                              <Eye size={15} />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  <p className="text-[11px] text-gray-400 mt-2">
+                    Shows saved assignments. Unsaved changes on this page aren't included until you click Save Changes.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

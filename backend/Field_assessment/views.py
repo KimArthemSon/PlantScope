@@ -155,6 +155,62 @@ def get_assigned_list(request, reforestation_area_id):
     }, status=200)
 
 # =====================================================
+# GET ONE INSPECTOR'S DETAILS + ALL AREAS ASSIGNED TO THEM
+# =====================================================
+
+@csrf_exempt
+def get_inspector_details(request, user_id):
+    if request.method != "GET":
+        return JsonResponse({"error": "Only GET allowed"}, status=405)
+
+    # Contact details are personal data, so require a logged-in user
+    try:
+        get_user_from_token(request)
+    except Exception:
+        return JsonResponse({"error": "Unauthorized"}, status=401)
+
+    user = get_object_or_404(
+        User.objects.select_related("profile"),
+        id=user_id,
+        user_role="OnsiteInspector",
+    )
+    profile = getattr(user, "profile", None)
+
+    assignments = (
+        Assigned_onsite_inspector.objects
+        .filter(user=user)
+        .select_related("reforestation_area", "reforestation_area__barangay")
+        .order_by("-created_at")
+    )
+
+    areas = []
+    for a in assignments:
+        area = a.reforestation_area
+        areas.append({
+            "reforestation_area_id": area.reforestation_area_id,
+            "name": area.name,
+            "barangay": area.barangay.name if area.barangay else None,
+            "assigned_at": a.created_at.strftime("%Y-%m-%d") if a.created_at else None,
+        })
+
+    return JsonResponse({
+        "user_id": user.id,
+        "email": user.email,
+        "is_active": user.is_active,
+        "full_name": (
+            " ".join(filter(None, [profile.first_name, profile.middle_name, profile.last_name]))
+            if profile else user.email
+        ),
+        "profile_img": get_cloudinary_url(str(profile.profile_img)) if profile and profile.profile_img else None,
+        "contact": profile.contact if profile else None,
+        "address": profile.address if profile else None,
+        "gender": profile.gender if profile else None,
+        "birthday": profile.birthday.strftime("%Y-%m-%d") if profile and profile.birthday else None,
+        "assigned_areas": areas,
+    }, status=200)
+
+
+# =====================================================
 # ASSIGN INSPECTOR TO REFORESTATION AREA
 # =====================================================
 
