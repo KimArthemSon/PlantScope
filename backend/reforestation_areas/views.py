@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Count, Q
 from .models import Reforestation_areas
 from sites.models import Potential_sites, Sites
+from accounts.helper import get_user_from_token
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,16 @@ def create_reforestation_areas(request):
         logger.error(f"Create area error: {e}", exc_info=True)
         return JsonResponse({'error': f'Failed to create area: {str(e)[:100]}'}, status=500)
 
+def _coord_changed(old, new):
+    """True if a [lat, lng] coordinate actually moved (ignores float noise)."""
+    try:
+        if len(old) != len(new):
+            return True
+        return any(abs(float(a) - float(b)) > 1e-7 for a, b in zip(old, new))
+    except (TypeError, ValueError):
+        return old != new
+
+
 @csrf_exempt
 def update_reforestation_areas(request, reforestation_area_id):
     if request.method not in ['PUT', 'POST']: 
@@ -182,7 +193,17 @@ def update_reforestation_areas(request, reforestation_area_id):
             area.barangay_id = body['barangay_id']
         if 'coordinate' in body:
             val = body['coordinate']
-            area.coordinate = json.loads(val) if isinstance(val, str) else val
+            new_coord = json.loads(val) if isinstance(val, str) else val
+            # Only GIS Specialists may move an area. The edit form resends the
+            # unchanged coordinate, so other roles are only blocked on a real change.
+            if _coord_changed(area.coordinate, new_coord):
+                try:
+                    user = get_user_from_token(request)
+                except Exception:
+                    return JsonResponse({'error': 'Unauthorized'}, status=401)
+                if user.user_role != 'GISSpecialist':
+                    return JsonResponse({'error': 'Only GIS Specialists can update area coordinates.'}, status=403)
+            area.coordinate = new_coord
 
         area.save()
         return JsonResponse({'message': 'Successfully updated', 'data': _serialize_area(area)}, status=200)

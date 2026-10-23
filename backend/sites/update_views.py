@@ -26,7 +26,15 @@ def update_site_marker_coordinate(request, site_id):
     """
     if request.method not in ["PUT", "PATCH", "POST"]:
         return JsonResponse({"error": "Method not allowed. Use PUT, PATCH, or POST."}, status=405)
-    
+
+    # Only GIS Specialists may move a site's coordinate
+    try:
+        user = get_user_from_token(request)
+    except Exception:
+        return JsonResponse({"error": "Unauthorized"}, status=401)
+    if user.user_role != 'GISSpecialist':
+        return JsonResponse({"error": "Only GIS Specialists can update site coordinates."}, status=403)
+
     try:
         body = json.loads(request.body)
         site = get_object_or_404(Sites, site_id=site_id, is_active=True)
