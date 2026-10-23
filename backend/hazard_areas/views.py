@@ -105,7 +105,18 @@ def get_hazard_areas(request):
 
     offset = (page - 1) * entries
 
-    queryset = HazardArea.objects.all().order_by('-created_at')
+    # Sorting: map allowed keys to fields so user input can't pick arbitrary columns
+    sortable_fields = {
+        'name': 'name',
+        'hazard_type': 'hazard_type',
+        'barangay': 'barangay__name',
+        'description': 'description',
+        'created_at': 'created_at',
+    }
+    sort_field = sortable_fields.get(request.GET.get('sort_by', ''), 'created_at')
+    prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
+
+    queryset = HazardArea.objects.all().order_by(f'{prefix}{sort_field}', f'{prefix}pk')
 
     # Apply filters
     if search:

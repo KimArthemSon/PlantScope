@@ -32,7 +32,15 @@ def _serialize_area(a):
     # Count by status
     accepted_sites = sites_qs.filter(status='accepted').count()
     pending_sites = sites_qs.filter(status='pending').count()
-    
+    # Sites whose verification is done (used by the area card progress bar)
+    verified_sites = sites_qs.filter(meta_verification__status='verified').count()
+    # Fully done: accepted/completed AND verified
+    complete_sites = sites_qs.filter(
+        status__in=['accepted', 'completed'],
+        meta_verification__status='verified'
+    ).count()
+    total_area_hectares = round(sum(s.total_area_hectares or 0 for s in sites_qs), 4)
+
     # ✅ Format date as M/D/YYYY (e.g., 5/30/2026)
     created_date = a.created_at.strftime('%Y-%m-%d').lstrip('0')
     
@@ -46,9 +54,13 @@ def _serialize_area(a):
             'name': a.barangay.name
         } if a.barangay else None,
         'created_at': created_date,  # ✅ Changed from '%Y-%m-%d %H:%M:%S'
+        'site_count': total_sites,
+        'total_area_hectares': total_area_hectares,
         # Site statistics
         'site_stats': {
             'total': total_sites,
+            'verified': verified_sites,
+            'complete': complete_sites,
             'accepted_verified': accepted_verified_sites,
             'accepted': accepted_sites,
             'pending': pending_sites,

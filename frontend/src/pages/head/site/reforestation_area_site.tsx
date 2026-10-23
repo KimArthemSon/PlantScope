@@ -120,6 +120,14 @@ interface ReforestationArea {
   created_at: string;
   site_count?: number;
   total_area_hectares?: number;
+  site_stats?: {
+    total: number;
+    verified?: number;
+    complete?: number;
+    accepted_verified?: number;
+    accepted?: number;
+    pending?: number;
+  };
 }
 
 interface Filter {
@@ -642,34 +650,21 @@ export default function ReforestationAreaSiteCombined() {
   };
 
   // ✅ NEW: Calculate Area Status and Progress based on Sites
+  // Uses the per-area counts from the backend (site_stats), so the bar is
+  // correct for every card without having to load that area's sites first.
   const getAreaProgressData = (area: ReforestationArea) => {
-    const areaSites = sites.filter(
-      (s) => s.reforestation_area_id === area.reforestation_area_id
-    );
-    
-    const total = area.site_count ?? areaSites.length;
-    const verified = areaSites.filter(
-      (s) => s.verification.status === "verified"
-    ).length;
-
-    // Check if a site is fully complete (Status accepted/completed AND Verified)
-    const isSiteComplete = (s: Site) =>
-      (s.status === "completed" || s.status === "accepted") &&
-      s.verification.status === "verified";
+    const stats = area.site_stats;
+    const total = stats?.total ?? area.site_count ?? 0;
+    const verified = stats?.verified ?? 0;
+    const complete = stats?.complete ?? 0;
 
     let statusLabel = "Pending";
     let statusColor = "bg-amber-100 text-amber-700 border border-amber-300";
 
-    // If backend explicitly says verified, trust it. 
-    // Otherwise, calculate: if all loaded sites are complete, mark as Completed.
     if (area.verification_status === "verified") {
       statusLabel = "Completed";
       statusColor = "bg-emerald-100 text-emerald-700 border border-emerald-300";
-    } else if (
-      areaSites.length > 0 &&
-      areaSites.every(isSiteComplete) &&
-      areaSites.length === total // Only mark complete if we have all sites loaded
-    ) {
+    } else if (total > 0 && complete === total) {
       statusLabel = "Completed";
       statusColor = "bg-emerald-100 text-emerald-700 border border-emerald-300";
     }
@@ -1017,7 +1012,7 @@ export default function ReforestationAreaSiteCombined() {
                         <div className="flex items-center gap-2.5">
                           <span className="flex items-center gap-1">
                             <Trees size={12} />
-                            {area.site_count || 0}
+                            {total}
                           </span>
                           <span className="flex items-center gap-1">
                             <Ruler size={12} />

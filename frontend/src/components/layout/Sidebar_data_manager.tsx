@@ -10,19 +10,10 @@ import {
   ListCheck,
   MonitorDot,
   Calendar,
-  Bell,
   ChevronDown,
-  Mail,
   User,
-  Settings,
-  Check,
-  X,
-  Shield,
   Clock,
-  AlertTriangle,
   ListChevronsUpDown,
-  Info,
-  Sparkles,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo2.png";
@@ -44,71 +35,6 @@ interface UserData {
   profile_img: string;
   full_name: string;
   user_role: string;
-}
-
-interface Notification {
-  notification_id: number;
-  type: "alert" | "success" | "warning" | "info";
-  title: string;
-  description: string;
-  link: string | null;
-  is_read: boolean;
-  is_general: boolean;
-  created_at: string;
-}
-
-// ─── Notification Type Config ─────────────────────────────────────────────────
-const NOTIF_TYPE_CONFIG: Record<
-  string,
-  {
-    icon: React.ReactNode;
-    color: string;
-    bg: string;
-    dot: string;
-    border: string;
-  }
-> = {
-  alert: {
-    icon: <AlertTriangle size={14} />,
-    color: "text-red-400",
-    bg: "bg-red-500/10",
-    dot: "bg-red-400",
-    border: "border-red-500/20",
-  },
-  success: {
-    icon: <Check size={14} />,
-    color: "text-emerald-400",
-    bg: "bg-emerald-500/10",
-    dot: "bg-emerald-400",
-    border: "border-emerald-500/20",
-  },
-  warning: {
-    icon: <Clock size={14} />,
-    color: "text-amber-400",
-    bg: "bg-amber-500/10",
-    dot: "bg-amber-400",
-    border: "border-amber-500/20",
-  },
-  info: {
-    icon: <Info size={14} />,
-    color: "text-sky-400",
-    bg: "bg-sky-500/10",
-    dot: "bg-sky-400",
-    border: "border-sky-500/20",
-  },
-};
-
-// ─── Time Ago Helper ──────────────────────────────────────────────────────────
-function timeAgo(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-  if (seconds < 60) return "Just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-  return date.toLocaleDateString("en-PH", { month: "short", day: "numeric" });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -159,188 +85,6 @@ function UserAvatar({
       flex items-center justify-center text-white font-bold shadow-md shrink-0`}
     >
       {initials(user?.full_name ?? "")}
-    </div>
-  );
-}
-
-// ─── Modern Notification Panel ────────────────────────────────────────────────
-interface NotifPanelProps {
-  notes: Notification[];
-  unreadCount: number;
-  loading: boolean;
-  onMarkAll: () => void;
-  onMarkRead: (id: number) => void;
-  onDismiss: (id: number) => void;
-  onClose: () => void;
-  onNavigate: (link: string) => void;
-  onViewAll: () => void;
-}
-
-function NotificationPanel({
-  notes,
-  unreadCount,
-  loading,
-  onMarkAll,
-  onMarkRead,
-  onDismiss,
-  onClose,
-  onNavigate,
-  onViewAll,
-}: NotifPanelProps) {
-  return (
-    <div
-      className="absolute right-0 top-full mt-3 w-[400px] z-50
-      bg-gradient-to-b from-[#0a3320]/98 to-[#082818]/98 backdrop-blur-2xl 
-      border border-white/10 rounded-2xl shadow-[0_30px_80px_rgba(0,0,0,0.7)] 
-      overflow-hidden animate-slideDown"
-    >
-      {/* Header */}
-      <div className="relative px-5 py-4 border-b border-white/10 bg-gradient-to-r from-emerald-500/10 to-transparent">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-              <Bell size={16} className="text-white" />
-            </div>
-            <div>
-              <h3 className="text-white font-bold text-sm">Notifications</h3>
-              <p className="text-white/40 text-[10px]">
-                Stay updated with your activity
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {unreadCount > 0 && (
-              <>
-                <span className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-lg shadow-emerald-500/30">
-                  {unreadCount} NEW
-                </span>
-                <button
-                  onClick={onMarkAll}
-                  className="text-[11px] text-emerald-300 hover:text-emerald-200 transition-colors cursor-pointer font-semibold px-2 py-1 rounded-lg hover:bg-white/5"
-                >
-                  Mark all
-                </button>
-              </>
-            )}
-            <button
-              onClick={onClose}
-              className="text-white/40 hover:text-white/80 transition-colors p-1.5 rounded-lg hover:bg-white/10 cursor-pointer"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Notification List */}
-      <div className="max-h-[440px] overflow-y-auto notif-scroll">
-        {loading ? (
-          <div className="py-16 flex flex-col items-center gap-3 text-white/30">
-            <div className="w-8 h-8 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-            <span className="text-xs">Loading notifications...</span>
-          </div>
-        ) : notes.length === 0 ? (
-          <div className="py-16 flex flex-col items-center gap-3 text-white/30">
-            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
-              <Sparkles size={28} className="text-white/20" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-semibold text-white/50">
-                All caught up!
-              </p>
-              <p className="text-[11px] text-white/30 mt-1">
-                No new notifications
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="py-2">
-            {notes.map((n) => {
-              const cfg = NOTIF_TYPE_CONFIG[n.type] || NOTIF_TYPE_CONFIG.info;
-              return (
-                <div
-                  key={n.notification_id}
-                  className={`relative group flex gap-3 px-5 py-3.5 border-b border-white/[0.04] 
-                    transition-all duration-200 cursor-pointer
-                    ${n.is_read ? "opacity-60" : "hover:bg-white/[0.04]"}
-                    ${!n.is_read ? "bg-white/[0.02]" : ""}
-                  `}
-                  onClick={() => {
-                    if (!n.is_read) onMarkRead(n.notification_id);
-                    if (n.link) onNavigate(n.link);
-                  }}
-                >
-                  {!n.is_read && (
-                    <span
-                      className={`absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${cfg.dot} shadow-lg shadow-current`}
-                    />
-                  )}
-
-                  <div
-                    className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${cfg.bg} ${cfg.color} mt-0.5 border ${cfg.border}`}
-                  >
-                    {cfg.icon}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <p
-                        className={`text-[13px] font-semibold leading-tight ${n.is_read ? "text-white/70" : "text-white"}`}
-                      >
-                        {n.title}
-                      </p>
-                      <span className="text-white/25 text-[10px] shrink-0 mt-0.5">
-                        {timeAgo(n.created_at)}
-                      </span>
-                    </div>
-                    {n.description && (
-                      <p className="text-white/45 text-[11.5px] mt-1 leading-snug line-clamp-2">
-                        {n.description}
-                      </p>
-                    )}
-                    {n.link && (
-                      <div className="flex items-center gap-1 mt-1.5">
-                        <span className="text-emerald-400/70 text-[10px] font-semibold">
-                          Open →
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDismiss(n.notification_id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-white/70 shrink-0 cursor-pointer p-1 rounded-lg hover:bg-white/10 mt-0.5"
-                    title="Dismiss"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="px-5 py-3 border-t border-white/10 bg-gradient-to-r from-transparent to-emerald-500/5">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onViewAll}
-            className="flex-1 text-center text-[12px] text-emerald-300/80 hover:text-emerald-200 transition-colors cursor-pointer font-semibold py-1.5 rounded-lg hover:bg-white/5 flex items-center justify-center gap-1.5"
-          >
-            View all notifications →
-          </button>
-          <button
-            onClick={onClose}
-            className="text-[12px] text-white/50 hover:text-white/80 transition-colors cursor-pointer font-semibold py-1.5 px-3 rounded-lg hover:bg-white/5"
-          >
-            Close
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -460,25 +204,16 @@ export default function Sidebar_data_manager() {
   const [isLogout, setIsLogout] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
-  const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
   // Badge counts
   const [pendingAppCount, setPendingAppCount] = useState(0);
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
 
-  // Notification state
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
-  const [notifLoading, setNotifLoading] = useState(false);
-
-  const notifRef: any = useRef<HTMLDivElement>(null);
   const profileRef: any = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const notifIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isFetchingRef = useRef(false);
 
-  useOutsideClick(notifRef, () => setShowNotifs(false));
   useOutsideClick(profileRef, () => setShowProfile(false));
 
   const { isAuthorized, isLoading, user_data } = useAuthorize("DataManager");
@@ -518,117 +253,6 @@ export default function Sidebar_data_manager() {
     }
   }, [isAuthorized]);
 
-  // Fetch notifications (full list)
-  const fetchNotifications = useCallback(async () => {
-    if (document.hidden) return;
-    if (!isAuthorized) return;
-
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) return;
-
-      const res = await fetch(`${api}api/notifications/?entries=20`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data.data || []);
-        setUnreadNotifCount(data.unread_count || 0);
-      }
-    } catch (err) {
-      console.error("Failed to fetch notifications:", err);
-    }
-  }, [isAuthorized]);
-
-  // Fetch unread count only (lightweight for polling)
-  const fetchUnreadCount = useCallback(async () => {
-    if (document.hidden) return;
-    if (!isAuthorized) return;
-
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) return;
-
-      const res = await fetch(`${api}api/notifications/unread-count/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setUnreadNotifCount(data.unread_count || 0);
-      }
-    } catch (err) {
-      console.error("Failed to fetch unread count:", err);
-    }
-  }, [isAuthorized]);
-
-  // Mark notification as read
-  const handleMarkRead = async (id: number) => {
-    try {
-      const token = localStorage.getItem("token");
-      await fetch(`${api}api/notifications/${id}/read/`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.notification_id === id ? { ...n, is_read: true } : n,
-        ),
-      );
-      setUnreadNotifCount((prev) => Math.max(0, prev - 1));
-    } catch (err) {
-      console.error("Failed to mark notification as read:", err);
-    }
-  };
-
-  // Mark all as read
-  const handleMarkAllRead = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${api}api/notifications/mark-all-read/`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-        setUnreadNotifCount(0);
-      }
-    } catch (err) {
-      console.error("Failed to mark all as read:", err);
-    }
-  };
-
-  // Dismiss notification
-  const handleDismiss = async (id: number) => {
-    try {
-      const token = localStorage.getItem("token");
-      await fetch(`${api}api/notifications/${id}/`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const notif = notifications.find((n) => n.notification_id === id);
-      setNotifications((prev) => prev.filter((n) => n.notification_id !== id));
-      if (notif && !notif.is_read) {
-        setUnreadNotifCount((prev) => Math.max(0, prev - 1));
-      }
-    } catch (err) {
-      console.error("Failed to dismiss notification:", err);
-    }
-  };
-
-  // Navigate from notification
-  const handleNotifNavigate = (link: string) => {
-    setShowNotifs(false);
-    navigate(link);
-  };
-
-  // View all notifications
-  const handleViewAll = () => {
-    setShowNotifs(false);
-    navigate("/DataManager/notification");
-  };
-
   // Smart polling for pending counts
   useEffect(() => {
     if (!isAuthorized) {
@@ -657,42 +281,6 @@ export default function Sidebar_data_manager() {
       window.removeEventListener("popstate", handleNavigation);
     };
   }, [isAuthorized, fetchPendingCounts]);
-
-  // Smart polling for notifications
-  useEffect(() => {
-    if (!isAuthorized) {
-      setNotifications([]);
-      setUnreadNotifCount(0);
-      return;
-    }
-
-    // Initial full fetch
-    setNotifLoading(true);
-    fetchNotifications().finally(() => setNotifLoading(false));
-
-    // Poll unread count every 60s (lightweight)
-    notifIntervalRef.current = setInterval(() => fetchUnreadCount(), 60000);
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        fetchUnreadCount();
-        fetchNotifications();
-      }
-    };
-    const handleFocus = () => {
-      fetchUnreadCount();
-      fetchNotifications();
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", handleFocus);
-
-    return () => {
-      if (notifIntervalRef.current) clearInterval(notifIntervalRef.current);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [isAuthorized, fetchNotifications, fetchUnreadCount]);
 
   if (isLoading) return <PlantScopeLoader />;
   if (!localStorage.getItem("token")) {
@@ -1050,45 +638,11 @@ export default function Sidebar_data_manager() {
 
             <div className="hdr-divider mx-1 hidden lg:block" />
 
-            {/* Bell - Real Notifications */}
-            <div className="relative" ref={notifRef}>
-              <button
-                onClick={() => {
-                  setShowNotifs((v) => !v);
-                  setShowProfile(false);
-                }}
-                className="glass-btn relative w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer"
-              >
-                <Bell size={16} className="text-white/70" />
-                {unreadNotifCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-gradient-to-r from-red-500 to-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center notif-ring shadow-lg shadow-red-500/30">
-                    {unreadNotifCount > 99 ? "99+" : unreadNotifCount}
-                  </span>
-                )}
-              </button>
-              {showNotifs && (
-                <NotificationPanel
-                  notes={notifications}
-                  unreadCount={unreadNotifCount}
-                  loading={notifLoading}
-                  onMarkAll={handleMarkAllRead}
-                  onMarkRead={handleMarkRead}
-                  onDismiss={handleDismiss}
-                  onClose={() => setShowNotifs(false)}
-                  onNavigate={handleNotifNavigate}
-                  onViewAll={handleViewAll}
-                />
-              )}
-            </div>
-
-            <div className="hdr-divider mx-1" />
-
             {/* Profile */}
             <div className="relative" ref={profileRef}>
               <button
                 onClick={() => {
                   setShowProfile((v) => !v);
-                  setShowNotifs(false);
                 }}
                 className="glass-btn flex items-center gap-2.5 rounded-xl pl-1.5 pr-3 py-1.5 cursor-pointer"
               >
