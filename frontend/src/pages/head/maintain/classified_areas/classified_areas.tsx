@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { Trash2, Edit, Plus, ChevronRight, ChevronLeft, X } from "lucide-react";
+import {
+  Trash2,
+  Edit,
+  Plus,
+  ChevronRight,
+  ChevronLeft,
+  X,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+} from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import { useNavigate } from "react-router-dom";
@@ -25,7 +35,16 @@ interface Filter {
   total_page: number;
   land_classification_id: number | "";
   barangay_id: number | "";
+  sort_by: SortKey;
+  order: "asc" | "desc";
 }
+
+type SortKey =
+  | "name"
+  | "land_classification"
+  | "barangay"
+  | "description"
+  | "created_at";
 
 interface LandClassification {
   land_classification_id: number;
@@ -46,6 +65,8 @@ export default function Classified_areas() {
     total_page: 1,
     land_classification_id: "",
     barangay_id: "",
+    sort_by: "created_at",
+    order: "desc",
   });
   const [landClassificationList, setLandClassificationList] = useState<
     LandClassification[]
@@ -118,6 +139,8 @@ export default function Classified_areas() {
         search: filter.search,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
+        sort_by: filter.sort_by,
+        order: filter.order,
       });
       if (filter.land_classification_id !== "")
         params.append(
@@ -153,7 +176,47 @@ export default function Classified_areas() {
     filter.entries,
     filter.land_classification_id,
     filter.barangay_id,
+    filter.sort_by,
+    filter.order,
   ]);
+
+  // Clicking the active column flips the order; a new column starts ascending
+  const handleSort = (key: SortKey) => {
+    setFilter((prev) => ({
+      ...prev,
+      sort_by: key,
+      order: prev.sort_by === key && prev.order === "asc" ? "desc" : "asc",
+      page: 1,
+    }));
+  };
+
+  const sortableHeader = (label: string, sortKey: SortKey) => (
+    <th
+      className="py-3 px-5 text-left text-[.9rem]"
+      aria-sort={
+        filter.sort_by !== sortKey
+          ? "none"
+          : filter.order === "asc"
+            ? "ascending"
+            : "descending"
+      }
+    >
+      <button
+        type="button"
+        onClick={() => handleSort(sortKey)}
+        className="flex items-center gap-1.5 cursor-pointer hover:text-green-200"
+      >
+        {label}
+        {filter.sort_by !== sortKey ? (
+          <ArrowUpDown size={14} className="opacity-50" />
+        ) : filter.order === "asc" ? (
+          <ArrowUp size={14} />
+        ) : (
+          <ArrowDown size={14} />
+        )}
+      </button>
+    </th>
+  );
 
   const activeFilterCount =
     (filter.land_classification_id !== "" ? 1 : 0) +
@@ -359,15 +422,11 @@ export default function Classified_areas() {
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Name</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Land Classification
-                </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Barangay</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">
-                  Description
-                </th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Created At</th>
+                {sortableHeader("Name", "name")}
+                {sortableHeader("Land Classification", "land_classification")}
+                {sortableHeader("Barangay", "barangay")}
+                {sortableHeader("Description", "description")}
+                {sortableHeader("Created At", "created_at")}
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>

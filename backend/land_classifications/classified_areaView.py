@@ -187,12 +187,22 @@ def get_classified_areas(request):
 
     offset = (page - 1) * entries
 
-    # Queryset with sorting by created_at (Descending: Newest first)
+    # Sorting: map allowed keys to fields so user input can't pick arbitrary columns
+    sortable_fields = {
+        'name': 'name',
+        'land_classification': 'land_classification__name',
+        'barangay': 'barangay__name',
+        'description': 'description',
+        'created_at': 'created_at',
+    }
+    sort_field = sortable_fields.get(request.GET.get('sort_by', ''), 'created_at')
+    prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
+
     classified_areas = (
         Classified_areas.objects
         .select_related('land_classification', 'barangay')
         .all()
-        .order_by('-created_at')  # ✅ Sorted by created_at
+        .order_by(f'{prefix}{sort_field}', f'{prefix}pk')
     )
 
     # Apply search filter if exists
