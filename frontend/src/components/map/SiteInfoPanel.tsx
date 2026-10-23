@@ -39,8 +39,10 @@ interface SiteData {
   description: string | null;
   status: string;
   center_coordinate: [number, number] | null;
+  marker_coordinate?: [number, number] | null;
   polygon_coordinates: any;
-  total_area_hectares: number;
+  area_hectares?: number | null;
+  total_area_hectares?: number | null;
   ndvi_value: number | null;
   created_at: string;
   site_images: SiteImage[];
@@ -70,6 +72,50 @@ interface SiteInfoPanelProps {
   isShowingPotentialSites?: boolean;
   onReanalyze?: (siteId: number) => void;
   onViewTrend?: (siteId: number, polygon: any) => void;
+}
+
+// Area units the user can toggle between (factor converts from hectares)
+const AREA_UNITS = [
+  { key: "ha", label: "ha", name: "Hectares", factor: 1, decimals: 2 },
+  { key: "m2", label: "m²", name: "Square meters", factor: 10000, decimals: 0 },
+  { key: "ac", label: "ac", name: "Acres", factor: 2.47105, decimals: 2 },
+  { key: "km2", label: "km²", name: "Square kilometers", factor: 0.01, decimals: 4 },
+] as const;
+type AreaUnitKey = (typeof AREA_UNITS)[number]["key"];
+const AREA_UNIT_STORAGE_KEY = "plantscope_area_unit";
+
+// Fallback when the backend has no stored area: compute hectares from the
+// polygon ([lat, lng] pairs, or a GeoJSON Polygon with [lng, lat] pairs).
+function hectaresFromPolygon(polygon: any): number | null {
+  let pts: [number, number][] | null = null; // as [lat, lng]
+  if (Array.isArray(polygon)) {
+    pts = polygon.map((c: any) => [Number(c[0]), Number(c[1])]);
+  } else if (polygon?.type === "Polygon" && Array.isArray(polygon.coordinates?.[0])) {
+    pts = polygon.coordinates[0].map((c: any) => [Number(c[1]), Number(c[0])]);
+  } else if (Array.isArray(polygon?.coordinates)) {
+    pts = polygon.coordinates.map((c: any) => [Number(c[0]), Number(c[1])]);
+  }
+  if (!pts || pts.length < 3 || pts.some(([a, b]) => isNaN(a) || isNaN(b))) return null;
+  // Stored as [lng, lat]? swap.
+  if (Math.abs(pts[0][0]) > 90) pts = pts.map(([a, b]) => [b, a] as [number, number]);
+
+  const latRad = (pts.reduce((sum, p) => sum + p[0], 0) / pts.length) * (Math.PI / 180);
+  const mPerDegLat = 111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
+  const mPerDegLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
+  const [lat0, lng0] = pts[0];
+  const xy = pts.map(([lat, lng]) => [(lng - lng0) * mPerDegLng, (lat - lat0) * mPerDegLat]);
+  let sqm = 0;
+  for (let i = 0; i < xy.length; i++) {
+    const j = (i + 1) % xy.length;
+    sqm += xy[i][0] * xy[j][1] - xy[j][0] * xy[i][1];
+  }
+  return Math.abs(sqm) / 2 / 10000;
+}
+
+function getSiteHectares(site: SiteData): number | null {
+  const stored = site.area_hectares ?? site.total_area_hectares;
+  if (stored != null && Number(stored) > 0) return Number(stored);
+  return hectaresFromPolygon(site.polygon_coordinates);
 }
 
 const STATUS_CONFIG: Record<
@@ -106,6 +152,20 @@ export default function SiteInfoPanel({
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [applications, setApplications] = useState<SiteApplication[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [areaUnit, setAreaUnit] = useState<AreaUnitKey>(() => {
+    try {
+      const saved = localStorage.getItem(AREA_UNIT_STORAGE_KEY);
+      if (AREA_UNITS.some((u) => u.key === saved)) return saved as AreaUnitKey;
+    } catch {}
+    return "ha";
+  });
+
+  const changeAreaUnit = (unit: AreaUnitKey) => {
+    setAreaUnit(unit);
+    try {
+      localStorage.setItem(AREA_UNIT_STORAGE_KEY, unit);
+    } catch {}
+  };
 
   const [expandedSections, setExpandedSections] = useState({
     photos: true,
@@ -358,14 +418,46 @@ export default function SiteInfoPanel({
               </button>
               {expandedSections.info && (
                 <div className="p-3 space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-gray-500">Area unit</span>
+                    <div className="inline-flex bg-gray-100 rounded-lg p-0.5" role="group" aria-label="Area unit">
+                      {AREA_UNITS.map((u) => (
+                        <button
+                          key={u.key}
+                          type="button"
+                          onClick={() => changeAreaUnit(u.key)}
+                          title={u.name}
+                          aria-pressed={areaUnit === u.key}
+                          className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-colors ${
+                            areaUnit === u.key
+                              ? "bg-white text-blue-700 shadow-sm"
+                              : "text-gray-500 hover:text-gray-700"
+                          }`}
+                        >
+                          {u.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
                     <div className="bg-blue-50 rounded-lg p-2">
                       <div className="flex items-center gap-1 mb-1"><Leaf size={12} className="text-blue-600" /><span className="text-[10px] font-medium text-blue-700">Area</span></div>
-                      <p className="text-xs font-bold text-blue-900">{siteData.total_area_hectares?.toFixed(2) ?? "N/A"} <span className="text-[10px] font-normal">ha</span></p>
-                    </div>
-                    <div className="bg-emerald-50 rounded-lg p-2">
-                      <div className="flex items-center gap-1 mb-1"><TrendingUp size={12} className="text-emerald-600" /><span className="text-[10px] font-medium text-emerald-700">NDVI</span></div>
-                      <p className="text-xs font-bold text-emerald-900">{siteData.ndvi_value?.toFixed(2) ?? "N/A"}</p>
+                      {(() => {
+                        const hectares = getSiteHectares(siteData);
+                        const unit = AREA_UNITS.find((u) => u.key === areaUnit) ?? AREA_UNITS[0];
+                        if (hectares == null) {
+                          return <p className="text-xs font-bold text-blue-900">N/A</p>;
+                        }
+                        return (
+                          <p className="text-xs font-bold text-blue-900 break-all" title={`${hectares.toFixed(4)} ha`}>
+                            {(hectares * unit.factor).toLocaleString(undefined, {
+                              minimumFractionDigits: unit.decimals,
+                              maximumFractionDigits: unit.decimals,
+                            })}{" "}
+                            <span className="text-[10px] font-normal">{unit.label}</span>
+                          </p>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -382,12 +474,16 @@ export default function SiteInfoPanel({
               </button>
               {expandedSections.location && (
                 <div className="p-3 space-y-2">
-                  {siteData.center_coordinate && (
-                    <div className="bg-gray-50 rounded-lg p-2">
-                      <p className="text-[10px] text-gray-500 mb-1">Coordinates</p>
-                      <p className="text-xs font-mono text-gray-900">{siteData.center_coordinate[0]?.toFixed(4)}, {siteData.center_coordinate[1]?.toFixed(4)}</p>
-                    </div>
-                  )}
+                  {(() => {
+                    const coord = siteData.marker_coordinate ?? siteData.center_coordinate;
+                    if (!coord || coord.length !== 2) return null;
+                    return (
+                      <div className="bg-gray-50 rounded-lg p-2">
+                        <p className="text-[10px] text-gray-500 mb-1">Coordinates</p>
+                        <p className="text-xs font-mono text-gray-900">{Number(coord[0]).toFixed(5)}, {Number(coord[1]).toFixed(5)}</p>
+                      </div>
+                    );
+                  })()}
                   <div className="bg-purple-50 rounded-lg p-2">
                     <p className="text-[10px] text-purple-600 mb-1">Created</p>
                     <p className="text-xs font-medium text-purple-900">{siteData.created_at ? new Date(siteData.created_at).toLocaleDateString() : "N/A"}</p>

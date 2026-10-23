@@ -678,6 +678,8 @@ export default function Map() {
   const [pendingNewSites, setPendingNewSites] = useState<any[]>([]);
   const [pendingNewCount, setPendingNewCount] = useState(0);
   const { userRole } = useUserRole();
+  // Only GIS Specialists may move site / reforestation area coordinates
+  const canEditCoordinates = userRole === "GISSpecialist";
   const [firmsStartDate, setFirmsStartDate] = useState<string>(() =>
     formatDate(new Date()),
   );
@@ -858,6 +860,14 @@ export default function Map() {
     id: number,
     currentCoord: [number, number] | null,
   ) => {
+    if (!canEditCoordinates) {
+      setPSAlert({
+        type: "failed",
+        title: "Not Allowed",
+        message: "Only GIS Specialists can update coordinates.",
+      });
+      return;
+    }
     setEditingAreaId(type === "area" ? id : null);
     setEditingSiteId(type === "site" ? id : null);
     setOriginalCoordinate(currentCoord);
@@ -3681,18 +3691,20 @@ export default function Map() {
                     >
                       <Target size={12} /> Show Sites
                     </button>
-                    <button
-                      onClick={() =>
-                        startMapEdit(
-                          "area",
-                          area.reforestation_area_id,
-                          normalizedCoord,
-                        )
-                      }
-                      className="w-full bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
-                    >
-                      <Pencil size={12} /> Edit Coordinate
-                    </button>
+                    {canEditCoordinates && (
+                      <button
+                        onClick={() =>
+                          startMapEdit(
+                            "area",
+                            area.reforestation_area_id,
+                            normalizedCoord,
+                          )
+                        }
+                        className="w-full bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Pencil size={12} /> Edit Coordinate
+                      </button>
+                    )}
                   </div>
                 </Popup>
               </Marker>
@@ -3750,14 +3762,20 @@ export default function Map() {
                     <h3 className="text-sm font-bold text-gray-900 mb-2">
                       {site.name}
                     </h3>
-                    <button
-                      onClick={() =>
-                        startMapEdit("site", site.site_id, normalizedCoord)
-                      }
-                      className="w-full bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
-                    >
-                      <Pencil size={12} /> Edit Coordinate
-                    </button>
+                    {canEditCoordinates ? (
+                      <button
+                        onClick={() =>
+                          startMapEdit("site", site.site_id, normalizedCoord)
+                        }
+                        className="w-full bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Pencil size={12} /> Edit Coordinate
+                      </button>
+                    ) : (
+                      <p className="text-[11px] text-gray-500">
+                        {lat.toFixed(5)}, {lng.toFixed(5)}
+                      </p>
+                    )}
                   </div>
                 </Popup>
               </Marker>
