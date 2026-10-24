@@ -8,36 +8,20 @@ import {
   Animated,
   Easing,
   ActivityIndicator,
-  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { ArrowRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context"; // 👈 Add this
 import LoginModal from "@/components/LoginModal";
-import * as SecureStore from "expo-secure-store";
-import { api } from "@/constants/url_fixed";
+import { checkSession, clearAuthData } from "@/utils/auth";
 
-const TOKEN_KEY = "token";
-const USER_ROLE_KEY = "user_role";
+// Max time to wait for the auth check before asking the user to retry
+const AUTH_TIMEOUT_MS = 3 * 60 * 1000;
 
-const getToken = async () => {
-  if (Platform.OS === "web") return localStorage.getItem(TOKEN_KEY);
-  return await SecureStore.getItemAsync(TOKEN_KEY);
-};
-
-const getUserRole = async () => {
-  if (Platform.OS === "web") return localStorage.getItem(USER_ROLE_KEY);
-  return await SecureStore.getItemAsync(USER_ROLE_KEY);
-};
-
-const clearAuthData = async () => {
-  if (Platform.OS === "web") {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_ROLE_KEY);
-  } else {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    await SecureStore.deleteItemAsync(USER_ROLE_KEY);
-  }
+const routeForRole = (role: string | null) => {
+  if (role === "OnsiteInspector") return "/home";
+  if (role === "treeGrowers") return "/tree_growers/home";
+  return null;
 };
 
 export default function HomePage() {
@@ -45,6 +29,8 @@ export default function HomePage() {
   const insets = useSafeAreaInsets(); // 👈 Get safe area insets
   const [loginVisible, setLoginVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [timedOut, setTimedOut] = useState(false);
+  const attemptRef = useRef(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideUpAnim = useRef(new Animated.Value(60)).current;
@@ -54,61 +40,55 @@ export default function HomePage() {
   useEffect(() => {
     checkIfStillLoggedIn();
     startAnimations();
+    return () => {
+      attemptRef.current++; // ignore results after unmount
+    };
   }, []);
 
   const checkIfStillLoggedIn = async () => {
+    const attempt = ++attemptRef.current;
+    setTimedOut(false);
+    setIsLoading(true);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+      if (attempt === attemptRef.current) {
+        setTimedOut(true);
+        setIsLoading(false);
+      }
+    }, AUTH_TIMEOUT_MS);
+
     try {
-      const token = await getToken();
-      if (!token) {
-        setIsLoading(false);
-        return;
-      }
-      const response = await fetch(`${api}/api/get_me/`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const data = await response.json();
-      if (response.ok && data.user_role) {
-        if (data.user_role === "OnsiteInspector") {
-          router.replace("/home");
-        } else if (data.user_role === "treeGrowers") {
-          router.replace("/tree_growers/home");
-        } else {
-          await clearAuthData();
-          setIsLoading(false);
+      const result = await checkSession(controller.signal);
+      if (attempt !== attemptRef.current) return; // stale or cancelled
+
+      if (result.status === "valid" || result.status === "unreachable") {
+        // "unreachable" = offline / server error: fall back to the cached role
+        const route = routeForRole(result.role);
+        if (route) {
+          router.replace(route);
+          return;
         }
-      } else {
+        if (result.status === "valid") await clearAuthData(); // unknown role
+      } else if (result.status === "invalid") {
         await clearAuthData();
-        setIsLoading(false);
       }
+      setIsLoading(false);
     } catch (error) {
-      console.error("Auth check error (offline):", error);
-      await handleOfflineAuth();
+      // AbortError from the timeout — the timer already showed the retry UI
+      console.error("Auth check error:", error);
+    } finally {
+      clearTimeout(timer);
     }
   };
 
-  const handleOfflineAuth = async () => {
-    try {
-      const token = await getToken();
-      const cachedRole = await getUserRole();
-      if (token && cachedRole) {
-        console.log("Offline mode: Using cached role:", cachedRole);
-        if (cachedRole === "OnsiteInspector") {
-          router.replace("/home");
-          return;
-        } else if (cachedRole === "treeGrowers") {
-          router.replace("/tree_growers/home");
-          return;
-        }
-      }
-      setIsLoading(false);
-    } catch (error) {
-      console.error("Offline auth error:", error);
-      setIsLoading(false);
-    }
+  const loginAgain = async () => {
+    attemptRef.current++; // cancel any pending check
+    await clearAuthData();
+    setTimedOut(false);
+    setIsLoading(false);
+    setLoginVisible(true);
   };
 
   const startAnimations = () => {
@@ -144,6 +124,28 @@ export default function HomePage() {
       delay: 500,
     }).start();
   };
+
+  if (timedOut) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>PlantScope</Text>
+        <Text style={styles.timeoutText}>
+          This is taking longer than expected. Check your connection and try
+          again, or log in again.
+        </Text>
+        <TouchableOpacity
+          style={[styles.signInButton, styles.timeoutButton]}
+          onPress={checkIfStillLoggedIn}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.signInButtonText}>Retry</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={loginAgain} activeOpacity={0.7}>
+          <Text style={styles.timeoutLink}>Log in again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -354,5 +356,24 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "700",
     letterSpacing: 1,
+  },
+  timeoutText: {
+    color: "rgba(255, 255, 255, 0.75)",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    paddingHorizontal: 36,
+  },
+  timeoutButton: {
+    alignSelf: "stretch",
+    marginHorizontal: 36,
+    marginTop: 8,
+    marginBottom: 0,
+  },
+  timeoutLink: {
+    color: "#4ADE80",
+    fontSize: 15,
+    fontWeight: "600",
+    paddingVertical: 8,
   },
 });

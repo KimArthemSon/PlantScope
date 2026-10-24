@@ -11,20 +11,14 @@ import {
 import { Tabs, useRouter, usePathname } from "expo-router";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useAlert } from "@/components/AlertContext";
+import { getToken, clearAuthData, isAuthFailure } from "@/utils/auth";
 
 const API = api + "/api";
 const USER_DATA_KEY = "@plantscope_user_data";
-const TOKEN_KEY = "token";
-
-const getToken = async () => {
-  if (Platform.OS === "web") return localStorage.getItem(TOKEN_KEY);
-  return await SecureStore.getItemAsync(TOKEN_KEY);
-};
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -37,15 +31,22 @@ export default function TabLayout() {
   const [hasShownOfflineAlert, setHasShownOfflineAlert] = useState(false);
 
   useEffect(() => {
+    const goToLogin = async () => {
+      await clearAuthData();
+      router.replace("/homepage");
+    };
+
     const fetchUserRole = async () => {
-      if (!isOnline) {
-        setLoading(false);
-        return;
-      }
       try {
         const token = await getToken();
         if (!token) {
-          setLoading(false);
+          // No session (online or offline) → log in again
+          await goToLogin();
+          return;
+        }
+        if (!isOnline) {
+          const cached = await AsyncStorage.getItem(USER_DATA_KEY);
+          if (cached) JSON.parse(cached);
           return;
         }
         const res = await fetch(`${API}/get_me/`, {
@@ -55,6 +56,11 @@ export default function TabLayout() {
             "Content-Type": "application/json",
           },
         });
+        if (isAuthFailure(res.status)) {
+          // Token expired or invalid
+          await goToLogin();
+          return;
+        }
         if (res.ok) await res.json();
       } catch (error) {
         console.error("Error fetching user role:", error);
@@ -63,14 +69,7 @@ export default function TabLayout() {
       }
     };
 
-    if (isOnline) {
-      fetchUserRole();
-    } else {
-      AsyncStorage.getItem(USER_DATA_KEY).then((cached) => {
-        if (cached) JSON.parse(cached);
-        setLoading(false);
-      });
-    }
+    fetchUserRole();
   }, [isOnline]);
 
   const shouldHideAllTabs = !isOnline;

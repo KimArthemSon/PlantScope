@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { WebView } from "react-native-webview";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useAlert, ToastHost } from "@/components/AlertContext";
@@ -35,6 +36,484 @@ const API_BASE_URL = api + "/api";
 const GPS_READY_HOURS = 2;
 const GPS_AGING_HOURS = 6;
 const GPS_LIVE_TIMEOUT_MS = 30000; // 30 seconds
+
+// Remembers that the map background was saved, per area, so the status
+// survives leaving the page (the tiles themselves live in the WebView cache).
+const mapBackgroundKey = (areaId: number) =>
+  `@plantscope_map_background_${areaId}`;
+
+type MapBackgroundInfo = {
+  savedAt: string;
+  tiles: number;
+  failed: number;
+  minZoom?: number;
+  maxZoom?: number;
+  areaKm2?: number;
+};
+
+/* ── Offline map download planning ─────────────────────────────────
+   Instead of one fixed box/zoom, we save:
+   • "context" zooms (10–13) over the area plus ~3 km around it, so you can
+     zoom out and still see roads/landmarks offline;
+   • "detail" zooms (14 up to 18) only over the real planting extent
+     (site polygon, potential sites, or the area's sites), so you can zoom
+     right in on the ground you're walking.
+   The deepest zoom is reduced automatically for very large areas so the
+   download stays reasonable. */
+type LatLngBounds = [[number, number], [number, number]]; // [[minLat,minLng],[maxLat,maxLng]]
+type ZoomLevelPlan = { z: number; bounds: LatLngBounds };
+
+const CONTEXT_ZOOMS = [10, 11, 12, 13];
+const DETAIL_MIN_ZOOM = 14;
+const DETAIL_MAX_ZOOM = 18;
+const DETAIL_FLOOR_ZOOM = 15; // never go shallower than this for the detail area
+const MAX_TILES = 3000;
+const AVG_TILE_KB = 15;
+const CONTEXT_PAD_DEG = 0.03; // ≈ 3.3 km
+const MIN_DETAIL_PAD_DEG = 0.003; // ≈ 330 m
+
+const lngToTileX = (lng: number, z: number) =>
+  Math.floor(((lng + 180) / 360) * Math.pow(2, z));
+const latToTileY = (lat: number, z: number) => {
+  const r = (lat * Math.PI) / 180;
+  return Math.floor(
+    ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) *
+      Math.pow(2, z),
+  );
+};
+
+const tilesInBounds = (b: LatLngBounds, z: number) => {
+  const xs = lngToTileX(b[1][1], z) - lngToTileX(b[0][1], z) + 1;
+  const ys = latToTileY(b[0][0], z) - latToTileY(b[1][0], z) + 1;
+  return Math.max(xs, 0) * Math.max(ys, 0);
+};
+
+const boundsFromPoints = (pts: [number, number][]): LatLngBounds | null => {
+  const valid = pts.filter(
+    (p) => p && isFinite(p[0]) && isFinite(p[1]) && p[0] !== 0 && p[1] !== 0,
+  );
+  if (!valid.length) return null;
+  return [
+    [Math.min(...valid.map((p) => p[0])), Math.min(...valid.map((p) => p[1]))],
+    [Math.max(...valid.map((p) => p[0])), Math.max(...valid.map((p) => p[1]))],
+  ];
+};
+
+const padBounds = (b: LatLngBounds, pad: number): LatLngBounds => [
+  [b[0][0] - pad, b[0][1] - pad],
+  [b[1][0] + pad, b[1][1] + pad],
+];
+
+const boundsAreaKm2 = (b: LatLngBounds) => {
+  const midLat = ((b[0][0] + b[1][0]) / 2) * (Math.PI / 180);
+  const h = (b[1][0] - b[0][0]) * 111.32;
+  const w = (b[1][1] - b[0][1]) * 111.32 * Math.cos(midLat);
+  return Math.max(h * w, 0);
+};
+
+/* ── User-adjustable save settings ─────────────────────────────── */
+const HARD_MAX_TILES = 10000; // downloads above this are blocked
+const KM_PER_DEG = 111.32;
+
+type DetailMargin = "tight" | "normal" | "wide";
+type SaveOptions = {
+  maxZoom: "auto" | 15 | 16 | 17 | 18; // closest zoom for the close-up area
+  detailMargin: DetailMargin; // extra ground around the planting area
+  contextKm: 0 | 1 | 3 | 5; // surroundings saved at zoom 10–13
+};
+const DEFAULT_SAVE_OPTIONS: SaveOptions = {
+  maxZoom: "auto",
+  detailMargin: "normal",
+  contextKm: 3,
+};
+const SAVE_OPTIONS_KEY = "@plantscope_map_save_options";
+
+const detailPadFor = (margin: DetailMargin, spanDeg: number) => {
+  if (margin === "tight") return 0.001; // ≈ 110 m
+  if (margin === "wide") return Math.max(spanDeg * 0.2, MIN_DETAIL_PAD_DEG) + 0.009; // + ≈ 1 km
+  return Math.max(spanDeg * 0.2, MIN_DETAIL_PAD_DEG); // 20%, at least ≈ 330 m
+};
+
+/** Approximate ground width of one map tile at a zoom (Ormoc latitude). */
+const tileWidthMeters = (z: number) =>
+  Math.round(((40075016 * Math.cos((11 * Math.PI) / 180)) / Math.pow(2, z)));
+
+const buildDownloadPlan = (
+  extent: LatLngBounds,
+  opts: SaveOptions = DEFAULT_SAVE_OPTIONS,
+) => {
+  const span = Math.max(extent[1][0] - extent[0][0], extent[1][1] - extent[0][1]);
+  const detail = padBounds(extent, detailPadFor(opts.detailMargin, span));
+  const context =
+    opts.contextKm > 0 ? padBounds(detail, opts.contextKm / KM_PER_DEG) : detail;
+
+  const make = (maxZ: number): ZoomLevelPlan[] => [
+    ...CONTEXT_ZOOMS.map((z) => ({ z, bounds: context })),
+    ...Array.from({ length: maxZ - DETAIL_MIN_ZOOM + 1 }, (_, i) => ({
+      z: DETAIL_MIN_ZOOM + i,
+      bounds: detail,
+    })),
+  ];
+  const count = (levels: ZoomLevelPlan[]) =>
+    levels.reduce((sum, l) => sum + tilesInBounds(l.bounds, l.z), 0);
+
+  let maxZoom: number;
+  let levels: ZoomLevelPlan[];
+  if (opts.maxZoom === "auto") {
+    // Deepest zoom that keeps the download around MAX_TILES
+    maxZoom = DETAIL_MAX_ZOOM;
+    levels = make(maxZoom);
+    while (count(levels) > MAX_TILES && maxZoom > DETAIL_FLOOR_ZOOM) {
+      maxZoom--;
+      levels = make(maxZoom);
+    }
+  } else {
+    maxZoom = opts.maxZoom;
+    levels = make(maxZoom);
+  }
+
+  const perZoom = levels.map((l) => ({ z: l.z, tiles: tilesInBounds(l.bounds, l.z) }));
+  const tiles = perZoom.reduce((s, l) => s + l.tiles, 0);
+  return {
+    levels,
+    perZoom,
+    tiles,
+    minZoom: CONTEXT_ZOOMS[0],
+    maxZoom,
+    detailKm2: boundsAreaKm2(detail),
+    contextKm2: boundsAreaKm2(context),
+    estimateMB: (tiles * AVG_TILE_KB) / 1024,
+    reducedZoom: opts.maxZoom === "auto" && maxZoom < DETAIL_MAX_ZOOM,
+    tooLarge: tiles > MAX_TILES,
+    blocked: tiles > HARD_MAX_TILES,
+  };
+};
+
+type DownloadPlan = ReturnType<typeof buildDownloadPlan>;
+type SaveTarget = { key: string; label: string; detail: string; extent: LatLngBounds };
+
+const formatMB = (mb: number) =>
+  mb < 1 ? `${Math.max(1, Math.round(mb * 1024))} KB` : `${mb.toFixed(1)} MB`;
+const formatArea = (km2: number) =>
+  km2 < 1 ? `${Math.round(km2 * 100)} ha` : `${km2.toFixed(1)} km²`;
+
+/* ── In-app guide for the "Save Map Offline" screen ────────────────
+   Uses the user's current settings/estimate when available, otherwise an
+   example (~2 × 2 km site with default settings). Visuals are plain Views
+   so they work offline. */
+const EXAMPLE_EXTENT: LatLngBounds = [
+  [11.04, 124.6],
+  [11.058, 124.618],
+];
+
+const GuideHeading: React.FC<{ n: number; title: string }> = ({ n, title }) => (
+  <View style={styles.gHeadRow}>
+    <View style={styles.guideNum}>
+      <Text style={styles.guideNumText}>{n}</Text>
+    </View>
+    <Text style={styles.guideSection}>{title}</Text>
+  </View>
+);
+
+/** A square split into n × n tiles — shows how tiles multiply per zoom. */
+const TileGrid: React.FC<{ n: number; size: number; color: string }> = ({
+  n,
+  size,
+  color,
+}) => {
+  const cell = size / n;
+  return (
+    <View style={{ width: size, height: size, flexDirection: "row", flexWrap: "wrap" }}>
+      {Array.from({ length: n * n }).map((_, i) => (
+        <View
+          key={i}
+          style={{
+            width: cell,
+            height: cell,
+            backgroundColor: color,
+            borderWidth: 0.5,
+            borderColor: "#FFFFFF",
+          }}
+        />
+      ))}
+    </View>
+  );
+};
+
+const SaveMapGuide: React.FC<{
+  plan: DownloadPlan | null;
+  opts: SaveOptions;
+  isExample: boolean;
+}> = ({ plan: livePlan, opts, isExample }) => {
+  const plan = livePlan || buildDownloadPlan(EXAMPLE_EXTENT, DEFAULT_SAVE_OPTIONS);
+  const o = livePlan ? opts : DEFAULT_SAVE_OPTIONS;
+  const maxTiles = Math.max(...plan.perZoom.map((l) => l.tiles), 1);
+  const deepest = plan.perZoom[plan.perZoom.length - 1];
+  const deepestPct = Math.round((deepest.tiles / Math.max(plan.tiles, 1)) * 100);
+  const contextTiles = plan.perZoom
+    .filter((l) => l.z < DETAIL_MIN_ZOOM)
+    .reduce((s, l) => s + l.tiles, 0);
+
+  return (
+    <View>
+      <Text style={styles.gIntro}>
+        This screen decides <Text style={styles.gBold}>which part of the map</Text> is saved
+        and <Text style={styles.gBold}>how close you can zoom</Text> without internet.
+        {isExample
+          ? " Numbers below are an example."
+          : " Numbers below are from your current settings."}
+      </Text>
+
+      {/* ── Big picture ── */}
+      <Text style={styles.gTitle}>What gets saved</Text>
+      <View style={styles.gOuter}>
+        <Text style={styles.gOuterLabel}>
+          Surroundings · zoom 10–13{o.contextKm ? ` · ${o.contextKm} km` : " · none"}
+        </Text>
+        <View style={styles.gMiddle}>
+          <Text style={styles.gMiddleLabel}>
+            Close-up margin · zoom 14–{plan.maxZoom}
+          </Text>
+          <View style={styles.gInner}>
+            <MaterialCommunityIcons name="pine-tree" size={16} color="#fff" />
+            <Text style={styles.gInnerText}>Cover (your planting ground)</Text>
+          </View>
+        </View>
+      </View>
+      <Text style={styles.gCaption}>
+        Inner box: the ground you chose in Cover. Middle box: that ground plus the margin,
+        saved in full detail. Outer box: a zoomed-out view around it for roads and landmarks.
+        Outside the outer box the map is grey offline.
+      </Text>
+
+      {/* ── 1. Cover ── */}
+      <GuideHeading n={1} title="Cover" />
+      <Text style={styles.gText}>
+        <Text style={styles.gBold}>This site</Text> – the site outline, its pin and its potential
+        sites. Best detail for one site.{"\n"}
+        <Text style={styles.gBold}>Whole area</Text> – every site in the reforestation area.{"\n"}
+        <Text style={styles.gBold}>Around me</Text> – your GPS position, if location is on.
+      </Text>
+      <Text style={styles.gNote}>
+        The number on the right (e.g. 36.0 km²) is the close-up area: the ground plus the
+        margin. It does not include the surroundings.
+      </Text>
+
+      {/* ── 2. Closest zoom ── */}
+      <GuideHeading n={2} title="Closest zoom" />
+      <Text style={styles.gText}>
+        How far you can zoom in offline. Each step closer splits every tile into 4, so the
+        close-up part of the download grows about <Text style={styles.gBold}>4× per step</Text>.
+      </Text>
+      <View style={styles.gZoomRow}>
+        {[15, 16, 17, 18].map((z, i) => {
+          const active = z === plan.maxZoom;
+          return (
+            <View key={z} style={styles.gZoomCol}>
+              <View style={[styles.gZoomFrame, active && styles.gZoomFrameActive]}>
+                <TileGrid n={Math.pow(2, i)} size={52} color={active ? "#0F4A2F" : "#86B79C"} />
+              </View>
+              <Text style={[styles.gZoomZ, active && { color: "#0F4A2F" }]}>Zoom {z}</Text>
+              <Text style={styles.gZoomSub}>×{Math.pow(4, i)} tiles</Text>
+              <Text style={styles.gZoomSub}>
+                1 tile ≈ {tileWidthMeters(z) >= 1000
+                  ? `${(tileWidthMeters(z) / 1000).toFixed(1)} km`
+                  : `${tileWidthMeters(z)} m`}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      <Text style={styles.gText}>
+        <Text style={styles.gBold}>15</Text> roads and land shapes ·{" "}
+        <Text style={styles.gBold}>16</Text> fields and small roads ·{" "}
+        <Text style={styles.gBold}>17</Text> houses and trails ·{" "}
+        <Text style={styles.gBold}>18</Text> paths and tree clusters.{"\n"}
+        <Text style={styles.gBold}>Auto</Text> uses the closest zoom that keeps the download near{" "}
+        {MAX_TILES.toLocaleString()} tiles.
+      </Text>
+
+      {/* ── 3. Close-up margin ── */}
+      <GuideHeading n={3} title="Close-up margin" />
+      <View style={styles.gMarginRow}>
+        {([
+          ["tight", "Tight", "~110 m", 4],
+          ["normal", "Normal", "20% (min 330 m)", 10],
+          ["wide", "Wide", "+1 km more", 18],
+        ] as const).map(([k, label, sub, pad]) => {
+          const active = o.detailMargin === k;
+          return (
+            <View key={k} style={styles.gMarginCol}>
+              <View
+                style={[
+                  styles.gMarginBox,
+                  { padding: pad },
+                  active && { borderColor: "#0F4A2F", backgroundColor: "#DCFCE7" },
+                ]}
+              >
+                <View style={styles.gMarginCore} />
+              </View>
+              <Text style={[styles.gZoomZ, active && { color: "#0F4A2F" }]}>{label}</Text>
+              <Text style={styles.gZoomSub}>{sub}</Text>
+            </View>
+          );
+        })}
+      </View>
+      <Text style={styles.gText}>
+        Extra land around your planting ground that also gets full detail. Use{" "}
+        <Text style={styles.gBold}>Wide</Text> if you walk in from far away, and{" "}
+        <Text style={styles.gBold}>Tight</Text> to keep the download small.
+      </Text>
+
+      {/* ── 4. Surroundings ── */}
+      <GuideHeading n={4} title="Surroundings (zoom 10–13)" />
+      <Text style={styles.gText}>
+        A zoomed-out map around everything, so you can still zoom out to find roads, rivers and
+        barangays. It's cheap: in this download zoom 10–13 is only{" "}
+        <Text style={styles.gBold}>{contextTiles.toLocaleString()} tiles</Text>. Choose{" "}
+        <Text style={styles.gBold}>None</Text> to skip it.
+      </Text>
+
+      {/* ── 5. Reading the estimate ── */}
+      <GuideHeading n={5} title="Reading the estimate" />
+      <View style={styles.estimateCard}>
+        <View style={styles.estimateRow}>
+          <View style={styles.estimateStat}>
+            <Text style={styles.estimateValue}>{plan.tiles.toLocaleString()}</Text>
+            <Text style={styles.estimateLabel}>Ⓐ tiles</Text>
+          </View>
+          <View style={styles.estimateStat}>
+            <Text style={styles.estimateValue}>{formatMB(plan.estimateMB)}</Text>
+            <Text style={styles.estimateLabel}>Ⓑ about</Text>
+          </View>
+          <View style={styles.estimateStat}>
+            <Text style={styles.estimateValue}>
+              {plan.minZoom}–{plan.maxZoom}
+            </Text>
+            <Text style={styles.estimateLabel}>Ⓒ zoom</Text>
+          </View>
+        </View>
+        <Text style={styles.estimateLine}>
+          Ⓓ Close-up area: {formatArea(plan.detailKm2)} · Total covered:{" "}
+          {formatArea(plan.contextKm2)}
+        </Text>
+      </View>
+      <View style={styles.gLegend}>
+        <Text style={styles.gText}>
+          <Text style={styles.gBold}>Ⓐ Tiles</Text> – small square map pictures that get saved.{"\n"}
+          <Text style={styles.gBold}>Ⓑ Size</Text> – rough storage needed (about {AVG_TILE_KB} KB per tile;
+          real size varies).{"\n"}
+          <Text style={styles.gBold}>Ⓒ Zoom</Text> – farthest out to closest in that works offline.{"\n"}
+          <Text style={styles.gBold}>Ⓓ Areas</Text> – close-up = middle box; total = outer box.
+        </Text>
+      </View>
+
+      <Text style={styles.gTitle}>Ⓔ Tiles per zoom level</Text>
+      <View style={styles.gBars}>
+        {plan.perZoom.map((l) => (
+          <View key={l.z} style={styles.gBarRow}>
+            <Text style={styles.gBarZ}>z{l.z}</Text>
+            <View style={styles.gBarTrack}>
+              <View
+                style={[
+                  styles.gBarFill,
+                  {
+                    width: `${Math.max((l.tiles / maxTiles) * 100, 1.5)}%`,
+                    backgroundColor: l.z < DETAIL_MIN_ZOOM ? "#9CA3AF" : "#0F4A2F",
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.gBarN}>{l.tiles.toLocaleString()}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={styles.gCaption}>
+        Grey = surroundings, green = close-up. Zoom {deepest.z} alone is{" "}
+        <Text style={styles.gBold}>{deepestPct}%</Text> of this download. That's why lowering
+        the closest zoom shrinks it the most.
+      </Text>
+
+      {/* ── Tips ── */}
+      <GuideHeading n={6} title="If the download is too big" />
+      <Text style={styles.gText}>
+        1. Lower <Text style={styles.gBold}>Closest zoom</Text> by one step (about ¼ of the close-up tiles).{"\n"}
+        2. Pick <Text style={styles.gBold}>This site</Text> instead of Whole area, or a{" "}
+        <Text style={styles.gBold}>Tight</Text> margin.{"\n"}
+        3. Surroundings barely matter. Change them last.
+      </Text>
+      <View style={styles.gLimits}>
+        <Text style={styles.gLimitText}>
+          Above {MAX_TILES.toLocaleString()} tiles: use Wi-Fi.{"  "}Above{" "}
+          {HARD_MAX_TILES.toLocaleString()} tiles: Download is disabled.
+        </Text>
+        <Text style={styles.gLimitText}>
+          Keep the map open and the screen on until it says “Map Saved Offline”.
+        </Text>
+      </View>
+    </View>
+  );
+};
+
+// Cached potential sites per official site, so they can be shown offline
+const potentialSitesKey = (siteId: number) =>
+  `@plantscope_potential_sites_${siteId}`;
+
+// Cached area pin + extent, so "Go to Area" works offline
+const areaViewKey = (areaId: number) => `@plantscope_area_view_${areaId}`;
+
+// Cached official site boundary + pin, so they can be shown offline
+const siteBoundaryKey = (siteId: number) =>
+  `@plantscope_site_boundary_${siteId}`;
+
+type SiteBoundary = {
+  name: string;
+  coordinates: [number, number][]; // [lat, lng]
+  marker: [number, number] | null; // [lat, lng]
+  area_hectares: number | null;
+  status: string | null;
+  savedAt: string;
+};
+
+/** Ensures a point is [lat, lng] (Ormoc: lat ~11, lng ~124). */
+const toLatLng = (p: any): [number, number] | null => {
+  if (!Array.isArray(p) || p.length < 2) return null;
+  const a = Number(p[0]);
+  const b = Number(p[1]);
+  if (!isFinite(a) || !isFinite(b)) return null;
+  return Math.abs(a) > 90 ? [b, a] : [a, b]; // swap if given as [lng, lat]
+};
+
+/** Builds a SiteBoundary from a get_site response. */
+const parseSiteBoundary = (site: any): SiteBoundary => {
+  let raw = site?.polygon_coordinates;
+  // Accept GeoJSON geometry too: { type: "Polygon", coordinates: [[[lng, lat], ...]] }
+  if (raw && !Array.isArray(raw) && Array.isArray(raw.coordinates)) {
+    raw = raw.coordinates;
+  }
+  if (Array.isArray(raw) && Array.isArray(raw[0]) && Array.isArray(raw[0][0])) {
+    raw = raw[0];
+  }
+  const coordinates = (Array.isArray(raw) ? raw : [])
+    .map(toLatLng)
+    .filter(Boolean) as [number, number][];
+
+  const pinRaw = site?.marker_coordinate;
+  const marker = Array.isArray(pinRaw)
+    ? toLatLng(pinRaw)
+    : pinRaw?.latitude != null
+      ? toLatLng([pinRaw.latitude, pinRaw.longitude])
+      : null;
+
+  return {
+    name: site?.name || "Site",
+    coordinates,
+    marker,
+    area_hectares: site?.area_hectares ?? null,
+    status: site?.status ?? null,
+    savedAt: new Date().toISOString(),
+  };
+};
 
 //  Official Hazard Tile URLs
 const MGB_FLOOD_TILE_URL =
@@ -475,6 +954,7 @@ export default function FloatingMapButton({
   const [loadingHazards, setLoadingHazards] = useState(false);
 
   const [showFlood, setShowFlood] = useState(false);
+  const [showBarangays, setShowBarangays] = useState(true);
   const [showLandslide, setShowLandslide] = useState(false);
   const [showLayerPanel, setShowLayerPanel] = useState(false);
 
@@ -508,10 +988,92 @@ export default function FloatingMapButton({
 
   const [isMapBackgroundDownloaded, setIsMapBackgroundDownloaded] =
     useState(false);
+  const [mapBackgroundInfo, setMapBackgroundInfo] =
+    useState<MapBackgroundInfo | null>(null);
+
+  // Potential sites (from the web GIS analysis) for the selected site
+  const [potentialSites, setPotentialSites] = useState<any[]>([]);
+  const [showPotentialSites, setShowPotentialSites] = useState(false);
+  const [loadingPotentialSites, setLoadingPotentialSites] = useState(false);
+  const [potentialSitesFromCache, setPotentialSitesFromCache] = useState(false);
+
+  // Reset offline data sheet
+  const [showResetSheet, setShowResetSheet] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetSel, setResetSel] = useState({
+    tiles: true,
+    locations: true,
+    polygons: false,
+  });
+
+  // Save-map settings sheet + user guide
+  const [showSaveSheet, setShowSaveSheet] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [saveTargets, setSaveTargets] = useState<SaveTarget[]>([]);
+  const [saveTargetKey, setSaveTargetKey] = useState<string | null>(null);
+  const [saveOpts, setSaveOpts] = useState<SaveOptions>(DEFAULT_SAVE_OPTIONS);
+
+  // Real-world extent of the whole reforestation area (from the backend)
+  const [areaBounds, setAreaBounds] = useState<LatLngBounds | null>(null);
+  // Details of the download in progress, saved once it completes
+  const pendingDownloadRef = useRef<{
+    minZoom: number;
+    maxZoom: number;
+    areaKm2: number;
+  } | null>(null);
+
+  // Restore the cached area location (used offline / before the server answers)
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(areaViewKey(areaId))
+      .then((raw) => {
+        if (!active || !raw) return;
+        const cached = JSON.parse(raw);
+        if (cached.coords) setAreaCoords((prev) => prev || cached.coords);
+        if (cached.bounds) setAreaBounds((prev) => prev || cached.bounds);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [areaId]);
+
+  // Keep the cached area location up to date
+  useEffect(() => {
+    if (!areaCoords && !areaBounds) return;
+    AsyncStorage.setItem(
+      areaViewKey(areaId),
+      JSON.stringify({ coords: areaCoords, bounds: areaBounds }),
+    ).catch(() => {});
+  }, [areaId, areaCoords, areaBounds]);
+
+  // Official site boundary polygon + pin
+  const [siteBoundary, setSiteBoundary] = useState<SiteBoundary | null>(null);
+  const [showSiteBoundary, setShowSiteBoundary] = useState(false);
+  const [loadingSiteBoundary, setLoadingSiteBoundary] = useState(false);
+  const [siteBoundaryFromCache, setSiteBoundaryFromCache] = useState(false);
+
+  // Restore the saved-map status whenever the component mounts or the area changes
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(mapBackgroundKey(areaId))
+      .then((raw) => {
+        if (!active) return;
+        const info: MapBackgroundInfo | null = raw ? JSON.parse(raw) : null;
+        setMapBackgroundInfo(info);
+        setIsMapBackgroundDownloaded(!!info);
+      })
+      .catch((e) => console.warn("Failed to read map background status:", e));
+    return () => {
+      active = false;
+    };
+  }, [areaId]);
   const [isLoadingPolygons, setIsLoadingPolygons] = useState(false);
   const [shouldShowAlertIndicator, setShouldShowAlertIndicator] =
     useState(false);
   const hasFitted = useRef(false);
+  // True once the map page inside the WebView has loaded and can take commands
+  const [mapReady, setMapReady] = useState(false);
 
   const webViewRef = useRef<any>(null);
   const isOnline = useNetworkStatus();
@@ -810,8 +1372,13 @@ export default function FloatingMapButton({
         if (areasRes.ok) {
           const areasData = await areasRes.json();
           const area = Array.isArray(areasData)
-            ? areasData.find((a: any) => a.reforestation_area_id === areaId)
+            ? areasData.find(
+                (a: any) => Number(a.reforestation_area_id) === Number(areaId),
+              )
             : null;
+          if (Array.isArray(area?.bounds) && area.bounds.length === 2) {
+            setAreaBounds(area.bounds as LatLngBounds);
+          }
           if (area?.coordinate) {
             if (Array.isArray(area.coordinate) && area.coordinate.length >= 2) {
               setAreaCoords({
@@ -837,13 +1404,32 @@ export default function FloatingMapButton({
           });
           if (siteRes.ok) {
             const siteData = await siteRes.json();
-            if (
-              siteData?.center_coordinate &&
-              siteData.center_coordinate.length === 2
-            ) {
+
+            // Keep offline copies of the boundary and potential sites up to date
+            const boundary = parseSiteBoundary(siteData);
+            setSiteBoundary(boundary);
+            AsyncStorage.setItem(
+              siteBoundaryKey(siteId),
+              JSON.stringify(boundary),
+            ).catch(() => {});
+            if (Array.isArray(siteData?.potential_sites)) {
+              AsyncStorage.setItem(
+                potentialSitesKey(siteId),
+                JSON.stringify({
+                  savedAt: new Date().toISOString(),
+                  data: siteData.potential_sites,
+                }),
+              ).catch(() => {});
+            }
+
+            // Backend sends the site pin as `marker_coordinate` ([lat, lng])
+            const pin = siteData?.marker_coordinate || siteData?.center_coordinate;
+            if (Array.isArray(pin) && pin.length === 2) {
+              setSiteCoords({ lat: Number(pin[0]), lng: Number(pin[1]) });
+            } else if (pin?.latitude != null) {
               setSiteCoords({
-                lat: Number(siteData.center_coordinate[0]),
-                lng: Number(siteData.center_coordinate[1]),
+                lat: Number(pin.latitude),
+                lng: Number(pin.longitude),
               });
             }
           }
@@ -886,15 +1472,41 @@ export default function FloatingMapButton({
       } else if (data.type === "tile_download_progress") {
         setDownloadProgress(data.progress);
       } else if (data.type === "tile_download_complete") {
+        const total = Number(data.count) || 0;
+        const failed = Number(data.failed) || 0;
         setIsDownloading(false);
         setDownloadProgress(100);
-        setDownloadStatus("Map background saved successfully!");
+
+        if (total > 0 && failed >= total) {
+          // Nothing was cached — don't mark the map as saved
+          setShowDownloadModal(false);
+          alert?.error(
+            "Download Failed",
+            "Couldn't download any map tiles. Check your connection and try again.",
+          );
+          return;
+        }
+
+        const info: MapBackgroundInfo = {
+          savedAt: new Date().toISOString(),
+          tiles: total - failed,
+          failed,
+          ...(pendingDownloadRef.current || {}),
+        };
+        pendingDownloadRef.current = null;
+        AsyncStorage.setItem(mapBackgroundKey(areaId), JSON.stringify(info)).catch(
+          (e) => console.warn("Failed to save map background status:", e),
+        );
+        setMapBackgroundInfo(info);
         setIsMapBackgroundDownloaded(true);
+        setDownloadStatus("Map background saved successfully!");
         setTimeout(() => {
           setShowDownloadModal(false);
           alert?.success(
             "Map Saved",
-            "Map background is now available offline!",
+            failed > 0
+              ? `Map saved for offline use (${failed} of ${total} tiles failed — tap Update to retry).`
+              : "Map background is now available offline!",
           );
         }, 1500);
       } else if (data.type === "tile_download_error") {
@@ -910,6 +1522,56 @@ export default function FloatingMapButton({
     }
   };
 
+  /* ── Go to reforestation area ────────────────────────────────── */
+  const hasAreaLocation = !!(areaBounds || areaCoords);
+
+  /** Moves the map to the reforestation area. Returns false if its location is unknown. */
+  const goToArea = (silent = false) => {
+    // Fly to the reforestation area's marker ("A" pin)
+    if (areaCoords) {
+      injectToWebView(
+        `window.updateMap('flyToArea', { lat: ${areaCoords.lat}, lng: ${areaCoords.lng}, zoom: 15 })`,
+      );
+      return true;
+    }
+    // No marker saved: use the middle of the area's sites instead
+    if (areaBounds) {
+      const lat = (areaBounds[0][0] + areaBounds[1][0]) / 2;
+      const lng = (areaBounds[0][1] + areaBounds[1][1]) / 2;
+      injectToWebView(
+        `window.updateMap('flyTo', { lat: ${lat}, lng: ${lng}, zoom: 15 })`,
+      );
+      return true;
+    }
+    if (!silent) {
+      alert?.warning(
+        "Area Location Unavailable",
+        "This area's location hasn't been loaded yet. Open the map once while online.",
+      );
+    }
+    return false;
+  };
+
+  // Opening the map: start at the reforestation area (once the map page is ready)
+  useEffect(() => {
+    if (!showMap || !mapReady || loading || hasFitted.current) return;
+    if (goToArea(true)) hasFitted.current = true;
+  }, [showMap, mapReady, loading, areaBounds, areaCoords]);
+
+  // Show / hide barangay markers (re-applied when the map page reloads)
+  useEffect(() => {
+    if (!showMap || !mapReady) return;
+    injectToWebView(`window.updateMap('setBarangaysVisible', ${showBarangays})`);
+  }, [showBarangays, showMap, mapReady]);
+
+  // Closing the map destroys the WebView, so start fresh next time
+  useEffect(() => {
+    if (!showMap) {
+      setMapReady(false);
+      hasFitted.current = false;
+    }
+  }, [showMap]);
+
   // ✅ UPDATED: Separate injection for each point type
   useEffect(() => {
     if (!showMap) {
@@ -920,6 +1582,7 @@ export default function FloatingMapButton({
       }
       return;
     }
+    if (!mapReady) return; // map page not loaded yet — commands would be lost
 
     // Draw boundary polygon if enabled and has 3+ vertices
     if (polygonVertices.length >= 3 && showBoundaryPolygon) {
@@ -981,9 +1644,9 @@ export default function FloatingMapButton({
       }
     }
 
-    // Auto-fit bounds when points are added
+    // Auto-fit to the points only when there's no area to start at
     const allPoints = validMapPoints.length > 0 ? validMapPoints : [];
-    if (allPoints.length > 0 && !hasFitted.current) {
+    if (allPoints.length > 0 && !hasFitted.current && !loading && !hasAreaLocation) {
       const bounds: [number, number][] = allPoints.map((p) => [
         p.latitude,
         p.longitude,
@@ -1004,12 +1667,15 @@ export default function FloatingMapButton({
     showMap, 
     showAssessmentLocation, 
     showBoundaryMarkers, 
-    showBoundaryPolygon, 
-    currentLocation
+    showBoundaryPolygon,
+    currentLocation,
+    mapReady,
+    loading,
+    hasAreaLocation,
   ]);
 
   useEffect(() => {
-    if (!showMap || loading) return;
+    if (!showMap || loading || !mapReady) return;
     if (areaCoords) {
       injectToWebView(
         `window.updateMap('addArea', { id: ${areaId}, lat: ${areaCoords.lat}, lng: ${areaCoords.lng}, name: '${(areaName || "Area").replace(/'/g, "\\'")}' })`,
@@ -1036,9 +1702,9 @@ export default function FloatingMapButton({
         `window.updateMap('addBarangays', ${JSON.stringify(data)})`,
       );
     }
-    if (!hasFitted.current) {
+    // Fallback start view when the area's location is unknown
+    if (!hasFitted.current && !hasAreaLocation) {
       const points: [number, number][] = [];
-      if (areaCoords) points.push([areaCoords.lat, areaCoords.lng]);
       if (siteCoords) points.push([siteCoords.lat, siteCoords.lng]);
       if (currentLocation)
         points.push([currentLocation.lat, currentLocation.lng]);
@@ -1055,7 +1721,7 @@ export default function FloatingMapButton({
         hasFitted.current = true;
       }
     }
-  }, [areaCoords, siteCoords, currentLocation, barangays, loading, showMap]);
+  }, [areaCoords, siteCoords, currentLocation, barangays, loading, showMap, mapReady]);
 
   useEffect(() => {
     if (!showMap) return;
@@ -1160,6 +1826,198 @@ export default function FloatingMapButton({
       setLoadingHazards(false);
     }
   };
+
+  /* ── Potential sites ─────────────────────────────────────────── */
+  const drawPotentialSites = (list: any[]) => {
+    const payload = list
+      .filter((p) => p?.polygon_coordinates)
+      .map((p, i) => ({
+        id: p.potential_sites_id,
+        index: i + 1,
+        geometry: p.polygon_coordinates, // GeoJSON geometry (lng, lat)
+        area_hectares: p.area_hectares,
+        avg_ndvi: p.avg_ndvi,
+        suitability_score: p.suitability_score,
+      }));
+    injectToWebView(
+      `window.updateMap('drawPotentialSites', ${JSON.stringify(payload)})`,
+    );
+  };
+
+  const loadPotentialSites = async () => {
+    if (!siteId) return;
+    setLoadingPotentialSites(true);
+    let list: any[] | null = null;
+    let fromCache = false;
+
+    // 1) Try the server (same endpoint the web map uses)
+    if (isOnline) {
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        const res = await fetch(
+          `${API_BASE_URL}/get_potential_sites/?site_id=${siteId}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          list = data.data || [];
+          AsyncStorage.setItem(
+            potentialSitesKey(siteId),
+            JSON.stringify({ savedAt: new Date().toISOString(), data: list }),
+          ).catch(() => {});
+        }
+      } catch (e) {
+        console.warn("Failed to fetch potential sites:", e);
+      }
+    }
+
+    // 2) Fall back to the copy saved last time we were online
+    if (list === null) {
+      try {
+        const raw = await AsyncStorage.getItem(potentialSitesKey(siteId));
+        if (raw) {
+          list = JSON.parse(raw).data || [];
+          fromCache = true;
+        }
+      } catch (e) {
+        console.warn("Failed to read cached potential sites:", e);
+      }
+    }
+
+    setLoadingPotentialSites(false);
+
+    if (list === null) {
+      alert?.error(
+        "Not Available Offline",
+        "Potential sites haven't been loaded for this site yet. Load them once while online.",
+      );
+      return;
+    }
+    if (list.length === 0) {
+      setPotentialSites([]);
+      alert?.info(
+        "No Potential Sites",
+        "No potential sites have been analyzed for this site yet.",
+      );
+      return;
+    }
+
+    setPotentialSites(list);
+    setPotentialSitesFromCache(fromCache);
+    setShowPotentialSites(true);
+    drawPotentialSites(list);
+    alert?.success(
+      "Potential Sites Loaded",
+      `Showing ${list.length} potential site(s)${fromCache ? " (saved copy)" : ""}.`,
+    );
+  };
+
+  const togglePotentialSites = () => {
+    if (showPotentialSites) {
+      injectToWebView(`window.updateMap('clearPotentialSites')`);
+      setShowPotentialSites(false);
+      return;
+    }
+    loadPotentialSites();
+  };
+
+  /* ── Site boundary ───────────────────────────────────────────── */
+  const drawSiteBoundary = (b: SiteBoundary) => {
+    injectToWebView(
+      `window.updateMap('drawSiteBoundary', ${JSON.stringify(b)})`,
+    );
+  };
+
+  const loadSiteBoundary = async () => {
+    if (!siteId) return;
+    setLoadingSiteBoundary(true);
+    let boundary: SiteBoundary | null = null;
+    let fromCache = false;
+
+    if (isOnline) {
+      try {
+        const token = await SecureStore.getItemAsync("token");
+        const res = await fetch(`${API_BASE_URL}/get_site/${siteId}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          boundary = parseSiteBoundary(await res.json());
+          AsyncStorage.setItem(
+            siteBoundaryKey(siteId),
+            JSON.stringify(boundary),
+          ).catch(() => {});
+        }
+      } catch (e) {
+        console.warn("Failed to fetch site boundary:", e);
+      }
+    }
+
+    if (!boundary) {
+      try {
+        const raw = await AsyncStorage.getItem(siteBoundaryKey(siteId));
+        if (raw) {
+          boundary = JSON.parse(raw);
+          fromCache = true;
+        }
+      } catch (e) {
+        console.warn("Failed to read cached site boundary:", e);
+      }
+    }
+
+    setLoadingSiteBoundary(false);
+
+    if (!boundary) {
+      alert?.error(
+        "Not Available Offline",
+        "The site boundary hasn't been loaded yet. Open the map once while online.",
+      );
+      return;
+    }
+    if (boundary.coordinates.length < 3 && !boundary.marker) {
+      alert?.info(
+        "No Boundary",
+        "This site has no boundary polygon or pin coordinate yet.",
+      );
+      return;
+    }
+
+    setSiteBoundary(boundary);
+    setSiteBoundaryFromCache(fromCache);
+    setShowSiteBoundary(true);
+    drawSiteBoundary(boundary);
+    alert?.success(
+      "Site Boundary Loaded",
+      boundary.coordinates.length >= 3
+        ? `${boundary.coordinates.length} boundary points${fromCache ? " (saved copy)" : ""}.`
+        : `Only the site pin is available${fromCache ? " (saved copy)" : ""}.`,
+    );
+  };
+
+  const toggleSiteBoundary = () => {
+    if (showSiteBoundary) {
+      injectToWebView(`window.updateMap('clearSiteBoundary')`);
+      setShowSiteBoundary(false);
+      return;
+    }
+    loadSiteBoundary();
+  };
+
+  const flyToSitePin = () => {
+    const p = siteBoundary?.marker || siteBoundary?.coordinates[0];
+    if (!p) return;
+    setShowLayerPanel(false);
+    injectToWebView(
+      `window.updateMap('flyTo', { lat: ${p[0]}, lng: ${p[1]}, zoom: 17 })`,
+    );
+  };
+
+  // The map view is recreated when the modal reopens, so reset the toggles
+  useEffect(() => {
+    if (!showMap) {
+      setShowPotentialSites(false);
+      setShowSiteBoundary(false);
+    }
+  }, [showMap]);
 
   const hidePolygons = () => {
     injectToWebView(`window.updateMap('clearPolygons')`);
@@ -1333,7 +2191,59 @@ export default function FloatingMapButton({
     );
   };
 
-  const downloadMapBackground = () => {
+  /** Every piece of ground that can be saved, in order of preference. */
+  const getExtentCandidates = async (): Promise<SaveTarget[]> => {
+    const out: SaveTarget[] = [];
+    if (siteId) {
+      const pts: [number, number][] = [];
+      if (siteBoundary) {
+        pts.push(...siteBoundary.coordinates);
+        if (siteBoundary.marker) pts.push(siteBoundary.marker);
+      }
+      // Include potential sites so the analyzed planting areas are covered too
+      try {
+        const raw = await AsyncStorage.getItem(potentialSitesKey(siteId));
+        const list: any[] = raw ? JSON.parse(raw).data || [] : potentialSites;
+        list.forEach((p) => {
+          const parsed = parseSiteBoundary({ polygon_coordinates: p.polygon_coordinates });
+          pts.push(...parsed.coordinates);
+        });
+      } catch {}
+      if (siteCoords) pts.push([siteCoords.lat, siteCoords.lng]);
+      const b = boundsFromPoints(pts);
+      if (b) out.push({ key: "site", label: "This site", detail: siteName || "Site + potential sites", extent: b });
+    }
+    if (areaBounds) {
+      out.push({ key: "area", label: "Whole area", detail: areaName || "All sites in the area", extent: areaBounds });
+    } else if (areaCoords) {
+      const c: [number, number] = [areaCoords.lat, areaCoords.lng];
+      out.push({ key: "area", label: "Area pin", detail: `${areaName || "Area"} (no site outlines yet)`, extent: [c, c] });
+    }
+    if (currentLocation) {
+      const c: [number, number] = [currentLocation.lat, currentLocation.lng];
+      out.push({ key: "me", label: "Around me", detail: "Your current GPS position", extent: [c, c] });
+    }
+    return out;
+  };
+
+  // Remember the last-used save settings
+  useEffect(() => {
+    AsyncStorage.getItem(SAVE_OPTIONS_KEY)
+      .then((raw) => {
+        if (raw) setSaveOpts({ ...DEFAULT_SAVE_OPTIONS, ...JSON.parse(raw) });
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveTarget =
+    saveTargets.find((t) => t.key === saveTargetKey) || saveTargets[0] || null;
+  const savePlan: DownloadPlan | null = useMemo(
+    () => (saveTarget ? buildDownloadPlan(saveTarget.extent, saveOpts) : null),
+    [saveTarget, saveOpts],
+  );
+
+  /** Opens the save settings sheet. */
+  const downloadMapBackground = async () => {
     if (!isOnline) {
       alert?.error(
         "Offline",
@@ -1341,30 +2251,110 @@ export default function FloatingMapButton({
       );
       return;
     }
-    alert?.info(
-      "Downloading Map",
-      "Saving map background for offline use. Keep the app open.",
-    );
-    let bounds = [
-      [11.0, 124.5],
-      [11.1, 124.7],
-    ];
-    const offset = 0.05;
-    if (areaCoords) {
-      bounds = [
-        [areaCoords.lat - offset, areaCoords.lng - offset],
-        [areaCoords.lat + offset, areaCoords.lng + offset],
-      ];
-    } else if (currentLocation) {
-      bounds = [
-        [currentLocation.lat - offset, currentLocation.lng - offset],
-        [currentLocation.lat + offset, currentLocation.lng + offset],
-      ];
+    const candidates = await getExtentCandidates();
+    if (!candidates.length) {
+      alert?.error(
+        "No Location",
+        "No site, area or GPS location is available to size the map download.",
+      );
+      return;
     }
-    const minZoom = 10;
-    const maxZoom = 15;
+    setSaveTargets(candidates);
+    setSaveTargetKey((prev) =>
+      prev && candidates.some((c) => c.key === prev) ? prev : candidates[0].key,
+    );
+    setShowLayerPanel(false);
+    setShowSaveSheet(true);
+  };
+
+  /* ── Reset offline data ──────────────────────────────────────── */
+  const openResetSheet = () => {
+    setShowLayerPanel(false);
+    setShowResetSheet(true);
+  };
+
+  const runReset = async () => {
+    setResetting(true);
+    const done: string[] = [];
+    try {
+      if (resetSel.tiles) {
+        // Tiles live in the map view's shared cache, so this clears every area
+        webViewRef.current?.clearCache?.(true);
+        const keys = await AsyncStorage.getAllKeys();
+        await AsyncStorage.multiRemove(
+          keys.filter((k) => k.startsWith("@plantscope_map_background_")),
+        );
+        setIsMapBackgroundDownloaded(false);
+        setMapBackgroundInfo(null);
+        done.push("saved map tiles");
+      }
+
+      if (resetSel.locations) {
+        const keys = [areaViewKey(areaId)];
+        if (siteId) keys.push(siteBoundaryKey(siteId), potentialSitesKey(siteId));
+        await AsyncStorage.multiRemove(keys);
+        injectToWebView(
+          `window.updateMap('clearSiteBoundary'); window.updateMap('clearPotentialSites')`,
+        );
+        setShowSiteBoundary(false);
+        setShowPotentialSites(false);
+        setSiteBoundaryFromCache(false);
+        setPotentialSitesFromCache(false);
+        done.push(siteId ? "saved site & area locations" : "saved area location");
+      }
+
+      if (resetSel.polygons) {
+        await PolygonDownloadService.deleteAllPolygons();
+        setHasDownloadedPolygons(false);
+        setShouldShowAlertIndicator(false);
+        await refreshPolygonStatus();
+        await updateDownloadedStats();
+        if (geofencingActive) await stopGeofencing();
+        injectToWebView(`window.updateMap('clearPolygons')`);
+        done.push("hazard & classification polygons");
+      }
+
+      setShowResetSheet(false);
+      alert?.success(
+        "Offline Data Reset",
+        `Deleted ${done.join(", ")}.` +
+          (isOnline && resetSel.locations
+            ? " Locations will be saved again next time you open the map online."
+            : ""),
+      );
+    } catch (e) {
+      console.error("Reset offline data failed:", e);
+      alert?.error("Reset Failed", "Some offline data could not be deleted.");
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const confirmReset = () => {
+    if (!resetSel.tiles && !resetSel.locations && !resetSel.polygons) return;
+    Alert.alert(
+      "Delete offline data?",
+      "The selected data will be removed from this phone." +
+        (resetSel.tiles ? "\n\nSaved map tiles are removed for ALL areas." : "") +
+        "\n\nYou'll need internet to download it again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: runReset },
+      ],
+    );
+  };
+
+  const startMapDownload = () => {
+    if (!savePlan || savePlan.blocked) return;
+    pendingDownloadRef.current = {
+      minZoom: savePlan.minZoom,
+      maxZoom: savePlan.maxZoom,
+      areaKm2: savePlan.detailKm2,
+    };
+    AsyncStorage.setItem(SAVE_OPTIONS_KEY, JSON.stringify(saveOpts)).catch(() => {});
+    setShowSaveSheet(false);
     injectToWebView(
-      `window.downloadMapBackground(${JSON.stringify(bounds)}, ${minZoom}, ${maxZoom})`,
+      `window.downloadMapBackground(${JSON.stringify(savePlan.levels)})`,
     );
   };
 
@@ -1550,25 +2540,6 @@ export default function FloatingMapButton({
             />
           )}
 
-          <View style={styles.polygonStatusBar}>
-            <View style={styles.polygonStatusLeft}>
-              <Ionicons
-                name={
-                  hasDownloadedPolygons
-                    ? "checkmark-circle"
-                    : "download-outline"
-                }
-                size={14}
-                color={hasDownloadedPolygons ? "#16a34a" : "#f59e0b"}
-              />
-              <Text style={styles.polygonStatusBarText}>
-                {hasDownloadedPolygons
-                  ? `${downloadedStats.classified + downloadedStats.hazards} polygons ready`
-                  : "No polygons downloaded"}
-              </Text>
-            </View>
-          </View>
-
           {showLayerPanel && (
             <View style={styles.layerPanel}>
               <Text style={styles.layerPanelTitle}>Hazard Layers (MGB)</Text>
@@ -1620,6 +2591,180 @@ export default function FloatingMapButton({
                   <Ionicons name="checkmark" size={18} color="#fff" />
                 )}
               </TouchableOpacity>
+
+              <Text style={[styles.layerPanelTitle, { marginTop: 12 }]}>
+                Map Markers
+              </Text>
+              <TouchableOpacity
+                style={[
+                  styles.layerToggle,
+                  showBarangays && styles.layerToggleActiveBarangay,
+                ]}
+                onPress={() => setShowBarangays(!showBarangays)}
+              >
+                <Ionicons
+                  name="business-outline"
+                  size={18}
+                  color={showBarangays ? "#fff" : "#A16207"}
+                />
+                <Text
+                  style={[
+                    styles.layerToggleText,
+                    showBarangays && styles.layerToggleTextActive,
+                  ]}
+                >
+                  Barangays ({barangays.length})
+                </Text>
+                {showBarangays && (
+                  <Ionicons name="checkmark" size={18} color="#fff" />
+                )}
+              </TouchableOpacity>
+
+              {/* Official site boundary polygon + pin (specific site only) */}
+              {!!siteId && (
+                <View style={styles.assessmentPointsSection}>
+                  <Text style={styles.layerPanelTitle}>Site Boundary</Text>
+                  <View style={styles.assessmentPointsRow}>
+                    <View style={styles.assessmentPointsInfo}>
+                      <MaterialCommunityIcons
+                        name="shape-polygon-plus"
+                        size={18}
+                        color="#16a34a"
+                      />
+                      <View style={{ flexShrink: 1 }}>
+                        <Text style={styles.assessmentPointsText}>
+                          {showSiteBoundary && siteBoundary
+                            ? siteBoundary.coordinates.length >= 3
+                              ? `Polygon · ${siteBoundary.coordinates.length} points`
+                              : "Pin only (no polygon)"
+                            : "Official site polygon & pin"}
+                        </Text>
+                        {showSiteBoundary && siteBoundaryFromCache && (
+                          <Text style={styles.offlineSubText}>
+                            Saved copy (offline)
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.miniBtn,
+                        showSiteBoundary
+                          ? styles.miniBtnSecondary
+                          : styles.miniBtnPrimary,
+                      ]}
+                      onPress={toggleSiteBoundary}
+                      disabled={loadingSiteBoundary}
+                    >
+                      {loadingSiteBoundary ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Ionicons
+                          name={showSiteBoundary ? "eye-off" : "eye"}
+                          size={14}
+                          color="#fff"
+                        />
+                      )}
+                      <Text style={styles.miniBtnText}>
+                        {showSiteBoundary ? "Hide" : "Load"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {showSiteBoundary && siteBoundary && (
+                    <View style={styles.coordCard}>
+                      {siteBoundary.marker && (
+                        <View style={styles.coordRow}>
+                          <Text style={styles.coordLabel}>Pin</Text>
+                          <Text style={styles.coordValue} selectable>
+                            {siteBoundary.marker[0].toFixed(6)},{" "}
+                            {siteBoundary.marker[1].toFixed(6)}
+                          </Text>
+                        </View>
+                      )}
+                      {siteBoundary.area_hectares != null && (
+                        <View style={styles.coordRow}>
+                          <Text style={styles.coordLabel}>Area</Text>
+                          <Text style={styles.coordValue}>
+                            {Number(siteBoundary.area_hectares).toFixed(2)} ha
+                          </Text>
+                        </View>
+                      )}
+                      {siteBoundary.coordinates.length >= 3 && (
+                        <ScrollView
+                          style={styles.coordList}
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator
+                        >
+                          {siteBoundary.coordinates.map((c, i) => (
+                            <Text key={i} style={styles.coordListItem} selectable>
+                              {i + 1}. {c[0].toFixed(6)}, {c[1].toFixed(6)}
+                            </Text>
+                          ))}
+                        </ScrollView>
+                      )}
+                      <TouchableOpacity
+                        style={styles.coordGoBtn}
+                        onPress={flyToSitePin}
+                      >
+                        <Ionicons name="locate" size={14} color="#0F4A2F" />
+                        <Text style={styles.coordGoText}>Go to site</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Potential sites from the web GIS analysis (specific site only) */}
+              {!!siteId && (
+                <View style={styles.assessmentPointsSection}>
+                  <Text style={styles.layerPanelTitle}>Potential Sites</Text>
+                  <View style={styles.assessmentPointsRow}>
+                    <View style={styles.assessmentPointsInfo}>
+                      <MaterialCommunityIcons
+                        name="vector-polygon"
+                        size={18}
+                        color="#dc2626"
+                      />
+                      <View style={{ flexShrink: 1 }}>
+                        <Text style={styles.assessmentPointsText}>
+                          {showPotentialSites
+                            ? `Showing ${potentialSites.length} potential site(s)`
+                            : "Analyzed potential areas"}
+                        </Text>
+                        {showPotentialSites && potentialSitesFromCache && (
+                          <Text style={styles.offlineSubText}>
+                            Saved copy (offline)
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.miniBtn,
+                        showPotentialSites
+                          ? styles.miniBtnSecondary
+                          : styles.miniBtnPrimary,
+                      ]}
+                      onPress={togglePotentialSites}
+                      disabled={loadingPotentialSites}
+                    >
+                      {loadingPotentialSites ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Ionicons
+                          name={showPotentialSites ? "eye-off" : "eye"}
+                          size={14}
+                          color="#fff"
+                        />
+                      )}
+                      <Text style={styles.miniBtnText}>
+                        {showPotentialSites ? "Hide" : "Load"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
 
               {/* ✅ UPDATED: Separate Assessment Points Section */}
               <View style={styles.assessmentPointsSection}>
@@ -1752,7 +2897,17 @@ export default function FloatingMapButton({
               </View>
 
               <View style={styles.offlineSection}>
-                <Text style={styles.layerPanelTitle}>Offline Data</Text>
+                <View style={styles.offlineTitleRow}>
+                  <Text style={styles.layerPanelTitle}>Offline Data</Text>
+                  <TouchableOpacity
+                    style={styles.guideLink}
+                    onPress={() => setShowGuide(true)}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="help-circle-outline" size={15} color="#0F4A2F" />
+                    <Text style={styles.guideLinkText}>Guide</Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.offlineRow}>
                   <View style={styles.offlineInfo}>
                     <Ionicons
@@ -1764,11 +2919,24 @@ export default function FloatingMapButton({
                       size={18}
                       color={isMapBackgroundDownloaded ? "#16a34a" : "#6B7280"}
                     />
-                    <Text style={styles.offlineText}>
-                      {isMapBackgroundDownloaded
-                        ? "Map Saved Offline"
-                        : "Map Not Saved"}
-                    </Text>
+                    <View style={{ flexShrink: 1 }}>
+                      <Text style={styles.offlineText}>
+                        {isMapBackgroundDownloaded
+                          ? "Map Saved Offline"
+                          : "Map Not Saved"}
+                      </Text>
+                      {isMapBackgroundDownloaded && mapBackgroundInfo && (
+                        <Text style={styles.offlineSubText}>
+                          {new Date(mapBackgroundInfo.savedAt).toLocaleDateString(
+                            "en-US",
+                            { month: "short", day: "numeric", year: "numeric" },
+                          )}{" "}
+                          · {mapBackgroundInfo.tiles.toLocaleString()} tiles
+                          {mapBackgroundInfo.minZoom != null &&
+                            ` · zoom ${mapBackgroundInfo.minZoom}–${mapBackgroundInfo.maxZoom}`}
+                        </Text>
+                      )}
+                    </View>
                   </View>
                   <TouchableOpacity
                     style={[
@@ -1852,6 +3020,11 @@ export default function FloatingMapButton({
                     )}
                   </View>
                 </View>
+
+                <TouchableOpacity style={styles.resetLink} onPress={openResetSheet}>
+                  <Ionicons name="trash-outline" size={15} color="#DC2626" />
+                  <Text style={styles.resetLinkText}>Reset offline data…</Text>
+                </TouchableOpacity>
               </View>
 
               <View style={styles.infoBox}>
@@ -1879,6 +3052,10 @@ export default function FloatingMapButton({
                   domStorageEnabled={true}
                   originWhitelist={["*"]}
                   startInLoadingState={true}
+                  // Offline: use cached tiles even if they're "expired"
+                  cacheEnabled={true}
+                  cacheMode={isOnline ? "LOAD_DEFAULT" : "LOAD_CACHE_ELSE_NETWORK"}
+                  onLoadEnd={() => setMapReady(true)}
                   onMessage={onWebViewMessage}
                   renderLoading={() => (
                     <View style={styles.loadingOverlay}>
@@ -1975,8 +3152,18 @@ export default function FloatingMapButton({
             )}
 
             <TouchableOpacity
+              style={[styles.areaBtn, !hasAreaLocation && { opacity: 0.5 }]}
+              onPress={() => goToArea()}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons name="pine-tree" size={16} color="#fff" />
+              <Text style={styles.recenterText}>Go to Area</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[
                 styles.recenterBtn,
+                { marginLeft: 6 },
                 (isLocationEnabled || isAcquiringLocation) &&
                   styles.recenterBtnActive,
               ]}
@@ -2004,6 +3191,370 @@ export default function FloatingMapButton({
           </View>
         </View>
         <ToastHost />
+      </Modal>
+
+      {/* ── Save Map Offline: settings + live estimate ── */}
+      <Modal
+        transparent
+        visible={showSaveSheet}
+        animationType="slide"
+        onRequestClose={() => setShowSaveSheet(false)}
+      >
+        <View style={styles.sheetOverlay}>
+          {/* Backdrop sits behind the sheet so it doesn't steal scroll gestures */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowSaveSheet(false)} />
+          <View style={styles.saveSheet}>
+            <View style={styles.dragHandle} />
+            <View style={styles.saveHeader}>
+              <Text style={styles.saveTitle}>Save Map Offline</Text>
+              <TouchableOpacity
+                style={styles.guideLink}
+                onPress={() => setShowGuide(true)}
+                hitSlop={8}
+              >
+                <Ionicons name="help-circle-outline" size={18} color="#0F4A2F" />
+                <Text style={styles.guideLinkText}>Guide</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={{ flexShrink: 1 }}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Cover */}
+              <Text style={styles.saveLabel}>Cover</Text>
+              {saveTargets.map((t) => {
+                const active = saveTarget?.key === t.key;
+                const preview = buildDownloadPlan(t.extent, saveOpts);
+                return (
+                  <TouchableOpacity
+                    key={t.key}
+                    style={[styles.targetRow, active && styles.targetRowActive]}
+                    onPress={() => setSaveTargetKey(t.key)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={active ? "radio-button-on" : "radio-button-off"}
+                      size={18}
+                      color={active ? "#0F4A2F" : "#9CA3AF"}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.targetLabel}>{t.label}</Text>
+                      <Text style={styles.targetDetail} numberOfLines={1}>
+                        {t.detail}
+                      </Text>
+                    </View>
+                    <Text style={styles.targetSize}>{formatArea(preview.detailKm2)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {/* Closest zoom */}
+              <Text style={styles.saveLabel}>Closest zoom</Text>
+              <View style={styles.chipRow}>
+                {(["auto", 15, 16, 17, 18] as const).map((z) => (
+                  <TouchableOpacity
+                    key={String(z)}
+                    style={[styles.optChip, saveOpts.maxZoom === z && styles.optChipActive]}
+                    onPress={() => setSaveOpts((o) => ({ ...o, maxZoom: z }))}
+                  >
+                    <Text
+                      style={[styles.optChipText, saveOpts.maxZoom === z && styles.optChipTextActive]}
+                    >
+                      {z === "auto" ? "Auto" : z}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {savePlan && (
+                <Text style={styles.saveHint}>
+                  Zoom {savePlan.maxZoom}: one tile ≈ {tileWidthMeters(savePlan.maxZoom)} m wide
+                  {savePlan.maxZoom >= 18
+                    ? " — paths and tree clusters"
+                    : savePlan.maxZoom >= 17
+                      ? " — houses and trails"
+                      : savePlan.maxZoom >= 16
+                        ? " — fields and small roads"
+                        : " — roads and land shapes"}
+                  {saveOpts.maxZoom === "auto" ? " (picked automatically)" : ""}
+                </Text>
+              )}
+
+              {/* Close-up margin */}
+              <Text style={styles.saveLabel}>Close-up margin</Text>
+              <View style={styles.chipRow}>
+                {([
+                  ["tight", "Tight ~110 m"],
+                  ["normal", "Normal"],
+                  ["wide", "Wide +1 km"],
+                ] as const).map(([k, label]) => (
+                  <TouchableOpacity
+                    key={k}
+                    style={[styles.optChip, saveOpts.detailMargin === k && styles.optChipActive]}
+                    onPress={() => setSaveOpts((o) => ({ ...o, detailMargin: k }))}
+                  >
+                    <Text
+                      style={[styles.optChipText, saveOpts.detailMargin === k && styles.optChipTextActive]}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Surroundings */}
+              <Text style={styles.saveLabel}>Surroundings (zoom 10–13)</Text>
+              <View style={styles.chipRow}>
+                {([0, 1, 3, 5] as const).map((km) => (
+                  <TouchableOpacity
+                    key={km}
+                    style={[styles.optChip, saveOpts.contextKm === km && styles.optChipActive]}
+                    onPress={() => setSaveOpts((o) => ({ ...o, contextKm: km }))}
+                  >
+                    <Text
+                      style={[styles.optChipText, saveOpts.contextKm === km && styles.optChipTextActive]}
+                    >
+                      {km === 0 ? "None" : `${km} km`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Estimate */}
+              {savePlan && (
+                <View style={styles.estimateCard}>
+                  <View style={styles.estimateRow}>
+                    <View style={styles.estimateStat}>
+                      <Text style={styles.estimateValue}>{savePlan.tiles.toLocaleString()}</Text>
+                      <Text style={styles.estimateLabel}>tiles</Text>
+                    </View>
+                    <View style={styles.estimateStat}>
+                      <Text style={styles.estimateValue}>{formatMB(savePlan.estimateMB)}</Text>
+                      <Text style={styles.estimateLabel}>about</Text>
+                    </View>
+                    <View style={styles.estimateStat}>
+                      <Text style={styles.estimateValue}>
+                        {savePlan.minZoom}–{savePlan.maxZoom}
+                      </Text>
+                      <Text style={styles.estimateLabel}>zoom</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.estimateLine}>
+                    Close-up area: {formatArea(savePlan.detailKm2)} · Total covered:{" "}
+                    {formatArea(savePlan.contextKm2)}
+                  </Text>
+                  <View style={styles.zoomBreakdown}>
+                    {savePlan.perZoom.map((l) => (
+                      <View key={l.z} style={styles.zoomCell}>
+                        <Text style={styles.zoomCellZ}>z{l.z}</Text>
+                        <Text style={styles.zoomCellN}>{l.tiles.toLocaleString()}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {savePlan?.blocked ? (
+                <Text style={[styles.saveWarn, styles.saveWarnError]}>
+                  Too large ({HARD_MAX_TILES.toLocaleString()} tile limit). Lower the closest zoom or margin.
+                </Text>
+              ) : savePlan?.tooLarge ? (
+                <Text style={styles.saveWarn}>Big download — use Wi-Fi if you can.</Text>
+              ) : null}
+              {savePlan?.reducedZoom && (
+                <Text style={styles.saveWarn}>
+                  Large area: Auto limited the closest zoom to {savePlan.maxZoom} to stay near{" "}
+                  {MAX_TILES.toLocaleString()} tiles.
+                </Text>
+              )}
+              <Text style={styles.saveHint}>Keep the map open and the screen on until it finishes.</Text>
+            </ScrollView>
+
+            <View style={styles.saveBtnRow}>
+              <TouchableOpacity
+                style={styles.saveCancelBtn}
+                onPress={() => setShowSaveSheet(false)}
+              >
+                <Text style={styles.saveCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveGoBtn, (!savePlan || savePlan.blocked) && { opacity: 0.4 }]}
+                onPress={startMapDownload}
+                disabled={!savePlan || savePlan.blocked}
+              >
+                <Ionicons name="cloud-download-outline" size={16} color="#fff" />
+                <Text style={styles.saveGoText}>Download</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Reset offline data ── */}
+      <Modal
+        transparent
+        visible={showResetSheet}
+        animationType="slide"
+        onRequestClose={() => !resetting && setShowResetSheet(false)}
+      >
+        <View style={styles.sheetOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => !resetting && setShowResetSheet(false)}
+          />
+          <View style={styles.saveSheet}>
+            <View style={styles.dragHandle} />
+            <View style={styles.saveHeader}>
+              <Text style={styles.saveTitle}>Reset Offline Data</Text>
+              <TouchableOpacity
+                onPress={() => setShowResetSheet(false)}
+                hitSlop={8}
+                disabled={resetting}
+              >
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.saveHint}>
+              Choose what to delete from this phone. Use this to free storage or to start over
+              if the offline map looks wrong.
+            </Text>
+
+            <ScrollView style={{ flexShrink: 1 }} showsVerticalScrollIndicator={false}>
+              {([
+                {
+                  key: "tiles",
+                  icon: "map-outline",
+                  title: "Saved map tiles",
+                  sub: mapBackgroundInfo
+                    ? `${mapBackgroundInfo.tiles.toLocaleString()} tiles saved here · removed for ALL areas`
+                    : "Map background images · removed for ALL areas",
+                },
+                {
+                  key: "locations",
+                  icon: "location-outline",
+                  title: siteId ? "Saved site & area locations" : "Saved area location",
+                  sub: siteId
+                    ? "Area pin/outline, site boundary and potential sites (this area and site)"
+                    : "Area pin and outline (this area)",
+                },
+                {
+                  key: "polygons",
+                  icon: "shield-outline",
+                  title: "Hazard & classification polygons",
+                  sub: hasDownloadedPolygons
+                    ? `${(downloadedStats.classified + downloadedStats.hazards).toLocaleString()} polygons · ${downloadedStats.size} · hazard warnings stop offline`
+                    : "None downloaded",
+                },
+              ] as const).map((item) => {
+                const checked = resetSel[item.key];
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={[styles.targetRow, checked && styles.resetRowActive]}
+                    onPress={() =>
+                      setResetSel((s) => ({ ...s, [item.key]: !s[item.key] }))
+                    }
+                    activeOpacity={0.7}
+                    disabled={resetting}
+                  >
+                    <Ionicons
+                      name={checked ? "checkbox" : "square-outline"}
+                      size={20}
+                      color={checked ? "#DC2626" : "#9CA3AF"}
+                    />
+                    <Ionicons name={item.icon} size={18} color="#374151" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.targetLabel}>{item.title}</Text>
+                      <Text style={styles.targetDetail}>{item.sub}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <Text style={styles.saveHint}>
+                Assessments, drafts and areas/sites saved on the Assess tab are not affected.
+              </Text>
+              {!isOnline && (
+                <Text style={[styles.saveWarn, styles.saveWarnError]}>
+                  You're offline. Anything you delete can't be downloaded again until you're
+                  back online.
+                </Text>
+              )}
+            </ScrollView>
+
+            <View style={styles.saveBtnRow}>
+              <TouchableOpacity
+                style={styles.saveCancelBtn}
+                onPress={() => setShowResetSheet(false)}
+                disabled={resetting}
+              >
+                <Text style={styles.saveCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.saveGoBtn,
+                  { backgroundColor: "#DC2626" },
+                  (resetting ||
+                    (!resetSel.tiles && !resetSel.locations && !resetSel.polygons)) && {
+                    opacity: 0.4,
+                  },
+                ]}
+                onPress={confirmReset}
+                disabled={
+                  resetting || (!resetSel.tiles && !resetSel.locations && !resetSel.polygons)
+                }
+              >
+                {resetting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="trash-outline" size={16} color="#fff" />
+                )}
+                <Text style={styles.saveGoText}>Delete selected</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Offline map user guide ── */}
+      <Modal
+        transparent
+        visible={showGuide}
+        animationType="slide"
+        onRequestClose={() => setShowGuide(false)}
+      >
+        <View style={styles.sheetOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowGuide(false)} />
+          <View style={styles.saveSheet}>
+            <View style={styles.dragHandle} />
+            <View style={styles.saveHeader}>
+              <Text style={styles.saveTitle}>Save Map Offline: Guide</Text>
+              <TouchableOpacity onPress={() => setShowGuide(false)} hitSlop={8}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              showsVerticalScrollIndicator
+              style={{ flexShrink: 1 }}
+              nestedScrollEnabled
+            >
+              <SaveMapGuide
+                plan={showSaveSheet ? savePlan : null}
+                opts={saveOpts}
+                isExample={!(showSaveSheet && savePlan)}
+              />
+              <View style={{ height: 12 }} />
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.saveGoBtn, { flex: 0, marginTop: 10 }]}
+              onPress={() => setShowGuide(false)}
+            >
+              <Text style={styles.saveGoText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       <Modal
@@ -2347,9 +3898,11 @@ const mapHtml = `
   <div id="map"></div>
   <script>
     var map = L.map('map', { center: [11.02, 124.61], zoom: 13, zoomControl: true, fadeAnimation: true, zoomAnimation: true });
-    var baseTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OSM' }).addTo(map);
+    // maxNativeZoom 18 = deepest saved level; zoom 19 just enlarges z18 tiles (works offline too)
+    var baseTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, maxNativeZoom: 18, attribution: '© OSM' }).addTo(map);
     var markers = { barangay: {}, area: null, site: null, user: null };
-    var polygonLayers = { classified: null, hazards: null, boundary: null };
+    var polygonLayers = { classified: null, hazards: null, boundary: null, potential: null, site: null };
+    var barangaysVisible = true;
     var hazardTiles = { flood: null, landslide: null };
     var userPulse = null;
     var assessmentPointsLayer = null;
@@ -2418,7 +3971,8 @@ const mapHtml = `
         if (action === 'addBarangays') {
           payload.forEach(b => {
             if (markers.barangay[b.id]) map.removeLayer(markers.barangay[b.id]);
-            var m = L.marker([b.lat, b.lng], { icon: createIcon('yellow', 'B') }).addTo(map);
+            var m = L.marker([b.lat, b.lng], { icon: createIcon('yellow', 'B') });
+            if (barangaysVisible) m.addTo(map);
             m.on('click', () => sendClick('barangay', b.id));
             m.bindPopup('<b>Barangay:</b> ' + b.name);
             markers.barangay[b.id] = m;
@@ -2521,6 +4075,86 @@ const mapHtml = `
           });
           group.addTo(map); polygonLayers.hazards = group;
         }
+        else if (action === 'drawPotentialSites') {
+          if (polygonLayers.potential) { map.removeLayer(polygonLayers.potential); polygonLayers.potential = null; }
+          var group = L.featureGroup();
+          payload.forEach(function(p) {
+            try {
+              var fmt = function(v, d) { return (v === null || v === undefined || isNaN(Number(v))) ? 'N/A' : Number(v).toFixed(d); };
+              var popup = '<div style="min-width:180px;font-family:system-ui;">'
+                + '<div style="font-weight:700;color:#dc2626;font-size:14px;border-bottom:1px solid #eee;padding-bottom:4px;margin-bottom:6px;">Potential Site ' + p.index + '</div>'
+                + '<div style="font-size:12px;margin-bottom:3px;"><b>Area:</b> ' + fmt(p.area_hectares, 2) + ' ha</div>'
+                + '<div style="font-size:12px;margin-bottom:3px;"><b>Avg NDVI:</b> ' + fmt(p.avg_ndvi, 3) + '</div>'
+                + '<div style="font-size:12px;"><b>Suitability:</b> ' + fmt(p.suitability_score, 1) + '</div>'
+                + '</div>';
+              // Same style as the web map
+              L.geoJSON(p.geometry, {
+                style: { color: '#dc2626', weight: 2, fillColor: '#fecaca', fillOpacity: 0.5, dashArray: '4, 4' }
+              }).bindPopup(popup).addTo(group);
+            } catch (e) { console.warn('Error drawing potential site:', e); }
+          });
+          group.addTo(map);
+          polygonLayers.potential = group;
+          try {
+            var b = group.getBounds();
+            if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 17 });
+          } catch (e) {}
+        }
+        else if (action === 'flyToArea') {
+          // Center on the area marker and show its name
+          map.flyTo([payload.lat, payload.lng], payload.zoom || 15, { duration: 0.8 });
+          if (markers.area) setTimeout(function() { markers.area.openPopup(); }, 850);
+        }
+        else if (action === 'setBarangaysVisible') {
+          barangaysVisible = !!payload;
+          Object.keys(markers.barangay).forEach(function(id) {
+            var m = markers.barangay[id];
+            if (barangaysVisible) { if (!map.hasLayer(m)) m.addTo(map); }
+            else if (map.hasLayer(m)) map.removeLayer(m);
+          });
+        }
+        else if (action === 'drawSiteBoundary') {
+          if (polygonLayers.site) { map.removeLayer(polygonLayers.site); polygonLayers.site = null; }
+          var siteGroup = L.featureGroup();
+          var coords = payload.coordinates || [];
+          var area = (payload.area_hectares === null || payload.area_hectares === undefined) ? 'N/A' : Number(payload.area_hectares).toFixed(2) + ' ha';
+          if (coords.length >= 3) {
+            var poly = L.polygon(coords, { color: '#16a34a', weight: 3, fillColor: '#22c55e', fillOpacity: 0.18 });
+            poly.bindPopup('<div style="font-family:system-ui;min-width:170px;">'
+              + '<div style="font-weight:700;color:#15803d;font-size:14px;margin-bottom:4px;">' + payload.name + '</div>'
+              + '<div style="font-size:12px;"><b>Area:</b> ' + area + '</div>'
+              + '<div style="font-size:12px;"><b>Status:</b> ' + (payload.status || 'N/A') + '</div>'
+              + '<div style="font-size:12px;"><b>Boundary points:</b> ' + coords.length + '</div></div>');
+            poly.addTo(siteGroup);
+            // Small numbered vertices so the boundary can be walked in the field
+            coords.forEach(function(c, i) {
+              L.circleMarker(c, { radius: 4, color: '#ffffff', weight: 1.5, fillColor: '#15803d', fillOpacity: 1 })
+                .bindPopup('<b>Point ' + (i + 1) + '</b><br>' + c[0].toFixed(6) + ', ' + c[1].toFixed(6))
+                .addTo(siteGroup);
+            });
+          }
+          if (payload.marker) {
+            L.marker(payload.marker, { icon: L.divIcon({ className: 'custom', html: '<div style="background:#16a34a;width:36px;height:36px;border-radius:50%;border:4px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;font-size:14px;">S</div>', iconSize: [36, 36], iconAnchor: [18, 18] }) })
+              .bindPopup('<b>' + payload.name + '</b><br>' + payload.marker[0].toFixed(6) + ', ' + payload.marker[1].toFixed(6))
+              .addTo(siteGroup);
+          }
+          siteGroup.addTo(map);
+          polygonLayers.site = siteGroup;
+          try {
+            if (coords.length >= 3) {
+              var sb = siteGroup.getBounds();
+              if (sb.isValid()) map.fitBounds(sb, { padding: [40, 40], maxZoom: 18 });
+            } else if (payload.marker) {
+              map.flyTo(payload.marker, 17);
+            }
+          } catch (e) {}
+        }
+        else if (action === 'clearSiteBoundary') {
+          if (polygonLayers.site) { map.removeLayer(polygonLayers.site); polygonLayers.site = null; }
+        }
+        else if (action === 'clearPotentialSites') {
+          if (polygonLayers.potential) { map.removeLayer(polygonLayers.potential); polygonLayers.potential = null; }
+        }
         else if (action === 'clearPolygons') {
           if (polygonLayers.classified) { map.removeLayer(polygonLayers.classified); polygonLayers.classified = null; }
           if (polygonLayers.hazards) { map.removeLayer(polygonLayers.hazards); polygonLayers.hazards = null; }
@@ -2542,39 +4176,60 @@ const mapHtml = `
       }
     };
 
-    window.downloadMapBackground = function(bounds, minZoom, maxZoom) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'tile_download_start' }));
-      var latMin = bounds[0][0]; var lngMin = bounds[0][1]; var latMax = bounds[1][0]; var lngMax = bounds[1][1];
-      var totalTiles = 0; var downloadedTiles = 0;
-      for (var z = minZoom; z <= maxZoom; z++) {
-        var n = Math.pow(2, z);
-        var xMin = Math.floor((lngMin + 180) / 360 * n);
-        var xMax = Math.floor((lngMax + 180) / 360 * n);
-        var yMin = Math.floor((1 - Math.log(Math.tan(latMax * Math.PI / 180) + 1 / Math.cos(latMax * Math.PI / 180)) / Math.PI) / 2 * n);
-        var yMax = Math.floor((1 - Math.log(Math.tan(latMin * Math.PI / 180) + 1 / Math.cos(latMin * Math.PI / 180)) / Math.PI) / 2 * n);
+    // levels: [{ z, bounds: [[minLat, minLng], [maxLat, maxLng]] }, ...]
+    window.downloadMapBackground = function(levels) {
+      var post = function(m) { window.ReactNativeWebView.postMessage(JSON.stringify(m)); };
+      post({ type: 'tile_download_start' });
+
+      function lngToX(lng, n) { return Math.floor((lng + 180) / 360 * n); }
+      function latToY(lat, n) { var r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n); }
+
+      // Build the tile list
+      var tiles = [];
+      var seen = {};
+      (levels || []).forEach(function(l) {
+        var n = Math.pow(2, l.z);
+        var xMin = lngToX(l.bounds[0][1], n), xMax = lngToX(l.bounds[1][1], n);
+        var yMin = latToY(l.bounds[1][0], n), yMax = latToY(l.bounds[0][0], n);
         for (var x = xMin; x <= xMax; x++) {
           for (var y = yMin; y <= yMax; y++) {
-            totalTiles++;
-            var tileUrl = 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png';
-            var img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = function() {
-              downloadedTiles++;
-              var progress = Math.round((downloadedTiles / totalTiles) * 100);
-              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'tile_download_progress', progress: progress }));
-              if (downloadedTiles === totalTiles) {
-                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'tile_download_complete', count: totalTiles }));
-              }
-            };
-            img.onerror = function() {
-              downloadedTiles++;
-              var progress = Math.round((downloadedTiles / totalTiles) * 100);
-              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'tile_download_progress', progress: progress }));
-            };
-            img.src = tileUrl;
+            var key = l.z + '/' + x + '/' + y;
+            if (!seen[key]) { seen[key] = true; tiles.push([l.z, x, y]); }
           }
         }
+      });
+
+      var total = tiles.length, done = 0, failed = 0, next = 0, lastPct = -1;
+      if (total === 0) { post({ type: 'tile_download_complete', count: 0, failed: 0 }); return; }
+
+      // Must build the exact URL the map uses (same {s} subdomain rule as Leaflet),
+      // otherwise the cache treats it as a different file
+      var subdomains = 'abc';
+      function urlFor(t) {
+        var s = subdomains[Math.abs(t[1] + t[2]) % subdomains.length];
+        return 'https://' + s + '.tile.openstreetmap.org/' + t[0] + '/' + t[1] + '/' + t[2] + '.png';
       }
+
+      function finishOne(ok) {
+        if (!ok) failed++;
+        done++;
+        var pct = Math.round(done / total * 100);
+        if (pct !== lastPct) { lastPct = pct; post({ type: 'tile_download_progress', progress: pct }); }
+        if (done === total) post({ type: 'tile_download_complete', count: total, failed: failed });
+        else startNext();
+      }
+
+      function startNext() {
+        if (next >= total) return;
+        var t = tiles[next++];
+        var img = new Image(); // no crossOrigin: match how Leaflet requests tiles
+        img.onload = function() { finishOne(true); };
+        img.onerror = function() { finishOne(false); };
+        img.src = urlFor(t);
+      }
+
+      // A few at a time — gentle on the tile server and the phone
+      for (var i = 0; i < Math.min(6, total); i++) startNext();
     };
   </script>
 </body>
@@ -2836,6 +4491,39 @@ const styles = StyleSheet.create({
   },
   offlineInfo: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
   offlineText: { fontSize: 13, color: "#111", fontWeight: "500" },
+  offlineSubText: { fontSize: 11, color: "#6B7280", marginTop: 1 },
+  coordCard: {
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#DCFCE7",
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 6,
+    gap: 4,
+  },
+  coordRow: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
+  coordLabel: { fontSize: 11.5, color: "#6B7280", fontWeight: "600" },
+  coordValue: { fontSize: 11.5, color: "#111827", fontWeight: "700" },
+  coordList: { maxHeight: 110, marginTop: 4 },
+  coordListItem: {
+    fontSize: 11,
+    color: "#374151",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    paddingVertical: 1,
+  },
+  coordGoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 6,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+  },
+  coordGoText: { fontSize: 12, fontWeight: "700", color: "#0F4A2F" },
   offlineActions: { flexDirection: "row", gap: 8 },
   miniBtn: {
     flexDirection: "row",
@@ -2890,6 +4578,10 @@ const styles = StyleSheet.create({
   layerToggleActiveLandslide: {
     backgroundColor: "#6D4C41",
     borderColor: "#6D4C41",
+  },
+  layerToggleActiveBarangay: {
+    backgroundColor: "#CA8A04",
+    borderColor: "#CA8A04",
   },
   layerToggleText: { flex: 1, fontSize: 13, color: "#111", fontWeight: "600" },
   layerToggleTextActive: { color: "#fff" },
@@ -2986,6 +4678,233 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   recenterBtnActive: { backgroundColor: "#2563eb" },
+  resetLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    backgroundColor: "#FEF2F2",
+  },
+  resetLinkText: { fontSize: 12.5, fontWeight: "700", color: "#DC2626" },
+  resetRowActive: { borderColor: "#FCA5A5", backgroundColor: "#FEF2F2" },
+  // Save Map Offline sheet + guide
+  offlineTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  guideLink: { flexDirection: "row", alignItems: "center", gap: 3 },
+  guideLinkText: { fontSize: 12, fontWeight: "700", color: "#0F4A2F" },
+  saveSheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    maxHeight: "88%",
+  },
+  saveHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  saveTitle: { fontSize: 18, fontWeight: "800", color: "#111827" },
+  saveLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#6B7280",
+    letterSpacing: 0.3,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  targetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 8,
+  },
+  targetRowActive: { borderColor: "#0F4A2F", backgroundColor: "#F0FDF4" },
+  targetLabel: { fontSize: 14, fontWeight: "700", color: "#111827" },
+  targetDetail: { fontSize: 11.5, color: "#6B7280", marginTop: 1 },
+  targetSize: { fontSize: 12, fontWeight: "700", color: "#0F4A2F" },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  optChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#fff",
+  },
+  optChipActive: { backgroundColor: "#0F4A2F", borderColor: "#0F4A2F" },
+  optChipText: { fontSize: 13, fontWeight: "600", color: "#374151" },
+  optChipTextActive: { color: "#fff" },
+  saveHint: { fontSize: 11.5, color: "#6B7280", marginTop: 6, lineHeight: 16 },
+  estimateCard: {
+    backgroundColor: "#0F4A2F",
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 18,
+  },
+  estimateRow: { flexDirection: "row" },
+  estimateStat: { flex: 1 },
+  estimateValue: { fontSize: 20, fontWeight: "800", color: "#fff" },
+  estimateLabel: { fontSize: 11, color: "rgba(255,255,255,0.6)", fontWeight: "600" },
+  estimateLine: { fontSize: 11.5, color: "rgba(255,255,255,0.8)", marginTop: 10 },
+  zoomBreakdown: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
+  zoomCell: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignItems: "center",
+    minWidth: 46,
+  },
+  zoomCellZ: { fontSize: 10, color: "rgba(255,255,255,0.6)", fontWeight: "700" },
+  zoomCellN: { fontSize: 12, color: "#fff", fontWeight: "700" },
+  saveWarn: {
+    fontSize: 12,
+    color: "#92400E",
+    backgroundColor: "#FFFBEB",
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+  },
+  saveWarnError: { color: "#991B1B", backgroundColor: "#FEF2F2" },
+  saveBtnRow: { flexDirection: "row", gap: 10, marginTop: 14 },
+  saveCancelBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: "#0F4A2F",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  saveCancelText: { color: "#0F4A2F", fontWeight: "700", fontSize: 14 },
+  saveGoBtn: {
+    flex: 2,
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: "#0F4A2F",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 0,
+  },
+  saveGoText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  guideSection: { fontSize: 14, fontWeight: "800", color: "#0F4A2F", marginBottom: 8 },
+  // Guide visuals
+  gIntro: { fontSize: 13, color: "#374151", lineHeight: 19, marginBottom: 6 },
+  gBold: { fontWeight: "700", color: "#111827" },
+  gTitle: { fontSize: 13, fontWeight: "800", color: "#111827", marginTop: 14, marginBottom: 8 },
+  gHeadRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 20, marginBottom: 2 },
+  gText: { fontSize: 13, color: "#374151", lineHeight: 20 },
+  gNote: {
+    fontSize: 12,
+    color: "#1E3A8A",
+    backgroundColor: "#EFF6FF",
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 8,
+    lineHeight: 17,
+  },
+  gCaption: { fontSize: 11.5, color: "#6B7280", lineHeight: 17, marginTop: 8 },
+  gOuter: {
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: "#9CA3AF",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 14,
+    padding: 10,
+  },
+  gOuterLabel: { fontSize: 11, fontWeight: "700", color: "#6B7280", marginBottom: 8 },
+  gMiddle: {
+    borderWidth: 1.5,
+    borderColor: "#4ADE80",
+    backgroundColor: "#DCFCE7",
+    borderRadius: 12,
+    padding: 10,
+  },
+  gMiddleLabel: { fontSize: 11, fontWeight: "700", color: "#15803D", marginBottom: 8 },
+  gInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#0F4A2F",
+    borderRadius: 10,
+    paddingVertical: 14,
+  },
+  gInnerText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  gZoomRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 12 },
+  gZoomCol: { alignItems: "center", flex: 1 },
+  gZoomFrame: { padding: 3, borderRadius: 8, borderWidth: 2, borderColor: "transparent" },
+  gZoomFrameActive: { borderColor: "#0F4A2F" },
+  gZoomZ: { fontSize: 12, fontWeight: "800", color: "#6B7280", marginTop: 4 },
+  gZoomSub: { fontSize: 10.5, color: "#6B7280" },
+  gMarginRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 10 },
+  gMarginCol: { alignItems: "center", flex: 1 },
+  gMarginBox: {
+    borderWidth: 1.5,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 8,
+  },
+  gMarginCore: { width: 26, height: 26, borderRadius: 4, backgroundColor: "#0F4A2F" },
+  gLegend: { marginTop: 10 },
+  gBars: { gap: 5 },
+  gBarRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  gBarZ: { width: 28, fontSize: 11, fontWeight: "700", color: "#6B7280" },
+  gBarTrack: {
+    flex: 1,
+    height: 12,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 6,
+    overflow: "hidden",
+  },
+  gBarFill: { height: "100%", borderRadius: 6 },
+  gBarN: { width: 48, fontSize: 11, fontWeight: "700", color: "#111827", textAlign: "right" },
+  gLimits: {
+    backgroundColor: "#FFFBEB",
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 12,
+    gap: 4,
+  },
+  gLimitText: { fontSize: 12, color: "#92400E", lineHeight: 17 },
+  guideStep: { flexDirection: "row", gap: 10, marginBottom: 8 },
+  guideNum: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#E8F1EC",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  guideNumText: { fontSize: 11, fontWeight: "800", color: "#0F4A2F" },
+  guideText: { flex: 1, fontSize: 13, color: "#374151", lineHeight: 19 },
+  areaBtn: {
+    marginLeft: "auto",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#0F4A2F",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
   recenterText: { color: "#fff", fontSize: 10, fontWeight: "700" },
 
   sheetOverlay: {

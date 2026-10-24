@@ -14,25 +14,19 @@ import {
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
+import { getToken, clearAuthData, isAuthFailure } from "@/utils/auth";
 import { BarChart } from "react-native-chart-kit";
 
 const screenWidth = Dimensions.get("window").width;
 const API = api + "/api";
-const TOKEN_KEY = "token";
 
 const BG = "#F5F6F8";
 const PRIMARY = "#0F4A2F";
 const INK = "#111827";
 const MUTED = "#6B7280";
 const FAINT = "#9CA3AF";
-
-const getToken = async () => {
-  if (Platform.OS === "web") return localStorage.getItem(TOKEN_KEY);
-  return await SecureStore.getItemAsync(TOKEN_KEY);
-};
 
 /* ──────────────────────────────────────────────────────────────────
    HEADER
@@ -245,19 +239,25 @@ const Home: React.FC = () => {
     "Weekly",
   );
 
+  const goToLogin = useCallback(async () => {
+    await clearAuthData();
+    router.replace("/homepage");
+  }, [router]);
+
   const fetchData = useCallback(async () => {
+    const token = await getToken();
+    if (!token) {
+      // No session → log in again
+      await goToLogin();
+      return;
+    }
     if (!isOnline) {
-      setError("No internet connection.");
-      setLoading(false);
+      // Logged in but offline → inspector offline mode (saved areas)
+      router.replace("/Area");
       return;
     }
     try {
       setError(null);
-      const token = await getToken();
-      if (!token) {
-        setError("Authentication required");
-        return;
-      }
       const headers = {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -278,6 +278,12 @@ const Home: React.FC = () => {
         }),
       ]);
 
+      if (isAuthFailure(statsRes.status) || isAuthFailure(recentRes.status)) {
+        // Token expired or invalid
+        await goToLogin();
+        return;
+      }
+
       if (!statsRes.ok || !recentRes.ok) {
         throw new Error("Failed to fetch data");
       }
@@ -293,7 +299,7 @@ const Home: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isOnline, period]);
+  }, [isOnline, period, router, goToLogin]);
 
   useEffect(() => {
     fetchData();

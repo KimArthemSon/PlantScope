@@ -1,8 +1,9 @@
-import React from "react";
-import { Tabs } from "expo-router";
+import React, { useEffect } from "react";
+import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import { checkSession, clearAuthData } from "@/utils/auth";
 
 // Same background used by the Home dashboard, so the status bar
 // area blends seamlessly instead of showing a separate colored bar.
@@ -11,6 +12,27 @@ const DASHBOARD_BG = "#F5F7FB";
 /* ---------- LAYOUT ---------- */
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  // Auth guard: no token, invalid/expired token, or wrong role → back to login.
+  // If the server can't be reached we keep the user here (offline use).
+  useEffect(() => {
+    let active = true;
+    checkSession().then(async (result) => {
+      if (!active) return;
+      const mustLogin =
+        result.status === "no_token" ||
+        result.status === "invalid" ||
+        (result.status === "valid" && result.role !== "treeGrowers");
+      if (mustLogin) {
+        await clearAuthData();
+        router.replace("/homepage");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <>

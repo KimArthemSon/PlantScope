@@ -12,9 +12,9 @@ from .models import (
     FieldAssessmentAnimal, LandClassification
 )
 from animals.models import Animal
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Count, Sum, Max, Q
 from django.http.multipartparser import MultiPartParser
-from sites.models import Sites
+from sites.models import Sites, Potential_sites
 import logging
 
 logger = logging.getLogger(__name__)
@@ -60,21 +60,115 @@ def get_assigned_reforestation_area(request):
     try:
         user = get_user_from_token(request)
         if not user or user.user_role != "OnsiteInspector": return JsonResponse({'error': 'Unauthorized'}, status=403)
-        records = Assigned_onsite_inspector.objects.filter(user=user).select_related('reforestation_area')
+        records = list(
+            Assigned_onsite_inspector.objects.filter(user=user)
+            .select_related('reforestation_area', 'reforestation_area__barangay')
+        )
+        area_ids = [r.reforestation_area_id for r in records]
+        record_ids = [r.assigned_onsite_inspector_id for r in records]
+
+        # Site counts per area (one grouped query)
+        site_stats = {
+            row['reforestation_area_id']: row
+            for row in Sites.objects.filter(reforestation_area_id__in=area_ids, is_active=True)
+            .values('reforestation_area_id')
+            .annotate(
+                total=Count('site_id'),
+                hectares=Sum('total_area_hectares'),
+                accepted=Count('site_id', filter=Q(status='accepted')),
+                pending=Count('site_id', filter=Q(status__in=['pending', 'under_review'])),
+                rejected=Count('site_id', filter=Q(status='rejected')),
+                under_monitoring=Count('site_id', filter=Q(monitoring_status='under_monitoring')),
+            )
+        }
+
+        # This inspector's assessment counts per assignment (one grouped query)
+        assessment_stats = {
+            row['assigned_onsite_inspector_id']: row
+            for row in Field_assessment.objects.filter(assigned_onsite_inspector_id__in=record_ids)
+            .values('assigned_onsite_inspector_id')
+            .annotate(
+                total=Count('field_assessment_id'),
+                submitted=Count('field_assessment_id', filter=Q(is_submitted=True)),
+                drafts=Count('field_assessment_id', filter=Q(is_submitted=False)),
+                last_at=Max('updated_at'),
+            )
+        }
+
+        # Real-world extent of each area (sites + potential sites), used by the
+        # mobile app to size its offline map download
+        area_bounds = {}
+        for row in Sites.objects.filter(reforestation_area_id__in=area_ids, is_active=True) \
+                .values('reforestation_area_id', 'polygon_coordinates', 'marker_coordinate'):
+            b = area_bounds.setdefault(row['reforestation_area_id'], [])
+            _collect_points(row['polygon_coordinates'], b)
+            _collect_points(row['marker_coordinate'], b)
+        for row in Potential_sites.objects.filter(site__reforestation_area_id__in=area_ids, site__is_active=True) \
+                .values('site__reforestation_area_id', 'polygon_coordinates'):
+            _collect_points(row['polygon_coordinates'], area_bounds.setdefault(row['site__reforestation_area_id'], []))
+
         data = []
         for r in records:
             area = r.reforestation_area
             coordinate = area.coordinate
             lat, lng, coord_display = _parse_coordinate(coordinate)
+            s = site_stats.get(area.reforestation_area_id, {})
+            pts = area_bounds.get(area.reforestation_area_id) or []
+            if coordinate and coord_display != "No Coordinates":
+                pts = pts + [(lat, lng)]
+            bounds = (
+                [[min(p[0] for p in pts), min(p[1] for p in pts)],
+                 [max(p[0] for p in pts), max(p[1] for p in pts)]]
+                if pts else None
+            )
+            a = assessment_stats.get(r.assigned_onsite_inspector_id, {})
             data.append({
                 "assigned_onsite_inspector_id": r.assigned_onsite_inspector_id,
                 "reforestation_area_id": area.reforestation_area_id,
                 "name": area.name, "description": area.description,
                 "coordinate": coordinate, "latitude": lat, "longitude": lng, "coord_display": coord_display,
-                "assigned_at": r.created_at.isoformat()
+                "assigned_at": r.created_at.isoformat(),
+                "barangay_name": area.barangay.name if area.barangay else None,
+                "bounds": bounds,  # [[min_lat, min_lng], [max_lat, max_lng]] or null
+                "site_stats": {
+                    "total": s.get('total', 0),
+                    "total_hectares": round(s.get('hectares') or 0, 2),
+                    "accepted": s.get('accepted', 0),
+                    "pending": s.get('pending', 0),
+                    "rejected": s.get('rejected', 0),
+                    "under_monitoring": s.get('under_monitoring', 0),
+                },
+                "assessment_stats": {
+                    "total": a.get('total', 0),
+                    "submitted": a.get('submitted', 0),
+                    "drafts": a.get('drafts', 0),
+                    "last_assessment_at": a['last_at'].isoformat() if a.get('last_at') else None,
+                },
             })
         return JsonResponse(data, safe=False, status=200)
     except Exception as e: return JsonResponse({'error': str(e), 'success': False}, status=500)
+
+def _collect_points(value, out):
+    """
+    Appends (lat, lng) tuples from any coordinate shape we store:
+    [lat, lng], [[lat, lng], ...], GeoJSON geometry, or {latitude, longitude}.
+    Pairs given as [lng, lat] are swapped (latitude is always within ±90).
+    """
+    if value is None:
+        return
+    if isinstance(value, dict):
+        if 'coordinates' in value:
+            _collect_points(value['coordinates'], out)
+        elif 'latitude' in value and 'longitude' in value:
+            _collect_points([value['latitude'], value['longitude']], out)
+        return
+    if isinstance(value, (list, tuple)):
+        if len(value) >= 2 and all(isinstance(v, (int, float)) for v in value[:2]):
+            a, b = float(value[0]), float(value[1])
+            out.append((b, a) if abs(a) > 90 else (a, b))
+        else:
+            for item in value:
+                _collect_points(item, out)
 
 def _parse_coordinate(coordinate):
     default_lat, default_lng = 11.0, 124.6

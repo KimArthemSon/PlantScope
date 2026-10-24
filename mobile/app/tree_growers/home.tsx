@@ -20,6 +20,7 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
+import { clearAuthData, isAuthFailure } from "@/utils/auth";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -778,7 +779,8 @@ export default function Home() {
     try {
       const token = await getToken();
       if (!token) {
-        setLoadingUser(false);
+        await clearAuthData();
+        router.replace("/homepage");
         return;
       }
 
@@ -789,6 +791,13 @@ export default function Home() {
           "Content-Type": "application/json",
         },
       });
+
+      if (isAuthFailure(res.status)) {
+        // Token expired or invalid → log in again
+        await clearAuthData();
+        router.replace("/homepage");
+        return;
+      }
 
       if (res.ok) {
         const data = await res.json();
