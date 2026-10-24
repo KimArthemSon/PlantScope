@@ -3,6 +3,7 @@ import { Suspense, lazy } from "react";
 
 // ============ LAZY LOADED COMPONENTS ============
 const Login = lazy(() => import("./pages/auth/login"));
+const ForgotPassword = lazy(() => import("./pages/auth/forgot_password"));
 const Dashboard = lazy(() => import("./pages/head/dashboard/dashboard"));
 const Sidebar = lazy(() => import("./components/layout/Sidebar"));
 const Reforestation_areas = lazy(
@@ -111,6 +112,7 @@ const Hazard_area_form = lazy(
   () => import("./pages/head/maintain/hazard_areas/hazard_area._form"),
 );
 const GISReports = lazy(() => import("./pages/GISSpecialist/report"));
+const PlantingAreaReviews = lazy(() => import("./pages/GISSpecialist/planting_area_reviews"));
 const HeadReports = lazy(() => import("./pages/head/reports/headReports"));
 const NotificationsPage = lazy(
   () => import("./pages/dataManager/Notifications/NotificationsPage"),
@@ -135,6 +137,7 @@ export default function App() {
         <Routes>
           {/* Authentication */}
           <Route path="/Login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/register" element={<Registration />} />
           <Route path="/" element={<HomePage />} />
           <Route path="/terms" element={<Terms_and_Conditions />} />
@@ -438,6 +441,7 @@ export default function App() {
             <Route path="/GISS/map" element={<Map />} />
             <Route path="/GISS/my-profile" element={<MyProfile />} />
             <Route path="/GISS/reports" element={<GISReports />} />
+            <Route path="/GISS/planting-area-reviews" element={<PlantingAreaReviews />} />
 
             <Route
               path="/GISS/maintenance/hazard_area_form/"

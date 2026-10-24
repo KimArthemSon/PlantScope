@@ -1,9 +1,11 @@
 import { useRouter } from 'expo-router';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, StatusBar } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function NotificationPage() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const notifications = [
     { title: 'New Message', description: 'Your tree report is ready.', time: '2h ago' },
@@ -14,14 +16,14 @@ export default function NotificationPage() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1b5e20" />
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.push('./dashboard')}>
           <MaterialCommunityIcons name="chevron-left" size={22} color="#ffffff" />
           <Text style={styles.backText}>Notification</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 20 }]}>
         {notifications.map((item, index) => (
           <View key={index} style={styles.notificationCard}>
             <MaterialCommunityIcons name="bell" size={22} color="#1b5e20" style={styles.notificationIcon} />

@@ -12,6 +12,7 @@ import {
   Clock,
   AlertTriangle,
   Home,
+  MapPinned,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo2.png";
@@ -200,6 +201,7 @@ export default function SidebarGISS() {
     "/GISS/reforestation_area_site": "Analysis",
     "/GISS/official-reforestation": "Official Sites",
     "/GISS/reports": "Reports",
+    "/GISS/planting-area-reviews": "Planted Area Reviews",
     "/GISS/maintenance/ormoc-city": "Ormoc City",
     "/GISS/maintenance/Classified_areas": "Classified Areas",
     "/GISS/maintenance/hazard_areas/": "Hazard Areas",
@@ -237,6 +239,16 @@ export default function SidebarGISS() {
           to: "/GISS/official-reforestation",
           icon: <TreePine size={18} />,
           label: "Official Sites",
+        },
+      ],
+    },
+    {
+      title: "Monitoring",
+      items: [
+        {
+          to: "/GISS/planting-area-reviews",
+          icon: <MapPinned size={18} />,
+          label: "Planted Area Reviews",
         },
       ],
     },

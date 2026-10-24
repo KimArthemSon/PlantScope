@@ -28,7 +28,15 @@ import {
   Package,
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
+import ReportAreaMap, { computeAreaStats } from "@/components/map/ReportAreaMap";
 import { api } from "@/constant/api.ts";
+
+interface ReviewStep {
+  status: "pending" | "approved" | "changes_requested" | "not_required";
+  notes: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -66,6 +74,7 @@ interface SiteMonitoringDetail {
     accessibility: any;
     land_classification_name: string | null;
     monitoring_status: string;
+    polygon_coordinates: [number, number][] | null;
   };
   metrics: {
     total_planted: number;
@@ -73,6 +82,9 @@ interface SiteMonitoringDetail {
     total_dead: number;
     total_survived: number;
     survival_rate: number;
+    planted_area_hectares: number | null;
+    planted_area_percent: number | null;
+    planted_area_as_of: string | null;
   };
   total_seedlings_provided: number;
   seedling_requests_breakdown: SeedlingRequestSpeciesItem[];
@@ -98,7 +110,40 @@ interface SiteMonitoringDetail {
     status: "pending" | "accepted" | "rejected";
     proof_image: string | null;
     submitted_at: string | null;
+    inspector_name: string;
+    polygon_coordinates: [number, number][] | null;
+    planted_area_hectares: number | null;
+    review_stage: "data_manager" | "gis_specialist" | "done";
+    dm_review: ReviewStep;
+    gis_review: ReviewStep;
   }>;
+}
+
+const REVIEW_LOOK: Record<ReviewStep["status"], { label: string; cls: string }> = {
+  pending: { label: "Waiting", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  approved: { label: "Approved", cls: "bg-green-50 text-green-700 border-green-200" },
+  changes_requested: { label: "Changes requested", cls: "bg-red-50 text-red-700 border-red-200" },
+  not_required: { label: "Not required", cls: "bg-gray-50 text-gray-500 border-gray-200" },
+};
+
+function ReviewSteps({ dm, gis, stage }: { dm: ReviewStep; gis: ReviewStep; stage: string }) {
+  const steps = [
+    { n: 1, label: "Data Manager", step: dm, active: stage === "data_manager" },
+    { n: 2, label: "GIS Specialist · Map", step: gis, active: stage === "gis_specialist" },
+  ];
+  return (
+    <div className="flex flex-wrap gap-2">
+      {steps.map(({ n, label, step, active }) => {
+        const look = REVIEW_LOOK[step?.status ?? "pending"];
+        return (
+          <span key={n} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${look.cls} ${active ? "ring-2 ring-amber-300" : ""}`}>
+            <span className="font-bold">{n}.</span> {label}: {active ? "In review" : look.label}
+            {step?.reviewed_by && !active && <span className="font-normal opacity-70">· {step.reviewed_by}</span>}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -174,6 +219,11 @@ export default function SiteMonitoringDetails() {
 
   const [detail, setDetail] = useState<SiteMonitoringDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  // Date range filter (YYYY-MM-DD). Empty = all time.
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [filtering, setFiltering] = useState(false);
+  const isFiltered = !!(dateFrom || dateTo);
 
   // Modals
   const [completionModal, setCompletionModal] = useState<{ open: boolean; type: "completed" | "failed" | null; reason: string }>({ open: false, type: null, reason: "" });
@@ -196,9 +246,19 @@ export default function SiteMonitoringDetails() {
       return;
     }
 
-    setLoading(true);
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      setPSAlert({ type: "failed", title: "Invalid range", message: "The start date must be before the end date." });
+      return;
+    }
+
+    // Full-page spinner only on first load; filter changes keep the page visible
+    if (detail) setFiltering(true);
+    else setLoading(true);
     try {
-      const url = `${API_BASE}api/get_site_monitoring_details/${site_id}/`;
+      const params = new URLSearchParams();
+      if (dateFrom) params.append("date_from", dateFrom);
+      if (dateTo) params.append("date_to", dateTo);
+      const url = `${API_BASE}api/get_site_monitoring_details/${site_id}/${params.toString() ? `?${params}` : ""}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -215,24 +275,43 @@ export default function SiteMonitoringDetails() {
       setPSAlert({ type: "error", title: "Error", message: err.message || "Failed to load site details. Check console for details." });
     } finally {
       setLoading(false);
+      setFiltering(false);
     }
   };
 
   useEffect(() => {
     fetchSiteDetails();
-  }, [site_id]);
+  }, [site_id, dateFrom, dateTo]);
 
+  const applyPreset = (preset: "all" | "30d" | "90d" | "year") => {
+    const iso = (d: Date) => d.toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
+    const today = new Date();
+    if (preset === "all") {
+      setDateFrom("");
+      setDateTo("");
+    } else if (preset === "year") {
+      setDateFrom(`${today.getFullYear()}-01-01`);
+      setDateTo(iso(today));
+    } else {
+      const start = new Date(today);
+      start.setDate(start.getDate() - (preset === "30d" ? 30 : 90));
+      setDateFrom(iso(start));
+      setDateTo(iso(today));
+    }
+  };
+
+  // Step 1 of 2: Data Manager approves (→ GIS Specialist) or requests changes (→ inspector)
   const handleUpdateProgressReport = async (reportId: number, status: "accepted" | "rejected", reason: string) => {
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}api/update_progress_report/${reportId}/`, {
+      const res = await fetch(`${API_BASE}api/review_progress_report/${reportId}/`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ status, reason: reason.trim() }),
+        body: JSON.stringify({ action: status === "accepted" ? "approve" : "request_changes", notes: reason.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Action failed");
-      setPSAlert({ type: "success", title: status === "accepted" ? "Report Approved!" : "Report Rejected", message: data.message ?? `Report has been ${status}.` });
+      setPSAlert({ type: "success", title: status === "accepted" ? "Report Approved" : "Changes Requested", message: data.message ?? `Report has been ${status}.` });
       setRejectReportModal({ open: false, reportId: null, reason: "" });
       fetchSiteDetails();
     } catch (err: any) {
@@ -426,8 +505,10 @@ export default function SiteMonitoringDetails() {
   };
 
   const speciesBreakdown = calculateSpeciesBreakdown();
-  const pendingReports = detail?.progress_reports.filter((r) => r.status === "pending") || [];
+  // Only reports at the Data Manager step need action here; the rest wait on the GIS Specialist
+  const pendingReports = detail?.progress_reports.filter((r) => r.status === "pending" && r.review_stage === "data_manager") || [];
   const firstPendingReport = pendingReports[0];
+  const awaitingGisReport = detail?.progress_reports.find((r) => r.status === "pending" && r.review_stage === "gis_specialist");
   const appStatus = detail?.current_application?.status || "";
   const isNeedsOrientation = appStatus === "accepted";
 
@@ -524,6 +605,20 @@ export default function SiteMonitoringDetails() {
                   <span className="text-sm text-gray-800 font-medium">{site.total_area_hectares.toFixed(2)} hectares</span>
                 </div>
                 <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Planted Area (confirmed)</span>
+                  <span className="text-sm text-gray-800 font-medium">
+                    {metrics.planted_area_hectares != null ? (
+                      <>
+                        {metrics.planted_area_hectares.toFixed(4)} ha
+                        {metrics.planted_area_percent != null && <span className="text-gray-500"> · {metrics.planted_area_percent}% of site</span>}
+                        <span className="block text-xs text-gray-400 font-normal">From the latest accepted report ({formatDate(metrics.planted_area_as_of)})</span>
+                      </>
+                    ) : (
+                      <span className="text-gray-400">No accepted planted-area map yet</span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
                   <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Land Classification</span>
                   <span className="text-sm text-gray-800 font-medium">{site.land_classification_name || "Not classified"}</span>
                 </div>
@@ -590,14 +685,68 @@ export default function SiteMonitoringDetails() {
 
             {/* Lifetime Metrics */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <h3 className="text-sm font-bold text-[#0F4A2F] mb-4 flex items-center gap-2">
-                <TrendingUp size={16} /> Lifetime Site Metrics
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-[#0F4A2F] flex items-center gap-2">
+                    <TrendingUp size={16} /> {isFiltered ? "Site Metrics (Filtered)" : "Lifetime Site Metrics"}
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {isFiltered
+                      ? `${dateFrom ? formatDate(dateFrom) : "Start"} – ${dateTo ? formatDate(dateTo) : "Today"} · reports, seedlings and counts in this period`
+                      : "All reports and seedlings since the site started"}
+                  </p>
+                </div>
+                {filtering && <span className="text-xs text-gray-400 flex items-center gap-1.5"><span className="w-3 h-3 border-2 border-[#0F4A2F] border-t-transparent rounded-full animate-spin" /> Updating…</span>}
+              </div>
+
+              {/* Date filter */}
+              <div className="flex flex-wrap items-end gap-3 p-3 mb-4 bg-gray-50 rounded-xl border border-gray-100">
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">From</label>
+                  <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#0F4A2F]" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">To</label>
+                  <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:border-[#0F4A2F]" />
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {([
+                    ["all", "All time"],
+                    ["30d", "Last 30 days"],
+                    ["90d", "Last 90 days"],
+                    ["year", "This year"],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => applyPreset(key)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                        key === "all" && !isFiltered ? "bg-[#0F4A2F] text-white border-[#0F4A2F]" : "bg-white text-gray-600 border-gray-200 hover:border-[#0F4A2F]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
                   <Package size={20} className="text-emerald-600 mx-auto mb-2" />
                   <p className="text-2xl font-bold text-emerald-800">{total_seedlings_provided.toLocaleString()}</p>
                   <p className="text-xs text-emerald-600 font-medium">Total Seedlings Provided</p>
+                </div>
+                <div className="p-4 bg-teal-50 rounded-xl border border-teal-100 text-center">
+                  <MapPin size={20} className="text-teal-600 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-teal-800">
+                    {metrics.planted_area_hectares != null ? metrics.planted_area_hectares.toFixed(2) : "—"}
+                    <span className="text-sm font-semibold"> ha</span>
+                  </p>
+                  <p className="text-xs text-teal-600 font-medium">Total Area Planted</p>
+                  <p className="text-[10px] text-teal-500 mt-0.5">
+                    {metrics.planted_area_hectares != null
+                      ? `${metrics.planted_area_percent != null ? `${metrics.planted_area_percent}% of site · ` : ""}as of ${formatDate(metrics.planted_area_as_of)}`
+                      : "No confirmed map yet"}
+                  </p>
                 </div>
                 <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 text-center">
                   <Trees size={20} className="text-indigo-600 mx-auto mb-2" />
@@ -676,16 +825,21 @@ export default function SiteMonitoringDetails() {
 
             {/* Progress Reports */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <SectionHeader icon={<FileText size={16} />} title="Progress Reports" subtitle={`${progress_reports.length} total reports submitted`} />
+              <SectionHeader icon={<FileText size={16} />} title="Progress Reports" subtitle={isFiltered ? `${progress_reports.length} reports in the selected dates` : `${progress_reports.length} total reports submitted`} />
 
               {progress_reports.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-8">No progress reports submitted yet.</p>
+                <p className="text-sm text-gray-400 text-center py-8">
+                  {isFiltered ? "No progress reports in the selected dates." : "No progress reports submitted yet."}
+                </p>
               ) : (
                 <div className="space-y-4">
                   {progress_reports.map((report) => {
                     const isPending = report.status === "pending";
+                    const isMyStep = isPending && report.review_stage === "data_manager";
                     const isInitial = report.visit_type === "initial";
                     const isBaseline = isInitial && report.report_id === baselineReportId;
+                    const hasPolygon = (report.polygon_coordinates?.length ?? 0) >= 3;
+                    const areaStats = hasPolygon ? computeAreaStats(report.polygon_coordinates, site.polygon_coordinates) : null;
 
                     return (
                       <div key={report.report_id} className={`p-5 rounded-xl border transition-all ${isPending ? "bg-amber-50/50 border-amber-200" : "bg-gray-50 border-gray-100"}`}>
@@ -709,6 +863,55 @@ export default function SiteMonitoringDetails() {
                           </div>
                           <StatusBadge status={report.status} />
                         </div>
+
+                        {report.dm_review && (
+                          <div className="mb-4">
+                            <ReviewSteps dm={report.dm_review} gis={report.gis_review} stage={report.review_stage} />
+                          </div>
+                        )}
+
+                        {hasPolygon && (
+                          <div className="mb-4">
+                            <ReportAreaMap
+                              reportPolygon={report.polygon_coordinates}
+                              sitePolygon={site.polygon_coordinates}
+                              areaHectares={report.planted_area_hectares}
+                              height={isPending ? 320 : 220}
+                            />
+                            <div className="grid grid-cols-3 gap-2 mt-2 text-center">
+                              <div className="bg-white rounded-lg p-2 border border-gray-100">
+                                <p className="text-sm font-bold text-[#0F4A2F]">{report.planted_area_hectares?.toFixed(4) ?? "—"} ha</p>
+                                <p className="text-[10px] text-gray-500 uppercase">Planted Area</p>
+                              </div>
+                              <div className="bg-white rounded-lg p-2 border border-gray-100">
+                                <p className="text-sm font-bold text-gray-700">
+                                  {site.total_area_hectares && report.planted_area_hectares != null ? `${((report.planted_area_hectares / site.total_area_hectares) * 100).toFixed(1)}%` : "—"}
+                                </p>
+                                <p className="text-[10px] text-gray-500 uppercase">Of Site Area</p>
+                              </div>
+                              <div className="bg-white rounded-lg p-2 border border-gray-100">
+                                <p className={`text-sm font-bold ${areaStats?.outsidePercent && areaStats.outsidePercent > 5 ? "text-red-600" : "text-gray-700"}`}>
+                                  {areaStats?.outsidePercent != null ? `${areaStats.outsidePercent.toFixed(1)}%` : "—"}
+                                </p>
+                                <p className="text-[10px] text-gray-500 uppercase">Outside Boundary</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {[
+                          { by: "Data Manager", step: report.dm_review },
+                          { by: "GIS Specialist", step: report.gis_review },
+                        ]
+                          .filter((r) => r.step?.status === "changes_requested")
+                          .map((r) => (
+                            <div key={r.by} className="bg-red-50 p-3 rounded-lg border border-red-200 mb-3">
+                              <p className="text-xs font-bold text-red-600 uppercase tracking-wide mb-1">
+                                Changes requested by {r.by}{r.step.reviewed_by ? ` (${r.step.reviewed_by})` : ""}
+                              </p>
+                              <p className="text-sm text-gray-700">{r.step.notes}</p>
+                            </div>
+                          ))}
 
                         {/* 2-Column Grid based on Baseline vs Others */}
                         <div className="grid grid-cols-2 gap-3 mb-4">
@@ -788,7 +991,13 @@ export default function SiteMonitoringDetails() {
                           </a>
                         )}
 
-                        {isPending && (
+                        {isPending && report.review_stage === "gis_specialist" && (
+                          <div className="mt-4 pt-4 border-t border-amber-200 text-xs text-amber-700 flex items-center gap-2">
+                            <Clock size={14} /> Approved by you. Waiting for the GIS Specialist to confirm the planted-area map.
+                          </div>
+                        )}
+
+                        {isMyStep && (
                           <div className="flex gap-2 mt-4 pt-4 border-t border-amber-200">
                             <button onClick={() => handleUpdateProgressReport(report.report_id, "accepted", "Report approved")} disabled={submitting} className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-[#0F4A2F] text-white text-xs font-bold hover:bg-[#1a6b44] transition-colors disabled:opacity-50">
                               <CheckCircle2 size={14} /> Approve
@@ -814,8 +1023,29 @@ export default function SiteMonitoringDetails() {
                 <p className="text-xs text-gray-400 mt-1">Manage monitoring & status</p>
               </div>
 
+              {isFiltered ? (
+                <div className="p-5">
+                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center">
+                    <Calendar size={22} className="text-gray-500 mx-auto mb-2" />
+                    <p className="text-sm font-semibold text-gray-700">Date filter is on</p>
+                    <p className="text-xs text-gray-500 mt-1">Approvals and status changes use all reports, so they're hidden while you view a date range.</p>
+                    <button onClick={() => applyPreset("all")} className="mt-3 w-full py-2 rounded-lg bg-[#0F4A2F] text-white text-xs font-bold hover:bg-[#1a6b44] transition-colors">
+                      Clear Filter
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="p-5 space-y-4">
-                {!firstPendingReport ? (
+                {!firstPendingReport && awaitingGisReport ? (
+                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-200 text-center">
+                    <Clock size={24} className="text-blue-600 mx-auto mb-2" />
+                    <p className="text-sm font-semibold text-blue-800">Waiting for GIS Specialist</p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      You approved the report from <strong>{awaitingGisReport.group_name}</strong>. It will be accepted once the GIS Specialist confirms the planted-area map
+                      ({awaitingGisReport.planted_area_hectares?.toFixed(2) ?? "—"} ha).
+                    </p>
+                  </div>
+                ) : !firstPendingReport ? (
                   <div className="p-4 bg-green-50 rounded-xl border border-green-200 text-center">
                     <CheckCircle2 size={24} className="text-green-600 mx-auto mb-2" />
                     <p className="text-sm font-semibold text-green-800">All Reports Up to Date</p>
@@ -827,7 +1057,7 @@ export default function SiteMonitoringDetails() {
                       <BellRing size={14} /> Action Required
                     </p>
                     <p className="text-xs text-amber-700 mb-4 leading-relaxed">
-                      A report submitted by <strong>{firstPendingReport.group_name}</strong> is pending your review.
+                      A report submitted by <strong>{firstPendingReport.group_name}</strong> is pending your review (step 1 of 2). After you approve, the GIS Specialist confirms the planted-area map.
                     </p>
                     <div className="space-y-2">
                       <button onClick={() => handleUpdateProgressReport(firstPendingReport.report_id, "accepted", "Report approved")} disabled={submitting} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#0F4A2F] text-white text-sm font-bold hover:bg-[#1a6b44] transition-colors disabled:opacity-50">
@@ -913,6 +1143,7 @@ export default function SiteMonitoringDetails() {
                   </p>
                 </div>
               </div>
+              )}
             </div>
           </div>
         </div>
@@ -965,8 +1196,8 @@ export default function SiteMonitoringDetails() {
             <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4"><XCircle size={28} className="text-red-500" /></div>
             <h3 className="text-lg font-bold text-center text-gray-800 mb-1">Request Changes?</h3>
             <p className="text-sm text-center text-gray-500 mb-5">The inspector will be notified to revise and resubmit this report.</p>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Reason for Rejection *</label>
-            <textarea rows={4} value={rejectReportModal.reason} onChange={(e) => setRejectReportModal((p) => ({ ...p, reason: e.target.value }))} placeholder="e.g. Proof image is blurry, please retake." className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 mb-5 transition-colors" />
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">What needs to change? *</label>
+            <textarea rows={4} value={rejectReportModal.reason} onChange={(e) => setRejectReportModal((p) => ({ ...p, reason: e.target.value }))} placeholder="e.g. Proof image is blurry, or the planted-area outline misses the north side." className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 mb-5 transition-colors" />
             <div className="flex gap-3">
               <button onClick={() => setRejectReportModal({ open: false, reportId: null, reason: "" })} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancel</button>
               <button onClick={() => rejectReportModal.reportId && handleUpdateProgressReport(rejectReportModal.reportId, "rejected", rejectReportModal.reason)} disabled={submitting || !rejectReportModal.reason.trim()} className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed">

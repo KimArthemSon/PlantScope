@@ -12,10 +12,13 @@ import {
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useFieldAssessment, LocalImage } from "@/hooks/useFieldAssessment";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
+import { polygonAreaHectares } from "@/components/forms/PlantedAreaCapture";
 import {
   saveOfflineDraft,
   updateOfflineDraft,
@@ -85,6 +88,7 @@ function SimpleGeocam({
   ) => void;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [locationPermission, requestLocationPermission] =
     Location.useForegroundPermissions();
@@ -276,7 +280,7 @@ function SimpleGeocam({
   return (
     <View style={cam.root}>
       <CameraView ref={cameraRef} style={cam.camera} facing="back" />
-      <View style={cam.topBar}>
+      <View style={[cam.topBar, { top: insets.top + 12 }]}>
         <TouchableOpacity
           style={cam.iconBtn}
           onPress={onClose}
@@ -315,7 +319,7 @@ function SimpleGeocam({
         <View style={[cam.bracket, cam.bBR]} />
         <View style={cam.reticleDot} />
       </View>
-      <View style={cam.gpsCard}>
+      <View style={[cam.gpsCard, { bottom: 160 + insets.bottom }]}>
         <View style={cam.gpsCardHeader}>
           <View style={cam.gpsCardLeft}>
             <View
@@ -370,7 +374,7 @@ function SimpleGeocam({
           </Text>
         )}
       </View>
-      <View style={cam.captureArea}>
+      <View style={[cam.captureArea, { bottom: 28 + insets.bottom }]}>
         <View style={cam.captureButtonsRow}>
           <View style={cam.captureButtonColumn}>
             <TouchableOpacity
@@ -809,6 +813,7 @@ const calculateDistance = (
 
 export default function BoundaryVerificationForm() {
   const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const areaId = params.areaId as string;
   const assessmentId = params.assessmentId as string | undefined;
@@ -1421,7 +1426,7 @@ const loadOfflineDraftData = async () => {
     };
 
     if (polygonPoints.length > 0) {
-      layerData.polygon_points = polygonPoints
+      layerData.polygon_points = [...polygonPoints]
         .sort((a, b) => a.order - b.order)
         .map((p, idx) => ({
           latitude: p.latitude,
@@ -1441,6 +1446,20 @@ const loadOfflineDraftData = async () => {
       field_assessment_data: { boundary_verification: layerData },
     };
   };
+
+  // Size of the boundary polygon, in point order
+  const polygonHectares = polygonAreaHectares(
+    [...polygonPoints].sort((a, b) => a.order - b.order),
+  );
+
+  // Prompt before leaving with unsaved edits
+  const { markSaved, leave } = useUnsavedChangesGuard(
+    JSON.stringify([
+      buildPayload(),
+      localImages.map((img) => [img.id, img.description]),
+    ]),
+    { ready: !loading, disabled: isViewMode },
+  );
 
   const handleSaveOffline = async (): Promise<string | null> => {
     if (!title || title.trim() === "") {
@@ -1478,7 +1497,7 @@ const loadOfflineDraftData = async () => {
           status: "pending",
         });
         success("Updated Offline", "Draft updated locally.");
-        router.back();
+        leave(() => router.back());
         return offlineDraftId;
       }
 
@@ -1495,7 +1514,7 @@ const loadOfflineDraftData = async () => {
       });
       setLocalImages([]);
       success("Saved Offline", "Assessment saved locally.");
-      router.back();
+      leave(() => router.back());
       return localUuid;
     } catch (e: any) {
       console.error("Error saving offline:", e);
@@ -1531,6 +1550,7 @@ const loadOfflineDraftData = async () => {
         populateForm(data);
         setImages(data.images || []);
       }
+      markSaved();
     }
   };
 
@@ -2063,10 +2083,30 @@ const loadOfflineDraftData = async () => {
             </View>
           )}
 
+          {/* Polygon size */}
+          <View style={styles.polygonSizeBox}>
+            <MaterialCommunityIcons name="ruler-square" size={22} color="#7C3AED" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.polygonSizeLabel}>Polygon Size (estimate)</Text>
+              {polygonPoints.length >= MIN_POLYGON_POINTS ? (
+                <Text style={styles.polygonSizeValue}>
+                  {polygonHectares.toFixed(4)} ha
+                  <Text style={styles.polygonSizeSub}>
+                    {`  ·  ${Math.round(polygonHectares * 10000).toLocaleString()} m²`}
+                  </Text>
+                </Text>
+              ) : (
+                <Text style={styles.polygonSizeEmpty}>
+                  Add at least {MIN_POLYGON_POINTS} points to see the size
+                </Text>
+              )}
+            </View>
+          </View>
+
           {/* Points List */}
           {polygonPoints.length > 0 ? (
             <View style={styles.polygonPointsList}>
-              {polygonPoints
+              {[...polygonPoints]
                 .sort((a, b) => a.order - b.order)
                 .map((point, index) => (
                   <View key={point.id} style={styles.polygonPointItem}>
@@ -2291,7 +2331,7 @@ const loadOfflineDraftData = async () => {
       <Modal visible={!!previewImage} transparent animationType="fade">
         <View style={styles.previewModal}>
           <TouchableOpacity
-            style={styles.previewClose}
+            style={[styles.previewClose, { top: insets.top + 12 }]}
             onPress={() => setPreviewImage(null)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
@@ -2936,6 +2976,27 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     flex: 1,
   },
+  polygonSizeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "#F5F3FF",
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+    marginBottom: 12,
+  },
+  polygonSizeLabel: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  polygonSizeValue: { fontSize: 18, fontWeight: "800", color: "#5B21B6", marginTop: 2 },
+  polygonSizeSub: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
+  polygonSizeEmpty: { fontSize: 13, color: "#6B7280", marginTop: 2 },
   polygonPointsList: {
     gap: 10,
     marginBottom: 12,

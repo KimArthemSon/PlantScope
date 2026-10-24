@@ -20,6 +20,7 @@ import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "@/constants/url_fixed";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useAlert, ToastHost } from "@/components/AlertContext";
 import { usePolygonAlerts } from "@/hooks/usePolygonAlerts";
@@ -914,6 +915,9 @@ export default function FloatingMapButton({
   mapPoints = [],
   initialOpen // ✅ Default to empty array
 }: FloatingMapButtonProps) {
+  const insets = useSafeAreaInsets();
+  // Modals draw behind the system bars on Android, so sheets pad for the nav bar.
+  const sheetSafeBottom = { paddingBottom: insets.bottom + 28 };
   const [showMap, setShowMap] = useState(initialOpen); 
 
   const [loading, setLoading] = useState(false);
@@ -2486,8 +2490,8 @@ export default function FloatingMapButton({
         animationType="slide"
         onRequestClose={() => setShowMap(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.header}>
+        <View style={[styles.modalContainer, { paddingBottom: insets.bottom }]}>
+          <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
             <TouchableOpacity onPress={() => setShowMap(false)}>
               <Ionicons name="close" size={28} color="#0F4A2F" />
             </TouchableOpacity>
@@ -3203,7 +3207,7 @@ export default function FloatingMapButton({
         <View style={styles.sheetOverlay}>
           {/* Backdrop sits behind the sheet so it doesn't steal scroll gestures */}
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowSaveSheet(false)} />
-          <View style={styles.saveSheet}>
+          <View style={[styles.saveSheet, sheetSafeBottom]}>
             <View style={styles.dragHandle} />
             <View style={styles.saveHeader}>
               <Text style={styles.saveTitle}>Save Map Offline</Text>
@@ -3404,7 +3408,7 @@ export default function FloatingMapButton({
             style={StyleSheet.absoluteFill}
             onPress={() => !resetting && setShowResetSheet(false)}
           />
-          <View style={styles.saveSheet}>
+          <View style={[styles.saveSheet, sheetSafeBottom]}>
             <View style={styles.dragHandle} />
             <View style={styles.saveHeader}>
               <Text style={styles.saveTitle}>Reset Offline Data</Text>
@@ -3527,7 +3531,7 @@ export default function FloatingMapButton({
       >
         <View style={styles.sheetOverlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowGuide(false)} />
-          <View style={styles.saveSheet}>
+          <View style={[styles.saveSheet, sheetSafeBottom]}>
             <View style={styles.dragHandle} />
             <View style={styles.saveHeader}>
               <Text style={styles.saveTitle}>Save Map Offline: Guide</Text>
@@ -3568,7 +3572,7 @@ export default function FloatingMapButton({
           onPress={() => setShowBarangaySheet(false)}
         >
           <Pressable
-            style={styles.sheetContent}
+            style={[styles.sheetContent, sheetSafeBottom]}
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.dragHandle} />
@@ -3670,7 +3674,7 @@ export default function FloatingMapButton({
           onPress={() => setShowDownloadOptions(false)}
         >
           <Pressable
-            style={styles.downloadOptionsContent}
+            style={[styles.downloadOptionsContent, sheetSafeBottom]}
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.dragHandle} />
@@ -4408,7 +4412,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: 50,
     paddingBottom: 12,
     backgroundColor: "#fff",
     borderBottomWidth: 1,

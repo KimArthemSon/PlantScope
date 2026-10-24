@@ -695,7 +695,11 @@ const ReforestationAreas: React.FC = () => {
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
+        // Offline mode hides the tab bar, so pad for the system nav bar ourselves.
+        contentContainerStyle={[
+          styles.content,
+          !isOnline && { paddingBottom: 24 + insets.bottom },
+        ]}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl

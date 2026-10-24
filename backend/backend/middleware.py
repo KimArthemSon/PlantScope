@@ -10,6 +10,7 @@ class JWTAuthorizationMiddleware:
         "/api/register/",
         "/api/send_otp/",
         "/api/verify_otp/",
+        "/api/password_reset/",
         "/api/register_tree_grower/",
         "/api/debug-cloudinary/",  # ✅ Added debug endpoint
     ]

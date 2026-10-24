@@ -29,6 +29,7 @@ import {
 } from "@/hooks/useOfflineFieldAssessment";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useAlert, ToastHost } from "@/components/AlertContext";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 
 const API_BASE = api;
 
@@ -637,6 +638,15 @@ export default function MetaDataForm() {
     };
   };
 
+  // Prompt before leaving with unsaved edits
+  const { markSaved, leave } = useUnsavedChangesGuard(
+    JSON.stringify([
+      buildPayload(),
+      localImages.map((img) => [img.uri, img.type, img.note]),
+    ]),
+    { ready: !loading, disabled: isSubmitted },
+  );
+
   /* ---------- Save Offline ---------- */
   const handleSaveOffline = async (): Promise<string | null> => {
     if (!assessmentDate) {
@@ -671,7 +681,7 @@ export default function MetaDataForm() {
           "Updated Offline",
           "Draft updated locally. Will sync when online.",
         );
-        router.back();
+        leave(() => router.back());
         return offlineDraftId;
       }
 
@@ -693,7 +703,7 @@ export default function MetaDataForm() {
         "Saved Offline",
         "Assessment saved locally. Will sync when online.",
       );
-      router.back();
+      leave(() => router.back());
       return localUuid;
     } catch (e: any) {
       console.error("Error saving offline:", e);
@@ -789,6 +799,7 @@ export default function MetaDataForm() {
         : responseData.field_assessment_id;
 
       setLocalImages([]);
+      markSaved();
       success("Saved", isEditMode ? "Draft updated." : "Draft saved.");
       return faid;
     } catch (e: any) {
@@ -828,7 +839,7 @@ export default function MetaDataForm() {
             throw new Error(e.error ?? "Failed to submit.");
           }
           success("Submitted", "Meta Data submitted to GIS Specialist!");
-          router.back();
+          leave(() => router.back());
         } catch (e: any) {
           showError("Error", e.message);
         } finally {

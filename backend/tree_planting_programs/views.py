@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from accounts.helper import (
+    create_general_notification,
     create_notification,
     delete_cloudinary_resource,
     get_cloudinary_url,
@@ -23,7 +24,7 @@ from accounts.helper import (
 from accounts.models import User
 from barangay.models import Barangay
 from reforestation_areas.models import Reforestation_areas
-from sites.models import SiteMetaDataVerification, Sites
+from sites.models import SiteMetaDataVerification, Sites, calculate_polygon_area_hectares
 from tree_species.models import Tree_species
 from django.db.models import Exists, OuterRef, Prefetch, Q
 
@@ -83,6 +84,83 @@ def serialize_progress_report_species(progress_report):
         "total": s.no_survived + s.no_dead,
         "survival_rate": s.survival_rate,
     } for s in progress_report.report_species.select_related('tree_species').all()]
+
+
+MIN_REPORT_POLYGON_POINTS = 3
+MAX_REPORT_POLYGON_POINTS = 200
+
+
+def user_display_name(user):
+    """Full name from the user's profile, falling back to email."""
+    if not user:
+        return None
+    profile = getattr(user, 'profile', None)
+    if profile:
+        name = f"{profile.first_name} {profile.last_name}".strip()
+        if name:
+            return name
+    return user.email
+
+
+def parse_report_polygon(raw):
+    """
+    Validate the planted-area polygon sent by the inspector.
+    Accepts a JSON string or list of [lat, lng] pairs (or {latitude, longitude} objects).
+    Returns (coords, error_message).
+    """
+    if raw in (None, ''):
+        return None, 'polygon_coordinates is required: outline the planted area with at least 3 points.'
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except (ValueError, json.JSONDecodeError):
+        return None, 'polygon_coordinates must be valid JSON.'
+    if not isinstance(data, list):
+        return None, 'polygon_coordinates must be a list of [lat, lng] points.'
+
+    coords = []
+    for point in data:
+        try:
+            if isinstance(point, dict):
+                lat, lng = float(point['latitude']), float(point['longitude'])
+            else:
+                lat, lng = float(point[0]), float(point[1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            return None, f'Invalid polygon point: {point}'
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            return None, f'Polygon point out of range: {point}'
+        coords.append([lat, lng])
+
+    # Drop a repeated closing point so the area isn't affected
+    if len(coords) > 1 and coords[0] == coords[-1]:
+        coords.pop()
+
+    if len(coords) < MIN_REPORT_POLYGON_POINTS:
+        return None, f'The planted area needs at least {MIN_REPORT_POLYGON_POINTS} boundary points.'
+    if len(coords) > MAX_REPORT_POLYGON_POINTS:
+        return None, f'The planted area can have at most {MAX_REPORT_POLYGON_POINTS} boundary points.'
+    return coords, None
+
+
+def serialize_report_review(report):
+    """Polygon, area and two-step review info shared by every report payload."""
+    return {
+        "polygon_coordinates": report.polygon_coordinates,
+        "planted_area_hectares": report.planted_area_hectares,
+        "submitted_by_name": user_display_name(report.submitted_by),
+        "review_stage": report.review_stage,
+        "dm_review": {
+            "status": report.dm_review_status,
+            "notes": report.dm_review_notes,
+            "reviewed_by": user_display_name(report.dm_reviewed_by),
+            "reviewed_at": report.dm_reviewed_at.isoformat() if report.dm_reviewed_at else None,
+        },
+        "gis_review": {
+            "status": report.gis_review_status,
+            "notes": report.gis_review_notes,
+            "reviewed_by": user_display_name(report.gis_reviewed_by),
+            "reviewed_at": report.gis_reviewed_at.isoformat() if report.gis_reviewed_at else None,
+        },
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1156,6 +1234,13 @@ def create_progress_report(request):
     else:
         orientation_conducted = False
 
+    polygon_coords, polygon_error = parse_report_polygon(request.POST.get('polygon_coordinates'))
+    if polygon_error:
+        return JsonResponse({'error': polygon_error}, status=400)
+    planted_area_hectares = calculate_polygon_area_hectares(polygon_coords)
+    if planted_area_hectares <= 0:
+        return JsonResponse({'error': 'The planted area polygon has no area. Check that the points are not all in a line.'}, status=400)
+
     # ✅ PREVENT DUPLICATE PENDING REPORTS PER SITE
     if ProgressReport.objects.filter(site=site, status='pending').exists():
         return JsonResponse({
@@ -1172,7 +1257,10 @@ def create_progress_report(request):
                 proof_image_monitor_required=request.FILES['proof_image'],
                 agreement_image=request.FILES.get('agreement_image') if visit_type == 'initial' else None,
                 orientation_conducted=orientation_conducted,
-                status='pending'
+                status='pending',
+                submitted_by=user,
+                polygon_coordinates=polygon_coords,
+                planted_area_hectares=planted_area_hectares,
             )
 
             for item in report_species:
@@ -1211,9 +1299,168 @@ def create_progress_report(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+def _finalize_report_acceptance(report, user, reason_text):
+    """Both review steps passed: accept the report and advance the application."""
+    report.status = 'accepted'
+    report.save()
+
+    if report.application and report.visit_type == 'initial' and report.application.status == 'accepted':
+        report.application.status = 'under_monitoring'
+        report.application.save()
+
+    if report.application:
+        Reason.objects.create(
+            user=user,
+            application=report.application,
+            status_layer='report',
+            reason=reason_text or 'Report approved by Data Manager and GIS Specialist',
+            status='accepted'
+        )
+
+
+def _apply_report_review(report, user, action, notes):
+    """
+    Run one review step on a progress report.
+      - DataManager reviews first (counts, photos, notes) and sees the map.
+      - GISSpecialist then confirms the planted-area polygon.
+    Either can request changes (notes required) which rejects the report so the
+    inspector can resubmit. Returns (response_dict, http_status).
+    """
+    if action not in ('approve', 'request_changes'):
+        return {'error': 'action must be "approve" or "request_changes"'}, 400
+    if report.status != 'pending':
+        return {'error': 'This report has already been processed.'}, 400
+    if action == 'request_changes' and not notes:
+        return {'error': 'Please write a note explaining what needs to change.'}, 400
+
+    stage = report.review_stage
+    now = timezone.now()
+    site_name = report.site.name if report.site else 'the site'
+    site_id = report.site.site_id if report.site else None
+
+    if user.user_role == 'DataManager':
+        if stage != 'data_manager':
+            return {'error': 'Data Manager review is already done. Waiting for the GIS Specialist.'}, 400
+
+        report.dm_reviewed_by = user
+        report.dm_reviewed_at = now
+        report.dm_review_notes = notes or None
+
+        if action == 'request_changes':
+            report.dm_review_status = 'changes_requested'
+            report.status = 'rejected'
+            report.save()
+        else:
+            report.dm_review_status = 'approved'
+            if report.polygon_coordinates:
+                report.save()
+                create_general_notification(
+                    type='info',
+                    title='Planted area needs map confirmation',
+                    description=f'A progress report for {site_name} ({report.planted_area_hectares or 0:.2f} ha) was approved by the Data Manager and is waiting for your map review.',
+                    target_role='GISSpecialist',
+                    link='/GISS/planting-area-reviews',
+                )
+                return {'message': 'Approved. Sent to the GIS Specialist for map confirmation.', 'review_stage': report.review_stage}, 200
+
+            # Reports submitted before polygons were required have nothing to map
+            report.gis_review_status = 'not_required'
+            _finalize_report_acceptance(report, user, notes)
+
+    elif user.user_role == 'GISSpecialist':
+        if stage != 'gis_specialist':
+            if stage == 'data_manager':
+                return {'error': 'The Data Manager has to review this report first.'}, 400
+            return {'error': 'This report is not waiting for a GIS review.'}, 400
+
+        report.gis_reviewed_by = user
+        report.gis_reviewed_at = now
+        report.gis_review_notes = notes or None
+
+        if action == 'request_changes':
+            report.gis_review_status = 'changes_requested'
+            report.status = 'rejected'
+            report.save()
+            create_general_notification(
+                type='warning',
+                title='GIS Specialist requested changes',
+                description=f'The planted area map for {site_name} was sent back to the inspector. Note: {notes}',
+                target_role='DataManager',
+                link=f'/DataManager/site_monitoring/{site_id}' if site_id else None,
+            )
+        else:
+            report.gis_review_status = 'approved'
+            _finalize_report_acceptance(report, user, notes)
+    else:
+        return {'error': 'Only the Data Manager or GIS Specialist can review reports.'}, 403
+
+    if report.status == 'rejected':
+        if report.application:
+            Reason.objects.create(
+                user=user,
+                application=report.application,
+                status_layer='report',
+                reason=notes,
+                status='rejected'
+            )
+        if report.submitted_by:
+            reviewer = 'Data Manager' if user.user_role == 'DataManager' else 'GIS Specialist'
+            create_notification(
+                user=report.submitted_by,
+                type='warning',
+                title='Changes requested on your progress report',
+                description=f'The {reviewer} asked for changes to your report for {site_name}: {notes}. Please submit a new report.',
+                link=None,
+            )
+        return {'message': 'Changes requested. The inspector has been notified.', 'review_stage': 'done'}, 200
+
+    if report.status == 'accepted' and report.submitted_by:
+        create_notification(
+            user=report.submitted_by,
+            type='success',
+            title='Progress report accepted',
+            description=f'Your report for {site_name} was accepted. Planted area: {report.planted_area_hectares or 0:.2f} ha.',
+            link=None,
+        )
+    app_status = report.application.status if report.application else 'No Active Application'
+    return {'message': 'Report accepted.', 'review_stage': report.review_stage, 'application_status': app_status}, 200
+
+
+@csrf_exempt
+def review_progress_report(request, report_id):
+    """
+    PUT { action: 'approve' | 'request_changes', notes: str }
+    DataManager handles step 1, GISSpecialist handles step 2.
+    """
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role not in ('DataManager', 'GISSpecialist'):
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    report = get_object_or_404(ProgressReport.objects.select_related('site', 'application'), progress_report_id=report_id)
+    try:
+        with transaction.atomic():
+            body, status_code = _apply_report_review(
+                report, user, data.get('action'), (data.get('notes') or '').strip()
+            )
+        return JsonResponse(body, status=status_code)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 @csrf_exempt
 def update_progress_report(request, report_id):
-    """DataManager: Accept/Reject progress report with auto status transition"""
+    """
+    Legacy endpoint (status: accepted | rejected). Kept for older clients and
+    routed through the two-step review so the GIS step can't be skipped.
+    """
     if request.method != 'PUT':
         return JsonResponse({'error': 'Only PUT allowed'}, status=405)
 
@@ -1227,42 +1474,91 @@ def update_progress_report(request, report_id):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     status = data.get('status')
-    reason_text = data.get('reason', '').strip()
-    
     if status not in ['accepted', 'rejected']:
         return JsonResponse({'error': 'Status must be accepted or rejected'}, status=400)
 
-    report = get_object_or_404(ProgressReport, progress_report_id=report_id)
-    if report.status != 'pending':
-        return JsonResponse({'error': 'Report already processed'}, status=400)
-
+    report = get_object_or_404(ProgressReport.objects.select_related('site', 'application'), progress_report_id=report_id)
+    action = 'approve' if status == 'accepted' else 'request_changes'
     try:
         with transaction.atomic():
-            report.status = status
-            report.save()
-            
-            # ✅ NEW: Auto-transition Application status ONLY if application exists
-            if report.application and status == 'accepted' and report.visit_type == 'initial':
-                if report.application.status == 'accepted':
-                    report.application.status = 'under_monitoring'
-                    report.application.save()
-            
-            if report.application:
-                Reason.objects.create(
-                    user=user,
-                    application=report.application,
-                    status_layer='report',
-                    reason=reason_text,
-                    status=status
-                )
-
-        app_status = report.application.status if report.application else 'No Active Application'
-        return JsonResponse({
-            'message': f'Report {status}',
-            'application_status': app_status
-        }, status=200)
+            body, status_code = _apply_report_review(report, user, action, (data.get('reason') or '').strip())
+        return JsonResponse(body, status=status_code)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def get_gis_review_reports(request):
+    """
+    GISSpecialist: progress reports with planted-area polygons.
+    ?scope=pending (default) → approved by Data Manager, waiting for map confirmation
+    ?scope=reviewed          → already reviewed by a GIS Specialist
+    ?search=                 → site / area name
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role not in ('GISSpecialist', 'DataManager'):
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    scope = request.GET.get('scope', 'pending')
+    search = (request.GET.get('search') or '').strip()
+
+    qs = ProgressReport.objects.filter(polygon_coordinates__isnull=False).select_related(
+        'site__reforestation_area__barangay',
+        'application__user__tree_grower_group',
+        'submitted_by__profile',
+        'dm_reviewed_by__profile',
+        'gis_reviewed_by__profile',
+    ).prefetch_related('report_species__tree_species')
+
+    if scope == 'reviewed':
+        qs = qs.filter(gis_review_status__in=['approved', 'changes_requested']).order_by('-gis_reviewed_at')
+    elif scope == 'awaiting_dm':
+        # Read-only preview: submitted but the Data Manager hasn't approved yet
+        qs = qs.filter(status='pending', dm_review_status='pending').order_by('submitted_at')
+    else:
+        qs = qs.filter(status='pending', dm_review_status='approved', gis_review_status='pending').order_by('dm_reviewed_at')
+
+    if search:
+        qs = qs.filter(Q(site__name__icontains=search) | Q(site__reforestation_area__name__icontains=search))
+
+    pending_count = ProgressReport.objects.filter(
+        polygon_coordinates__isnull=False, status='pending', dm_review_status='approved', gis_review_status='pending'
+    ).count()
+    awaiting_dm_count = ProgressReport.objects.filter(
+        polygon_coordinates__isnull=False, status='pending', dm_review_status='pending'
+    ).count()
+
+    data = []
+    for r in qs[:100]:
+        site = r.site
+        group = getattr(r.application.user, 'tree_grower_group', None) if r.application else None
+        data.append({
+            "report_id": r.progress_report_id,
+            "visit_type": r.visit_type,
+            "status": r.status,
+            "description": r.description,
+            "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+            "proof_image": r.proof_image_monitor_required.url if r.proof_image_monitor_required else None,
+            "group_name": group.group_name if group else "Independent Monitoring",
+            "total_added_by_grower": r.total_added_by_grower,
+            "total_dead": r.total_dead,
+            "total_planted": sum(sp.no_planted for sp in r.report_species.all()),
+            "site": {
+                "site_id": site.site_id if site else None,
+                "name": site.name if site else "Unknown Site",
+                "reforestation_area_name": site.reforestation_area.name if site and site.reforestation_area else None,
+                "barangay_name": site.reforestation_area.barangay.name if site and site.reforestation_area and site.reforestation_area.barangay else None,
+                "polygon_coordinates": site.polygon_coordinates if site else None,
+                "marker_coordinate": site.marker_coordinate if site else None,
+                "total_area_hectares": site.total_area_hectares if site else 0,
+            },
+            **serialize_report_review(r),
+        })
+
+    return JsonResponse({"data": data, "pending_count": pending_count, "awaiting_dm_count": awaiting_dm_count}, status=200)
 
 
 
@@ -1281,7 +1577,10 @@ def get_progress_reports(request):
     
     qs = ProgressReport.objects.select_related(
         'site__reforestation_area',
-        'application__user__tree_grower_group'
+        'application__user__tree_grower_group',
+        'submitted_by__profile',
+        'dm_reviewed_by__profile',
+        'gis_reviewed_by__profile',
     ).order_by('-created_at')
     
     if status_filter:
@@ -1308,7 +1607,8 @@ def get_progress_reports(request):
         "status": r.status,
         "proof_image": get_cloudinary_url(str(r.proof_image_monitor_required)) if r.proof_image_monitor_required else None,
         "agreement_image": get_cloudinary_url(str(r.agreement_image)) if r.agreement_image else None,
-        "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None
+        "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+        **serialize_report_review(r),
     } for r in qs]
 
     return JsonResponse(data, safe=False, status=200)
@@ -2369,8 +2669,19 @@ def get_monitoring_sites(request):
         status__in=['accepted', 'under_monitoring']
     ).order_by('-created_at').values('status')[:1]
 
+    # Review state of the site's pending report (two-step review)
+    needs_dm_review_sq = Exists(
+        ProgressReport.objects.filter(site=OuterRef('pk'), status='pending', dm_review_status='pending')
+    )
+    awaiting_gis_sq = Exists(
+        ProgressReport.objects.filter(site=OuterRef('pk'), status='pending', dm_review_status='approved', gis_review_status='pending')
+    )
+    latest_report_status_sq = ProgressReport.objects.filter(
+        site=OuterRef('pk')
+    ).order_by('-created_at').values('status')[:1]
+
     # ─── 2. Base Queryset ────────────────────────────────────────────────────
-    
+
     # ✅ FIX: Pass the Exists object directly into Q(), do NOT use =True
     qs = Sites.objects.filter(
         Q(has_reports_sq) | Q(has_active_app_sq)
@@ -2382,12 +2693,26 @@ def get_monitoring_sites(request):
         total_reports=Coalesce(Subquery(total_reports_sq), 0),
         has_initial_report=has_initial_report_sq,
         active_application_status=Coalesce(
-            Subquery(active_app_status_sq), 
+            Subquery(active_app_status_sq),
             Value('inactive', output_field=fields.CharField())
-        )
+        ),
+        needs_dm_review=needs_dm_review_sq,
+        awaiting_gis_review=awaiting_gis_sq,
+        latest_report_status=Subquery(latest_report_status_sq),
     )
 
     # ─── 3. Apply Filters ────────────────────────────────────────────────────
+
+    # ?review_status=data_manager | gis_specialist | changes_requested | to_review (either step)
+    review_filter = request.GET.get('review_status', 'all').strip()
+    if review_filter == 'data_manager':
+        qs = qs.filter(needs_dm_review=True)
+    elif review_filter == 'gis_specialist':
+        qs = qs.filter(awaiting_gis_review=True)
+    elif review_filter == 'changes_requested':
+        qs = qs.filter(latest_report_status='rejected')
+    elif review_filter == 'to_review':
+        qs = qs.filter(Q(needs_dm_review=True) | Q(awaiting_gis_review=True))
 
     if monitoring_status_filter and monitoring_status_filter != 'all':
         qs = qs.filter(monitoring_status=monitoring_status_filter)
@@ -2452,11 +2777,24 @@ def get_monitoring_sites(request):
             "needs_initial": not site.has_initial_report,
             "active_application_status": site.active_application_status,
             "monitoring_status": site.monitoring_status,
+            # data_manager → waiting for DM, gis_specialist → DM approved, waiting for GIS,
+            # changes_requested → sent back to inspector, none → nothing to review
+            "review_status": (
+                "data_manager" if site.needs_dm_review
+                else "gis_specialist" if site.awaiting_gis_review
+                else "changes_requested" if site.latest_report_status == 'rejected'
+                else "none"
+            ),
         })
 
+    to_review_count = Sites.objects.filter(
+        Exists(ProgressReport.objects.filter(site=OuterRef('pk'), status='pending', dm_review_status='pending'))
+    ).count()
+
     return JsonResponse({
-        'data': data, 
-        'total_page': total_page, 
+        'data': data,
+        'to_review_count': to_review_count,
+        'total_page': total_page,
         'page': page, 
         'entries': entries, 
         'total': total
@@ -2512,8 +2850,37 @@ def get_site_monitoring_details(request, site_id):
             "created_at": app.created_at.isoformat() if app.created_at else None,
         })
 
-    reports_qs = ProgressReport.objects.filter(site=site).order_by('-created_at')
+    # Optional date range (?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD, both inclusive).
+    # Narrows the reports, metrics and seedlings provided to that period.
+    date_from = date_to = None
+    try:
+        if request.GET.get('date_from'):
+            date_from = datetime.strptime(request.GET['date_from'], '%Y-%m-%d').date()
+        if request.GET.get('date_to'):
+            date_to = datetime.strptime(request.GET['date_to'], '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'error': 'Dates must use the format YYYY-MM-DD.'}, status=400)
+    if date_from and date_to and date_from > date_to:
+        return JsonResponse({'error': 'The start date must be before the end date.'}, status=400)
+
+    reports_qs = ProgressReport.objects.filter(site=site).select_related(
+        'submitted_by__profile', 'dm_reviewed_by__profile', 'gis_reviewed_by__profile'
+    ).order_by('-created_at')
+    if date_from:
+        reports_qs = reports_qs.filter(submitted_at__date__gte=date_from)
+    if date_to:
+        reports_qs = reports_qs.filter(submitted_at__date__lte=date_to)
     accepted_reports = reports_qs.filter(status='accepted')
+
+    # Planted area = polygon of the most recent accepted report that has one.
+    # Each report outlines the whole planted area at that visit, so we take the
+    # latest instead of adding them up (which would count the same ground twice).
+    # With a date filter this is the area "as of" the end date, so only date_to applies.
+    area_qs = ProgressReport.objects.filter(site=site, status='accepted', planted_area_hectares__isnull=False)
+    if date_to:
+        area_qs = area_qs.filter(submitted_at__date__lte=date_to)
+    latest_area_report = area_qs.order_by('-submitted_at').first()
+    planted_area_hectares = latest_area_report.planted_area_hectares if latest_area_report else None
     
     total_planted = 0
     total_added = 0
@@ -2534,7 +2901,13 @@ def get_site_monitoring_details(request, site_id):
         "total_added": total_added,
         "total_dead": total_dead,
         "total_survived": total_survived,
-        "survival_rate": round(survival_rate, 1)
+        "survival_rate": round(survival_rate, 1),
+        "planted_area_hectares": planted_area_hectares,
+        "planted_area_percent": (
+            round(planted_area_hectares / site.total_area_hectares * 100, 1)
+            if planted_area_hectares is not None and site.total_area_hectares else None
+        ),
+        "planted_area_as_of": latest_area_report.submitted_at.isoformat() if latest_area_report and latest_area_report.submitted_at else None,
     }
 
     progress_reports_data = []
@@ -2564,11 +2937,7 @@ def get_site_monitoring_details(request, site_id):
                     "no_dead": sp.no_dead,
                 })
 
-        inspector_name = "Unknown Inspector"
-        if hasattr(report, 'inspector') and report.inspector:
-            inspector_name = f"{report.inspector.first_name} {report.inspector.last_name}".strip()
-        elif hasattr(report, 'inspector_name') and report.inspector_name:
-            inspector_name = report.inspector_name
+        inspector_name = user_display_name(report.submitted_by) or "Unknown Inspector"
 
         progress_reports_data.append({
             "report_id": report.progress_report_id,
@@ -2587,21 +2956,24 @@ def get_site_monitoring_details(request, site_id):
             "proof_image": report.proof_image_monitor_required.url if report.proof_image_monitor_required else None,
             "submitted_at": report.submitted_at.isoformat() if report.submitted_at else None,
             "created_at": report.created_at.isoformat() if report.created_at else None,
+            **serialize_report_review(report),
         })
 
     # ✅ NEW: Calculate total seedlings provided for the ENTIRE SITE (all applications)
     from django.db.models import Sum, F
-    site_seedling_stats = SeedlingRequestSpecies.objects.filter(
+    seedling_qs = SeedlingRequestSpecies.objects.filter(
         seedling_request__application__site=site,
         seedling_request__status='accepted'
-    ).aggregate(total=Sum('quantity'))
-    total_seedlings_provided = site_seedling_stats['total'] or 0
+    )
+    if date_from:
+        seedling_qs = seedling_qs.filter(seedling_request__created_at__date__gte=date_from)
+    if date_to:
+        seedling_qs = seedling_qs.filter(seedling_request__created_at__date__lte=date_to)
+
+    total_seedlings_provided = seedling_qs.aggregate(total=Sum('quantity'))['total'] or 0
 
     # ✅ NEW: Species breakdown for accepted seedling requests for this site
-    seedling_species_breakdown = SeedlingRequestSpecies.objects.filter(
-        seedling_request__application__site=site,
-        seedling_request__status='accepted'
-    ).values(
+    seedling_species_breakdown = seedling_qs.values(
         species_id=F('tree_species__tree_specie_id'),
         species_name=F('tree_species__name')
     ).annotate(
@@ -2625,6 +2997,9 @@ def get_site_monitoring_details(request, site_id):
         "name": site.name,
         "description": site.description,
         "total_area_hectares": site.total_area_hectares,
+        "polygon_coordinates": site.polygon_coordinates,
+        "marker_coordinate": site.marker_coordinate,
+        "reforestation_area_id": site.reforestation_area.reforestation_area_id if site.reforestation_area else None,
         "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
         "barangay_name": site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else None,
         "accessibility": accessibility_data,
@@ -2636,6 +3011,10 @@ def get_site_monitoring_details(request, site_id):
     return JsonResponse({
         "site": site_data,
         "metrics": metrics,
+        "filters": {
+            "date_from": date_from.isoformat() if date_from else None,
+            "date_to": date_to.isoformat() if date_to else None,
+        },
         "total_seedlings_provided": total_seedlings_provided,          # ✅ NEW: Site-level total
         "seedling_requests_breakdown": seedling_requests_breakdown,    # ✅ NEW: Site-level species breakdown
         "progress_reports": progress_reports_data,

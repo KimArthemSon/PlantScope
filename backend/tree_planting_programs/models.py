@@ -441,6 +441,51 @@ class ProgressReport(models.Model):
         default='pending'
     )
 
+    submitted_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='submitted_progress_reports',
+        help_text="Onsite Inspector who submitted this report"
+    )
+
+    # ── Planted area boundary (captured on site by the inspector) ──
+    polygon_coordinates = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Array of [lat, lng] points outlining the planted area at this visit."
+    )
+    planted_area_hectares = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Area of polygon_coordinates in hectares (computed on the server)."
+    )
+
+    # ── Two-step review: Data Manager first, then GIS Specialist ──
+    # The report only becomes 'accepted' after both steps approve.
+    # Either reviewer can request changes, which sets status to 'rejected'.
+    REVIEW_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('changes_requested', 'Changes Requested'),
+        ('not_required', 'Not Required'),
+    ]
+
+    dm_review_status = models.CharField(max_length=20, choices=REVIEW_STATUS_CHOICES, default='pending')
+    dm_reviewed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='dm_reviewed_progress_reports'
+    )
+    dm_reviewed_at = models.DateTimeField(null=True, blank=True)
+    dm_review_notes = models.TextField(blank=True, null=True)
+
+    gis_review_status = models.CharField(max_length=20, choices=REVIEW_STATUS_CHOICES, default='pending')
+    gis_reviewed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='gis_reviewed_progress_reports'
+    )
+    gis_reviewed_at = models.DateTimeField(null=True, blank=True)
+    gis_review_notes = models.TextField(blank=True, null=True)
+
     # Timestamps
     submitted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -502,6 +547,17 @@ class ProgressReport(models.Model):
     def is_initial_visit(self):
         """Check if this is the initial orientation visit"""
         return self.visit_type == 'initial'
+
+    @property
+    def review_stage(self):
+        """Who has to act next: 'data_manager', 'gis_specialist', or 'done'."""
+        if self.status != 'pending':
+            return 'done'
+        if self.dm_review_status == 'pending':
+            return 'data_manager'
+        if self.gis_review_status == 'pending':
+            return 'gis_specialist'
+        return 'done'
 
 
 # ────────────────────────────────────────────

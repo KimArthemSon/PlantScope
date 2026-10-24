@@ -6,7 +6,6 @@ import {
   Text,
   StyleSheet,
   Animated,
-  SafeAreaView,
   Image,
   FlatList,
   Dimensions,
@@ -1027,7 +1026,7 @@ export default function Home() {
   const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <ScrollView
         style={{ paddingHorizontal: 16 }}
         showsVerticalScrollIndicator={false}
@@ -1229,6 +1228,6 @@ export default function Home() {
         onOpen={handleOpenNotification}
         onViewAll={handleViewAllNotifications}
       />
-    </SafeAreaView>
+    </View>
   );
 }

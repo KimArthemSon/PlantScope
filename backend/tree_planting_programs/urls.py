@@ -24,6 +24,8 @@ urlpatterns = [
     path('get_progress_reports/', views.get_progress_reports, name='get_progress_reports'),
     path('create_progress_report/', views.create_progress_report, name='create_progress_report'),
     path('update_progress_report/<int:report_id>/', views.update_progress_report, name='update_progress_report'),
+    path('review_progress_report/<int:report_id>/', views.review_progress_report, name='review_progress_report'),
+    path('get_gis_review_reports/', views.get_gis_review_reports, name='get_gis_review_reports'),
 
     path('get_monitoring_sites/', views.get_monitoring_sites, name='get_monitoring_sites'),
     path('get_site_monitoring_details/<int:site_id>/', views.get_site_monitoring_details, name='get_site_monitoring_details'),

@@ -46,6 +46,7 @@ interface MonitoringSite {
   needs_initial: boolean;
   active_application_status: string;
   monitoring_status: string; // ✅ NEW
+  review_status: "data_manager" | "gis_specialist" | "changes_requested" | "none";
 }
 
 interface Filter {
@@ -56,6 +57,7 @@ interface Filter {
   days_since: string;
   needs_initial: boolean;
   monitoring_status: string; // ✅ Site Status Filter
+  review_status: string; // all | data_manager | gis_specialist | changes_requested
 }
 
 interface MonitoringStats {
@@ -106,6 +108,32 @@ function DaysBadge({ days }: { days: number | null }) {
   );
 }
 
+// Where the site's latest report is in the two-step review
+function ReviewBadge({ status }: { status: MonitoringSite["review_status"] }) {
+  switch (status) {
+    case "data_manager":
+      return (
+        <span className="px-2 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1 w-fit bg-amber-100 text-amber-800 border-amber-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> To Review
+        </span>
+      );
+    case "gis_specialist":
+      return (
+        <span className="px-2 py-1 rounded-full text-[10px] font-semibold border flex items-center gap-1 w-fit bg-blue-50 text-blue-700 border-blue-200" title="You approved it. Waiting for the GIS Specialist to confirm the planted-area map.">
+          <Clock size={10} /> With GIS Specialist
+        </span>
+      );
+    case "changes_requested":
+      return (
+        <span className="px-2 py-1 rounded-full text-[10px] font-semibold border flex items-center gap-1 w-fit bg-red-50 text-red-700 border-red-200" title="Sent back to the Onsite Inspector for changes.">
+          <XCircle size={10} /> Changes Requested
+        </span>
+      );
+    default:
+      return <span className="text-[11px] text-slate-400">—</span>;
+  }
+}
+
 // ✅ NEW: Monitoring Status Badge Helper
 function getMonitoringStatusBadge(status: string) {
   switch (status) {
@@ -142,7 +170,9 @@ export default function Monitoring() {
     search: "", entries: 10, page: 1, total_page: 1,
     days_since: "all", needs_initial: false,
     monitoring_status: "all", // ✅ Site Status Filter
+    review_status: "all",
   });
+  const [toReviewCount, setToReviewCount] = useState(0);
 
   const [loadingAreas, setLoadingAreas] = useState(false);
   const [loadingSites, setLoadingSites] = useState(false);
@@ -188,6 +218,7 @@ export default function Monitoring() {
         days_since: filter.days_since,
         needs_initial: filter.needs_initial ? "true" : "false",
         monitoring_status: filter.monitoring_status !== "all" ? filter.monitoring_status : "", // ✅ NEW
+        review_status: filter.review_status,
       });
 
       const response = await fetch(`${API_BASE}api/get_monitoring_sites/?${params.toString()}`, {
@@ -196,6 +227,7 @@ export default function Monitoring() {
       if (!response.ok) throw new Error("Failed to fetch monitoring sites.");
       const data = await response.json();
       setSites(data.data || []);
+      setToReviewCount(data.to_review_count ?? 0);
       setFilter((prev) => ({ ...prev, total_page: data.total_page }));
     } catch (err: any) {
       setPSAlert({ type: "error", title: "Failed", message: err.message || "Failed to load sites." });
@@ -205,7 +237,7 @@ export default function Monitoring() {
   };
 
   useEffect(() => { fetchAreas(); fetchStats(); }, []);
-  useEffect(() => { fetchSites(); }, [selectedArea, filter.page, filter.entries, filter.days_since, filter.needs_initial, filter.monitoring_status, filter.search]);
+  useEffect(() => { fetchSites(); }, [selectedArea, filter.page, filter.entries, filter.days_since, filter.needs_initial, filter.monitoring_status, filter.review_status, filter.search]);
   useEffect(() => {
     fetchStats();
     intervalRef.current = setInterval(fetchStats, 60000);
@@ -215,10 +247,10 @@ export default function Monitoring() {
   const handleViewHistory = (siteId: number) => navigate(`${userPath}/site_monitoring/${siteId}`);
 
   const clearFilters = () => {
-    setFilter((prev) => ({ ...prev, days_since: "all", needs_initial: false, monitoring_status: "all", search: "", page: 1 }));
+    setFilter((prev) => ({ ...prev, days_since: "all", needs_initial: false, monitoring_status: "all", review_status: "all", search: "", page: 1 }));
   };
 
-  const hasActiveFilters = filter.days_since !== "all" || filter.needs_initial || filter.monitoring_status !== "all" || filter.search !== "";
+  const hasActiveFilters = filter.days_since !== "all" || filter.needs_initial || filter.monitoring_status !== "all" || filter.review_status !== "all" || filter.search !== "";
 
   return (
     <div className="flex min-h-dvh bg-slate-50">
@@ -291,6 +323,14 @@ export default function Monitoring() {
                   <span className="text-xs font-medium text-slate-700 flex items-center gap-1"><Calendar size={12} /> Needs Initial Visit</span>
                 </label>
 
+                <button
+                  onClick={() => setFilter((prev) => ({ ...prev, review_status: prev.review_status === "data_manager" ? "all" : "data_manager", page: 1 }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 border ${filter.review_status === "data_manager" ? "bg-amber-500 text-white border-amber-500" : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"}`}
+                >
+                  <FileCheck2 size={12} /> To Review
+                  <span className={`px-1.5 rounded-full text-[10px] font-bold ${filter.review_status === "data_manager" ? "bg-white/25" : "bg-amber-200"}`}>{toReviewCount}</span>
+                </button>
+
                 {hasActiveFilters && (
                   <button onClick={clearFilters} className="ml-auto px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-all flex items-center gap-1">
                     <X size={12} /> Clear Filters
@@ -310,6 +350,16 @@ export default function Monitoring() {
                     <option value="completed">Completed</option>
                     <option value="failed">Failed</option>
                     <option value="onhold">On Hold</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-600">Review:</span>
+                  <select value={filter.review_status} onChange={(e) => setFilter((prev) => ({ ...prev, review_status: e.target.value, page: 1 }))} className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0F4A2F]/50 focus:border-[#0F4A2F] bg-white">
+                    <option value="all">All</option>
+                    <option value="data_manager">To Review (me)</option>
+                    <option value="gis_specialist">With GIS Specialist</option>
+                    <option value="changes_requested">Changes Requested</option>
                   </select>
                 </div>
 
@@ -335,6 +385,7 @@ export default function Monitoring() {
                     <th className="py-3 px-4 text-left text-[11px] font-semibold uppercase tracking-wider">Last Report</th>
                     <th className="py-3 px-4 text-left text-[11px] font-semibold uppercase tracking-wider">Days Since</th>
                     <th className="py-3 px-4 text-left text-[11px] font-semibold uppercase tracking-wider">Site Status</th>
+                    <th className="py-3 px-4 text-left text-[11px] font-semibold uppercase tracking-wider">Review</th>
                     <th className="py-3 px-4 text-left text-[11px] font-semibold uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
@@ -368,16 +419,23 @@ export default function Monitoring() {
                             <StatusIcon size={10} /> {statusBadge.label}
                           </span>
                         </td>
+                        <td className="py-3 px-4"><ReviewBadge status={site.review_status} /></td>
                         <td className="py-3 px-4">
-                          <button onClick={() => handleViewHistory(site.site_id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold transition-colors shadow-sm bg-[#0F4A2F] hover:bg-[#1a6b44]" title="View monitoring history and reports">
-                            <FileCheck2 size={14} /> View History
-                          </button>
+                          {site.review_status === "data_manager" ? (
+                            <button onClick={() => handleViewHistory(site.site_id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold transition-colors shadow-sm bg-amber-500 hover:bg-amber-600" title="Review the pending progress report">
+                              <FileCheck2 size={14} /> Review Report
+                            </button>
+                          ) : (
+                            <button onClick={() => handleViewHistory(site.site_id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-semibold transition-colors shadow-sm bg-[#0F4A2F] hover:bg-[#1a6b44]" title="View monitoring history and reports">
+                              <FileCheck2 size={14} /> View History
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
                   }) : (
                     <tr>
-                      <td colSpan={7} className="text-center py-12 text-slate-400">
+                      <td colSpan={8} className="text-center py-12 text-slate-400">
                         <div className="flex flex-col items-center gap-2">
                           <Leaf size={32} className="opacity-50" />
                           <p className="text-sm font-medium text-slate-600">{filter.search || hasActiveFilters ? "No sites match your filters" : "No sites found"}</p>

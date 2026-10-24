@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { useRouter } from "expo-router";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
 import {
   View,
   Text,
@@ -17,6 +17,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
+import { useNetworkStatus } from "@/utils/networkStatus";
+import { useAlert } from "@/components/AlertContext";
+import {
+  getSavedSites,
+  saveSiteOffline,
+  removeSavedSite,
+  updateSavedSiteSummaries,
+  getQueuedReports,
+  syncQueuedReports,
+  SavedSite,
+} from "@/utils/offlineMonitoring";
 
 const API_BASE_URL = api + "/api";
 
@@ -179,10 +190,99 @@ const OnsiteInspectorMonitoring: React.FC = () => {
   const sortedSites = useMemo(() => sortSites(sites, sortKey), [sites, sortKey]);
   const activeSort = SORT_OPTIONS.find((o) => o.key === sortKey)!;
 
+  // ── Offline ──
+  const isOnline = useNetworkStatus();
+  const { success, error: showError, warning, confirm } = useAlert();
+  const [savedSites, setSavedSites] = useState<Record<string, SavedSite>>({});
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [queuedCount, setQueuedCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const wasOnline = useRef(isOnline);
+
+  const refreshOfflineState = useCallback(async () => {
+    setSavedSites(await getSavedSites());
+    setQueuedCount((await getQueuedReports()).length);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshOfflineState();
+    }, [refreshOfflineState])
+  );
+
+  const runSync = async (silent = false) => {
+    setSyncing(true);
+    try {
+      const { uploaded, failed } = await syncQueuedReports();
+      await refreshOfflineState();
+      if (uploaded > 0) success("Reports uploaded", `${uploaded} offline report${uploaded === 1 ? " was" : "s were"} sent for review.`);
+      if (failed > 0 && !silent) warning("Some reports didn't upload", "Open the site to see why.");
+      if (uploaded > 0) fetchSites(true);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Upload queued reports as soon as the phone is back online
+  useEffect(() => {
+    const changed = isOnline !== wasOnline.current;
+    const cameBackOnline = isOnline && !wasOnline.current;
+    wasOnline.current = isOnline;
+    if (changed) fetchSites(); // switch between the live list and saved sites
+    if (cameBackOnline) {
+      getQueuedReports().then((q) => {
+        if (q.length > 0) runSync(true);
+      });
+    }
+  }, [isOnline]);
+
+  const toggleSaveSite = async (site: MonitoringSite) => {
+    if (savedSites[String(site.site_id)]) {
+      confirm(
+        "Remove offline copy?",
+        `"${site.site_name}" won't be available without internet anymore.`,
+        async () => {
+          await removeSavedSite(site.site_id);
+          refreshOfflineState();
+        },
+        { type: "warning", confirmText: "Remove", cancelText: "Cancel" }
+      );
+      return;
+    }
+    if (!isOnline) return warning("You're offline", "Connect to the internet to save this site.");
+    setSavingId(site.site_id);
+    try {
+      await saveSiteOffline(site.site_id, site);
+      await refreshOfflineState();
+      success("Saved for offline", `You can open "${site.site_name}" and fill in a report without internet.`);
+    } catch (err: any) {
+      showError("Couldn't save site", err.message || "Try again with a better connection.");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  // Offline: show only the saved sites, filtered by the search box
+  const loadSavedSitesAsList = async () => {
+    const saved = Object.values(await getSavedSites());
+    const q = searchText.trim().toLowerCase();
+    setSites(
+      saved
+        .map((s) => s.summary as MonitoringSite)
+        .filter(Boolean)
+        .filter((s) => !q || [s.site_name, s.reforestation_area_name, s.barangay_name].some((v) => v?.toLowerCase().includes(q)))
+    );
+  };
+
   const fetchSites = async (isRefresh = false) => {
     try {
       if (!isRefresh) setLoading(true);
       else setRefreshing(true);
+
+      if (!isOnline) {
+        await loadSavedSitesAsList();
+        return;
+      }
 
       const token = await SecureStore.getItemAsync("token");
       if (!token) throw new Error("No token found.");
@@ -202,8 +302,11 @@ const OnsiteInspectorMonitoring: React.FC = () => {
       if (!res.ok) throw new Error("Failed to load sites.");
       const data = await res.json();
       setSites(data.data || []);
+      updateSavedSiteSummaries(data.data || []);
     } catch (err: any) {
       console.error("Error fetching sites:", err);
+      // Server unreachable (weak signal): fall back to saved sites
+      await loadSavedSitesAsList();
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -259,6 +362,28 @@ const OnsiteInspectorMonitoring: React.FC = () => {
         </View>
 
         <View style={styles.cardFooter}>
+          {(() => {
+            const saved = !!savedSites[String(item.site_id)];
+            const saving = savingId === item.site_id;
+            return (
+              <TouchableOpacity
+                style={[styles.saveBtn, saved && styles.saveBtnOn]}
+                onPress={() => toggleSaveSite(item)}
+                disabled={saving}
+                hitSlop={6}
+                activeOpacity={0.7}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#0F4A2F" />
+                ) : (
+                  <Ionicons name={saved ? "cloud-done" : "cloud-download-outline"} size={14} color={saved ? "#FFFFFF" : "#0F4A2F"} />
+                )}
+                <Text style={[styles.saveBtnText, saved && { color: "#FFFFFF" }]}>
+                  {saving ? "Saving…" : saved ? "Saved offline" : "Save offline"}
+                </Text>
+              </TouchableOpacity>
+            );
+          })()}
           <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
         </View>
       </TouchableOpacity>
@@ -270,6 +395,31 @@ const OnsiteInspectorMonitoring: React.FC = () => {
       <View style={styles.header}>
         <Text style={styles.headerEyebrow}>Monitoring</Text>
         <Text style={styles.headerTitle}>Site Progress</Text>
+
+        {!isOnline && (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline-outline" size={16} color="#FFFFFF" />
+            <Text style={styles.offlineBannerText}>
+              Offline · showing {Object.keys(savedSites).length} saved site{Object.keys(savedSites).length === 1 ? "" : "s"}
+            </Text>
+          </View>
+        )}
+
+        {queuedCount > 0 && (
+          <View style={styles.queueBanner}>
+            <Ionicons name="cloud-upload-outline" size={18} color="#B45309" />
+            <Text style={styles.queueBannerText}>
+              {queuedCount} report{queuedCount === 1 ? "" : "s"} waiting to upload
+            </Text>
+            <TouchableOpacity
+              style={[styles.syncBtn, (!isOnline || syncing) && { opacity: 0.5 }]}
+              onPress={() => runSync()}
+              disabled={!isOnline || syncing}
+            >
+              {syncing ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.syncBtnText}>{isOnline ? "Sync now" : "No signal"}</Text>}
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={18} color="#9CA3AF" style={styles.searchIcon} />
@@ -369,8 +519,14 @@ const OnsiteInspectorMonitoring: React.FC = () => {
               <View style={styles.emptyIcon}>
                 <Ionicons name="folder-open-outline" size={40} color="#D1D5DB" />
               </View>
-              <Text style={styles.emptyTitle}>No Sites Found</Text>
-              <Text style={styles.emptySubtitle}>{searchText ? `No results for "${searchText}"` : "No sites match the current filters."}</Text>
+              <Text style={styles.emptyTitle}>{!isOnline && !searchText ? "No Saved Sites" : "No Sites Found"}</Text>
+              <Text style={styles.emptySubtitle}>
+                {searchText
+                  ? `No results for "${searchText}"`
+                  : !isOnline
+                    ? "You're offline. Tap “Save offline” on a site while connected to use it here without internet."
+                    : "No sites match the current filters."}
+              </Text>
             </View>
           }
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchSites(true)} tintColor="#3B82F6" />}
@@ -423,7 +579,16 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 14, fontWeight: "700", color: "#374151" },
   statLabel: { fontSize: 10, color: "#9CA3AF", marginTop: 2 },
   statDivider: { width: 1, height: 28, backgroundColor: "#F3F4F6", marginHorizontal: 14 },
-  cardFooter: { alignItems: "flex-end", paddingHorizontal: 14, paddingBottom: 10, marginTop: -4 },
+  cardFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingBottom: 10, marginTop: -2 },
+  saveBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: "#A7F3D0", backgroundColor: "#ECFDF5" },
+  saveBtnOn: { backgroundColor: "#0F4A2F", borderColor: "#0F4A2F" },
+  saveBtnText: { fontSize: 11, fontWeight: "700", color: "#0F4A2F" },
+  offlineBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#4B5563", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 10 },
+  offlineBannerText: { color: "#FFFFFF", fontSize: 12.5, fontWeight: "600" },
+  queueBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#FFFBEB", borderWidth: 1, borderColor: "#FDE68A", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 10 },
+  queueBannerText: { flex: 1, color: "#92400E", fontSize: 12.5, fontWeight: "700" },
+  syncBtn: { backgroundColor: "#D97706", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, minWidth: 80, alignItems: "center" },
+  syncBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 40 },
   loadingText: { marginTop: 12, color: "#9CA3AF", fontSize: 14, fontWeight: "500" },
   emptyState: { alignItems: "center", marginTop: 80, paddingHorizontal: 40 },

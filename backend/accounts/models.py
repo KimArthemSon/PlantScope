@@ -193,3 +193,36 @@ class Notification(models.Model):
     def __str__(self):
         target = self.user.email if self.user else (self.target_role or "System-wide")
         return f"[{self.type}] {self.title} → {target}"
+
+# ─────────────────────────────────────────────
+# PASSWORD RESET (Forgot password codes)
+# ─────────────────────────────────────────────
+class PasswordResetCode(models.Model):
+    """One emailed reset code. Rows are kept so the daily request limit
+    survives server restarts; codes and tokens are stored only as hashes."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='password_reset_codes'
+    )
+    code_hash = models.CharField(max_length=64)
+    # Set once the code is verified; required to actually change the password
+    reset_token_hash = models.CharField(max_length=64, blank=True, default='')
+    failed_attempts = models.PositiveSmallIntegerField(default=0)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    verified_at = models.DateTimeField(null=True, blank=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Password Reset Code"
+        verbose_name_plural = "Password Reset Codes"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"Reset code for {self.user.email} @ {self.created_at}"
