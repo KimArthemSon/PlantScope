@@ -10,6 +10,7 @@ import {
   FlatList,
 } from "react-native";
 import { Check, X } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Option = {
   label: string;
@@ -33,6 +34,7 @@ export default function CustomPicker({
   onSelect,
   onClose,
 }: CustomPickerProps) {
+  const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(300)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -100,6 +102,7 @@ export default function CustomPicker({
           style={[
             styles.modalContent,
             {
+              paddingBottom: insets.bottom,
               transform: [{ translateY: slideAnim }],
               opacity: fadeAnim,
             },

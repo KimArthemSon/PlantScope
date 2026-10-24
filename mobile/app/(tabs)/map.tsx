@@ -17,6 +17,7 @@ import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 import { useAlert, ToastHost } from "@/components/AlertContext";
 
@@ -63,6 +64,9 @@ interface SiteApplication {
 
 export default function MapScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  // Bottom sheets open in a Modal, which draws behind the Android nav bar.
+  const sheetSafeBottom = { paddingBottom: insets.bottom + 24 };
   const webViewRef = useRef<any>(null);
 
   // ✅ Safely get alert context
@@ -592,7 +596,7 @@ export default function MapScreen() {
 
       {/* 🎛️ FILTER BUTTON (Top Right) */}
       <TouchableOpacity
-        style={styles.filterBtn}
+        style={[styles.filterBtn, { top: insets.top + 12 }]}
         onPress={() => setShowFilterPanel(!showFilterPanel)}
         activeOpacity={0.8}
       >
@@ -605,7 +609,7 @@ export default function MapScreen() {
 
       {/* 🎛️ FILTER PANEL (Collapsible) */}
       {showFilterPanel && (
-        <View style={styles.filterPanel}>
+        <View style={[styles.filterPanel, { top: insets.top + 68 }]}>
           <View style={styles.filterPanelHeader}>
             <Text style={styles.filterPanelTitle}>Filters & Navigation</Text>
             <TouchableOpacity onPress={() => setShowFilterPanel(false)}>
@@ -843,7 +847,7 @@ export default function MapScreen() {
           onPress={() => setActiveSheet("none")}
         >
           <Pressable
-            style={styles.sheetContent}
+            style={[styles.sheetContent, sheetSafeBottom]}
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.dragHandle} />
@@ -921,7 +925,7 @@ export default function MapScreen() {
           onPress={() => setActiveSheet("none")}
         >
           <Pressable
-            style={styles.sheetContent}
+            style={[styles.sheetContent, sheetSafeBottom]}
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.dragHandle} />
@@ -990,7 +994,11 @@ export default function MapScreen() {
           onPress={() => setActiveSheet("none")}
         >
           <Pressable
-            style={[styles.sheetContent, { maxHeight: screenHeight * 0.85 }]}
+            style={[
+              styles.sheetContent,
+              sheetSafeBottom,
+              { maxHeight: screenHeight * 0.85 },
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.dragHandle} />
@@ -1132,7 +1140,7 @@ export default function MapScreen() {
           onPress={() => setActiveSheet("none")}
         >
           <Pressable
-            style={styles.sheetContent}
+            style={[styles.sheetContent, sheetSafeBottom]}
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.dragHandle} />

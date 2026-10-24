@@ -15,6 +15,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useFieldAssessment, LocalImage } from "@/hooks/useFieldAssessment";
+import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import {
   saveOfflineDraft,
   updateOfflineDraft,
@@ -25,6 +26,7 @@ import {
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
 import { useAlert, ToastHost } from "@/components/AlertContext";
 import FloodGuide from "@/components/guides/flood";
@@ -80,6 +82,7 @@ function SimpleGeocam({
   ) => void;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [locationPermission, requestLocationPermission] =
     Location.useForegroundPermissions();
@@ -285,7 +288,7 @@ function SimpleGeocam({
   return (
     <View style={cam.root}>
       <CameraView ref={cameraRef} style={cam.camera} facing="back" />
-      <View style={cam.topBar}>
+      <View style={[cam.topBar, { top: insets.top + 12 }]}>
         <TouchableOpacity
           style={cam.iconBtn}
           onPress={onClose}
@@ -326,7 +329,7 @@ function SimpleGeocam({
         <View style={cam.reticleDot} />
       </View>
 
-      <View style={cam.gpsCard}>
+      <View style={[cam.gpsCard, { bottom: 160 + insets.bottom }]}>
         <View style={cam.gpsCardHeader}>
           <View style={cam.gpsCardLeft}>
             <View
@@ -382,7 +385,7 @@ function SimpleGeocam({
         )}
       </View>
 
-      <View style={cam.captureArea}>
+      <View style={[cam.captureArea, { bottom: 28 + insets.bottom }]}>
         <View style={cam.captureButtonsRow}>
           <View style={cam.captureButtonColumn}>
             <TouchableOpacity
@@ -831,6 +834,7 @@ const GPSReadinessBanner: React.FC<{
 
 export default function SafetyForm() {
   const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const areaId = params.areaId as string;
   const assessmentId = params.assessmentId as string | undefined;
@@ -1276,6 +1280,15 @@ export default function SafetyForm() {
     };
   };
 
+  // Prompt before leaving with unsaved edits
+  const { markSaved, leave } = useUnsavedChangesGuard(
+    JSON.stringify([
+      buildPayload(),
+      localImages.map((img) => [img.id, img.description]),
+    ]),
+    { ready: !loading, disabled: isViewMode },
+  );
+
   const handleSaveOffline = async (): Promise<string | null> => {
     // ✅ NEW: Required validation
     if (!title || title.trim() === "") {
@@ -1305,7 +1318,7 @@ export default function SafetyForm() {
           "Updated Offline",
           "Draft updated locally. Will sync when online.",
         );
-        router.back();
+        leave(() => router.back());
         return offlineDraftId;
       }
 
@@ -1326,7 +1339,7 @@ export default function SafetyForm() {
         "Saved Offline",
         "Assessment saved locally. Will sync when online.",
       );
-      router.back();
+      leave(() => router.back());
       return localUuid;
     } catch (e: any) {
       console.error("Error saving offline:", e);
@@ -1376,6 +1389,7 @@ export default function SafetyForm() {
           allImages.filter((img: SafetyImage) => img.layer === "safety_other"),
         );
       }
+      markSaved();
     }
   };
 
@@ -2265,7 +2279,7 @@ export default function SafetyForm() {
       <Modal visible={!!previewImage} transparent animationType="fade">
         <View style={styles.previewModal}>
           <TouchableOpacity
-            style={styles.previewClose}
+            style={[styles.previewClose, { top: insets.top + 12 }]}
             onPress={() => setPreviewImage(null)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >

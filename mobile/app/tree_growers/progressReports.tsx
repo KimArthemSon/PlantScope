@@ -402,7 +402,7 @@ export default function ProgressReportsPage() {
       {/* ── Species Breakdown Modal ── */}
       <Modal visible={showSpeciesModal} animationType="slide" transparent onRequestClose={() => setShowSpeciesModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.speciesModalPanel}>
+          <View style={[styles.speciesModalPanel, { paddingBottom: insets.bottom + 32 }]}>
             <View style={styles.modalHandle} />
             <View style={styles.speciesModalHeader}>
               <View style={styles.speciesModalTitleWrap}>
@@ -478,7 +478,7 @@ export default function ProgressReportsPage() {
       {/* ── Report Detail Modal ─ */}
       <Modal visible={!!selectedReport} animationType="slide" transparent onRequestClose={() => setSelectedReport(null)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalPanel}>
+          <View style={[styles.modalPanel, { paddingBottom: insets.bottom + 32 }]}>
             <View style={styles.modalHandle} />
             {selectedReport && (() => {
               const m = getReportMetrics(selectedReport);

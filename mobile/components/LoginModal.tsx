@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Mail, Lock, Eye, EyeOff, X } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 import { useAlert, ToastHost } from "@/components/AlertContext";
@@ -60,6 +61,7 @@ type LoginModalProps = {
 };
 
 export default function LoginModal({ visible, onClose }: LoginModalProps) {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const alert = useAlert();
 
@@ -272,6 +274,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
           style={[
             styles.modalContent,
             {
+              paddingBottom: insets.bottom,
               transform: [{ translateY: slideAnim }],
               opacity: fadeAnim,
             },
@@ -377,6 +380,17 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
                 </TouchableOpacity>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={styles.forgotLink}
+              onPress={() => {
+                handleClose();
+                router.push("/forgot_password");
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.forgotLinkText}>Forgot password?</Text>
+            </TouchableOpacity>
 
             {lockoutSeconds > 0 ? (
               <View style={styles.lockoutBanner}>
@@ -558,6 +572,8 @@ const styles = StyleSheet.create({
     borderWidth: 0,
   },
   eyeButton: { padding: 6, marginLeft: 4 },
+  forgotLink: { alignSelf: "flex-end", marginTop: -6, marginBottom: 16 },
+  forgotLinkText: { color: "#22C55E", fontSize: 13, fontWeight: "600" },
   submitButton: {
     backgroundColor: "#22C55E",
     borderRadius: 14,

@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 import { ArrowLeft } from "lucide-react-native";
@@ -60,6 +61,7 @@ export default function MulticriteriaLayerForm() {
     }>();
 
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(!!assessmentId);
   const [formData, setFormData] = useState<any>({});
   const [images, setImages] = useState<any[]>([]);
@@ -198,7 +200,7 @@ export default function MulticriteriaLayerForm() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity
           style={styles.backBtnSmall}
           onPress={() => router.back()}
@@ -216,7 +218,10 @@ export default function MulticriteriaLayerForm() {
       </View>
       <ScrollView
         style={styles.content}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingBottom: insets.bottom + 20 },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         {renderLayerForm()}

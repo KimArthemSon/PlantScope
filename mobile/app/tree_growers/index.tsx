@@ -6,13 +6,13 @@ import {
   Text,
   StyleSheet,
   Animated,
-  SafeAreaView,
   Image,
   FlatList,
   Dimensions,
 } from "react-native";
 import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -392,7 +392,7 @@ export default function Home() {
   }, [crossfadeAnim]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <ScrollView
         style={{ paddingHorizontal: 16 }}
         showsVerticalScrollIndicator={false}

@@ -299,7 +299,7 @@ export default function Reapply() {
           onRequestClose={() => setShowDatePicker(false)}
         >
           <View style={modalStyles.overlay}>
-            <View style={modalStyles.container}>
+            <View style={[modalStyles.container, { paddingBottom: insets.bottom + 20 }]}>
               <View style={modalStyles.header}>
                 <Text style={modalStyles.title}>Select Date</Text>
                 <TouchableOpacity onPress={() => setShowDatePicker(false)}>

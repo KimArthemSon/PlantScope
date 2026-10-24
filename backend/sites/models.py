@@ -101,51 +101,54 @@ class Sites(models.Model):
         super().save(*args, **kwargs)
 
     def calculate_area_from_polygon(self) -> float:
-        """
-        ✅ IMPROVED: More robust area calculation with coordinate validation
-        """
-        if not self.polygon_coordinates or len(self.polygon_coordinates) < 3:
-            return 0.0
-        
-        try:
-            coords = [[float(c[0]), float(c[1])] for c in self.polygon_coordinates]
-        except (IndexError, TypeError, ValueError):
-            return 0.0
+        return calculate_polygon_area_hectares(self.polygon_coordinates)
 
-        val1, val2 = coords[0]
 
-        # Expected [lat, lng] (lat ≤ 90, lng ≤ 180); swap if stored as [lng, lat]
-        if abs(val1) <= 90 and abs(val2) <= 180:
-            pass
-        elif abs(val1) <= 180 and abs(val2) <= 90:
-            coords = [[c[1], c[0]] for c in coords]
-        else:
-            return 0.0
-        
-        lat_rad = math.radians(sum(c[0] for c in coords) / len(coords))
-        
-        meters_per_deg_lat = 111132.92 - 559.82 * math.cos(2*lat_rad) + 1.175 * math.cos(4*lat_rad)
-        meters_per_deg_lng = 111412.84 * math.cos(lat_rad) - 93.5 * math.cos(3*lat_rad)
-        
-        local_coords = [
-            (
-                (c[1] - coords[0][1]) * meters_per_deg_lng,
-                (c[0] - coords[0][0]) * meters_per_deg_lat
-            ) 
-            for c in coords
-        ]
-        
-        n = len(local_coords)
-        area_sqm = 0
-        for i in range(n):
-            j = (i + 1) % n
-            area_sqm += local_coords[i][0] * local_coords[j][1]
-            area_sqm -= local_coords[j][0] * local_coords[i][1]
-        
-        area_sqm = abs(area_sqm) / 2
-        area_hectares = area_sqm / 10000
-        
-        return round(area_hectares, 4)
+def calculate_polygon_area_hectares(polygon_coordinates) -> float:
+    """
+    Area in hectares of a polygon given as a list of [lat, lng] points.
+    Shared by Sites and ProgressReport so both use the same formula.
+    """
+    if not polygon_coordinates or len(polygon_coordinates) < 3:
+        return 0.0
+
+    try:
+        coords = [[float(c[0]), float(c[1])] for c in polygon_coordinates]
+    except (IndexError, TypeError, ValueError):
+        return 0.0
+
+    val1, val2 = coords[0]
+
+    # Expected [lat, lng] (lat ≤ 90, lng ≤ 180); swap if stored as [lng, lat]
+    if abs(val1) <= 90 and abs(val2) <= 180:
+        pass
+    elif abs(val1) <= 180 and abs(val2) <= 90:
+        coords = [[c[1], c[0]] for c in coords]
+    else:
+        return 0.0
+
+    lat_rad = math.radians(sum(c[0] for c in coords) / len(coords))
+
+    meters_per_deg_lat = 111132.92 - 559.82 * math.cos(2*lat_rad) + 1.175 * math.cos(4*lat_rad)
+    meters_per_deg_lng = 111412.84 * math.cos(lat_rad) - 93.5 * math.cos(3*lat_rad)
+
+    local_coords = [
+        (
+            (c[1] - coords[0][1]) * meters_per_deg_lng,
+            (c[0] - coords[0][0]) * meters_per_deg_lat
+        )
+        for c in coords
+    ]
+
+    n = len(local_coords)
+    area_sqm = 0
+    for i in range(n):
+        j = (i + 1) % n
+        area_sqm += local_coords[i][0] * local_coords[j][1]
+        area_sqm -= local_coords[j][0] * local_coords[i][1]
+
+    area_sqm = abs(area_sqm) / 2
+    return round(area_sqm / 10000, 4)
 
 
 # ─────────────────────────────────────────────

@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, treegrowers_views, emailviews, notification_views
+from . import views, treegrowers_views, emailviews, notification_views, password_reset_views
 
 urlpatterns = [
     # Basic user management
@@ -22,6 +22,11 @@ urlpatterns = [
     # Email OTP
     path('send_otp/', emailviews.send_otp, name='send_otp'),
     path('verify_otp/', emailviews.verify_otp, name='verify_otp'),
+
+    # Forgot password
+    path('password_reset/request/', password_reset_views.request_reset_code, name='password_reset_request'),
+    path('password_reset/verify/', password_reset_views.verify_reset_code, name='password_reset_verify'),
+    path('password_reset/confirm/', password_reset_views.confirm_password_reset, name='password_reset_confirm'),
 
     # Notifications
     path('notifications/', notification_views.get_notifications, name='get_notifications'),

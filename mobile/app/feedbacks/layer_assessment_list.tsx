@@ -863,7 +863,7 @@ export default function LayerAssessmentList() {
 
       <Modal visible={showFilterModal} transparent animationType="slide">
         <View style={modalStyles.overlay}>
-          <View style={modalStyles.modal}>
+          <View style={[modalStyles.modal, { paddingBottom: insets.bottom + 40 }]}>
             <View style={modalStyles.modalHeader}>
               <Text style={modalStyles.modalTitle}>Filter & Sort</Text>
               <TouchableOpacity onPress={() => setShowFilterModal(false)}>

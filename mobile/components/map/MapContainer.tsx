@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNetworkStatus } from '@/utils/networkStatus';
 import { usePolygonAlerts } from '@/hooks/usePolygonAlerts';
 import FloatingMapButton from '@/components/FloatingMapButton';
@@ -63,6 +64,8 @@ export default function MapContainer({
     };
   }, [visible]);
 
+  const insets = useSafeAreaInsets();
+
   const handleAlertPress = (alert: any) => {
     setSelectedAlert(alert);
     setShowAlertDetails(true);
@@ -81,9 +84,9 @@ export default function MapContainer({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingBottom: insets.bottom }]}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={28} color="#0F4A2F" />
           </TouchableOpacity>
@@ -142,7 +145,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 50,
     paddingBottom: 12,
     backgroundColor: '#fff',
     borderBottomWidth: 1,

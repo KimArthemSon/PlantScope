@@ -13,7 +13,6 @@ import {
   ScrollView,
   Platform,
   Animated,
-  SafeAreaView,
 } from "react-native";
 import {
   Mail,
@@ -1189,7 +1188,7 @@ export default function Signup() {
   const cardMaxHeight = getCardMaxHeight();
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.root}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -1350,7 +1349,7 @@ export default function Signup() {
           hasViewed={hasViewedTerms}
         />
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

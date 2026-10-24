@@ -72,31 +72,29 @@ export default function TabLayout() {
     fetchUserRole();
   }, [isOnline]);
 
-  const shouldHideAllTabs = !isOnline;
+  // Offline: only screens that work without internet stay reachable.
+  //  - Assess (Area + feedbacks forms) saves drafts offline
+  //  - Reports (monitoring) uses sites saved on the phone and queues reports
+  const isOffline = !isOnline;
+  const OFFLINE_PATHS = ["/Area", "/feedbacks", "/monitoring"];
+  const onlineOnlyHref = isOffline ? null : undefined; // null hides the tab
 
   useEffect(() => {
-    if (shouldHideAllTabs && !loading) {
-      if (!pathname.startsWith("/Area") && !pathname.startsWith("/feedbacks")) {
+    if (isOffline && !loading) {
+      if (!OFFLINE_PATHS.some((p) => pathname.startsWith(p))) {
         router.replace("/Area");
       }
       if (!hasShownOfflineAlert) {
         warning(
           "Offline Mode",
-          "You are currently offline. Only Assessment is available.",
+          "You are offline. Assess and Reports (saved sites) are still available.",
         );
         setHasShownOfflineAlert(true);
       }
     } else if (isOnline) {
       setHasShownOfflineAlert(false);
     }
-  }, [
-    shouldHideAllTabs,
-    loading,
-    pathname,
-    hasShownOfflineAlert,
-    isOnline,
-    warning,
-  ]);
+  }, [isOffline, loading, pathname, hasShownOfflineAlert, isOnline, warning]);
 
   if (loading) {
     return (
@@ -120,7 +118,6 @@ export default function TabLayout() {
         screenOptions={{
           headerShown: false,
           tabBarStyle: {
-            display: shouldHideAllTabs ? "none" : "flex",
             // ✅ PROPER HEIGHT CALCULATION WITH SAFE AREA
             height: 60 + (insets.bottom > 0 ? insets.bottom : 0),
             backgroundColor: "#FFFFFF",
@@ -153,6 +150,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="home"
           options={{
+            href: onlineOnlyHref,
             tabBarIcon: ({ color, focused }) => (
               <Ionicons
                 name={focused ? "home" : "home-outline"}
@@ -180,6 +178,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="delivery"
           options={{
+            href: onlineOnlyHref,
             tabBarIcon: ({ color, focused }) => (
               <MaterialCommunityIcons
                 name={focused ? "truck-delivery" : "truck-delivery-outline"}
@@ -208,6 +207,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="profile"
           options={{
+            href: onlineOnlyHref,
             tabBarIcon: ({ color, focused }) => (
               <Ionicons
                 name={focused ? "person" : "person-outline"}

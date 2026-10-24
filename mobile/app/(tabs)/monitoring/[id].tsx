@@ -22,6 +22,24 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 import { useAlert } from "@/components/AlertContext";
+import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
+import PlantedAreaCapture, { PlantedAreaPoint, MIN_AREA_POINTS } from "@/components/forms/PlantedAreaCapture";
+import ReportPolygonMapModal from "@/components/forms/ReportPolygonMapModal";
+import { useNetworkStatus, checkNetworkStatus } from "@/utils/networkStatus";
+import {
+  getSavedSite,
+  saveSiteOffline,
+  removeSavedSite,
+  updateSavedSiteDetail,
+  cacheTreeSpecies,
+  getCachedTreeSpecies,
+  getQueuedReports,
+  queueReport,
+  removeQueuedReport,
+  syncQueuedReports,
+  buildReportFormData,
+  QueuedReport,
+} from "@/utils/offlineMonitoring";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -63,6 +81,18 @@ interface SiteProgressReport {
   proof_image: string | null;
   submitted_at: string | null;
   created_at: string;
+  polygon_coordinates: [number, number][] | null;
+  planted_area_hectares: number | null;
+  review_stage: "data_manager" | "gis_specialist" | "done";
+  dm_review: ReviewStep;
+  gis_review: ReviewStep;
+}
+
+interface ReviewStep {
+  status: "pending" | "approved" | "changes_requested" | "not_required";
+  notes: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
 }
 
 interface SiteMonitoringDetail {
@@ -71,6 +101,8 @@ interface SiteMonitoringDetail {
     name: string;
     description: string | null;
     total_area_hectares: number;
+    polygon_coordinates: [number, number][] | null;
+    reforestation_area_id: number | null;
     reforestation_area_name: string | null;
     barangay_name: string | null;
     accessibility: any;
@@ -87,6 +119,8 @@ interface SiteMonitoringDetail {
     total_dead: number;
     total_survived: number;
     survival_rate: number;
+    planted_area_hectares: number | null;
+    planted_area_percent: number | null;
   };
   total_seedlings_provided: number;
   seedling_requests_breakdown: Array<{
@@ -241,6 +275,25 @@ const StepTitle = ({ n, title, done, optional }: { n: number; title: string; don
   </View>
 );
 
+const REVIEW_LOOK: Record<ReviewStep["status"], { icon: keyof typeof Ionicons.glyphMap; color: string; label: string }> = {
+  pending: { icon: "time-outline", color: WARNING, label: "Waiting" },
+  approved: { icon: "checkmark-circle", color: SUCCESS, label: "Approved" },
+  changes_requested: { icon: "close-circle", color: DANGER, label: "Changes requested" },
+  not_required: { icon: "remove-circle-outline", color: FAINT, label: "Not required" },
+};
+
+const ReviewStepRow = ({ n, label, step, active }: { n: number; label: string; step?: ReviewStep; active?: boolean }) => {
+  const look = REVIEW_LOOK[step?.status || "pending"];
+  return (
+    <View style={[styles.reviewRow, active && { borderColor: look.color }]}>
+      <Text style={styles.reviewRowNum}>{n}</Text>
+      <Text style={styles.reviewRowLabel}>{label}</Text>
+      <Ionicons name={look.icon} size={15} color={look.color} />
+      <Text style={[styles.reviewRowStatus, { color: look.color }]}>{active ? "In review" : look.label}</Text>
+    </View>
+  );
+};
+
 const CountInput = ({ label, value, onChange, danger }: { label: string; value: string; onChange: (v: string) => void; danger?: boolean }) => (
   <View style={{ flex: 1 }}>
     <Text style={[styles.inputLabel, danger && { color: DANGER }]}>{label}</Text>
@@ -326,7 +379,7 @@ export default function SiteMonitoringDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id, site_id } = useLocalSearchParams<{ id?: string; site_id?: string }>();
   const currentSiteId = id || site_id;
-  const { success, error: showError, warning } = useAlert();
+  const { success, error: showError, warning, confirm } = useAlert();
 
   const [detail, setDetail] = useState<SiteMonitoringDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -354,7 +407,17 @@ export default function SiteMonitoringDetailScreen() {
 
   const [description, setDescription] = useState("");
   const [proofImage, setProofImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
-  
+  const [areaPoints, setAreaPoints] = useState<PlantedAreaPoint[]>([]);
+  const [mapReport, setMapReport] = useState<SiteProgressReport | null>(null);
+
+  // Offline
+  const isOnline = useNetworkStatus();
+  const [offlineCopyAt, setOfflineCopyAt] = useState<string | null>(null); // set when showing the saved copy
+  const [isSavedOffline, setIsSavedOffline] = useState(false);
+  const [savingOffline, setSavingOffline] = useState(false);
+  const [queuedReport, setQueuedReport] = useState<QueuedReport | null>(null);
+  const [syncingQueue, setSyncingQueue] = useState(false);
+
   const [speciesWithWarnings, setSpeciesWithWarnings] = useState<number[]>([]);
 
   const hasActiveApplication = !!detail?.current_application;
@@ -442,16 +505,28 @@ export default function SiteMonitoringDetailScreen() {
     }
 
     if (!isRefresh) setLoading(true);
+    refreshOfflineState();
     try {
-      const token = await SecureStore.getItemAsync("token");
-      if (!token) throw new Error("No authentication token found.");
+      let data: any;
+      try {
+        if (!(await checkNetworkStatus())) throw new Error("offline");
+        const token = await SecureStore.getItemAsync("token");
+        if (!token) throw new Error("No authentication token found.");
 
-      const res = await fetch(`${api}/api/get_site_monitoring_details/${currentSiteId}/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Failed to load site details.");
-
-      const data = await res.json();
+        const res = await fetch(`${api}/api/get_site_monitoring_details/${currentSiteId}/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Failed to load site details.");
+        data = await res.json();
+        setOfflineCopyAt(null);
+        updateSavedSiteDetail(Number(currentSiteId), data); // keep the offline copy fresh
+      } catch (loadErr) {
+        // No signal or server unreachable: use the copy saved on the phone
+        const saved = await getSavedSite(currentSiteId);
+        if (!saved) throw loadErr instanceof Error && loadErr.message !== "offline" ? loadErr : new Error("You're offline and this site isn't saved on your phone.");
+        data = saved.detail;
+        setOfflineCopyAt(saved.saved_at);
+      }
       setDetail(data);
 
       const siteHasInitial = data.progress_reports.some(
@@ -491,11 +566,77 @@ export default function SiteMonitoringDetailScreen() {
       const res = await fetch(`${api}/api/get_tree_species_list/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) setAllTreeSpecies(await res.json());
-    } catch (err) {
-      console.error("Failed to fetch tree species", err);
+      if (!res.ok) throw new Error("Failed to load species");
+      const list = await res.json();
+      setAllTreeSpecies(list);
+      cacheTreeSpecies(list);
+    } catch {
+      setAllTreeSpecies(await getCachedTreeSpecies());
     }
   };
+
+  const refreshOfflineState = async () => {
+    if (!currentSiteId) return;
+    setIsSavedOffline(!!(await getSavedSite(currentSiteId)));
+    const queue = await getQueuedReports();
+    setQueuedReport(queue.find((q) => String(q.site_id) === String(currentSiteId)) ?? null);
+  };
+
+  const toggleSaveOffline = async () => {
+    if (!detail) return;
+    if (isSavedOffline) {
+      await removeSavedSite(detail.site.site_id);
+      setIsSavedOffline(false);
+      success("Offline copy removed", "This site now needs internet to open.");
+      return;
+    }
+    if (!isOnline) return warning("You're offline", "Connect to the internet to save this site.");
+    setSavingOffline(true);
+    try {
+      await saveSiteOffline(detail.site.site_id);
+      setIsSavedOffline(true);
+      success("Saved for offline", "You can open this site and fill in a report without internet.");
+    } catch (err: any) {
+      showError("Couldn't save site", err.message || "Try again with a better connection.");
+    } finally {
+      setSavingOffline(false);
+    }
+  };
+
+  const handleSyncQueued = async () => {
+    setSyncingQueue(true);
+    try {
+      const { uploaded } = await syncQueuedReports();
+      await refreshOfflineState();
+      if (uploaded > 0) {
+        success("Report uploaded", "It's now waiting for Data Manager review.");
+        fetchDetail(true);
+      } else {
+        const q = (await getQueuedReports()).find((r) => String(r.site_id) === String(currentSiteId));
+        if (q?.last_error) showError("Upload failed", q.last_error, 6000);
+      }
+    } finally {
+      setSyncingQueue(false);
+    }
+  };
+
+  const discardQueued = () => {
+    if (!queuedReport) return;
+    confirm(
+      "Delete offline report?",
+      "This report hasn't been uploaded. Deleting it can't be undone.",
+      async () => {
+        await removeQueuedReport(queuedReport.local_id);
+        refreshOfflineState();
+      },
+      { type: "error", confirmText: "Delete", cancelText: "Cancel" }
+    );
+  };
+
+  // Back online with a queued report for this site → upload it
+  useEffect(() => {
+    if (isOnline && queuedReport && !syncingQueue) handleSyncQueued();
+  }, [isOnline]);
 
   useEffect(() => {
     fetchDetail();
@@ -520,6 +661,38 @@ export default function SiteMonitoringDetailScreen() {
       }
     } catch (err) {
       showError("Photo error", "Something went wrong selecting the image.");
+    }
+  };
+
+  // A report sent back for changes isn't thrown away: copy its species counts,
+  // remarks and planted-area corners into the form so the inspector only fixes what was flagged.
+  const loadReportForResubmit = (report: SiteProgressReport) => {
+    const allowPlanted = visitType === "initial" && !hasExistingSiteInitialReport;
+    const allowAdded = visitType === "ongoing" || (visitType === "initial" && hasExistingSiteInitialReport);
+    let dropped = false;
+
+    const species: ReportSpeciesItem[] = report.species.map((sp) => {
+      const planted = allowPlanted ? sp.no_planted || 0 : 0;
+      const added = allowAdded ? sp.no_added_by_grower || 0 : 0;
+      if (planted !== (sp.no_planted || 0) || added !== (sp.no_added_by_grower || 0)) dropped = true;
+      return { tree_species_id: sp.species_id, species_name: sp.species_name, no_planted: planted, no_added_by_grower: added, no_dead: sp.no_dead || 0 };
+    });
+
+    setReportSpeciesList(species);
+    setDescription(report.description || "");
+    setAreaPoints(
+      (report.polygon_coordinates || []).map(([lat, lng], i) => ({ id: `prev-${report.report_id}-${i}`, latitude: Number(lat), longitude: Number(lng) }))
+    );
+    setSelectedSpeciesId("");
+    setTempPlanted("");
+    setTempAdded("");
+    setTempDead("");
+    setShowHistoryModal(false);
+
+    if (dropped) {
+      warning("Some counts not copied", "This visit type records different counts. Re-check the species entries.", 6000);
+    } else {
+      success("Previous report loaded", "Fix what was requested, then re-attach the photos and submit.", 5000);
     }
   };
 
@@ -577,13 +750,16 @@ export default function SiteMonitoringDetailScreen() {
     setTempDead("");
   };
 
-  const handleSubmitReport = async () => {
+  // saveOffline = true keeps the report on the phone instead of uploading now
+  const handleSubmitReport = async (saveOffline = false) => {
     if (!detail) return;
     if (reportSpeciesList.length === 0) return warning("No species added", "Add at least one species to the report.");
     if (visitType === "initial" && !orientationConducted) return warning("Orientation not confirmed", "Tick the box confirming the orientation was conducted.");
     if (visitType === "initial" && !agreementImage) return warning("Agreement photo missing", "Attach a photo of the signed agreement.");
     if (!proofImage) return warning("Site photo missing", "Attach a proof photo of the site for this visit.");
-    
+    if (areaPoints.length < MIN_AREA_POINTS)
+      return warning("Planted area missing", `Mark at least ${MIN_AREA_POINTS} corners of the planted area.`);
+
     if (speciesWithWarnings.length > 0) {
       return showError(
         "Can't submit yet",
@@ -592,44 +768,8 @@ export default function SiteMonitoringDetailScreen() {
       );
     }
 
-    setSubmitting(true);
-    try {
-      const token = await SecureStore.getItemAsync("token");
-      const formData = new FormData();
-
-      formData.append("site_id", String(detail.site.site_id));
-      if (detail.current_application) formData.append("application_id", String(detail.current_application.application_id));
-      formData.append("visit_type", visitType);
-      formData.append("orientation_conducted", String(orientationConducted));
-
-      const formattedSpecies = reportSpeciesList.map((sp) => ({
-        tree_species_id: sp.tree_species_id,
-        no_planted: sp.no_planted,
-        no_added_by_grower: sp.no_added_by_grower,
-        no_survived: 0,
-        no_dead: sp.no_dead,
-      }));
-
-      formData.append("report_species", JSON.stringify(formattedSpecies));
-      formData.append("description", description);
-
-      if (visitType === "initial" && agreementImage) {
-        const filename = agreementImage.uri.split("/").pop();
-        formData.append("agreement_image", { uri: agreementImage.uri, name: filename || "agreement.jpg", type: "image/jpeg" } as any);
-      }
-
-      const proofFilename = proofImage.uri.split("/").pop();
-      formData.append("proof_image", { uri: proofImage.uri, name: proofFilename || "proof.jpg", type: "image/jpeg" } as any);
-
-      const res = await fetch(`${api}/api/create_progress_report/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Submission failed.");
-
-      success("Report submitted", "It's now pending Data Manager review.");
+    const resetForm = () => {
+      setAreaPoints([]);
       setReportSpeciesList([]);
       setDescription("");
       setProofImage(null);
@@ -640,6 +780,72 @@ export default function SiteMonitoringDetailScreen() {
       setTempDead("");
       setSelectedSpeciesId("");
       setSpeciesWithWarnings([]);
+    };
+
+    const report: Omit<QueuedReport, "local_id" | "created_at"> = {
+      site_id: detail.site.site_id,
+      site_name: detail.site.name,
+      fields: {
+        application_id: detail.current_application?.application_id ?? null,
+        visit_type: visitType,
+        orientation_conducted: orientationConducted,
+        report_species: reportSpeciesList.map((sp) => ({
+          tree_species_id: sp.tree_species_id,
+          no_planted: sp.no_planted,
+          no_added_by_grower: sp.no_added_by_grower,
+          no_survived: 0,
+          no_dead: sp.no_dead,
+        })),
+        description,
+        polygon_coordinates: areaPoints.map((p) => [p.latitude, p.longitude]),
+      },
+      proof_image_uri: proofImage.uri,
+      agreement_image_uri: visitType === "initial" && agreementImage ? agreementImage.uri : null,
+    };
+
+    const saveToQueue = async (reason: string) => {
+      try {
+        await queueReport(report);
+      } catch (err: any) {
+        showError("Couldn't save on your phone", err?.message || "Check your phone's free storage and try again.");
+        return;
+      }
+      resetForm();
+      await refreshOfflineState();
+      success("Saved offline", `${reason}It will upload automatically when you're back online.`, 6000);
+    };
+
+    setSubmitting(true);
+    try {
+      if (saveOffline || !(await checkNetworkStatus())) {
+        await saveToQueue(saveOffline ? "" : "You're offline. ");
+        return;
+      }
+
+      const token = await SecureStore.getItemAsync("token");
+      let res: Response;
+      // Weak signal can make an upload hang forever; give up after 60s and keep the report
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 60000);
+      try {
+        res = await fetch(`${api}/api/create_progress_report/`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: buildReportFormData({ ...report, local_id: "", created_at: "" }),
+          signal: controller.signal,
+        });
+      } catch {
+        // No connection / signal dropped mid-upload: don't lose the inspector's work
+        await saveToQueue("The connection is too weak to upload. ");
+        return;
+      } finally {
+        clearTimeout(timer);
+      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Submission failed.");
+
+      success("Report submitted", "It will be reviewed by the Data Manager, then the GIS Specialist.");
+      resetForm();
       fetchDetail(true);
     } catch (err: any) {
       showError("Submission failed", err.message || "Failed to submit report.");
@@ -667,7 +873,27 @@ export default function SiteMonitoringDetailScreen() {
   const survivalColor = survival >= 80 ? SUCCESS : survival >= 50 ? WARNING : DANGER;
   const breakdownMax = Math.max(1, ...(seedling_requests_breakdown || []).map((b) => b.total_requested));
   const lastReport = progress_reports.find((r) => r.status === "accepted");
-  const canSubmit = !submitting && reportSpeciesList.length > 0 && !!proofImage && !hasBlockingErrors;
+  const hasArea = areaPoints.length >= MIN_AREA_POINTS;
+  const canSubmit = !submitting && reportSpeciesList.length > 0 && !!proofImage && hasArea && !hasBlockingErrors;
+
+  // Most recent report sent back for changes, so the inspector can see why
+  const latestReport = progress_reports[0];
+  const changesRequested =
+    latestReport && latestReport.status === "rejected"
+      ? latestReport.gis_review?.status === "changes_requested"
+        ? { by: "GIS Specialist", notes: latestReport.gis_review.notes }
+        : { by: "Data Manager", notes: latestReport.dm_review?.notes }
+      : null;
+
+  const mapPoints: MapPoint[] = areaPoints.map((p, i) => ({
+    id: `area-${p.id}`,
+    type: "polygon_vertex",
+    latitude: p.latitude,
+    longitude: p.longitude,
+    label: `Corner ${i + 1}`,
+    accuracy: p.accuracy,
+    description: "Planted area corner",
+  }));
 
   const visitMeta = {
     initial: { label: "Initial Orientation", sub: "Baseline planting + signed agreement", icon: "calendar" as const, color: PRIMARY, bg: "#ECFDF5" },
@@ -678,8 +904,9 @@ export default function SiteMonitoringDetailScreen() {
   // Step numbers shift when the agreement step is shown
   const showAgreementStep = visitType === "initial" && hasActiveApplication;
   const stepSpecies = showAgreementStep ? 2 : 1;
-  const stepRemarks = stepSpecies + 1;
-  const stepPhoto = stepSpecies + 2;
+  const stepArea = stepSpecies + 1;
+  const stepRemarks = stepSpecies + 2;
+  const stepPhoto = stepSpecies + 3;
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.container}>
@@ -695,8 +922,27 @@ export default function SiteMonitoringDetailScreen() {
             <TouchableOpacity style={styles.heroBack} onPress={() => router.replace("/(tabs)/monitoring")}>
               <Ionicons name="chevron-back" size={20} color={WHITE} />
             </TouchableOpacity>
-            <StatusBadge status={programStatus} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <TouchableOpacity style={[styles.heroSave, isSavedOffline && styles.heroSaveOn]} onPress={toggleSaveOffline} disabled={savingOffline} activeOpacity={0.8}>
+                {savingOffline ? (
+                  <ActivityIndicator size="small" color={WHITE} />
+                ) : (
+                  <Ionicons name={isSavedOffline ? "cloud-done" : "cloud-download-outline"} size={14} color={isSavedOffline ? PRIMARY : WHITE} />
+                )}
+                <Text style={[styles.heroSaveText, isSavedOffline && { color: PRIMARY }]}>{isSavedOffline ? "Saved" : "Save offline"}</Text>
+              </TouchableOpacity>
+              <StatusBadge status={programStatus} />
+            </View>
           </View>
+
+          {offlineCopyAt && (
+            <View style={styles.offlineCopyBanner}>
+              <Ionicons name="cloud-offline-outline" size={14} color={WHITE} />
+              <Text style={styles.offlineCopyText}>
+                Offline copy from {new Date(offlineCopyAt).toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              </Text>
+            </View>
+          )}
 
           <Text style={styles.heroEyebrow}>Site Monitoring</Text>
           <Text style={styles.heroTitle} numberOfLines={2}>{site.name}</Text>
@@ -713,6 +959,12 @@ export default function SiteMonitoringDetailScreen() {
               <Ionicons name="resize-outline" size={13} color={WHITE} />
               <Text style={styles.heroChipText}>{site.total_area_hectares.toFixed(2)} ha</Text>
             </View>
+            {metrics.planted_area_hectares != null && (
+              <View style={styles.heroChip}>
+                <MaterialCommunityIcons name="vector-polygon" size={13} color={WHITE} />
+                <Text style={styles.heroChipText}>{metrics.planted_area_hectares.toFixed(2)} ha planted</Text>
+              </View>
+            )}
             <View style={styles.heroChip}>
               <Ionicons name="document-text-outline" size={13} color={WHITE} />
               <Text style={styles.heroChipText}>{progress_reports.length} reports</Text>
@@ -732,7 +984,16 @@ export default function SiteMonitoringDetailScreen() {
             <CardTitle icon="information-circle-outline" title="Site Details" />
             <View style={styles.tileGrid}>
               <InfoTile icon="business-outline" label="Area" value={site.reforestation_area_name || "Unknown"} sub={site.barangay_name ? `Brgy. ${site.barangay_name}` : undefined} />
-              <InfoTile icon="resize-outline" label="Total Area" value={`${site.total_area_hectares.toFixed(2)} ha`} />
+              <InfoTile
+                icon="resize-outline"
+                label="Total Area"
+                value={`${site.total_area_hectares.toFixed(2)} ha`}
+                sub={
+                  metrics.planted_area_hectares != null
+                    ? `${metrics.planted_area_hectares.toFixed(2)} ha planted${metrics.planted_area_percent != null ? ` (${metrics.planted_area_percent}%)` : ""}`
+                    : "Planted area not yet confirmed"
+                }
+              />
               <InfoTile icon="layers-outline" label="Land Class" value={site.land_classification_name || "Not classified"} />
               <InfoTile icon="car-outline" label="Accessibility" value={getAccessibilityText(site.accessibility)} />
             </View>
@@ -781,6 +1042,28 @@ export default function SiteMonitoringDetailScreen() {
               <MetricTile icon="close-circle-outline" label="Dead" value={metrics.total_dead} color="#B91C1C" bg="#FEF2F2" />
               <MetricTile icon="check-circle-outline" label="Survived" value={metrics.total_survived} color={SUCCESS} bg="#F0FDF4" />
             </View>
+
+            <View style={styles.areaMetric}>
+              <View style={styles.areaMetricIcon}>
+                <MaterialCommunityIcons name="vector-polygon" size={20} color="#0F766E" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.metricLabel}>Total Area Planted</Text>
+                <Text style={styles.areaMetricValue}>
+                  {metrics.planted_area_hectares != null ? `${metrics.planted_area_hectares.toFixed(2)} ha` : "—"}
+                </Text>
+                <Text style={styles.areaMetricSub}>
+                  {metrics.planted_area_hectares != null
+                    ? `${metrics.planted_area_percent != null ? `${metrics.planted_area_percent}% of ${site.total_area_hectares.toFixed(2)} ha site · ` : ""}from latest confirmed map`
+                    : "No confirmed planted-area map yet"}
+                </Text>
+              </View>
+            </View>
+            {metrics.planted_area_percent != null && (
+              <View style={[styles.progressTrack, { marginTop: 8 }]}>
+                <View style={[styles.progressFill, { width: `${Math.min(100, metrics.planted_area_percent)}%`, backgroundColor: "#14B8A6" }]} />
+              </View>
+            )}
 
             <View style={styles.survivalWrap}>
               <View style={styles.survivalHead}>
@@ -842,9 +1125,38 @@ export default function SiteMonitoringDetailScreen() {
           </View>
 
           {/* ── Report section ───────────────────────────────── */}
-          <Text style={styles.blockTitle}>{hasPendingReport ? "Pending Report" : "Submit New Report"}</Text>
+          <Text style={styles.blockTitle}>{queuedReport ? "Waiting to Upload" : hasPendingReport ? "Pending Report" : "Submit New Report"}</Text>
 
-          {hasPendingReport && pendingReport ? (
+          {queuedReport ? (
+            <View style={styles.queuedBox}>
+              <View style={[styles.pendingAlertIcon, { backgroundColor: "#DBEAFE" }]}>
+                <Ionicons name="cloud-upload-outline" size={28} color={INFO} />
+              </View>
+              <Text style={[styles.pendingAlertTitle, { color: INFO }]}>Saved on your phone</Text>
+              <Text style={styles.pendingAlertText}>
+                Report from {formatDate(queuedReport.created_at)} hasn't been uploaded yet.{" "}
+                {isOnline ? "Tap Upload now to send it." : "It will upload when you're back online."}
+              </Text>
+              {queuedReport.last_error && (
+                <Text style={styles.queuedError}>Last upload failed: {queuedReport.last_error}</Text>
+              )}
+              <View style={[styles.changesActions, { alignSelf: "stretch" }]}>
+                <TouchableOpacity style={styles.changesBtn} onPress={discardQueued} activeOpacity={0.8}>
+                  <Ionicons name="trash-outline" size={15} color={DANGER} />
+                  <Text style={[styles.changesBtnText, { color: DANGER }]}>Delete</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.changesBtn, styles.changesBtnPrimary, (!isOnline || syncingQueue) && { opacity: 0.5 }]}
+                  onPress={handleSyncQueued}
+                  disabled={!isOnline || syncingQueue}
+                  activeOpacity={0.8}
+                >
+                  {syncingQueue ? <ActivityIndicator size="small" color={WHITE} /> : <Ionicons name="cloud-upload" size={15} color={WHITE} />}
+                  <Text style={[styles.changesBtnText, { color: WHITE }]}>{isOnline ? "Upload now" : "No signal"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : hasPendingReport && pendingReport ? (
             <View style={styles.pendingAlertBox}>
               <View style={styles.pendingAlertIcon}>
                 <Ionicons name="hourglass-outline" size={28} color={WARNING} />
@@ -857,12 +1169,41 @@ export default function SiteMonitoringDetailScreen() {
                 </Text>{" "}
                 report on {formatDate(pendingReport.submitted_at)}.
               </Text>
+              <View style={styles.reviewSteps}>
+                <ReviewStepRow n={1} label="Data Manager" step={pendingReport.dm_review} active={pendingReport.review_stage === "data_manager"} />
+                <ReviewStepRow n={2} label="GIS Specialist (map)" step={pendingReport.gis_review} active={pendingReport.review_stage === "gis_specialist"} />
+              </View>
               <Text style={styles.pendingAlertFooter}>
-                Please wait for the Data Manager to review it before submitting a new one.
+                {pendingReport.review_stage === "gis_specialist"
+                  ? "Approved by the Data Manager. Waiting for the GIS Specialist to confirm the planted area."
+                  : "Please wait for the Data Manager to review it before submitting a new one."}
               </Text>
             </View>
           ) : (
             <>
+              {changesRequested && (
+                <View style={styles.changesBox}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <Ionicons name="return-down-back" size={18} color={DANGER} />
+                    <Text style={styles.changesTitle}>Changes requested by {changesRequested.by}</Text>
+                  </View>
+                  <Text style={styles.changesNotes}>{changesRequested.notes || "No note was given."}</Text>
+                  <View style={styles.changesActions}>
+                    <TouchableOpacity style={[styles.changesBtn, styles.changesBtnPrimary]} onPress={() => loadReportForResubmit(latestReport)} activeOpacity={0.8}>
+                      <Ionicons name="create-outline" size={15} color={WHITE} />
+                      <Text style={[styles.changesBtnText, { color: WHITE }]}>Edit & Resubmit</Text>
+                    </TouchableOpacity>
+                    {(latestReport.polygon_coordinates?.length ?? 0) >= 3 && (
+                      <TouchableOpacity style={styles.changesBtn} onPress={() => setMapReport(latestReport)} activeOpacity={0.8}>
+                        <Ionicons name="map-outline" size={15} color={PRIMARY} />
+                        <Text style={styles.changesBtnText}>View Map</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <Text style={styles.changesFooter}>Edit & Resubmit fills the form below with this report's data. Photos need to be attached again.</Text>
+                </View>
+              )}
+
               {/* Visit type */}
               <View style={[styles.visitBanner, { backgroundColor: visitMeta.bg, borderColor: `${visitMeta.color}33` }]}>
                 <View style={[styles.visitIcon, { backgroundColor: visitMeta.color }]}>
@@ -993,6 +1334,12 @@ export default function SiteMonitoringDetailScreen() {
                 )}
               </View>
 
+              {/* Step: Planted area boundary */}
+              <View style={styles.stepCard}>
+                <StepTitle n={stepArea} title="Planted Area Boundary" done={hasArea} />
+                <PlantedAreaCapture points={areaPoints} onChange={setAreaPoints} siteAreaHectares={site.total_area_hectares || undefined} />
+              </View>
+
               {/* Step: Remarks */}
               <View style={styles.stepCard}>
                 <StepTitle n={stepRemarks} title="Remarks" optional done={description.trim().length > 0} />
@@ -1021,8 +1368,8 @@ export default function SiteMonitoringDetailScreen() {
               </View>
 
               <TouchableOpacity
-                style={[styles.submitBtn, !canSubmit && { opacity: 0.55 }]}
-                onPress={handleSubmitReport}
+                style={[styles.submitBtn, !isOnline && styles.submitBtnOffline, !canSubmit && { opacity: 0.55 }]}
+                onPress={() => handleSubmitReport(!isOnline)}
                 disabled={!canSubmit}
                 activeOpacity={0.85}
               >
@@ -1030,14 +1377,36 @@ export default function SiteMonitoringDetailScreen() {
                   <ActivityIndicator size="small" color={WHITE} />
                 ) : (
                   <>
-                    <Ionicons name={hasBlockingErrors ? "warning" : "paper-plane"} size={18} color={WHITE} />
-                    <Text style={styles.submitBtnText}>{hasBlockingErrors ? "Fix Errors Before Submitting" : "Submit Report"}</Text>
+                    <Ionicons name={hasBlockingErrors ? "warning" : isOnline ? "paper-plane" : "save"} size={18} color={WHITE} />
+                    <Text style={styles.submitBtnText}>
+                      {hasBlockingErrors ? "Fix Errors Before Submitting" : isOnline ? "Submit Report" : "Save Offline"}
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
+
+              {!isOnline && (
+                <Text style={styles.submitHint}>
+                  You're offline. The report and photos are kept on your phone and upload automatically when you're back online.
+                </Text>
+              )}
+
+              {/* Weak signal in the field: let the inspector choose to keep it on the phone */}
+              {isOnline && canSubmit && (
+                <TouchableOpacity style={styles.saveOfflineLink} onPress={() => handleSubmitReport(true)} disabled={submitting} activeOpacity={0.7}>
+                  <Ionicons name="save-outline" size={15} color={PRIMARY} />
+                  <Text style={styles.saveOfflineLinkText}>Weak signal? Save offline and upload later</Text>
+                </TouchableOpacity>
+              )}
+
               {!canSubmit && !submitting && !hasBlockingErrors && (
                 <Text style={styles.submitHint}>
-                  {reportSpeciesList.length === 0 ? "Add at least one species" : "Attach a site photo"} to submit.
+                  {reportSpeciesList.length === 0
+                    ? "Add at least one species"
+                    : !hasArea
+                      ? `Mark at least ${MIN_AREA_POINTS} corners of the planted area`
+                      : "Attach a site photo"}{" "}
+                  to {isOnline ? "submit" : "save"}.
                 </Text>
               )}
             </>
@@ -1048,7 +1417,7 @@ export default function SiteMonitoringDetailScreen() {
       {/* SPECIES BREAKDOWN MODAL */}
       <Modal visible={showSpeciesModal} animationType="slide" transparent={true} onRequestClose={() => setShowSpeciesModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + 32 }]}>
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Lifetime Species Breakdown</Text>
@@ -1093,7 +1462,7 @@ export default function SiteMonitoringDetailScreen() {
       {/* REPORT HISTORY MODAL */}
       <Modal visible={showHistoryModal} animationType="slide" transparent={true} onRequestClose={() => setShowHistoryModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + 32 }]}>
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Report History</Text>
@@ -1162,10 +1531,48 @@ export default function SiteMonitoringDetailScreen() {
                         </View>
                       )}
 
+                      {report.planted_area_hectares != null && (
+                        <View style={styles.reportDescBox}>
+                          <MaterialCommunityIcons name="vector-polygon" size={13} color={MUTED} />
+                          <Text style={styles.reportDesc}>
+                            Planted area: {report.planted_area_hectares.toFixed(4)} ha ({report.polygon_coordinates?.length || 0} points)
+                          </Text>
+                        </View>
+                      )}
+
                       {report.description && (
                         <View style={styles.reportDescBox}>
                           <Ionicons name="chatbox-ellipses-outline" size={13} color={MUTED} />
                           <Text style={styles.reportDesc}>{report.description}</Text>
+                        </View>
+                      )}
+
+                      {[
+                        { by: "Data Manager", step: report.dm_review },
+                        { by: "GIS Specialist", step: report.gis_review },
+                      ]
+                        .filter((r) => r.step?.status === "changes_requested")
+                        .map((r) => (
+                          <View key={r.by} style={styles.reportReviewNote}>
+                            <Text style={styles.reportReviewNoteTitle}>Changes requested · {r.by}</Text>
+                            <Text style={styles.reportReviewNoteText}>{r.step.notes || "No note given."}</Text>
+                          </View>
+                        ))}
+
+                      {((report.polygon_coordinates?.length ?? 0) >= 3 || (report.status === "rejected" && report.report_id === latestReport?.report_id && !hasPendingReport)) && (
+                        <View style={styles.changesActions}>
+                          {(report.polygon_coordinates?.length ?? 0) >= 3 && (
+                            <TouchableOpacity style={styles.changesBtn} onPress={() => setMapReport(report)} activeOpacity={0.8}>
+                              <Ionicons name="map-outline" size={15} color={PRIMARY} />
+                              <Text style={styles.changesBtnText}>View on Map</Text>
+                            </TouchableOpacity>
+                          )}
+                          {report.status === "rejected" && report.report_id === latestReport?.report_id && !hasPendingReport && (
+                            <TouchableOpacity style={[styles.changesBtn, styles.changesBtnPrimary]} onPress={() => loadReportForResubmit(report)} activeOpacity={0.8}>
+                              <Ionicons name="create-outline" size={15} color={WHITE} />
+                              <Text style={[styles.changesBtnText, { color: WHITE }]}>Edit & Resubmit</Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
                       )}
                     </View>
@@ -1176,6 +1583,29 @@ export default function SiteMonitoringDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Map of one report's planted-area polygon (opened from history or the changes banner) */}
+      <ReportPolygonMapModal
+        visible={!!mapReport}
+        onClose={() => setMapReport(null)}
+        title={mapReport ? `${mapReport.visit_type === "initial" ? "Initial" : mapReport.visit_type === "inactive_check" ? "Inactive Check" : "Ongoing"} · ${formatDate(mapReport.submitted_at)}` : ""}
+        subtitle={site.name}
+        reportPolygon={mapReport?.polygon_coordinates}
+        sitePolygon={site.polygon_coordinates}
+        areaHectares={mapReport?.planted_area_hectares}
+      />
+
+      {/* Map preview of the planted-area corners (same viewer as Boundary Verification) */}
+      {site.reforestation_area_id != null && !hasPendingReport && (
+        <FloatingMapButton
+          areaId={site.reforestation_area_id}
+          areaName={site.reforestation_area_name || undefined}
+          siteId={site.site_id}
+          siteName={site.name}
+          mapPoints={mapPoints}
+          initialOpen={false}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -1225,6 +1655,20 @@ const styles = StyleSheet.create({
   metricValue: { fontSize: 24, fontWeight: "800", marginTop: 6, letterSpacing: -0.5 },
   metricLabel: { fontSize: 11, color: MUTED, fontWeight: "600", marginTop: 1 },
 
+  submitBtnOffline: { backgroundColor: "#1D4ED8", shadowColor: "#1D4ED8" },
+  saveOfflineLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10 },
+  saveOfflineLinkText: { fontSize: 13, fontWeight: "700", color: PRIMARY },
+  heroSave: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.15)" },
+  heroSaveOn: { backgroundColor: WHITE },
+  heroSaveText: { fontSize: 11, fontWeight: "700", color: WHITE },
+  offlineCopyBanner: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", backgroundColor: "rgba(0,0,0,0.25)", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 10 },
+  offlineCopyText: { fontSize: 11.5, color: WHITE, fontWeight: "600" },
+  queuedBox: { backgroundColor: "#EFF6FF", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: "#BFDBFE", alignItems: "center" },
+  queuedError: { fontSize: 12, color: DANGER, textAlign: "center", marginBottom: 4 },
+  areaMetric: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 10, padding: 12, borderRadius: 14, backgroundColor: "#F0FDFA" },
+  areaMetricIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: "#CCFBF1", justifyContent: "center", alignItems: "center" },
+  areaMetricValue: { fontSize: 22, fontWeight: "800", color: "#0F766E", letterSpacing: -0.5, marginTop: 1 },
+  areaMetricSub: { fontSize: 11, color: MUTED, marginTop: 1 },
   survivalWrap: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: "#F1F5F9" },
   survivalHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 },
   survivalLabel: { fontSize: 13, fontWeight: "700", color: INK },
@@ -1284,6 +1728,22 @@ const styles = StyleSheet.create({
   pendingAlertTitle: { fontSize: 17, fontWeight: "800", color: WARNING, marginBottom: 6 },
   pendingAlertText: { fontSize: 14, color: INK, textAlign: "center", lineHeight: 20, marginBottom: 10 },
   pendingAlertFooter: { fontSize: 12, color: MUTED, textAlign: "center" },
+  reviewSteps: { alignSelf: "stretch", gap: 6, marginBottom: 10 },
+  reviewRow: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: WHITE, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: BORDER },
+  reviewRowNum: { fontSize: 11, fontWeight: "800", color: MUTED, width: 14 },
+  reviewRowLabel: { fontSize: 13, fontWeight: "700", color: INK, flex: 1 },
+  reviewRowStatus: { fontSize: 11.5, fontWeight: "700" },
+  changesBox: { backgroundColor: "#FEF2F2", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#FECACA" },
+  changesTitle: { fontSize: 14, fontWeight: "800", color: DANGER, flex: 1 },
+  changesNotes: { fontSize: 13.5, color: INK, lineHeight: 19 },
+  changesFooter: { fontSize: 11.5, color: MUTED, marginTop: 8 },
+  changesActions: { flexDirection: "row", gap: 8, marginTop: 12 },
+  changesBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: BORDER, backgroundColor: WHITE },
+  changesBtnPrimary: { backgroundColor: PRIMARY, borderColor: PRIMARY },
+  changesBtnText: { fontSize: 13, fontWeight: "700", color: PRIMARY },
+  reportReviewNote: { marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FECACA" },
+  reportReviewNoteTitle: { fontSize: 11, fontWeight: "800", color: DANGER, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 3 },
+  reportReviewNoteText: { fontSize: 12.5, color: INK, lineHeight: 17 },
 
   subLabel: { fontSize: 11.5, fontWeight: "700", color: MUTED, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 },
   inputLabel: { fontSize: 11.5, color: MUTED, marginBottom: 5, fontWeight: "600" },

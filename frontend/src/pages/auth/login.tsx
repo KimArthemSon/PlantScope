@@ -344,6 +344,19 @@ export default function Login() {
                         {showPassword ? <EyeOff className="text-black" size={20} /> : <Eye className="text-black" size={20} />}
                       </button>
                     </div>
+                    <div className="flex justify-end mt-2">
+                      <a
+                        href="/forgot-password"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigate("/forgot-password");
+                        }}
+                        className="text-sm font-medium hover:underline"
+                        style={{ color: "#8FE07C" }}
+                      >
+                        Forgot password?
+                      </a>
+                    </div>
                   </div>
 
                   {/* Lockout feedback */}
