@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -16,13 +16,13 @@ import {
   StatusBar,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { WebView } from "react-native-webview";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useAlert, ToastHost } from "@/components/AlertContext";
+import { getToken, clearAuthData, isAuthFailure } from "@/utils/auth";
 
 const screenHeight = Dimensions.get("window").height;
 const API_BASE_URL = api + "/api";
@@ -33,16 +33,38 @@ const OFFLINE_AREAS_KEY = "@plantscope_offline_areas";
    ─────────────────────────────────────────────────────────────── */
 const BG = "#F5F6F8";
 const PRIMARY = "#0F4A2F";
+const PRIMARY_SOFT = "#E8F1EC";
 const INK = "#111827";
 const MUTED = "#6B7280";
 const FAINT = "#9CA3AF";
+const LINE = "#EEF0F3";
+const GREEN = "#22C55E";
+const AMBER = "#F59E0B";
+const RED = "#EF4444";
+const BLUE = "#3B82F6";
 
 const cardShadow = {
   shadowColor: "#0F172A",
   shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.03,
+  shadowOpacity: 0.04,
   shadowRadius: 8,
   elevation: 1,
+};
+
+type SiteStats = {
+  total: number;
+  total_hectares: number;
+  accepted: number;
+  pending: number;
+  rejected: number;
+  under_monitoring: number;
+};
+
+type AssessmentStats = {
+  total: number;
+  submitted: number;
+  drafts: number;
+  last_assessment_at: string | null;
 };
 
 type ReforestationArea = {
@@ -55,8 +77,164 @@ type ReforestationArea = {
   longitude: number;
   coord_display: string;
   assigned_at: string;
+  barangay_name?: string | null;
+  site_stats?: SiteStats;
+  assessment_stats?: AssessmentStats;
 };
 
+type FilterKey = "all" | "saved" | "unassessed" | "drafts";
+
+const EMPTY_SITES: SiteStats = {
+  total: 0,
+  total_hectares: 0,
+  accepted: 0,
+  pending: 0,
+  rejected: 0,
+  under_monitoring: 0,
+};
+const EMPTY_ASSESSMENTS: AssessmentStats = {
+  total: 0,
+  submitted: 0,
+  drafts: 0,
+  last_assessment_at: null,
+};
+
+/* ──────────────────────────────────────────────────────────────────
+   HELPERS
+   ─────────────────────────────────────────────────────────────── */
+const formatHectares = (ha: number) =>
+  ha >= 100 ? Math.round(ha).toLocaleString() : ha.toFixed(ha >= 10 ? 1 : 2);
+
+const timeAgo = (iso: string | null | undefined) => {
+  if (!iso) return null;
+  const diff = Date.now() - new Date(iso).getTime();
+  if (isNaN(diff)) return null;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
+const formatDate = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
+const parseCoordinate = (coordinate: any) => {
+  const defaultLat = 11.0,
+    defaultLng = 124.6;
+  let lat = defaultLat,
+    lng = defaultLng;
+  let coordDisplay = "No Coordinates";
+
+  try {
+    if (Array.isArray(coordinate) && coordinate.length >= 2) {
+      [lat, lng] = coordinate;
+      coordDisplay = `${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E`;
+    } else if (coordinate && typeof coordinate === "object") {
+      lat = coordinate.latitude || defaultLat;
+      lng = coordinate.longitude || defaultLng;
+      coordDisplay = `${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E`;
+    }
+  } catch (e) {
+    console.error("Error parsing coordinate:", e);
+  }
+  return { lat, lng, coordDisplay };
+};
+
+/* ──────────────────────────────────────────────────────────────────
+   SMALL COMPONENTS
+   ─────────────────────────────────────────────────────────────── */
+const SummaryStat: React.FC<{ value: string; label: string }> = ({
+  value,
+  label,
+}) => (
+  <View style={styles.summaryStat}>
+    <Text style={styles.summaryValue}>{value}</Text>
+    <Text style={styles.summaryLabel}>{label}</Text>
+  </View>
+);
+
+const MiniStat: React.FC<{
+  icon: string;
+  value: string;
+  label: string;
+}> = ({ icon, value, label }) => (
+  <View style={styles.miniStat}>
+    <MaterialCommunityIcons name={icon as any} size={15} color={PRIMARY} />
+    <View style={{ flexShrink: 1 }}>
+      <Text style={styles.miniValue} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={styles.miniLabel} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  </View>
+);
+
+/** Stacked bar showing accepted / pending / rejected sites. */
+const SiteStatusBar: React.FC<{ stats: SiteStats }> = ({ stats }) => {
+  const other = Math.max(
+    stats.total - stats.accepted - stats.pending - stats.rejected,
+    0,
+  );
+  const segments = [
+    { key: "accepted", n: stats.accepted, color: GREEN, label: "Accepted" },
+    { key: "pending", n: stats.pending, color: AMBER, label: "Pending" },
+    { key: "rejected", n: stats.rejected, color: RED, label: "Rejected" },
+    { key: "other", n: other, color: "#D1D5DB", label: "Other" },
+  ].filter((s) => s.n > 0);
+
+  return (
+    <View style={{ marginTop: 14 }}>
+      <View style={styles.stackBar}>
+        {segments.map((s) => (
+          <View
+            key={s.key}
+            style={{ flex: s.n, backgroundColor: s.color, height: "100%" }}
+          />
+        ))}
+      </View>
+      <View style={styles.legendRow}>
+        {segments.map((s) => (
+          <View key={s.key} style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: s.color }]} />
+            <Text style={styles.legendText}>
+              {s.n} {s.label}
+            </Text>
+          </View>
+        ))}
+        {stats.under_monitoring > 0 && (
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: BLUE }]} />
+            <Text style={styles.legendText}>
+              {stats.under_monitoring} Monitoring
+            </Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+};
+
+/* ──────────────────────────────────────────────────────────────────
+   SCREEN
+   ─────────────────────────────────────────────────────────────── */
 const ReforestationAreas: React.FC = () => {
   const insets = useSafeAreaInsets();
   const {
@@ -75,6 +253,7 @@ const ReforestationAreas: React.FC = () => {
   const [actionSheetArea, setActionSheetArea] =
     useState<ReforestationArea | null>(null);
   const [searchText, setSearchText] = useState("");
+  const [filter, setFilter] = useState<FilterKey>("all");
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,58 +261,49 @@ const ReforestationAreas: React.FC = () => {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const [offlineAreaIds, setOfflineAreaIds] = useState<Set<string>>(new Set());
-  const [offlineCount, setOfflineCount] = useState(0);
   const [savingOffline, setSavingOffline] = useState<string | null>(null);
 
   const router = useRouter();
   const isOnline = useNetworkStatus();
 
-  useEffect(() => {
-    loadOfflineAreaIds();
-  }, []);
+  /* ── Offline storage ─────────────────────────────────────────── */
+  const readSavedAreas = async (): Promise<ReforestationArea[]> => {
+    const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
+    return saved ? JSON.parse(saved) : [];
+  };
+
+  const writeSavedAreas = async (list: ReforestationArea[]) => {
+    await AsyncStorage.setItem(OFFLINE_AREAS_KEY, JSON.stringify(list));
+    setOfflineAreaIds(new Set(list.map((a) => a.reforestation_area_id)));
+  };
 
   const loadOfflineAreaIds = async () => {
     try {
-      const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
-      if (saved) {
-        const savedAreas: ReforestationArea[] = JSON.parse(saved);
-        const ids = new Set(savedAreas.map((a) => a.reforestation_area_id));
-        setOfflineAreaIds(ids);
-        setOfflineCount(savedAreas.length);
-      } else {
-        setOfflineCount(0);
-      }
+      const savedAreas = await readSavedAreas();
+      setOfflineAreaIds(
+        new Set(savedAreas.map((a) => a.reforestation_area_id)),
+      );
+      return savedAreas;
     } catch (error) {
       console.error("Error loading offline areas:", error);
+      return [];
     }
   };
 
   const saveAreaForOffline = async (area: ReforestationArea) => {
     setSavingOffline(area.reforestation_area_id);
     try {
-      const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
-      const savedAreas: ReforestationArea[] = saved ? JSON.parse(saved) : [];
-
-      const alreadySaved = savedAreas.some(
-        (a) => a.reforestation_area_id === area.reforestation_area_id,
-      );
-      if (alreadySaved) {
+      const savedAreas = await readSavedAreas();
+      if (
+        savedAreas.some(
+          (a) => a.reforestation_area_id === area.reforestation_area_id,
+        )
+      ) {
         showInfo("Info", `${area.name} is already saved for offline use.`);
         return;
       }
-
-      const updatedAreas = [...savedAreas, area];
-      await AsyncStorage.setItem(
-        OFFLINE_AREAS_KEY,
-        JSON.stringify(updatedAreas),
-      );
-
-      setOfflineAreaIds(
-        new Set(updatedAreas.map((a) => a.reforestation_area_id)),
-      );
-      setOfflineCount(updatedAreas.length);
-
-      success("Success", `${area.name} saved for offline use.`);
+      await writeSavedAreas([...savedAreas, area]);
+      success("Saved", `${area.name} is now available offline.`);
     } catch (error) {
       showError("Error", "Failed to save area for offline use.");
     } finally {
@@ -148,24 +318,12 @@ const ReforestationAreas: React.FC = () => {
       async () => {
         setSavingOffline(area.reforestation_area_id);
         try {
-          const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
-          const savedAreas: ReforestationArea[] = saved
-            ? JSON.parse(saved)
-            : [];
-
-          const updatedAreas = savedAreas.filter(
-            (a) => a.reforestation_area_id !== area.reforestation_area_id,
+          const savedAreas = await readSavedAreas();
+          await writeSavedAreas(
+            savedAreas.filter(
+              (a) => a.reforestation_area_id !== area.reforestation_area_id,
+            ),
           );
-          await AsyncStorage.setItem(
-            OFFLINE_AREAS_KEY,
-            JSON.stringify(updatedAreas),
-          );
-
-          setOfflineAreaIds(
-            new Set(updatedAreas.map((a) => a.reforestation_area_id)),
-          );
-          setOfflineCount(updatedAreas.length);
-
           success("Removed", `${area.name} removed from offline storage.`);
         } catch (error) {
           showError("Error", "Failed to remove area from offline storage.");
@@ -177,6 +335,25 @@ const ReforestationAreas: React.FC = () => {
     );
   };
 
+  /* ── Data loading ────────────────────────────────────────────── */
+  const loadOfflineAreas = async () => {
+    try {
+      const savedAreas = (await readSavedAreas()).filter(
+        (area) => area && area.reforestation_area_id && area.name,
+      );
+      setAreas(savedAreas);
+      setError(
+        savedAreas.length
+          ? null
+          : "No areas saved for offline use. Connect to the internet and save areas first.",
+      );
+    } catch (err: any) {
+      console.error("Error loading offline areas:", err);
+      setError("Failed to load offline areas.");
+      setAreas([]);
+    }
+  };
+
   const fetchAssignedAreas = useCallback(
     async (showRefreshIndicator = false) => {
       if (showRefreshIndicator) setRefreshing(true);
@@ -184,15 +361,19 @@ const ReforestationAreas: React.FC = () => {
       setError(null);
 
       try {
-        await loadOfflineAreaIds();
+        const savedAreas = await loadOfflineAreaIds();
 
         if (!isOnline) {
           await loadOfflineAreas();
           return;
         }
 
-        const token = await SecureStore.getItemAsync("token");
-        if (!token) throw new Error("No authentication token found.");
+        const token = await getToken();
+        if (!token) {
+          await clearAuthData();
+          router.replace("/homepage");
+          return;
+        }
 
         const response = await fetch(
           `${API_BASE_URL}/get_assigned_reforestation_area/`,
@@ -206,8 +387,13 @@ const ReforestationAreas: React.FC = () => {
           },
         );
 
+        if (isAuthFailure(response.status)) {
+          await clearAuthData();
+          router.replace("/homepage");
+          return;
+        }
         if (!response.ok)
-          throw new Error(`HTTP error! status: ${response.status}`);
+          throw new Error(`Couldn't load areas (error ${response.status}).`);
         const data = await response.json();
 
         const mappedAreas: ReforestationArea[] = data.map((item: any) => {
@@ -223,21 +409,30 @@ const ReforestationAreas: React.FC = () => {
             longitude: lng,
             coord_display: coordDisplay,
             assigned_at: item.assigned_at || "",
+            barangay_name: item.barangay_name ?? null,
+            site_stats: { ...EMPTY_SITES, ...(item.site_stats || {}) },
+            assessment_stats: {
+              ...EMPTY_ASSESSMENTS,
+              ...(item.assessment_stats || {}),
+            },
           };
         });
 
         setAreas(mappedAreas);
         setLastRefreshed(new Date());
-      } catch (err: any) {
-        setError(err.message);
-        if (err.message.includes("token")) {
-          confirm(
-            "Authentication Error",
-            "Please log in again.",
-            () => router.replace("/"),
-            { type: "error", confirmText: "OK", cancelText: "" },
+
+        // Keep offline copies up to date with the latest stats
+        if (savedAreas.length) {
+          const fresh = new Map(
+            mappedAreas.map((a) => [a.reforestation_area_id, a]),
           );
+          const updated = savedAreas.map(
+            (a) => fresh.get(a.reforestation_area_id) || a,
+          );
+          await writeSavedAreas(updated);
         }
+      } catch (err: any) {
+        setError(err.message || "Something went wrong.");
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -246,63 +441,16 @@ const ReforestationAreas: React.FC = () => {
     [isOnline, router],
   );
 
-  const loadOfflineAreas = async () => {
-    setLoading(true);
-    try {
-      const saved = await AsyncStorage.getItem(OFFLINE_AREAS_KEY);
-      if (saved) {
-        const savedAreas: ReforestationArea[] = JSON.parse(saved);
-        const validAreas = savedAreas.filter(
-          (area) => area && area.reforestation_area_id && area.name,
-        );
-        setAreas(validAreas);
-        setError(null);
-      } else {
-        setAreas([]);
-        setError(
-          "No areas saved for offline use. Please connect to internet and save areas.",
-        );
-      }
-    } catch (err: any) {
-      console.error("Error loading offline areas:", err);
-      setError("Failed to load offline areas.");
-      setAreas([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    fetchAssignedAreas();
+  }, [fetchAssignedAreas]);
 
   const onRefresh = useCallback(
     () => fetchAssignedAreas(true),
     [fetchAssignedAreas],
   );
 
-  const parseCoordinate = (coordinate: any) => {
-    const defaultLat = 11.0,
-      defaultLng = 124.6;
-    let lat = defaultLat,
-      lng = defaultLng;
-    let coordDisplay = "No Coordinates";
-
-    try {
-      if (Array.isArray(coordinate) && coordinate.length >= 2) {
-        [lat, lng] = coordinate;
-        coordDisplay = `${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E`;
-      } else if (coordinate && typeof coordinate === "object") {
-        lat = coordinate.latitude || defaultLat;
-        lng = coordinate.longitude || defaultLng;
-        coordDisplay = `${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E`;
-      }
-    } catch (e) {
-      console.error("Error parsing coordinate:", e);
-    }
-    return { lat, lng, coordDisplay };
-  };
-
-  useEffect(() => {
-    fetchAssignedAreas();
-  }, [fetchAssignedAreas]);
-
+  /* ── Modals / navigation ─────────────────────────────────────── */
   const openModal = (area: ReforestationArea) => {
     if (!isOnline) {
       warning("Offline Mode", "Map is not available offline.");
@@ -351,13 +499,190 @@ const ReforestationAreas: React.FC = () => {
     setActionSheetVisible(false);
   };
 
+  /* ── Derived data ────────────────────────────────────────────── */
+  const totals = useMemo(() => {
+    return areas.reduce(
+      (acc, a) => {
+        const s = a.site_stats || EMPTY_SITES;
+        const f = a.assessment_stats || EMPTY_ASSESSMENTS;
+        acc.sites += s.total;
+        acc.hectares += s.total_hectares;
+        acc.submitted += f.submitted;
+        acc.drafts += f.drafts;
+        if (f.total > 0) acc.assessedAreas += 1;
+        return acc;
+      },
+      { sites: 0, hectares: 0, submitted: 0, drafts: 0, assessedAreas: 0 },
+    );
+  }, [areas]);
+
+  const savedCount = areas.filter((a) =>
+    offlineAreaIds.has(a.reforestation_area_id),
+  ).length;
+  const offlinePct =
+    areas.length > 0 ? Math.round((savedCount / areas.length) * 100) : 0;
+
+  const filterCounts: Record<FilterKey, number> = {
+    all: areas.length,
+    saved: savedCount,
+    unassessed: areas.filter((a) => !a.assessment_stats?.total).length,
+    drafts: areas.filter((a) => (a.assessment_stats?.drafts || 0) > 0).length,
+  };
+
   const filteredAreas = areas.filter((area) => {
-    const areaName = area.name || "";
-    return areaName.toLowerCase().includes(searchText.toLowerCase());
+    const q = searchText.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      (area.name || "").toLowerCase().includes(q) ||
+      (area.barangay_name || "").toLowerCase().includes(q);
+    if (!matchesSearch) return false;
+    switch (filter) {
+      case "saved":
+        return offlineAreaIds.has(area.reforestation_area_id);
+      case "unassessed":
+        return !area.assessment_stats?.total;
+      case "drafts":
+        return (area.assessment_stats?.drafts || 0) > 0;
+      default:
+        return true;
+    }
   });
 
-  const percentage =
-    areas.length > 0 ? Math.round((offlineCount / areas.length) * 100) : 0;
+  const FILTERS: { key: FilterKey; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "saved", label: "Saved offline" },
+    { key: "unassessed", label: "Not assessed" },
+    { key: "drafts", label: "Has drafts" },
+  ];
+
+  /* ── Render ──────────────────────────────────────────────────── */
+  const renderAreaCard = (area: ReforestationArea) => {
+    const isSaved = offlineAreaIds.has(area.reforestation_area_id);
+    const isSaving = savingOffline === area.reforestation_area_id;
+    const s = area.site_stats || EMPTY_SITES;
+    const f = area.assessment_stats || EMPTY_ASSESSMENTS;
+    const lastAssessed = timeAgo(f.last_assessment_at);
+
+    return (
+      <View key={area.reforestation_area_id} style={styles.card}>
+        {/* Title row */}
+        <View style={styles.cardTop}>
+          <View style={styles.cardIcon}>
+            <MaterialCommunityIcons name="pine-tree" size={20} color={PRIMARY} />
+          </View>
+          <View style={styles.cardTitleWrap}>
+            <Text style={styles.cardName} numberOfLines={1}>
+              {area.name}
+            </Text>
+            <View style={styles.metaRow}>
+              <Ionicons name="location-outline" size={12} color={FAINT} />
+              <Text style={styles.metaText} numberOfLines={1}>
+                {area.barangay_name
+                  ? `Brgy. ${area.barangay_name}`
+                  : area.coord_display}
+              </Text>
+            </View>
+          </View>
+          {isSaved && (
+            <View style={styles.savedBadge}>
+              <Ionicons name="cloud-done" size={12} color={PRIMARY} />
+              <Text style={styles.savedBadgeText}>Offline</Text>
+            </View>
+          )}
+        </View>
+
+        {!!area.description && (
+          <Text style={styles.cardDesc} numberOfLines={2}>
+            {area.description}
+          </Text>
+        )}
+
+        {/* Key numbers */}
+        <View style={styles.miniRow}>
+          <MiniStat
+            icon="map-marker-multiple-outline"
+            value={String(s.total)}
+            label={s.total === 1 ? "Site" : "Sites"}
+          />
+          <View style={styles.miniDivider} />
+          <MiniStat
+            icon="texture-box"
+            value={`${formatHectares(s.total_hectares)} ha`}
+            label="Total area"
+          />
+          <View style={styles.miniDivider} />
+          <MiniStat
+            icon="clipboard-check-outline"
+            value={`${f.submitted}/${f.total}`}
+            label="Submitted"
+          />
+        </View>
+
+        {s.total > 0 && <SiteStatusBar stats={s} />}
+
+        {/* Activity */}
+        <View style={styles.activityRow}>
+          <View style={styles.activityItem}>
+            <Ionicons name="time-outline" size={13} color={FAINT} />
+            <Text style={styles.activityText}>
+              {lastAssessed ? `Last assessed ${lastAssessed}` : "Not assessed yet"}
+            </Text>
+          </View>
+          {f.drafts > 0 && (
+            <View style={styles.draftPill}>
+              <Text style={styles.draftPillText}>
+                {f.drafts} draft{f.drafts > 1 ? "s" : ""}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Actions */}
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={[styles.iconAction, !isOnline && styles.iconActionDisabled]}
+            onPress={() => openModal(area)}
+            activeOpacity={0.7}
+            disabled={!isOnline}
+          >
+            <Ionicons
+              name="map-outline"
+              size={18}
+              color={!isOnline ? FAINT : PRIMARY}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.iconAction, isSaved && styles.iconActionDanger]}
+            onPress={() =>
+              isSaved ? removeAreaFromOffline(area) : saveAreaForOffline(area)
+            }
+            disabled={isSaving}
+            activeOpacity={0.7}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color={PRIMARY} />
+            ) : (
+              <Ionicons
+                name={isSaved ? "trash-outline" : "cloud-download-outline"}
+                size={18}
+                color={isSaved ? RED : PRIMARY}
+              />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.primaryAction}
+            onPress={() => openActionSheet(area)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="clipboard-outline" size={16} color="#FFFFFF" />
+            <Text style={styles.primaryActionText}>Start Assessment</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -371,6 +696,7 @@ const ReforestationAreas: React.FC = () => {
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -381,35 +707,37 @@ const ReforestationAreas: React.FC = () => {
           />
         }
       >
+        {/* Header */}
         <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <View style={styles.topRow}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.eyebrow}>Field Inspections</Text>
               <Text style={styles.title}>Assigned Areas</Text>
             </View>
+            {lastRefreshed && isOnline && (
+              <View style={styles.updatedPill}>
+                <View style={styles.liveDot} />
+                <Text style={styles.updatedText}>
+                  {lastRefreshed.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Text>
+              </View>
+            )}
           </View>
 
           {!isOnline && (
             <View style={styles.offlineBanner}>
-              <Ionicons
-                name="cloud-offline-outline"
-                size={14}
-                color="#FFFFFF"
-              />
-              <Text style={styles.offlineBannerText}>
-                Offline Mode — Saved Areas Only
-              </Text>
+              <Ionicons name="cloud-offline-outline" size={16} color="#92400E" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.offlineTitle}>You're offline</Text>
+                <Text style={styles.offlineText}>
+                  Showing saved areas only. Numbers are from when you last
+                  synced.
+                </Text>
+              </View>
             </View>
-          )}
-
-          {lastRefreshed && !refreshing && isOnline && (
-            <Text style={styles.lastRefreshed}>
-              Updated{" "}
-              {lastRefreshed.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </Text>
           )}
 
           <View style={styles.searchContainer}>
@@ -417,7 +745,7 @@ const ReforestationAreas: React.FC = () => {
               <Ionicons name="search-outline" size={18} color={FAINT} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search by name…"
+                placeholder="Search area or barangay…"
                 placeholderTextColor={FAINT}
                 value={searchText}
                 onChangeText={setSearchText}
@@ -429,184 +757,163 @@ const ReforestationAreas: React.FC = () => {
               )}
             </View>
             <TouchableOpacity
-              style={styles.mapButton}
+              style={[styles.mapButton, !isOnline && { opacity: 0.4 }]}
               onPress={() => router.push("/(tabs)/map")}
               activeOpacity={0.8}
+              disabled={!isOnline}
             >
               <Ionicons name="map" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ✅ REPLACED: Semi-circle with linear progress bar */}
+        {/* Summary */}
         {areas.length > 0 && (
-          <View style={styles.progressCard}>
-            <View style={styles.progressRow}>
-              <View>
-                <Text style={styles.progressLabel}>OFFLINE READINESS</Text>
-                <Text style={styles.progressSub}>
-                  {offlineCount} of {areas.length} areas saved
-                </Text>
-              </View>
-              <Text style={styles.progressPct}>{percentage}%</Text>
-            </View>
-            <View style={styles.progressBg}>
-              <View
-                style={[styles.progressFill, { width: `${percentage}%` }]}
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryEyebrow}>YOUR COVERAGE</Text>
+            <View style={styles.summaryRow}>
+              <SummaryStat value={String(areas.length)} label="Areas" />
+              <View style={styles.summaryDivider} />
+              <SummaryStat value={String(totals.sites)} label="Sites" />
+              <View style={styles.summaryDivider} />
+              <SummaryStat
+                value={formatHectares(totals.hectares)}
+                label="Hectares"
               />
             </View>
-            <View style={styles.progressStatusRow}>
-              <View style={styles.statusItem}>
-                <View style={[styles.statusDot, { backgroundColor: "#5FD08A" }]} />
-                <Text style={styles.statusText}>
-                  {offlineCount} Saved
+
+            <View style={styles.summaryChips}>
+              <View style={styles.summaryChip}>
+                <Ionicons name="checkmark-circle" size={13} color="#5FD08A" />
+                <Text style={styles.summaryChipText}>
+                  {totals.submitted} submitted
                 </Text>
               </View>
-              <View style={styles.statusItem}>
-                <View style={[styles.statusDot, { backgroundColor: "#E5E7EB" }]} />
-                <Text style={styles.statusText}>
-                  {areas.length - offlineCount} Pending
+              <View style={styles.summaryChip}>
+                <Ionicons name="create-outline" size={13} color="#FCD34D" />
+                <Text style={styles.summaryChipText}>
+                  {totals.drafts} drafts
                 </Text>
+              </View>
+              <View style={styles.summaryChip}>
+                <Ionicons name="layers-outline" size={13} color="#B7D3C6" />
+                <Text style={styles.summaryChipText}>
+                  {totals.assessedAreas}/{areas.length} areas assessed
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.offlineReady}>
+              <View style={styles.offlineReadyRow}>
+                <Text style={styles.offlineReadyLabel}>Offline readiness</Text>
+                <Text style={styles.offlineReadyValue}>
+                  {savedCount}/{areas.length} saved · {offlinePct}%
+                </Text>
+              </View>
+              <View style={styles.progressBg}>
+                <View
+                  style={[styles.progressFill, { width: `${offlinePct}%` }]}
+                />
               </View>
             </View>
           </View>
         )}
 
+        {/* Content */}
         {loading && !refreshing ? (
           <View style={styles.centerContent}>
             <ActivityIndicator size="large" color={PRIMARY} />
-            <Text style={styles.loadingText}>Loading…</Text>
+            <Text style={styles.loadingText}>Loading areas…</Text>
           </View>
         ) : error && areas.length === 0 ? (
           <View style={styles.centerContent}>
-            <MaterialCommunityIcons
-              name={isOnline ? "alert-circle-outline" : "cloud-offline"}
-              size={48}
-              color={isOnline ? "#EF4444" : "#F59E0B"}
-            />
-            <Text style={styles.errorText}>{error}</Text>
-            <Text style={styles.refreshHint}>Pull down to refresh</Text>
+            <View
+              style={[
+                styles.stateIcon,
+                { backgroundColor: isOnline ? "#FEF2F2" : "#FFFBEB" },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={isOnline ? "alert-circle-outline" : "cloud-off-outline"}
+                size={30}
+                color={isOnline ? RED : AMBER}
+              />
+            </View>
+            <Text style={styles.stateTitle}>
+              {isOnline ? "Couldn't load areas" : "Nothing saved offline"}
+            </Text>
+            <Text style={styles.stateText}>{error}</Text>
+            {isOnline && (
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => fetchAssignedAreas()}
+              >
+                <Text style={styles.retryText}>Try again</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>
-                Areas ({filteredAreas.length})
-              </Text>
-            </View>
-
-            <View style={styles.list}>
-              {filteredAreas.map((area) => {
-                const isSaved = offlineAreaIds.has(area.reforestation_area_id);
-                const isSaving = savingOffline === area.reforestation_area_id;
-
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterRow}
+            >
+              {FILTERS.map((f) => {
+                const active = filter === f.key;
                 return (
-                  <View key={area.reforestation_area_id} style={styles.card}>
-                    <View style={styles.cardContent}>
-                      <View style={styles.cardInfo}>
-                        <Text style={styles.cardName} numberOfLines={1}>
-                          {area.name}
-                        </Text>
-                        <View style={styles.metaRow}>
-                          <Ionicons
-                            name="navigate-outline"
-                            size={13}
-                            color={FAINT}
-                          />
-                          <Text style={styles.metaText}>
-                            {area.coord_display}
-                          </Text>
-                        </View>
-                        {isSaved && (
-                          <View style={styles.savedBadge}>
-                            <Ionicons
-                              name="checkmark-circle"
-                              size={12}
-                              color={PRIMARY}
-                            />
-                            <Text style={styles.savedBadgeText}>
-                              Saved Offline
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <View style={styles.cardActions}>
-                        <TouchableOpacity
-                          style={styles.actionIcon}
-                          onPress={() => openModal(area)}
-                          activeOpacity={0.7}
-                          disabled={!isOnline}
-                        >
-                          <Ionicons
-                            name="map-outline"
-                            size={18}
-                            color={!isOnline ? FAINT : PRIMARY}
-                          />
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[
-                            styles.actionIcon,
-                            isSaved && styles.actionIconDanger,
-                          ]}
-                          onPress={() =>
-                            isSaved
-                              ? removeAreaFromOffline(area)
-                              : saveAreaForOffline(area)
-                          }
-                          disabled={isSaving}
-                          activeOpacity={0.7}
-                        >
-                          {isSaving ? (
-                            <ActivityIndicator size="small" color={PRIMARY} />
-                          ) : (
-                            <Ionicons
-                              name={
-                                isSaved
-                                  ? "trash-outline"
-                                  : "cloud-download-outline"
-                              }
-                              size={18}
-                              color={isSaved ? "#EF4444" : PRIMARY}
-                            />
-                          )}
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.actionIconPrimary}
-                          onPress={() => openActionSheet(area)}
-                          activeOpacity={0.8}
-                        >
-                          <Ionicons
-                            name="clipboard-outline"
-                            size={18}
-                            color="#FFFFFF"
-                          />
-                        </TouchableOpacity>
-                      </View>
+                  <TouchableOpacity
+                    key={f.key}
+                    style={[styles.filterChip, active && styles.filterChipActive]}
+                    onPress={() => setFilter(f.key)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        active && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {f.label}
+                    </Text>
+                    <View
+                      style={[
+                        styles.filterCount,
+                        active && styles.filterCountActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.filterCountText,
+                          active && styles.filterCountTextActive,
+                        ]}
+                      >
+                        {filterCounts[f.key]}
+                      </Text>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
-            </View>
+            </ScrollView>
+
+            <View style={styles.list}>{filteredAreas.map(renderAreaCard)}</View>
 
             {filteredAreas.length === 0 && (
               <View style={styles.emptyState}>
-                <MaterialCommunityIcons
-                  name={isOnline ? "tree-outline" : "cloud-offline"}
-                  size={52}
-                  color="#D1D5DB"
-                />
-                <Text style={styles.emptyTitle}>
-                  {isOnline ? "No Areas Found" : "No Saved Areas"}
-                </Text>
-                <Text style={styles.emptySubtitle}>
-                  {isOnline
-                    ? searchText
-                      ? `No results for "${searchText}"`
-                      : "No assigned areas yet"
-                    : "Go online and save areas for offline use"}
+                <View style={[styles.stateIcon, { backgroundColor: "#F3F4F6" }]}>
+                  <MaterialCommunityIcons
+                    name="pine-tree"
+                    size={30}
+                    color={FAINT}
+                  />
+                </View>
+                <Text style={styles.stateTitle}>No areas found</Text>
+                <Text style={styles.stateText}>
+                  {searchText
+                    ? `No results for "${searchText}".`
+                    : filter !== "all"
+                      ? "No areas match this filter."
+                      : "You have no assigned areas yet."}
                 </Text>
               </View>
             )}
@@ -616,7 +923,7 @@ const ReforestationAreas: React.FC = () => {
         <View style={{ height: 24 }} />
       </ScrollView>
 
-           {/* Map Modal */}
+      {/* Map Modal */}
       <Modal
         animationType="slide"
         transparent
@@ -662,19 +969,68 @@ const ReforestationAreas: React.FC = () => {
                   showsVerticalScrollIndicator={false}
                 >
                   <Text style={styles.modalTitle}>{selectedArea.name}</Text>
-                  <View style={styles.infoRow}>
-                    <View style={styles.infoIconWrap}>
-                      <Ionicons name="navigate" size={16} color={PRIMARY} />
-                    </View>
-                    <View>
-                      <Text style={styles.infoLabel}>Coordinates</Text>
-                      <Text style={styles.infoValue}>
-                        {selectedArea.coord_display}
-                      </Text>
-                    </View>
+                  {!!selectedArea.description && (
+                    <Text style={styles.modalDesc}>
+                      {selectedArea.description}
+                    </Text>
+                  )}
+                  <View style={styles.infoGrid}>
+                    {[
+                      {
+                        icon: "location",
+                        label: "Barangay",
+                        value: selectedArea.barangay_name || "—",
+                      },
+                      {
+                        icon: "navigate",
+                        label: "Coordinates",
+                        value: selectedArea.coord_display,
+                      },
+                      {
+                        icon: "pin",
+                        label: "Sites",
+                        value: `${selectedArea.site_stats?.total ?? 0} (${formatHectares(selectedArea.site_stats?.total_hectares ?? 0)} ha)`,
+                      },
+                      {
+                        icon: "clipboard",
+                        label: "Assessments",
+                        value: `${selectedArea.assessment_stats?.submitted ?? 0} submitted · ${selectedArea.assessment_stats?.drafts ?? 0} drafts`,
+                      },
+                      {
+                        icon: "calendar",
+                        label: "Assigned",
+                        value: formatDate(selectedArea.assigned_at),
+                      },
+                      {
+                        icon: "time",
+                        label: "Last assessed",
+                        value: formatDate(
+                          selectedArea.assessment_stats?.last_assessment_at,
+                        ),
+                      },
+                    ].map((row) => (
+                      <View key={row.label} style={styles.infoRow}>
+                        <View style={styles.infoIconWrap}>
+                          <Ionicons
+                            name={row.icon as any}
+                            size={15}
+                            color={PRIMARY}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.infoLabel}>{row.label}</Text>
+                          <Text style={styles.infoValue}>{row.value}</Text>
+                        </View>
+                      </View>
+                    ))}
                   </View>
                 </ScrollView>
-                <View style={[styles.modalBtnRow, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+                <View
+                  style={[
+                    styles.modalBtnRow,
+                    { paddingBottom: Math.max(insets.bottom, 16) },
+                  ]}
+                >
                   <Pressable style={styles.closeBtn} onPress={closeModal}>
                     <Text style={styles.closeBtnText}>Close</Text>
                   </Pressable>
@@ -704,13 +1060,18 @@ const ReforestationAreas: React.FC = () => {
           onPress={() => setActionSheetVisible(false)}
         >
           <Pressable
-            style={styles.actionSheet}
+            style={[
+              styles.actionSheet,
+              { paddingBottom: Math.max(insets.bottom, 16) + 24 },
+            ]}
             onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.dragHandle} />
             <Text style={styles.actionSheetTitle}>Choose Assessment Type</Text>
             <Text style={styles.actionSheetSubtitle}>
-              Are you assessing the entire area or a specific site?
+              {actionSheetArea?.name
+                ? `${actionSheetArea.name} · ${actionSheetArea.site_stats?.total ?? 0} sites`
+                : "Are you assessing the entire area or a specific site?"}
             </Text>
 
             <TouchableOpacity
@@ -809,6 +1170,8 @@ const styles = StyleSheet.create({
   },
   scrollView: { flex: 1 },
   content: { paddingBottom: 24 },
+
+  // Header
   header: { paddingHorizontal: 20 },
   topRow: {
     flexDirection: "row",
@@ -824,33 +1187,32 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   title: { fontSize: 32, fontWeight: "800", color: INK, letterSpacing: -0.5 },
-  iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-    ...cardShadow,
-  },
-  offlineBanner: {
+  updatedPill: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: PRIMARY,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    gap: 8,
+    gap: 6,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 4,
+    ...cardShadow,
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: GREEN },
+  updatedText: { fontSize: 11, color: MUTED, fontWeight: "600" },
+  offlineBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    padding: 12,
+    borderRadius: 14,
     marginBottom: 12,
-    borderRadius: 12,
   },
-  offlineBannerText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
-  lastRefreshed: {
-    fontSize: 11.5,
-    color: FAINT,
-    marginBottom: 10,
-    fontWeight: "500",
-  },
+  offlineTitle: { fontSize: 13, fontWeight: "700", color: "#92400E" },
+  offlineText: { fontSize: 12, color: "#A16207", marginTop: 2, lineHeight: 17 },
   searchContainer: { flexDirection: "row", gap: 10, alignItems: "center" },
   searchBar: {
     flex: 1,
@@ -858,7 +1220,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 14,
     height: 46,
     ...cardShadow,
@@ -867,102 +1229,168 @@ const styles = StyleSheet.create({
   mapButton: {
     width: 46,
     height: 46,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: PRIMARY,
     alignItems: "center",
     justifyContent: "center",
     ...cardShadow,
   },
-  progressCard: {
+
+  // Summary card
+  summaryCard: {
     backgroundColor: PRIMARY,
     marginHorizontal: 20,
-    marginTop: 24,
+    marginTop: 20,
     padding: 20,
-    borderRadius: 18,
+    borderRadius: 20,
     ...cardShadow,
   },
-  progressRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  progressLabel: {
-    fontSize: 13,
+  summaryEyebrow: {
+    fontSize: 12,
     color: "#B7D3C6",
-    fontWeight: "600",
-    letterSpacing: 0.5,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    marginBottom: 14,
   },
-  progressSub: {
-    fontSize: 11,
-    color: "rgba(255,255,255,0.45)",
-    marginTop: 2,
-  },
-  progressPct: {
+  summaryRow: { flexDirection: "row", alignItems: "center" },
+  summaryStat: { flex: 1, alignItems: "flex-start" },
+  summaryValue: {
     fontSize: 26,
     fontWeight: "800",
     color: "#FFFFFF",
+    letterSpacing: -0.5,
   },
+  summaryLabel: {
+    fontSize: 11.5,
+    color: "rgba(255,255,255,0.55)",
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  summaryDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    marginHorizontal: 14,
+  },
+  summaryChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 16,
+  },
+  summaryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  summaryChipText: {
+    fontSize: 11.5,
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: "600",
+  },
+  offlineReady: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+  },
+  offlineReadyRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  offlineReadyLabel: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.7)",
+    fontWeight: "600",
+  },
+  offlineReadyValue: { fontSize: 12, color: "#FFFFFF", fontWeight: "700" },
   progressBg: {
     height: 6,
     backgroundColor: "rgba(255,255,255,0.18)",
     borderRadius: 3,
     overflow: "hidden",
+  },
+  progressFill: { height: "100%", backgroundColor: "#5FD08A", borderRadius: 3 },
+
+  // Filters
+  filterRow: {
+    paddingHorizontal: 20,
+    gap: 8,
+    marginTop: 24,
     marginBottom: 14,
   },
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#5FD08A",
-    borderRadius: 3,
-  },
-  progressStatusRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  statusItem: {
+  filterChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    backgroundColor: "#FFFFFF",
+    paddingLeft: 14,
+    paddingRight: 6,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: LINE,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: 11,
-    color: "rgba(255,255,255,0.6)",
-    fontWeight: "500",
-  },
-  centerContent: {
-    flex: 1,
+  filterChipActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
+  filterChipText: { fontSize: 12.5, fontWeight: "600", color: MUTED },
+  filterChipTextActive: { color: "#FFFFFF" },
+  filterCount: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    gap: 12,
-    paddingTop: 80,
   },
-  loadingText: { color: MUTED, fontSize: 14, marginTop: 4 },
-  errorText: {
-    color: "#EF4444",
+  filterCountActive: { backgroundColor: "rgba(255,255,255,0.18)" },
+  filterCountText: { fontSize: 11, fontWeight: "700", color: MUTED },
+  filterCountTextActive: { color: "#FFFFFF" },
+
+  // States
+  centerContent: {
+    alignItems: "center",
+    gap: 8,
+    paddingTop: 72,
+    paddingHorizontal: 32,
+  },
+  loadingText: { color: MUTED, fontSize: 14, marginTop: 6 },
+  stateIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  stateTitle: { fontSize: 16, fontWeight: "700", color: INK },
+  stateText: {
+    fontSize: 13,
+    color: MUTED,
     textAlign: "center",
-    fontSize: 14,
-    paddingHorizontal: 20,
+    lineHeight: 19,
   },
-  refreshHint: { color: FAINT, fontSize: 12, marginTop: 4 },
-  sectionHeader: {
-    flexDirection: "row",
+  retryBtn: {
+    marginTop: 12,
+    backgroundColor: PRIMARY,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryText: { color: "#FFFFFF", fontWeight: "600", fontSize: 14 },
+  emptyState: {
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    marginTop: 32,
-    marginBottom: 12,
+    paddingTop: 40,
+    gap: 8,
+    paddingHorizontal: 32,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: INK,
-    letterSpacing: -0.2,
-  },
+
+  // Area card
   list: { paddingHorizontal: 20, gap: 12 },
   card: {
     backgroundColor: "#FFFFFF",
@@ -970,13 +1398,19 @@ const styles = StyleSheet.create({
     padding: 16,
     ...cardShadow,
   },
-  cardContent: {
-    flexDirection: "row",
+  cardTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  cardIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: PRIMARY_SOFT,
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
   },
-  cardInfo: { flex: 1, marginRight: 12 },
-  cardName: { fontSize: 15, fontWeight: "700", color: INK, marginBottom: 6 },
+  cardTitleWrap: { flex: 1 },
+  cardName: { fontSize: 15.5, fontWeight: "700", color: INK, marginBottom: 3 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  metaText: { fontSize: 12, color: MUTED, flexShrink: 1 },
   savedBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -985,21 +1419,76 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    alignSelf: "flex-start",
-    marginTop: 6,
   },
-  savedBadgeText: { fontSize: 10, fontWeight: "600", color: PRIMARY },
-  metaRow: {
+  savedBadgeText: { fontSize: 10.5, fontWeight: "700", color: PRIMARY },
+  cardDesc: { fontSize: 12.5, color: MUTED, lineHeight: 18, marginTop: 10 },
+  miniRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    marginBottom: 4,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginTop: 14,
   },
-  metaText: { fontSize: 12, color: MUTED },
-  cardActions: { flexDirection: "row", alignItems: "center", gap: 8 },
-  actionIcon: {
-    width: 42,
-    height: 42,
+  miniStat: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  miniValue: { fontSize: 14, fontWeight: "800", color: INK },
+  miniLabel: { fontSize: 10.5, color: FAINT, fontWeight: "600" },
+  miniDivider: {
+    width: 1,
+    height: 26,
+    backgroundColor: LINE,
+    marginHorizontal: 8,
+  },
+  stackBar: {
+    flexDirection: "row",
+    height: 6,
+    borderRadius: 3,
+    overflow: "hidden",
+    backgroundColor: "#F3F4F6",
+    gap: 2,
+  },
+  legendRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginTop: 8,
+  },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendDot: { width: 7, height: 7, borderRadius: 4 },
+  legendText: { fontSize: 11, color: MUTED, fontWeight: "500" },
+  activityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: LINE,
+  },
+  activityItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  activityText: { fontSize: 11.5, color: MUTED, fontWeight: "500" },
+  draftPill: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  draftPillText: { fontSize: 10.5, fontWeight: "700", color: "#B45309" },
+  cardActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+  },
+  iconAction: {
+    width: 44,
+    height: 44,
     borderRadius: 12,
     backgroundColor: "#F0FDF4",
     alignItems: "center",
@@ -1007,30 +1496,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DCFCE7",
   },
-  actionIconDanger: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
-  actionIconPrimary: {
-    width: 42,
-    height: 42,
+  iconActionDisabled: { backgroundColor: "#F9FAFB", borderColor: LINE },
+  iconActionDanger: { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
+  primaryAction: {
+    flex: 1,
+    height: 44,
     borderRadius: 12,
     backgroundColor: PRIMARY,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingTop: 60,
     gap: 8,
-    paddingHorizontal: 20,
   },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: FAINT },
-  emptySubtitle: { fontSize: 13, color: FAINT, textAlign: "center" },
+  primaryActionText: { color: "#FFFFFF", fontSize: 13.5, fontWeight: "700" },
+
+  // Map modal
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
     backgroundColor: "rgba(15,23,42,0.45)",
   },
   modalSheet: {
-    height: screenHeight * 0.6,
+    height: screenHeight * 0.75,
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -1047,16 +1534,18 @@ const styles = StyleSheet.create({
   },
   map: {
     width: "100%",
-    height: screenHeight * 0.35,
+    height: screenHeight * 0.3,
     backgroundColor: "#E5E7EB",
   },
   modalInfo: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
-  modalTitle: { fontSize: 18, fontWeight: "700", color: INK, marginBottom: 16 },
+  modalTitle: { fontSize: 19, fontWeight: "800", color: INK, marginBottom: 4 },
+  modalDesc: { fontSize: 13, color: MUTED, lineHeight: 19, marginBottom: 4 },
+  infoGrid: { marginTop: 12, paddingBottom: 12 },
   infoRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 12,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   infoIconWrap: {
     width: 34,
@@ -1093,12 +1582,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   startBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
+
+  // Action sheet
   actionSheet: {
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    paddingBottom: 40,
     gap: 14,
   },
   actionSheetTitle: {
@@ -1133,7 +1623,7 @@ const styles = StyleSheet.create({
   actionTitle: { fontSize: 14, fontWeight: "700", color: INK },
   actionDesc: { fontSize: 12, color: MUTED, marginTop: 2 },
   cancelBtn: { marginTop: 4, paddingVertical: 12, alignItems: "center" },
-  cancelBtnText: { color: "#EF4444", fontWeight: "600", fontSize: 14 },
+  cancelBtnText: { color: RED, fontWeight: "600", fontSize: 14 },
 });
 
 export default ReforestationAreas;

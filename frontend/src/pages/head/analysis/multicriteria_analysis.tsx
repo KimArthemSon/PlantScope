@@ -33,6 +33,7 @@ import SiteCoordinatesEditor from "./components/SiteCoordinatesEditor";
 import AssessmentBoundaryImporter from "./components/AssessmentBoundaryImporter";
 import SiteReportModal from "./components/SiteReportModal";
 import CoordinateSearch from "./components/CoordinateSearch";
+import DrawPolygonTool from "./components/DrawPolygonTool";
 import BarangayAreasPanel from "./BarangayAreasPanel";
 import FieldAssessmentPanel from "./components/Fieldassessmentpanel";
 import HazardAssessmentPanel from "./components/HazardAssessmentPanel";
@@ -597,10 +598,16 @@ export default function MulticriteriaAnalysis() {
             dashArray: "5, 5",
           }).addTo(map);
 
+          const areaHa = calculatePolygonArea(coords);
+          const areaSqm = Math.round(areaHa * 10000).toLocaleString();
           polygon.bindPopup(
-            `<div style="font-family:sans-serif;"><strong>Boundary Polygon</strong><br/>Vertices: ${coords.length}</div>`,
+            `<div style="font-family:sans-serif;"><strong>Boundary Polygon</strong><br/>Vertices: ${coords.length}<br/>Area: <strong>${areaHa.toFixed(2)} ha</strong> (${areaSqm} m²)</div>`,
           );
-          boundaryPolygonRef.current = polygon;
+          // Always-visible size label in the middle of the polygon
+          polygon.bindTooltip(
+            `<div style="font-family:sans-serif;font-size:11px;font-weight:700;color:#5B21B6;text-align:center;">${areaHa.toFixed(2)} ha<br/><span style="font-weight:500;color:#6B7280;">${areaSqm} m²</span></div>`,
+            { permanent: true, direction: "center", className: "boundary-area-label" },
+          );          boundaryPolygonRef.current = polygon;
 
           // ✅ NEW: Add clickable vertex markers
           coords.forEach((coord, idx) => {
@@ -2556,6 +2563,7 @@ export default function MulticriteriaAnalysis() {
             <div className="flex items-center gap-2">
               <BarangayAreasPanel barangayAreas={barangayAreas} />
               <CoordinateSearch onGo={handleGoToCoordinate} />
+              <DrawPolygonTool mapRef={mapRef} />
               <button
                 onClick={() => {
                   if (!barangayAreas.selectedBarangayId) {

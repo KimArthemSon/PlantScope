@@ -18,7 +18,7 @@ from tree_species.models import Tree_species
 from animals.models import Animal
 from Field_assessment.models import Field_assessment
 from tree_planting_programs.models import Application
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, OuterRef, Q, Count, Max
 
 logger = logging.getLogger(__name__)
 
@@ -636,8 +636,21 @@ def get_sites_list(request, reforestation_area_id):
     if status_filter != "all": sites = sites.filter(status=status_filter)
     if verification_filter != "all": sites = sites.filter(meta_verification__status=verification_filter)
 
+    # Assessment counts per site (one grouped query)
+    assessment_stats = {
+        row['site_id']: row
+        for row in Field_assessment.objects.filter(site__in=sites)
+        .values('site_id')
+        .annotate(
+            total=Count('field_assessment_id'),
+            submitted=Count('field_assessment_id', filter=Q(is_submitted=True)),
+            last_at=Max('updated_at'),
+        )
+    }
+
     data = []
     for s in sites:
+        a = assessment_stats.get(s.site_id, {})
         latest_sd = s.site_data_versions.order_by('-version').first()
         validation = {"has_safety_note": False, "has_survivability_note": False, "final_decision": None}
         
@@ -658,7 +671,10 @@ def get_sites_list(request, reforestation_area_id):
             "area_hectares": s.total_area_hectares,
             "validation": validation,
             "verification_status": verification_status,
-            "created_at": s.created_at.strftime("%Y-%m-%d %H:%M")
+            "created_at": s.created_at.strftime("%Y-%m-%d %H:%M"),
+            "assessment_count": a.get('total', 0),
+            "submitted_count": a.get('submitted', 0),
+            "last_assessed_at": a['last_at'].isoformat() if a.get('last_at') else None,
         })
 
     return JsonResponse({"data": data, "count": len(data)})
