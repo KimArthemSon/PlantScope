@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { api } from "@/constant/api.ts";
 import {
   BarChart,
@@ -17,15 +17,12 @@ import {
   AreaChart,
   Area,
   ComposedChart,
-  RadialBarChart,
-  RadialBar,
+  ReferenceLine,
 } from "recharts";
 import {
   Activity,
-  AlertTriangle,
   TrendingUp,
   MapPin,
-  Users,
   CheckCircle2,
   Clock,
   XCircle,
@@ -35,31 +32,48 @@ import {
   Wind,
   Thermometer,
   Eye,
-  ArrowUpRight,
-  ArrowDownRight,
-  Minus,
   ClipboardList,
   Loader2,
-  FileText,
-  Shield,
-  Leaf,
-  Building2,
-  FileCheck,
   Package,
   AlertCircle,
   TreePine,
   Heart,
+  Layers,
+  MonitorDot,
+  Trophy,
+  CalendarClock,
+  FileClock,
 } from "lucide-react";
 
 // ─────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────
+interface SiteProgress {
+  site_id: number;
+  name: string;
+  barangay: string;
+  monitoring_status: string;
+  site_hectares: number;
+  planted_hectares: number;
+  planted: number;
+  survived: number;
+  dead: number;
+  rate: number;
+  visits: number;
+  last_visit: string;
+  days_since_visit: number | null;
+  overdue: boolean;
+  no_visit: boolean;
+  reason?: string;
+}
+
 interface DashboardData {
   stats: {
     total_applications: number;
     approved: number;
     pending: number;
     rejected: number;
+    under_monitoring_applications: number;
     completed_applications: number;
     completed_sites: number;
     total_seedlings_planted: number;
@@ -68,19 +82,14 @@ interface DashboardData {
     assessors: number;
     trees_endorsed: number;
     overall_survival_rate: number;
-    active_alerts: number;
+    official_sites: number;
+    official_hectares: number;
   };
   application_trend: {
     month: string;
     submitted: number;
     approved: number;
     rejected: number;
-  }[];
-  seedlings_planted_trend: {
-    month: string;
-    seedlings_planted: number;
-    cumulative_seedlings: number;
-    cumulative_area_hectares: number;
   }[];
   status_data: { name: string; value: number; fill: string }[];
   assessment_data: { name: string; assessed: number; approved: number }[];
@@ -103,15 +112,6 @@ interface DashboardData {
     status: string;
     created_at: string;
   }[];
-  all_apps: {
-    ref: string;
-    title: string;
-    classification: string;
-    area: string;
-    hectares: string;
-    status: string;
-    created_at: string;
-  }[];
   assessors: {
     name: string;
     assessments: number;
@@ -120,13 +120,6 @@ interface DashboardData {
     status: string;
     avatar: string;
   }[];
-  barangay_breakdown: {
-    name: string;
-    apps: number;
-    trees: number;
-    rate: number;
-  }[];
-  // NEW
   seedling_request_pipeline: { name: string; value: number; fill: string }[];
   site_verification_pipeline: { name: string; value: number; fill: string }[];
   progress_report_stats: {
@@ -135,6 +128,45 @@ interface DashboardData {
     total_ongoing: number;
     ongoing_completed: number;
   };
+  // Monitoring
+  monitoring_summary: {
+    official_sites: number;
+    official_hectares: number;
+    sites_under_monitoring: number;
+    hectares_under_monitoring: number;
+    available_sites: number;
+    sites_planted: number;
+    planted_hectares: number;
+    total_planted: number;
+    total_survived: number;
+    total_dead: number;
+    survival_rate: number;
+    overdue_sites: number;
+    sites_without_visit: number;
+    pending_reports: number;
+    visits_last_30_days: number;
+    overdue_days: number;
+  };
+  monitoring_status_breakdown: {
+    key: string;
+    name: string;
+    value: number;
+    hectares: number;
+    fill: string;
+  }[];
+  planting_trend: {
+    month: string;
+    new_seedlings: number;
+    new_dead: number;
+    new_sites: number;
+    visits: number;
+    cumulative_sites: number;
+    cumulative_seedlings: number;
+    cumulative_survived: number;
+    cumulative_hectares: number;
+    survival_rate: number | null;
+  }[];
+  site_progress: SiteProgress[];
   survival_by_species: {
     name: string;
     planted: number;
@@ -142,42 +174,8 @@ interface DashboardData {
     dead: number;
     rate: number;
   }[];
-  survival_by_barangay: {
-    name: string;
-    survived: number;
-    dead: number;
-    rate: number;
-  }[];
-  documentation_stats: {
-    apps_with_maintenance_plan: number;
-    apps_total: number;
-    sites_with_permits: number;
-    sites_total: number;
-    initial_visits_with_agreement: number;
-    initial_visits_total: number;
-    permit_docs_by_type: {
-      document_type: string;
-      count: number;
-      display: string;
-    }[];
-  };
-  top_performing_sites: {
-    name: string;
-    barangay: string;
-    survived: number;
-    dead: number;
-    total: number;
-    rate: number;
-  }[];
-  sites_needing_attention: {
-    name: string;
-    barangay: string;
-    survived: number;
-    dead: number;
-    total: number;
-    rate: number;
-    last_visit: string;
-  }[];
+  top_performing_sites: SiteProgress[];
+  sites_needing_attention: SiteProgress[];
 }
 
 // ─────────────────────────────────────────
@@ -193,14 +191,9 @@ const WEATHER_DATA = [
 const TABS = [
   { id: "overview", label: "Overview", icon: <Activity size={13} /> },
   { id: "monitoring", label: "Monitoring", icon: <Heart size={13} /> },
-  {
-    id: "documentation",
-    label: "Documentation",
-    icon: <FileCheck size={13} />,
-  },
 ];
 
-const ACT_STYLE: Record<string, { bg: string; icon: JSX.Element }> = {
+const ACT_STYLE: Record<string, { bg: string; icon: ReactElement }> = {
   success: {
     bg: "bg-emerald-50 text-emerald-700",
     icon: <CheckCircle2 size={12} />,
@@ -220,6 +213,15 @@ const STATUS_BADGE: Record<string, string> = {
   Completed: "bg-green-50 text-green-700 border-green-200",
 };
 
+const MONITORING_BADGE: Record<string, string> = {
+  "Under Monitoring": "bg-indigo-50 text-indigo-700 border-indigo-200",
+  Completed: "bg-green-50 text-green-700 border-green-200",
+  Failed: "bg-red-50 text-red-700 border-red-200",
+  Available: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Reserved: "bg-amber-50 text-amber-700 border-amber-200",
+  "On Hold": "bg-gray-50 text-gray-600 border-gray-200",
+};
+
 const ZONE_ACCENTS = [
   "bg-emerald-500",
   "bg-indigo-500",
@@ -228,14 +230,21 @@ const ZONE_ACCENTS = [
   "bg-red-500",
   "bg-violet-500",
 ];
-const ZONE_HEX = [
-  "#10b981",
-  "#6366f1",
-  "#f59e0b",
-  "#3b82f6",
-  "#ef4444",
-  "#8b5cf6",
-];
+
+const AXIS_TICK = { fontSize: 11, fill: "#94a3b8" };
+
+// Matches LOW_SURVIVAL_THRESHOLD in the backend
+const SURVIVAL_TARGET = 70;
+
+function rateColor(rate: number) {
+  if (rate >= SURVIVAL_TARGET) return "#10b981";
+  if (rate >= 50) return "#f59e0b";
+  return "#ef4444";
+}
+
+const fmt = (n: number | undefined | null) => (n ?? 0).toLocaleString();
+const fmtHa = (n: number | undefined | null) =>
+  `${(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ha`;
 
 // ─────────────────────────────────────────
 // SUB-COMPONENTS
@@ -247,25 +256,14 @@ function GreenTooltip({ active, payload, label }: any) {
       <p className="font-semibold mb-1 text-emerald-300">{label}</p>
       {payload.map((p: any, i: number) => (
         <p key={i} style={{ color: p.color ?? "#86efac" }}>
-          {p.name}: <b>{p.value}</b>
+          {p.name}: <b>{p.value ?? "—"}</b>
         </p>
       ))}
     </div>
   );
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-  sub,
-  trend,
-  trendVal,
-  color,
-  delay,
-}: any) {
-  const up = trend === "up",
-    down = trend === "down";
+function StatCard({ icon, label, value, sub, color, delay }: any) {
   return (
     <div
       className="group relative overflow-hidden rounded-2xl p-5 border border-white/60
@@ -274,31 +272,8 @@ function StatCard({
       style={{ animationDelay: delay }}
     >
       <div className={`absolute top-0 left-0 right-0 h-0.5 ${color}`} />
-      <div className="flex items-start justify-between mb-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#057501]/[0.08]">
-          <span className="text-[#057501]">{icon}</span>
-        </div>
-        {trend && (
-          <span
-            className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full
-            ${
-              up
-                ? "bg-emerald-50 text-emerald-600"
-                : down
-                  ? "bg-red-50 text-red-500"
-                  : "bg-gray-100 text-gray-500"
-            }`}
-          >
-            {up ? (
-              <ArrowUpRight size={11} />
-            ) : down ? (
-              <ArrowDownRight size={11} />
-            ) : (
-              <Minus size={11} />
-            )}
-            {trendVal}
-          </span>
-        )}
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#057501]/[0.08] mb-3">
+        <span className="text-[#057501]">{icon}</span>
       </div>
       <p className="text-[13px] text-gray-500 font-medium mb-0.5">{label}</p>
       <p className="text-[26px] font-bold text-gray-800 leading-none dash-title">
@@ -311,7 +286,7 @@ function StatCard({
 
 function SectionHeader({ title, sub, badge }: any) {
   return (
-    <div className="flex items-start justify-between mb-5">
+    <div className="flex items-start justify-between mb-5 gap-3">
       <div>
         <h2 className="dash-title text-[15px] font-bold text-gray-800">
           {title}
@@ -339,47 +314,13 @@ function Card({ children, delay = "0s", className = "" }: any) {
   );
 }
 
-/** Gauge chart built with RadialBarChart (semi-circle) */
-function GaugeChart({
-  value,
-  label,
-  color = "#10b981",
-  size = 180,
-}: {
-  value: number;
-  label: string;
-  color?: string;
-  size?: number;
-}) {
-  const gaugeData = [
-    { name: "value", value: value, fill: color },
-    { name: "empty", value: 100 - value, fill: "#f1f5f9" },
-  ];
+function EmptyState({ text, className = "py-10" }: any) {
   return (
-    <div className="flex flex-col items-center justify-center">
-      <ResponsiveContainer width={size} height={size * 0.65}>
-        <RadialBarChart
-          innerRadius="70%"
-          outerRadius="100%"
-          data={gaugeData}
-          startAngle={180}
-          endAngle={0}
-          barSize={14}
-        >
-          <RadialBar background dataKey="value" cornerRadius={10} />
-        </RadialBarChart>
-      </ResponsiveContainer>
-      <div className="text-center -mt-12">
-        <p className="dash-title text-[32px] font-extrabold" style={{ color }}>
-          {value}%
-        </p>
-        <p className="text-[11px] text-gray-500 font-medium">{label}</p>
-      </div>
-    </div>
+    <p className={`text-center text-gray-400 text-sm ${className}`}>{text}</p>
   );
 }
 
-function ComplianceBar({ label, done, total, color = "bg-emerald-500" }: any) {
+function ProgressBar({ label, done, total, color = "bg-emerald-500" }: any) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return (
     <div>
@@ -400,290 +341,246 @@ function ComplianceBar({ label, done, total, color = "bg-emerald-500" }: any) {
   );
 }
 
+function DonutWithLegend({
+  data,
+  height = 140,
+  emptyText,
+}: {
+  data: { name: string; value: number; fill: string }[];
+  height?: number;
+  emptyText: string;
+}) {
+  const visible = data.filter((d) => d.value > 0);
+  if (visible.length === 0) return <EmptyState text={emptyText} />;
+  return (
+    <>
+      <ResponsiveContainer width="100%" height={height}>
+        <PieChart>
+          <Pie
+            data={visible}
+            dataKey="value"
+            nameKey="name"
+            outerRadius={height * 0.4}
+            innerRadius={height * 0.22}
+            paddingAngle={2}
+          >
+            {visible.map((d, i) => (
+              <Cell key={i} fill={d.fill} />
+            ))}
+          </Pie>
+          <Tooltip content={<GreenTooltip />} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="flex flex-col gap-1.5 mt-2">
+        {visible.map((d) => (
+          <div key={d.name} className="flex items-center gap-2">
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ background: d.fill }}
+            />
+            <span className="text-[11px] text-gray-600">{d.name}</span>
+            <span className="ml-auto text-[11px] font-bold text-gray-800">
+              {d.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function MiniStat({ label, value, tone = "text-gray-800" }: any) {
+  return (
+    <div className="bg-gray-50 rounded-xl p-3">
+      <p className="text-[10px] text-gray-400 font-medium mb-1">{label}</p>
+      <p className={`dash-title text-[22px] font-bold ${tone}`}>{value}</p>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────
 // TAB: OVERVIEW
 // ─────────────────────────────────────────
 function TabOverview({ data }: { data: DashboardData }) {
+  const s = data.stats;
+  const approvalPct =
+    s.total_applications > 0
+      ? Math.round((s.approved / s.total_applications) * 100)
+      : 0;
+
   const STAT_CARDS = [
     {
       icon: <ClipboardList size={20} />,
       label: "Total Applications",
-      value: data.stats.total_applications.toLocaleString(),
-      sub: `${data.stats.pending} pending review`,
-      trend: "up",
-      trendVal: "+12",
+      value: fmt(s.total_applications),
+      sub: `${s.rejected} rejected or cancelled`,
       color: "bg-emerald-500",
-      delay: "0.05s",
-    },
-    {
-      icon: <CheckCircle2 size={20} />,
-      label: "Approved",
-      value: data.stats.approved.toLocaleString(),
-      sub: `${data.stats.total_applications > 0 ? Math.round((data.stats.approved / data.stats.total_applications) * 100) : 0}% approval rate`,
-      trend: "up",
-      trendVal: "+8%",
-      color: "bg-teal-500",
-      delay: "0.1s",
     },
     {
       icon: <Clock size={20} />,
       label: "Pending Review",
-      value: data.stats.pending.toLocaleString(),
-      sub: "Awaiting evaluation",
-      trend: "down",
-      trendVal: "-3",
+      value: fmt(s.pending),
+      sub: "For evaluation or head approval",
       color: "bg-amber-500",
-      delay: "0.15s",
     },
     {
-      icon: <Sprout size={20} />,
-      label: "Survival Rate",
-      value: `${data.stats.overall_survival_rate}%`,
-      sub: `From ${data.stats.total_seedlings_planted.toLocaleString()} planted`,
-      trend: "up",
-      trendVal: "+2.1%",
-      color: "bg-green-600",
-      delay: "0.2s",
+      icon: <CheckCircle2 size={20} />,
+      label: "Approved",
+      value: fmt(s.approved),
+      sub: `${approvalPct}% of all applications · awaiting orientation`,
+      color: "bg-teal-500",
+    },
+    {
+      icon: <MonitorDot size={20} />,
+      label: "Programs Under Monitoring",
+      value: fmt(s.under_monitoring_applications),
+      sub: `${s.completed_applications} programs completed`,
+      color: "bg-indigo-500",
     },
     {
       icon: <TreePine size={20} />,
-      label: "Seedlings Planted",
-      value: data.stats.total_seedlings_planted.toLocaleString(),
-      sub: `${data.stats.total_area_planted} ha covered`,
-      trend: "up",
-      trendVal: "+15%",
+      label: "Official Sites",
+      value: fmt(s.official_sites),
+      sub: `${fmtHa(s.official_hectares)} total area`,
       color: "bg-emerald-600",
-      delay: "0.25s",
-    },
-    {
-      icon: <Package size={20} />,
-      label: "Seedlings Endorsed",
-      value: data.stats.trees_endorsed.toLocaleString(),
-      sub: "From accepted requests",
-      trend: "up",
-      trendVal: "+12%",
-      color: "bg-green-500",
-      delay: "0.3s",
     },
     {
       icon: <MapPin size={20} />,
-      label: "Sites Assessed",
-      value: data.stats.areas_assessed.toLocaleString(),
-      sub: `${data.stats.completed_sites} sites completed`,
-      trend: "up",
-      trendVal: "+5",
+      label: "Sites Verified",
+      value: fmt(s.areas_assessed),
+      sub: `${s.completed_sites} sites with completed programs`,
       color: "bg-teal-600",
-      delay: "0.35s",
     },
     {
-      icon: <AlertTriangle size={20} />,
-      label: "Active Alerts",
-      value: data.stats.active_alerts.toLocaleString(),
-      sub: "Requires attention",
-      trend: "down",
-      trendVal: "-1",
-      color: "bg-orange-500",
-      delay: "0.4s",
+      icon: <Package size={20} />,
+      label: "Seedlings Released",
+      value: fmt(s.trees_endorsed),
+      sub: "From accepted seedling requests",
+      color: "bg-green-500",
+    },
+    {
+      icon: <Sprout size={20} />,
+      label: "Seedlings Planted",
+      value: fmt(s.total_seedlings_planted),
+      sub: `${fmtHa(s.total_area_planted)} planted`,
+      color: "bg-green-600",
     },
   ];
 
   return (
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {STAT_CARDS.map((c) => (
-          <StatCard key={c.label} {...c} />
+        {STAT_CARDS.map((c, i) => (
+          <StatCard key={c.label} {...c} delay={`${0.05 + i * 0.04}s`} />
         ))}
       </div>
 
       {/* Row 1: Application trend + Status pie */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-        <Card delay="0.45s" className="lg:col-span-2">
+        <Card delay="0.4s" className="lg:col-span-2">
           <SectionHeader
             title="Application Submissions & Approvals"
-            sub="Last 7 months • All assessment areas"
+            sub="Last 7 months"
             badge="Live Data"
           />
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={data.application_trend}>
-              <defs>
-                <linearGradient id="submGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="appGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.18} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0fdf4" />
-              <XAxis
-                dataKey="month"
-                tick={{ fontSize: 12, fill: "#94a3b8" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 12, fill: "#94a3b8" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip content={<GreenTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area
-                type="monotone"
-                dataKey="submitted"
-                name="Submitted"
-                stroke="#6366f1"
-                strokeWidth={2}
-                fill="url(#submGrad)"
-                strokeDasharray="5 3"
-              />
-              <Area
-                type="monotone"
-                dataKey="approved"
-                name="Approved"
-                stroke="#10b981"
-                strokeWidth={2.5}
-                fill="url(#appGrad)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          {data.application_trend.length > 0 ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <AreaChart data={data.application_trend}>
+                <defs>
+                  <linearGradient id="submGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="appGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.18} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0fdf4" />
+                <XAxis
+                  dataKey="month"
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip content={<GreenTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area
+                  type="monotone"
+                  dataKey="submitted"
+                  name="Submitted"
+                  stroke="#6366f1"
+                  strokeWidth={2}
+                  fill="url(#submGrad)"
+                  strokeDasharray="5 3"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="approved"
+                  name="Approved"
+                  stroke="#10b981"
+                  strokeWidth={2.5}
+                  fill="url(#appGrad)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="rejected"
+                  name="Rejected"
+                  stroke="#ef4444"
+                  strokeWidth={1.5}
+                  fill="none"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyState text="No applications in the last 7 months" />
+          )}
         </Card>
 
-        <Card delay="0.5s" className="flex flex-col">
+        <Card delay="0.45s" className="flex flex-col">
           <SectionHeader
             title="Application Status"
-            sub={`All ${data.stats.total_applications} applications`}
+            sub={`All ${s.total_applications} applications`}
           />
-          <ResponsiveContainer width="100%" height={180}>
-            <PieChart>
-              <Pie
-                data={data.status_data}
-                dataKey="value"
-                nameKey="name"
-                outerRadius={72}
-                innerRadius={38}
-                paddingAngle={3}
-              >
-                {data.status_data.map((d, i) => (
-                  <Cell key={i} fill={d.fill} />
-                ))}
-              </Pie>
-              <Tooltip content={<GreenTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="grid grid-cols-2 gap-2 mt-3">
-            {data.status_data.map((d) => (
-              <div key={d.name} className="flex items-center gap-2">
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ background: d.fill }}
-                />
-                <span className="text-[11.5px] text-gray-600">{d.name}</span>
-                <span className="ml-auto text-[11.5px] font-bold text-gray-800">
-                  {d.value}
-                </span>
-              </div>
-            ))}
-          </div>
+          <DonutWithLegend
+            data={data.status_data}
+            height={180}
+            emptyText="No applications yet"
+          />
         </Card>
       </div>
 
       {/* Row 2: Pipelines */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-        <Card delay="0.52s">
+        <Card delay="0.5s">
           <SectionHeader
             title="Seedling Request Pipeline"
             sub="Current status of all seedling requests"
           />
-          {data.seedling_request_pipeline.length > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={140}>
-                <PieChart>
-                  <Pie
-                    data={data.seedling_request_pipeline}
-                    dataKey="value"
-                    nameKey="name"
-                    outerRadius={55}
-                    innerRadius={30}
-                    paddingAngle={2}
-                  >
-                    {data.seedling_request_pipeline.map((d, i) => (
-                      <Cell key={i} fill={d.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<GreenTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex flex-col gap-1.5 mt-2">
-                {data.seedling_request_pipeline.map((d) => (
-                  <div key={d.name} className="flex items-center gap-2">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: d.fill }}
-                    />
-                    <span className="text-[11px] text-gray-600">{d.name}</span>
-                    <span className="ml-auto text-[11px] font-bold text-gray-800">
-                      {d.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="text-center text-gray-400 text-sm py-10">
-              No seedling requests yet
-            </p>
-          )}
+          <DonutWithLegend
+            data={data.seedling_request_pipeline}
+            emptyText="No seedling requests yet"
+          />
         </Card>
 
-        <Card delay="0.55s">
+        <Card delay="0.53s">
           <SectionHeader
             title="Site Verification Pipeline"
-            sub="DataManager review status"
+            sub="Site data review status"
           />
-          {data.site_verification_pipeline.length > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={140}>
-                <PieChart>
-                  <Pie
-                    data={data.site_verification_pipeline}
-                    dataKey="value"
-                    nameKey="name"
-                    outerRadius={55}
-                    innerRadius={30}
-                    paddingAngle={2}
-                  >
-                    {data.site_verification_pipeline.map((d, i) => (
-                      <Cell key={i} fill={d.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<GreenTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex flex-col gap-1.5 mt-2">
-                {data.site_verification_pipeline.map((d) => (
-                  <div key={d.name} className="flex items-center gap-2">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: d.fill }}
-                    />
-                    <span className="text-[11px] text-gray-600">{d.name}</span>
-                    <span className="ml-auto text-[11px] font-bold text-gray-800">
-                      {d.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="text-center text-gray-400 text-sm py-10">
-              No verifications yet
-            </p>
-          )}
+          <DonutWithLegend
+            data={data.site_verification_pipeline}
+            emptyText="No verifications yet"
+          />
         </Card>
 
-        <Card delay="0.58s">
+        <Card delay="0.56s">
           <SectionHeader
             title="Approval Rate Trend"
             sub="Monthly approval rate %"
@@ -697,13 +594,13 @@ function TabOverview({ data }: { data: DashboardData }) {
               />
               <XAxis
                 dataKey="month"
-                tick={{ fontSize: 11, fill: "#94a3b8" }}
+                tick={AXIS_TICK}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
                 domain={[0, 100]}
-                tick={{ fontSize: 11, fill: "#94a3b8" }}
+                tick={AXIS_TICK}
                 axisLine={false}
                 tickLine={false}
               />
@@ -725,7 +622,7 @@ function TabOverview({ data }: { data: DashboardData }) {
               Avg{" "}
               {data.approval_rate.length > 0
                 ? Math.round(
-                    data.approval_rate.reduce((s, r) => s + r.rate, 0) /
+                    data.approval_rate.reduce((sum, r) => sum + r.rate, 0) /
                       data.approval_rate.length,
                   )
                 : 0}
@@ -735,83 +632,58 @@ function TabOverview({ data }: { data: DashboardData }) {
         </Card>
       </div>
 
-      {/* Row 3: Seedlings trend + Assessors */}
+      {/* Row 3: Sites by barangay + Assessors */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
         <Card delay="0.6s" className="lg:col-span-2">
           <SectionHeader
-            title="Seedlings Planted Over Time"
-            sub="Cumulative planting progress with area (2m spacing)"
-            badge={`${data.stats.total_area_planted} ha total`}
+            title="Sites by Barangay"
+            sub="Top barangays by number of proposed sites"
           />
-          <ResponsiveContainer width="100%" height={240}>
-            <ComposedChart data={data.seedlings_planted_trend}>
-              <defs>
-                <linearGradient id="seedlingsGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0fdf4" />
-              <XAxis
-                dataKey="month"
-                tick={{ fontSize: 12, fill: "#94a3b8" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                yAxisId="left"
-                tick={{ fontSize: 12, fill: "#94a3b8" }}
-                axisLine={false}
-                tickLine={false}
-                label={{
-                  value: "Seedlings",
-                  angle: -90,
-                  position: "insideLeft",
-                  style: { fontSize: 11, fill: "#94a3b8" },
-                }}
-              />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                tick={{ fontSize: 12, fill: "#94a3b8" }}
-                axisLine={false}
-                tickLine={false}
-                label={{
-                  value: "Hectares",
-                  angle: 90,
-                  position: "insideRight",
-                  style: { fontSize: 11, fill: "#94a3b8" },
-                }}
-              />
-              <Tooltip content={<GreenTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area
-                yAxisId="left"
-                type="monotone"
-                dataKey="seedlings_planted"
-                name="Monthly Planted"
-                stroke="#10b981"
-                strokeWidth={2}
-                fill="url(#seedlingsGrad)"
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="cumulative_area_hectares"
-                name="Cumulative Area (ha)"
-                stroke="#6366f1"
-                strokeWidth={2.5}
-                dot={{ r: 3, fill: "#6366f1", strokeWidth: 0 }}
-                activeDot={{ r: 5, fill: "#0F4A2F" }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
+          {data.assessment_data.length > 0 ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={data.assessment_data} barGap={4}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f0fdf4"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="name"
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip content={<GreenTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar
+                  dataKey="assessed"
+                  name="Total Sites"
+                  fill="#c7d2fe"
+                  radius={[5, 5, 0, 0]}
+                />
+                <Bar
+                  dataKey="approved"
+                  name="Accepted"
+                  fill="#10b981"
+                  radius={[5, 5, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyState text="No site data yet" className="py-12" />
+          )}
         </Card>
 
         <Card delay="0.63s">
           <SectionHeader
-            title="Assessors"
-            sub={`${data.stats.assessors} active inspectors`}
+            title="Inspectors"
+            sub={`${s.assessors} active onsite inspectors`}
           />
           <div className="flex flex-col gap-2.5">
             {data.assessors.length > 0 ? (
@@ -830,17 +702,17 @@ function TabOverview({ data }: { data: DashboardData }) {
                       {a.assessments} verified · {a.approved} approved
                     </p>
                   </div>
-                  {a.pending_seedlings > 0 && (
-                    <span className="bg-amber-50 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
-                      {a.pending_seedlings} pending
-                    </span>
-                  )}
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${a.pending_seedlings > 0 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}
+                  >
+                    {a.pending_seedlings > 0
+                      ? `${a.pending_seedlings} pending`
+                      : "Clear"}
+                  </span>
                 </div>
               ))
             ) : (
-              <p className="text-center text-gray-400 text-sm py-8">
-                No inspectors
-              </p>
+              <EmptyState text="No inspectors" className="py-8" />
             )}
           </div>
         </Card>
@@ -848,7 +720,7 @@ function TabOverview({ data }: { data: DashboardData }) {
 
       {/* Bottom row: Recent apps + Recent activity */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Card delay="0.65s" className="lg:col-span-2">
+        <Card delay="0.66s" className="lg:col-span-2">
           <SectionHeader title="Recent Applications" />
           <div className="flex flex-col gap-2.5">
             {data.recent_apps.length > 0 ? (
@@ -879,29 +751,23 @@ function TabOverview({ data }: { data: DashboardData }) {
                 </div>
               ))
             ) : (
-              <p className="text-center text-gray-400 text-sm py-8">
-                No recent applications
-              </p>
+              <EmptyState text="No recent applications" className="py-8" />
             )}
           </div>
         </Card>
 
         <Card delay="0.7s">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="dash-title text-[15px] font-bold text-gray-800">
-              Recent Activity
-            </h2>
-          </div>
+          <SectionHeader title="Recent Activity" />
           <div className="flex flex-col gap-3">
             {data.recent_activities.length > 0 ? (
               data.recent_activities.slice(0, 6).map((a) => {
-                const s = ACT_STYLE[a.type] || ACT_STYLE.info;
+                const st = ACT_STYLE[a.type] || ACT_STYLE.info;
                 return (
                   <div key={a.id} className="flex items-start gap-3">
                     <div
-                      className={`mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${s.bg}`}
+                      className={`mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${st.bg}`}
                     >
-                      {s.icon}
+                      {st.icon}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
@@ -923,9 +789,7 @@ function TabOverview({ data }: { data: DashboardData }) {
                 );
               })
             ) : (
-              <p className="text-center text-gray-400 text-sm py-8">
-                No recent activity
-              </p>
+              <EmptyState text="No recent activity" className="py-8" />
             )}
           </div>
         </Card>
@@ -935,108 +799,470 @@ function TabOverview({ data }: { data: DashboardData }) {
 }
 
 // ─────────────────────────────────────────
-// TAB: MONITORING & SURVIVAL
+// TAB: MONITORING & PROGRESS
 // ─────────────────────────────────────────
 function TabMonitoring({ data }: { data: DashboardData }) {
-  const { progress_report_stats } = data;
+  const m = data.monitoring_summary;
+  const prs = data.progress_report_stats;
+  const trend = data.planting_trend;
+
+  const KPI_CARDS = [
+    {
+      icon: <TreePine size={20} />,
+      label: "Official Sites",
+      value: fmt(m.official_sites),
+      sub: `${fmtHa(m.official_hectares)} total area`,
+      color: "bg-emerald-600",
+    },
+    {
+      icon: <MonitorDot size={20} />,
+      label: "Under Monitoring",
+      value: fmt(m.sites_under_monitoring),
+      sub: `${fmtHa(m.hectares_under_monitoring)} being monitored`,
+      color: "bg-indigo-500",
+    },
+    {
+      icon: <Layers size={20} />,
+      label: "Available Sites",
+      value: fmt(m.available_sites),
+      sub: "Open for new programs",
+      color: "bg-teal-500",
+    },
+    {
+      icon: <MapPin size={20} />,
+      label: "Sites Planted",
+      value: fmt(m.sites_planted),
+      sub: `${fmtHa(m.planted_hectares)} planted area`,
+      color: "bg-green-600",
+    },
+    {
+      icon: <Sprout size={20} />,
+      label: "Total Plants Planted",
+      value: fmt(m.total_planted),
+      sub: `${fmt(m.total_survived)} alive · ${fmt(m.total_dead)} dead`,
+      color: "bg-emerald-500",
+    },
+    {
+      icon: <Heart size={20} />,
+      label: "Survival Rate",
+      value: `${m.survival_rate}%`,
+      sub:
+        m.survival_rate >= SURVIVAL_TARGET
+          ? `On target (≥ ${SURVIVAL_TARGET}%)`
+          : `Below ${SURVIVAL_TARGET}% target`,
+      color: m.survival_rate >= SURVIVAL_TARGET ? "bg-green-500" : "bg-red-500",
+    },
+  ];
+
+  const hasTrend = trend.some((t) => t.cumulative_seedlings > 0 || t.visits > 0);
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Top: Overall survival gauge + visit stats */}
+      {/* KPI row */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {KPI_CARDS.map((c, i) => (
+          <StatCard key={c.label} {...c} delay={`${0.05 + i * 0.04}s`} />
+        ))}
+      </div>
+
+      {/* Planting progress + Site status */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Card>
+        <Card className="lg:col-span-2" delay="0.3s">
           <SectionHeader
-            title="Overall Survival Rate"
-            sub="Across all accepted progress reports"
+            title="Planting Progress"
+            sub="Plants planted each month, with running totals of plants and planted area"
+            badge={`${fmtHa(m.planted_hectares)} planted`}
           />
-          <GaugeChart
-            value={data.stats.overall_survival_rate}
-            label="Survival Rate"
-            color="#10b981"
-          />
+          {hasTrend ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={trend}>
+                <defs>
+                  <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.18} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0fdf4" />
+                <XAxis
+                  dataKey="month"
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  yAxisId="left"
+                  allowDecimals={false}
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                  unit=" ha"
+                />
+                <Tooltip content={<GreenTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="cumulative_seedlings"
+                  name="Total Plants"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  fill="url(#cumGrad)"
+                />
+                <Bar
+                  yAxisId="left"
+                  dataKey="new_seedlings"
+                  name="Planted This Month"
+                  fill="#86efac"
+                  radius={[4, 4, 0, 0]}
+                  barSize={18}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="cumulative_hectares"
+                  name="Planted Area (ha)"
+                  stroke="#6366f1"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: "#6366f1", strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: "#0F4A2F" }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyState text="No accepted progress reports yet" className="py-16" />
+          )}
         </Card>
 
-        <Card>
+        <Card delay="0.34s">
           <SectionHeader
-            title="Initial Visits (Orientation)"
-            sub="Baseline & agreement signing"
+            title="Official Site Status"
+            sub={`${m.official_sites} sites · ${fmtHa(m.official_hectares)}`}
           />
-          <div className="flex flex-col gap-4 mt-4">
-            <ComplianceBar
-              label="Initial visits completed"
-              done={progress_report_stats.initial_completed}
-              total={progress_report_stats.total_initial}
+          {m.official_sites > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={150}>
+                <PieChart>
+                  <Pie
+                    data={data.monitoring_status_breakdown.filter((d) => d.value > 0)}
+                    dataKey="value"
+                    nameKey="name"
+                    outerRadius={62}
+                    innerRadius={36}
+                    paddingAngle={2}
+                  >
+                    {data.monitoring_status_breakdown
+                      .filter((d) => d.value > 0)
+                      .map((d, i) => (
+                        <Cell key={i} fill={d.fill} />
+                      ))}
+                  </Pie>
+                  <Tooltip content={<GreenTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="flex flex-col gap-2 mt-3">
+                {data.monitoring_status_breakdown.map((d) => (
+                  <div key={d.key} className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ background: d.fill }}
+                    />
+                    <span className="text-[11.5px] text-gray-600">{d.name}</span>
+                    <span className="ml-auto text-[11px] text-gray-400">
+                      {fmtHa(d.hectares)}
+                    </span>
+                    <span className="w-6 text-right text-[11.5px] font-bold text-gray-800">
+                      {d.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <EmptyState text="No official sites yet" />
+          )}
+        </Card>
+      </div>
+
+      {/* Sites planted trend + Survival trend + Visit compliance */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <Card delay="0.38s">
+          <SectionHeader
+            title="Sites Planted"
+            sub="New planted sites per month and running total"
+          />
+          {hasTrend ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <ComposedChart data={trend}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f0fdf4"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="month"
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip content={<GreenTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar
+                  dataKey="new_sites"
+                  name="New Sites"
+                  fill="#a5b4fc"
+                  radius={[4, 4, 0, 0]}
+                  barSize={14}
+                />
+                <Line
+                  type="stepAfter"
+                  dataKey="cumulative_sites"
+                  name="Total Sites"
+                  stroke="#4f46e5"
+                  strokeWidth={2.5}
+                  dot={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyState text="No planted sites yet" className="py-16" />
+          )}
+        </Card>
+
+        <Card delay="0.42s">
+          <SectionHeader
+            title="Survival Rate Trend"
+            sub={`Running survival rate · target ${SURVIVAL_TARGET}%`}
+          />
+          {trend.some((t) => t.survival_rate !== null) ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={trend}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f0fdf4"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="month"
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                  unit="%"
+                />
+                <Tooltip content={<GreenTooltip />} />
+                <ReferenceLine
+                  y={SURVIVAL_TARGET}
+                  stroke="#f59e0b"
+                  strokeDasharray="4 4"
+                  label={{
+                    value: "Target",
+                    position: "insideTopRight",
+                    fontSize: 10,
+                    fill: "#f59e0b",
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="survival_rate"
+                  name="Survival %"
+                  stroke="#10b981"
+                  strokeWidth={2.5}
+                  connectNulls
+                  dot={{ r: 3, fill: "#10b981", strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: "#0F4A2F" }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyState text="No survival data yet" className="py-16" />
+          )}
+        </Card>
+
+        <Card delay="0.46s">
+          <SectionHeader
+            title="Visit Compliance"
+            sub="Field visits and report reviews"
+          />
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <MiniStat
+              label="Visits (last 30 days)"
+              value={m.visits_last_30_days}
+              tone="text-emerald-600"
+            />
+            <MiniStat
+              label={`Overdue (> ${m.overdue_days} days)`}
+              value={m.overdue_sites}
+              tone={m.overdue_sites > 0 ? "text-red-500" : "text-gray-800"}
+            />
+            <MiniStat
+              label="No visit yet"
+              value={m.sites_without_visit}
+              tone={m.sites_without_visit > 0 ? "text-amber-600" : "text-gray-800"}
+            />
+            <MiniStat
+              label="Reports to review"
+              value={m.pending_reports}
+              tone={m.pending_reports > 0 ? "text-amber-600" : "text-gray-800"}
+            />
+          </div>
+          <div className="flex flex-col gap-3">
+            <ProgressBar
+              label="Initial visits accepted"
+              done={prs.initial_completed}
+              total={prs.total_initial}
               color="bg-emerald-500"
             />
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              <div className="bg-gray-50 rounded-xl p-3">
-                <p className="text-[10px] text-gray-400 font-medium mb-1">
-                  Total Visits
-                </p>
-                <p className="dash-title text-[22px] font-bold text-gray-800">
-                  {progress_report_stats.total_initial}
-                </p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3">
-                <p className="text-[10px] text-gray-400 font-medium mb-1">
-                  Completed
-                </p>
-                <p className="dash-title text-[22px] font-bold text-emerald-600">
-                  {progress_report_stats.initial_completed}
-                </p>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <SectionHeader
-            title="Ongoing Monitoring"
-            sub="Follow-up site visits"
-          />
-          <div className="flex flex-col gap-4 mt-4">
-            <ComplianceBar
-              label="Ongoing visits completed"
-              done={progress_report_stats.ongoing_completed}
-              total={progress_report_stats.total_ongoing}
+            <ProgressBar
+              label="Ongoing visits accepted"
+              done={prs.ongoing_completed}
+              total={prs.total_ongoing}
               color="bg-indigo-500"
             />
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              <div className="bg-gray-50 rounded-xl p-3">
-                <p className="text-[10px] text-gray-400 font-medium mb-1">
-                  Total Visits
-                </p>
-                <p className="dash-title text-[22px] font-bold text-gray-800">
-                  {progress_report_stats.total_ongoing}
-                </p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3">
-                <p className="text-[10px] text-gray-400 font-medium mb-1">
-                  Completed
-                </p>
-                <p className="dash-title text-[22px] font-bold text-indigo-600">
-                  {progress_report_stats.ongoing_completed}
-                </p>
-              </div>
-            </div>
           </div>
         </Card>
       </div>
 
+      {/* Site progress table */}
+      <Card delay="0.5s">
+        <SectionHeader
+          title="Site Progress"
+          sub="Planted area, plant count and survival per monitored site"
+          badge={`${data.site_progress.length} sites`}
+        />
+        {data.site_progress.length > 0 ? (
+          <div className="overflow-x-auto -mx-2">
+            <table className="w-full text-left min-w-[860px]">
+              <thead>
+                <tr className="text-[10.5px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                  <th className="px-2 py-2 font-semibold">Site</th>
+                  <th className="px-2 py-2 font-semibold">Status</th>
+                  <th className="px-2 py-2 font-semibold text-right">Site Area</th>
+                  <th className="px-2 py-2 font-semibold text-right">Planted Area</th>
+                  <th className="px-2 py-2 font-semibold text-right">Planted</th>
+                  <th className="px-2 py-2 font-semibold text-right">Alive</th>
+                  <th className="px-2 py-2 font-semibold w-[160px]">Survival</th>
+                  <th className="px-2 py-2 font-semibold text-right">Visits</th>
+                  <th className="px-2 py-2 font-semibold">Last Visit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.site_progress.map((s) => {
+                  const coverage =
+                    s.site_hectares > 0
+                      ? Math.min(Math.round((s.planted_hectares / s.site_hectares) * 100), 100)
+                      : null;
+                  return (
+                    <tr
+                      key={s.site_id}
+                      className="border-b border-gray-50 hover:bg-gray-50/70 transition text-[12px]"
+                    >
+                      <td className="px-2 py-2.5">
+                        <p className="font-bold text-gray-800 truncate max-w-[200px]">
+                          {s.name}
+                        </p>
+                        <p className="text-[10.5px] text-gray-400">{s.barangay}</p>
+                      </td>
+                      <td className="px-2 py-2.5">
+                        <span
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${MONITORING_BADGE[s.monitoring_status] ?? "bg-gray-50 text-gray-600 border-gray-200"}`}
+                        >
+                          {s.monitoring_status}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2.5 text-right text-gray-600">
+                        {fmtHa(s.site_hectares)}
+                      </td>
+                      <td className="px-2 py-2.5 text-right">
+                        <span className="text-gray-800 font-semibold">
+                          {fmtHa(s.planted_hectares)}
+                        </span>
+                        {coverage !== null && (
+                          <p className="text-[10px] text-gray-400">{coverage}% of site</p>
+                        )}
+                      </td>
+                      <td className="px-2 py-2.5 text-right text-gray-700">
+                        {fmt(s.planted)}
+                      </td>
+                      <td className="px-2 py-2.5 text-right text-gray-700">
+                        {fmt(s.survived)}
+                      </td>
+                      <td className="px-2 py-2.5">
+                        {s.planted > 0 ? (
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${s.rate}%`,
+                                  background: rateColor(s.rate),
+                                }}
+                              />
+                            </div>
+                            <span
+                              className="text-[11.5px] font-bold w-11 text-right"
+                              style={{ color: rateColor(s.rate) }}
+                            >
+                              {s.rate}%
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2.5 text-right text-gray-700">
+                        {s.visits}
+                      </td>
+                      <td className="px-2 py-2.5">
+                        <span
+                          className={`text-[11px] ${s.overdue ? "text-red-500 font-semibold" : s.no_visit ? "text-amber-600 font-semibold" : "text-gray-500"}`}
+                        >
+                          {s.last_visit}
+                        </span>
+                        {s.overdue && (
+                          <p className="text-[10px] text-red-400">Overdue</p>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState text="No monitored sites yet" />
+        )}
+      </Card>
+
       {/* Survival by species + Top performing sites */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2" delay="0.54s">
           <SectionHeader
             title="Survival Rate by Species"
-            sub="Which species thrive in Ormoc"
+            sub="Which species do best — useful for choosing seedlings for new programs"
           />
           {data.survival_by_species.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart
-                data={data.survival_by_species}
-                layout="vertical"
-                barGap={4}
-              >
+              <BarChart data={data.survival_by_species} layout="vertical">
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="#f0fdf4"
@@ -1045,9 +1271,10 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                 <XAxis
                   type="number"
                   domain={[0, 100]}
-                  tick={{ fontSize: 11, fill: "#94a3b8" }}
+                  tick={AXIS_TICK}
                   axisLine={false}
                   tickLine={false}
+                  unit="%"
                 />
                 <YAxis
                   type="category"
@@ -1055,26 +1282,27 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                   tick={{ fontSize: 11, fill: "#64748b" }}
                   axisLine={false}
                   tickLine={false}
-                  width={100}
+                  width={110}
                 />
                 <Tooltip content={<GreenTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar
-                  dataKey="rate"
-                  name="Survival %"
-                  fill="#10b981"
-                  radius={[0, 5, 5, 0]}
+                <ReferenceLine
+                  x={SURVIVAL_TARGET}
+                  stroke="#f59e0b"
+                  strokeDasharray="4 4"
                 />
+                <Bar dataKey="rate" name="Survival %" radius={[0, 5, 5, 0]}>
+                  {data.survival_by_species.map((sp, i) => (
+                    <Cell key={i} fill={rateColor(sp.rate)} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-center text-gray-400 text-sm py-12">
-              No survival data yet
-            </p>
+            <EmptyState text="No survival data yet" className="py-12" />
           )}
         </Card>
 
-        <Card>
+        <Card delay="0.58s">
           <SectionHeader
             title="Top Performing Sites"
             sub="Highest survival rates"
@@ -1083,67 +1311,69 @@ function TabMonitoring({ data }: { data: DashboardData }) {
             {data.top_performing_sites.length > 0 ? (
               data.top_performing_sites.map((s, i) => (
                 <div
-                  key={i}
+                  key={s.site_id}
                   className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition"
                 >
                   <div
-                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-white text-[11px] font-bold shrink-0 ${ZONE_ACCENTS[i % ZONE_ACCENTS.length]}`}
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0 ${ZONE_ACCENTS[i % ZONE_ACCENTS.length]}`}
                   >
-                    #{i + 1}
+                    {i === 0 ? (
+                      <Trophy size={13} />
+                    ) : (
+                      <span className="text-[11px] font-bold">#{i + 1}</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[12px] font-bold text-gray-800 truncate">
                       {s.name}
                     </p>
                     <p className="text-[10.5px] text-gray-400 truncate">
-                      {s.barangay}
+                      {s.barangay} · {fmtHa(s.planted_hectares)}
                     </p>
                   </div>
                   <div className="text-right">
                     <p
                       className="text-[13px] font-bold"
-                      style={{
-                        color:
-                          s.rate >= 70
-                            ? "#10b981"
-                            : s.rate >= 50
-                              ? "#f59e0b"
-                              : "#ef4444",
-                      }}
+                      style={{ color: rateColor(s.rate) }}
                     >
                       {s.rate}%
                     </p>
                     <p className="text-[9px] text-gray-400">
-                      {s.survived}/{s.total}
+                      {fmt(s.survived)}/{fmt(s.planted)}
                     </p>
                   </div>
                 </div>
               ))
             ) : (
-              <p className="text-center text-gray-400 text-sm py-8">No data</p>
+              <EmptyState text="No data yet" className="py-8" />
             )}
           </div>
         </Card>
       </div>
 
-      {/* Sites needing attention + survival by barangay */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Card>
-          <SectionHeader
-            title="Sites Needing Attention"
-            sub="Low survival or overdue visits"
-          />
-          <div className="flex flex-col gap-2">
-            {data.sites_needing_attention.length > 0 ? (
-              data.sites_needing_attention.map((s, i) => (
+      {/* Sites needing attention */}
+      <Card delay="0.62s">
+        <SectionHeader
+          title="Sites Needing Attention"
+          sub={`Overdue visits (> ${m.overdue_days} days), no visit yet, or survival below ${SURVIVAL_TARGET}%`}
+        />
+        {data.sites_needing_attention.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {data.sites_needing_attention.map((s) => {
+              const Icon = s.overdue
+                ? CalendarClock
+                : s.no_visit
+                  ? FileClock
+                  : AlertCircle;
+              const tone = s.overdue || (!s.no_visit && s.rate < 50)
+                ? "border-red-100 bg-red-50/40 text-red-500"
+                : "border-amber-100 bg-amber-50/40 text-amber-600";
+              return (
                 <div
-                  key={i}
-                  className="flex items-start gap-3 p-2.5 rounded-lg border border-red-100 bg-red-50/30"
+                  key={s.site_id}
+                  className={`flex items-start gap-3 p-3 rounded-xl border ${tone}`}
                 >
-                  <AlertCircle
-                    size={16}
-                    className="text-red-500 mt-0.5 shrink-0"
-                  />
+                  <Icon size={16} className="mt-0.5 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-[12px] font-bold text-gray-800 truncate">
                       {s.name}
@@ -1151,287 +1381,21 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                     <p className="text-[10.5px] text-gray-500 truncate">
                       {s.barangay}
                     </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] text-red-600 font-semibold">
-                        {s.rate}% survival
-                      </span>
-                      <span className="text-[10px] text-gray-400">
-                        · {s.dead} dead
-                      </span>
-                      <span className="text-[10px] text-gray-400">
-                        · {s.last_visit}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-center text-gray-400 text-sm py-8">
-                All sites healthy 🌱
-              </p>
-            )}
-          </div>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <SectionHeader
-            title="Survival by Barangay"
-            sub="Geographic performance heatmap"
-          />
-          {data.survival_by_barangay.length > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={data.survival_by_barangay} barGap={4}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#f0fdf4"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fontSize: 11, fill: "#94a3b8" }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "#94a3b8" }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip content={<GreenTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar
-                  dataKey="survived"
-                  name="Survived"
-                  fill="#10b981"
-                  radius={[5, 5, 0, 0]}
-                />
-                <Bar
-                  dataKey="dead"
-                  name="Dead"
-                  fill="#f87171"
-                  radius={[5, 5, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-center text-gray-400 text-sm py-12">
-              No barangay survival data
-            </p>
-          )}
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────
-// TAB: DOCUMENTATION & COMPLIANCE
-// ─────────────────────────────────────────
-function TabDocumentation({ data }: { data: DashboardData }) {
-  const d = data.documentation_stats;
-
-  return (
-    <div className="flex flex-col gap-5">
-      {/* Compliance overview bars */}
-      <Card>
-        <SectionHeader
-          title="Documentation Completeness"
-          sub="Key records needed for program compliance"
-          badge={`${Math.round(((d.apps_with_maintenance_plan / Math.max(d.apps_total, 1) + d.sites_with_permits / Math.max(d.sites_total, 1) + d.initial_visits_with_agreement / Math.max(d.initial_visits_total, 1)) / 3) * 100)}% overall`}
-        />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5">
-          <ComplianceBar
-            label="Applications with Maintenance Plans"
-            done={d.apps_with_maintenance_plan}
-            total={d.apps_total}
-            color="bg-emerald-500"
-          />
-          <ComplianceBar
-            label="Sites with Permit Documents"
-            done={d.sites_with_permits}
-            total={d.sites_total}
-            color="bg-indigo-500"
-          />
-          <ComplianceBar
-            label="Initial Visits with Signed Agreements"
-            done={d.initial_visits_with_agreement}
-            total={d.initial_visits_total}
-            color="bg-teal-500"
-          />
-          <ComplianceBar
-            label="Applications Fully Completed"
-            done={data.stats.completed_applications}
-            total={d.apps_total}
-            color="bg-green-600"
-          />
-        </div>
-      </Card>
-
-      {/* Permit documents breakdown + Assessors workload */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Card>
-          <SectionHeader
-            title="Permit Documents by Type"
-            sub="Land titles, tax declarations, and others"
-          />
-          {d.permit_docs_by_type.length > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie
-                    data={d.permit_docs_by_type}
-                    dataKey="count"
-                    nameKey="display"
-                    outerRadius={80}
-                    innerRadius={42}
-                    paddingAngle={3}
-                  >
-                    {d.permit_docs_by_type.map((p, i) => (
-                      <Cell key={i} fill={ZONE_HEX[i % ZONE_HEX.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<GreenTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="grid grid-cols-2 gap-2 mt-3">
-                {d.permit_docs_by_type.map((p, i) => (
-                  <div
-                    key={p.document_type}
-                    className="flex items-center gap-2"
-                  >
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: ZONE_HEX[i % ZONE_HEX.length] }}
-                    />
-                    <span className="text-[11.5px] text-gray-600">
-                      {p.display}
-                    </span>
-                    <span className="ml-auto text-[11.5px] font-bold text-gray-800">
-                      {p.count}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="text-center text-gray-400 text-sm py-12">
-              No permit documents uploaded yet
-            </p>
-          )}
-        </Card>
-
-        <Card>
-          <SectionHeader
-            title="Inspector Workload"
-            sub="Pending seedling verifications per inspector"
-          />
-          <div className="flex flex-col gap-2.5">
-            {data.assessors.length > 0 ? (
-              data.assessors.map((a, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-lg flex items-center justify-center text-white text-[11px] font-bold shrink-0 ${["bg-[#0F4A2F]", "bg-blue-700", "bg-violet-700", "bg-teal-700", "bg-orange-700", "bg-rose-700"][i % 6]}`}
-                  >
-                    {a.avatar}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-[12px] font-bold text-gray-800 truncate">
-                        {a.name}
+                    <p className="text-[11px] font-semibold mt-1">{s.reason}</p>
+                    {!s.no_visit && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {s.rate}% survival · {fmt(s.dead)} dead · last visit{" "}
+                        {s.last_visit}
                       </p>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${a.pending_seedlings > 0 ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}
-                      >
-                        {a.pending_seedlings > 0
-                          ? `${a.pending_seedlings} pending`
-                          : "Clear"}
-                      </span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
-                        style={{
-                          width: `${a.assessments > 0 ? Math.min((a.approved / a.assessments) * 100, 100) : 0}%`,
-                        }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      {a.assessments} verified · {a.approved} approved
-                    </p>
+                    )}
                   </div>
                 </div>
-              ))
-            ) : (
-              <p className="text-center text-gray-400 text-sm py-8">
-                No inspectors
-              </p>
-            )}
+              );
+            })}
           </div>
-        </Card>
-      </div>
-
-      {/* Barangay breakdown */}
-      <Card>
-        <SectionHeader
-          title="Barangay Performance"
-          sub="Applications, trees planted, and approval rates"
-        />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data.barangay_breakdown.length > 0 ? (
-            data.barangay_breakdown.map((b, i) => (
-              <div
-                key={b.name}
-                className="bg-gray-50 rounded-xl p-4 relative overflow-hidden border border-gray-100"
-              >
-                <div
-                  className={`absolute top-0 left-0 right-0 h-0.5 ${ZONE_ACCENTS[i % ZONE_ACCENTS.length]}`}
-                />
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <p className="dash-title text-[15px] font-bold text-gray-800">
-                      {b.name}
-                    </p>
-                    <p className="text-[10px] text-gray-400">Assessment zone</p>
-                  </div>
-                  <span
-                    className="text-[13px] font-bold"
-                    style={{ color: ZONE_HEX[i % ZONE_HEX.length] }}
-                  >
-                    {b.rate}%
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <div>
-                    <p className="text-[10px] text-gray-400 font-medium">
-                      📋 Apps
-                    </p>
-                    <p className="dash-title text-[18px] font-bold text-gray-800">
-                      {b.apps}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-400 font-medium">
-                      🌱 Trees
-                    </p>
-                    <p className="dash-title text-[18px] font-bold text-gray-800">
-                      {b.trees.toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-700 ${ZONE_ACCENTS[i % ZONE_ACCENTS.length]}`}
-                    style={{ width: `${b.rate}%` }}
-                  />
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-center text-gray-400 text-sm py-8 col-span-3">
-              No barangay data
-            </p>
-          )}
-        </div>
+        ) : (
+          <EmptyState text="All monitored sites are on track 🌱" className="py-8" />
+        )}
       </Card>
     </div>
   );
@@ -1631,7 +1595,6 @@ export default function DashboardAFA() {
           <>
             {activeTab === "overview" && <TabOverview data={data} />}
             {activeTab === "monitoring" && <TabMonitoring data={data} />}
-            {activeTab === "documentation" && <TabDocumentation data={data} />}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center py-20">

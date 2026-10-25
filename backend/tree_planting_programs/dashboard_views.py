@@ -1,14 +1,15 @@
-from django.db.models import Sum, Count, Q, F, Avg, Value
-from django.db.models.functions import Coalesce, TruncMonth, Round
-from datetime import timedelta
+from django.db.models import Sum, Count, Q, F, Value
+from django.db.models.functions import Coalesce, TruncMonth
+from datetime import timedelta, datetime
 from django.utils import timezone
-from sites.models import Sites, SiteMetaDataVerification, PermitDocument
+from sites.models import Sites, SiteMetaDataVerification
+from sites.views import OFFICIAL_SITE_STATUSES
 from accounts.models import User
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import (
     Application, SeedlingRequest, SeedlingRequestSpecies,
-    Reason, ProgressReport, ProgressReportSpecies
+    Reason, ProgressReport
 )
 from accounts.helper import get_user_from_token
 
@@ -69,6 +70,292 @@ def _format_app(app):
     }
 
 
+# A site under monitoring with no accepted visit in this many days is overdue.
+# Matches the 90-day compliance rule used in the Head dashboard.
+OVERDUE_VISIT_DAYS = 90
+
+# Survival rate below this (in %) flags a site as needing attention.
+LOW_SURVIVAL_THRESHOLD = 70
+
+MONITORING_STATUS_MAP = {
+    'available':        ('Available',        '#10b981'),
+    'reserved':         ('Reserved',         '#f59e0b'),
+    'under_monitoring': ('Under Monitoring', '#6366f1'),
+    'completed':        ('Completed',        '#059669'),
+    'failed':           ('Failed',           '#ef4444'),
+    'onhold':           ('On Hold',          '#9ca3af'),
+}
+
+
+def _report_date(report):
+    return report.submitted_at or report.created_at
+
+
+def _month_key(dt):
+    local = timezone.localtime(dt)
+    return (local.year, local.month)
+
+
+def _survival(planted, added, dead):
+    """Same formula as the site monitoring report: (planted + added - dead) / (planted + added)."""
+    total = planted + added
+    survived = max(0, total - dead)
+    rate = round(survived / total * 100, 1) if total > 0 else None
+    return total, survived, rate
+
+
+def _estimated_hectares(seedlings):
+    """Fallback when no planted polygon exists: 2m x 2m spacing = 4 m² per seedling."""
+    return round((seedlings * 4) / 10000, 2)
+
+
+def _build_monitoring_data(now):
+    """
+    Monitoring and planting progress for the Data Manager.
+    Works from accepted progress reports, grouped per site, so each site is
+    counted once and the planted area is the latest polygon (not a sum of visits).
+    """
+    # ── Official sites and their monitoring status ──
+    official_sites = Sites.objects.filter(
+        is_active=True,
+        meta_verification__status='verified',
+        status__in=OFFICIAL_SITE_STATUSES,
+    )
+    status_rows = {
+        r['monitoring_status']: r for r in official_sites
+        .values('monitoring_status')
+        .annotate(count=Count('site_id'),
+                  hectares=Coalesce(Sum('total_area_hectares'), Value(0.0)))
+    }
+    monitoring_status_breakdown = []
+    for key, (label, color) in MONITORING_STATUS_MAP.items():
+        row = status_rows.get(key)
+        monitoring_status_breakdown.append({
+            "key": key,
+            "name": label,
+            "value": row['count'] if row else 0,
+            "hectares": round(row['hectares'], 2) if row else 0.0,
+            "fill": color,
+        })
+    official_total = sum(r['count'] for r in status_rows.values())
+    official_hectares = round(sum(r['hectares'] for r in status_rows.values()), 2)
+    under_monitoring_row = status_rows.get('under_monitoring')
+
+    # ── Accepted reports, oldest first ──
+    reports = list(
+        ProgressReport.objects
+        .filter(status='accepted', site__isnull=False)
+        .select_related('site__reforestation_area__barangay')
+        .prefetch_related('report_species__tree_species')
+    )
+    reports.sort(key=_report_date)
+
+    per_site = {}
+    per_species = {}
+    for r in reports:
+        rp = ra = rd = 0
+        for sp in r.report_species.all():
+            p, a, d = sp.no_planted or 0, sp.no_added_by_grower or 0, sp.no_dead or 0
+            rp, ra, rd = rp + p, ra + a, rd + d
+            name = sp.tree_species.name if sp.tree_species else "Unknown"
+            spec = per_species.setdefault(name, {"planted": 0, "added": 0, "dead": 0})
+            spec["planted"] += p
+            spec["added"] += a
+            spec["dead"] += d
+        r._totals = (rp, ra, rd)
+
+        s = per_site.setdefault(r.site_id, {
+            "site": r.site, "planted": 0, "added": 0, "dead": 0,
+            "visits": 0, "last_visit": None, "area": None,
+        })
+        s["planted"] += rp
+        s["added"] += ra
+        s["dead"] += rd
+        s["visits"] += 1
+        s["last_visit"] = _report_date(r)
+        if r.planted_area_hectares:
+            s["area"] = r.planted_area_hectares  # latest polygon wins
+
+    # ── Monthly progress trend (last 12 months, cumulative) ──
+    month_keys = []
+    y, m = now.year, now.month
+    for _ in range(12):
+        month_keys.append((y, m))
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    month_keys.reverse()
+
+    run_planted = run_added = run_dead = 0
+    site_area, site_seedlings, planted_sites = {}, {}, set()
+    planting_trend = []
+    ptr = 0
+    for key in month_keys:
+        new_seedlings = new_dead = new_sites = visits = 0
+        while ptr < len(reports) and _month_key(_report_date(reports[ptr])) <= key:
+            r = reports[ptr]
+            ptr += 1
+            rp, ra, rd = r._totals
+            run_planted, run_added, run_dead = run_planted + rp, run_added + ra, run_dead + rd
+            site_seedlings[r.site_id] = site_seedlings.get(r.site_id, 0) + rp + ra
+            if r.planted_area_hectares:
+                site_area[r.site_id] = r.planted_area_hectares
+            is_new_site = r.site_id not in planted_sites and (rp + ra > 0 or r.visit_type == 'initial')
+            if is_new_site:
+                planted_sites.add(r.site_id)
+            if _month_key(_report_date(r)) == key:
+                new_seedlings += rp + ra
+                new_dead += rd
+                visits += 1
+                new_sites += 1 if is_new_site else 0
+
+        total, survived, rate = _survival(run_planted, run_added, run_dead)
+        hectares = sum(
+            site_area[sid] if sid in site_area else _estimated_hectares(site_seedlings.get(sid, 0))
+            for sid in planted_sites
+        )
+        planting_trend.append({
+            "month": datetime(key[0], key[1], 1).strftime("%b '%y"),
+            "new_seedlings": new_seedlings,
+            "new_dead": new_dead,
+            "new_sites": new_sites,
+            "visits": visits,
+            "cumulative_sites": len(planted_sites),
+            "cumulative_seedlings": total,
+            "cumulative_survived": survived,
+            "cumulative_hectares": round(hectares, 2),
+            "survival_rate": rate,
+        })
+
+    # ── Per-site progress ──
+    site_progress = []
+    for sid, s in per_site.items():
+        site = s["site"]
+        total, survived, rate = _survival(s["planted"], s["added"], s["dead"])
+        days_since = (now - s["last_visit"]).days if s["last_visit"] else None
+        site_progress.append({
+            "site_id": sid,
+            "name": site.name or "Unnamed Site",
+            "barangay": (site.reforestation_area.barangay.name
+                         if site.reforestation_area and site.reforestation_area.barangay
+                         else "Unassigned"),
+            "monitoring_status": MONITORING_STATUS_MAP.get(site.monitoring_status, (site.monitoring_status, ''))[0],
+            "site_hectares": round(site.total_area_hectares or 0, 2),
+            "planted_hectares": round(s["area"], 2) if s["area"] is not None else _estimated_hectares(total),
+            "planted": total,
+            "survived": survived,
+            "dead": s["dead"],
+            "rate": rate if rate is not None else 0.0,
+            "visits": s["visits"],
+            "last_visit": _time_ago(s["last_visit"]),
+            "days_since_visit": days_since,
+            "overdue": site.monitoring_status == 'under_monitoring'
+                       and days_since is not None and days_since > OVERDUE_VISIT_DAYS,
+            "no_visit": False,
+        })
+
+    # Sites under monitoring that have no accepted visit yet
+    for site in (official_sites.filter(monitoring_status='under_monitoring')
+                 .exclude(site_id__in=per_site.keys())
+                 .select_related('reforestation_area__barangay')):
+        site_progress.append({
+            "site_id": site.site_id,
+            "name": site.name or "Unnamed Site",
+            "barangay": (site.reforestation_area.barangay.name
+                         if site.reforestation_area and site.reforestation_area.barangay
+                         else "Unassigned"),
+            "monitoring_status": "Under Monitoring",
+            "site_hectares": round(site.total_area_hectares or 0, 2),
+            "planted_hectares": 0.0,
+            "planted": 0, "survived": 0, "dead": 0, "rate": 0.0,
+            "visits": 0,
+            "last_visit": "No visit yet",
+            "days_since_visit": None,
+            "overdue": False,
+            "no_visit": True,
+        })
+
+    site_progress.sort(key=lambda x: (-x["planted"], x["name"]))
+    planted_by_barangay = {}
+    for sp in site_progress:
+        e = planted_by_barangay.setdefault(sp["barangay"] or "Unassigned", {"hectares": 0.0, "planted": 0, "dead": 0})
+        e["hectares"] = round(e["hectares"] + (sp["planted_hectares"] or 0), 4)
+        e["planted"] += sp["planted"]
+        e["dead"] += sp["dead"]
+
+    top_performing_sites = sorted(
+        [s for s in site_progress if s["planted"] > 0],
+        key=lambda x: (-x["rate"], -x["planted"]),
+    )[:5]
+
+    def _attention_reason(s):
+        if s["no_visit"]:
+            return "No accepted visit yet"
+        if s["overdue"]:
+            return f"No visit in {s['days_since_visit']} days"
+        return f"Low survival ({s['rate']}%)"
+
+    sites_needing_attention = [
+        {**s, "reason": _attention_reason(s)}
+        for s in sorted(
+            [s for s in site_progress
+             if s["no_visit"] or s["overdue"]
+             or (s["planted"] > 0 and s["rate"] < LOW_SURVIVAL_THRESHOLD)],
+            key=lambda x: (not x["overdue"], not x["no_visit"], x["rate"]),
+        )
+    ][:6]
+
+    # ── Survival by species ──
+    survival_by_species = []
+    for name, sp in per_species.items():
+        total, survived, rate = _survival(sp["planted"], sp["added"], sp["dead"])
+        if total == 0:
+            continue
+        survival_by_species.append({
+            "name": name, "planted": total, "survived": survived,
+            "dead": sp["dead"], "rate": rate,
+        })
+    survival_by_species.sort(key=lambda x: -x["planted"])
+    survival_by_species = survival_by_species[:8]
+
+    # ── Summary ──
+    all_planted = sum(s["planted"] + s["added"] for s in per_site.values())
+    all_dead = sum(s["dead"] for s in per_site.values())
+    _, all_survived, all_rate = _survival(all_planted, 0, all_dead)
+    planted_hectares = planting_trend[-1]["cumulative_hectares"] if planting_trend else 0.0
+
+    thirty_days_ago = now - timedelta(days=30)
+    monitoring_summary = {
+        "official_sites": official_total,
+        "official_hectares": official_hectares,
+        "sites_under_monitoring": under_monitoring_row['count'] if under_monitoring_row else 0,
+        "hectares_under_monitoring": round(under_monitoring_row['hectares'], 2) if under_monitoring_row else 0.0,
+        "available_sites": status_rows['available']['count'] if 'available' in status_rows else 0,
+        "sites_planted": len(per_site),
+        "planted_hectares": planted_hectares,
+        "total_planted": all_planted,
+        "total_survived": all_survived,
+        "total_dead": all_dead,
+        "survival_rate": all_rate if all_rate is not None else 0.0,
+        "overdue_sites": sum(1 for s in site_progress if s["overdue"]),
+        "sites_without_visit": sum(1 for s in site_progress if s["no_visit"]),
+        "pending_reports": ProgressReport.objects.filter(status='pending').count(),
+        "visits_last_30_days": sum(1 for r in reports if _report_date(r) >= thirty_days_ago),
+        "overdue_days": OVERDUE_VISIT_DAYS,
+    }
+
+    return {
+        "monitoring_summary": monitoring_summary,
+        "monitoring_status_breakdown": monitoring_status_breakdown,
+        "planting_trend": planting_trend,
+        "site_progress": site_progress[:15],
+        "planted_by_barangay": planted_by_barangay,
+        "survival_by_species": survival_by_species,
+        "top_performing_sites": top_performing_sites,
+        "sites_needing_attention": sites_needing_attention,
+    }
+
+
 # ─────────────────────────────────────────────────────────────
 # MAIN ENDPOINT
 # ─────────────────────────────────────────────────────────────
@@ -106,32 +393,11 @@ def get_dashboard_data(request):
         seedling_request__status='accepted'
     ).aggregate(total=Coalesce(Sum('quantity'), 0))['total']
 
-    # Seedlings: actually planted (from baseline in initial visits)
-    total_seedlings_planted = ProgressReportSpecies.objects.filter(
-        progress_report__visit_type='initial',
-        progress_report__status='accepted',
-    ).aggregate(total=Coalesce(Sum('no_planted'), 0))['total']
+    under_monitoring_applications = Application.objects.filter(status='under_monitoring').count()
 
-    total_area_planted = round((total_seedlings_planted * 4) / 10000, 2)
-
-    # Overall survival rate (from accepted progress reports)
-    survival_totals = ProgressReportSpecies.objects.filter(
-        progress_report__status='accepted'
-    ).aggregate(
-        survived=Coalesce(Sum('no_survived'), 0),
-        dead=Coalesce(Sum('no_dead'), 0),
-    )
-    total_plants = survival_totals['survived'] + survival_totals['dead']
-    overall_survival_rate = round(
-        (survival_totals['survived'] / total_plants * 100), 1
-    ) if total_plants > 0 else 0.0
-
-    active_alerts = (
-        SiteMetaDataVerification.objects.filter(status='pending').count()
-        + Application.objects.filter(status='for_evaluation').count()
-        + SeedlingRequest.objects.filter(status='pending').count()
-        + ProgressReport.objects.filter(status='pending').count()
-    )
+    # Monitoring & planting progress (seedlings, area, survival, official sites)
+    monitoring = _build_monitoring_data(now)
+    summary = monitoring["monitoring_summary"]
 
     # ═══════════════════════════════════════════════════════════
     # 2. APPLICATION TREND (Last 7 months)
@@ -157,32 +423,7 @@ def get_dashboard_data(request):
     ]
 
     # ═══════════════════════════════════════════════════════════
-    # 3. SEEDLINGS PLANTED TREND
-    # ═══════════════════════════════════════════════════════════
-    monthly_planted = ProgressReportSpecies.objects.filter(
-        progress_report__visit_type='initial',
-        progress_report__status='accepted',
-        progress_report__created_at__gte=seven_months_ago,
-    ).annotate(
-        month=TruncMonth('progress_report__created_at')
-    ).values('month').annotate(
-        planted=Coalesce(Sum('no_planted'), 0)
-    ).order_by('month')
-
-    seedlings_planted_trend = []
-    cumulative_seedlings = 0
-    for e in monthly_planted:
-        planted = e['planted'] or 0
-        cumulative_seedlings += planted
-        seedlings_planted_trend.append({
-            "month": e['month'].strftime('%b'),
-            "seedlings_planted": planted,
-            "cumulative_seedlings": cumulative_seedlings,
-            "cumulative_area_hectares": round((cumulative_seedlings * 4) / 10000, 2)
-        })
-
-    # ═══════════════════════════════════════════════════════════
-    # 4. STATUS DATA (Pie Chart)
+    # 3. STATUS DATA (Pie Chart)
     # ═══════════════════════════════════════════════════════════
     status_counts = Application.objects.values('status').annotate(count=Count('application_id'))
 
@@ -207,7 +448,7 @@ def get_dashboard_data(request):
     status_data = list(status_aggregated.values())
 
     # ═══════════════════════════════════════════════════════════
-    # 5. ASSESSMENT DATA (By Barangay)
+    # 4. ASSESSMENT DATA (By Barangay)
     # ═══════════════════════════════════════════════════════════
     barangay_stats = Sites.objects.filter(
         reforestation_area__barangay__isnull=False
@@ -224,7 +465,7 @@ def get_dashboard_data(request):
     ]
 
     # ═══════════════════════════════════════════════════════════
-    # 6. APPROVAL RATE TREND
+    # 5. APPROVAL RATE TREND
     # ═══════════════════════════════════════════════════════════
     approval_rate = [
         {
@@ -235,7 +476,7 @@ def get_dashboard_data(request):
     ]
 
     # ═══════════════════════════════════════════════════════════
-    # 7. RECENT ACTIVITIES (audit trail — multi-layer)
+    # 6. RECENT ACTIVITIES (audit trail — multi-layer)
     # ═══════════════════════════════════════════════════════════
     recent_reasons = Reason.objects.select_related(
         'user__profile', 'application'
@@ -268,7 +509,7 @@ def get_dashboard_data(request):
         })
 
     # ═══════════════════════════════════════════════════════════
-    # 8. RECENT APPS & ALL APPS
+    # 7. RECENT APPS & ALL APPS
     # ═══════════════════════════════════════════════════════════
     recent_apps = [
         _format_app(a) for a in
@@ -282,7 +523,7 @@ def get_dashboard_data(request):
     ]
 
     # ═══════════════════════════════════════════════════════════
-    # 9. ASSESSORS (OnsiteInspectors)
+    # 8. ASSESSORS (OnsiteInspectors)
     # ═══════════════════════════════════════════════════════════
     inspectors = User.objects.filter(
         user_role='OnsiteInspector', is_active=True
@@ -313,39 +554,7 @@ def get_dashboard_data(request):
         })
 
     # ═══════════════════════════════════════════════════════════
-    # 10. BARANGAY BREAKDOWN (with real seedling counts)
-    # ═══════════════════════════════════════════════════════════
-    brgy_app_counts = (Application.objects
-        .filter(site__reforestation_area__barangay__isnull=False)
-        .values(brgy=F('site__reforestation_area__barangay__name'))
-        .annotate(
-            apps=Count('application_id'),
-            approved_apps=Count('application_id',
-                filter=Q(status__in=['accepted', 'completed', 'under_monitoring'])))
-        .order_by('-apps')[:6]
-    )
-
-    barangay_breakdown = []
-    for b in brgy_app_counts:
-        brgy_name = b['brgy']
-        total_seedlings = (ProgressReportSpecies.objects
-            .filter(
-                progress_report__status='accepted',
-                progress_report__application__site__reforestation_area__barangay__name=brgy_name
-            )
-            .aggregate(total=Coalesce(Sum('no_planted'), 0))['total'])
-        rate = (int(round(b['approved_apps'] / b['apps'] * 100))
-                if b['apps'] > 0 else 0)
-
-        barangay_breakdown.append({
-            "name": brgy_name,
-            "apps": b['apps'],
-            "trees": total_seedlings,
-            "rate": rate,
-        })
-
-    # ═══════════════════════════════════════════════════════════
-    # 11. SEEDLING REQUEST PIPELINE
+    # 9. SEEDLING REQUEST PIPELINE
     # ═══════════════════════════════════════════════════════════
     seedling_status_counts = (SeedlingRequest.objects
         .values('status')
@@ -367,7 +576,7 @@ def get_dashboard_data(request):
             })
 
     # ═══════════════════════════════════════════════════════════
-    # 12. SITE VERIFICATION PIPELINE
+    # 10. SITE VERIFICATION PIPELINE
     # ═══════════════════════════════════════════════════════════
     verification_counts = (SiteMetaDataVerification.objects
         .values('status')
@@ -388,7 +597,7 @@ def get_dashboard_data(request):
             })
 
     # ═══════════════════════════════════════════════════════════
-    # 13. PROGRESS REPORT STATS (Initial vs Ongoing)
+    # 11. PROGRESS REPORT STATS (Initial vs Ongoing)
     # ═══════════════════════════════════════════════════════════
     pr_counts = (ProgressReport.objects
         .values('visit_type', 'status')
@@ -409,160 +618,6 @@ def get_dashboard_data(request):
                 progress_report_stats['ongoing_completed'] += p['count']
 
     # ═══════════════════════════════════════════════════════════
-    # 14. SURVIVAL RATE BY SPECIES
-    # ═══════════════════════════════════════════════════════════
-    species_survival = (ProgressReportSpecies.objects
-        .filter(progress_report__status='accepted')
-        .values(species=F('tree_species__name'))
-        .annotate(
-            survived=Coalesce(Sum('no_survived'), 0),
-            dead=Coalesce(Sum('no_dead'), 0),
-            planted=Coalesce(Sum('no_planted'), 0),
-        )
-        .order_by('-survived')[:8]
-    )
-
-    survival_by_species = []
-    for s in species_survival:
-        total = s['survived'] + s['dead']
-        rate = round((s['survived'] / total * 100), 1) if total > 0 else 0.0
-        survival_by_species.append({
-            "name": s['species'] or "Unknown",
-            "planted": s['planted'],
-            "survived": s['survived'],
-            "dead": s['dead'],
-            "rate": rate,
-        })
-
-    # ═══════════════════════════════════════════════════════════
-    # 15. SURVIVAL RATE BY BARANGAY
-    # ═══════════════════════════════════════════════════════════
-    brgy_survival_qs = (ProgressReportSpecies.objects
-        .filter(
-            progress_report__status='accepted',
-            progress_report__application__site__reforestation_area__barangay__isnull=False,
-        )
-        .values(brgy=F('progress_report__application__site__reforestation_area__barangay__name'))
-        .annotate(
-            survived=Coalesce(Sum('no_survived'), 0),
-            dead=Coalesce(Sum('no_dead'), 0),
-        )
-        .order_by('-survived')[:8]
-    )
-
-    survival_by_barangay = []
-    for b in brgy_survival_qs:
-        total = b['survived'] + b['dead']
-        rate = round((b['survived'] / total * 100), 1) if total > 0 else 0.0
-        survival_by_barangay.append({
-            "name": b['brgy'],
-            "survived": b['survived'],
-            "dead": b['dead'],
-            "rate": rate,
-        })
-
-    # ═══════════════════════════════════════════════════════════
-    # 16. DOCUMENTATION & COMPLIANCE STATS
-    # ═══════════════════════════════════════════════════════════
-    apps_with_maintenance = Application.objects.exclude(
-        Q(maintenance_plan='') | Q(maintenance_plan__isnull=True)
-    ).count()
-
-    sites_with_permits = (PermitDocument.objects
-        .values('site')
-        .distinct()
-        .count())
-
-    initial_visits_total = ProgressReport.objects.filter(visit_type='initial').count()
-    initial_visits_with_agreement = (ProgressReport.objects
-        .filter(visit_type='initial')
-        .exclude(Q(agreement_image='') | Q(agreement_image__isnull=True))
-        .count())
-
-    permit_docs_by_type = list(
-        PermitDocument.objects.values('document_type')
-        .annotate(count=Count('permit_id'))
-    )
-    for p in permit_docs_by_type:
-        p['display'] = dict(PermitDocument.DOCUMENT_TYPES).get(
-            p['document_type'], p['document_type']
-        )
-
-    documentation_stats = {
-        "apps_with_maintenance_plan": apps_with_maintenance,
-        "apps_total": total_applications,
-        "sites_with_permits": sites_with_permits,
-        "sites_total": Sites.objects.count(),
-        "initial_visits_with_agreement": initial_visits_with_agreement,
-        "initial_visits_total": initial_visits_total,
-        "permit_docs_by_type": permit_docs_by_type,
-    }
-
-    # ═══════════════════════════════════════════════════════════
-    # 17. TOP PERFORMING SITES (highest survival)
-    # ═══════════════════════════════════════════════════════════
-    site_performance = (ProgressReportSpecies.objects
-        .filter(progress_report__status='accepted')
-        .values(
-            site_name=F('progress_report__application__site__name'),
-            barangay=F('progress_report__application__site__reforestation_area__barangay__name'),
-            site_id=F('progress_report__application__site__site_id'),
-        )
-        .annotate(
-            survived=Coalesce(Sum('no_survived'), 0),
-            dead=Coalesce(Sum('no_dead'), 0),
-        )
-        .order_by('-survived')[:5]
-    )
-
-    top_performing_sites = []
-    for s in site_performance:
-        total = s['survived'] + s['dead']
-        rate = round((s['survived'] / total * 100), 1) if total > 0 else 0.0
-        top_performing_sites.append({
-            "name": s['site_name'] or "Unnamed Site",
-            "barangay": s['barangay'] or "Unassigned",
-            "survived": s['survived'],
-            "dead": s['dead'],
-            "total": total,
-            "rate": rate,
-        })
-
-    # ═══════════════════════════════════════════════════════════
-    # 18. SITES NEEDING ATTENTION (low survival or no recent visit)
-    # ═══════════════════════════════════════════════════════════
-    sites_attention_qs = (ProgressReportSpecies.objects
-        .filter(progress_report__status='accepted')
-        .values(
-            site_name=F('progress_report__application__site__name'),
-            barangay=F('progress_report__application__site__reforestation_area__barangay__name'),
-            site_id=F('progress_report__application__site__site_id'),
-        )
-        .annotate(
-            survived=Coalesce(Sum('no_survived'), 0),
-            dead=Coalesce(Sum('no_dead'), 0),
-            last_visit=F('progress_report__created_at'),
-        )
-        .order_by('survived')[:5]
-    )
-
-    sites_needing_attention = []
-    for s in sites_attention_qs:
-        total = s['survived'] + s['dead']
-        if total == 0:
-            continue
-        rate = round((s['survived'] / total * 100), 1)
-        sites_needing_attention.append({
-            "name": s['site_name'] or "Unnamed Site",
-            "barangay": s['barangay'] or "Unassigned",
-            "survived": s['survived'],
-            "dead": s['dead'],
-            "total": total,
-            "rate": rate,
-            "last_visit": _time_ago(s['last_visit']) if s['last_visit'] else "—",
-        })
-
-    # ═══════════════════════════════════════════════════════════
     # RESPONSE
     # ═══════════════════════════════════════════════════════════
     return JsonResponse({
@@ -571,18 +626,19 @@ def get_dashboard_data(request):
             "approved": approved,
             "pending": pending,
             "rejected": rejected,
+            "under_monitoring_applications": under_monitoring_applications,
             "completed_applications": completed_applications,
             "completed_sites": completed_sites,
-            "total_seedlings_planted": total_seedlings_planted,
-            "total_area_planted": total_area_planted,
+            "total_seedlings_planted": summary["total_planted"],
+            "total_area_planted": summary["planted_hectares"],
             "areas_assessed": areas_assessed,
             "assessors": assessors_count,
             "trees_endorsed": trees_endorsed,
-            "overall_survival_rate": overall_survival_rate,
-            "active_alerts": active_alerts,
+            "overall_survival_rate": summary["survival_rate"],
+            "official_sites": summary["official_sites"],
+            "official_hectares": summary["official_hectares"],
         },
         "application_trend": application_trend,
-        "seedlings_planted_trend": seedlings_planted_trend,
         "status_data": status_data,
         "assessment_data": assessment_data,
         "approval_rate": approval_rate,
@@ -590,16 +646,10 @@ def get_dashboard_data(request):
         "recent_apps": recent_apps,
         "all_apps": all_apps,
         "assessors": assessors,
-        "barangay_breakdown": barangay_breakdown,
-        # NEW
         "seedling_request_pipeline": seedling_pipeline,
         "site_verification_pipeline": verification_pipeline,
         "progress_report_stats": progress_report_stats,
-        "survival_by_species": survival_by_species,
-        "survival_by_barangay": survival_by_barangay,
-        "documentation_stats": documentation_stats,
-        "top_performing_sites": top_performing_sites,
-        "sites_needing_attention": sites_needing_attention,
+        **monitoring,
     }, status=200)
 
 

@@ -3,6 +3,8 @@ from . import views
 from . import views_ndvi
 from . import views_fire
 from . import report_views
+from . import gis_dashboard_views
+from . import gis_report_views
 from . import views_hazard_analysis    
 urlpatterns = [
     # ═══════════════════════════════════════════════════════════
@@ -29,7 +31,11 @@ urlpatterns = [
 
     path('gis_specialist_dashboard/', report_views.get_gis_specialist_dashboard, name='gis_specialist_dashboard'),
     path('gis_assessments_list/', report_views.get_gis_assessments_list, name='gis_assessments_list'),
-    path('gis_dashboard/', report_views.get_gis_dashboard, name='gis_dashboard'),
+    path('gis_dashboard/', gis_dashboard_views.get_gis_dashboard, name='gis_dashboard'),
+    path('gis_pending_review_count/', gis_dashboard_views.get_gis_pending_review_count, name='gis_pending_review_count'),
+    path('gis_report/sites/', gis_report_views.get_gis_sites_report, name='gis_report_sites'),
+    path('gis_report/planted_reviews/', gis_report_views.get_gis_planted_reviews_report, name='gis_report_planted_reviews'),
+    path('gis_report/assessments/', gis_report_views.get_gis_assessments_report, name='gis_report_assessments'),
     path('gis_sites_list/', report_views.get_gis_sites_list, name='gis_sites_list'),
 
       # 🛡️ HAZARD ANALYSIS ENDPOINTS (NEW — organized like the others)

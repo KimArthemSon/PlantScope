@@ -16,13 +16,14 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo2.png";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ReactElement } from "react";
 import Logout from "./logout";
 import { Outlet } from "react-router-dom";
 import PlantScopeLoader from "../alert/PlantScopeLoader";
 import NotFoundPage from "./NotFoundPage";
 import { useAuthorize } from "../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
+import { api } from "@/constant/api";
 import "../../global css/sidebarScrollbar.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -187,6 +188,30 @@ export default function SidebarGISS() {
 
   const { isAuthorized, isLoading, user_data } = useAuthorize("GISSpecialist");
 
+  // Planted-area reports waiting for GIS review (sidebar badge)
+  const [pendingReviews, setPendingReviews] = useState(0);
+  useEffect(() => {
+    if (!isAuthorized) return;
+    const load = async () => {
+      if (document.hidden) return;
+      try {
+        const res = await fetch(`${api}api/gis_pending_review_count/`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        });
+        if (res.ok) setPendingReviews((await res.json()).pending_count || 0);
+      } catch {
+        /* badge is optional */
+      }
+    };
+    load();
+    const timer = setInterval(load, 60000);
+    window.addEventListener("focus", load);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", load);
+    };
+  }, [isAuthorized, location.pathname]);
+
   if (isLoading) return <PlantScopeLoader />;
   if (!localStorage.getItem("token")) {
     navigate("/Login");
@@ -210,7 +235,10 @@ export default function SidebarGISS() {
   const pageTitle = PAGE_TITLES[location.pathname] ?? "PlantScope";
 
   // ── Grouped Navigation ────────────────────────────────────────────────────
-  const navGroups = [
+  const navGroups: {
+    title: string;
+    items: { to: string; icon: ReactElement; label: string; badge?: number }[];
+  }[] = [
     {
       title: "Overview",
       items: [
@@ -249,6 +277,7 @@ export default function SidebarGISS() {
           to: "/GISS/planting-area-reviews",
           icon: <MapPinned size={18} />,
           label: "Planted Area Reviews",
+          badge: pendingReviews,
         },
       ],
     },
@@ -410,8 +439,9 @@ export default function SidebarGISS() {
               )}
 
               <div className="space-y-0.5">
-                {group.items.map(({ to, icon, label }) => {
+                {group.items.map(({ to, icon, label, badge }) => {
                   const isActive = location.pathname === to;
+                  const hasBadge = !!badge && badge > 0;
 
                   return (
                     <Link
@@ -437,6 +467,15 @@ export default function SidebarGISS() {
                         <span className="flex-1 text-sm font-medium truncate">
                           {label}
                         </span>
+                      )}
+
+                      {expanded && hasBadge && (
+                        <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-gradient-to-r from-red-500 to-rose-500 text-white text-[9px] font-bold rounded-full badge-pulse shadow-lg shadow-red-500/30">
+                          {badge! > 99 ? "99+" : badge}
+                        </span>
+                      )}
+                      {!expanded && hasBadge && (
+                        <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                       )}
                     </Link>
                   );
