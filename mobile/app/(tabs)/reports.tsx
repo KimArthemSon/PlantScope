@@ -1,701 +1,554 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
+  RefreshControl,
   ScrollView,
-  FlatList,
-  TouchableOpacity,
   StatusBar,
-  Platform,
-  Dimensions,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { LineChart, PieChart } from "react-native-chart-kit";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { api } from "@/constants/url_fixed";
+import { getToken, isAuthFailure, clearAuthData } from "@/utils/auth";
+import { useNetworkStatus } from "@/utils/networkStatus";
 
-const screenWidth = Dimensions.get("window").width;
+const API = api + "/api";
 
-// ─── Static Mock Data ──────────────────────────────────────────────────────
+const BG = "#F3F6F4";
+const PRIMARY = "#0F4A2F";
+const INK = "#111827";
+const MUTED = "#6B7280";
+const FAINT = "#9CA3AF";
 
-const MOCK_REPORTS = [
-  {
-    id: "RPT-2024-089",
-    projectName: "Mount Makiling Reforestation",
-    siteName: "Sector 4 • Brgy. Mayondon",
-    date: "Jul 15, 2024",
-    status: "verified",
-    survived: 450,
-    dead: 12,
-    survivalRate: 97,
-  },
-  {
-    id: "RPT-2024-088",
-    projectName: "Sierra Madre Green Belt",
-    siteName: "Zone B • Brgy. Diteki",
-    date: "Jul 10, 2024",
-    status: "pending",
-    survived: 210,
-    dead: 45,
-    survivalRate: 82,
-  },
-  {
-    id: "RPT-2024-087",
-    projectName: "Cabungtan Community Forest",
-    siteName: "Plot 12 • Brgy. Cabungtan",
-    date: "Jul 05, 2024",
-    status: "verified",
-    survived: 180,
-    dead: 5,
-    survivalRate: 97,
-  },
-  {
-    id: "RPT-2024-086",
-    projectName: "Coastal Mangrove Project",
-    siteName: "Site A • Brgy. San Jose",
-    date: "Jun 28, 2024",
-    status: "rejected",
-    survived: 90,
-    dead: 60,
-    survivalRate: 60,
-  },
-  {
-    id: "RPT-2024-085",
-    projectName: "Upland Agroforestry Init.",
-    siteName: "Block 3 • Brgy. Santa Cruz",
-    date: "Jun 20, 2024",
-    status: "verified",
-    survived: 320,
-    dead: 18,
-    survivalRate: 94,
-  },
-];
+type Kind = "visits" | "assessments";
+type Period = "month" | "quarter" | "all";
 
-const STATUS_CONFIG = {
-  verified: {
-    label: "Verified",
-    bg: "#DCFCE7",
-    text: "#15803D",
-    dot: "#22C55E",
-  },
-  pending: { label: "Pending", bg: "#FEF9C3", text: "#A16207", dot: "#F59E0B" },
-  rejected: {
-    label: "Rejected",
-    bg: "#FEE2E2",
-    text: "#DC2626",
-    dot: "#EF4444",
-  },
+interface VisitRow {
+  id: number;
+  date: string;
+  site_id: number | null;
+  site_name: string;
+  barangay: string | null;
+  program: string | null;
+  group_name: string | null;
+  visit_type: string;
+  status: "accepted" | "pending" | "returned";
+  stage: string;
+  notes: string | null;
+  planted: number;
+  dead: number;
+  species: string[];
+  planted_hectares: number | null;
+}
+
+interface AssessmentRow {
+  id: number;
+  title: string;
+  date: string;
+  area_id: number | null;
+  area_name: string;
+  barangay: string | null;
+  site_id: number | null;
+  site_name: string | null;
+  status: "submitted" | "draft";
+  layers: string[];
+  photos: number;
+}
+
+interface ReportData {
+  type: Kind;
+  summary: any;
+  counts: Record<string, number>;
+  monthly: any[];
+  rows: (VisitRow | AssessmentRow)[];
+}
+
+const STATUS = {
+  accepted: { label: "Accepted", fg: "#059669", bg: "#D1FAE5", icon: "check-circle-outline" },
+  pending: { label: "In review", fg: "#D97706", bg: "#FEF3C7", icon: "clock-outline" },
+  returned: { label: "Returned", fg: "#DC2626", bg: "#FEE2E2", icon: "file-undo-outline" },
+  submitted: { label: "Submitted", fg: "#059669", bg: "#D1FAE5", icon: "check-circle-outline" },
+  draft: { label: "Draft", fg: "#D97706", bg: "#FEF3C7", icon: "pencil-outline" },
+} as const;
+
+const LAYER_LABEL: Record<string, string> = {
+  meta_data: "Meta",
+  safety: "Safety",
+  survivability: "Survivability",
+  boundary_verification: "Boundary",
 };
 
-const MOCK_PIE_DATA = [
-  {
-    name: "Verified",
-    population: 128,
-    color: "#10B981",
-    legendFontColor: "#374151",
-    legendFontSize: 10,
-  },
-  {
-    name: "Pending",
-    population: 8,
-    color: "#F59E0B",
-    legendFontColor: "#374151",
-    legendFontSize: 10,
-  },
-  {
-    name: "Rejected",
-    population: 6,
-    color: "#EF4444",
-    legendFontColor: "#374151",
-    legendFontSize: 10,
-  },
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "month", label: "This month" },
+  { key: "quarter", label: "3 months" },
+  { key: "all", label: "All time" },
 ];
 
-const MOCK_LINE_DATA = {
-  labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-  datasets: [{ data: [82, 84, 83, 86, 85, 87] }],
-};
+const fmt = (n: number | null | undefined) => (n ?? 0).toLocaleString();
+const shortDate = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
-// ── Main Component ────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────
+   SMALL COMPONENTS
+   ──────────────────────────────────────────────────────────────── */
+const Chip: React.FC<{ label: string; active: boolean; onPress: () => void; count?: number }> = ({ label, active, onPress, count }) => (
+  <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={onPress} activeOpacity={0.75}>
+    <Text style={[styles.chipText, active && styles.chipTextActive]}>
+      {label}
+      {count !== undefined ? ` · ${count}` : ""}
+    </Text>
+  </TouchableOpacity>
+);
 
-const ReportsScreen: React.FC = () => {
-  const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState("All");
-  const tabs = ["All", "Verified", "Pending", "Rejected"];
+const Stat: React.FC<{ value: string; label: string; color?: string }> = ({ value, label, color = INK }) => (
+  <View style={styles.stat}>
+    <Text style={[styles.statValue, { color }]}>{value}</Text>
+    <Text style={styles.statLabel}>{label}</Text>
+  </View>
+);
 
-  const filteredReports =
-    activeTab === "All"
-      ? MOCK_REPORTS
-      : MOCK_REPORTS.filter((r) => r.status === activeTab.toLowerCase());
-
-  // Calculate status percentages for the visual bar
-  const totalReports = 142;
-  const verifiedPct = (128 / totalReports) * 100;
-  const pendingPct = (8 / totalReports) * 100;
-  const rejectedPct = (6 / totalReports) * 100;
-
-  const renderReportCard = ({ item }: { item: (typeof MOCK_REPORTS)[0] }) => {
-    const config = STATUS_CONFIG[item.status as keyof typeof STATUS_CONFIG];
-    return (
-      <TouchableOpacity style={styles.reportCard} activeOpacity={0.8}>
-        <View
-          style={[styles.statusIndicator, { backgroundColor: config.dot }]}
-        />
-        <View style={styles.cardContent}>
-          <View style={styles.cardTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.projectName} numberOfLines={1}>
-                {item.projectName}
-              </Text>
-              <Text style={styles.siteName} numberOfLines={1}>
-                {item.siteName}
-              </Text>
-            </View>
-            <View style={[styles.statusBadge, { backgroundColor: config.bg }]}>
-              <Text style={[styles.statusText, { color: config.text }]}>
-                {config.label}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.metricsRow}>
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Survived</Text>
-              <Text style={[styles.metricValue, { color: "#16A34A" }]}>
-                {item.survived}
-              </Text>
-            </View>
-            <View style={styles.metricDivider} />
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Dead</Text>
-              <Text style={[styles.metricValue, { color: "#DC2626" }]}>
-                {item.dead}
-              </Text>
-            </View>
-            <View style={styles.metricDivider} />
-            <View style={styles.metric}>
-              <Text style={styles.metricLabel}>Rate</Text>
-              <Text style={[styles.metricValue, { color: "#0F4A2F" }]}>
-                {item.survivalRate}%
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.cardBottom}>
-            <View style={styles.metaInfo}>
-              <Ionicons name="calendar-outline" size={12} color="#9CA3AF" />
-              <Text style={styles.dateText}>{item.date}</Text>
-              <Text style={styles.dotSeparator}>•</Text>
-              <Text style={styles.reportId}>{item.id}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const chartConfig = {
-    backgroundColor: "#FFFFFF",
-    backgroundGradientFrom: "#FFFFFF",
-    backgroundGradientTo: "#FFFFFF",
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(15, 74, 47, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-    style: { borderRadius: 16 },
-    propsForBackgroundLines: { stroke: "#F3F4F6", strokeDasharray: "0" },
-  };
-
+/** Simple 6-month bars: accepted (green) stacked under returned (red), or submitted assessments. */
+const MiniBars: React.FC<{ data: any[]; kind: Kind }> = ({ data, kind }) => {
+  const totals = data.map((m) => (kind === "visits" ? m.accepted + m.returned : m.submitted));
+  const max = Math.max(1, ...totals);
   return (
-    <View
-      style={[
-        styles.container,
-        { paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0 },
-      ]}
-    >
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="#F5F6F8"
-        translucent={false}
-      />
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* ─── HEADER ─── */}
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
-          <Text style={styles.headerEyebrow}>History & Archive</Text>
-          <Text style={styles.headerTitle}>Assessment Reports</Text>
-
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={18} color="#9CA3AF" />
-            <Text style={styles.searchPlaceholder}>
-              Search reports, projects...
-            </Text>
-            <TouchableOpacity style={styles.filterBtn}>
-              <Ionicons name="options" size={18} color="#0F4A2F" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ─── TAB FILTERS ─── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.tabContainer}
-          contentContainerStyle={styles.tabContent}
-        >
-          {tabs.map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.tab, activeTab === tab && styles.tabActive]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === tab && styles.tabTextActive,
-                ]}
-              >
-                {tab}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* ─── STORY 1: Overall Health (Visual Status Bar) ─── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Report Status Overview</Text>
-          <View style={styles.statusCard}>
-            <View style={styles.statusBar}>
-              <View
-                style={[
-                  styles.statusSegment,
-                  { width: `${verifiedPct}%`, backgroundColor: "#10B981" },
-                ]}
-              />
-              <View
-                style={[
-                  styles.statusSegment,
-                  { width: `${pendingPct}%`, backgroundColor: "#F59E0B" },
-                ]}
-              />
-              <View
-                style={[
-                  styles.statusSegment,
-                  { width: `${rejectedPct}%`, backgroundColor: "#EF4444" },
-                ]}
-              />
+    <View style={styles.bars}>
+      {data.map((m, i) => {
+        const a = kind === "visits" ? m.accepted : m.submitted;
+        const r = kind === "visits" ? m.returned : 0;
+        return (
+          <View key={i} style={styles.barCol}>
+            <View style={styles.barTrack}>
+              {r > 0 && <View style={[styles.barSeg, { height: `${(r / max) * 100}%`, backgroundColor: "#FCA5A5" }]} />}
+              {a > 0 && <View style={[styles.barSeg, { height: `${(a / max) * 100}%`, backgroundColor: "#34D399" }]} />}
             </View>
-            <View style={styles.statusLegend}>
-              <View style={styles.legendItem}>
-                <View
-                  style={[styles.legendDot, { backgroundColor: "#10B981" }]}
-                />
-                <Text style={styles.legendText}>Verified (90%)</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View
-                  style={[styles.legendDot, { backgroundColor: "#F59E0B" }]}
-                />
-                <Text style={styles.legendText}>Pending (6%)</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View
-                  style={[styles.legendDot, { backgroundColor: "#EF4444" }]}
-                />
-                <Text style={styles.legendText}>Rejected (4%)</Text>
-              </View>
-            </View>
+            <Text style={styles.barLabel}>{m.month}</Text>
           </View>
-        </View>
-
-        {/* ─── STORY 2: Trend (Hero Chart) ─── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Survival Rate Trend</Text>
-              <Text style={styles.sectionSubtitle}>
-                Are we improving over time?
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.exportBtn}>
-              <Ionicons name="download-outline" size={14} color="#0F4A2F" />
-              <Text style={styles.exportText}>Export</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.heroChartCard}>
-            <LineChart
-              data={MOCK_LINE_DATA}
-              width={screenWidth - 40}
-              height={200}
-              chartConfig={{
-                ...chartConfig,
-                propsForDots: {
-                  r: "5",
-                  strokeWidth: "2",
-                  stroke: "#0F4A2F",
-                  fill: "#FFFFFF",
-                },
-              }}
-              bezier
-              style={styles.chart}
-              withInnerLines={true}
-              withOuterLines={false}
-              withVerticalLines={false}
-              fromZero={false}
-              yAxisLabel=""
-              yAxisSuffix="%"
-            />
-          </View>
-        </View>
-
-        {/* ─── STORY 3: Key Insights (Side-by-Side) ─── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Key Insights</Text>
-          <View style={styles.insightsRow}>
-            <View style={styles.insightCard}>
-              <View
-                style={[styles.insightIcon, { backgroundColor: "#DCFCE7" }]}
-              >
-                <Ionicons name="trending-up" size={20} color="#16A34A" />
-              </View>
-              <Text style={styles.insightValue}>+5%</Text>
-              <Text style={styles.insightLabel}>Improvement</Text>
-              <Text style={styles.insightDetail}>vs last quarter</Text>
-            </View>
-            <View style={styles.insightCard}>
-              <View
-                style={[styles.insightIcon, { backgroundColor: "#FEF3C7" }]}
-              >
-                <Ionicons name="alert-circle" size={20} color="#D97706" />
-              </View>
-              <Text style={styles.insightValue}>8</Text>
-              <Text style={styles.insightLabel}>Pending Review</Text>
-              <Text style={styles.insightDetail}>Needs attention</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── STORY 4: Distribution (Compact Pie) ─── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Status Distribution</Text>
-          <View style={styles.pieCard}>
-            <PieChart
-              data={MOCK_PIE_DATA}
-              width={screenWidth - 40}
-              height={160}
-              chartConfig={chartConfig}
-              accessor="population"
-              backgroundColor="transparent"
-              paddingLeft="0"
-              center={[10, 10]}
-              absolute
-              hasLegend={true}
-            />
-          </View>
-        </View>
-
-        {/* ─── STORY 5: Detailed Records ─── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Detailed Records</Text>
-            <Text style={styles.recordCount}>
-              {filteredReports.length} records
-            </Text>
-          </View>
-
-          <FlatList
-            data={filteredReports}
-            renderItem={renderReportCard}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
-            contentContainerStyle={styles.listContent}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Ionicons name="document-outline" size={48} color="#D1D5DB" />
-                <Text style={styles.emptyText}>
-                  No reports found for this filter.
-                </Text>
-              </View>
-            }
-          />
-        </View>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
+        );
+      })}
     </View>
   );
 };
 
-// ─── Styles ────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────
+   SCREEN
+   ──────────────────────────────────────────────────────────────── */
+export default function ReportsScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const isOnline = useNetworkStatus();
+
+  const [kind, setKind] = useState<Kind>("visits");
+  const [period, setPeriod] = useState<Period>("all");
+  const [status, setStatus] = useState("all");
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [data, setData] = useState<ReportData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Wait until the inspector stops typing before searching
+  useEffect(() => {
+    if (debounce.current) clearTimeout(debounce.current);
+    debounce.current = setTimeout(() => setQuery(search.trim()), 400);
+    return () => {
+      if (debounce.current) clearTimeout(debounce.current);
+    };
+  }, [search]);
+
+  const load = useCallback(async () => {
+    if (!isOnline) {
+      setError("You're offline. Reports need an internet connection.");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    try {
+      setError(null);
+      const token = await getToken();
+      if (!token) {
+        await clearAuthData();
+        router.replace("/homepage");
+        return;
+      }
+      const params = new URLSearchParams({ type: kind, period, status });
+      if (query) params.append("search", query);
+      const res = await fetch(`${API}/inspector/my-reports/?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (isAuthFailure(res.status)) {
+        await clearAuthData();
+        router.replace("/homepage");
+        return;
+      }
+      const body = await res.json();
+      if (!res.ok || !body.success) throw new Error(body.error || "Failed to load reports");
+      setData(body.data);
+    } catch (e: any) {
+      setError(e.message || "Failed to load reports");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [isOnline, kind, period, status, query, router]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const switchKind = (k: Kind) => {
+    if (k === kind) return;
+    setKind(k);
+    setStatus("all");
+    setLoading(true);
+  };
+
+  const s = data?.summary;
+  const rows = data?.type === kind ? data.rows : [];
+  const statusChips =
+    kind === "visits"
+      ? [
+          { key: "all", label: "All" },
+          { key: "returned", label: "Returned" },
+          { key: "pending", label: "In review" },
+          { key: "accepted", label: "Accepted" },
+        ]
+      : [
+          { key: "all", label: "All" },
+          { key: "draft", label: "Drafts" },
+          { key: "submitted", label: "Submitted" },
+        ];
+
+  const openVisit = (r: VisitRow) => r.site_id && router.push(`/(tabs)/monitoring/${r.site_id}` as any);
+  const openAssessment = (a: AssessmentRow) =>
+    a.area_id &&
+    router.push({
+      pathname: "/feedbacks/site_field_assessment",
+      params: {
+        areaId: String(a.area_id),
+        areaName: a.area_name,
+        ...(a.site_id ? { siteId: String(a.site_id), siteName: a.site_name ?? "" } : {}),
+        assessmentType: a.site_id ? "specific" : "general",
+      },
+    } as any);
+
+  return (
+    <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor={BG} translucent={false} />
+
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => (router.canGoBack() ? router.back() : router.replace("/(tabs)/profile" as any))}>
+          <Ionicons name="chevron-back" size={22} color={INK} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>My Reports</Text>
+          <Text style={styles.subtitle}>Your monitoring visits and field assessments</Text>
+        </View>
+      </View>
+
+      {/* Visits / Assessments */}
+      <View style={styles.segment}>
+        {(["visits", "assessments"] as Kind[]).map((k) => (
+          <TouchableOpacity key={k} style={[styles.segBtn, kind === k && styles.segBtnActive]} onPress={() => switchKind(k)} activeOpacity={0.8}>
+            <MaterialCommunityIcons
+              name={k === "visits" ? "map-marker-check-outline" : "clipboard-text-outline"}
+              size={16}
+              color={kind === k ? "#fff" : MUTED}
+            />
+            <Text style={[styles.segText, kind === k && styles.segTextActive]}>{k === "visits" ? "Visit reports" : "Assessments"}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={PRIMARY}
+            colors={[PRIMARY]}
+          />
+        }
+      >
+        {/* Period */}
+        <View style={styles.chipRow}>
+          {PERIODS.map((p) => (
+            <Chip key={p.key} label={p.label} active={period === p.key} onPress={() => setPeriod(p.key)} />
+          ))}
+        </View>
+
+        {loading && !data ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={PRIMARY} />
+          </View>
+        ) : error && !data ? (
+          <View style={styles.center}>
+            <Ionicons name="cloud-offline-outline" size={46} color={FAINT} />
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.btn} onPress={load}>
+              <Text style={styles.btnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : s && data?.type === kind ? (
+          <>
+            {/* Summary */}
+            <View style={styles.card}>
+              {kind === "visits" ? (
+                <>
+                  <View style={styles.statRow}>
+                    <Stat value={fmt(s.total)} label="Submitted" />
+                    <Stat value={fmt(s.accepted)} label="Accepted" color="#059669" />
+                    <Stat value={fmt(s.returned)} label="Returned" color={s.returned > 0 ? "#DC2626" : INK} />
+                  </View>
+                  <Text style={styles.footnote}>
+                    {fmt(s.plants_recorded)} plants and {fmt(s.deaths_recorded)} deaths recorded in accepted reports · {s.sites} site
+                    {s.sites !== 1 ? "s" : ""}
+                  </Text>
+                </>
+              ) : (
+                <View style={styles.statRow}>
+                  <Stat value={fmt(s.submitted)} label="Submitted" color="#059669" />
+                  <Stat value={fmt(s.draft)} label="Drafts" color={s.draft > 0 ? "#D97706" : INK} />
+                  <Stat value={fmt(s.photos)} label="Photos" />
+                </View>
+              )}
+            </View>
+
+            {/* Last 6 months */}
+            <View style={[styles.card, { marginTop: 12 }]}>
+              <View style={styles.rowBetween}>
+                <Text style={styles.cardTitle}>Last 6 months</Text>
+                {kind === "visits" && (
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <Legend color="#34D399" label="Accepted" />
+                    <Legend color="#FCA5A5" label="Returned" />
+                  </View>
+                )}
+              </View>
+              <MiniBars data={data.monthly} kind={kind} />
+            </View>
+
+            {/* Search + status */}
+            <View style={styles.search}>
+              <Ionicons name="search" size={17} color={FAINT} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder={kind === "visits" ? "Search site, program or group" : "Search title, site or area"}
+                placeholderTextColor={FAINT}
+                value={search}
+                onChangeText={setSearch}
+                returnKeyType="search"
+              />
+              {search.length > 0 && (
+                <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
+                  <Ionicons name="close-circle" size={17} color={FAINT} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+              {statusChips.map((c) => (
+                <Chip
+                  key={c.key}
+                  label={c.label}
+                  active={status === c.key}
+                  onPress={() => setStatus(c.key)}
+                  count={c.key === "all" ? s.total : data.counts[c.key] ?? 0}
+                />
+              ))}
+            </ScrollView>
+
+            {/* List */}
+            {rows.length === 0 ? (
+              <View style={[styles.card, styles.empty]}>
+                <MaterialCommunityIcons name="file-search-outline" size={38} color="#D1D5DB" />
+                <Text style={styles.emptyText}>No reports match these filters</Text>
+              </View>
+            ) : kind === "visits" ? (
+              (rows as VisitRow[]).map((r) => {
+                const st = STATUS[r.status];
+                return (
+                  <TouchableOpacity key={r.id} style={styles.item} activeOpacity={0.75} onPress={() => openVisit(r)}>
+                    <View style={[styles.itemIcon, { backgroundColor: st.bg }]}>
+                      <MaterialCommunityIcons name={st.icon as any} size={20} color={st.fg} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.rowBetween}>
+                        <Text style={styles.itemTitle} numberOfLines={1}>
+                          {r.site_name}
+                        </Text>
+                        <View style={[styles.tag, { backgroundColor: st.bg }]}>
+                          <Text style={[styles.tagText, { color: st.fg }]}>{st.label}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.itemSub} numberOfLines={1}>
+                        {r.visit_type} · {shortDate(r.date)}
+                      </Text>
+                      {r.group_name && (
+                        <Text style={styles.itemMeta} numberOfLines={1}>
+                          {r.program} · {r.group_name}
+                        </Text>
+                      )}
+                      {r.status === "returned" ? (
+                        <View style={styles.note}>
+                          <Text style={styles.noteText} numberOfLines={2}>
+                            {r.notes ? `“${r.notes}”` : r.stage}
+                          </Text>
+                          <Text style={styles.noteAction}>Tap to fix and resubmit</Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.itemMeta}>
+                          {r.status === "pending" ? r.stage : `${fmt(r.planted)} planted · ${fmt(r.dead)} dead`}
+                          {r.planted_hectares ? ` · ${r.planted_hectares} ha` : ""}
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              (rows as AssessmentRow[]).map((a) => {
+                const st = STATUS[a.status];
+                return (
+                  <TouchableOpacity key={a.id} style={styles.item} activeOpacity={0.75} onPress={() => openAssessment(a)}>
+                    <View style={[styles.itemIcon, { backgroundColor: st.bg }]}>
+                      <MaterialCommunityIcons name={st.icon as any} size={20} color={st.fg} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.rowBetween}>
+                        <Text style={styles.itemTitle} numberOfLines={1}>
+                          {a.title}
+                        </Text>
+                        <View style={[styles.tag, { backgroundColor: st.bg }]}>
+                          <Text style={[styles.tagText, { color: st.fg }]}>{st.label}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.itemSub} numberOfLines={1}>
+                        {a.site_name ?? "General"} · {a.area_name} · {shortDate(a.date)}
+                      </Text>
+                      <Text style={styles.itemMeta} numberOfLines={1}>
+                        {a.layers.length > 0 ? a.layers.map((l) => LAYER_LABEL[l]).join(", ") : "No layers yet"} · {a.photos} photo
+                        {a.photos !== 1 ? "s" : ""}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </>
+        ) : (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={PRIMARY} />
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const Legend: React.FC<{ color: string; label: string }> = ({ color, label }) => (
+  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+    <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: color }} />
+    <Text style={{ fontSize: 10.5, color: MUTED }}>{label}</Text>
+  </View>
+);
+
+/* ──────────────────────────────────────────────────────────────────
+   STYLES
+   ──────────────────────────────────────────────────────────────── */
+const shadow = {
+  shadowColor: "#0F172A",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.05,
+  shadowRadius: 10,
+  elevation: 2,
+};
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F6F8" },
-  scrollContent: { paddingBottom: 24 },
+  root: { flex: 1, backgroundColor: BG },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingBottom: 12, gap: 6 },
+  backBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "#fff", ...shadow },
+  title: { fontSize: 24, fontWeight: "800", color: INK, letterSpacing: -0.3, marginLeft: 6 },
+  subtitle: { fontSize: 12, color: MUTED, marginLeft: 6, marginTop: 1 },
 
-  // Header
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    backgroundColor: "#F5F6F8",
-  },
-  headerEyebrow: {
-    fontSize: 12,
-    color: "#6B7280",
-    fontWeight: "600",
-    marginBottom: 4,
-    letterSpacing: 0.2,
-  },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: "#111827",
-    letterSpacing: -0.5,
-    marginBottom: 16,
-  },
+  segment: { flexDirection: "row", marginHorizontal: 20, backgroundColor: "#E6EBE8", borderRadius: 14, padding: 4, gap: 4 },
+  segBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 11 },
+  segBtnActive: { backgroundColor: PRIMARY },
+  segText: { fontSize: 13, fontWeight: "700", color: MUTED },
+  segTextActive: { color: "#fff" },
 
-  searchContainer: {
+  chipRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20, marginTop: 14, marginBottom: 2 },
+  chip: { paddingHorizontal: 13, paddingVertical: 7, borderRadius: 20, backgroundColor: "#fff", borderWidth: 1, borderColor: "#E5E7EB" },
+  chipActive: { backgroundColor: "#E7F3EC", borderColor: PRIMARY },
+  chipText: { fontSize: 12, fontWeight: "600", color: MUTED },
+  chipTextActive: { color: PRIMARY },
+
+  center: { alignItems: "center", justifyContent: "center", paddingVertical: 60, paddingHorizontal: 30 },
+  errorText: { fontSize: 13.5, color: MUTED, textAlign: "center", marginTop: 10, marginBottom: 16 },
+  btn: { backgroundColor: PRIMARY, paddingHorizontal: 26, paddingVertical: 11, borderRadius: 12 },
+  btnText: { color: "#fff", fontWeight: "700" },
+
+  card: { backgroundColor: "#fff", marginHorizontal: 20, marginTop: 14, borderRadius: 20, padding: 16, ...shadow },
+  cardTitle: { fontSize: 14, fontWeight: "800", color: INK },
+  statRow: { flexDirection: "row" },
+  stat: { flex: 1, alignItems: "center" },
+  statValue: { fontSize: 24, fontWeight: "800" },
+  statLabel: { fontSize: 12, color: MUTED, marginTop: 2, fontWeight: "500" },
+  rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  footnote: { fontSize: 11.5, color: FAINT, marginTop: 12, textAlign: "center" },
+
+  bars: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 96, marginTop: 14 },
+  barCol: { flex: 1, alignItems: "center" },
+  barTrack: { width: 18, height: 74, justifyContent: "flex-end", borderRadius: 6, backgroundColor: "#F3F4F6", overflow: "hidden" },
+  barSeg: { width: "100%" },
+  barLabel: { fontSize: 10.5, color: MUTED, marginTop: 6, fontWeight: "600" },
+
+  search: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 22,
+    backgroundColor: "#fff",
+    borderRadius: 14,
     paddingHorizontal: 14,
     height: 46,
-    gap: 8,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
+    ...shadow,
   },
-  searchPlaceholder: {
-    flex: 1,
-    fontSize: 14,
-    color: "#9CA3AF",
-    fontWeight: "500",
-  },
-  filterBtn: { padding: 4 },
+  searchInput: { flex: 1, fontSize: 14, color: INK, paddingVertical: 0 },
 
-  // Tab Filters
-  tabContainer: { marginBottom: 24 },
-  tabContent: { paddingHorizontal: 20, gap: 10 },
-  tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  tabActive: {
-    backgroundColor: "#0F4A2F",
-    borderColor: "#0F4A2F",
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#6B7280",
-  },
-  tabTextActive: {
-    color: "#FFFFFF",
-  },
-
-  // Sections
-  section: { paddingHorizontal: 20, marginBottom: 28 },
-  sectionHeader: {
+  item: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
+    gap: 12,
+    backgroundColor: "#fff",
+    marginHorizontal: 20,
+    marginTop: 10,
+    borderRadius: 18,
+    padding: 14,
+    ...shadow,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#111827",
-    letterSpacing: -0.2,
-    marginBottom: 12,
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: "#9CA3AF",
-    fontWeight: "500",
-    marginTop: 2,
-  },
-  recordCount: {
-    fontSize: 12,
-    color: "#6B7280",
-    fontWeight: "600",
-    marginTop: 4,
-  },
-  exportBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#F0FDF4",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  exportText: { fontSize: 12, fontWeight: "600", color: "#0F4A2F" },
+  itemIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  itemTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: INK },
+  itemSub: { fontSize: 12, color: MUTED, marginTop: 2 },
+  itemMeta: { fontSize: 11.5, color: FAINT, marginTop: 3 },
+  tag: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
+  tagText: { fontSize: 10.5, fontWeight: "800" },
+  note: { marginTop: 8, backgroundColor: "#FEF2F2", borderRadius: 10, padding: 9 },
+  noteText: { fontSize: 12, color: "#991B1B" },
+  noteAction: { fontSize: 11, color: "#DC2626", fontWeight: "700", marginTop: 4 },
 
-  // Status Overview
-  statusCard: {
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-    borderRadius: 20,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  statusBar: {
-    flexDirection: "row",
-    height: 12,
-    borderRadius: 6,
-    overflow: "hidden",
-    marginBottom: 16,
-  },
-  statusSegment: { height: "100%" },
-  statusLegend: { flexDirection: "row", justifyContent: "space-between" },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { fontSize: 11, color: "#6B7280", fontWeight: "600" },
-
-  // Hero Chart
-  heroChartCard: {
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-    borderRadius: 20,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-    alignItems: "center",
-  },
-  chart: { borderRadius: 12, marginLeft: -10 },
-
-  // Insights
-  insightsRow: { flexDirection: "row", gap: 12 },
-  insightCard: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderRadius: 16,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  insightIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  insightValue: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  insightLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#111827",
-    marginBottom: 2,
-  },
-  insightDetail: { fontSize: 11, color: "#9CA3AF" },
-
-  // Pie Chart
-  pieCard: {
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-    borderRadius: 20,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-    alignItems: "center",
-  },
-
-  // List
-  listContent: { gap: 12 },
-  reportCard: {
-    flexDirection: "row",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    overflow: "hidden",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  statusIndicator: { width: 5 },
-  cardContent: { flex: 1, padding: 16 },
-
-  cardTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  projectName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 4,
-    flex: 1,
-    marginRight: 8,
-  },
-  siteName: { fontSize: 12.5, color: "#6B7280" },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  statusText: { fontSize: 11, fontWeight: "700" },
-
-  divider: { height: 1, backgroundColor: "#F3F4F6", marginBottom: 12 },
-
-  metricsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  metric: { flex: 1, alignItems: "center" },
-  metricDivider: { width: 1, height: 24, backgroundColor: "#E5E7EB" },
-  metricLabel: {
-    fontSize: 10,
-    color: "#9CA3AF",
-    fontWeight: "600",
-    textTransform: "uppercase",
-    marginBottom: 4,
-  },
-  metricValue: { fontSize: 16, fontWeight: "800" },
-
-  cardBottom: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-  },
-  metaInfo: { flexDirection: "row", alignItems: "center", gap: 6 },
-  dateText: { fontSize: 12, color: "#6B7280", fontWeight: "500" },
-  dotSeparator: { fontSize: 12, color: "#D1D5DB" },
-  reportId: { fontSize: 11, color: "#9CA3AF", fontWeight: "600" },
-
-  emptyState: { alignItems: "center", paddingVertical: 40, gap: 8 },
-  emptyText: { fontSize: 14, color: "#9CA3AF", fontWeight: "500" },
+  empty: { alignItems: "center", paddingVertical: 30 },
+  emptyText: { fontSize: 13, color: MUTED, marginTop: 8 },
 });
-
-export default ReportsScreen;
