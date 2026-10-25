@@ -15,6 +15,9 @@ urlpatterns = [
     path('evaluate_application/<int:application_id>/', views.evaluate_application, name='evaluate_application'),
     path('confirm_application/<int:application_id>/', views.confirm_application, name='confirm_application'),
     path('complete_application/<int:application_id>/', views.complete_application, name='complete_application'),
+    path('request_program_closure/<int:application_id>/', views.request_program_closure, name='request_program_closure'),
+    path('decide_program_closure/<int:closure_request_id>/', views.decide_program_closure, name='decide_program_closure'),
+    path('get_program_closure_requests/', views.get_program_closure_requests, name='get_program_closure_requests'),
     path('delete_application/<int:application_id>/', views.delete_application, name='delete_application'),
 
     # ─── SEEDLING REQUESTS ─────────────────────────────────────────

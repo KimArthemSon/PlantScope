@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "expo-router";
 import {
   View,
@@ -41,65 +41,131 @@ const formatDescription = (desc: string | null | undefined) => {
 };
 
 // ─── OSM Map Component ────────────────────────────────────────────────────
+type LatLng = [number, number];
+
+/**
+ * Accepts the coordinate shapes we store ([lat, lng] pairs, {lat,lng} / {latitude,longitude}
+ * objects, JSON strings, GeoJSON) and returns [lat, lng] pairs. Flips [lng, lat] lists.
+ */
+const toLatLngList = (coords: any): LatLng[] => {
+  if (!coords) return [];
+  let data = coords;
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return [];
+    }
+  }
+  if (data?.type && data?.coordinates) data = data.type === "Polygon" ? data.coordinates[0].map(([lng, lat]: number[]) => [lat, lng]) : [];
+  if (!Array.isArray(data)) return [];
+  const pts = data
+    .map((p: any) =>
+      Array.isArray(p)
+        ? [Number(p[0]), Number(p[1])]
+        : [Number(p?.latitude ?? p?.lat), Number(p?.longitude ?? p?.lng ?? p?.lon)],
+    )
+    .filter((p: number[]) => Number.isFinite(p[0]) && Number.isFinite(p[1])) as LatLng[];
+  return pts.length && Math.abs(pts[0][0]) > 90 ? pts.map(([a, b]) => [b, a] as LatLng) : pts;
+};
+
+const toLatLng = (coord: any): LatLng | null => toLatLngList(coord ? [coord] : [])[0] ?? null;
+
 const OSMMap = ({
-  region,
-  polygon,
+  sitePolygon,
+  plantedPolygon,
   marker,
   style,
 }: {
-  region: any;
-  polygon: any[];
-  marker: any | null;
+  sitePolygon: LatLng[];
+  plantedPolygon?: LatLng[];
+  marker: LatLng | null;
   style?: any;
 }) => {
-  const safeLat = region?.latitude || 11.036;
-  const safeLng = region?.longitude || 124.635;
-  const safePolygon =
-    polygon && polygon.length > 0
-      ? JSON.stringify(
-          polygon.map((p) =>
-            Array.isArray(p) ? p : [p.latitude, p.longitude],
-          ),
-        )
-      : "[]";
+  // Rebuild the page only when the data changes, so the map doesn't reload on every render
+  const html = useMemo(() => {
+    const data = JSON.stringify({ site: sitePolygon, planted: plantedPolygon || [], marker });
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #e5e7eb; }
+    .leaflet-control-attribution { font-size: 9px; background: rgba(255,255,255,0.7); }
+    .pin { background: transparent; border: none; }
+    .legend { background: rgba(255,255,255,0.95); padding: 6px 8px; border-radius: 8px; font: 600 11px sans-serif; color: #374151; line-height: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+    .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  </style>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    (function () {
+      var d = ${data};
+      var map = L.map('map', { zoomControl: true, attributionControl: true });
+      var street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 });
+      var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri', maxZoom: 19 });
+      street.addTo(map);
+      L.control.layers({ 'Street': street, 'Satellite': sat }, null, { position: 'topright' }).addTo(map);
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      <style>
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
-        #map { width: 100%; height: 100vh; }
-        .leaflet-control-attribution { font-size: 9px; background: rgba(255,255,255,0.7); }
-        .custom-marker-wrapper { background: transparent; border: none; }
-      </style>
-      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    </head>
-    <body>
-      <div id="map"></div>
-      <script>
-        try {
-          var map = L.map('map', { center: [${safeLat}, ${safeLng}], zoom: 15, zoomControl: true });
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap', maxZoom: 19, crossOrigin: true
-          }).addTo(map);
-          var polygonCoords = ${safePolygon};
-          if (polygonCoords.length > 0) {
-            var poly = L.polygon(polygonCoords, { color: '#0F4A2F', fillColor: '#0F4A2F', fillOpacity: 0.3, weight: 2 }).addTo(map);
-            map.fitBounds(poly.getBounds(), { padding: [20, 20] });
-          }
-          ${marker ? `var customIcon = L.divIcon({ className: 'custom-marker-wrapper', html: '<div style="width: 20px; height: 20px; background-color: #0F4A2F; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>', iconSize: [20, 20], iconAnchor: [10, 10] }); L.marker([${marker?.latitude || safeLat}, ${marker?.longitude || safeLng}], {icon: customIcon}).addTo(map);` : ""}
-        } catch(e) {}
-      </script>
-    </body>
-    </html>
-  `;
+      var layers = L.featureGroup().addTo(map);
+      var legend = [];
+      if (d.site.length >= 3) {
+        L.polygon(d.site, { color: '#0F4A2F', fillColor: '#0F4A2F', fillOpacity: 0.15, weight: 2 }).addTo(layers);
+        legend.push('<span class="sw" style="background:rgba(15,74,47,.25);border:2px solid #0F4A2F"></span>Site boundary');
+      }
+      if (d.planted.length >= 3) {
+        L.polygon(d.planted, { color: '#22C55E', fillColor: '#22C55E', fillOpacity: 0.35, weight: 2, dashArray: '5 4' }).addTo(layers);
+        legend.push('<span class="sw" style="background:rgba(34,197,94,.45);border:2px dashed #22C55E"></span>Area planted');
+      }
+      if (d.marker) {
+        var icon = L.divIcon({ className: 'pin', iconSize: [26, 26], iconAnchor: [13, 26],
+          html: '<svg width="26" height="26" viewBox="0 0 24 24"><path fill="#DC2626" stroke="#fff" stroke-width="1.5" d="M12 2C8 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3-7-7-7z"/><circle cx="12" cy="9" r="2.6" fill="#fff"/></svg>' });
+        L.marker(d.marker, { icon: icon }).addTo(layers);
+        legend.push('<span class="sw" style="background:#DC2626;border-radius:50%"></span>Site pin');
+      }
+
+      // Start on the site pin; without one, on the centre of the site boundary
+      // (or the planted area). Zoom so the whole outline still fits around that point.
+      var outline = d.site.length >= 3 ? d.site : d.planted.length >= 3 ? d.planted : null;
+      var center = d.marker || (outline ? L.polygon(outline).getBounds().getCenter() : null);
+
+      function placeView() {
+        map.invalidateSize();
+        var size = map.getSize();
+        if (!center) return map.setView([11.036, 124.635], 13); // nothing saved: Ormoc City
+        if (!outline) return map.setView(center, 16); // only a pin
+        // The zoom that fits the outline needs the real map size; while a screen is
+        // still opening the size is 0, which would zoom out to the whole world.
+        var zoom = size.x > 0 && size.y > 0 ? map.getBoundsZoom(layers.getBounds().pad(0.15)) : 16;
+        map.setView(center, Math.max(12, Math.min(zoom, 18)));
+      }
+
+      placeView();
+      // Re-place once the WebView has its final size (e.g. after the full-screen map
+      // slides in), but stop once the user has moved the map themselves.
+      var userMoved = false;
+      map.on('dragstart', function () { userMoved = true; });
+      map.getContainer().addEventListener('touchstart', function (e) { if (e.touches.length > 1) userMoved = true; });
+      window.addEventListener('resize', function () { if (!userMoved) placeView(); });
+      [150, 400, 900].forEach(function (ms) { setTimeout(function () { if (!userMoved) placeView(); }, ms); });
+
+      if (legend.length) {
+        var box = L.control({ position: 'bottomleft' });
+        box.onAdd = function () { var el = L.DomUtil.create('div', 'legend'); el.innerHTML = legend.join('<br/>'); return el; };
+        box.addTo(map);
+      }
+    })();
+  </script>
+</body>
+</html>`;
+  }, [JSON.stringify(sitePolygon), JSON.stringify(plantedPolygon), JSON.stringify(marker)]);
 
   return (
     <WebView
-      source={{ html }}
+      source={{ html, baseUrl: "https://plantscope.local/" }}
       style={style || { flex: 1, width: "100%", height: "100%" }}
       scrollEnabled={false}
       javaScriptEnabled={true}
@@ -123,6 +189,8 @@ interface ApplicationData {
   proposed_orientation_date: string | null;
   created_at: string;
   maintenance_plan: string | null;
+  // True while the City ENRO Head decides if the program is completed or failed
+  final_review_pending?: boolean;
 }
 
 interface GroupData {
@@ -136,6 +204,8 @@ interface AssignedSite {
   total_area_hectares: number;
   ndvi_value: number | null;
   polygon_coordinates: [number, number][] | string | null;
+  marker_coordinate?: any;
+  planted_area_polygon?: [number, number][] | null;
   reforestation_area_name: string | null;
   barangay_name: string | null;
   accessibility: any;
@@ -200,11 +270,23 @@ const statusConfig: Record<
     text: "#2E7D32",
     dot: "#388E3C",
   },
+  final_review: {
+    label: "Final Review",
+    bg: "#EEF2FF",
+    text: "#4338CA",
+    dot: "#6366F1",
+  },
   completed: {
     label: "Completed",
     bg: "#E0F2FE",
     text: "#0284C7",
     dot: "#0EA5E9",
+  },
+  failed: {
+    label: "Not Completed",
+    bg: "#FFEBEE",
+    text: "#C62828",
+    dot: "#D32F2F",
   },
   rejected: {
     label: "Rejected",
@@ -236,19 +318,6 @@ const formatDate = (iso: string) =>
         month: "short",
         day: "numeric",
       });
-
-const parsePolygonCoordinates = (coords: any): [number, number][] => {
-  if (!coords) return [];
-  if (Array.isArray(coords) && coords.length > 0 && Array.isArray(coords[0]))
-    return coords as [number, number][];
-  if (typeof coords === "string") {
-    try {
-      const p = JSON.parse(coords);
-      if (Array.isArray(p)) return p;
-    } catch {}
-  }
-  return [];
-};
 
 const getAccessibilityText = (accessibility: any) => {
   if (!accessibility) return "Not specified";
@@ -285,6 +354,7 @@ const FloatingProgressTimeline = ({ status }: { status: string }) => {
     { key: "for_head", label: "Head Review", icon: "people" },
     { key: "accepted", label: "Approved", icon: "checkmark-circle" },
     { key: "under_monitoring", label: "Active", icon: "leaf" },
+    { key: "final_review", label: "Final Review", icon: "ribbon" },
     { key: "completed", label: "Completed", icon: "trophy" },
   ];
 
@@ -293,6 +363,7 @@ const FloatingProgressTimeline = ({ status }: { status: string }) => {
     "for_head",
     "accepted",
     "under_monitoring",
+    "final_review",
     "completed",
   ];
 
@@ -526,46 +597,12 @@ export default function ApplicationPage() {
     fetchData(true);
   };
 
-  const getMapRegion = () => {
-    const site = detail?.assigned_site;
-    const coords = parsePolygonCoordinates(site?.polygon_coordinates);
-    if (coords.length === 0)
-      return {
-        latitude: 11.036,
-        longitude: 124.635,
-        latitudeDelta: 0.02,
-        longitudeDelta: 0.02,
-      };
-    const lats = coords.map(([lat]) => lat);
-    const lngs = coords.map(([, lng]) => lng);
-    const minLat = Math.min(...lats),
-      maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs),
-      maxLng = Math.max(...lngs);
-    return {
-      latitude: (minLat + maxLat) / 2,
-      longitude: (minLng + maxLng) / 2,
-      latitudeDelta: (maxLat - minLat) * 1.5 + 0.005,
-      longitudeDelta: (maxLng - minLng) * 1.5 + 0.005,
-    };
-  };
-
-  const polygonCoords = detail?.assigned_site
-    ? parsePolygonCoordinates(detail.assigned_site.polygon_coordinates).map(
-        ([lat, lng]) => ({ latitude: lat, longitude: lng }),
-      )
-    : [];
-  const centroid =
-    polygonCoords.length > 0
-      ? {
-          latitude:
-            polygonCoords.reduce((s, c) => s + c.latitude, 0) /
-            polygonCoords.length,
-          longitude:
-            polygonCoords.reduce((s, c) => s + c.longitude, 0) /
-            polygonCoords.length,
-        }
-      : null;
+  // Map layers: site boundary, latest confirmed planted area, and the site pin.
+  // The map opens on the pin; without a saved pin it opens on the boundary's centre.
+  const sitePolygon = toLatLngList(detail?.assigned_site?.polygon_coordinates);
+  const plantedPolygon = toLatLngList(detail?.assigned_site?.planted_area_polygon);
+  const siteMarker: LatLng | null = toLatLng(detail?.assigned_site?.marker_coordinate);
+  const hasMapData = sitePolygon.length >= 3 || plantedPolygon.length >= 3 || !!siteMarker;
 
   const acceptedSeedlings =
     detail?.seedling_requests?.filter((r) => r.status === "accepted") || [];
@@ -618,14 +655,22 @@ export default function ApplicationPage() {
         <View style={styles.terminalBody}>
           <Ionicons name="sparkles-outline" size={48} color={PRIMARY} />
           <Text style={styles.terminalH1}>
-            {detail?.application
-              ? "Program Completed!"
-              : "No Active Application"}
+            {!detail?.application
+              ? "No Active Application"
+              : detail.application.status === "completed"
+                ? "Program Completed!"
+                : detail.application.status === "failed"
+                  ? "Program Not Completed"
+                  : "Application Closed"}
           </Text>
           <Text style={styles.terminalDesc}>
-            {detail?.application
-              ? "Thank you for your contribution! You are now eligible to start a new tree planting project."
-              : "You haven't applied for a tree planting program yet. Start your journey today!"}
+            {!detail?.application
+              ? "You haven't applied for a tree planting program yet. Start your journey today!"
+              : detail.application.status === "completed"
+                ? "The City ENRO Head confirmed your program as completed. Thank you for your contribution! You can now start a new tree planting project."
+                : detail.application.status === "failed"
+                  ? "After final review, the City ENRO Head marked your program as not completed. Please coordinate with the ENRO office about next steps. You can apply for a new program."
+                  : "Your last application was closed. You can apply for a new tree planting program."}
           </Text>
           <TouchableOpacity
             style={styles.terminalBtn}
@@ -641,6 +686,9 @@ export default function ApplicationPage() {
   }
 
   const application = detail!.application;
+  // While the Head reviews the results, show "Final Review" instead of "Active"
+  const finalReviewPending = !!application?.final_review_pending;
+  const displayStatus = finalReviewPending ? "final_review" : application?.status;
   const group = detail!.group;
   const assigned_site = detail!.assigned_site;
   const heroImage = assigned_site?.main_image_url
@@ -691,7 +739,7 @@ export default function ApplicationPage() {
         </View>
 
         <View style={styles.floatingTimelinePosition}>
-          <FloatingProgressTimeline status={application?.status} />
+          <FloatingProgressTimeline status={displayStatus || ""} />
         </View>
 
         <View style={styles.contentSheet}>
@@ -724,6 +772,20 @@ export default function ApplicationPage() {
               <Text style={styles.statLabel}>Reports</Text>
             </View>
           </View>
+
+          {finalReviewPending && (
+            <View style={styles.finalReviewBanner}>
+              <View style={styles.finalReviewIcon}>
+                <Ionicons name="ribbon" size={18} color="#4338CA" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.finalReviewTitle}>Final review by the City ENRO Head</Text>
+                <Text style={styles.finalReviewText}>
+                  ENRO has recommended closing your program. The City ENRO Head is reviewing your results (trees planted, survival and area planted) to decide if it is completed. You'll get a notification once a decision is made.
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* ✅ FIX 2: Orientation Date strictly shown ONLY when status is 'accepted' */}
           {application?.status === "accepted" &&
@@ -904,18 +966,27 @@ export default function ApplicationPage() {
                       <Text style={styles.mapExpandText}>Expand</Text>
                     </TouchableOpacity>
                   </View>
-                  <TouchableOpacity
-                    style={styles.mapPreview}
-                    onPress={() => setShowMap(true)}
-                    activeOpacity={0.9}
-                  >
-                    <OSMMap
-                      region={getMapRegion()}
-                      polygon={polygonCoords}
-                      marker={centroid}
-                      style={{ width: "100%", height: "100%" }}
-                    />
-                  </TouchableOpacity>
+                  {/* Plain View: the mini map can be dragged/zoomed without opening full screen */}
+                  <View style={styles.mapPreview}>
+                    {hasMapData ? (
+                      <OSMMap
+                        sitePolygon={sitePolygon}
+                        plantedPolygon={plantedPolygon}
+                        marker={siteMarker}
+                        style={{ width: "100%", height: "100%" }}
+                      />
+                    ) : (
+                      <View style={styles.mapEmpty}>
+                        <Ionicons name="map-outline" size={28} color={MUTED} />
+                        <Text style={styles.mapEmptyText}>No map location saved for this site yet.</Text>
+                      </View>
+                    )}
+                    {hasMapData && (
+                      <TouchableOpacity style={styles.mapExpandBtn} onPress={() => setShowMap(true)} activeOpacity={0.8} hitSlop={6}>
+                        <Ionicons name="expand" size={16} color="#fff" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               )}
 
@@ -948,8 +1019,10 @@ export default function ApplicationPage() {
                     "Your application is pending final approval from the City ENRO Head."}
                   {application?.status === "accepted" &&
                     "Application approved! Please prepare for the orientation scheduled above."}
-                  {application?.status === "under_monitoring" &&
+                  {application?.status === "under_monitoring" && !finalReviewPending &&
                     "Program is active. Onsite inspectors will monitor progress and submit reports."}
+                  {finalReviewPending &&
+                    "Monitoring is paused while the City ENRO Head makes the final decision on your program."}
                 </Text>
               </View>
             </>
@@ -1021,9 +1094,9 @@ export default function ApplicationPage() {
       >
         <View style={{ flex: 1 }}>
           <OSMMap
-            region={getMapRegion()}
-            polygon={polygonCoords}
-            marker={centroid}
+            sitePolygon={sitePolygon}
+            plantedPolygon={plantedPolygon}
+            marker={siteMarker}
             style={{ flex: 1 }}
           />
           <View style={[styles.mapModalBar, { top: insets.top + 16 }]}>
@@ -1243,6 +1316,27 @@ const styles = StyleSheet.create({
     elevation: 10,
     zIndex: 5,
   },
+  finalReviewBanner: {
+    flexDirection: "row",
+    gap: 12,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+  },
+  finalReviewIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "#E0E7FF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  finalReviewTitle: { fontSize: 14, fontWeight: "800", color: "#3730A3" },
+  finalReviewText: { fontSize: 12, color: "#4338CA", marginTop: 3, lineHeight: 17 },
   orientationBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1406,6 +1500,24 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   mapExpandText: { fontSize: 13, fontWeight: "600", color: PRIMARY },
+  mapExpandBtn: {
+    position: "absolute",
+    bottom: 10,
+    right: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(15,74,47,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  mapEmpty: { flex: 1, justifyContent: "center", alignItems: "center", gap: 6, backgroundColor: "#F3F4F6" },
+  mapEmptyText: { fontSize: 12, color: MUTED, fontWeight: "600" },
   mapPreview: {
     height: 220,
     borderRadius: 16,

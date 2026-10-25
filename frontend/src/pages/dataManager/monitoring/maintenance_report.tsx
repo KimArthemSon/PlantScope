@@ -29,6 +29,9 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import ReportAreaMap, { computeAreaStats } from "@/components/map/ReportAreaMap";
+import ClosureDecisionPanel, { formatClosureDate } from "@/components/monitoring/ClosureDecisionPanel";
+import type { ClosureRequest } from "@/components/monitoring/ClosureDecisionPanel";
+import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api.ts";
 
 interface ReviewStep {
@@ -93,8 +96,38 @@ interface SiteMonitoringDetail {
     group_name: string;
     group_contact: string;
     status: string;
+    group?: {
+      group_type: string | null;
+      address: string | null;
+      email: string | null;
+      profile_img: string | null;
+      member_since: string | null;
+    };
+    representative?: {
+      full_name: string | null;
+      gender: string | null;
+      contact: string | null;
+      address: string | null;
+      profile_img: string | null;
+    } | null;
+    program?: {
+      title: string;
+      classification: string;
+      participants: number;
+      applied_at: string | null;
+      confirmed_at: string | null;
+      orientation_date: string | null;
+      has_maintenance_plan: boolean;
+      agreement_image: string | null;
+      seedlings_provided: number;
+      reports_submitted: number;
+      reports_accepted: number;
+      last_report_at: string | null;
+    };
+    track_record?: { total_programs: number; completed: number; failed: number };
   } | null;
   historical_applications: HistoricalApplication[];
+  closure_request: ClosureRequest | null;
   progress_reports: Array<{
     report_id: number;
     visit_type: "initial" | "ongoing" | "inactive_check";
@@ -210,11 +243,114 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
   );
 }
 
+// Group, representative, program and track record of the current tree grower
+function TreeGrowerDetails({
+  app,
+  onDownloadPlan,
+}: {
+  app: NonNullable<SiteMonitoringDetail["current_application"]>;
+  onDownloadPlan: () => void;
+}) {
+  const { group, representative: rep, program, track_record: record } = app;
+  const avatar = group?.profile_img || rep?.profile_img;
+  const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className="text-xs text-gray-800 font-medium mt-0.5 break-words">{value || "—"}</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Group */}
+      <div className="flex items-start gap-3">
+        {avatar ? (
+          <img src={avatar} alt={app.group_name} className="w-12 h-12 rounded-xl object-cover border border-emerald-200 bg-white shrink-0" />
+        ) : (
+          <div className="w-12 h-12 rounded-xl bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0">
+            {app.group_name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-gray-900">{app.group_name}</p>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+            {group?.group_type && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white border border-emerald-200 text-emerald-700">{group.group_type}</span>
+            )}
+            {group?.member_since && <span className="text-[11px] text-gray-500">Registered {formatDate(group.member_since)}</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 bg-white rounded-lg border border-emerald-100 p-3">
+        <Field label="Group Contact" value={app.group_contact} />
+        <Field label="Email" value={group?.email} />
+        <div className="col-span-2"><Field label="Group Address" value={group?.address} /></div>
+      </div>
+
+      {/* Representative */}
+      {rep && (
+        <div className="bg-white rounded-lg border border-emerald-100 p-3">
+          <p className="text-[11px] font-bold text-emerald-800 mb-2">Group Representative</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Name" value={rep.full_name} />
+            <Field label="Gender" value={rep.gender} />
+            <Field label="Contact" value={rep.contact} />
+            <Field label="Address" value={rep.address} />
+          </div>
+        </div>
+      )}
+
+      {/* Program */}
+      {program && (
+        <div className="bg-white rounded-lg border border-emerald-100 p-3">
+          <p className="text-[11px] font-bold text-emerald-800 mb-2">Program: {program.title}</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <Field label="Type" value={program.classification === "new" ? "New application" : "Re-application"} />
+            <Field label="Participants" value={`${program.participants} tree growers`} />
+            <Field label="Applied" value={formatDate(program.applied_at)} />
+            <Field label="Confirmed" value={formatDate(program.confirmed_at)} />
+            <Field label="Orientation" value={formatDate(program.orientation_date)} />
+            <Field label="Seedlings Provided" value={program.seedlings_provided.toLocaleString()} />
+            <Field label="Reports" value={`${program.reports_accepted} accepted / ${program.reports_submitted} submitted`} />
+            <Field label="Last Report" value={formatDate(program.last_report_at)} />
+          </div>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {program.has_maintenance_plan && (
+              <button onClick={onDownloadPlan} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-semibold hover:bg-emerald-100">
+                <Download size={12} /> Maintenance Plan
+              </button>
+            )}
+            {program.agreement_image && (
+              <a href={program.agreement_image} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-semibold hover:bg-emerald-100">
+                <FileText size={12} /> Signed Agreement
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Track record */}
+      {record && (
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="font-semibold text-gray-600">Track record:</span>
+          <span className="px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700">{record.total_programs} program{record.total_programs === 1 ? "" : "s"}</span>
+          <span className="px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700">{record.completed} completed</span>
+          <span className="px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-700">{record.failed} failed</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────
 
 export default function SiteMonitoringDetails() {
   const { site_id } = useParams<{ site_id: string }>();
   const navigate = useNavigate();
+  // Same page for the Data Manager and the City ENRO Head; the Head makes final closure decisions
+  const { userRole } = useUserRole();
+  const isHead = userRole === "CityENROHead";
   const token = localStorage.getItem("token");
 
   const [detail, setDetail] = useState<SiteMonitoringDetail | null>(null);
@@ -300,6 +436,28 @@ export default function SiteMonitoringDetails() {
     }
   };
 
+  const downloadMaintenancePlan = async (applicationId: number) => {
+    try {
+      const res = await fetch(`${API_BASE}api/application/${applicationId}/download-maintenance-plan/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Download failed");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      // Plans can be PDF or Word; name the file after the type the server sent
+      const ext = blob.type.includes("wordprocessingml") ? "docx" : blob.type === "application/msword" ? "doc" : "pdf";
+      link.download = `maintenance_plan_${applicationId}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setPSAlert({ type: "error", title: "Download Failed", message: err.message });
+    }
+  };
+
   // Step 1 of 2: Data Manager approves (→ GIS Specialist) or requests changes (→ inspector)
   const handleUpdateProgressReport = async (reportId: number, status: "accepted" | "rejected", reason: string) => {
     setSubmitting(true);
@@ -329,34 +487,28 @@ export default function SiteMonitoringDetails() {
     }
     setSubmitting(true);
     try {
-      // 1. Complete or Fail the application
-      const res = await fetch(`${API_BASE}api/complete_application/${detail.current_application.application_id}/`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ status: completionModal.type, reason: completionModal.reason.trim() }),
-      });
+      const appId = detail.current_application.application_id;
+      // Data Manager recommends; the City ENRO Head decides. The Head can also decide directly.
+      const res = isHead
+        ? await fetch(`${API_BASE}api/complete_application/${appId}/`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ status: completionModal.type, reason: completionModal.reason.trim() }),
+          })
+        : await fetch(`${API_BASE}api/request_program_closure/${appId}/`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ recommendation: completionModal.type, reason: completionModal.reason.trim() }),
+          });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Action failed");
 
-      // 2. Explicitly update the site's monitoring status to match the application outcome
-      // This ensures the site doesn't remain "under_monitoring" or revert to "available"
-      const newSiteStatus = completionModal.type === "completed" ? "completed" : "failed";
-      
-      await fetch(`${API_BASE}api/update_site_monitoring_status/${site_id}/`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          monitoring_status: newSiteStatus, 
-          reason: `Application marked as ${completionModal.type}: ${completionModal.reason.trim()}` 
-        }),
+      setPSAlert({
+        type: "success",
+        title: isHead ? (completionModal.type === "completed" ? "Program Completed" : "Program Marked Failed") : "Recommendation Sent",
+        message: data.message,
       });
 
-      setPSAlert({ 
-        type: "success", 
-        title: completionModal.type === "completed" ? "Completed!" : "Marked as Failed", 
-        message: data.message ?? `Application has been ${completionModal.type} and site status updated.` 
-      });
-      
       setCompletionModal({ open: false, type: null, reason: "" });
       fetchSiteDetails(); // Refresh to show the new "failed" or "completed" site status
     } catch (err: any) {
@@ -632,13 +784,16 @@ export default function SiteMonitoringDetails() {
               <div className="pt-6 border-t border-gray-100">
                 {current_application ? (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4">
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-3">
                       <Users size={16} className="text-emerald-700" />
                       <h3 className="text-sm font-bold text-emerald-800">Current Tree Grower (Active Program)</h3>
                     </div>
-                    <p className="text-sm font-semibold text-gray-800">{current_application.group_name}</p>
-                    <p className="text-xs text-gray-600 mt-1">Contact: {current_application.group_contact || "N/A"}</p>
-                    
+
+                    <TreeGrowerDetails
+                      app={current_application}
+                      onDownloadPlan={() => downloadMaintenancePlan(current_application.application_id)}
+                    />
+
                     {isNeedsOrientation && (
                       <div className="mt-3 flex gap-2">
                         <button onClick={() => setUpdateOrientationModal({ open: true, newDate: "", reason: "" })} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors">
@@ -835,7 +990,7 @@ export default function SiteMonitoringDetails() {
                 <div className="space-y-4">
                   {progress_reports.map((report) => {
                     const isPending = report.status === "pending";
-                    const isMyStep = isPending && report.review_stage === "data_manager";
+                    const isMyStep = isPending && report.review_stage === "data_manager" && !isHead;
                     const isInitial = report.visit_type === "initial";
                     const isBaseline = isInitial && report.report_id === baselineReportId;
                     const hasPolygon = (report.polygon_coordinates?.length ?? 0) >= 3;
@@ -1057,16 +1212,20 @@ export default function SiteMonitoringDetails() {
                       <BellRing size={14} /> Action Required
                     </p>
                     <p className="text-xs text-amber-700 mb-4 leading-relaxed">
-                      A report submitted by <strong>{firstPendingReport.group_name}</strong> is pending your review (step 1 of 2). After you approve, the GIS Specialist confirms the planted-area map.
+                      {isHead ? (
+                        <>A report from <strong>{firstPendingReport.group_name}</strong> is waiting for the Data Manager's review.</>
+                      ) : (
+                        <>A report submitted by <strong>{firstPendingReport.group_name}</strong> is pending your review (step 1 of 2). After you approve, the GIS Specialist confirms the planted-area map.</>
+                      )}
                     </p>
-                    <div className="space-y-2">
+                    {!isHead && <div className="space-y-2">
                       <button onClick={() => handleUpdateProgressReport(firstPendingReport.report_id, "accepted", "Report approved")} disabled={submitting} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#0F4A2F] text-white text-sm font-bold hover:bg-[#1a6b44] transition-colors disabled:opacity-50">
                         <CheckCircle2 size={16} /> {submitting ? "Processing..." : "Approve Report"}
                       </button>
                       <button onClick={() => setRejectReportModal({ open: true, reportId: firstPendingReport.report_id, reason: "" })} disabled={submitting} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white border border-red-200 text-red-600 text-sm font-bold hover:bg-red-50 transition-colors disabled:opacity-50">
                         <XCircle size={16} /> Request Changes
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 )}
 
@@ -1085,23 +1244,55 @@ export default function SiteMonitoringDetails() {
                     </button>
                   )}
 
-                  {/* Show completion/failure buttons based on initial report status */}
-                  {site.monitoring_status === "under_monitoring" && current_application && (
-                    <div className="space-y-2">
-                      {/* Only show Complete if there's an accepted initial report */}
-                      {hasAcceptedInitialReport && (
-                        <button onClick={() => setCompletionModal({ open: true, type: "completed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">
-                          <CheckCircle2 size={16} /> Mark Application Completed
-                        </button>
-                      )}
-                      {/* Show Fail if there's either accepted OR rejected initial report */}
-                      {(hasAcceptedInitialReport || hasRejectedInitialReport) && (
-                        <button onClick={() => setCompletionModal({ open: true, type: "failed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors">
-                          <XCircle size={16} /> Mark Application Failed
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {/* Program closure: Data Manager recommends → City ENRO Head decides */}
+                  {site.monitoring_status === "under_monitoring" && current_application && (() => {
+                    const closure = detail.closure_request;
+                    const pendingClosure = closure?.status === "pending" ? closure : null;
+                    const returnedClosure = closure?.status === "returned" ? closure : null;
+
+                    if (pendingClosure) {
+                      return isHead ? (
+                        <ClosureDecisionPanel
+                          closure={pendingClosure}
+                          onDone={(message) => { setPSAlert({ type: "success", title: "Decision Saved", message }); fetchSiteDetails(); }}
+                          onError={(message) => setPSAlert({ type: "failed", title: "Failed", message })}
+                        />
+                      ) : (
+                        <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+                          <p className="text-xs font-bold text-indigo-800 flex items-center gap-1.5"><Clock size={14} /> Waiting for City ENRO Head</p>
+                          <p className="text-xs text-indigo-700 mt-1">
+                            You recommended <strong className="uppercase">{pendingClosure.recommendation}</strong> on {formatClosureDate(pendingClosure.requested_at)}. The Head makes the final decision.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2">
+                        {returnedClosure && !isHead && (
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                            <p className="text-xs font-bold text-amber-800">Returned by {returnedClosure.decided_by ?? "the City ENRO Head"}</p>
+                            <p className="text-xs text-gray-700 mt-1">“{returnedClosure.head_notes}”</p>
+                          </div>
+                        )}
+                        {!isHead && (
+                          <p className="text-[11px] text-gray-500">Recommend an outcome. The City ENRO Head makes the final decision.</p>
+                        )}
+                        {/* Only offer Completed once there's an accepted initial report */}
+                        {hasAcceptedInitialReport && (
+                          <button onClick={() => setCompletionModal({ open: true, type: "completed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">
+                            <CheckCircle2 size={16} /> {isHead ? "Mark Program Completed" : "Recommend Completion"}
+                          </button>
+                        )}
+                        {/* Failure can follow an accepted OR rejected initial report */}
+                        {(hasAcceptedInitialReport || hasRejectedInitialReport) && (
+                          <button onClick={() => setCompletionModal({ open: true, type: "failed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors">
+                            <XCircle size={16} /> {isHead ? "Mark Program Failed" : "Recommend Failure"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {(site.monitoring_status === "completed" || site.monitoring_status === "failed") && (
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
@@ -1176,14 +1367,21 @@ export default function SiteMonitoringDetails() {
             <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${completionModal.type === "completed" ? "bg-green-100" : "bg-red-100"}`}>
               {completionModal.type === "completed" ? <CheckCircle2 size={28} className="text-green-600" /> : <XCircle size={28} className="text-red-500" />}
             </div>
-            <h3 className="text-lg font-bold text-center text-gray-800 mb-1">{completionModal.type === "completed" ? "Mark as Completed?" : "Mark as Failed?"}</h3>
-            <p className="text-sm text-center text-gray-500 mb-5">"{current_application?.group_name}"</p>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Reason *</label>
+            <h3 className="text-lg font-bold text-center text-gray-800 mb-1">
+              {isHead
+                ? completionModal.type === "completed" ? "Mark as Completed?" : "Mark as Failed?"
+                : completionModal.type === "completed" ? "Recommend Completion?" : "Recommend Failure?"}
+            </h3>
+            <p className="text-sm text-center text-gray-500 mb-5">
+              "{current_application?.group_name}"
+              {!isHead && <span className="block text-xs mt-1">This goes to the City ENRO Head for the final decision. Nothing changes until they approve.</span>}
+            </p>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{isHead ? "Reason *" : "Reason for the Head *"}</label>
             <textarea rows={4} value={completionModal.reason} onChange={(e) => setCompletionModal((p) => ({ ...p, reason: e.target.value }))} placeholder={completionModal.type === "completed" ? "e.g. All objectives met" : "e.g. Insufficient survival rate"} className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] mb-5 transition-colors" />
             <div className="flex gap-3">
               <button onClick={() => setCompletionModal({ open: false, type: null, reason: "" })} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancel</button>
               <button onClick={handleCompleteApplication} disabled={submitting || !completionModal.reason.trim()} className={`flex-1 py-2.5 rounded-xl text-white text-sm font-bold transition-all ${completionModal.type === "completed" ? "bg-green-600 hover:bg-green-700" : "bg-red-500 hover:bg-red-600"} ${submitting || !completionModal.reason.trim() ? "opacity-50 cursor-not-allowed" : ""}`}>
-                {submitting ? "Processing…" : "Confirm"}
+                {submitting ? "Processing…" : isHead ? "Confirm" : "Send to Head"}
               </button>
             </div>
           </div>

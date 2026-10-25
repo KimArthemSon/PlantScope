@@ -113,6 +113,7 @@ const Hazard_area_form = lazy(
 );
 const GISReports = lazy(() => import("./pages/GISSpecialist/report"));
 const PlantingAreaReviews = lazy(() => import("./pages/GISSpecialist/planting_area_reviews"));
+const ProgramClosures = lazy(() => import("./pages/head/monitoring/program_closures"));
 const HeadReports = lazy(() => import("./pages/head/reports/headReports"));
 const NotificationsPage = lazy(
   () => import("./pages/dataManager/Notifications/NotificationsPage"),
@@ -204,7 +205,9 @@ export default function App() {
               path="/applications"
               element={<Application_confirmation />}
             />
-            <Route path="/monitoring" element={<Monitoring />} />
+            {/* Head reviews programs through Program Closures; site page kept for "Full site history" */}
+            <Route path="/site_monitoring/:site_id" element={<Maintenance_report />} />
+            <Route path="/program-closures" element={<ProgramClosures />} />
             <Route path="/calendar" element={<Calendar />} />
 
             <Route path="/maintenance/barangays/" element={<Barangays />} />

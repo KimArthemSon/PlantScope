@@ -16,6 +16,7 @@ import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
+import ReportPolygonMapModal from "@/components/forms/ReportPolygonMapModal";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -55,6 +56,17 @@ interface ProgressReport {
     application_id: number;
     group_name: string;
   } | null;
+  polygon_coordinates?: [number, number][] | null;
+  planted_area_hectares?: number | null;
+  review_stage?: "data_manager" | "gis_specialist" | "done";
+}
+
+interface SiteInfo {
+  name: string;
+  total_area_hectares: number;
+  polygon_coordinates: [number, number][] | null;
+  planted_area_hectares: number | null;
+  planted_area_as_of: string | null;
 }
 
 interface ProgressReportsData {
@@ -76,6 +88,13 @@ const statusConfig = {
   pending: { label: "Pending Review", bg: "#FFF8E1", text: "#F57F17", dot: "#F9A825", accent: "#F9A825", border: "#FFECB3" },
   accepted: { label: "Verified", bg: "#E8F5E9", text: "#2E7D32", dot: "#388E3C", accent: "#2E7D32", border: "#C8E6C9" },
   rejected: { label: "Rejected", bg: "#FFEBEE", text: "#C62828", dot: "#D32F2F", accent: "#C62828", border: "#FFCDD2" },
+};
+
+// Pending reports go through two checks: Data Manager, then GIS Specialist (planted-area map)
+const getStatusConf = (report: ProgressReport) => {
+  if (report.status !== "pending") return statusConfig[report.status] || statusConfig.pending;
+  const label = report.review_stage === "gis_specialist" ? "Map Check" : "Under Review";
+  return { ...statusConfig.pending, label };
 };
 
 const formatDate = (iso: string) =>
@@ -116,6 +135,9 @@ export default function ProgressReportsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedReport, setSelectedReport] = useState<ProgressReport | null>(null);
   const [showSpeciesModal, setShowSpeciesModal] = useState(false);
+  const [siteInfo, setSiteInfo] = useState<SiteInfo | null>(null);
+  const [finalReviewPending, setFinalReviewPending] = useState(false);
+  const [mapReport, setMapReport] = useState<ProgressReport | null>(null);
 
   const fetchData = async (isRefresh = false) => {
     try {
@@ -126,6 +148,8 @@ export default function ProgressReportsPage() {
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
       setReportsData(data.progress_reports || { my_reports: [], site_history: [] });
+      setSiteInfo(data.assigned_site || null);
+      setFinalReviewPending(!!data.application?.final_review_pending);
     } catch (err) { console.error(err); } 
     finally { setLoading(false); setRefreshing(false); }
   };
@@ -255,6 +279,16 @@ export default function ProgressReportsPage() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(true); }} tintColor={PRIMARY} />}>
         
+        {finalReviewPending && (
+          <View style={styles.finalReviewBanner}>
+            <Ionicons name="ribbon-outline" size={20} color="#4338CA" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.finalReviewTitle}>Final review in progress</Text>
+              <Text style={styles.finalReviewText}>The City ENRO Head is reviewing your program results to decide if it is completed. You will be notified of the decision.</Text>
+            </View>
+          </View>
+        )}
+
         {/* Tabs */}
         {(reportsData.my_reports.length > 0 || reportsData.site_history.length > 0) && (
           <View style={styles.tabContainer}>
@@ -301,6 +335,21 @@ export default function ProgressReportsPage() {
                 </View>
               </View>
               
+              {siteInfo && (
+                <View style={styles.areaRow}>
+                  <Ionicons name="map" size={16} color="#A7F3D0" />
+                  <Text style={styles.areaRowText}>
+                    Area planted:{" "}
+                    <Text style={{ fontWeight: "800", color: WHITE }}>
+                      {siteInfo.planted_area_hectares != null ? `${siteInfo.planted_area_hectares.toFixed(2)} ha` : "not measured yet"}
+                    </Text>
+                    {siteInfo.planted_area_hectares != null && siteInfo.total_area_hectares > 0
+                      ? ` of ${siteInfo.total_area_hectares.toFixed(2)} ha site`
+                      : ""}
+                  </Text>
+                </View>
+              )}
+
               <TouchableOpacity style={styles.speciesBreakdownBtn} onPress={() => setShowSpeciesModal(true)}>
                 <Ionicons name="leaf" size={18} color={WHITE} />
                 <Text style={styles.speciesBreakdownBtnText}>View Species Breakdown</Text>
@@ -322,7 +371,7 @@ export default function ProgressReportsPage() {
         {displayedReports.length > 0 ? (
           <View style={styles.reportsList}>
             {displayedReports.map((report) => {
-              const conf = statusConfig[report.status] || statusConfig.pending;
+              const conf = getStatusConf(report);
               const isMyReport = myReportIds.has(report.report_id);
               const metrics = getReportMetrics(report);
 
@@ -369,6 +418,13 @@ export default function ProgressReportsPage() {
                       <Text style={styles.miniMetricLabel}>Dead</Text>
                     </View>
                   </View>
+
+                  {report.planted_area_hectares != null && (
+                    <View style={styles.areaPill}>
+                      <Ionicons name="map-outline" size={12} color={PRIMARY} />
+                      <Text style={styles.areaPillText}>Planted area {report.planted_area_hectares.toFixed(2)} ha</Text>
+                    </View>
+                  )}
 
                   {report.species && report.species.length > 0 && (
                     <View style={styles.speciesPreview}>
@@ -486,8 +542,8 @@ export default function ProgressReportsPage() {
                 <ScrollView showsVerticalScrollIndicator={false}>
                   <View style={styles.modalHeader}>
                     <View style={styles.modalHeaderLeft}>
-                      <View style={[styles.modalHeaderIcon, { backgroundColor: (statusConfig[selectedReport.status] || statusConfig.pending).bg }]}>
-                        <Ionicons name="document-text" size={20} color={(statusConfig[selectedReport.status] || statusConfig.pending).text} />
+                      <View style={[styles.modalHeaderIcon, { backgroundColor: getStatusConf(selectedReport).bg }]}>
+                        <Ionicons name="document-text" size={20} color={getStatusConf(selectedReport).text} />
                       </View>
                       <View>
                         <Text style={styles.modalTitle}>Report #{selectedReport.report_id}</Text>
@@ -498,9 +554,9 @@ export default function ProgressReportsPage() {
                     <TouchableOpacity onPress={() => setSelectedReport(null)} style={styles.modalCloseBtn}><Ionicons name="close" size={22} color="#9CA3AF" /></TouchableOpacity>
                   </View>
 
-                  <View style={[styles.modalStatusBadge, { backgroundColor: (statusConfig[selectedReport.status] || statusConfig.pending).bg, borderColor: (statusConfig[selectedReport.status] || statusConfig.pending).border }]}>
-                    <View style={[styles.statusDot, { backgroundColor: (statusConfig[selectedReport.status] || statusConfig.pending).dot }]} />
-                    <Text style={[styles.statusText, { color: (statusConfig[selectedReport.status] || statusConfig.pending).text }]}>{(statusConfig[selectedReport.status] || statusConfig.pending).label}</Text>
+                  <View style={[styles.modalStatusBadge, { backgroundColor: getStatusConf(selectedReport).bg, borderColor: getStatusConf(selectedReport).border }]}>
+                    <View style={[styles.statusDot, { backgroundColor: getStatusConf(selectedReport).dot }]} />
+                    <Text style={[styles.statusText, { color: getStatusConf(selectedReport).text }]}>{getStatusConf(selectedReport).label}</Text>
                   </View>
 
                   {/* ✅ UPDATED: 2-Column Grid (Primary, Dead) - Removed Rate */}
@@ -563,6 +619,21 @@ export default function ProgressReportsPage() {
                     </View>
                   )}
 
+                  {selectedReport.planted_area_hectares != null && (
+                    <View style={styles.areaBox}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.overallRateLabel}>Planted Area</Text>
+                        <Text style={styles.areaBoxValue}>{selectedReport.planted_area_hectares.toFixed(4)} ha</Text>
+                      </View>
+                      {(selectedReport.polygon_coordinates?.length ?? 0) >= 3 && (
+                        <TouchableOpacity style={styles.mapBtn} onPress={() => setMapReport(selectedReport)}>
+                          <Ionicons name="map" size={15} color={WHITE} />
+                          <Text style={styles.mapBtnText}>View on Map</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+
                   {selectedReport.description && (
                     <View style={styles.descriptionBox}>
                       <View style={styles.descriptionHeader}><Ionicons name="chatbubble-ellipses-outline" size={14} color={MUTED} /><Text style={styles.descriptionLabel}>Inspector Notes</Text></View>
@@ -585,6 +656,16 @@ export default function ProgressReportsPage() {
           </View>
         </View>
       </Modal>
+
+      <ReportPolygonMapModal
+        visible={!!mapReport}
+        onClose={() => setMapReport(null)}
+        title={mapReport ? `Report #${mapReport.report_id} · ${formatDate(mapReport.submitted_at || mapReport.created_at)}` : ""}
+        subtitle={siteInfo?.name}
+        reportPolygon={mapReport?.polygon_coordinates}
+        sitePolygon={siteInfo?.polygon_coordinates}
+        areaHectares={mapReport?.planted_area_hectares}
+      />
     </View>
   );
 }
@@ -715,5 +796,16 @@ const styles = StyleSheet.create({
   speciesProgressBarWrap: { marginTop: 12 },
   emptySpeciesState: { alignItems: "center", paddingVertical: 40 },
   emptySpeciesTitle: { fontSize: 16, fontWeight: "700", color: INK, marginTop: 12, marginBottom: 6 },
+  finalReviewBanner: { flexDirection: "row", gap: 12, marginHorizontal: 20, marginTop: 20, padding: 14, borderRadius: 16, backgroundColor: "#EEF2FF", borderWidth: 1, borderColor: "#C7D2FE" },
+  finalReviewTitle: { fontSize: 14, fontWeight: "800", color: "#3730A3" },
+  finalReviewText: { fontSize: 12, color: "#4338CA", marginTop: 2, lineHeight: 17 },
+  areaRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  areaRowText: { flex: 1, fontSize: 12.5, color: "rgba(255,255,255,0.8)" },
+  areaPill: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", backgroundColor: "#ECFDF5", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, marginBottom: 10 },
+  areaPillText: { fontSize: 11, color: PRIMARY, fontWeight: "700" },
+  areaBox: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#ECFDF5", borderRadius: 16, padding: 16, marginTop: 16 },
+  areaBoxValue: { fontSize: 20, fontWeight: "800", color: PRIMARY, marginTop: 2 },
+  mapBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: PRIMARY, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12 },
+  mapBtnText: { color: WHITE, fontSize: 12.5, fontWeight: "700" },
   emptySpeciesMsg: { fontSize: 13, color: MUTED, textAlign: "center", lineHeight: 18, paddingHorizontal: 20 },
 });

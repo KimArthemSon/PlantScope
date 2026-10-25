@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
+import ReportPolygonMapModal from "@/components/forms/ReportPolygonMapModal";
 
 const API_BASE = api + "/api";
 
@@ -41,6 +42,9 @@ type Report = {
   proof_image: string | null;
   submitted_at: string | null;
   created_at: string;
+  polygon_coordinates?: [number, number][] | null;
+  planted_area_hectares?: number | null;
+  review_stage?: "data_manager" | "gis_specialist" | "done";
 };
 
 type ApplicationSummary = {
@@ -57,6 +61,9 @@ type ApplicationSummary = {
   total_seedling_provided: number;
   total_seedling_planted: number;
   total_seedling_survived: number;
+  planted_area_hectares: number | null;
+  site_polygon_coordinates: [number, number][] | null;
+  final_review_pending: boolean;
   reports: Report[];
 };
 
@@ -98,7 +105,14 @@ const STATUS_CONFIG: Record<
   rejected: { label: "Rejected", bg: "#FFEBEE", text: "#C62828", dot: "#D32F2F" },
   failed: { label: "Failed", bg: "#FFEBEE", text: "#C62828", dot: "#D32F2F" },
   cancelled: { label: "Cancelled", bg: "#F5F5F5", text: "#555", dot: "#999" },
+  // Report waiting for the GIS Specialist to check the planted-area map
+  map_check: { label: "Map Check", bg: "#E0F2FE", text: "#0369A1", dot: "#0284C7" },
+  // Program waiting for the City ENRO Head's completed/failed decision
+  final_review: { label: "Final Review", bg: "#EEF2FF", text: "#4338CA", dot: "#6366F1" },
 };
+
+const reportStatusKey = (r: Report) =>
+  r.status === "pending" && r.review_stage === "gis_specialist" ? "map_check" : r.status;
 
 const getConf = (s: string | undefined) =>
   (s && STATUS_CONFIG[s]) || {
@@ -165,7 +179,7 @@ const StatusBadge = ({ status, small }: { status: string | undefined; small?: bo
   );
 };
 
-const ReportRow = ({ report }: { report: Report }) => (
+const ReportRow = ({ report, onViewMap }: { report: Report; onViewMap: (r: Report) => void }) => (
   <View style={s.reportRow}>
     <View style={s.reportRowTop}>
       <View style={{ flex: 1 }}>
@@ -174,7 +188,7 @@ const ReportRow = ({ report }: { report: Report }) => (
         </Text>
         <Text style={s.reportDate}>{fmt(report.submitted_at || report.created_at)}</Text>
       </View>
-      <StatusBadge status={report.status} small />
+      <StatusBadge status={reportStatusKey(report)} small />
     </View>
     <View style={s.reportStats}>
       {report.visit_type === "initial" ? (
@@ -200,6 +214,18 @@ const ReportRow = ({ report }: { report: Report }) => (
         Species <Text style={s.reportStatVal}>{report.species.length}</Text>
       </Text>
     </View>
+    {report.planted_area_hectares != null && (
+      <View style={s.reportAreaRow}>
+        <Ionicons name="map-outline" size={13} color="#0F4A2F" />
+        <Text style={s.reportAreaTxt}>Planted area {report.planted_area_hectares.toFixed(2)} ha</Text>
+        {(report.polygon_coordinates?.length ?? 0) >= 3 && (
+          <TouchableOpacity style={s.mapLink} onPress={() => onViewMap(report)} hitSlop={8}>
+            <Text style={s.mapLinkTxt}>View on map</Text>
+            <Ionicons name="chevron-forward" size={13} color="#0F4A2F" />
+          </TouchableOpacity>
+        )}
+      </View>
+    )}
   </View>
 );
 
@@ -215,6 +241,7 @@ export default function ReportsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [expandedApp, setExpandedApp] = useState<number | null>(null);
+  const [mapView, setMapView] = useState<{ report: Report; app: ApplicationSummary } | null>(null);
   const hasLoaded = useRef(false);
 
   const fetchAll = useCallback(async (mode: "initial" | "refresh" | "silent") => {
@@ -463,7 +490,7 @@ export default function ReportsScreen() {
                         </Text>
                       </View>
                       <View style={s.appCardRight}>
-                        <StatusBadge status={app.status} small />
+                        <StatusBadge status={app.final_review_pending ? "final_review" : app.status} small />
                         <Ionicons
                           name={isExpanded ? "chevron-up" : "chevron-down"}
                           size={20}
@@ -500,16 +527,36 @@ export default function ReportsScreen() {
                         <Text style={s.quickStatLbl}>Reports</Text>
                       </View>
                     </View>
+
+                    <View style={s.appAreaRow}>
+                      <Ionicons name="map" size={14} color="#A7F3D0" />
+                      <Text style={s.appAreaTxt}>
+                        Area planted:{" "}
+                        <Text style={{ color: "#fff", fontWeight: "800" }}>
+                          {app.planted_area_hectares != null ? `${app.planted_area_hectares.toFixed(2)} ha` : "not measured yet"}
+                        </Text>
+                      </Text>
+                    </View>
                   </TouchableOpacity>
 
                   {isExpanded && (
                     <View style={s.reportsSection}>
+                      {app.final_review_pending && (
+                        <View style={s.finalReviewBox}>
+                          <Ionicons name="ribbon-outline" size={18} color="#4338CA" />
+                          <Text style={s.finalReviewTxt}>
+                            The City ENRO Head is reviewing this program's results to decide if it is completed. You will be notified of the decision.
+                          </Text>
+                        </View>
+                      )}
                       {sortedReports.length === 0 ? (
                         <Text style={s.noReports}>
                           No monitoring reports yet for this application.
                         </Text>
                       ) : (
-                        sortedReports.map((r) => <ReportRow key={r.report_id} report={r} />)
+                        sortedReports.map((r) => (
+                          <ReportRow key={r.report_id} report={r} onViewMap={(rep) => setMapView({ report: rep, app })} />
+                        ))
                       )}
 
                       <TouchableOpacity
@@ -532,6 +579,16 @@ export default function ReportsScreen() {
           </>
         )}
       </ScrollView>
+
+      <ReportPolygonMapModal
+        visible={!!mapView}
+        onClose={() => setMapView(null)}
+        title={mapView ? `${VISIT_LABEL[mapView.report.visit_type] || "Monitoring Visit"} · ${fmt(mapView.report.submitted_at || mapView.report.created_at)}` : ""}
+        subtitle={mapView?.app.site_name || mapView?.app.title}
+        reportPolygon={mapView?.report.polygon_coordinates}
+        sitePolygon={mapView?.app.site_polygon_coordinates}
+        areaHectares={mapView?.report.planted_area_hectares}
+      />
     </View>
   );
 }
@@ -540,6 +597,14 @@ export default function ReportsScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F4F7F5" },
+  reportAreaRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 8 },
+  reportAreaTxt: { flex: 1, fontSize: 12, color: "#0F4A2F", fontWeight: "600" },
+  mapLink: { flexDirection: "row", alignItems: "center", gap: 2 },
+  mapLinkTxt: { fontSize: 12, color: "#0F4A2F", fontWeight: "800" },
+  appAreaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
+  appAreaTxt: { fontSize: 12, color: "rgba(255,255,255,0.8)" },
+  finalReviewBox: { flexDirection: "row", gap: 10, padding: 12, borderRadius: 12, backgroundColor: "#EEF2FF", borderWidth: 1, borderColor: "#C7D2FE", marginBottom: 10 },
+  finalReviewTxt: { flex: 1, fontSize: 12, color: "#3730A3", lineHeight: 17 },
   header: {
     flexDirection: "row",
     alignItems: "center",

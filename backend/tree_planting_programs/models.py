@@ -711,3 +711,45 @@ class Reason(models.Model):
     def __str__(self):
         app_title = self.application.title if self.application else "N/A"
         return f"Reason for {app_title} - {self.get_status_display()}"
+
+# ─────────────────────────────────────────────
+# PROGRAM CLOSURE (Data Manager recommends → City ENRO Head decides)
+# ─────────────────────────────────────────────
+class ProgramClosureRequest(models.Model):
+    """
+    The Data Manager recommends ending a program as completed or failed.
+    Only the City ENRO Head makes the final decision: approve (optionally
+    choosing a different outcome) or return it to the Data Manager with notes.
+    """
+
+    OUTCOME_CHOICES = [
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending Head Decision'),
+        ('approved', 'Approved by Head'),
+        ('returned', 'Returned to Data Manager'),
+    ]
+
+    closure_request_id = models.AutoField(primary_key=True)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name='closure_requests')
+    site = models.ForeignKey(Sites, on_delete=models.SET_NULL, null=True, blank=True, related_name='closure_requests')
+
+    recommendation = models.CharField(max_length=20, choices=OUTCOME_CHOICES)
+    recommendation_reason = models.TextField()
+    requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='closure_requests_made')
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    final_outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, null=True, blank=True)
+    head_notes = models.TextField(blank=True, null=True)
+    decided_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='closure_requests_decided')
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-requested_at']
+        indexes = [models.Index(fields=['application', 'status'])]
+
+    def __str__(self):
+        return f"Closure #{self.closure_request_id} ({self.recommendation}) for {self.application.title} - {self.status}"

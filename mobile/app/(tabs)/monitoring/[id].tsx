@@ -135,6 +135,12 @@ interface SiteMonitoringDetail {
     group_contact: string;
     status: string;
   } | null;
+  // Data Manager's completed/failed recommendation, waiting on the City ENRO Head
+  closure_request?: {
+    status: "pending" | "approved" | "returned";
+    recommendation: "completed" | "failed";
+    requested_at: string | null;
+  } | null;
 }
 
 type TreeSpeciesOption = {
@@ -422,6 +428,8 @@ export default function SiteMonitoringDetailScreen() {
 
   const hasActiveApplication = !!detail?.current_application;
   const hasPendingReport = detail?.progress_reports.some((r) => r.status === "pending") || false;
+  // Recommended for completion/failure → no new reports until the Head decides
+  const finalReviewPending = detail?.closure_request?.status === "pending";
   const pendingReport = detail?.progress_reports.find((r) => r.status === "pending");
 
   // ✅ FIX 1: Find the oldest initial report (baseline) - considers ALL statuses
@@ -753,6 +761,8 @@ export default function SiteMonitoringDetailScreen() {
   // saveOffline = true keeps the report on the phone instead of uploading now
   const handleSubmitReport = async (saveOffline = false) => {
     if (!detail) return;
+    if (finalReviewPending)
+      return warning("Reporting paused", "This site is waiting for the City ENRO Head's final decision.");
     if (reportSpeciesList.length === 0) return warning("No species added", "Add at least one species to the report.");
     if (visitType === "initial" && !orientationConducted) return warning("Orientation not confirmed", "Tick the box confirming the orientation was conducted.");
     if (visitType === "initial" && !agreementImage) return warning("Agreement photo missing", "Attach a photo of the signed agreement.");
@@ -1125,9 +1135,26 @@ export default function SiteMonitoringDetailScreen() {
           </View>
 
           {/* ── Report section ───────────────────────────────── */}
-          <Text style={styles.blockTitle}>{queuedReport ? "Waiting to Upload" : hasPendingReport ? "Pending Report" : "Submit New Report"}</Text>
+          <Text style={styles.blockTitle}>
+            {finalReviewPending && !queuedReport ? "Reporting Paused" : queuedReport ? "Waiting to Upload" : hasPendingReport ? "Pending Report" : "Submit New Report"}
+          </Text>
 
-          {queuedReport ? (
+          {finalReviewPending && !queuedReport ? (
+            <View style={styles.pausedBox}>
+              <View style={[styles.pendingAlertIcon, { backgroundColor: "#E0E7FF" }]}>
+                <Ionicons name="lock-closed" size={26} color="#4338CA" />
+              </View>
+              <Text style={[styles.pendingAlertTitle, { color: "#4338CA" }]}>Waiting for City ENRO Head</Text>
+              <Text style={styles.pendingAlertText}>
+                The Data Manager recommended marking this program as{" "}
+                <Text style={{ fontWeight: "800" }}>{detail.closure_request?.recommendation === "failed" ? "failed" : "completed"}</Text>
+                {detail.closure_request?.requested_at ? ` on ${formatDate(detail.closure_request.requested_at)}` : ""}.
+              </Text>
+              <Text style={styles.pendingAlertFooter}>
+                New reports are paused until the Head decides. If the program is returned for more monitoring, you can report again.
+              </Text>
+            </View>
+          ) : queuedReport ? (
             <View style={styles.queuedBox}>
               <View style={[styles.pendingAlertIcon, { backgroundColor: "#DBEAFE" }]}>
                 <Ionicons name="cloud-upload-outline" size={28} color={INFO} />
@@ -1559,7 +1586,7 @@ export default function SiteMonitoringDetailScreen() {
                           </View>
                         ))}
 
-                      {((report.polygon_coordinates?.length ?? 0) >= 3 || (report.status === "rejected" && report.report_id === latestReport?.report_id && !hasPendingReport)) && (
+                      {((report.polygon_coordinates?.length ?? 0) >= 3 || (report.status === "rejected" && report.report_id === latestReport?.report_id && !hasPendingReport && !finalReviewPending)) && (
                         <View style={styles.changesActions}>
                           {(report.polygon_coordinates?.length ?? 0) >= 3 && (
                             <TouchableOpacity style={styles.changesBtn} onPress={() => setMapReport(report)} activeOpacity={0.8}>
@@ -1567,7 +1594,7 @@ export default function SiteMonitoringDetailScreen() {
                               <Text style={styles.changesBtnText}>View on Map</Text>
                             </TouchableOpacity>
                           )}
-                          {report.status === "rejected" && report.report_id === latestReport?.report_id && !hasPendingReport && (
+                          {report.status === "rejected" && report.report_id === latestReport?.report_id && !hasPendingReport && !finalReviewPending && (
                             <TouchableOpacity style={[styles.changesBtn, styles.changesBtnPrimary]} onPress={() => loadReportForResubmit(report)} activeOpacity={0.8}>
                               <Ionicons name="create-outline" size={15} color={WHITE} />
                               <Text style={[styles.changesBtnText, { color: WHITE }]}>Edit & Resubmit</Text>
@@ -1596,7 +1623,7 @@ export default function SiteMonitoringDetailScreen() {
       />
 
       {/* Map preview of the planted-area corners (same viewer as Boundary Verification) */}
-      {site.reforestation_area_id != null && !hasPendingReport && (
+      {site.reforestation_area_id != null && !hasPendingReport && !finalReviewPending && (
         <FloatingMapButton
           areaId={site.reforestation_area_id}
           areaName={site.reforestation_area_name || undefined}
@@ -1663,6 +1690,7 @@ const styles = StyleSheet.create({
   heroSaveText: { fontSize: 11, fontWeight: "700", color: WHITE },
   offlineCopyBanner: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", backgroundColor: "rgba(0,0,0,0.25)", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 10 },
   offlineCopyText: { fontSize: 11.5, color: WHITE, fontWeight: "600" },
+  pausedBox: { backgroundColor: "#EEF2FF", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: "#C7D2FE", alignItems: "center" },
   queuedBox: { backgroundColor: "#EFF6FF", borderRadius: 20, padding: 20, borderWidth: 1, borderColor: "#BFDBFE", alignItems: "center" },
   queuedError: { fontSize: 12, color: DANGER, textAlign: "center", marginBottom: 4 },
   areaMetric: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 10, padding: 12, borderRadius: 14, backgroundColor: "#F0FDFA" },

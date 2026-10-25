@@ -146,3 +146,132 @@ class TwoStepReviewTests(TestCase):
         self.assertIsNone(data["metrics"]["planted_area_hectares"])
 
         self.assertEqual(self.client.get(url, {"date_from": "bad"}, **auth).status_code, 400)
+
+
+class ProgramClosureTests(TestCase):
+    def setUp(self):
+        from .models import Application
+
+        self.dm = User.objects.create(email="dm2@test.ph", password="x", user_role="DataManager")
+        self.head = User.objects.create(email="head@test.ph", password="x", user_role="CityENROHead")
+        grower = User.objects.create(email="grower@test.ph", password="x", user_role="treeGrowers")
+        area = Reforestation_areas.objects.create(name="Closure Area")
+        self.site = Sites.objects.create(reforestation_area=area, name="Site C", monitoring_status="under_monitoring")
+        self.app = Application.objects.create(user=grower, site=self.site, title="Program C", status="under_monitoring")
+
+    def _call(self, user, method, url, body=None):
+        token = jwt.encode({"user_id": user.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        fn = getattr(self.client, method)
+        return fn(url, data=json.dumps(body or {}), content_type="application/json", HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def _recommend(self, outcome="completed"):
+        return self._call(self.dm, "post", f"/api/request_program_closure/{self.app.application_id}/",
+                          {"recommendation": outcome, "reason": "All targets met"})
+
+    def test_dm_cannot_finalize_directly(self):
+        res = self._call(self.dm, "put", f"/api/complete_application/{self.app.application_id}/", {"status": "completed"})
+        self.assertEqual(res.status_code, 403)
+        res = self._call(self.dm, "put", f"/api/update_site_monitoring_status/{self.site.site_id}/", {"monitoring_status": "completed"})
+        self.assertEqual(res.status_code, 403)
+
+    def test_head_approves_recommendation(self):
+        self.assertEqual(self._recommend().status_code, 201)
+        self.assertEqual(self._recommend().status_code, 400)  # only one pending at a time
+
+        from .models import ProgramClosureRequest
+        closure = ProgramClosureRequest.objects.get()
+        self.app.refresh_from_db()
+        self.assertEqual(self.app.status, "under_monitoring")  # nothing changes until the Head decides
+
+        res = self._call(self.head, "put", f"/api/decide_program_closure/{closure.pk}/", {"action": "approve"})
+        self.assertEqual(res.status_code, 200)
+        self.app.refresh_from_db()
+        self.site.refresh_from_db()
+        self.assertEqual(self.app.status, "completed")
+        self.assertEqual(self.site.monitoring_status, "completed")
+
+    def test_head_can_override_outcome(self):
+        self._recommend("completed")
+        from .models import ProgramClosureRequest
+        closure = ProgramClosureRequest.objects.get()
+        self._call(self.head, "put", f"/api/decide_program_closure/{closure.pk}/",
+                   {"action": "approve", "final_outcome": "failed", "notes": "Survival too low"})
+        self.app.refresh_from_db()
+        self.assertEqual(self.app.status, "failed")
+
+    def test_head_returns_to_dm(self):
+        self._recommend()
+        from .models import ProgramClosureRequest
+        closure = ProgramClosureRequest.objects.get()
+        self.assertEqual(self._call(self.head, "put", f"/api/decide_program_closure/{closure.pk}/", {"action": "return"}).status_code, 400)
+        res = self._call(self.head, "put", f"/api/decide_program_closure/{closure.pk}/", {"action": "return", "notes": "Need one more visit"})
+        self.assertEqual(res.status_code, 200)
+        self.app.refresh_from_db()
+        self.assertEqual(self.app.status, "under_monitoring")
+        self.assertEqual(self._recommend().status_code, 201)  # DM can recommend again
+
+        token = jwt.encode({"user_id": self.head.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        data = self.client.get("/api/get_program_closure_requests/", HTTP_AUTHORIZATION=f"Bearer {token}").json()
+        self.assertEqual(data["pending_count"], 1)
+
+    def test_tree_grower_sees_area_and_final_review(self):
+        from accounts.models import TreeGrowerGroup
+
+        grower = self.app.user
+        TreeGrowerGroup.objects.create(users=grower, group_name="Kims", address="Ormoc", contact="0900")
+        ProgressReport.objects.create(
+            site=self.site, application=self.app, visit_type="ongoing", status="accepted",
+            polygon_coordinates=SQUARE, planted_area_hectares=calculate_polygon_area_hectares(SQUARE),
+        )
+        self._recommend()
+
+        token = jwt.encode({"user_id": grower.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        auth = {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+        data = self.client.get("/api/get_tree_grower_application/", **auth).json()
+        self.assertTrue(data["application"]["final_review_pending"])
+        self.assertAlmostEqual(data["assigned_site"]["planted_area_hectares"], 1.0, delta=0.05)
+        self.assertEqual(data["progress_reports"]["my_reports"][0]["review_stage"], "done")
+
+        history = self.client.get("/api/get_tree_grower_application_history/", **auth).json()
+        app = history["applications"][0]
+        self.assertTrue(app["final_review_pending"])
+        self.assertAlmostEqual(app["planted_area_hectares"], 1.0, delta=0.05)
+
+    def test_reports_paused_while_head_decides(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        inspector = User.objects.create(email="oi2@test.ph", password="x", user_role="OnsiteInspector")
+        self._recommend()
+        token = jwt.encode({"user_id": inspector.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        res = self.client.post(
+            "/api/create_progress_report/",
+            {
+                "site_id": self.site.site_id,
+                "application_id": self.app.application_id,
+                "visit_type": "ongoing",
+                "report_species": "[]",
+                "polygon_coordinates": json.dumps(SQUARE),
+                "proof_image": SimpleUploadedFile("p.jpg", b"x", content_type="image/jpeg"),
+            },
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("City ENRO Head", res.json()["error"])
+
+        dm_token = jwt.encode({"user_id": self.dm.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        data = self.client.get("/api/get_monitoring_sites/", HTTP_AUTHORIZATION=f"Bearer {dm_token}").json()
+        self.assertTrue(data["data"][0]["final_review_pending"])
+
+    def test_site_details_include_tree_grower_info(self):
+        from accounts.models import TreeGrowerGroup
+
+        TreeGrowerGroup.objects.create(users=self.app.user, group_name="Kims", address="Brgy. Curva", contact="0900", group_type="community_group")
+        token = jwt.encode({"user_id": self.dm.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        data = self.client.get(f"/api/get_site_monitoring_details/{self.site.site_id}/", HTTP_AUTHORIZATION=f"Bearer {token}").json()
+        app = data["current_application"]
+        self.assertEqual(app["group_name"], "Kims")
+        self.assertEqual(app["group"]["group_type"], "Community Group")
+        self.assertEqual(app["group"]["email"], "grower@test.ph")
+        self.assertEqual(app["program"]["participants"], 2)
+        self.assertEqual(app["track_record"]["total_programs"], 1)
