@@ -96,6 +96,35 @@ interface SiteMonitoringDetail {
     group_name: string;
     group_contact: string;
     status: string;
+    group?: {
+      group_type: string | null;
+      address: string | null;
+      email: string | null;
+      profile_img: string | null;
+      member_since: string | null;
+    };
+    representative?: {
+      full_name: string | null;
+      gender: string | null;
+      contact: string | null;
+      address: string | null;
+      profile_img: string | null;
+    } | null;
+    program?: {
+      title: string;
+      classification: string;
+      participants: number;
+      applied_at: string | null;
+      confirmed_at: string | null;
+      orientation_date: string | null;
+      has_maintenance_plan: boolean;
+      agreement_image: string | null;
+      seedlings_provided: number;
+      reports_submitted: number;
+      reports_accepted: number;
+      last_report_at: string | null;
+    };
+    track_record?: { total_programs: number; completed: number; failed: number };
   } | null;
   historical_applications: HistoricalApplication[];
   closure_request: ClosureRequest | null;
@@ -214,6 +243,106 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
   );
 }
 
+// Group, representative, program and track record of the current tree grower
+function TreeGrowerDetails({
+  app,
+  onDownloadPlan,
+}: {
+  app: NonNullable<SiteMonitoringDetail["current_application"]>;
+  onDownloadPlan: () => void;
+}) {
+  const { group, representative: rep, program, track_record: record } = app;
+  const avatar = group?.profile_img || rep?.profile_img;
+  const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className="text-xs text-gray-800 font-medium mt-0.5 break-words">{value || "—"}</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Group */}
+      <div className="flex items-start gap-3">
+        {avatar ? (
+          <img src={avatar} alt={app.group_name} className="w-12 h-12 rounded-xl object-cover border border-emerald-200 bg-white shrink-0" />
+        ) : (
+          <div className="w-12 h-12 rounded-xl bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0">
+            {app.group_name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-gray-900">{app.group_name}</p>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+            {group?.group_type && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white border border-emerald-200 text-emerald-700">{group.group_type}</span>
+            )}
+            {group?.member_since && <span className="text-[11px] text-gray-500">Registered {formatDate(group.member_since)}</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 bg-white rounded-lg border border-emerald-100 p-3">
+        <Field label="Group Contact" value={app.group_contact} />
+        <Field label="Email" value={group?.email} />
+        <div className="col-span-2"><Field label="Group Address" value={group?.address} /></div>
+      </div>
+
+      {/* Representative */}
+      {rep && (
+        <div className="bg-white rounded-lg border border-emerald-100 p-3">
+          <p className="text-[11px] font-bold text-emerald-800 mb-2">Group Representative</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Name" value={rep.full_name} />
+            <Field label="Gender" value={rep.gender} />
+            <Field label="Contact" value={rep.contact} />
+            <Field label="Address" value={rep.address} />
+          </div>
+        </div>
+      )}
+
+      {/* Program */}
+      {program && (
+        <div className="bg-white rounded-lg border border-emerald-100 p-3">
+          <p className="text-[11px] font-bold text-emerald-800 mb-2">Program: {program.title}</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <Field label="Type" value={program.classification === "new" ? "New application" : "Re-application"} />
+            <Field label="Participants" value={`${program.participants} tree growers`} />
+            <Field label="Applied" value={formatDate(program.applied_at)} />
+            <Field label="Confirmed" value={formatDate(program.confirmed_at)} />
+            <Field label="Orientation" value={formatDate(program.orientation_date)} />
+            <Field label="Seedlings Provided" value={program.seedlings_provided.toLocaleString()} />
+            <Field label="Reports" value={`${program.reports_accepted} accepted / ${program.reports_submitted} submitted`} />
+            <Field label="Last Report" value={formatDate(program.last_report_at)} />
+          </div>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {program.has_maintenance_plan && (
+              <button onClick={onDownloadPlan} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-semibold hover:bg-emerald-100">
+                <Download size={12} /> Maintenance Plan
+              </button>
+            )}
+            {program.agreement_image && (
+              <a href={program.agreement_image} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-semibold hover:bg-emerald-100">
+                <FileText size={12} /> Signed Agreement
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Track record */}
+      {record && (
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="font-semibold text-gray-600">Track record:</span>
+          <span className="px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700">{record.total_programs} program{record.total_programs === 1 ? "" : "s"}</span>
+          <span className="px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700">{record.completed} completed</span>
+          <span className="px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-700">{record.failed} failed</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────
 
 export default function SiteMonitoringDetails() {
@@ -304,6 +433,28 @@ export default function SiteMonitoringDetails() {
       start.setDate(start.getDate() - (preset === "30d" ? 30 : 90));
       setDateFrom(iso(start));
       setDateTo(iso(today));
+    }
+  };
+
+  const downloadMaintenancePlan = async (applicationId: number) => {
+    try {
+      const res = await fetch(`${API_BASE}api/application/${applicationId}/download-maintenance-plan/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Download failed");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      // Plans can be PDF or Word; name the file after the type the server sent
+      const ext = blob.type.includes("wordprocessingml") ? "docx" : blob.type === "application/msword" ? "doc" : "pdf";
+      link.download = `maintenance_plan_${applicationId}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setPSAlert({ type: "error", title: "Download Failed", message: err.message });
     }
   };
 
@@ -633,13 +784,16 @@ export default function SiteMonitoringDetails() {
               <div className="pt-6 border-t border-gray-100">
                 {current_application ? (
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4">
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-3">
                       <Users size={16} className="text-emerald-700" />
                       <h3 className="text-sm font-bold text-emerald-800">Current Tree Grower (Active Program)</h3>
                     </div>
-                    <p className="text-sm font-semibold text-gray-800">{current_application.group_name}</p>
-                    <p className="text-xs text-gray-600 mt-1">Contact: {current_application.group_contact || "N/A"}</p>
-                    
+
+                    <TreeGrowerDetails
+                      app={current_application}
+                      onDownloadPlan={() => downloadMaintenancePlan(current_application.application_id)}
+                    />
+
                     {isNeedsOrientation && (
                       <div className="mt-3 flex gap-2">
                         <button onClick={() => setUpdateOrientationModal({ open: true, newDate: "", reason: "" })} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors">

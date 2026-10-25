@@ -42,6 +42,16 @@ type MonitoringSite = {
   total_reports: number;
   needs_initial: boolean;
   monitoring_status: "available" | "reserved" | "under_monitoring" | "completed" | "failed" | "onhold";
+  // Where the latest report is: Data Manager → GIS Specialist, or sent back for changes
+  review_status?: "data_manager" | "gis_specialist" | "changes_requested" | "none";
+  // Recommended for completion/failure; reporting is paused until the City ENRO Head decides
+  final_review_pending?: boolean;
+};
+
+const REVIEW_CHIP: Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap; color: string; bg: string }> = {
+  data_manager: { label: "In review · Data Manager", icon: "hourglass-outline", color: "#B45309", bg: "#FEF3C7" },
+  gis_specialist: { label: "In review · Map check", icon: "map-outline", color: "#0369A1", bg: "#E0F2FE" },
+  changes_requested: { label: "Changes requested · resubmit", icon: "return-down-back", color: "#DC2626", bg: "#FEE2E2" },
 };
 
 // ─── Sorting ───────────────────────────────────────────────────────────────
@@ -348,6 +358,18 @@ const OnsiteInspectorMonitoring: React.FC = () => {
             </Text>
           </View>
 
+          {item.final_review_pending ? (
+            <View style={[styles.reviewChip, { backgroundColor: "#EEF2FF" }]}>
+              <Ionicons name="lock-closed" size={12} color="#4338CA" />
+              <Text style={[styles.reviewChipText, { color: "#4338CA" }]}>Waiting for Head decision · reporting paused</Text>
+            </View>
+          ) : item.review_status && REVIEW_CHIP[item.review_status] && (
+            <View style={[styles.reviewChip, { backgroundColor: REVIEW_CHIP[item.review_status].bg }]}>
+              <Ionicons name={REVIEW_CHIP[item.review_status].icon} size={12} color={REVIEW_CHIP[item.review_status].color} />
+              <Text style={[styles.reviewChipText, { color: REVIEW_CHIP[item.review_status].color }]}>{REVIEW_CHIP[item.review_status].label}</Text>
+            </View>
+          )}
+
           <View style={styles.statsRow}>
             <View style={styles.statBlock}>
               <Text style={styles.statValue}>{formatDate(item.latest_report_date)}</Text>
@@ -580,6 +602,8 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 10, color: "#9CA3AF", marginTop: 2 },
   statDivider: { width: 1, height: 28, backgroundColor: "#F3F4F6", marginHorizontal: 14 },
   cardFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingBottom: 10, marginTop: -2 },
+  reviewChip: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginTop: -4, marginBottom: 10 },
+  reviewChipText: { fontSize: 11, fontWeight: "700" },
   saveBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: "#A7F3D0", backgroundColor: "#ECFDF5" },
   saveBtnOn: { backgroundColor: "#0F4A2F", borderColor: "#0F4A2F" },
   saveBtnText: { fontSize: 11, fontWeight: "700", color: "#0F4A2F" },

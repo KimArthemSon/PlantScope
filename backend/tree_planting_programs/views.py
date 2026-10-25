@@ -673,10 +673,20 @@ def get_tree_grower_application(request):
                 "application_id": pr.application.application_id,
                 "group_name": group_name,
             } if pr.application else None,
+            # Planted-area map + where the report is in the two-step review
+            # (reviewer notes stay internal between the inspector and ENRO staff)
+            "polygon_coordinates": pr.polygon_coordinates,
+            "planted_area_hectares": pr.planted_area_hectares,
+            "review_stage": pr.review_stage,
         }
 
     my_reports = [serialize_pr(pr) for pr in my_reports_qs]
     site_history = [serialize_pr(pr) for pr in site_history_qs]
+
+    latest_area_report = ProgressReport.objects.filter(
+        site=app.site, status='accepted', planted_area_hectares__isnull=False
+    ).order_by('-submitted_at').first() if app.site else None
+    pending_closure = ProgramClosureRequest.objects.filter(application=app, status='pending').exists()
 
     assigned_site_data = None
     if app.site:
@@ -720,6 +730,11 @@ def get_tree_grower_application(request):
             "main_image_url": get_cloudinary_url(str(site.main_image)) if site.main_image else None,  # ✅ ADD THIS
             "general_images": general_images,
             "recommended_species": recommended_species,
+            "planted_area_hectares": latest_area_report.planted_area_hectares if latest_area_report else None,
+            "planted_area_as_of": latest_area_report.submitted_at.isoformat() if latest_area_report and latest_area_report.submitted_at else None,
+            # Map: the site pin, plus the latest confirmed planted-area outline
+            "marker_coordinate": site.marker_coordinate,
+            "planted_area_polygon": latest_area_report.polygon_coordinates if latest_area_report else None,
         }
 
     proposed_site_data = None
@@ -750,6 +765,8 @@ def get_tree_grower_application(request):
             "agreement_image": get_cloudinary_url(str(app.agreement_image)) if app.agreement_image else None,
             "created_at": app.created_at.isoformat(),
             "updated_at": app.updated_at.isoformat(),
+            # True while the City ENRO Head is deciding whether the program is completed or failed
+            "final_review_pending": pending_closure,
         },
         "group": group_data,
         "profile": profile_data,
@@ -1463,6 +1480,13 @@ def create_progress_report(request):
     if planted_area_hectares <= 0:
         return JsonResponse({'error': 'The planted area polygon has no area. Check that the points are not all in a line.'}, status=400)
 
+    # The program is waiting for the City ENRO Head's completed/failed decision:
+    # no new reports, so the results the Head is reviewing don't change underneath them
+    if ProgramClosureRequest.objects.filter(application__site=site, status='pending').exists():
+        return JsonResponse({
+            'error': 'This site is waiting for the City ENRO Head to decide if the program is completed. New reports are paused until then.'
+        }, status=400)
+
     # ✅ PREVENT DUPLICATE PENDING REPORTS PER SITE
     if ProgressReport.objects.filter(site=site, status='pending').exists():
         return JsonResponse({
@@ -1922,6 +1946,7 @@ def get_tree_grower_application_history(request):
                 ),
             ),
             'seedling_requests__seedling_species',
+            'closure_requests',
         )
         .order_by('-created_at')
     )
@@ -1970,7 +1995,13 @@ def get_tree_grower_application_history(request):
                 "proof_image": get_cloudinary_url(str(r.proof_image_monitor_required)) if r.proof_image_monitor_required else None,
                 "created_at": r.created_at.isoformat(),
                 "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
+                "polygon_coordinates": r.polygon_coordinates,
+                "planted_area_hectares": r.planted_area_hectares,
+                "review_stage": r.review_stage,
             })
+
+        # Latest confirmed planted area for this program (reports are newest first)
+        area_report = next((r for r in reports if r.status == 'accepted' and r.planted_area_hectares is not None), None)
 
         history_data.append({
             "application_id": app.application_id,
@@ -1986,6 +2017,9 @@ def get_tree_grower_application_history(request):
             "total_seedling_provided": total_provided,
             "total_seedling_planted": total_planted,
             "total_seedling_survived": total_survived,
+            "planted_area_hectares": area_report.planted_area_hectares if area_report else None,
+            "site_polygon_coordinates": app.site.polygon_coordinates if app.site else None,
+            "final_review_pending": any(c.status == 'pending' for c in app.closure_requests.all()),
             "reports": report_list,
         })
     
@@ -2921,6 +2955,9 @@ def get_monitoring_sites(request):
         needs_dm_review=needs_dm_review_sq,
         awaiting_gis_review=awaiting_gis_sq,
         latest_report_status=Subquery(latest_report_status_sq),
+        final_review_pending=Exists(
+            ProgramClosureRequest.objects.filter(application__site=OuterRef('pk'), status='pending')
+        ),
     )
 
     # ─── 3. Apply Filters ────────────────────────────────────────────────────
@@ -3007,6 +3044,8 @@ def get_monitoring_sites(request):
                 else "changes_requested" if site.latest_report_status == 'rejected'
                 else "none"
             ),
+            # Recommended for completion/failure, waiting for the Head → reporting is paused
+            "final_review_pending": site.final_review_pending,
         })
 
     to_review_count = Sites.objects.filter(
@@ -3048,12 +3087,62 @@ def get_site_monitoring_details(request, site_id):
 
     current_application_data = None
     if active_app:
-        group = getattr(active_app.user, 'tree_grower_group', None)
+        grower = active_app.user
+        group = getattr(grower, 'tree_grower_group', None)
+        rep = getattr(grower, 'profile', None)
+
+        # Signed agreement: from the initial orientation report, or the application itself
+        initial_with_agreement = ProgressReport.objects.filter(
+            application=active_app, visit_type='initial'
+        ).exclude(agreement_image__isnull=True).exclude(agreement_image='').order_by('-created_at').first()
+        agreement = (initial_with_agreement.agreement_image if initial_with_agreement else None) or active_app.agreement_image
+
+        # Track record across all of this grower's programs
+        grower_apps = Application.objects.filter(user=grower)
+        app_reports = ProgressReport.objects.filter(application=active_app)
+        last_report = app_reports.order_by('-submitted_at').first()
+        app_seedlings = SeedlingRequestSpecies.objects.filter(
+            seedling_request__application=active_app, seedling_request__status='accepted'
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+
         current_application_data = {
             "application_id": active_app.application_id,
             "group_name": group.group_name if group else "Unknown Group",
             "group_contact": getattr(group, 'contact', 'N/A') if group else "N/A",
             "status": active_app.status,
+            "group": {
+                "group_type": group.get_group_type_display() if group else None,
+                "address": group.address if group else None,
+                "email": grower.email,
+                "profile_img": get_cloudinary_url(str(group.profile_img)) if group and group.profile_img else None,
+                "member_since": group.created_at.isoformat() if group and group.created_at else None,
+            },
+            "representative": {
+                "full_name": " ".join(p for p in [rep.first_name, rep.middle_name, rep.last_name] if p) if rep else None,
+                "gender": rep.get_gender_display() if rep else None,
+                "contact": rep.contact if rep else None,
+                "address": rep.address if rep else None,
+                "profile_img": get_cloudinary_url(str(rep.profile_img)) if rep and getattr(rep, 'profile_img', None) else None,
+            } if rep else None,
+            "program": {
+                "title": active_app.title,
+                "classification": active_app.classification,
+                "participants": active_app.total_treegrowers_will_participate,
+                "applied_at": active_app.created_at.isoformat() if active_app.created_at else None,
+                "confirmed_at": active_app.confirmed_at.isoformat() if active_app.confirmed_at else None,
+                "orientation_date": active_app.orientation_date.isoformat() if active_app.orientation_date else None,
+                "has_maintenance_plan": bool(active_app.maintenance_plan),
+                "agreement_image": get_cloudinary_url(str(agreement)) if agreement else None,
+                "seedlings_provided": app_seedlings,
+                "reports_submitted": app_reports.count(),
+                "reports_accepted": app_reports.filter(status='accepted').count(),
+                "last_report_at": last_report.submitted_at.isoformat() if last_report and last_report.submitted_at else None,
+            },
+            "track_record": {
+                "total_programs": grower_apps.count(),
+                "completed": grower_apps.filter(status='completed').count(),
+                "failed": grower_apps.filter(status='failed').count(),
+            },
         }
 
     historical_apps = Application.objects.filter(
@@ -3182,7 +3271,6 @@ def get_site_monitoring_details(request, site_id):
         })
 
     # ✅ NEW: Calculate total seedlings provided for the ENTIRE SITE (all applications)
-    from django.db.models import Sum, F
     seedling_qs = SeedlingRequestSpecies.objects.filter(
         seedling_request__application__site=site,
         seedling_request__status='accepted'

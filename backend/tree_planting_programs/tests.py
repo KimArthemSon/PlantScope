@@ -213,3 +213,65 @@ class ProgramClosureTests(TestCase):
         token = jwt.encode({"user_id": self.head.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
         data = self.client.get("/api/get_program_closure_requests/", HTTP_AUTHORIZATION=f"Bearer {token}").json()
         self.assertEqual(data["pending_count"], 1)
+
+    def test_tree_grower_sees_area_and_final_review(self):
+        from accounts.models import TreeGrowerGroup
+
+        grower = self.app.user
+        TreeGrowerGroup.objects.create(users=grower, group_name="Kims", address="Ormoc", contact="0900")
+        ProgressReport.objects.create(
+            site=self.site, application=self.app, visit_type="ongoing", status="accepted",
+            polygon_coordinates=SQUARE, planted_area_hectares=calculate_polygon_area_hectares(SQUARE),
+        )
+        self._recommend()
+
+        token = jwt.encode({"user_id": grower.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        auth = {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+        data = self.client.get("/api/get_tree_grower_application/", **auth).json()
+        self.assertTrue(data["application"]["final_review_pending"])
+        self.assertAlmostEqual(data["assigned_site"]["planted_area_hectares"], 1.0, delta=0.05)
+        self.assertEqual(data["progress_reports"]["my_reports"][0]["review_stage"], "done")
+
+        history = self.client.get("/api/get_tree_grower_application_history/", **auth).json()
+        app = history["applications"][0]
+        self.assertTrue(app["final_review_pending"])
+        self.assertAlmostEqual(app["planted_area_hectares"], 1.0, delta=0.05)
+
+    def test_reports_paused_while_head_decides(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        inspector = User.objects.create(email="oi2@test.ph", password="x", user_role="OnsiteInspector")
+        self._recommend()
+        token = jwt.encode({"user_id": inspector.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        res = self.client.post(
+            "/api/create_progress_report/",
+            {
+                "site_id": self.site.site_id,
+                "application_id": self.app.application_id,
+                "visit_type": "ongoing",
+                "report_species": "[]",
+                "polygon_coordinates": json.dumps(SQUARE),
+                "proof_image": SimpleUploadedFile("p.jpg", b"x", content_type="image/jpeg"),
+            },
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("City ENRO Head", res.json()["error"])
+
+        dm_token = jwt.encode({"user_id": self.dm.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        data = self.client.get("/api/get_monitoring_sites/", HTTP_AUTHORIZATION=f"Bearer {dm_token}").json()
+        self.assertTrue(data["data"][0]["final_review_pending"])
+
+    def test_site_details_include_tree_grower_info(self):
+        from accounts.models import TreeGrowerGroup
+
+        TreeGrowerGroup.objects.create(users=self.app.user, group_name="Kims", address="Brgy. Curva", contact="0900", group_type="community_group")
+        token = jwt.encode({"user_id": self.dm.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        data = self.client.get(f"/api/get_site_monitoring_details/{self.site.site_id}/", HTTP_AUTHORIZATION=f"Bearer {token}").json()
+        app = data["current_application"]
+        self.assertEqual(app["group_name"], "Kims")
+        self.assertEqual(app["group"]["group_type"], "Community Group")
+        self.assertEqual(app["group"]["email"], "grower@test.ph")
+        self.assertEqual(app["program"]["participants"], 2)
+        self.assertEqual(app["track_record"]["total_programs"], 1)
