@@ -200,7 +200,7 @@ export default function TabLayout() {
                 color={color}
               />
             ),
-            tabBarLabel: "Reports",
+            tabBarLabel: "Monitoring",
           }}
         />
 
