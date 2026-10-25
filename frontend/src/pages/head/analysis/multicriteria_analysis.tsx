@@ -236,6 +236,14 @@ export default function MulticriteriaAnalysis() {
     onConfirm: () => void;
   } | null>(null);
 
+  // Unsent field assessment modal (requires a note for the inspector)
+  const [unsentTarget, setUnsentTarget] = useState<{
+    id: number;
+    title: string | null;
+  } | null>(null);
+  const [unsentNote, setUnsentNote] = useState("");
+  const [unsentSubmitting, setUnsentSubmitting] = useState(false);
+
   const [isDrawing, setIsDrawing] = useState(false);
   const [polygonArea, setPolygonArea] = useState<number | null>(null);
   const [polygonCoordinates, setPolygonCoordinates] = useState<
@@ -2489,6 +2497,87 @@ export default function MulticriteriaAnalysis() {
           </div>
         </div>
       )}
+      {unsentTarget && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-auto">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => !unsentSubmitting && setUnsentTarget(null)}
+          />
+          <div className="relative z-10 w-full max-w-md bg-white rounded-lg shadow-xl border border-amber-200 p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Undo2 size={18} className="text-amber-600" />
+              <h3 className="text-base font-semibold text-gray-800">
+                Unsent Assessment
+              </h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-3">
+              {unsentTarget.title ? (
+                <>
+                  <span className="font-medium">{unsentTarget.title}</span>{" "}
+                  will be returned to the inspector and removed from the
+                  submitted list.
+                </>
+              ) : (
+                "This assessment will be returned to the inspector and removed from the submitted list."
+              )}
+            </p>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Unsent note <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={unsentNote}
+              onChange={(e) => setUnsentNote(e.target.value)}
+              rows={4}
+              maxLength={1000}
+              autoFocus
+              placeholder="Explain why this assessment is being returned (e.g., missing photos, wrong site)..."
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+            />
+            <div className="text-[10px] text-gray-400 text-right mb-3">
+              {unsentNote.length}/1000
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setUnsentTarget(null)}
+                disabled={unsentSubmitting}
+                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={unsentSubmitting || !unsentNote.trim()}
+                onClick={async () => {
+                  setUnsentSubmitting(true);
+                  const result = await fieldAssessments.unsentAssessment(
+                    unsentTarget.id,
+                    unsentNote.trim(),
+                  );
+                  setUnsentSubmitting(false);
+                  if (result.success) {
+                    setUnsentTarget(null);
+                    setUnsentNote("");
+                    setAlert({
+                      type: "success",
+                      title: "Success",
+                      message: result.message || "Assessment marked as unsent.",
+                    });
+                    handleFetchLayer(fieldAssessments.activeLayer);
+                  } else {
+                    setAlert({
+                      type: "error",
+                      title: "Failed",
+                      message: result.message || "Could not unsent assessment.",
+                    });
+                  }
+                }}
+                className="px-3 py-1.5 text-sm rounded-md bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {unsentSubmitting ? "Sending..." : "Unsent"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <main className="flex-1 p-3 flex flex-col gap-3">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-3 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2 flex-wrap">
@@ -4097,40 +4186,11 @@ export default function MulticriteriaAnalysis() {
                                   <MapPin size={9} /> Reassign
                                 </button>
                                 <button
-                                  onClick={async () => {
-                                    setConfirmDialog({
-                                      title: "Unsent Assessment",
-                                      message:
-                                        "Are you sure you want to mark this assessment as unsent? It will be removed from the submitted list.",
-                                      variant: "warning",
-                                      confirmLabel: "Unsent",
-                                      onConfirm: async () => {
-                                        setConfirmDialog(null);
-                                        const result =
-                                          await fieldAssessments.unsentAssessment(
-                                            entry.field_assessment_id,
-                                          );
-                                        if (result.success) {
-                                          setAlert({
-                                            type: "success",
-                                            title: "Success",
-                                            message:
-                                              result.message ||
-                                              "Assessment marked as unsent.",
-                                          });
-                                          handleFetchLayer(
-                                            fieldAssessments.activeLayer,
-                                          );
-                                        } else {
-                                          setAlert({
-                                            type: "error",
-                                            title: "Failed",
-                                            message:
-                                              result.message ||
-                                              "Could not unsent assessment.",
-                                          });
-                                        }
-                                      },
+                                  onClick={() => {
+                                    setUnsentNote("");
+                                    setUnsentTarget({
+                                      id: entry.field_assessment_id,
+                                      title: entry.title ?? null,
                                     });
                                   }}
                                   className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 transition"

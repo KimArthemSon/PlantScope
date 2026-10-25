@@ -413,6 +413,19 @@ export default function LayerAssessmentList() {
 
     const isSubmitted = isOffline ? false : assessment?.is_submitted;
 
+    // Note left by the head / GIS specialist when they unsent this assessment
+    const unsentNote =
+      !isOffline && !isSubmitted
+        ? (assessment?.field_assessment_data?.unsent_note as
+            | {
+                note?: string;
+                unsent_by?: string;
+                unsent_by_role?: string;
+                unsent_at?: string;
+              }
+            | undefined)
+        : undefined;
+
     const dateStr = isOffline
       ? draft?.created_at
       : assessment?.assessment_date || assessment?.created_at;
@@ -511,13 +524,37 @@ export default function LayerAssessmentList() {
                   ? "Submitted"
                   : isOffline
                     ? "Pending Sync"
-                    : "Draft"}
+                    : unsentNote
+                      ? "Returned"
+                      : "Draft"}
               </Text>
             </View>
             <Text style={styles.dateText}>
               {dateStr ? fmtDate(dateStr) : "Date not set"}
             </Text>
           </View>
+
+          {unsentNote && (
+            <View style={styles.unsentNoteBox}>
+              <View style={styles.unsentNoteHeader}>
+                <Ionicons name="return-down-back" size={13} color="#B45309" />
+                <Text style={styles.unsentNoteTitle}>Unsent Note</Text>
+                {unsentNote.unsent_at ? (
+                  <Text style={styles.unsentNoteDate}>
+                    {fmtDate(unsentNote.unsent_at)}
+                  </Text>
+                ) : null}
+              </View>
+              <Text style={styles.unsentNoteText}>
+                {unsentNote.note?.trim() || "No reason was provided."}
+              </Text>
+              {unsentNote.unsent_by_role || unsentNote.unsent_by ? (
+                <Text style={styles.unsentNoteBy}>
+                  — {unsentNote.unsent_by_role || unsentNote.unsent_by}
+                </Text>
+              ) : null}
+            </View>
+          )}
 
           <View style={styles.metaRow}>
             <Ionicons
@@ -942,6 +979,46 @@ export default function LayerAssessmentList() {
 
 /* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
+  unsentNoteBox: {
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FCD34D",
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderLeftColor: "#F59E0B",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  unsentNoteHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 4,
+  },
+  unsentNoteTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#B45309",
+    flex: 1,
+  },
+  unsentNoteDate: {
+    fontSize: 10,
+    color: "#92400E",
+  },
+  unsentNoteText: {
+    fontSize: 12,
+    color: "#78350F",
+    lineHeight: 17,
+  },
+  unsentNoteBy: {
+    fontSize: 10,
+    color: "#92400E",
+    fontStyle: "italic",
+    marginTop: 4,
+    textAlign: "right",
+  },
   root: { flex: 1, backgroundColor: "#F4F7F5" },
   loadingScreen: {
     flex: 1,

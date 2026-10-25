@@ -489,8 +489,14 @@ def update_field_assessment(request, field_assessment_id):
             fa.assessment_date = data['assessment_date']; _changed.append('assessment_date')
         if 'location' in data and data['location'] != fa.location:
             fa.location = data['location']; _changed.append('location')
-        if 'field_assessment_data' in data and data['field_assessment_data'] != fa.field_assessment_data:
-            fa.field_assessment_data = data['field_assessment_data']; _changed.append('field_assessment_data')
+        if 'field_assessment_data' in data:
+            new_fad = data['field_assessment_data']
+            # Keep the head's unsent note while the inspector edits; it is cleared on submit
+            old_fad = fa.field_assessment_data if isinstance(fa.field_assessment_data, dict) else {}
+            if isinstance(new_fad, dict) and 'unsent_note' in old_fad and 'unsent_note' not in new_fad:
+                new_fad = {**new_fad, 'unsent_note': old_fad['unsent_note']}
+            if new_fad != fa.field_assessment_data:
+                fa.field_assessment_data = new_fad; _changed.append('field_assessment_data')
             
         # --- Update Land Classification ---
         if 'land_classification_id' in data:
@@ -564,6 +570,11 @@ def submit_field_assessment(request, field_assessment_id):
 
         fa.is_submitted = True
         fa.sent_date = timezone.now()
+        # Resubmitting resolves any unsent note from the head
+        if isinstance(fa.field_assessment_data, dict) and 'unsent_note' in fa.field_assessment_data:
+            fa.field_assessment_data = {
+                k: v for k, v in fa.field_assessment_data.items() if k != 'unsent_note'
+            }
         fa.save()
 
         _record_activity(
@@ -748,10 +759,26 @@ def head_unsent_field_assessment(request, field_assessment_id):
         if not fa.is_submitted:
             return JsonResponse({'error': 'Assessment is not submitted'}, status=400)
 
+        try:
+            body = json.loads(request.body or b'{}')
+        except (json.JSONDecodeError, ValueError):
+            body = {}
+        unsent_note = str(body.get('note') or '').strip()
+
         old_sent_date = fa.sent_date.isoformat() if fa.sent_date else None
 
         fa.is_submitted = False
         fa.sent_date = None
+
+        # Keep the note inside field_assessment_data so the inspector can see why it was returned
+        data = fa.field_assessment_data if isinstance(fa.field_assessment_data, dict) else {}
+        data['unsent_note'] = {
+            'note': unsent_note,
+            'unsent_by': getattr(user, 'email', None),
+            'unsent_by_role': user.user_role,
+            'unsent_at': timezone.now().isoformat(),
+        }
+        fa.field_assessment_data = data
         fa.save()
 
         _record_activity(
@@ -760,10 +787,11 @@ def head_unsent_field_assessment(request, field_assessment_id):
             entity_type='FieldAssessment',
             entity_id=field_assessment_id,
             entity_label=f'Assessment {field_assessment_id}',
-            description=f'Field assessment {field_assessment_id} marked as unsent by head user.',
+            description=f'Field assessment {field_assessment_id} marked as unsent by head user.'
+                        + (f' Note: {unsent_note}' if unsent_note else ''),
             old_data={'is_submitted': True, 'sent_date': old_sent_date},
-            new_data={'is_submitted': False, 'sent_date': None},
-            changed_fields=['is_submitted', 'sent_date'],
+            new_data={'is_submitted': False, 'sent_date': None, 'unsent_note': unsent_note},
+            changed_fields=['is_submitted', 'sent_date', 'unsent_note'],
         )
 
         return JsonResponse({'message': 'Assessment marked as unsent'}, status=200)

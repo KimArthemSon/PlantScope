@@ -477,6 +477,7 @@ export function useFieldAssessments(
   const unsentAssessment = useCallback(
     async (
       fieldAssessmentId: number,
+      note: string = "",
     ): Promise<{ success: boolean; message?: string }> => {
       try {
         const token = localStorage.getItem("token");
@@ -488,6 +489,7 @@ export function useFieldAssessments(
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
+            body: JSON.stringify({ note }),
           },
         );
         const json = await res.json();
