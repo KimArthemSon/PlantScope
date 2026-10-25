@@ -1,5 +1,5 @@
 from django.urls import path
-from . import head_views, views, file_views, dashboard_views, request_views,reports_treeGrowers_views
+from . import head_views, views, file_views, dashboard_views, request_views,reports_treeGrowers_views, dm_report_views, head_dashboard_views, head_report_views
 
 urlpatterns = [
     # ─── APPLICATIONS (DataManager & General) ───────────────────────
@@ -52,8 +52,19 @@ urlpatterns = [
     path('get_monitoring_compliance/', views.get_monitoring_compliance, name='get_monitoring_compliance'),
     path('get_monitoring_stats/', views.get_monitoring_stats, name='get_monitoring_stats'),
 
+    # ─── DATA MANAGER REPORTS (filterable, exportable) ─────────────
+    path('dm_report/filter_options/', dm_report_views.get_report_filter_options, name='dm_report_filter_options'),
+    path('dm_report/programs/', dm_report_views.get_programs_report, name='dm_report_programs'),
+    path('dm_report/sites/', dm_report_views.get_sites_report, name='dm_report_sites'),
+    path('dm_report/site_history/<int:site_id>/', dm_report_views.get_site_history, name='dm_report_site_history'),
+    path('dm_report/visits/', dm_report_views.get_visits_report, name='dm_report_visits'),
+    path('dm_report/species/', dm_report_views.get_species_report, name='dm_report_species'),
+
     # ─── HEAD DASHBOARD & REPORTS ───────────────────────────────────
-    path('get_head_dashboard_data/', head_views.get_head_dashboard_data, name='get_head_dashboard_data'),
+    path('get_head_dashboard_data/', head_dashboard_views.get_head_dashboard_data, name='get_head_dashboard_data'),
+    path('head_report/summary/', head_report_views.get_head_summary_report, name='head_report_summary'),
+    path('head_report/growers/', head_report_views.get_head_growers_report, name='head_report_growers'),
+    path('head_report/decisions/', head_report_views.get_head_decisions_report, name='head_report_decisions'),
     path('get_executive_summary/', head_views.get_executive_summary, name='get_executive_summary'),
     path('get_program_performance_report/', head_views.get_program_performance_report, name='get_program_performance_report'),
     path('get_species_performance_report/', head_views.get_species_performance_report, name='get_species_performance_report'),
