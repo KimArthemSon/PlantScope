@@ -1329,6 +1329,10 @@ def update_site_monitoring_status(request, site_id):
         valid_statuses = ['available', 'reserved', 'under_monitoring', 'completed', 'failed', 'onhold']
         if new_status not in valid_statuses:
             return JsonResponse({'error': 'Invalid status'}, status=400)
+
+        # Ending a program is the City ENRO Head's decision (the Data Manager recommends it)
+        if new_status in ('completed', 'failed') and user.user_role != 'CityENROHead':
+            return JsonResponse({'error': 'Only the City ENRO Head can mark a site as completed or failed. Send a recommendation instead.'}, status=403)
             
         site = get_object_or_404(Sites, site_id=site_id)
         

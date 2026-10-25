@@ -29,6 +29,9 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import ReportAreaMap, { computeAreaStats } from "@/components/map/ReportAreaMap";
+import ClosureDecisionPanel, { formatClosureDate } from "@/components/monitoring/ClosureDecisionPanel";
+import type { ClosureRequest } from "@/components/monitoring/ClosureDecisionPanel";
+import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api.ts";
 
 interface ReviewStep {
@@ -95,6 +98,7 @@ interface SiteMonitoringDetail {
     status: string;
   } | null;
   historical_applications: HistoricalApplication[];
+  closure_request: ClosureRequest | null;
   progress_reports: Array<{
     report_id: number;
     visit_type: "initial" | "ongoing" | "inactive_check";
@@ -215,6 +219,9 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
 export default function SiteMonitoringDetails() {
   const { site_id } = useParams<{ site_id: string }>();
   const navigate = useNavigate();
+  // Same page for the Data Manager and the City ENRO Head; the Head makes final closure decisions
+  const { userRole } = useUserRole();
+  const isHead = userRole === "CityENROHead";
   const token = localStorage.getItem("token");
 
   const [detail, setDetail] = useState<SiteMonitoringDetail | null>(null);
@@ -329,34 +336,28 @@ export default function SiteMonitoringDetails() {
     }
     setSubmitting(true);
     try {
-      // 1. Complete or Fail the application
-      const res = await fetch(`${API_BASE}api/complete_application/${detail.current_application.application_id}/`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ status: completionModal.type, reason: completionModal.reason.trim() }),
-      });
+      const appId = detail.current_application.application_id;
+      // Data Manager recommends; the City ENRO Head decides. The Head can also decide directly.
+      const res = isHead
+        ? await fetch(`${API_BASE}api/complete_application/${appId}/`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ status: completionModal.type, reason: completionModal.reason.trim() }),
+          })
+        : await fetch(`${API_BASE}api/request_program_closure/${appId}/`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ recommendation: completionModal.type, reason: completionModal.reason.trim() }),
+          });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Action failed");
 
-      // 2. Explicitly update the site's monitoring status to match the application outcome
-      // This ensures the site doesn't remain "under_monitoring" or revert to "available"
-      const newSiteStatus = completionModal.type === "completed" ? "completed" : "failed";
-      
-      await fetch(`${API_BASE}api/update_site_monitoring_status/${site_id}/`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          monitoring_status: newSiteStatus, 
-          reason: `Application marked as ${completionModal.type}: ${completionModal.reason.trim()}` 
-        }),
+      setPSAlert({
+        type: "success",
+        title: isHead ? (completionModal.type === "completed" ? "Program Completed" : "Program Marked Failed") : "Recommendation Sent",
+        message: data.message,
       });
 
-      setPSAlert({ 
-        type: "success", 
-        title: completionModal.type === "completed" ? "Completed!" : "Marked as Failed", 
-        message: data.message ?? `Application has been ${completionModal.type} and site status updated.` 
-      });
-      
       setCompletionModal({ open: false, type: null, reason: "" });
       fetchSiteDetails(); // Refresh to show the new "failed" or "completed" site status
     } catch (err: any) {
@@ -835,7 +836,7 @@ export default function SiteMonitoringDetails() {
                 <div className="space-y-4">
                   {progress_reports.map((report) => {
                     const isPending = report.status === "pending";
-                    const isMyStep = isPending && report.review_stage === "data_manager";
+                    const isMyStep = isPending && report.review_stage === "data_manager" && !isHead;
                     const isInitial = report.visit_type === "initial";
                     const isBaseline = isInitial && report.report_id === baselineReportId;
                     const hasPolygon = (report.polygon_coordinates?.length ?? 0) >= 3;
@@ -1057,16 +1058,20 @@ export default function SiteMonitoringDetails() {
                       <BellRing size={14} /> Action Required
                     </p>
                     <p className="text-xs text-amber-700 mb-4 leading-relaxed">
-                      A report submitted by <strong>{firstPendingReport.group_name}</strong> is pending your review (step 1 of 2). After you approve, the GIS Specialist confirms the planted-area map.
+                      {isHead ? (
+                        <>A report from <strong>{firstPendingReport.group_name}</strong> is waiting for the Data Manager's review.</>
+                      ) : (
+                        <>A report submitted by <strong>{firstPendingReport.group_name}</strong> is pending your review (step 1 of 2). After you approve, the GIS Specialist confirms the planted-area map.</>
+                      )}
                     </p>
-                    <div className="space-y-2">
+                    {!isHead && <div className="space-y-2">
                       <button onClick={() => handleUpdateProgressReport(firstPendingReport.report_id, "accepted", "Report approved")} disabled={submitting} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#0F4A2F] text-white text-sm font-bold hover:bg-[#1a6b44] transition-colors disabled:opacity-50">
                         <CheckCircle2 size={16} /> {submitting ? "Processing..." : "Approve Report"}
                       </button>
                       <button onClick={() => setRejectReportModal({ open: true, reportId: firstPendingReport.report_id, reason: "" })} disabled={submitting} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white border border-red-200 text-red-600 text-sm font-bold hover:bg-red-50 transition-colors disabled:opacity-50">
                         <XCircle size={16} /> Request Changes
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 )}
 
@@ -1085,23 +1090,55 @@ export default function SiteMonitoringDetails() {
                     </button>
                   )}
 
-                  {/* Show completion/failure buttons based on initial report status */}
-                  {site.monitoring_status === "under_monitoring" && current_application && (
-                    <div className="space-y-2">
-                      {/* Only show Complete if there's an accepted initial report */}
-                      {hasAcceptedInitialReport && (
-                        <button onClick={() => setCompletionModal({ open: true, type: "completed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">
-                          <CheckCircle2 size={16} /> Mark Application Completed
-                        </button>
-                      )}
-                      {/* Show Fail if there's either accepted OR rejected initial report */}
-                      {(hasAcceptedInitialReport || hasRejectedInitialReport) && (
-                        <button onClick={() => setCompletionModal({ open: true, type: "failed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors">
-                          <XCircle size={16} /> Mark Application Failed
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {/* Program closure: Data Manager recommends → City ENRO Head decides */}
+                  {site.monitoring_status === "under_monitoring" && current_application && (() => {
+                    const closure = detail.closure_request;
+                    const pendingClosure = closure?.status === "pending" ? closure : null;
+                    const returnedClosure = closure?.status === "returned" ? closure : null;
+
+                    if (pendingClosure) {
+                      return isHead ? (
+                        <ClosureDecisionPanel
+                          closure={pendingClosure}
+                          onDone={(message) => { setPSAlert({ type: "success", title: "Decision Saved", message }); fetchSiteDetails(); }}
+                          onError={(message) => setPSAlert({ type: "failed", title: "Failed", message })}
+                        />
+                      ) : (
+                        <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+                          <p className="text-xs font-bold text-indigo-800 flex items-center gap-1.5"><Clock size={14} /> Waiting for City ENRO Head</p>
+                          <p className="text-xs text-indigo-700 mt-1">
+                            You recommended <strong className="uppercase">{pendingClosure.recommendation}</strong> on {formatClosureDate(pendingClosure.requested_at)}. The Head makes the final decision.
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2">
+                        {returnedClosure && !isHead && (
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                            <p className="text-xs font-bold text-amber-800">Returned by {returnedClosure.decided_by ?? "the City ENRO Head"}</p>
+                            <p className="text-xs text-gray-700 mt-1">“{returnedClosure.head_notes}”</p>
+                          </div>
+                        )}
+                        {!isHead && (
+                          <p className="text-[11px] text-gray-500">Recommend an outcome. The City ENRO Head makes the final decision.</p>
+                        )}
+                        {/* Only offer Completed once there's an accepted initial report */}
+                        {hasAcceptedInitialReport && (
+                          <button onClick={() => setCompletionModal({ open: true, type: "completed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">
+                            <CheckCircle2 size={16} /> {isHead ? "Mark Program Completed" : "Recommend Completion"}
+                          </button>
+                        )}
+                        {/* Failure can follow an accepted OR rejected initial report */}
+                        {(hasAcceptedInitialReport || hasRejectedInitialReport) && (
+                          <button onClick={() => setCompletionModal({ open: true, type: "failed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors">
+                            <XCircle size={16} /> {isHead ? "Mark Program Failed" : "Recommend Failure"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {(site.monitoring_status === "completed" || site.monitoring_status === "failed") && (
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
@@ -1176,14 +1213,21 @@ export default function SiteMonitoringDetails() {
             <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${completionModal.type === "completed" ? "bg-green-100" : "bg-red-100"}`}>
               {completionModal.type === "completed" ? <CheckCircle2 size={28} className="text-green-600" /> : <XCircle size={28} className="text-red-500" />}
             </div>
-            <h3 className="text-lg font-bold text-center text-gray-800 mb-1">{completionModal.type === "completed" ? "Mark as Completed?" : "Mark as Failed?"}</h3>
-            <p className="text-sm text-center text-gray-500 mb-5">"{current_application?.group_name}"</p>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Reason *</label>
+            <h3 className="text-lg font-bold text-center text-gray-800 mb-1">
+              {isHead
+                ? completionModal.type === "completed" ? "Mark as Completed?" : "Mark as Failed?"
+                : completionModal.type === "completed" ? "Recommend Completion?" : "Recommend Failure?"}
+            </h3>
+            <p className="text-sm text-center text-gray-500 mb-5">
+              "{current_application?.group_name}"
+              {!isHead && <span className="block text-xs mt-1">This goes to the City ENRO Head for the final decision. Nothing changes until they approve.</span>}
+            </p>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{isHead ? "Reason *" : "Reason for the Head *"}</label>
             <textarea rows={4} value={completionModal.reason} onChange={(e) => setCompletionModal((p) => ({ ...p, reason: e.target.value }))} placeholder={completionModal.type === "completed" ? "e.g. All objectives met" : "e.g. Insufficient survival rate"} className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-[#0F4A2F] focus:ring-1 focus:ring-[#0F4A2F] mb-5 transition-colors" />
             <div className="flex gap-3">
               <button onClick={() => setCompletionModal({ open: false, type: null, reason: "" })} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors">Cancel</button>
               <button onClick={handleCompleteApplication} disabled={submitting || !completionModal.reason.trim()} className={`flex-1 py-2.5 rounded-xl text-white text-sm font-bold transition-all ${completionModal.type === "completed" ? "bg-green-600 hover:bg-green-700" : "bg-red-500 hover:bg-red-600"} ${submitting || !completionModal.reason.trim() ? "opacity-50 cursor-not-allowed" : ""}`}>
-                {submitting ? "Processing…" : "Confirm"}
+                {submitting ? "Processing…" : isHead ? "Confirm" : "Send to Head"}
               </button>
             </div>
           </div>

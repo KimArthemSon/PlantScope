@@ -39,6 +39,7 @@ from .email_service import (
 )
 from .models import (
     Application,
+    ProgramClosureRequest,
     ProgressReport,
     ProgressReportSpecies,
     Reason,
@@ -1025,52 +1026,31 @@ def confirm_application(request, application_id):
 
 
 
-@csrf_exempt
-def complete_application(request, application_id):
-    """DataManager: Finalize program as completed or failed"""
-    if request.method != 'PUT':
-        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+def _finalize_application(app, user, new_status, reason_text):
+    """
+    End a program as completed/failed: update the application and site, log the
+    reason, then notify and email the tree grower. Caller wraps the DB part in a
+    transaction; notifications are best-effort.
+    """
+    app.status = new_status
+    app.save()
 
-    user = get_user_from_token(request)
-    if not user or user.user_role != 'DataManager':
-        return JsonResponse({'error': 'Unauthorized'}, status=403)
+    Reason.objects.create(
+        user=user,
+        application=app,
+        status_layer='new_program',
+        reason=reason_text,
+        status=new_status
+    )
 
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if app.site:
+        # Only the monitoring lifecycle changes. site.status is the GIS
+        # approval decision and must stay 'accepted', otherwise the site
+        # can never be listed as official/available again after a re-open.
+        app.site.monitoring_status = new_status  # 'completed' or 'failed'
+        app.site.save(update_fields=['monitoring_status'])
 
-    new_status = data.get('status', 'completed').strip()
-    reason_text = data.get('reason', 'Program finalized.').strip()
-    
-    if new_status not in ['completed', 'failed']:
-        return JsonResponse({'error': 'Status must be completed or failed'}, status=400)
-
-    app = get_object_or_404(Application, application_id=application_id)
-    
-    if app.status not in ['accepted', 'under_monitoring']:
-        return JsonResponse({'error': 'Application must be accepted or under monitoring to finalize'}, status=400)
-
-    try:
-        with transaction.atomic():
-            app.status = new_status
-            app.save()
-            
-            Reason.objects.create(
-                user=user,
-                application=app,
-                status_layer='new_program',
-                reason=reason_text,
-                status=new_status
-            )
-            
-            if app.site:
-                # Only the monitoring lifecycle changes. site.status is the GIS
-                # approval decision and must stay 'accepted', otherwise the site
-                # can never be listed as official/available again after a re-open.
-                app.site.monitoring_status = new_status  # 'completed' or 'failed'
-                app.site.save(update_fields=['monitoring_status'])
-
+    def notify():
         try:
             if new_status == 'completed':
                 create_notification(
@@ -1100,14 +1080,256 @@ def complete_application(request, application_id):
         except Exception as email_err:
             logger.error(f"Failed to send completion email: {str(email_err)}")
 
-        return JsonResponse({
-            'message': f'Application marked as {new_status}',
-            'new_status': new_status
-        }, status=200)
-        
+    # Only tell the grower once the decision is actually saved
+    transaction.on_commit(notify)
+
+
+def _parse_json(request):
+    try:
+        return json.loads(request.body), None
+    except json.JSONDecodeError:
+        return None, JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+
+@csrf_exempt
+def complete_application(request, application_id):
+    """
+    City ENRO Head: finalize a program directly as completed or failed.
+    (The Data Manager now recommends via request_program_closure instead.)
+    """
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role != 'CityENROHead':
+        return JsonResponse({'error': 'Only the City ENRO Head can make the final completed/failed decision.'}, status=403)
+
+    data, err = _parse_json(request)
+    if err:
+        return err
+
+    new_status = (data.get('status') or 'completed').strip()
+    reason_text = (data.get('reason') or 'Program finalized.').strip()
+    if new_status not in ['completed', 'failed']:
+        return JsonResponse({'error': 'Status must be completed or failed'}, status=400)
+
+    app = get_object_or_404(Application, application_id=application_id)
+    if app.status not in ['accepted', 'under_monitoring']:
+        return JsonResponse({'error': 'Application must be accepted or under monitoring to finalize'}, status=400)
+
+    try:
+        with transaction.atomic():
+            _finalize_application(app, user, new_status, reason_text)
+            # A direct decision also settles any open recommendation
+            ProgramClosureRequest.objects.filter(application=app, status='pending').update(
+                status='approved', final_outcome=new_status, head_notes=reason_text,
+                decided_by=user, decided_at=timezone.now(),
+            )
+        return JsonResponse({'message': f'Application marked as {new_status}', 'new_status': new_status}, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-    
+
+
+def serialize_closure_request(c):
+    app = c.application
+    group = getattr(app.user, 'tree_grower_group', None) if app else None
+    site = c.site
+    return {
+        "closure_request_id": c.closure_request_id,
+        "status": c.status,
+        "recommendation": c.recommendation,
+        "recommendation_reason": c.recommendation_reason,
+        "requested_by": user_display_name(c.requested_by),
+        "requested_at": c.requested_at.isoformat() if c.requested_at else None,
+        "final_outcome": c.final_outcome,
+        "head_notes": c.head_notes,
+        "decided_by": user_display_name(c.decided_by),
+        "decided_at": c.decided_at.isoformat() if c.decided_at else None,
+        "application": {
+            "application_id": app.application_id,
+            "title": app.title,
+            "status": app.status,
+            "group_name": group.group_name if group else "Unknown Group",
+            "created_at": app.created_at.isoformat() if app.created_at else None,
+        },
+        "site": {
+            "site_id": site.site_id,
+            "name": site.name,
+            "reforestation_area_name": site.reforestation_area.name if site.reforestation_area else None,
+            "barangay_name": site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else None,
+            "total_area_hectares": site.total_area_hectares,
+            "monitoring_status": site.monitoring_status,
+        } if site else None,
+    }
+
+
+@csrf_exempt
+def request_program_closure(request, application_id):
+    """
+    DataManager: recommend that a program be marked completed or failed.
+    POST { recommendation: 'completed' | 'failed', reason: str }
+    The City ENRO Head makes the final decision.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role != 'DataManager':
+        return JsonResponse({'error': 'Unauthorized: DataManager only'}, status=403)
+
+    data, err = _parse_json(request)
+    if err:
+        return err
+
+    recommendation = (data.get('recommendation') or '').strip()
+    reason = (data.get('reason') or '').strip()
+    if recommendation not in ('completed', 'failed'):
+        return JsonResponse({'error': 'recommendation must be "completed" or "failed"'}, status=400)
+    if not reason:
+        return JsonResponse({'error': 'Please explain the recommendation for the City ENRO Head.'}, status=400)
+
+    app = get_object_or_404(Application.objects.select_related('site'), application_id=application_id)
+    if app.status not in ('accepted', 'under_monitoring'):
+        return JsonResponse({'error': 'Only an active program can be recommended for closure.'}, status=400)
+    if ProgramClosureRequest.objects.filter(application=app, status='pending').exists():
+        return JsonResponse({'error': 'A recommendation is already waiting for the City ENRO Head.'}, status=400)
+
+    closure = ProgramClosureRequest.objects.create(
+        application=app, site=app.site, recommendation=recommendation,
+        recommendation_reason=reason, requested_by=user,
+    )
+    site_name = app.site.name if app.site else app.title
+    create_general_notification(
+        type='info',
+        title=f'Program closure: recommended {recommendation}',
+        description=f'The Data Manager recommends marking the program at {site_name} as {recommendation}. Reason: {reason}',
+        target_role='CityENROHead',
+        link='/program-closures',
+    )
+    return JsonResponse({
+        'message': 'Recommendation sent to the City ENRO Head for the final decision.',
+        'closure_request_id': closure.closure_request_id,
+    }, status=201)
+
+
+@csrf_exempt
+def decide_program_closure(request, closure_request_id):
+    """
+    CityENROHead: final decision on a closure recommendation.
+    PUT { action: 'approve' | 'return', final_outcome?: 'completed' | 'failed', notes: str }
+      approve → program ends with final_outcome (defaults to the recommendation)
+      return  → sent back to the Data Manager with notes; program keeps running
+    """
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role != 'CityENROHead':
+        return JsonResponse({'error': 'Only the City ENRO Head can decide.'}, status=403)
+
+    data, err = _parse_json(request)
+    if err:
+        return err
+
+    action = data.get('action')
+    notes = (data.get('notes') or '').strip()
+    closure = get_object_or_404(
+        ProgramClosureRequest.objects.select_related('application__site', 'requested_by'),
+        closure_request_id=closure_request_id,
+    )
+    if closure.status != 'pending':
+        return JsonResponse({'error': 'This recommendation has already been decided.'}, status=400)
+
+    app = closure.application
+    site_name = app.site.name if app.site else app.title
+
+    if action == 'return':
+        if not notes:
+            return JsonResponse({'error': 'Please explain why it is being returned.'}, status=400)
+        closure.status = 'returned'
+        closure.head_notes = notes
+        closure.decided_by = user
+        closure.decided_at = timezone.now()
+        closure.save()
+        notify_dm = dict(
+            type='warning',
+            title='Program closure returned by the City ENRO Head',
+            description=f'Your recommendation for {site_name} was returned: {notes}',
+            link=f'/DataManager/site_monitoring/{app.site.site_id}' if app.site else None,
+        )
+        if closure.requested_by:
+            create_notification(user=closure.requested_by, **notify_dm)
+        else:
+            create_general_notification(target_role='DataManager', **notify_dm)
+        return JsonResponse({'message': 'Returned to the Data Manager.'}, status=200)
+
+    if action != 'approve':
+        return JsonResponse({'error': 'action must be "approve" or "return"'}, status=400)
+
+    final_outcome = (data.get('final_outcome') or closure.recommendation).strip()
+    if final_outcome not in ('completed', 'failed'):
+        return JsonResponse({'error': 'final_outcome must be "completed" or "failed"'}, status=400)
+    if app.status not in ('accepted', 'under_monitoring'):
+        return JsonResponse({'error': 'This program is no longer active.'}, status=400)
+
+    try:
+        with transaction.atomic():
+            reason_text = notes or closure.recommendation_reason
+            _finalize_application(app, user, final_outcome, reason_text)
+            closure.status = 'approved'
+            closure.final_outcome = final_outcome
+            closure.head_notes = notes or None
+            closure.decided_by = user
+            closure.decided_at = timezone.now()
+            closure.save()
+        if closure.requested_by:
+            create_notification(
+                user=closure.requested_by,
+                type='success',
+                title=f'Program marked {final_outcome}',
+                description=f'The City ENRO Head approved closing the program at {site_name} as {final_outcome}.',
+                link=f'/DataManager/site_monitoring/{app.site.site_id}' if app.site else None,
+            )
+        return JsonResponse({'message': f'Program marked as {final_outcome}.', 'final_outcome': final_outcome}, status=200)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def get_program_closure_requests(request):
+    """
+    CityENROHead / DataManager: closure recommendations.
+    ?scope=pending (default) | decided   ?search=site/area/group
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+
+    user = get_user_from_token(request)
+    if not user or user.user_role not in ('CityENROHead', 'DataManager'):
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    qs = ProgramClosureRequest.objects.select_related(
+        'application__user__tree_grower_group', 'site__reforestation_area__barangay',
+        'requested_by__profile', 'decided_by__profile',
+    )
+    if request.GET.get('scope') == 'decided':
+        qs = qs.exclude(status='pending').order_by('-decided_at')
+    else:
+        qs = qs.filter(status='pending').order_by('requested_at')
+
+    search = (request.GET.get('search') or '').strip()
+    if search:
+        qs = qs.filter(
+            Q(site__name__icontains=search)
+            | Q(site__reforestation_area__name__icontains=search)
+            | Q(application__title__icontains=search)
+        )
+
+    return JsonResponse({
+        'data': [serialize_closure_request(c) for c in qs[:100]],
+        'pending_count': ProgramClosureRequest.objects.filter(status='pending').count(),
+    }, status=200)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SEEDLING REQUESTS (Only Creation remains here, Management moved to request_views.py)
@@ -3019,6 +3241,14 @@ def get_site_monitoring_details(request, site_id):
         "seedling_requests_breakdown": seedling_requests_breakdown,    # ✅ NEW: Site-level species breakdown
         "progress_reports": progress_reports_data,
         "current_application": current_application_data,
+        # Latest closure recommendation for the running program (pending or returned)
+        "closure_request": (
+            serialize_closure_request(c)
+            if active_app and (c := ProgramClosureRequest.objects.filter(application=active_app).select_related(
+                'application__user__tree_grower_group', 'site__reforestation_area__barangay',
+                'requested_by__profile', 'decided_by__profile').order_by('-requested_at').first())
+            else None
+        ),
         "historical_applications": historical_applications_data
     }, status=200)
 

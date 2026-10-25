@@ -7,12 +7,12 @@ import {
   ChevronLeft,
   Map,
   ListCheck,
-  MonitorDot,
   Calendar,
   ChevronDown,
   User,
   Clock,
   Leaf,
+  Gavel,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import logo from "../../assets/logo2.png";
@@ -184,6 +184,7 @@ export default function Sidebar() {
 
   // Badge counts
   const [pendingHeadCount, setPendingHeadCount] = useState(0);
+  const [pendingClosureCount, setPendingClosureCount] = useState(0);
 
   const profileRef: any = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -213,6 +214,15 @@ export default function Sidebar() {
       if (res.ok) {
         const data = await res.json();
         setPendingHeadCount(data.pending_count || 0);
+      }
+
+      // Programs waiting for the Head's final completed/failed decision
+      const closures = await fetch(`${api}api/get_program_closure_requests/?scope=pending`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (closures.ok) {
+        const data = await closures.json();
+        setPendingClosureCount(data.pending_count || 0);
       }
     } catch (err) {
       console.error("Failed to fetch pending count:", err);
@@ -259,7 +269,7 @@ export default function Sidebar() {
     "/map": "Map",
     "/applications": "Applications",
     "/calendar": "Calendar",
-    "/monitoring": "Monitoring",
+    "/program-closures": "Program Closures",
     "/reports": "Report",
     "/Log-trail": "Audit Trail",
     "/account-management": "Accounts",
@@ -287,7 +297,12 @@ export default function Sidebar() {
           badge: pendingHeadCount > 0 ? pendingHeadCount : null,
         },
         { to: "/calendar", icon: <Calendar size={18} />, label: "Calendar", badge: null },
-        { to: "/monitoring", icon: <MonitorDot size={18} />, label: "Monitoring", badge: null },
+        {
+          to: "/program-closures",
+          icon: <Gavel size={18} />,
+          label: "Program Closures",
+          badge: pendingClosureCount > 0 ? pendingClosureCount : null,
+        },
       ],
     },
     {
@@ -441,7 +456,7 @@ export default function Sidebar() {
                       key={to}
                       to={to}
                       onClick={() => {
-                        if (to === "/applications") fetchPendingCount();
+                        if (to === "/applications" || to === "/program-closures") fetchPendingCount();
                       }}
                       className={`nav-item group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer relative overflow-hidden ${
                         isActive
