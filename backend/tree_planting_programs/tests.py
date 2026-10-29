@@ -275,3 +275,76 @@ class ProgramClosureTests(TestCase):
         self.assertEqual(app["group"]["email"], "grower@test.ph")
         self.assertEqual(app["program"]["participants"], 2)
         self.assertEqual(app["track_record"]["total_programs"], 1)
+
+    def test_site_details_count_confirmed_seedlings(self):
+        from accounts.models import TreeGrowerGroup
+        from tree_species.models import Tree_species
+        from .models import SeedlingRequest, SeedlingRequestSpecies
+
+        TreeGrowerGroup.objects.create(users=self.app.user, group_name="Kims", address="Ormoc", contact="0900")
+        narra = Tree_species.objects.create(name="Narra")
+        mahogany = Tree_species.objects.create(name="Mahogany")
+
+        confirmed = SeedlingRequest.objects.create(application=self.app, status="confirmed", fulfillment_type="deliver")
+        SeedlingRequestSpecies.objects.create(seedling_request=confirmed, tree_species=narra, quantity=100)
+        SeedlingRequestSpecies.objects.create(seedling_request=confirmed, tree_species=mahogany, quantity=50)
+        # Approved but not yet handed over: must not count
+        waiting = SeedlingRequest.objects.create(application=self.app, status="accepted")
+        SeedlingRequestSpecies.objects.create(seedling_request=waiting, tree_species=narra, quantity=999)
+
+        token = jwt.encode({"user_id": self.dm.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        data = self.client.get(f"/api/get_site_monitoring_details/{self.site.site_id}/", HTTP_AUTHORIZATION=f"Bearer {token}").json()
+
+        self.assertEqual(data["total_seedlings_provided"], 150)
+        self.assertEqual(data["current_application"]["program"]["seedlings_provided"], 150)
+        self.assertEqual(len(data["seedlings_provided_list"]), 1)
+        entry = data["seedlings_provided_list"][0]
+        self.assertEqual(entry["group_name"], "Kims")
+        self.assertEqual(entry["total_quantity"], 150)
+        self.assertEqual({s["species_name"] for s in entry["species"]}, {"Narra", "Mahogany"})
+
+    def test_completion_blocked_while_report_in_review(self):
+        report = ProgressReport.objects.create(
+            site=self.site, application=self.app, visit_type="ongoing", status="pending",
+        )
+        res = self._recommend("completed")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("still being reviewed", res.json()["error"])
+
+        report.status = "accepted"
+        report.save()
+        self.assertEqual(self._recommend("completed").status_code, 201)
+
+    def test_site_details_include_extra_site_and_history_info(self):
+        from accounts.models import TreeGrowerGroup
+        from sites.models import SiteMetaDataVerification
+        from .models import Application
+
+        TreeGrowerGroup.objects.create(users=self.app.user, group_name="Kims", address="Ormoc", contact="0900")
+        SiteMetaDataVerification.objects.create(
+            site=self.site, status="verified", verified_by=self.dm,
+            verified_security_concerns=["illegal_logging"],
+            verified_accessibility=[{"type": "road_access", "description": "Near the highway"}],
+        )
+        past_grower = User.objects.create(email="past@test.ph", password="x", user_role="treeGrowers")
+        TreeGrowerGroup.objects.create(users=past_grower, group_name="Old Group", address="Ormoc", contact="0911")
+        Application.objects.create(user=past_grower, site=self.site, title="Old Program", status="completed")
+
+        token = jwt.encode({"user_id": self.dm.id}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        data = self.client.get(f"/api/get_site_monitoring_details/{self.site.site_id}/", HTTP_AUTHORIZATION=f"Bearer {token}").json()
+
+        site = data["site"]
+        self.assertEqual(site["verification"]["status"], "verified")
+        self.assertEqual(site["verification"]["security_concerns"], ["illegal_logging"])
+        self.assertEqual(site["verification"]["accessibility_type"], "road_access")
+        self.assertEqual(site["verification"]["accessibility_description"], "Near the highway")
+        self.assertEqual(site["program_summary"], {"total": 2, "completed": 1, "failed": 0, "active": 1})
+
+        past = data["historical_applications"][0]
+        self.assertEqual(past["group_name"], "Old Group")
+        self.assertEqual(past["title"], "Old Program")
+        self.assertEqual(past["seedlings_provided"], 0)
+        self.assertIsNone(past["survival_rate"])
+        self.assertIsNotNone(past["ended_at"])
+
+        self.assertEqual(data["current_application"]["representative"], None)  # grower has no profile in this test

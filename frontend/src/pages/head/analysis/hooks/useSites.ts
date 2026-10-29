@@ -162,19 +162,23 @@ export function useSites() {
     async (
       areaId: string,
       name: string,
-      polygon_coordinates: [number, number][],
+      polygon_coordinates: [number, number][] | null,
       total_area_hectares: number,
+      // Center coordinate; when omitted it's taken from the polygon
+      marker_coordinate?: [number, number] | null,
     ) => {
       try {
-        const markerCoordinate = calculateCentroid(polygon_coordinates);
+        const hasPolygon = !!polygon_coordinates && polygon_coordinates.length >= 3;
+        const markerCoordinate =
+          marker_coordinate ?? (hasPolygon ? calculateCentroid(polygon_coordinates!) : null);
 
         const data = await fetchWithAuth(`${BASE_URL}/api/sites/create_site/`, {
           method: "POST",
           body: JSON.stringify({
             reforestation_area_id: parseInt(areaId),
             name,
-            polygon_coordinates: polygon_coordinates,
-            total_area_hectares,
+            // Polygon is optional: a site can start with just its center marker
+            ...(hasPolygon && { polygon_coordinates, total_area_hectares }),
             marker_coordinate: markerCoordinate,
           }),
         });

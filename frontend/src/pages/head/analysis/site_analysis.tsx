@@ -1,3 +1,4 @@
+import { polygonAreaHa } from "@/utils/geoArea";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import L from "leaflet";
@@ -978,25 +979,9 @@ export default function MulticriteriaAnalysis() {
     setSiteName("");
   };
 
-  const calculatePolygonArea = (coords: [number, number][]): number => {
-    if (coords.length < 3) return 0;
-    const latRad =
-      ((coords.reduce((s, c) => s + c[0], 0) / coords.length) * Math.PI) / 180;
-    const mLat =
-      111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
-    const mLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
-    const local = coords.map(([lat, lng]) => [
-      (lng - coords[0][1]) * mLng,
-      (lat - coords[0][0]) * mLat,
-    ]);
-    let area = 0;
-    for (let i = 0; i < local.length; i++) {
-      const [x1, y1] = local[i];
-      const [x2, y2] = local[(i + 1) % local.length];
-      area += x1 * y2 - x2 * y1;
-    }
-    return Math.round((Math.abs(area) / 2 / 10000) * 100) / 100;
-  };
+  // Geodesic area (same method as Google Earth)
+  const calculatePolygonArea = (coords: [number, number][]): number =>
+    polygonAreaHa(coords);
 
   const handleSaveSite = async () => {
     if (!polygonCoordinates.length || !areaId || !polygonArea) {

@@ -1,3 +1,4 @@
+import { polygonAreaHa } from "@/utils/geoArea";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import L from "leaflet";
@@ -26,7 +27,9 @@ import {
   Globe,
   Search,
   ArrowUpDown,
+  Crosshair,
 } from "lucide-react";
+import { polygonCentroid } from "@/utils/geoArea";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 import SiteCoordinatesEditor from "./components/SiteCoordinatesEditor";
@@ -273,6 +276,13 @@ export default function MulticriteriaAnalysis() {
   >(null);
   const [siteName, setSiteName] = useState("");
   const [showNameInput, setShowNameInput] = useState(false);
+  // Create-site form: polygon is optional; center comes from the polygon or a picked/typed point
+  const [siteFormActive, setSiteFormActive] = useState(false);
+  const [siteCenterMode, setSiteCenterMode] = useState<"polygon" | "custom">("custom");
+  const [siteCenter, setSiteCenter] = useState<[number, number] | null>(null);
+  const [siteCenterInput, setSiteCenterInput] = useState("");
+  const [isPickingSiteCenter, setIsPickingSiteCenter] = useState(false);
+  const siteCenterMarkerRef = useRef<L.Marker | null>(null);
 
   const [isCoordinateProbeMode, setIsCoordinateProbeMode] = useState(false);
   const [mouseCoords, setMouseCoords] = useState<{
@@ -321,25 +331,9 @@ export default function MulticriteriaAnalysis() {
     setViewAreaUnit("ha");
   }, [viewingSite?.site_id]);
 
-  const calculatePolygonArea = (coords: [number, number][]): number => {
-    if (coords.length < 3) return 0;
-    const latRad =
-      ((coords.reduce((s, c) => s + c[0], 0) / coords.length) * Math.PI) / 180;
-    const mLat =
-      111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
-    const mLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
-    const local = coords.map(([lat, lng]) => [
-      (lng - coords[0][1]) * mLng,
-      (lat - coords[0][0]) * mLat,
-    ]);
-    let area = 0;
-    for (let i = 0; i < local.length; i++) {
-      const [x1, y1] = local[i];
-      const [x2, y2] = local[(i + 1) % local.length];
-      area += x1 * y2 - x2 * y1;
-    }
-    return Math.round((Math.abs(area) / 2 / 10000) * 100) / 100;
-  };
+  // Geodesic area (same method as Google Earth)
+  const calculatePolygonArea = (coords: [number, number][]): number =>
+    polygonAreaHa(coords);
 
   const getDisplayAreaValue = useCallback((): number | null => {
     if (isEditMode && editedPolygon && editedPolygon.length >= 3)
@@ -429,6 +423,19 @@ export default function MulticriteriaAnalysis() {
     (lat: number, lng: number) => {
       const snapped: [number, number] = [lat, lng];
       const map = mapRef.current;
+      if (isPickingSiteCenter) {
+        setSiteCenter(snapped);
+        setSiteCenterMode("custom");
+        setSiteCenterInput(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        setIsPickingSiteCenter(false);
+        setShowNameInput(true);
+        setAlert({
+          type: "success",
+          title: "Snapped to Assessment",
+          message: "Site center set from field assessment marker.",
+        });
+        return;
+      }
       if (isDrawing) {
         setPolygonCoordinates((prev) => [...prev, snapped]);
         setAlert({
@@ -516,6 +523,7 @@ export default function MulticriteriaAnalysis() {
       }
     },
     [
+      isPickingSiteCenter,
       isDrawing,
       isDrawingNewPolygon,
       isPickingMarkerLocation,
@@ -527,6 +535,7 @@ export default function MulticriteriaAnalysis() {
   );
 
   const isDrawingMode =
+    isPickingSiteCenter ||
     isDrawing ||
     isDrawingNewPolygon ||
     isPickingMarkerLocation ||
@@ -1451,7 +1460,168 @@ export default function MulticriteriaAnalysis() {
     });
   };
 
-  const continueToNameSite = () => setShowNameInput(true);
+  // ── Create-site form ────────────────────────────────────────────────
+  const hasSitePolygon = isDrawingFinished && polygonCoordinates.length >= 3;
+  const polygonCenter = hasSitePolygon ? polygonCentroid(polygonCoordinates) : null;
+  const effectiveSiteCenter: [number, number] | null =
+    siteCenterMode === "polygon" && polygonCenter ? polygonCenter : siteCenter;
+  const canSaveSite = !!effectiveSiteCenter || hasSitePolygon;
+
+  const resetSiteCenter = () => {
+    setSiteCenter(null);
+    setSiteCenterInput("");
+    setSiteCenterMode("custom");
+    setIsPickingSiteCenter(false);
+  };
+
+  // Open the site form directly (no polygon needed)
+  const openCreateSite = () => {
+    setSiteFormActive(true);
+    setSiteCenterMode(hasSitePolygon && !siteCenter ? "polygon" : "custom");
+    setShowNameInput(true);
+  };
+
+  const continueToNameSite = () => {
+    setSiteFormActive(true);
+    // Default to the polygon's center unless a center was already picked
+    if (!siteCenter) setSiteCenterMode("polygon");
+    setShowNameInput(true);
+  };
+
+  const startPickSiteCenter = () => {
+    setShowNameInput(false);
+    setIsPickingSiteCenter(true);
+    setAlert({
+      type: "success",
+      title: "Pick Center",
+      message: "Click the map (or a field assessment marker) to set the site's center coordinate.",
+    });
+  };
+
+  const applySiteCenterInput = () => {
+    const parts = siteCenterInput.split(/[\s,;]+/).filter(Boolean).map(Number);
+    if (parts.length !== 2 || parts.some(isNaN) || Math.abs(parts[0]) > 90 || Math.abs(parts[1]) > 180) {
+      setAlert({
+        type: "failed",
+        title: "Invalid Coordinate",
+        message: "Enter the center as \"lat, lng\" (e.g. 11.0064, 124.6075).",
+      });
+      return;
+    }
+    setSiteCenter([parts[0], parts[1]]);
+    setSiteCenterMode("custom");
+    mapRef.current?.panTo([parts[0], parts[1]]);
+  };
+
+  // Draw a polygon from inside the form; finishing it brings the form back
+  const drawPolygonFromForm = () => {
+    setSiteFormActive(true);
+    if (hasSitePolygon) {
+      // Remove the old shape first, then draw a new one
+      setShowNameInput(false);
+      setShowCoordPanel(true);
+      redrawPolygon();
+    } else {
+      startDrawing();
+    }
+  };
+
+  // Stop drawing and go back to the form without a polygon
+  const cancelDrawingToForm = () => {
+    if (mapRef.current) {
+      drawingPointsRef.current.forEach((m) => mapRef.current?.removeLayer(m));
+      if (drawingLineRef.current) mapRef.current.removeLayer(drawingLineRef.current);
+    }
+    drawingPointsRef.current = [];
+    drawingLineRef.current = null;
+    setIsDrawing(false);
+    setShowCoordPanel(false);
+    setPolygonCoordinates([]);
+    setPolygonArea(null);
+    setSiteCenterMode("custom");
+    setShowNameInput(true);
+  };
+
+  // Remove the polygon but keep the form (site will use its center marker only)
+  const removeSitePolygon = () => {
+    if (polygonRef.current && mapRef.current) {
+      mapRef.current.removeLayer(polygonRef.current);
+      polygonRef.current = null;
+    }
+    creationVertexMarkersRef.current.forEach((m) => mapRef.current?.removeLayer(m));
+    creationVertexMarkersRef.current = [];
+    setPolygonCoordinates([]);
+    setPolygonArea(null);
+    setIsDrawingFinished(false);
+    if (siteCenterMode === "polygon" && polygonCenter) {
+      // Keep the center where it was so the site doesn't lose its location
+      setSiteCenter(polygonCenter);
+      setSiteCenterInput(`${polygonCenter[0].toFixed(6)}, ${polygonCenter[1].toFixed(6)}`);
+    }
+    setSiteCenterMode("custom");
+  };
+
+  // Map click while picking the center
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isPickingSiteCenter) return;
+    const onClick = (e: L.LeafletMouseEvent) => {
+      const c: [number, number] = [e.latlng.lat, e.latlng.lng];
+      setSiteCenter(c);
+      setSiteCenterMode("custom");
+      setSiteCenterInput(`${c[0].toFixed(6)}, ${c[1].toFixed(6)}`);
+      setIsPickingSiteCenter(false);
+      setShowNameInput(true);
+    };
+    map.on("click", onClick);
+    map.getContainer().style.cursor = "crosshair";
+    return () => {
+      map.off("click", onClick);
+      map.getContainer().style.cursor = "";
+    };
+  }, [isPickingSiteCenter]);
+
+  // Show the chosen center on the map; drag it to fine-tune
+  const showSiteCenterMarker =
+    siteFormActive && !!effectiveSiteCenter && (showNameInput || isDrawing || isDrawingFinished || isPickingSiteCenter);
+  const centerLat = effectiveSiteCenter?.[0];
+  const centerLng = effectiveSiteCenter?.[1];
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!showSiteCenterMarker || centerLat === undefined || centerLng === undefined) {
+      siteCenterMarkerRef.current?.remove();
+      siteCenterMarkerRef.current = null;
+      return;
+    }
+    if (siteCenterMarkerRef.current) {
+      siteCenterMarkerRef.current.setLatLng([centerLat, centerLng]);
+      return;
+    }
+    const marker = L.marker([centerLat, centerLng], {
+      draggable: true,
+      zIndexOffset: 1000,
+      icon: L.divIcon({
+        className: "site-center-marker",
+        html: `<div style="background:#2563EB;width:26px;height:26px;border-radius:50%;border:4px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;"><div style="width:8px;height:8px;background:white;border-radius:50%;"></div></div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+      }),
+    })
+      .bindTooltip("Site center", { direction: "top", offset: [0, -14] })
+      .addTo(map);
+    marker.on("dragend", (ev) => {
+      const ll = ev.target.getLatLng();
+      setSiteCenter([ll.lat, ll.lng]);
+      setSiteCenterMode("custom");
+      setSiteCenterInput(`${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}`);
+    });
+    siteCenterMarkerRef.current = marker;
+  }, [showSiteCenterMarker, centerLat, centerLng]);
+
+  useEffect(() => () => {
+    siteCenterMarkerRef.current?.remove();
+  }, []);
 
   const redrawPolygon = () => {
     if (polygonRef.current && mapRef.current) {
@@ -1494,14 +1664,16 @@ export default function MulticriteriaAnalysis() {
     setIsDrawingFinished(false);
     setShowNameInput(false);
     setSiteName("");
+    setSiteFormActive(false);
+    resetSiteCenter();
   };
 
   const handleSaveSite = async () => {
-    if (!polygonCoordinates.length || !areaId || !polygonArea) {
+    if (!areaId || !canSaveSite) {
       setAlert({
         type: "failed",
         title: "Missing Data",
-        message: "Draw a valid polygon with at least 3 points.",
+        message: "Set a center coordinate or draw a polygon for the site.",
       });
       return;
     }
@@ -1514,8 +1686,9 @@ export default function MulticriteriaAnalysis() {
       const data = await sites.createSite(
         areaId,
         nameToUse,
-        polygonCoordinates,
-        polygonArea,
+        hasSitePolygon ? polygonCoordinates : null,
+        hasSitePolygon ? (polygonArea ?? 0) : 0,
+        effectiveSiteCenter,
       );
       if (data) {
         setAlert({
@@ -2977,6 +3150,16 @@ export default function MulticriteriaAnalysis() {
                 </div>
               </div>
 
+              {isPickingSiteCenter && (
+                <div className="absolute top-3 left-3 bg-white/95 px-3 py-1.5 rounded-lg shadow-md border border-blue-200 z-[100]">
+                  <p className="text-xs font-semibold text-blue-800">
+                    Pick Site Center
+                  </p>
+                  <p className="text-[10px] text-gray-600">
+                    Click the map or a field assessment marker
+                  </p>
+                </div>
+              )}
               {isDrawing && (
                 <div className="absolute top-3 left-3 bg-white/95 px-3 py-1.5 rounded-lg shadow-md border border-green-200 z-[100]">
                   <p className="text-xs font-semibold text-green-800">
@@ -3502,21 +3685,10 @@ export default function MulticriteriaAnalysis() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-bold text-green-800 text-lg">
-                        Name Your New Site
+                        Create New Site
                       </h4>
                       <p className="text-xs text-gray-500">
-                        Area:{" "}
-                        <span className="font-semibold text-green-700">
-                          {polygonArea?.toFixed(2)} ha
-                        </span>{" "}
-                        (
-                        <span className="font-semibold text-green-700">
-                          {((polygonArea ?? 0) * 10000).toFixed(2)} m²
-                        </span>
-                        ) • Vertices:{" "}
-                        <span className="font-semibold text-green-700">
-                          {polygonCoordinates.length}
-                        </span>
+                        Name the site, set its center, and optionally draw its boundary.
                       </p>
                     </div>
                   </div>
@@ -3530,16 +3702,123 @@ export default function MulticriteriaAnalysis() {
                       onChange={(e) => setSiteName(e.target.value)}
                       placeholder="Enter site name (e.g., Site A - North Field)"
                       className="w-full px-4 py-3 text-sm border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition"
-                      onKeyDown={(e) => e.key === "Enter" && handleSaveSite()}
+                      onKeyDown={(e) => e.key === "Enter" && canSaveSite && handleSaveSite()}
                       autoFocus
                     />
                   </div>
+
+                  {/* Center coordinate */}
+                  <div className="mb-4">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                      Center Coordinate {!hasSitePolygon && <span className="text-red-500">*</span>}
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setSiteCenterMode("polygon")}
+                        disabled={!hasSitePolygon}
+                        title={hasSitePolygon ? "Use the center of the drawn polygon" : "Draw a polygon first"}
+                        className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border-2 transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                          siteCenterMode === "polygon" && hasSitePolygon
+                            ? "border-green-600 bg-green-50 text-green-800"
+                            : "border-gray-200 text-gray-600 hover:border-green-400"
+                        }`}
+                      >
+                        <Target size={14} /> Polygon center
+                      </button>
+                      <button
+                        type="button"
+                        onClick={startPickSiteCenter}
+                        className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold border-2 transition ${
+                          siteCenterMode === "custom" && siteCenter
+                            ? "border-blue-600 bg-blue-50 text-blue-800"
+                            : "border-gray-200 text-gray-600 hover:border-blue-400"
+                        }`}
+                      >
+                        <Crosshair size={14} /> Pick on map
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={
+                          siteCenterMode === "polygon" && polygonCenter
+                            ? `${polygonCenter[0].toFixed(6)}, ${polygonCenter[1].toFixed(6)}`
+                            : siteCenterInput
+                        }
+                        onChange={(e) => {
+                          setSiteCenterMode("custom");
+                          setSiteCenterInput(e.target.value);
+                        }}
+                        onKeyDown={(e) => e.key === "Enter" && applySiteCenterInput()}
+                        placeholder="or type lat, lng (e.g. 11.0064, 124.6075)"
+                        className="flex-1 px-3 py-2 text-xs font-mono border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      {siteCenterMode === "custom" && siteCenterInput.trim() && (
+                        <button
+                          type="button"
+                          onClick={applySiteCenterInput}
+                          className="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          Set
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {effectiveSiteCenter
+                        ? `Center: ${effectiveSiteCenter[0].toFixed(6)}, ${effectiveSiteCenter[1].toFixed(6)} · drag the blue marker to adjust`
+                        : hasSitePolygon
+                          ? "No center set — the polygon's center will be used."
+                          : "Pick a point on the map or type the coordinates."}
+                    </p>
+                  </div>
+
+                  {/* Optional polygon */}
+                  <div className="mb-5 p-3 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-700">
+                          Boundary Polygon <span className="font-normal text-gray-400">(optional)</span>
+                        </p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          {hasSitePolygon ? (
+                            <>
+                              <span className="font-semibold text-green-700">{polygonArea?.toFixed(2)} ha</span>{" "}
+                              ({((polygonArea ?? 0) * 10000).toFixed(2)} m²) · {polygonCoordinates.length} vertices
+                            </>
+                          ) : (
+                            "No polygon — it can be drawn later when editing the site."
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={drawPolygonFromForm}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-green-600 hover:bg-green-700 text-white"
+                        >
+                          <Pen size={12} /> {hasSitePolygon ? "Redraw" : "Draw"}
+                        </button>
+                        {hasSitePolygon && (
+                          <button
+                            type="button"
+                            onClick={removeSitePolygon}
+                            title="Remove polygon"
+                            className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-lg bg-white border border-red-200 text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex gap-3">
                     <button
                       onClick={handleSaveSite}
-                      disabled={!polygonArea}
+                      disabled={!canSaveSite}
                       className={`flex-1 py-3 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 ${
-                        polygonArea
+                        canSaveSite
                           ? "bg-green-600 hover:bg-green-700 text-white shadow-lg"
                           : "bg-gray-200 text-gray-400 cursor-not-allowed"
                       }`}
@@ -3548,8 +3827,13 @@ export default function MulticriteriaAnalysis() {
                     </button>
                     <button
                       onClick={() => {
+                        // Close the form; a drawn polygon stays in preview, everything else resets
                         setShowNameInput(false);
                         setSiteName("");
+                        if (!hasSitePolygon) {
+                          setSiteFormActive(false);
+                          resetSiteCenter();
+                        }
                       }}
                       className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-lg transition"
                     >
@@ -3713,16 +3997,37 @@ export default function MulticriteriaAnalysis() {
                     </button>
                   </>
                 )}
+                {isDrawing && siteFormActive && (
+                  <button
+                    onClick={cancelDrawingToForm}
+                    className="px-3 py-1.5 bg-gray-500 hover:bg-gray-600 text-white text-xs font-semibold rounded transition flex items-center gap-1"
+                    title="Stop drawing and go back to the site form without a polygon"
+                  >
+                    <X size={12} /> Back to Form
+                  </button>
+                )}
+                {isPickingSiteCenter && (
+                  <button
+                    onClick={() => {
+                      setIsPickingSiteCenter(false);
+                      setShowNameInput(true);
+                    }}
+                    className="px-3 py-1.5 bg-gray-500 hover:bg-gray-600 text-white text-xs font-semibold rounded transition flex items-center gap-1"
+                  >
+                    <X size={12} /> Cancel Picking
+                  </button>
+                )}
                 {!showNameInput &&
                   !isDrawing &&
                   !isDrawingFinished &&
-                  !isDrawingNewPolygon && (
+                  !isDrawingNewPolygon &&
+                  !isPickingSiteCenter && (
                     <button
-                      onClick={startDrawing}
+                      onClick={openCreateSite}
                       disabled={!!fieldAssessments.locationTargetId}
                       className="px-4 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-xs font-semibold rounded transition flex items-center gap-1"
                     >
-                      <Pen size={12} /> Draw Polygon
+                      <Plus size={12} /> Create Site
                     </button>
                   )}
                 <button

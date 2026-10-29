@@ -127,28 +127,64 @@ def calculate_polygon_area_hectares(polygon_coordinates) -> float:
     else:
         return 0.0
 
-    lat_rad = math.radians(sum(c[0] for c in coords) / len(coords))
+    return round(_ring_area_sqm(coords) / 10000, 4)
 
-    meters_per_deg_lat = 111132.92 - 559.82 * math.cos(2*lat_rad) + 1.175 * math.cos(4*lat_rad)
-    meters_per_deg_lng = 111412.84 * math.cos(lat_rad) - 93.5 * math.cos(3*lat_rad)
 
-    local_coords = [
-        (
-            (c[1] - coords[0][1]) * meters_per_deg_lng,
-            (c[0] - coords[0][0]) * meters_per_deg_lat
-        )
-        for c in coords
-    ]
+# Earth radius used by Google Earth / Google Maps computeArea
+EARTH_RADIUS = 6378137.0
 
-    n = len(local_coords)
-    area_sqm = 0
+
+def _ring_area_sqm(latlng_ring) -> float:
+    """
+    Geodesic area (m²) of one ring of [lat, lng] points, on a sphere with
+    R = 6,378,137 m — the same method as Google Earth / Google Maps computeArea.
+    Must match frontend/src/utils/geoArea.ts and mobile PlantedAreaCapture.
+    """
+    coords = list(latlng_ring)
+    # Drop the closing point if the ring is closed
+    if len(coords) > 3 and list(coords[0]) == list(coords[-1]):
+        coords = coords[:-1]
+    n = len(coords)
+    if n < 3:
+        return 0.0
+    total = 0.0
     for i in range(n):
-        j = (i + 1) % n
-        area_sqm += local_coords[i][0] * local_coords[j][1]
-        area_sqm -= local_coords[j][0] * local_coords[i][1]
+        lat1, lng1 = coords[i]
+        lat2, lng2 = coords[(i + 1) % n]
+        total += math.radians(lng2 - lng1) * (
+            2 + math.sin(math.radians(lat1)) + math.sin(math.radians(lat2))
+        )
+    return abs(total * EARTH_RADIUS * EARTH_RADIUS / 2.0)
 
-    area_sqm = abs(area_sqm) / 2
-    return round(area_sqm / 10000, 4)
+
+def geojson_area_hectares(geometry) -> float:
+    """
+    Area in hectares of a GeoJSON Polygon or MultiPolygon ([lng, lat] order),
+    using the same Google Earth formula as calculate_polygon_area_hectares.
+    Holes are subtracted.
+    """
+    if not isinstance(geometry, dict):
+        return 0.0
+    if geometry.get('type') == 'Feature':
+        geometry = geometry.get('geometry') or {}
+    gtype = geometry.get('type')
+    coords = geometry.get('coordinates') or []
+    if gtype == 'Polygon':
+        polygons = [coords]
+    elif gtype == 'MultiPolygon':
+        polygons = coords
+    else:
+        return 0.0
+
+    try:
+        area_sqm = 0.0
+        for rings in polygons:
+            for idx, ring in enumerate(rings or []):
+                ring_area = _ring_area_sqm([(float(p[1]), float(p[0])) for p in ring])
+                area_sqm += ring_area if idx == 0 else -ring_area
+    except (IndexError, TypeError, ValueError):
+        return 0.0
+    return round(max(area_sqm, 0.0) / 10000, 4)
 
 
 # ─────────────────────────────────────────────

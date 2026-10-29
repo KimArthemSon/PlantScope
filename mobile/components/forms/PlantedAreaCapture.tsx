@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Modal } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, ScrollView } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useAlert } from "@/components/AlertContext";
@@ -27,21 +27,42 @@ const DANGER = "#DC2626";
 const WARNING = "#D97706";
 const WHITE = "#FFFFFF";
 
-/** Same formula as the backend (sites.models.calculate_polygon_area_hectares). */
+/** A planted area from an earlier report that can be copied into this one. */
+export interface PreviousArea {
+  id: number;
+  date: string | null;
+  status: string;
+  visitType: string;
+  inspector: string;
+  hectares: number | null;
+  points: [number, number][];
+}
+
+/**
+ * Geodesic area on a sphere (R = 6,378,137 m), same method as Google Earth.
+ * Must match the backend (sites.models.calculate_polygon_area_hectares).
+ */
 export function polygonAreaHectares(points: { latitude: number; longitude: number }[]): number {
   if (points.length < MIN_AREA_POINTS) return 0;
-  const latRad = ((points.reduce((s, p) => s + p.latitude, 0) / points.length) * Math.PI) / 180;
-  const mLat = 111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
-  const mLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
-  const o = points[0];
-  const xy = points.map((p) => [(p.longitude - o.longitude) * mLng, (p.latitude - o.latitude) * mLat]);
+  const R = 6378137;
+  const rad = (d: number) => (d * Math.PI) / 180;
   let sum = 0;
-  for (let i = 0; i < xy.length; i++) {
-    const j = (i + 1) % xy.length;
-    sum += xy[i][0] * xy[j][1] - xy[j][0] * xy[i][1];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    sum += rad(b.longitude - a.longitude) * (2 + Math.sin(rad(a.latitude)) + Math.sin(rad(b.latitude)));
   }
-  return Math.abs(sum) / 2 / 10000;
+  return Math.abs((sum * R * R) / 2) / 10000;
 }
+
+const VISIT_LABEL: Record<string, string> = { initial: "Initial", ongoing: "Ongoing", inactive_check: "Inactive check" };
+const STATUS_COLOR: Record<string, { fg: string; bg: string; label: string }> = {
+  accepted: { fg: "#059669", bg: "#D1FAE5", label: "Accepted" },
+  pending: { fg: "#D97706", bg: "#FEF3C7", label: "In review" },
+  rejected: { fg: "#DC2626", bg: "#FEE2E2", label: "Returned" },
+};
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "No date";
 
 const distanceMeters = (a: PlantedAreaPoint, b: PlantedAreaPoint) => {
   const R = 6371e3;
@@ -57,14 +78,17 @@ export default function PlantedAreaCapture({
   points,
   onChange,
   siteAreaHectares,
+  previousAreas = [],
 }: {
   points: PlantedAreaPoint[];
   onChange: (points: PlantedAreaPoint[]) => void;
   siteAreaHectares?: number;
+  previousAreas?: PreviousArea[];
 }) {
   const { success, warning, error: showError, confirm } = useAlert();
   const [capturing, setCapturing] = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [showReuse, setShowReuse] = useState(false);
   const [manualLat, setManualLat] = useState("");
   const [manualLng, setManualLng] = useState("");
 
@@ -137,6 +161,25 @@ export default function PlantedAreaCapture({
 
   const removePoint = (id: string) => onChange(points.filter((p) => p.id !== id));
 
+  // Copy a previous report's corners into this report; they can still be edited after
+  const applyPrevious = (prev: PreviousArea) => {
+    const load = () => {
+      onChange(prev.points.map(([lat, lng], i) => ({ id: `reuse-${prev.id}-${i}-${Date.now()}`, latitude: Number(lat), longitude: Number(lng) })));
+      setShowReuse(false);
+      success("Area loaded", `${prev.points.length} corners copied from report #${prev.id}. Add or remove corners if the area changed.`);
+    };
+    if (points.length > 0) {
+      setShowReuse(false);
+      confirm("Replace current corners?", `This replaces the ${points.length} corner(s) you already marked.`, load, {
+        type: "warning",
+        confirmText: "Replace",
+        cancelText: "Cancel",
+      });
+    } else {
+      load();
+    }
+  };
+
   const clearAll = () =>
     confirm("Clear all points?", "This removes every corner you marked.", () => onChange([]), {
       type: "error",
@@ -183,6 +226,13 @@ export default function PlantedAreaCapture({
         </TouchableOpacity>
       </View>
 
+      {previousAreas.length > 0 && (
+        <TouchableOpacity style={[s.btn, s.reuseBtn]} onPress={() => setShowReuse(true)} activeOpacity={0.8}>
+          <MaterialCommunityIcons name="history" size={16} color={PRIMARY} />
+          <Text style={s.btnText}>Reuse Previous Area ({previousAreas.length})</Text>
+        </TouchableOpacity>
+      )}
+
       {points.length > 0 && (
         <View style={{ marginTop: 12 }}>
           <View style={s.listHead}>
@@ -228,6 +278,46 @@ export default function PlantedAreaCapture({
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showReuse} transparent animationType="fade" onRequestClose={() => setShowReuse(false)}>
+        <View style={s.overlay}>
+          <View style={[s.modal, { maxHeight: "80%" }]}>
+            <Text style={s.modalTitle}>Reuse a Previous Area</Text>
+            <Text style={[s.hint, { marginBottom: 8 }]}>
+              Pick a report to copy its planted-area corners. You can still add or remove corners afterwards.
+            </Text>
+            <ScrollView style={{ flexGrow: 0 }}>
+              {previousAreas.map((prev) => {
+                const st = STATUS_COLOR[prev.status] ?? { fg: MUTED, bg: "#F3F4F6", label: prev.status };
+                const ha = prev.hectares ?? polygonAreaHectares(prev.points.map(([latitude, longitude]) => ({ latitude, longitude })));
+                return (
+                  <TouchableOpacity key={prev.id} style={s.reuseRow} onPress={() => applyPrevious(prev)} activeOpacity={0.75}>
+                    <MaterialCommunityIcons name="vector-polygon" size={20} color={PRIMARY} />
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={s.reuseTitle}>Report #{prev.id}</Text>
+                        <View style={[s.badge, { backgroundColor: st.bg }]}>
+                          <Text style={[s.badgeText, { color: st.fg }]}>{st.label}</Text>
+                        </View>
+                      </View>
+                      <Text style={s.reuseSub}>
+                        {fmtDate(prev.date)} · {VISIT_LABEL[prev.visitType] ?? prev.visitType} · {prev.inspector}
+                      </Text>
+                      <Text style={s.reuseArea}>
+                        {ha.toFixed(4)} ha · {prev.points.length} corners
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={FAINT} />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity style={[s.btn, { marginTop: 12, flex: 0 }]} onPress={() => setShowReuse(false)}>
+              <Text style={s.btnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -252,6 +342,13 @@ const s = StyleSheet.create({
   pointNumText: { fontSize: 11, fontWeight: "800", color: "#7C3AED" },
   pointCoords: { flex: 1, fontSize: 12.5, color: INK, fontVariant: ["tabular-nums"] },
   mapHint: { fontSize: 11, color: FAINT, marginTop: 8 },
+  reuseBtn: { flex: 0, marginTop: 10, borderStyle: "dashed", borderColor: "#A7F3D0", backgroundColor: "#F0FDF4" },
+  reuseRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
+  reuseTitle: { fontSize: 14, fontWeight: "800", color: INK },
+  reuseSub: { fontSize: 11.5, color: MUTED, marginTop: 2 },
+  reuseArea: { fontSize: 12, fontWeight: "700", color: PRIMARY, marginTop: 2 },
+  badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999 },
+  badgeText: { fontSize: 10, fontWeight: "800" },
   overlay: { flex: 1, backgroundColor: "rgba(15,23,42,0.5)", justifyContent: "center", padding: 24 },
   modal: { backgroundColor: WHITE, borderRadius: 20, padding: 20 },
   modalTitle: { fontSize: 17, fontWeight: "800", color: INK, marginBottom: 12 },

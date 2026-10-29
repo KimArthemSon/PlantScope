@@ -1,3 +1,4 @@
+import { polygonAreaHa } from "@/utils/geoArea";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import { createPortal } from "react-dom";
@@ -42,26 +43,9 @@ const parseRow = (row: PointRow): [number, number] | null => {
   return [lat, lng];
 };
 
-// Same planar approximation used elsewhere on the analysis page
-const calculateAreaHa = (coords: [number, number][]): number => {
-  if (coords.length < 3) return 0;
-  const latRad =
-    ((coords.reduce((s, c) => s + c[0], 0) / coords.length) * Math.PI) / 180;
-  const mLat =
-    111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
-  const mLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
-  const local = coords.map(([lat, lng]) => [
-    (lng - coords[0][1]) * mLng,
-    (lat - coords[0][0]) * mLat,
-  ]);
-  let area = 0;
-  for (let i = 0; i < local.length; i++) {
-    const [x1, y1] = local[i];
-    const [x2, y2] = local[(i + 1) % local.length];
-    area += x1 * y2 - x2 * y1;
-  }
-  return Math.abs(area) / 2 / 10000;
-};
+// Geodesic area (same method as Google Earth)
+const calculateAreaHa = (coords: [number, number][]): number =>
+  polygonAreaHa(coords);
 
 // Accepts one "lat, lng" pair per line (comma, space, tab or semicolon separated)
 const parseBulk = (text: string): PointRow[] =>

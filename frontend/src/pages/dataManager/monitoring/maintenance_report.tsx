@@ -59,11 +59,52 @@ interface SeedlingRequestSpeciesItem {
   total_requested: number;
 }
 
+interface SeedlingProvidedEntry {
+  seedling_request_id: number;
+  application_id: number;
+  application_title: string;
+  application_status: string;
+  group_name: string;
+  fulfillment_type: "pickup" | "deliver" | null;
+  inspector_name: string | null;
+  total_quantity: number;
+  species: { species_id: number; species_name: string; quantity: number; provided_by: string }[];
+  proof_of_delivery: string | null;
+  requested_at: string | null;
+  confirmed_at: string | null;
+}
+
 interface HistoricalApplication {
   application_id: number;
   group_name: string;
   status: string;
   created_at: string | null;
+  group_type?: string | null;
+  group_contact?: string | null;
+  representative_name?: string | null;
+  representative_contact?: string | null;
+  title?: string;
+  classification?: string;
+  participants?: number;
+  confirmed_at?: string | null;
+  orientation_date?: string | null;
+  ended_at?: string | null;
+  seedlings_provided?: number;
+  reports_submitted?: number;
+  reports_accepted?: number;
+  trees_planted?: number;
+  survival_rate?: number | null;
+}
+
+interface SiteVerification {
+  status: string;
+  verified_by: string | null;
+  verified_at: string | null;
+  decision_note: string | null;
+  accessibility_type: string | null;
+  accessibility_description: string | null;
+  security_concerns: string[];
+  animals: { name: string; scientific_name: string | null; notes: string | null }[];
 }
 
 interface SiteMonitoringDetail {
@@ -78,6 +119,15 @@ interface SiteMonitoringDetail {
     land_classification_name: string | null;
     monitoring_status: string;
     polygon_coordinates: [number, number][] | null;
+    marker_coordinate?: [number, number] | null;
+    status?: string;
+    created_at?: string | null;
+    main_image?: string | null;
+    verification?: SiteVerification | null;
+    recommended_species?: { species_id: number; species_name: string; priority_rank: number; notes: string | null }[];
+    potential_sites_count?: number;
+    program_summary?: { total: number; completed: number; failed: number; active: number };
+    first_program_at?: string | null;
   };
   metrics: {
     total_planted: number;
@@ -91,6 +141,7 @@ interface SiteMonitoringDetail {
   };
   total_seedlings_provided: number;
   seedling_requests_breakdown: SeedlingRequestSpeciesItem[];
+  seedlings_provided_list?: SeedlingProvidedEntry[];
   current_application: {
     application_id: number;
     group_name: string;
@@ -109,6 +160,8 @@ interface SiteMonitoringDetail {
       contact: string | null;
       address: string | null;
       profile_img: string | null;
+      email?: string | null;
+      age?: number | null;
     } | null;
     program?: {
       title: string;
@@ -124,7 +177,7 @@ interface SiteMonitoringDetail {
       reports_accepted: number;
       last_report_at: string | null;
     };
-    track_record?: { total_programs: number; completed: number; failed: number };
+    track_record?: { total_programs: number; completed: number; failed: number; other_sites?: string[] };
   } | null;
   historical_applications: HistoricalApplication[];
   closure_request: ClosureRequest | null;
@@ -193,6 +246,7 @@ const STATUS_CONFIG: Record<
   rejected: { label: "Rejected", bg: "bg-red-50", text: "text-red-700", border: "border-red-200", icon: <XCircle size={13} className="text-red-500" /> },
   completed: { label: "Completed", bg: "bg-green-50", text: "text-green-700", border: "border-green-200", icon: <CheckCircle2 size={13} className="text-green-500" /> },
   failed: { label: "Failed", bg: "bg-red-50", text: "text-red-700", border: "border-red-200", icon: <XCircle size={13} className="text-red-500" /> },
+  cancelled: { label: "Cancelled", bg: "bg-gray-50", text: "text-gray-600", border: "border-gray-200", icon: <XCircle size={13} className="text-gray-400" /> },
   inactive: { label: "Inactive / No Active Program", bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200", icon: <AlertTriangle size={13} className="text-slate-500" /> },
 };
 
@@ -294,9 +348,10 @@ function TreeGrowerDetails({
           <p className="text-[11px] font-bold text-emerald-800 mb-2">Group Representative</p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Name" value={rep.full_name} />
-            <Field label="Gender" value={rep.gender} />
+            <Field label="Gender / Age" value={[rep.gender, rep.age != null ? `${rep.age} yrs old` : null].filter(Boolean).join(" · ")} />
             <Field label="Contact" value={rep.contact} />
-            <Field label="Address" value={rep.address} />
+            <Field label="Email" value={rep.email} />
+            <div className="col-span-2"><Field label="Address" value={rep.address} /></div>
           </div>
         </div>
       )}
@@ -337,6 +392,11 @@ function TreeGrowerDetails({
           <span className="px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-700">{record.total_programs} program{record.total_programs === 1 ? "" : "s"}</span>
           <span className="px-2 py-0.5 rounded-full bg-green-50 border border-green-200 text-green-700">{record.completed} completed</span>
           <span className="px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-700">{record.failed} failed</span>
+          {record.other_sites && record.other_sites.length > 0 && (
+            <span className="text-gray-500 w-full sm:w-auto">
+              Also worked on: <span className="font-medium text-gray-700">{record.other_sites.join(", ")}</span>
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -661,6 +721,8 @@ export default function SiteMonitoringDetails() {
   const pendingReports = detail?.progress_reports.filter((r) => r.status === "pending" && r.review_stage === "data_manager") || [];
   const firstPendingReport = pendingReports[0];
   const awaitingGisReport = detail?.progress_reports.find((r) => r.status === "pending" && r.review_stage === "gis_specialist");
+  // Any report still in review (Data Manager or GIS Specialist step) blocks recommending completion
+  const hasReportInReview = detail?.progress_reports.some((r) => r.status === "pending") ?? false;
   const appStatus = detail?.current_application?.status || "";
   const isNeedsOrientation = appStatus === "accepted";
 
@@ -707,6 +769,7 @@ export default function SiteMonitoringDetails() {
   }
 
   const { site, metrics, total_seedlings_provided, seedling_requests_breakdown, current_application, historical_applications, progress_reports } = detail;
+  const seedlingsProvidedList = detail.seedlings_provided_list ?? [];
   const monitoringBadge = getMonitoringStatusBadge(site.monitoring_status);
   const MonitoringIcon = monitoringBadge.icon;
 
@@ -751,10 +814,55 @@ export default function SiteMonitoringDetails() {
             {/* Site Information & Tree Growers */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <SectionHeader icon={<MapPin size={18} />} title="Site Information" subtitle="Details of the monitored planting site" />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+
+              {/* Photo + description */}
+              {(site.main_image || site.description) && (
+                <div className="flex flex-col sm:flex-row gap-4 mb-5">
+                  {site.main_image && (
+                    <a href={site.main_image} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                      <img src={site.main_image} alt={site.name} className="w-full sm:w-56 h-36 object-cover rounded-xl border border-gray-200" />
+                    </a>
+                  )}
+                  {site.description && (
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Description</p>
+                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{site.description}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 mb-5">
+                <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Location</span>
+                  <span className="text-sm text-gray-800 font-medium">
+                    {[site.barangay_name && `Brgy. ${site.barangay_name}`, site.reforestation_area_name].filter(Boolean).join(" · ") || "—"}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Center Coordinate</span>
+                  {site.marker_coordinate ? (
+                    <span className="text-sm text-gray-800 font-medium font-mono">
+                      {Number(site.marker_coordinate[0]).toFixed(6)}, {Number(site.marker_coordinate[1]).toFixed(6)}{" "}
+                      <a
+                        href={`https://www.google.com/maps?q=${site.marker_coordinate[0]},${site.marker_coordinate[1]}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-sans text-xs font-semibold text-[#0F4A2F] hover:underline"
+                      >
+                        Open in Google Maps
+                      </a>
+                    </span>
+                  ) : (
+                    <span className="text-sm text-gray-400">Not set</span>
+                  )}
+                </div>
                 <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
                   <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Area</span>
-                  <span className="text-sm text-gray-800 font-medium">{site.total_area_hectares.toFixed(2)} hectares</span>
+                  <span className="text-sm text-gray-800 font-medium">
+                    {site.total_area_hectares.toFixed(2)} hectares
+                    <span className="text-gray-500"> · {Math.round(site.total_area_hectares * 10000).toLocaleString()} m²</span>
+                  </span>
                 </div>
                 <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
                   <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Planted Area (confirmed)</span>
@@ -774,11 +882,131 @@ export default function SiteMonitoringDetails() {
                   <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Land Classification</span>
                   <span className="text-sm text-gray-800 font-medium">{site.land_classification_name || "Not classified"}</span>
                 </div>
-                <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100 md:col-span-2">
-                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Accessibility</span>
-                  <span className="text-sm text-gray-800 font-medium">{getAccessibilityText(site.accessibility)}</span>
+                <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1"><Car size={12} /> Accessibility</span>
+                  <span className="text-sm text-gray-800 font-medium">
+                    {site.verification?.accessibility_type
+                      ? site.verification.accessibility_type.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+                      : getAccessibilityText(site.accessibility)}
+                    {site.verification?.accessibility_description && (
+                      <span className="block text-xs text-gray-500 font-normal">{site.verification.accessibility_description}</span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Site Added</span>
+                  <span className="text-sm text-gray-800 font-medium">
+                    {formatDate(site.created_at ?? null)}
+                    {site.status && <span className="text-gray-500 capitalize"> · {site.status.replace(/_/g, " ")}</span>}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Program History</span>
+                  <span className="text-sm text-gray-800 font-medium">
+                    {site.program_summary ? (
+                      <>
+                        {site.program_summary.total} program{site.program_summary.total === 1 ? "" : "s"}
+                        <span className="text-gray-500">
+                          {" "}· {site.program_summary.completed} completed · {site.program_summary.failed} failed
+                          {site.program_summary.active > 0 && ` · ${site.program_summary.active} active`}
+                        </span>
+                        {site.first_program_at && <span className="block text-xs text-gray-400 font-normal">First program confirmed {formatDate(site.first_program_at)}</span>}
+                      </>
+                    ) : "—"}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100">
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1"><Layers size={12} /> Potential Planting Zones</span>
+                  <span className="text-sm text-gray-800 font-medium">
+                    {site.potential_sites_count ? `${site.potential_sites_count} zone${site.potential_sites_count === 1 ? "" : "s"} from NDVI analysis` : "None analysed"}
+                  </span>
                 </div>
               </div>
+
+              {/* Recommended species */}
+              {site.recommended_species && site.recommended_species.length > 0 && (
+                <div className="mb-5">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Recommended Species</p>
+                  <div className="flex flex-wrap gap-2">
+                    {site.recommended_species.map((sp) => (
+                      <span
+                        key={sp.species_id}
+                        title={sp.notes ?? undefined}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-medium"
+                      >
+                        <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-bold flex items-center justify-center">{sp.priority_rank}</span>
+                        {sp.species_name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Field verification: safety, wildlife, who verified */}
+              {site.verification && (
+                <div className="mb-6 p-4 rounded-xl border border-gray-200 bg-gray-50">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <p className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-1.5">
+                      <ShieldCheck size={14} className="text-[#0F4A2F]" /> Field Verification
+                    </p>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border capitalize ${
+                      site.verification.status === "verified"
+                        ? "bg-green-50 text-green-700 border-green-200"
+                        : site.verification.status === "rejected"
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : "bg-amber-50 text-amber-700 border-amber-200"
+                    }`}>
+                      {site.verification.status.replace(/_/g, " ")}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Security Concerns</p>
+                      {site.verification.security_concerns.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {site.verification.security_concerns.map((c, i) => (
+                            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-[11px] text-red-700 font-medium capitalize">
+                              <AlertTriangle size={11} /> {c.replace(/_/g, " ")}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-green-700 font-medium flex items-center gap-1"><ShieldCheck size={12} /> None reported</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Wildlife Observed</p>
+                      {site.verification.animals.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {site.verification.animals.map((a, i) => (
+                            <span
+                              key={i}
+                              title={[a.scientific_name, a.notes].filter(Boolean).join(" — ") || undefined}
+                              className="px-2 py-0.5 rounded-full bg-white border border-gray-200 text-[11px] text-gray-700 font-medium"
+                            >
+                              {a.name}
+                              {a.scientific_name && <span className="italic text-gray-400"> ({a.scientific_name})</span>}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">None recorded</p>
+                      )}
+                    </div>
+                  </div>
+                  {(site.verification.verified_by || site.verification.decision_note) && (
+                    <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-600">
+                      {site.verification.verified_by && (
+                        <p>
+                          Verified by <span className="font-semibold text-gray-800">{site.verification.verified_by}</span>
+                          {site.verification.verified_at && <> on {formatDate(site.verification.verified_at)}</>}
+                        </p>
+                      )}
+                      {site.verification.decision_note && <p className="mt-1 italic">“{site.verification.decision_note}”</p>}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Current vs Historical Tree Growers */}
               <div className="pt-6 border-t border-gray-100">
@@ -822,14 +1050,50 @@ export default function SiteMonitoringDetails() {
                       View Historical Tree Growers ({historical_applications.length})
                       <span className="ml-auto group-open:rotate-180 transition-transform">▼</span>
                     </summary>
-                    <div className="mt-3 space-y-2 pl-6 border-l-2 border-gray-200">
+                    <div className="mt-3 space-y-3 pl-4 border-l-2 border-gray-200">
                       {historical_applications.map((app) => (
-                        <div key={app.application_id} className="flex items-center justify-between py-2">
-                          <div>
-                            <p className="text-sm font-medium text-gray-800">{app.group_name}</p>
-                            <p className="text-xs text-gray-500">Started: {formatDate(app.created_at)}</p>
+                        <div key={app.application_id} className="p-3 rounded-xl border border-gray-200 bg-gray-50">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-gray-800">
+                                {app.group_name}
+                                {app.group_type && <span className="ml-2 text-[10px] font-semibold text-gray-500 uppercase">{app.group_type}</span>}
+                              </p>
+                              {app.title && <p className="text-xs text-gray-600 mt-0.5">{app.title}</p>}
+                            </div>
+                            <StatusBadge status={app.status} />
                           </div>
-                          <StatusBadge status={app.status} />
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2 mt-3 text-xs">
+                            <div>
+                              <p className="text-[10px] font-semibold text-gray-400 uppercase">Period</p>
+                              <p className="text-gray-700 font-medium">
+                                {formatDate(app.confirmed_at ?? app.created_at)} – {app.ended_at ? formatDate(app.ended_at) : "—"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-semibold text-gray-400 uppercase">Participants</p>
+                              <p className="text-gray-700 font-medium">{app.participants ?? "—"}{app.classification && <span className="text-gray-400"> · {app.classification === "new" ? "New" : "Returning"}</span>}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-semibold text-gray-400 uppercase">Seedlings / Planted</p>
+                              <p className="text-gray-700 font-medium">
+                                {(app.seedlings_provided ?? 0).toLocaleString()} / {(app.trees_planted ?? 0).toLocaleString()}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-semibold text-gray-400 uppercase">Survival · Reports</p>
+                              <p className="text-gray-700 font-medium">
+                                {app.survival_rate != null ? `${app.survival_rate}%` : "—"}
+                                <span className="text-gray-400"> · {app.reports_accepted ?? 0}/{app.reports_submitted ?? 0}</span>
+                              </p>
+                            </div>
+                          </div>
+                          {(app.representative_name || app.group_contact) && (
+                            <p className="text-[11px] text-gray-500 mt-2">
+                              {app.representative_name && <>Representative: <span className="font-medium text-gray-700">{app.representative_name}</span></>}
+                              {(app.representative_contact || app.group_contact) && <> · {app.representative_contact || app.group_contact}</>}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -929,7 +1193,7 @@ export default function SiteMonitoringDetails() {
             {/* Seedling Request Breakdown */}
             {seedling_requests_breakdown.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <SectionHeader icon={<Package size={16} />} title="Seedling Request Breakdown" subtitle="Total accepted seedlings provided by ENRO across all applications" />
+                <SectionHeader icon={<Package size={16} />} title="Seedling Request Breakdown" subtitle="Total confirmed seedlings provided by ENRO across all applications" />
                 <div className="space-y-3">
                   {seedling_requests_breakdown.map((sp, idx) => (
                     <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
@@ -948,6 +1212,68 @@ export default function SiteMonitoringDetails() {
                 </div>
               </div>
             )}
+
+            {/* Seedlings Provided — each confirmed request and the tree grower who received it */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <SectionHeader
+                icon={<Sprout size={16} />}
+                title={`Seedlings Provided (${seedlingsProvidedList.length})`}
+                subtitle="Confirmed seedling handovers to this site, with the tree grower who received them"
+              />
+              {seedlingsProvidedList.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">
+                  No confirmed seedling handovers {isFiltered ? "in this period" : "for this site yet"}.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {seedlingsProvidedList.map((sr) => (
+                    <div key={sr.seedling_request_id} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <Users size={14} className="text-[#0F4A2F] shrink-0" />
+                            <span className="font-bold text-gray-800 truncate">{sr.group_name}</span>
+                            <StatusBadge status={sr.application_status} />
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Request #{sr.seedling_request_id} · {sr.application_title}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            Requested {formatDate(sr.requested_at)} · Confirmed {formatDate(sr.confirmed_at)}
+                            {sr.fulfillment_type && ` · ${sr.fulfillment_type === "deliver" ? "Delivered to site" : "Grower pickup"}`}
+                            {sr.inspector_name && ` · Verified by ${sr.inspector_name}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {sr.proof_of_delivery && (
+                            <a href={sr.proof_of_delivery} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0F4A2F] hover:underline">
+                              View proof
+                            </a>
+                          )}
+                          <div className="text-right">
+                            <span className="text-xl font-bold text-emerald-700">{sr.total_quantity.toLocaleString()}</span>
+                            <span className="block text-[10px] text-gray-500 font-medium uppercase">seedlings</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {sr.species.map((sp) => (
+                          <span
+                            key={sp.species_id}
+                            title={`Provided by ${sp.provided_by}`}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-emerald-100 rounded-full text-xs text-gray-700"
+                          >
+                            <Leaf size={12} className="text-emerald-600" />
+                            {sp.species_name}
+                            <span className="font-bold text-emerald-700">×{sp.quantity.toLocaleString()}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Species Progress Breakdown */}
             {speciesBreakdown.length > 0 && (
@@ -1278,12 +1604,30 @@ export default function SiteMonitoringDetails() {
                         {!isHead && (
                           <p className="text-[11px] text-gray-500">Recommend an outcome. The City ENRO Head makes the final decision.</p>
                         )}
-                        {/* Only offer Completed once there's an accepted initial report */}
-                        {hasAcceptedInitialReport && (
-                          <button onClick={() => setCompletionModal({ open: true, type: "completed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors">
-                            <CheckCircle2 size={16} /> {isHead ? "Mark Program Completed" : "Recommend Completion"}
-                          </button>
-                        )}
+                        {/* Only offer Completed once there's an accepted initial report.
+                            The Data Manager must also wait until no report is still in review (DM or GIS step). */}
+                        {hasAcceptedInitialReport && (() => {
+                          const blocked = !isHead && hasReportInReview;
+                          return (
+                            <>
+                              <button
+                                onClick={() => setCompletionModal({ open: true, type: "completed", reason: "" })}
+                                disabled={blocked}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed"
+                              >
+                                <CheckCircle2 size={16} /> {isHead ? "Mark Program Completed" : "Recommend Completion"}
+                              </button>
+                              {blocked && (
+                                <p className="text-[11px] text-amber-700 flex items-start gap-1.5">
+                                  <Clock size={12} className="mt-0.5 shrink-0" />
+                                  {awaitingGisReport && !firstPendingReport
+                                    ? "A report is waiting for the GIS Specialist's map check. You can recommend completion once it's reviewed."
+                                    : "Review the pending progress report first. You can recommend completion once every report is reviewed."}
+                                </p>
+                              )}
+                            </>
+                          );
+                        })()}
                         {/* Failure can follow an accepted OR rejected initial report */}
                         {(hasAcceptedInitialReport || hasRejectedInitialReport) && (
                           <button onClick={() => setCompletionModal({ open: true, type: "failed", reason: "" })} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors">

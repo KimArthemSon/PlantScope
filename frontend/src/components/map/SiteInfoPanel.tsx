@@ -1,3 +1,4 @@
+import { polygonAreaHa } from "@/utils/geoArea";
 import React, { useState, useEffect } from "react";
 import {
   X,
@@ -99,17 +100,8 @@ function hectaresFromPolygon(polygon: any): number | null {
   // Stored as [lng, lat]? swap.
   if (Math.abs(pts[0][0]) > 90) pts = pts.map(([a, b]) => [b, a] as [number, number]);
 
-  const latRad = (pts.reduce((sum, p) => sum + p[0], 0) / pts.length) * (Math.PI / 180);
-  const mPerDegLat = 111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad);
-  const mPerDegLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
-  const [lat0, lng0] = pts[0];
-  const xy = pts.map(([lat, lng]) => [(lng - lng0) * mPerDegLng, (lat - lat0) * mPerDegLat]);
-  let sqm = 0;
-  for (let i = 0; i < xy.length; i++) {
-    const j = (i + 1) % xy.length;
-    sqm += xy[i][0] * xy[j][1] - xy[j][0] * xy[i][1];
-  }
-  return Math.abs(sqm) / 2 / 10000;
+  // Geodesic area, same method as Google Earth
+  return polygonAreaHa(pts);
 }
 
 function getSiteHectares(site: SiteData): number | null {

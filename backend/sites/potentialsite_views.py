@@ -4,10 +4,27 @@ import logging
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
-from sites.models import Potential_sites, Sites
+from sites.models import Potential_sites, Sites, calculate_polygon_area_hectares, geojson_area_hectares
 
 
 logger = logging.getLogger(__name__)
+
+
+def _area_from_geometry(geometry, fallback=0):
+    """Area (ha) computed on the server with the Google Earth formula.
+    Falls back to the client's value only if the geometry can't be read."""
+    if isinstance(geometry, dict):
+        area = geojson_area_hectares(geometry)
+    elif isinstance(geometry, list):
+        area = calculate_polygon_area_hectares(geometry)
+    else:
+        area = 0
+    if area > 0:
+        return area
+    try:
+        return float(fallback or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 # =====================================================
 # POTENTIAL SITES
@@ -96,7 +113,7 @@ def bulk_create_potential_sites(request):
             Potential_sites.objects.create(
                 site=site,
                 polygon_coordinates=geometry,
-                area_hectares=float(site_data.get('area_hectares', 0) or 0),
+                area_hectares=_area_from_geometry(geometry, site_data.get('area_hectares')),
                 avg_ndvi=float(site_data.get('avg_ndvi', 0) or 0),
                 suitability_score=float(site_data.get('suitability_score', 0) or 0),
                 ndvi_threshold=0.41
@@ -134,8 +151,10 @@ def update_potential_site(request, potential_sites_id):
         # Update fields
         if 'geometry' in data:
             potential_site.polygon_coordinates = data['geometry']
-        if 'area_hectares' in data:
-            potential_site.area_hectares = float(data['area_hectares'])
+        if 'geometry' in data or 'area_hectares' in data:
+            potential_site.area_hectares = _area_from_geometry(
+                potential_site.polygon_coordinates, data.get('area_hectares', potential_site.area_hectares)
+            )
         if 'avg_ndvi' in data:
             potential_site.avg_ndvi = float(data['avg_ndvi'])
         if 'suitability_score' in data:
