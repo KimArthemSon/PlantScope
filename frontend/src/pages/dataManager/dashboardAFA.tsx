@@ -854,7 +854,9 @@ function TabMonitoring({ data }: { data: DashboardData }) {
     },
   ];
 
-  const hasTrend = trend.some((t) => t.cumulative_seedlings > 0 || t.visits > 0);
+  const hasTrend = trend.some(
+    (t) => t.cumulative_seedlings > 0 || t.visits > 0,
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -936,7 +938,10 @@ function TabMonitoring({ data }: { data: DashboardData }) {
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyState text="No accepted progress reports yet" className="py-16" />
+            <EmptyState
+              text="No accepted progress reports yet"
+              className="py-16"
+            />
           )}
         </Card>
 
@@ -950,7 +955,9 @@ function TabMonitoring({ data }: { data: DashboardData }) {
               <ResponsiveContainer width="100%" height={150}>
                 <PieChart>
                   <Pie
-                    data={data.monitoring_status_breakdown.filter((d) => d.value > 0)}
+                    data={data.monitoring_status_breakdown.filter(
+                      (d) => d.value > 0,
+                    )}
                     dataKey="value"
                     nameKey="name"
                     outerRadius={62}
@@ -973,7 +980,9 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                       className="w-2.5 h-2.5 rounded-full shrink-0"
                       style={{ background: d.fill }}
                     />
-                    <span className="text-[11.5px] text-gray-600">{d.name}</span>
+                    <span className="text-[11.5px] text-gray-600">
+                      {d.name}
+                    </span>
                     <span className="ml-auto text-[11px] text-gray-400">
                       {fmtHa(d.hectares)}
                     </span>
@@ -1117,7 +1126,9 @@ function TabMonitoring({ data }: { data: DashboardData }) {
             <MiniStat
               label="No visit yet"
               value={m.sites_without_visit}
-              tone={m.sites_without_visit > 0 ? "text-amber-600" : "text-gray-800"}
+              tone={
+                m.sites_without_visit > 0 ? "text-amber-600" : "text-gray-800"
+              }
             />
             <MiniStat
               label="Reports to review"
@@ -1156,11 +1167,19 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                 <tr className="text-[10.5px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
                   <th className="px-2 py-2 font-semibold">Site</th>
                   <th className="px-2 py-2 font-semibold">Status</th>
-                  <th className="px-2 py-2 font-semibold text-right">Site Area</th>
-                  <th className="px-2 py-2 font-semibold text-right">Planted Area</th>
-                  <th className="px-2 py-2 font-semibold text-right">Planted</th>
+                  <th className="px-2 py-2 font-semibold text-right">
+                    Site Area
+                  </th>
+                  <th className="px-2 py-2 font-semibold text-right">
+                    Planted Area
+                  </th>
+                  <th className="px-2 py-2 font-semibold text-right">
+                    Planted
+                  </th>
                   <th className="px-2 py-2 font-semibold text-right">Alive</th>
-                  <th className="px-2 py-2 font-semibold w-[160px]">Survival</th>
+                  <th className="px-2 py-2 font-semibold w-[160px]">
+                    Survival
+                  </th>
                   <th className="px-2 py-2 font-semibold text-right">Visits</th>
                   <th className="px-2 py-2 font-semibold">Last Visit</th>
                 </tr>
@@ -1169,7 +1188,12 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                 {data.site_progress.map((s) => {
                   const coverage =
                     s.site_hectares > 0
-                      ? Math.min(Math.round((s.planted_hectares / s.site_hectares) * 100), 100)
+                      ? Math.min(
+                          Math.round(
+                            (s.planted_hectares / s.site_hectares) * 100,
+                          ),
+                          100,
+                        )
                       : null;
                   return (
                     <tr
@@ -1180,7 +1204,9 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                         <p className="font-bold text-gray-800 truncate max-w-[200px]">
                           {s.name}
                         </p>
-                        <p className="text-[10.5px] text-gray-400">{s.barangay}</p>
+                        <p className="text-[10.5px] text-gray-400">
+                          {s.barangay}
+                        </p>
                       </td>
                       <td className="px-2 py-2.5">
                         <span
@@ -1197,7 +1223,9 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                           {fmtHa(s.planted_hectares)}
                         </span>
                         {coverage !== null && (
-                          <p className="text-[10px] text-gray-400">{coverage}% of site</p>
+                          <p className="text-[10px] text-gray-400">
+                            {coverage}% of site
+                          </p>
                         )}
                       </td>
                       <td className="px-2 py-2.5 text-right text-gray-700">
@@ -1365,9 +1393,10 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                 : s.no_visit
                   ? FileClock
                   : AlertCircle;
-              const tone = s.overdue || (!s.no_visit && s.rate < 50)
-                ? "border-red-100 bg-red-50/40 text-red-500"
-                : "border-amber-100 bg-amber-50/40 text-amber-600";
+              const tone =
+                s.overdue || (!s.no_visit && s.rate < 50)
+                  ? "border-red-100 bg-red-50/40 text-red-500"
+                  : "border-amber-100 bg-amber-50/40 text-amber-600";
               return (
                 <div
                   key={s.site_id}
@@ -1394,7 +1423,10 @@ function TabMonitoring({ data }: { data: DashboardData }) {
             })}
           </div>
         ) : (
-          <EmptyState text="All monitored sites are on track 🌱" className="py-8" />
+          <EmptyState
+            text="All monitored sites are on track 🌱"
+            className="py-8"
+          />
         )}
       </Card>
     </div>
@@ -1525,33 +1557,6 @@ export default function DashboardAFA() {
       `}</style>
 
       <div className="dash-root bg-[#f5faf6] min-h-screen p-6 overflow-x-hidden">
-        {/* Weather strip */}
-        <div className="flex items-center gap-4 lg:gap-6 mb-6 bg-[#0F4A2F] rounded-2xl px-5 py-3 shadow-[0_4px_24px_rgba(15,74,47,0.25)] animate-fadeUp flex-wrap">
-          <div className="flex items-center gap-2">
-            <Globe2 size={15} className="text-emerald-300" />
-            <span className="text-emerald-200 text-[11px] font-bold tracking-wider uppercase">
-              Ormoc City — Live Conditions
-            </span>
-          </div>
-          <div className="w-px h-5 bg-white/20 hidden sm:block" />
-          {WEATHER_DATA.map((w) => (
-            <div
-              key={w.label}
-              className="flex items-center gap-1.5 text-white/70 text-[12.5px]"
-            >
-              <span className="text-emerald-400">{w.icon}</span>
-              <span className="text-white/40">{w.label}</span>
-              <span className="text-white font-semibold">{w.value}</span>
-            </div>
-          ))}
-          <div className="ml-auto flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-emerald-400/80 text-[11px] font-medium tabular-nums">
-              {dateStr} · {timeStr}
-            </span>
-          </div>
-        </div>
-
         {/* Header */}
         <div
           className="mb-6 animate-fadeUp"
