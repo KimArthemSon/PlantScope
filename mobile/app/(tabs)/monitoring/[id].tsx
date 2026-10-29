@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 import { useAlert } from "@/components/AlertContext";
 import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
-import PlantedAreaCapture, { PlantedAreaPoint, MIN_AREA_POINTS } from "@/components/forms/PlantedAreaCapture";
+import PlantedAreaCapture, { PlantedAreaPoint, PreviousArea, MIN_AREA_POINTS } from "@/components/forms/PlantedAreaCapture";
 import ReportPolygonMapModal from "@/components/forms/ReportPolygonMapModal";
 import { useNetworkStatus, checkNetworkStatus } from "@/utils/networkStatus";
 import {
@@ -884,6 +884,18 @@ export default function SiteMonitoringDetailScreen() {
   const breakdownMax = Math.max(1, ...(seedling_requests_breakdown || []).map((b) => b.total_requested));
   const lastReport = progress_reports.find((r) => r.status === "accepted");
   const hasArea = areaPoints.length >= MIN_AREA_POINTS;
+  // Earlier reports on this site that mapped a planted area, so the inspector can reuse one
+  const previousAreas: PreviousArea[] = progress_reports
+    .filter((r) => (r.polygon_coordinates?.length ?? 0) >= MIN_AREA_POINTS)
+    .map((r) => ({
+      id: r.report_id,
+      date: r.submitted_at || r.created_at,
+      status: r.status,
+      visitType: r.visit_type,
+      inspector: r.inspector_name,
+      hectares: r.planted_area_hectares,
+      points: r.polygon_coordinates as [number, number][],
+    }));
   const canSubmit = !submitting && reportSpeciesList.length > 0 && !!proofImage && hasArea && !hasBlockingErrors;
 
   // Most recent report sent back for changes, so the inspector can see why
@@ -1364,7 +1376,12 @@ export default function SiteMonitoringDetailScreen() {
               {/* Step: Planted area boundary */}
               <View style={styles.stepCard}>
                 <StepTitle n={stepArea} title="Planted Area Boundary" done={hasArea} />
-                <PlantedAreaCapture points={areaPoints} onChange={setAreaPoints} siteAreaHectares={site.total_area_hectares || undefined} />
+                <PlantedAreaCapture
+                  points={areaPoints}
+                  onChange={setAreaPoints}
+                  siteAreaHectares={site.total_area_hectares || undefined}
+                  previousAreas={previousAreas}
+                />
               </View>
 
               {/* Step: Remarks */}

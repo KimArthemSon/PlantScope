@@ -81,9 +81,23 @@ def create_site(request):
 
         reforestation_area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
 
-        polygon_coordinates = body.get('polygon_coordinates')
-        marker_coordinate = body.get('marker_coordinate')
-        
+        polygon_coordinates = body.get('polygon_coordinates') or None
+        marker_coordinate = body.get('marker_coordinate') or None
+
+        # Polygon is optional, but if given it must be a real shape
+        if polygon_coordinates is not None and (not isinstance(polygon_coordinates, list) or len(polygon_coordinates) < 3):
+            return JsonResponse({"error": "A polygon needs at least 3 points."}, status=400)
+        if marker_coordinate is not None:
+            try:
+                lat, lng = float(marker_coordinate[0]), float(marker_coordinate[1])
+            except (TypeError, ValueError, IndexError):
+                return JsonResponse({"error": "Center coordinate must be [lat, lng]."}, status=400)
+            if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+                return JsonResponse({"error": "Center coordinate is out of range."}, status=400)
+            marker_coordinate = [lat, lng]
+        if not marker_coordinate and not polygon_coordinates:
+            return JsonResponse({"error": "Set a center coordinate or draw a polygon for the site."}, status=400)
+
         if not marker_coordinate and polygon_coordinates and len(polygon_coordinates) >= 3:
             sum_lat = sum(coord[0] for coord in polygon_coordinates)
             sum_lng = sum(coord[1] for coord in polygon_coordinates)

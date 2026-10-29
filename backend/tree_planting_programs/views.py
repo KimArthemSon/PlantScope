@@ -91,6 +91,12 @@ MIN_REPORT_POLYGON_POINTS = 3
 MAX_REPORT_POLYGON_POINTS = 200
 
 
+def _age(birthday):
+    """Age in whole years from a date of birth."""
+    today = date.today()
+    return today.year - birthday.year - ((today.month, today.day) < (birthday.month, birthday.day))
+
+
 def user_display_name(user):
     """Full name from the user's profile, falling back to email."""
     if not user:
@@ -1210,6 +1216,18 @@ def request_program_closure(request, application_id):
         return JsonResponse({'error': 'Only an active program can be recommended for closure.'}, status=400)
     if ProgramClosureRequest.objects.filter(application=app, status='pending').exists():
         return JsonResponse({'error': 'A recommendation is already waiting for the City ENRO Head.'}, status=400)
+
+    # Completion needs every progress report fully reviewed first
+    # (Data Manager step AND the GIS Specialist's planted-area check).
+    if recommendation == 'completed':
+        report_filter = Q(application=app)
+        if app.site_id:
+            report_filter |= Q(site_id=app.site_id)
+        if ProgressReport.objects.filter(report_filter, status='pending').exists():
+            return JsonResponse({
+                'error': 'A progress report is still being reviewed. Completion can be recommended once the '
+                         'Data Manager and the GIS Specialist have finished reviewing every report.'
+            }, status=400)
 
     closure = ProgramClosureRequest.objects.create(
         application=app, site=app.site, recommendation=recommendation,
@@ -3102,7 +3120,7 @@ def get_site_monitoring_details(request, site_id):
         app_reports = ProgressReport.objects.filter(application=active_app)
         last_report = app_reports.order_by('-submitted_at').first()
         app_seedlings = SeedlingRequestSpecies.objects.filter(
-            seedling_request__application=active_app, seedling_request__status='accepted'
+            seedling_request__application=active_app, seedling_request__status='confirmed'
         ).aggregate(total=Sum('quantity'))['total'] or 0
 
         current_application_data = {
@@ -3122,6 +3140,8 @@ def get_site_monitoring_details(request, site_id):
                 "gender": rep.get_gender_display() if rep else None,
                 "contact": rep.contact if rep else None,
                 "address": rep.address if rep else None,
+                "email": grower.email,
+                "age": _age(rep.birthday) if rep and getattr(rep, 'birthday', None) else None,
                 "profile_img": get_cloudinary_url(str(rep.profile_img)) if rep and getattr(rep, 'profile_img', None) else None,
             } if rep else None,
             "program": {
@@ -3142,6 +3162,11 @@ def get_site_monitoring_details(request, site_id):
                 "total_programs": grower_apps.count(),
                 "completed": grower_apps.filter(status='completed').count(),
                 "failed": grower_apps.filter(status='failed').count(),
+                # Other sites this group has worked on
+                "other_sites": list(
+                    grower_apps.exclude(site=site).exclude(site__isnull=True)
+                    .values_list('site__name', flat=True).distinct()
+                ),
             },
         }
 
@@ -3149,16 +3174,50 @@ def get_site_monitoring_details(request, site_id):
         site=site
     ).exclude(
         status__in=['accepted', 'under_monitoring']
-    ).select_related('user__tree_grower_group').order_by('-created_at')
+    ).select_related('user__tree_grower_group', 'user__profile').order_by('-created_at')
 
     historical_applications_data = []
     for app in historical_apps:
         group = getattr(app.user, 'tree_grower_group', None)
+        h_rep = getattr(app.user, 'profile', None)
+
+        # Outcome of that program: seedlings received, reports, survival
+        h_reports = ProgressReport.objects.filter(application=app)
+        h_counts = ProgressReportSpecies.objects.filter(
+            progress_report__application=app, progress_report__status='accepted'
+        ).aggregate(planted=Sum('no_planted'), added=Sum('no_added_by_grower'), dead=Sum('no_dead'))
+        h_total = (h_counts['planted'] or 0) + (h_counts['added'] or 0)
+        h_survival = round(max(0, h_total - (h_counts['dead'] or 0)) / h_total * 100, 1) if h_total else None
+        h_seedlings = SeedlingRequestSpecies.objects.filter(
+            seedling_request__application=app, seedling_request__status='confirmed'
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+
+        # When it ended: the Head's closure decision, else the last status change
+        h_closure = ProgramClosureRequest.objects.filter(
+            application=app, status='approved', decided_at__isnull=False
+        ).order_by('-decided_at').first()
+        ended_at = h_closure.decided_at if h_closure else (app.updated_at if app.status in ('completed', 'failed', 'rejected', 'cancelled') else None)
+
         historical_applications_data.append({
             "application_id": app.application_id,
             "group_name": group.group_name if group else "Unknown Group",
+            "group_type": group.get_group_type_display() if group else None,
+            "group_contact": group.contact if group else None,
+            "representative_name": " ".join(p for p in [h_rep.first_name, h_rep.last_name] if p) if h_rep else None,
+            "representative_contact": h_rep.contact if h_rep else None,
             "status": app.status,
+            "title": app.title,
+            "classification": app.classification,
+            "participants": app.total_treegrowers_will_participate,
             "created_at": app.created_at.isoformat() if app.created_at else None,
+            "confirmed_at": app.confirmed_at.isoformat() if app.confirmed_at else None,
+            "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
+            "ended_at": ended_at.isoformat() if ended_at else None,
+            "seedlings_provided": h_seedlings,
+            "reports_submitted": h_reports.count(),
+            "reports_accepted": h_reports.filter(status='accepted').count(),
+            "trees_planted": h_total,
+            "survival_rate": h_survival,
         })
 
     # Optional date range (?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD, both inclusive).
@@ -3270,15 +3329,52 @@ def get_site_monitoring_details(request, site_id):
             **serialize_report_review(report),
         })
 
-    # ✅ NEW: Calculate total seedlings provided for the ENTIRE SITE (all applications)
+    # Seedlings provided to the ENTIRE SITE (all applications).
+    # Only 'confirmed' requests count — the handover was verified by an Onsite Inspector.
+    # ('accepted' just means approved and still waiting for handover.)
     seedling_qs = SeedlingRequestSpecies.objects.filter(
         seedling_request__application__site=site,
-        seedling_request__status='accepted'
+        seedling_request__status='confirmed'
     )
     if date_from:
         seedling_qs = seedling_qs.filter(seedling_request__created_at__date__gte=date_from)
     if date_to:
         seedling_qs = seedling_qs.filter(seedling_request__created_at__date__lte=date_to)
+
+    # One entry per confirmed request, noting which tree grower group received it
+    confirmed_requests = SeedlingRequest.objects.filter(
+        seedling_request_id__in=seedling_qs.values('seedling_request_id')
+    ).select_related(
+        'application__user__tree_grower_group', 'assigned_inspector'
+    ).prefetch_related('seedling_species__tree_species').order_by('-created_at')
+
+    seedlings_provided_list = []
+    for sr in confirmed_requests:
+        app = sr.application
+        group = getattr(app.user, 'tree_grower_group', None)
+        species = [
+            {
+                "species_id": s.tree_species.tree_specie_id,
+                "species_name": s.tree_species.name,
+                "quantity": s.quantity,
+                "provided_by": s.provided_by,
+            }
+            for s in sr.seedling_species.all()
+        ]
+        seedlings_provided_list.append({
+            "seedling_request_id": sr.seedling_request_id,
+            "application_id": app.application_id,
+            "application_title": app.title,
+            "application_status": app.status,
+            "group_name": group.group_name if group else (user_display_name(app.user) or "Unknown Group"),
+            "fulfillment_type": sr.fulfillment_type,
+            "inspector_name": user_display_name(sr.assigned_inspector) if sr.assigned_inspector else None,
+            "total_quantity": sum(s["quantity"] for s in species),
+            "species": species,
+            "proof_of_delivery": get_cloudinary_url(str(sr.proof_of_delivery)) if sr.proof_of_delivery else None,
+            "requested_at": (sr.submitted_at or sr.created_at).isoformat() if (sr.submitted_at or sr.created_at) else None,
+            "confirmed_at": sr.updated_at.isoformat() if sr.updated_at else None,
+        })
 
     total_seedlings_provided = seedling_qs.aggregate(total=Sum('quantity'))['total'] or 0
 
@@ -3297,10 +3393,44 @@ def get_site_monitoring_details(request, site_id):
     accessibility_data = None
     land_classification_name = None
     
+    verification_data = None
     if meta_verification:
         accessibility_data = meta_verification.verified_accessibility
         if meta_verification.verified_land_classification:
             land_classification_name = meta_verification.verified_land_classification.name
+
+        # Accessibility is stored as an object or a list of {type, description}; normalise it
+        acc = accessibility_data
+        if isinstance(acc, list):
+            acc = acc[0] if acc and isinstance(acc[0], dict) else None
+        concerns = meta_verification.verified_security_concerns or []
+        verification_data = {
+            "status": meta_verification.status,
+            "verified_by": user_display_name(meta_verification.verified_by),
+            "verified_at": meta_verification.verified_at.isoformat() if meta_verification.verified_at else None,
+            "decision_note": meta_verification.decision_note,
+            "accessibility_type": acc.get('type') if isinstance(acc, dict) else (acc if isinstance(acc, str) else None),
+            "accessibility_description": acc.get('description') if isinstance(acc, dict) else None,
+            "security_concerns": [c if isinstance(c, str) else str(c) for c in concerns] if isinstance(concerns, list) else [],
+            "animals": [
+                {
+                    "name": rel.animal.name,
+                    "scientific_name": rel.animal.scientific_name or None,
+                    "notes": rel.admin_notes or None,
+                }
+                for rel in meta_verification.animal_relations.select_related('animal').all()
+            ],
+        }
+
+    # Program history at this site, by outcome
+    site_apps = Application.objects.filter(site=site)
+    program_summary = {
+        "total": site_apps.count(),
+        "completed": site_apps.filter(status='completed').count(),
+        "failed": site_apps.filter(status='failed').count(),
+        "active": site_apps.filter(status__in=['accepted', 'under_monitoring']).count(),
+    }
+    first_program = site_apps.exclude(confirmed_at__isnull=True).order_by('confirmed_at').first()
 
     site_data = {
         "site_id": site.site_id,
@@ -3314,8 +3444,24 @@ def get_site_monitoring_details(request, site_id):
         "barangay_name": site.reforestation_area.barangay.name if site.reforestation_area and site.reforestation_area.barangay else None,
         "accessibility": accessibility_data,
         "land_classification_name": land_classification_name,
-        "recommended_species": [],
+        "recommended_species": [
+            {
+                "species_id": r.tree_species.tree_specie_id,
+                "species_name": r.tree_species.name,
+                "priority_rank": r.priority_rank,
+                "notes": r.notes or None,
+            }
+            for r in site.species_recommendations.select_related('tree_species').all()
+            if r.tree_species
+        ],
         "monitoring_status": site.monitoring_status,
+        "status": site.status,
+        "created_at": site.created_at.isoformat() if site.created_at else None,
+        "main_image": get_cloudinary_url(str(site.main_image)) if site.main_image else None,
+        "verification": verification_data,
+        "potential_sites_count": site.potential_sites.count() if hasattr(site, 'potential_sites') else 0,
+        "program_summary": program_summary,
+        "first_program_at": first_program.confirmed_at.isoformat() if first_program else None,
     }
 
     return JsonResponse({
@@ -3327,6 +3473,7 @@ def get_site_monitoring_details(request, site_id):
         },
         "total_seedlings_provided": total_seedlings_provided,          # ✅ NEW: Site-level total
         "seedling_requests_breakdown": seedling_requests_breakdown,    # ✅ NEW: Site-level species breakdown
+        "seedlings_provided_list": seedlings_provided_list,            # Confirmed requests, per tree grower
         "progress_reports": progress_reports_data,
         "current_application": current_application_data,
         # Latest closure recommendation for the running program (pending or returned)

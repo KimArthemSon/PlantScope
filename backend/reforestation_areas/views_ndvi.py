@@ -8,7 +8,8 @@ from django.shortcuts import get_object_or_404
 import json
 
 # Import local models/helpers
-from ormoc_city.models import Ormoc_City 
+from ormoc_city.models import Ormoc_City
+from sites.models import geojson_area_hectares
 from . import gee_helpers
 
 logger = logging.getLogger(__name__)
@@ -119,14 +120,12 @@ def suitable_sites(request):
             ndvi_val = stats.get('NDVI')
             avg_ndvi = round(ndvi_val, 3) if ndvi_val is not None else 0.0
             
-            try:
-                area_ha = geom.area().divide(10000).getInfo()
-            except:
-                area_ha = 0
-            
+            # Same Google Earth formula used when sites/potential sites are saved
+            area_ha = geojson_area_hectares(feat.get('geometry'))
+
             feat['properties'].update({
                 'site_id': f'SITE-{str(i+1).zfill(3)}',
-                'area_hectares': round(area_ha, 2),
+                'area_hectares': area_ha,
                 'avg_ndvi': avg_ndvi,
                 'suitability_score': round((1 - avg_ndvi) * 100, 1)
             })

@@ -790,14 +790,14 @@ const GPSReadinessBanner: React.FC<{
   );
 };
 
-// Haversine distance calculation
+// Haversine distance on the same sphere Google Earth / Google Maps use (R = 6,378,137 m)
 const calculateDistance = (
   lat1: number,
   lon1: number,
   lat2: number,
   lon2: number,
 ): number => {
-  const R = 6371e3;
+  const R = 6378137;
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;

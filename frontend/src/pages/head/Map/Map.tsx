@@ -1,3 +1,4 @@
+import { polygonAreaHa } from "@/utils/geoArea";
 import {
   MapContainer,
   TileLayer,
@@ -68,21 +69,17 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-const calculateAreaHectares = (coords: [number, number][]): number => {
-  if (!coords || coords.length < 3) return 0;
-  let area = 0;
-  const R = 6378137;
-  const len = coords.length;
-  for (let i = 0; i < len; i++) {
-    const p1 = coords[i];
-    const p2 = coords[(i + 1) % len];
-    const lat1 = (p1[0] * Math.PI) / 180;
-    const lat2 = (p2[0] * Math.PI) / 180;
-    const dLng = ((p2[1] - p1[1]) * Math.PI) / 180;
-    area += dLng * (2 + Math.sin(lat1) + Math.sin(lat2));
-  }
-  return Math.abs((area * R * R) / 2) / 10000;
-};
+// Geodesic area, same method as Google Earth (shared with the analysis pages and backend)
+const calculateAreaHectares = (coords: [number, number][]): number =>
+  coords ? polygonAreaHa(coords) : 0;
+
+// Coordinates are kept to 6 decimals (~11 cm), more precise than any GPS reading
+const roundCoord = (n: number): number => Math.round(n * 1e6) / 1e6;
+
+// Area as hectares and square meters, e.g. "46.50 ha · 465,012 m²"
+const formatSqm = (ha: number): string =>
+  `${Math.round(ha * 10000).toLocaleString()} m²`;
+const formatArea = (ha: number): string => `${ha.toFixed(2)} ha · ${formatSqm(ha)}`;
 
 // ✅ MOVED OUTSIDE to prevent reference changes on re-render
 const getHazardColor = (hazardType: string) => {
@@ -763,7 +760,7 @@ export default function Map() {
     const handleClick = (e: L.LeafletMouseEvent) => {
       const { lat, lng } = e.latlng;
       if (isDrawingAnalysis) {
-        setAnalysisCoords((prev) => [...prev, [lat, lng]]);
+        setAnalysisCoords((prev) => [...prev, [roundCoord(lat), roundCoord(lng)]]);
         return;
       }
       if (isPickingMarker) {
@@ -802,7 +799,7 @@ export default function Map() {
     const newLatLng = e.target.getLatLng();
     setAnalysisCoords((prev) => {
       const next = [...prev];
-      next[index] = [newLatLng.lat, newLatLng.lng];
+      next[index] = [roundCoord(newLatLng.lat), roundCoord(newLatLng.lng)];
       return next;
     });
   };
@@ -812,8 +809,9 @@ export default function Map() {
     type: "lat" | "lng",
     val: string,
   ) => {
-    const num = parseFloat(val);
-    if (isNaN(num)) return;
+    const parsed = parseFloat(val);
+    if (isNaN(parsed)) return;
+    const num = roundCoord(parsed);
     setAnalysisCoords((prev) => {
       const next = [...prev];
       if (type === "lat") next[index] = [num, next[index][1]];
@@ -827,8 +825,8 @@ export default function Map() {
     const center = mapRef.current.getCenter();
     const lastPoint = analysisCoords[analysisCoords.length - 1];
     const newPoint: [number, number] = lastPoint
-      ? [lastPoint[0] + 0.001, lastPoint[1] + 0.001]
-      : [center.lat, center.lng];
+      ? [roundCoord(lastPoint[0] + 0.001), roundCoord(lastPoint[1] + 0.001)]
+      : [roundCoord(center.lat), roundCoord(center.lng)];
     setAnalysisCoords((prev) => [...prev, newPoint]);
   };
 
@@ -2143,6 +2141,9 @@ export default function Map() {
             <p className="text-xl font-bold text-blue-800">
               {totalAreaHectares.toFixed(2)} ha
             </p>
+            <p className="text-sm font-semibold text-blue-700">
+              {formatSqm(totalAreaHectares)}
+            </p>
           </div>
           <div className="space-y-2 mb-3 max-h-[300px] overflow-y-auto pr-1">
             {analysisCoords.length === 0 && (
@@ -2162,22 +2163,24 @@ export default function Map() {
                   <input
                     type="number"
                     step="0.000001"
-                    value={coord[0]}
+                    value={roundCoord(coord[0])}
                     onChange={(e) =>
                       handleCoordChange(idx, "lat", e.target.value)
                     }
-                    className="w-full text-xs p-1 border rounded focus:ring-1 focus:ring-blue-400"
+                    className="w-full min-w-0 text-xs p-1 border rounded font-mono focus:ring-1 focus:ring-blue-400"
                     placeholder="Lat"
+                    title="Latitude (6 decimals)"
                   />
                   <input
                     type="number"
                     step="0.000001"
-                    value={coord[1]}
+                    value={roundCoord(coord[1])}
                     onChange={(e) =>
                       handleCoordChange(idx, "lng", e.target.value)
                     }
-                    className="w-full text-xs p-1 border rounded focus:ring-1 focus:ring-blue-400"
+                    className="w-full min-w-0 text-xs p-1 border rounded font-mono focus:ring-1 focus:ring-blue-400"
                     placeholder="Lng"
+                    title="Longitude (6 decimals)"
                   />
                 </div>
                 <button
@@ -2616,8 +2619,11 @@ export default function Map() {
               <span className="flex items-center gap-1">
                 <Ruler size={12} className="text-gray-500" /> Total Area:
               </span>
-              <strong className="text-[#0f4a2f]">
+              <strong className="text-[#0f4a2f] text-right">
                 {siteStats.totalArea.toFixed(2)} ha
+                <span className="block text-[10px] font-medium text-gray-500">
+                  {formatSqm(siteStats.totalArea)}
+                </span>
               </strong>
             </div>
             <div className="flex justify-between items-center">
@@ -3305,7 +3311,7 @@ export default function Map() {
                         ? "Some points have invalid lat/lng"
                         : sitePolygonCoords.length < 3
                           ? `${sitePolygonCoords.length} pts — need at least 3`
-                          : `${sitePolygonCoords.length} points · ${calculateAreaHectares(sitePolygonCoords).toFixed(2)} ha`}
+                          : `${sitePolygonCoords.length} points · ${formatArea(calculateAreaHectares(sitePolygonCoords))}`}
                     </p>
                   )}
                 </div>
@@ -3514,7 +3520,7 @@ export default function Map() {
                 const isSelected = selectedPotentialSiteIds.includes(
                   props.potential_sites_id,
                 );
-                const popupContent = `<div style="font-size: 12px; min-width: 180px;"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg><strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Site"}</strong></div><div style="margin-bottom: 4px;"><strong>Area:</strong> ${props.area_hectares?.toFixed(2) || "N/A"} ha</div><div style="margin-bottom: 4px;"><strong>NDVI:</strong> ${props.avg_ndvi?.toFixed(3) || "N/A"}</div><div style="margin-bottom: 4px;"><strong>Suitability:</strong> ${props.suitability_score?.toFixed(2) || "N/A"}</div><hr style="margin: 6px 0;"/><button id="hazard-report-btn-analyze-${props.potential_sites_id}" style="width: 100%; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:4px;">${isSelected ? "Deselect" : "Select for Site"}</button><button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer; margin-bottom:4px;">View Trends</button><button id="delete-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:#EF4444; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-size:12px; display:flex; align-items:center; justify-content:center; gap:4px; margin-top:4px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>Delete Site</button></div>`;
+                const popupContent = `<div style="font-size: 12px; min-width: 180px;"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg><strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Site"}</strong></div><div style="margin-bottom: 4px;"><strong>Area:</strong> ${props.area_hectares != null ? formatArea(props.area_hectares) : "N/A"}</div><div style="margin-bottom: 4px;"><strong>NDVI:</strong> ${props.avg_ndvi?.toFixed(3) || "N/A"}</div><div style="margin-bottom: 4px;"><strong>Suitability:</strong> ${props.suitability_score?.toFixed(2) || "N/A"}</div><hr style="margin: 6px 0;"/><button id="hazard-report-btn-analyze-${props.potential_sites_id}" style="width: 100%; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:4px;">${isSelected ? "Deselect" : "Select for Site"}</button><button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer; margin-bottom:4px;">View Trends</button><button id="delete-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:#EF4444; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-size:12px; display:flex; align-items:center; justify-content:center; gap:4px; margin-top:4px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>Delete Site</button></div>`;
                 layer.bindPopup(popupContent);
                 layer.on("popupopen", () => {
                   const hazardBtn = document.getElementById(
@@ -3980,7 +3986,7 @@ export default function Map() {
             })}
             onEachFeature={(feature, layer) => {
               const p = feature.properties;
-              const popupContent = `<div style="min-width: 200px; font-family: system-ui;"><h3 style="margin-bottom: 8px; font-weight: bold; color: #dc2626; font-size: 14px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Potential Site</h3><div style="font-size: 12px; margin-bottom: 4px;"><strong>Area:</strong> ${p.area_hectares?.toFixed(2) || "N/A"} ha</div><div style="font-size: 12px; margin-bottom: 8px;"><strong>Avg NDVI:</strong> ${p.avg_ndvi?.toFixed(3) || "N/A"}</div><button id="hazard-report-btn-${p.potential_sites_id}" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button onclick="window.handleViewTrend(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #3B82F6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">View NDVI Trend</button><button onclick="window.handleDeletePotentialSite(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #EF4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">Delete Potential Site</button></div>`;
+              const popupContent = `<div style="min-width: 200px; font-family: system-ui;"><h3 style="margin-bottom: 8px; font-weight: bold; color: #dc2626; font-size: 14px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Potential Site</h3><div style="font-size: 12px; margin-bottom: 4px;"><strong>Area:</strong> ${p.area_hectares != null ? formatArea(p.area_hectares) : "N/A"}</div><div style="font-size: 12px; margin-bottom: 8px;"><strong>Avg NDVI:</strong> ${p.avg_ndvi?.toFixed(3) || "N/A"}</div><button id="hazard-report-btn-${p.potential_sites_id}" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button onclick="window.handleViewTrend(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #3B82F6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">View NDVI Trend</button><button onclick="window.handleDeletePotentialSite(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #EF4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">Delete Potential Site</button></div>`;
               layer.bindPopup(popupContent);
               layer.on("popupopen", () => {
                 const btn = document.getElementById(
