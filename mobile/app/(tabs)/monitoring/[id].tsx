@@ -424,7 +424,9 @@ export default function SiteMonitoringDetailScreen() {
   const [queuedReport, setQueuedReport] = useState<QueuedReport | null>(null);
   const [syncingQueue, setSyncingQueue] = useState(false);
 
-  const [speciesWithWarnings, setSpeciesWithWarnings] = useState<number[]>([]);
+  // species id → why that entry can't be submitted
+  const [speciesErrors, setSpeciesErrors] = useState<Record<number, string>>({});
+  const speciesWithWarnings = Object.keys(speciesErrors).map(Number);
 
   const hasActiveApplication = !!detail?.current_application;
   const hasPendingReport = detail?.progress_reports.some((r) => r.status === "pending") || false;
@@ -442,19 +444,6 @@ export default function SiteMonitoringDetailScreen() {
   };
 
   const baselineReportId = getBaselineReportId();
-
-  // ✅ UPDATED: Check ONLY accepted reports for actual planting data (Removed recommended_species check)
-  const checkSpeciesHasPlantingHistory = (speciesId: number): boolean => {
-    if (!detail) return false;
-    return detail.progress_reports
-      .filter(r => r.status === "accepted")
-      .some(report =>
-        report.species.some(sp =>
-          (sp.species_id === speciesId || (sp as any).tree_species_id === speciesId) &&
-          ((sp as any).no_planted > 0 || (sp as any).no_added_by_grower > 0)
-        )
-      );
-  };
 
   // ✅ FIX 2: Add Total Planted column
   const calculateLifetimeSpeciesBreakdown = (): LifetimeSpeciesStat[] => {
@@ -493,18 +482,59 @@ export default function SiteMonitoringDetailScreen() {
       .sort((a, b) => b.total_planted_sum - a.total_planted_sum);
   };
 
+  // Which counts this visit may record (must match the backend rules)
+  const allowPlantedCount = visitType === "initial" && !hasExistingSiteInitialReport;
+  const allowAddedCount = visitType === "ongoing" || (visitType === "initial" && hasExistingSiteInitialReport);
+
+  // Trees of a species still alive at this site, from accepted reports
+  const getSpeciesStanding = (speciesId: number) => {
+    const stat = calculateLifetimeSpeciesBreakdown().find((s) => s.species_id === speciesId);
+    return {
+      everPlanted: stat ? stat.total_planted_sum : 0,
+      dead: stat ? stat.total_dead : 0,
+      alive: stat ? Math.max(0, stat.total_planted_sum - stat.total_dead) : 0,
+    };
+  };
+
+  /**
+   * Why a species entry can't go into the report, or null if it's fine.
+   * Keeps lifetime totals sane: dead can never exceed the trees actually alive.
+   */
+  const validateSpeciesEntry = (speciesId: number, name: string, planted: number, added: number, dead: number): string | null => {
+    if ([planted, added, dead].some((n) => !Number.isInteger(n))) return "Use whole numbers only.";
+    if (planted < 0 || added < 0 || dead < 0) return "Counts can't be negative.";
+    if (planted > 0 && !allowPlantedCount)
+      return "Officially planted trees can only be recorded on the site's first initial visit. Use \"Added by Grower\" instead.";
+    if (added > 0 && !allowAddedCount)
+      return visitType === "inactive_check"
+        ? "An inactive check can only record dead trees."
+        : "Trees added by the grower can't be recorded on the first initial visit. Use \"Officially Planted\".";
+    if (visitType === "inactive_check" && dead === 0) return "Enter the number of dead trees.";
+    if (planted + added + dead === 0) return "Enter at least one count.";
+
+    const { everPlanted, alive } = getSpeciesStanding(speciesId);
+    const aliveNow = alive + planted + added;
+    if (dead > aliveNow) {
+      if (everPlanted === 0 && planted + added === 0)
+        return `"${name}" has never been planted at this site, so none can be dead. Check the species.`;
+      if (alive === 0 && planted + added === 0)
+        return `All ${everPlanted} "${name}" recorded here are already dead (0 alive). No more can be reported dead.`;
+      return `${dead} dead, but only ${aliveNow} "${name}" are alive (${alive} from past reports${planted + added > 0 ? ` + ${planted + added} in this entry` : ""}).`;
+    }
+    return null;
+  };
+
+  // Re-check the whole list whenever it, the visit type, or the site data changes
+  // (covers reports loaded for resubmission and visit-type switches)
   useEffect(() => {
-    const warnings: number[] = [];
+    const errors: Record<number, string> = {};
     reportSpeciesList.forEach((sp) => {
-      if (sp.no_dead > 0 && sp.no_planted === 0 && sp.no_added_by_grower === 0) {
-        const hasHistory = checkSpeciesHasPlantingHistory(sp.tree_species_id);
-        if (!hasHistory) {
-          warnings.push(sp.tree_species_id);
-        }
-      }
+      const err = validateSpeciesEntry(sp.tree_species_id, sp.species_name, sp.no_planted, sp.no_added_by_grower, sp.no_dead);
+      if (err) errors[sp.tree_species_id] = err;
     });
-    setSpeciesWithWarnings(warnings);
-  }, [reportSpeciesList, detail]);
+    setSpeciesErrors(errors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportSpeciesList, detail, visitType, hasExistingSiteInitialReport]);
 
   const fetchDetail = async (isRefresh = false) => {
     if (!currentSiteId) {
@@ -711,33 +741,19 @@ export default function SiteMonitoringDetailScreen() {
     const found = allTreeSpecies.find((s) => s.tree_specie_id === Number(selectedSpeciesId));
     if (!found) return;
 
-    const planted = visitType === "initial" && !hasExistingSiteInitialReport ? parseInt(tempPlanted) || 0 : 0;
-    const added = (visitType === "ongoing" || (visitType === "initial" && hasExistingSiteInitialReport)) ? parseInt(tempAdded) || 0 : 0;
-    const dead = parseInt(tempDead) || 0;
+    // Blank = 0; anything else must be a whole number (validated below)
+    const toCount = (v: string) => (v.trim() === "" ? 0 : Number(v.trim()));
+    const planted = allowPlantedCount ? toCount(tempPlanted) : 0;
+    const added = allowAddedCount ? toCount(tempAdded) : 0;
+    const dead = toCount(tempDead);
 
-    if (visitType === "inactive_check" && dead === 0) {
-      return warning("Dead count required", "Enter the number of dead trees for this species.");
-    }
+    const entryError = validateSpeciesEntry(found.tree_specie_id, found.name, planted, added, dead);
+    if (entryError) return showError("Entry blocked", entryError, 6000);
 
-    const totalAccounted = planted + added;
-    const hasHistory = checkSpeciesHasPlantingHistory(found.tree_specie_id);
-
-    // BLOCK 1: If dead trees exceed the trees accounted for in THIS entry AND there is no history
-    if (dead > totalAccounted && !hasHistory) {
-      return showError(
-        "Entry blocked",
-        `${dead} dead "${found.name}" but only ${totalAccounted} accounted for, and this species has no planting history here. Dead trees can't exceed planted — please verify the counts.`,
-        6000
-      );
-    }
-
-    // BLOCK 2: Block dead-only entries without actual planting history
-    if (dead > 0 && totalAccounted === 0 && !hasHistory) {
-      return showError(
-        "Entry blocked",
-        `"${found.name}" has never been planted at this site, so it can't have dead trees. Verify the species or add the planting count first.`,
-        6000
-      );
+    // Not blocking: planting more than ENRO provided may mean a typo (growers' own seedlings go under "Added")
+    const provided = (detail?.seedling_requests_breakdown || []).find((b) => b.species_id === found.tree_specie_id)?.total_requested;
+    if (planted > 0 && provided != null && planted > provided) {
+      warning("Check the count", `${planted} "${found.name}" planted, but only ${provided} were provided. Make sure the number is right.`, 6000);
     }
 
     const existingIndex = reportSpeciesList.findIndex((s) => s.tree_species_id === found.tree_specie_id);
@@ -789,7 +805,7 @@ export default function SiteMonitoringDetailScreen() {
       setTempAdded("");
       setTempDead("");
       setSelectedSpeciesId("");
-      setSpeciesWithWarnings([]);
+      setSpeciesErrors({});
     };
 
     const report: Omit<QueuedReport, "local_id" | "created_at"> = {
@@ -884,18 +900,44 @@ export default function SiteMonitoringDetailScreen() {
   const breakdownMax = Math.max(1, ...(seedling_requests_breakdown || []).map((b) => b.total_requested));
   const lastReport = progress_reports.find((r) => r.status === "accepted");
   const hasArea = areaPoints.length >= MIN_AREA_POINTS;
-  // Earlier reports on this site that mapped a planted area, so the inspector can reuse one
-  const previousAreas: PreviousArea[] = progress_reports
-    .filter((r) => (r.polygon_coordinates?.length ?? 0) >= MIN_AREA_POINTS)
-    .map((r) => ({
-      id: r.report_id,
-      date: r.submitted_at || r.created_at,
-      status: r.status,
-      visitType: r.visit_type,
-      inspector: r.inspector_name,
-      hectares: r.planted_area_hectares,
-      points: r.polygon_coordinates as [number, number][],
-    }));
+  // Areas the inspector can start from: the site's own boundary, then earlier reports' planted areas
+  const sitePolygonPoints: [number, number][] = (() => {
+    const raw = site.polygon_coordinates;
+    if (!Array.isArray(raw) || raw.length < MIN_AREA_POINTS) return [];
+    const pts = raw.map(([a, b]) => [Number(a), Number(b)] as [number, number]).filter(([a, b]) => !isNaN(a) && !isNaN(b));
+    // Stored as [lat, lng]; swap if it looks like [lng, lat]
+    const swapped = pts.length > 0 && Math.abs(pts[0][0]) > 90 ? pts.map(([a, b]) => [b, a] as [number, number]) : pts;
+    // Drop a repeated closing point
+    const last = swapped[swapped.length - 1];
+    return swapped.length > MIN_AREA_POINTS && last[0] === swapped[0][0] && last[1] === swapped[0][1] ? swapped.slice(0, -1) : swapped;
+  })();
+  const previousAreas: PreviousArea[] = [
+    ...(sitePolygonPoints.length >= MIN_AREA_POINTS
+      ? [{
+          id: site.site_id,
+          source: "site" as const,
+          siteName: site.name,
+          date: null,
+          status: "site",
+          visitType: "",
+          inspector: "",
+          hectares: site.total_area_hectares || null,
+          points: sitePolygonPoints,
+        }]
+      : []),
+    ...progress_reports
+      .filter((r) => (r.polygon_coordinates?.length ?? 0) >= MIN_AREA_POINTS)
+      .map((r) => ({
+        id: r.report_id,
+        source: "report" as const,
+        date: r.submitted_at || r.created_at,
+        status: r.status,
+        visitType: r.visit_type,
+        inspector: r.inspector_name,
+        hectares: r.planted_area_hectares,
+        points: r.polygon_coordinates as [number, number][],
+      })),
+  ];
   const canSubmit = !submitting && reportSpeciesList.length > 0 && !!proofImage && hasArea && !hasBlockingErrors;
 
   // Most recent report sent back for changes, so the inspector can see why
@@ -1337,6 +1379,18 @@ export default function SiteMonitoringDetailScreen() {
                   <CountInput label={visitType === "inactive_check" ? "Dead Trees *" : "Dead Count *"} value={tempDead} onChange={setTempDead} danger />
                 </View>
 
+                {/* How many of the selected species are still alive, so the inspector knows the limit */}
+                {selectedSpeciesId !== "" && (() => {
+                  const st = getSpeciesStanding(Number(selectedSpeciesId));
+                  return (
+                    <Text style={[styles.standingText, st.everPlanted > 0 && st.alive === 0 && { color: DANGER }]}>
+                      {st.everPlanted === 0
+                        ? "Not planted here yet — it can't have dead trees until it's planted."
+                        : `Alive at this site: ${st.alive} of ${st.everPlanted} (${st.dead} already dead)${st.alive === 0 ? " — no more can be reported dead" : ""}`}
+                    </Text>
+                  );
+                })()}
+
                 <TouchableOpacity style={[styles.addSpeciesBtn, { opacity: selectedSpeciesId ? 1 : 0.5 }]} onPress={handleAddSpeciesToReport} disabled={!selectedSpeciesId}>
                   <Ionicons name={reportSpeciesList.some((s) => s.tree_species_id === Number(selectedSpeciesId)) ? "refresh" : "add-circle"} size={16} color={WHITE} />
                   <Text style={styles.addSpeciesBtnText}>
@@ -1356,7 +1410,7 @@ export default function SiteMonitoringDetailScreen() {
                               <Text style={styles.addedSpeciesName}>{sp.species_name}</Text>
                               {hasWarning && <Ionicons name="warning" size={15} color={DANGER} />}
                             </View>
-                            {hasWarning && <Text style={styles.warnText}>No planting history — verify species</Text>}
+                            {hasWarning && <Text style={styles.warnText}>{speciesErrors[sp.tree_species_id]}</Text>}
                             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
                               {sp.no_planted > 0 && <Text style={styles.countBadgePrimary}>Planted {sp.no_planted}</Text>}
                               {sp.no_added_by_grower > 0 && <Text style={styles.countBadge}>Added {sp.no_added_by_grower}</Text>}
@@ -1807,6 +1861,7 @@ const styles = StyleSheet.create({
   addedSpeciesWarn: { borderColor: "#FCA5A5", backgroundColor: "#FEF2F2" },
   addedSpeciesName: { fontSize: 14, fontWeight: "700", color: INK },
   warnText: { fontSize: 11, color: DANGER, marginTop: 3, fontWeight: "600" },
+  standingText: { fontSize: 11.5, color: MUTED, fontWeight: "600", marginTop: -4, marginBottom: 12 },
   removeBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#FEF2F2", justifyContent: "center", alignItems: "center", marginLeft: 8 },
   countBadge: { fontSize: 11, fontWeight: "600", color: MUTED, backgroundColor: WHITE, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: BORDER, overflow: "hidden" },
   countBadgePrimary: { fontSize: 11, fontWeight: "600", color: PRIMARY, backgroundColor: "#ECFDF5", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: "#A7F3D0", overflow: "hidden" },

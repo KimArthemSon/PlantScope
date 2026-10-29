@@ -348,3 +348,77 @@ class ProgramClosureTests(TestCase):
         self.assertIsNotNone(past["ended_at"])
 
         self.assertEqual(data["current_application"]["representative"], None)  # grower has no profile in this test
+
+
+class ReportSpeciesValidationTests(TestCase):
+    """Dead trees can never exceed the trees still alive, plus the other count rules."""
+
+    def setUp(self):
+        from tree_species.models import Tree_species
+        from .models import ProgressReportSpecies
+
+        area = Reforestation_areas.objects.create(name="Validation Area")
+        self.site = Sites.objects.create(reforestation_area=area, name="Site V", polygon_coordinates=SQUARE)
+        self.narra = Tree_species.objects.create(name="Narra V")
+        self.mahogany = Tree_species.objects.create(name="Mahogany V")
+        self.ProgressReportSpecies = ProgressReportSpecies
+
+    def _accepted(self, visit_type, species, planted=0, added=0, dead=0):
+        r = ProgressReport.objects.create(site=self.site, visit_type=visit_type, status="accepted")
+        self.ProgressReportSpecies.objects.create(
+            progress_report=r, tree_species=species, no_planted=planted, no_added_by_grower=added, no_dead=dead,
+        )
+
+    def _check(self, visit_type, **counts):
+        from .views import validate_report_species
+        species = counts.pop("species", self.narra)
+        item = {"tree_species_id": species.tree_specie_id, **counts}
+        return validate_report_species(self.site, visit_type, [item])[1]
+
+    def test_dead_cannot_exceed_alive(self):
+        self._accepted("initial", self.narra, planted=100)
+        self._accepted("ongoing", self.narra, dead=90)
+        self.assertIsNone(self._check("ongoing", no_dead=10))          # exactly the 10 left
+        self.assertIn("only 10 are alive", self._check("ongoing", no_dead=11))
+        self.assertIsNone(self._check("ongoing", no_added_by_grower=5, no_dead=15))  # 10 + 5 new
+
+    def test_no_dead_once_all_are_dead(self):
+        self._accepted("initial", self.narra, planted=50)
+        self._accepted("ongoing", self.narra, dead=50)
+        self.assertIn("already dead", self._check("ongoing", no_dead=1))
+        self.assertIn("already dead", self._check("inactive_check", no_dead=1))
+
+    def test_never_planted_species_cannot_be_dead(self):
+        self._accepted("initial", self.narra, planted=50)
+        self.assertIn("never been planted", self._check("ongoing", species=self.mahogany, no_dead=3))
+
+    def test_visit_type_rules(self):
+        # First initial visit: planted only
+        self.assertIsNone(self._check("initial", no_planted=20))
+        self.assertIn("first initial visit", self._check("ongoing", no_planted=20))
+        self.assertIn("can't be recorded", self._check("initial", no_added_by_grower=5))
+        self.assertIn("dead trees", self._check("inactive_check", no_dead=0))
+        self._accepted("initial", self.narra, planted=20)
+        # After the first initial visit, "planted" is no longer allowed
+        self.assertIn("first initial visit", self._check("initial", no_planted=5))
+        self.assertIsNone(self._check("initial", no_added_by_grower=5))
+        self.assertIn("can't be recorded", self._check("inactive_check", no_added_by_grower=5, no_dead=1))
+
+    def test_bad_numbers_and_empty_entries(self):
+        self._accepted("initial", self.narra, planted=20)
+        self.assertIn("negative", self._check("ongoing", no_dead=-1))
+        self.assertIn("whole number", self._check("ongoing", no_dead=2.5))
+        self.assertIn("at least one count", self._check("ongoing"))
+
+    def test_duplicate_species_and_empty_report(self):
+        from .views import validate_report_species
+        self._accepted("initial", self.narra, planted=20)
+        item = {"tree_species_id": self.narra.tree_specie_id, "no_dead": 1}
+        self.assertIn("listed twice", validate_report_species(self.site, "ongoing", [item, item])[1])
+        self.assertIn("at least one species", validate_report_species(self.site, "ongoing", [])[1])
+
+    def test_pending_and_rejected_reports_do_not_count(self):
+        self._accepted("initial", self.narra, planted=10)
+        r = ProgressReport.objects.create(site=self.site, visit_type="ongoing", status="rejected")
+        self.ProgressReportSpecies.objects.create(progress_report=r, tree_species=self.narra, no_dead=10)
+        self.assertIsNone(self._check("ongoing", no_dead=10))  # the rejected report's deaths are ignored
