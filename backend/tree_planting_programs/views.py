@@ -1443,6 +1443,92 @@ def create_seedling_request(request):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @csrf_exempt
+def validate_report_species(site, visit_type, report_species):
+    """
+    Check species counts before a report is saved, so lifetime totals stay sane.
+    Returns (rows, error): rows are cleaned dicts, error is a message or None.
+
+    Rules (mirrored in the mobile report form):
+      - whole, non-negative numbers; at least one count per species; no duplicates
+      - "planted" only on the site's first initial visit, "added" only on later visits,
+        inactive checks record dead trees only
+      - dead can't exceed the trees still alive: accepted planted + added - dead,
+        plus anything planted/added in this same entry
+    """
+    site_has_initial = ProgressReport.objects.filter(site=site, visit_type='initial', status='accepted').exists()
+    allow_planted = visit_type == 'initial' and not site_has_initial
+    allow_added = visit_type == 'ongoing' or (visit_type == 'initial' and site_has_initial)
+
+    # Current standing per species from accepted reports
+    standing = {
+        row['tree_species_id']: row
+        for row in ProgressReportSpecies.objects.filter(
+            progress_report__site=site, progress_report__status='accepted'
+        ).values('tree_species_id').annotate(
+            planted=Coalesce(Sum('no_planted'), 0),
+            added=Coalesce(Sum('no_added_by_grower'), 0),
+            dead=Coalesce(Sum('no_dead'), 0),
+        )
+    }
+
+    if not report_species:
+        return None, 'Add at least one species to the report.'
+
+    rows, seen = [], set()
+    for item in report_species:
+        if not isinstance(item, dict):
+            return None, 'Each report species must be an object.'
+        try:
+            species_id = int(item.get('tree_species_id'))
+        except (TypeError, ValueError):
+            return None, f'Missing or invalid tree_species_id: {item}'
+
+        counts = {}
+        for key in ('no_planted', 'no_added_by_grower', 'no_dead', 'no_survived'):
+            raw = item.get(key) or 0
+            try:
+                value = int(raw)
+                if value != float(raw):
+                    raise ValueError
+            except (TypeError, ValueError):
+                return None, f'{key} must be a whole number.'
+            if value < 0:
+                return None, 'Counts can\'t be negative.'
+            counts[key] = value
+
+        species = Tree_species.objects.filter(tree_specie_id=species_id).first()
+        if not species:
+            return None, f'Tree species {species_id} not found.'
+        name = species.name
+        if species_id in seen:
+            return None, f'"{name}" is listed twice. Combine it into one entry.'
+        seen.add(species_id)
+
+        planted, added, dead = counts['no_planted'], counts['no_added_by_grower'], counts['no_dead']
+        if planted > 0 and not allow_planted:
+            return None, f'"{name}": officially planted trees can only be recorded on the site\'s first initial visit.'
+        if added > 0 and not allow_added:
+            return None, f'"{name}": trees added by the grower can\'t be recorded on this visit type.'
+        if visit_type == 'inactive_check' and dead == 0:
+            return None, f'"{name}": enter the number of dead trees.'
+        if planted + added + dead == 0:
+            return None, f'"{name}": enter at least one count.'
+
+        s = standing.get(species_id, {'planted': 0, 'added': 0, 'dead': 0})
+        ever = s['planted'] + s['added']
+        alive_before = max(0, ever - s['dead'])
+        alive_now = alive_before + planted + added
+        if dead > alive_now:
+            if ever == 0 and planted + added == 0:
+                return None, f'"{name}" has never been planted at this site, so none can be dead.'
+            if alive_before == 0 and planted + added == 0:
+                return None, f'All {ever} "{name}" recorded at this site are already dead. No more can be reported dead.'
+            return None, f'"{name}": {dead} dead, but only {alive_now} are alive.'
+
+        rows.append({'tree_species': species, **counts})
+    return rows, None
+
+
 def create_progress_report(request):
     """OnsiteInspector: Submit monitoring report (Initial, Ongoing, or Inactive Check)"""
     if request.method != 'POST':
@@ -1511,6 +1597,11 @@ def create_progress_report(request):
             'error': 'A report for this site is currently pending review. Please wait for the Data Manager to process it before submitting a new one.'
         }, status=400)
 
+    # Check the counts before anything is saved or uploaded
+    species_rows, species_error = validate_report_species(site, visit_type, report_species)
+    if species_error:
+        return JsonResponse({'error': species_error}, status=400)
+
     try:
         with transaction.atomic():
             report = ProgressReport.objects.create(
@@ -1527,29 +1618,8 @@ def create_progress_report(request):
                 planted_area_hectares=planted_area_hectares,
             )
 
-            for item in report_species:
-                if not isinstance(item, dict):
-                    raise ValueError("Each report species must be an object")
-                
-                tree_species_id = item.get('tree_species_id')
-                no_survived = int(item.get('no_survived') or 0)
-                no_dead = int(item.get('no_dead') or 0)
-                no_planted = int(item.get('no_planted') or 0)
-                no_added_by_grower = int(item.get('no_added_by_grower') or 0)
-
-                if not tree_species_id:
-                    raise ValueError(f"Missing tree_species_id: {item}")
-
-                tree_species = get_object_or_404(Tree_species, tree_specie_id=tree_species_id)
-
-                ProgressReportSpecies.objects.create(
-                    progress_report=report,
-                    tree_species=tree_species,
-                    no_planted=no_planted,
-                    no_added_by_grower=no_added_by_grower,
-                    no_survived=no_survived,
-                    no_dead=no_dead,
-                )
+            for row in species_rows:
+                ProgressReportSpecies.objects.create(progress_report=report, **row)
 
         return JsonResponse({
             'message': 'Progress report submitted', 

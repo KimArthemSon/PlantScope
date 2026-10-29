@@ -27,9 +27,14 @@ const DANGER = "#DC2626";
 const WARNING = "#D97706";
 const WHITE = "#FFFFFF";
 
-/** A planted area from an earlier report that can be copied into this one. */
+/**
+ * An area whose corners can be copied into this report: either the planted area
+ * of an earlier report, or the site's own boundary polygon.
+ */
 export interface PreviousArea {
   id: number;
+  source?: "report" | "site"; // defaults to "report"
+  siteName?: string;
   date: string | null;
   status: string;
   visitType: string;
@@ -164,9 +169,15 @@ export default function PlantedAreaCapture({
   // Copy a previous report's corners into this report; they can still be edited after
   const applyPrevious = (prev: PreviousArea) => {
     const load = () => {
-      onChange(prev.points.map(([lat, lng], i) => ({ id: `reuse-${prev.id}-${i}-${Date.now()}`, latitude: Number(lat), longitude: Number(lng) })));
+      const isSite = prev.source === "site";
+      onChange(prev.points.map(([lat, lng], i) => ({ id: `reuse-${prev.source ?? "report"}-${prev.id}-${i}-${Date.now()}`, latitude: Number(lat), longitude: Number(lng) })));
       setShowReuse(false);
-      success("Area loaded", `${prev.points.length} corners copied from report #${prev.id}. Add or remove corners if the area changed.`);
+      success(
+        "Area loaded",
+        isSite
+          ? `${prev.points.length} corners copied from the site boundary. Remove or move corners to match the area actually planted.`
+          : `${prev.points.length} corners copied from report #${prev.id}. Add or remove corners if the area changed.`,
+      );
     };
     if (points.length > 0) {
       setShowReuse(false);
@@ -229,7 +240,9 @@ export default function PlantedAreaCapture({
       {previousAreas.length > 0 && (
         <TouchableOpacity style={[s.btn, s.reuseBtn]} onPress={() => setShowReuse(true)} activeOpacity={0.8}>
           <MaterialCommunityIcons name="history" size={16} color={PRIMARY} />
-          <Text style={s.btnText}>Reuse Previous Area ({previousAreas.length})</Text>
+          <Text style={s.btnText}>
+            {previousAreas.some((a) => a.source === "site") ? "Use Site Boundary / Previous Area" : "Reuse Previous Area"} ({previousAreas.length})
+          </Text>
         </TouchableOpacity>
       )}
 
@@ -282,26 +295,36 @@ export default function PlantedAreaCapture({
       <Modal visible={showReuse} transparent animationType="fade" onRequestClose={() => setShowReuse(false)}>
         <View style={s.overlay}>
           <View style={[s.modal, { maxHeight: "80%" }]}>
-            <Text style={s.modalTitle}>Reuse a Previous Area</Text>
+            <Text style={s.modalTitle}>Reuse an Area</Text>
             <Text style={[s.hint, { marginBottom: 8 }]}>
-              Pick a report to copy its planted-area corners. You can still add or remove corners afterwards.
+              Copy the corners of the site boundary or of an earlier report. You can still add or remove corners afterwards.
             </Text>
             <ScrollView style={{ flexGrow: 0 }}>
               {previousAreas.map((prev) => {
-                const st = STATUS_COLOR[prev.status] ?? { fg: MUTED, bg: "#F3F4F6", label: prev.status };
+                const isSite = prev.source === "site";
+                const st = isSite
+                  ? { fg: "#1D4ED8", bg: "#DBEAFE", label: "Site boundary" }
+                  : STATUS_COLOR[prev.status] ?? { fg: MUTED, bg: "#F3F4F6", label: prev.status };
                 const ha = prev.hectares ?? polygonAreaHectares(prev.points.map(([latitude, longitude]) => ({ latitude, longitude })));
                 return (
-                  <TouchableOpacity key={prev.id} style={s.reuseRow} onPress={() => applyPrevious(prev)} activeOpacity={0.75}>
-                    <MaterialCommunityIcons name="vector-polygon" size={20} color={PRIMARY} />
+                  <TouchableOpacity
+                    key={`${prev.source ?? "report"}-${prev.id}`}
+                    style={[s.reuseRow, isSite && s.reuseRowSite]}
+                    onPress={() => applyPrevious(prev)}
+                    activeOpacity={0.75}
+                  >
+                    <MaterialCommunityIcons name={isSite ? "map-outline" : "vector-polygon"} size={20} color={isSite ? "#1D4ED8" : PRIMARY} />
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                        <Text style={s.reuseTitle}>Report #{prev.id}</Text>
+                        <Text style={s.reuseTitle}>{isSite ? prev.siteName || "Site" : `Report #${prev.id}`}</Text>
                         <View style={[s.badge, { backgroundColor: st.bg }]}>
                           <Text style={[s.badgeText, { color: st.fg }]}>{st.label}</Text>
                         </View>
                       </View>
                       <Text style={s.reuseSub}>
-                        {fmtDate(prev.date)} · {VISIT_LABEL[prev.visitType] ?? prev.visitType} · {prev.inspector}
+                        {isSite
+                          ? "Official boundary of the whole site"
+                          : `${fmtDate(prev.date)} · ${VISIT_LABEL[prev.visitType] ?? prev.visitType} · ${prev.inspector}`}
                       </Text>
                       <Text style={s.reuseArea}>
                         {ha.toFixed(4)} ha · {prev.points.length} corners
@@ -344,6 +367,7 @@ const s = StyleSheet.create({
   mapHint: { fontSize: 11, color: FAINT, marginTop: 8 },
   reuseBtn: { flex: 0, marginTop: 10, borderStyle: "dashed", borderColor: "#A7F3D0", backgroundColor: "#F0FDF4" },
   reuseRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
+  reuseRowSite: { backgroundColor: "#EFF6FF", borderRadius: 12, paddingHorizontal: 10, borderBottomWidth: 0, marginBottom: 6 },
   reuseTitle: { fontSize: 14, fontWeight: "800", color: INK },
   reuseSub: { fontSize: 11.5, color: MUTED, marginTop: 2 },
   reuseArea: { fontSize: 12, fontWeight: "700", color: PRIMARY, marginTop: 2 },
