@@ -23,7 +23,6 @@ type ReportSpecies = {
   species_id: number;
   species_name: string;
   no_planted: number;
-  no_added_by_grower: number;
   no_survived: number;
   no_dead: number;
   survival_rate: number;
@@ -35,7 +34,6 @@ type Report = {
   orientation_conducted: boolean;
   total_survived: number;
   total_dead: number;
-  total_added_by_grower: number;
   species: ReportSpecies[];
   description: string | null;
   status: "pending" | "accepted" | "rejected" | string;
@@ -142,24 +140,21 @@ const fmt = (iso: string | null | undefined) => {
 const reportTime = (r: Report) =>
   new Date(r.submitted_at || r.created_at || 0).getTime();
 
-// Planted = initial baseline + all additions by grower (accepted reports only).
-// Survived = (planted) - dead from the latest accepted report.
+// Planted = sum of no_planted from all accepted reports.
+// Survived = sum of no_survived from all accepted reports.
 const getApplicationMetrics = (app: ApplicationSummary) => {
   const accepted = app.reports.filter((r) => r.status === "accepted");
-  const initial = [...accepted]
-    .filter((r) => r.visit_type === "initial")
-    .sort((a, b) => reportTime(a) - reportTime(b))[0];
-  const latest = [...accepted].sort((a, b) => reportTime(b) - reportTime(a))[0];
-
-  const initialPlanted =
-    initial?.species.reduce((sum, sp) => sum + (sp.no_planted || 0), 0) || 0;
-  const totalAdded = accepted.reduce(
-    (sum, r) => sum + (r.total_added_by_grower || 0),
+  
+  const totalPlanted = accepted.reduce(
+    (sum, r) => sum + r.species.reduce((s, sp) => s + (sp.no_planted || 0), 0),
     0,
   );
-  const totalPlanted = initialPlanted + totalAdded;
-  const latestDead = latest?.total_dead || 0;
-  const totalSurvived = latest ? Math.max(0, totalPlanted - latestDead) : 0;
+  
+  const totalSurvived = accepted.reduce(
+    (sum, r) => sum + r.species.reduce((s, sp) => s + (sp.no_survived || 0), 0),
+    0,
+  );
+  
   const survivalRate = totalPlanted > 0 ? (totalSurvived / totalPlanted) * 100 : 0;
 
   return { totalPlanted, totalSurvived, survivalRate };
@@ -191,21 +186,12 @@ const ReportRow = ({ report, onViewMap }: { report: Report; onViewMap: (r: Repor
       <StatusBadge status={reportStatusKey(report)} small />
     </View>
     <View style={s.reportStats}>
-      {report.visit_type === "initial" ? (
-        <Text style={s.reportStat}>
-          Planted{" "}
-          <Text style={[s.reportStatVal, { color: "#1D4ED8" }]}>
-            {report.species.reduce((sum, sp) => sum + (sp.no_planted || 0), 0)}
-          </Text>
+      <Text style={s.reportStat}>
+        Planted{" "}
+        <Text style={[s.reportStatVal, { color: "#1D4ED8" }]}>
+          {report.species.reduce((sum, sp) => sum + (sp.no_planted || 0), 0)}
         </Text>
-      ) : (
-        <Text style={s.reportStat}>
-          Added{" "}
-          <Text style={[s.reportStatVal, { color: "#047857" }]}>
-            {report.total_added_by_grower}
-          </Text>
-        </Text>
-      )}
+      </Text>
       <Text style={s.reportStat}>
         Dead{" "}
         <Text style={[s.reportStatVal, { color: "#DC2626" }]}>{report.total_dead}</Text>

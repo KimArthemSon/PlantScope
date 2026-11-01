@@ -92,7 +92,6 @@ interface Visit {
   linked: boolean;
   inspector: string;
   planted: number;
-  added: number;
   dead: number;
   planted_hectares: number | null;
   dm_review: string;
@@ -126,7 +125,6 @@ interface SiteHistory {
     plants_planted: number;
     plants_alive: number;
     plants_dead: number;
-    added_by_growers: number;
     survival_rate: number | null;
     programs: number;
     programs_completed: number;
@@ -336,10 +334,10 @@ export default function SiteHistoryModal({ siteId, onClose }: { siteId: number; 
         },
         {
           title: "Monitoring visits",
-          columns: ["Date", "Type", "Status", "Program", "Group", "Inspector", "Planted", "Added", "Dead", "Planted area"],
+          columns: ["Date", "Type", "Status", "Program", "Group", "Inspector", "Planted", "Dead", "Planted area"],
           rows: data.visits.map((v) => [
             fmtDate(v.date), v.visit_type, v.status, v.program ?? "Not linked", v.group_name ?? "—", v.inspector,
-            v.planted, v.added, v.dead, v.planted_hectares !== null ? `${v.planted_hectares} ha` : "—",
+            v.planted, v.dead, v.planted_hectares !== null ? `${v.planted_hectares} ha` : "—",
           ]),
         },
         {
@@ -775,7 +773,6 @@ export default function SiteHistoryModal({ siteId, onClose }: { siteId: number; 
                           <th className="text-left px-3 py-2">Status</th>
                           <th className="text-left px-3 py-2">Inspector</th>
                           <th className="text-right px-3 py-2">Planted</th>
-                          <th className="text-right px-3 py-2">Added</th>
                           <th className="text-right px-3 py-2">Dead</th>
                           <th className="text-right px-3 py-2">Polygon</th>
                         </tr>
@@ -810,7 +807,6 @@ export default function SiteHistoryModal({ siteId, onClose }: { siteId: number; 
                             </td>
                             <td className="px-3 py-2">{v.inspector}</td>
                             <td className="px-3 py-2 text-right">{fmt(v.planted)}</td>
-                            <td className="px-3 py-2 text-right">{fmt(v.added)}</td>
                             <td className="px-3 py-2 text-right text-red-500">{fmt(v.dead)}</td>
                             <td className="px-3 py-2 text-right whitespace-nowrap">
                               {v.planted_hectares !== null ? (

@@ -645,9 +645,21 @@ export default function ApplicationPage() {
       detail.application.status,
     );
 
+  // ✅ FIX: Wrapped terminal state in ScrollView with RefreshControl so users can pull-to-refresh 
+  // or tap the manual refresh button to check for new application status without logging out.
   if (isTerminalState) {
     return (
-      <View style={styles.container}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ flexGrow: 1 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={PRIMARY}
+          />
+        }
+      >
         <View style={[styles.terminalBanner, { paddingTop: insets.top + 20 }]}>
           <Text style={styles.terminalTitle}>Tree Planting Program</Text>
           <Text style={styles.terminalSub}>Ready for a new project?</Text>
@@ -672,6 +684,23 @@ export default function ApplicationPage() {
                   ? "After final review, the City ENRO Head marked your program as not completed. Please coordinate with the ENRO office about next steps. You can apply for a new program."
                   : "Your last application was closed. You can apply for a new tree planting program."}
           </Text>
+
+          <TouchableOpacity 
+            style={styles.refreshStatusBtn} 
+            onPress={onRefresh} 
+            disabled={refreshing}
+            activeOpacity={0.7}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={PRIMARY} />
+            ) : (
+              <Ionicons name="refresh" size={18} color={PRIMARY} />
+            )}
+            <Text style={styles.refreshStatusText}>
+              {refreshing ? "Checking for updates..." : "Refresh Status"}
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.terminalBtn}
             onPress={() => router.push("/tree_growers/sites")}
@@ -681,7 +710,7 @@ export default function ApplicationPage() {
             <Text style={styles.terminalBtnText}>Apply for New Program</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     );
   }
 
@@ -1220,6 +1249,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 32,
+    paddingTop: 40,
+    paddingBottom: 40,
   },
   terminalH1: {
     fontSize: 24,
@@ -1236,6 +1267,26 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 32,
     maxWidth: 300,
+  },
+  refreshStatusBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginBottom: 16,
+    width: "100%",
+    maxWidth: 320,
+  },
+  refreshStatusText: {
+    color: PRIMARY,
+    fontSize: 14,
+    fontWeight: "700",
   },
   terminalBtn: {
     flexDirection: "row",

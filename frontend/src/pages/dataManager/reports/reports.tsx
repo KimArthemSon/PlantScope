@@ -211,7 +211,6 @@ interface VisitRow {
   gis_review: string;
   inspector: string;
   planted: number;
-  added: number;
   dead: number;
   planted_hectares: number | null;
 }
@@ -239,7 +238,6 @@ interface SpeciesRow {
   name: string;
   endorsed: number;
   planted: number;
-  added_by_grower: number;
   survived: number;
   dead: number;
   survival_rate: number | null;
@@ -260,7 +258,7 @@ interface SpeciesReport {
   rows: SpeciesRow[];
 }
 
-// ─── Shared helpers ─────────────────────────────────────────────────────────
+// ─── Shared helpers ────────────────────────────────────────────────────────
 
 
 function barangayOptions(options: FilterOptions | null) {
@@ -696,14 +694,7 @@ export function ProgramsTab({
                         <Td right>{r.visits}</Td>
                         <Td>
                           <div className="flex items-center gap-1.5">
-                            {programLinkBase && (
-                              <button
-                                onClick={() => navigate(`${programLinkBase}/${r.application_id}`)}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-[11px] font-medium hover:bg-gray-100"
-                              >
-                                <ExternalLink size={12} /> View
-                              </button>
-                            )}
+                            
                             {r.site_id && (
                               <button
                                 onClick={() => onSiteHistory(r.site_id!)}
@@ -1118,7 +1109,6 @@ export function VisitsTab({
         { header: "GIS review", value: (r) => r.gis_review },
         { header: "Inspector", value: (r) => r.inspector },
         { header: "Planted", value: (r) => r.planted },
-        { header: "Added", value: (r) => r.added },
         { header: "Dead", value: (r) => r.dead },
         { header: "Planted area", value: (r) => fmtHa(r.planted_hectares) },
       ],
@@ -1244,7 +1234,6 @@ export function VisitsTab({
                     <Th>Reviews (DM / GIS)</Th>
                     <Th>Inspector</Th>
                     <Th right>Planted</Th>
-                    <Th right>Added</Th>
                     <Th right>Dead</Th>
                   </tr>
                 </thead>
@@ -1279,7 +1268,6 @@ export function VisitsTab({
                         </Td>
                         <Td>{r.inspector}</Td>
                         <Td right>{fmt(r.planted)}</Td>
-                        <Td right>{fmt(r.added)}</Td>
                         <Td right className="text-red-500">
                           {fmt(r.dead)}
                         </Td>
@@ -1287,7 +1275,7 @@ export function VisitsTab({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={10}>
+                      <td colSpan={9}>
                         <EmptyState text="No visits match the filters" />
                       </td>
                     </tr>
@@ -1345,8 +1333,7 @@ export function SpeciesTab({ options, refreshKey }: { options: FilterOptions | n
       columns: [
         { header: "Species", value: (r) => r.name },
         { header: "Released", value: (r) => r.endorsed },
-        { header: "Planted (incl. added)", value: (r) => r.planted },
-        { header: "Added by growers", value: (r) => r.added_by_grower },
+        { header: "Planted", value: (r) => r.planted },
         { header: "Alive", value: (r) => r.survived },
         { header: "Dead", value: (r) => r.dead },
         { header: "Survival", value: (r) => fmtPct(r.survival_rate) },
@@ -1455,7 +1442,6 @@ export function SpeciesTab({ options, refreshKey }: { options: FilterOptions | n
                     <Th>Species</Th>
                     <Th right>Released</Th>
                     <Th right>Planted</Th>
-                    <Th right>Added by Growers</Th>
                     <Th right>Alive</Th>
                     <Th right>Dead</Th>
                     <Th>Survival</Th>
@@ -1469,7 +1455,6 @@ export function SpeciesTab({ options, refreshKey }: { options: FilterOptions | n
                         <Td className="font-semibold text-gray-800">{r.name}</Td>
                         <Td right>{fmt(r.endorsed)}</Td>
                         <Td right>{fmt(r.planted)}</Td>
-                        <Td right>{fmt(r.added_by_grower)}</Td>
                         <Td right className="text-emerald-600 font-semibold">
                           {fmt(r.survived)}
                         </Td>
@@ -1484,7 +1469,7 @@ export function SpeciesTab({ options, refreshKey }: { options: FilterOptions | n
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={7}>
                         <EmptyState text="No species data for these filters" />
                       </td>
                     </tr>

@@ -33,7 +33,6 @@ interface ProgressReportSpeciesItem {
   species_id: number;
   species_name: string;
   no_planted: number;
-  no_added_by_grower: number;
   no_survived: number;
   no_dead: number;
   total: number;
@@ -43,7 +42,6 @@ interface ProgressReportSpeciesItem {
 interface ProgressReport {
   report_id: number;
   visit_type: "initial" | "ongoing" | "inactive_check";
-  total_added_by_grower: number;
   total_survived: number;
   total_dead: number;
   species: ProgressReportSpeciesItem[];
@@ -77,8 +75,7 @@ interface ProgressReportsData {
 interface SpeciesBreakdownItem {
   species_id: number;
   species_name: string;
-  officially_planted: number;
-  total_added: number;
+  total_planted: number;
   total_dead: number;
   calculated_survived: number;
   survival_rate: number;
@@ -168,22 +165,9 @@ export default function ProgressReportsPage() {
     [activeTab, allReports, reportsData]
   );
 
-  // ✅ NEW: Find the true baseline report ID (oldest accepted initial report)
-  const baselineReportId = useMemo(() => {
-    const initialReports = allReports
-      .filter((r) => r.visit_type === "initial" && r.status === "accepted")
-      .sort((a, b) => new Date(a.submitted_at || a.created_at || 0).getTime() - new Date(b.submitted_at || b.created_at || 0).getTime());
-    return initialReports.length > 0 ? initialReports[0].report_id : null;
-  }, [allReports]);
-
-  // ✅ FIXED: Calculate species breakdown using useMemo
+  // ✅ SIMPLIFIED: Calculate species breakdown using only no_planted and no_dead
   const speciesBreakdown = useMemo(() => {
     const acceptedReports = displayedReports.filter(r => r.status === "accepted");
-    const initialReports = acceptedReports.filter(r => r.visit_type === "initial");
-    const oldestInitialReport = initialReports.length > 0 
-      ? initialReports.sort((a, b) => new Date(a.submitted_at || a.created_at || 0).getTime() - new Date(b.submitted_at || b.created_at || 0).getTime())[0] 
-      : null;
-    const ongoingReports = acceptedReports.filter(r => r.visit_type !== "initial");
 
     const allSpeciesIds = new Set<number>();
     const speciesNameMap = new Map<number, string>();
@@ -197,63 +181,49 @@ export default function ProgressReportsPage() {
     const breakdown: SpeciesBreakdownItem[] = [];
     for (const speciesId of allSpeciesIds) {
       const speciesName = speciesNameMap.get(speciesId) || "Unknown";
-      const initialSpecies = oldestInitialReport?.species.find(sp => sp.species_id === speciesId);
-      const officially_planted = initialSpecies?.no_planted || 0;
-
-      let total_added = 0;
+      
+      let total_planted = 0;
+      let total_dead = 0;
+      
       acceptedReports.forEach(report => {
         const sp = report.species.find(s => s.species_id === speciesId);
-        total_added += sp?.no_added_by_grower || 0;
+        if (sp) {
+          total_planted += sp.no_planted || 0;
+          total_dead += sp.no_dead || 0;
+        }
       });
 
-      const sortedOngoing = [...ongoingReports].sort((a, b) => new Date(b.submitted_at || b.created_at || 0).getTime() - new Date(a.submitted_at || a.created_at || 0).getTime());
-      let total_dead = 0;
-      for (let i = 0; i < sortedOngoing.length; i++) {
-        const sp = sortedOngoing[i].species.find(s => s.species_id === speciesId);
-        if (sp) { total_dead = sp.no_dead; break; }
-      }
-      if (total_dead === 0 && initialSpecies) total_dead = initialSpecies.no_dead || 0;
+      const calculated_survived = Math.max(0, total_planted - total_dead);
+      const survival_rate = total_planted > 0 ? (calculated_survived / total_planted) * 100 : 0;
 
-      const total_accounted = officially_planted + total_added;
-      const calculated_survived = Math.max(0, total_accounted - total_dead);
-      const survival_rate = total_accounted > 0 ? (calculated_survived / total_accounted) * 100 : 0;
-
-      breakdown.push({ species_id: speciesId, species_name: speciesName, officially_planted, total_added, total_dead, calculated_survived, survival_rate });
+      breakdown.push({ species_id: speciesId, species_name: speciesName, total_planted, total_dead, calculated_survived, survival_rate });
     }
     return breakdown;
   }, [displayedReports]);
 
-  // ── Lifetime Metrics Calculation ─
+  // ── Lifetime Metrics Calculation (Simplified) ─
   const acceptedReports = displayedReports.filter((r) => r.status === "accepted");
-  let totalPlanted = 0, totalAdded = 0, totalDead = 0;
+  let totalPlanted = 0, totalDead = 0;
   acceptedReports.forEach(report => {
     report.species.forEach(sp => {
       totalPlanted += sp.no_planted || 0;
-      totalAdded += sp.no_added_by_grower || 0;
       totalDead += sp.no_dead || 0;
     });
   });
-  const totalAccounted = totalPlanted + totalAdded;
+  const totalAccounted = totalPlanted;
   const totalSurvived = Math.max(0, totalAccounted - totalDead);
   const overallSurvivalRate = totalAccounted > 0 ? (totalSurvived / totalAccounted) * 100 : 0;
 
-  // ─ ✅ UPDATED Helper: Calculate per-report metrics ──
+  // ── Helper: Calculate per-report metrics (Simplified) ──
   const getReportMetrics = (report: ProgressReport) => {
-    let rPlanted = 0, rAdded = 0, rDead = 0, rSurvived = 0;
+    let rPlanted = 0, rDead = 0, rSurvived = 0;
     report.species.forEach(sp => {
       rPlanted += sp.no_planted || 0;
-      rAdded += sp.no_added_by_grower || 0;
       rDead += sp.no_dead || 0;
       rSurvived += sp.no_survived || 0;
     });
     
-    // Strictly check if this is the true baseline report
-    const isBaseline = report.report_id === baselineReportId;
-    const primaryCount = isBaseline ? rPlanted : rAdded;
-    const primaryLabel = isBaseline ? "Officially Planted" : "Added";
-    const rTotal = rPlanted + rAdded;
-    
-    return { primaryCount, primaryLabel, rSurvived, rDead, isBaseline, rTotal };
+    return { primaryCount: rPlanted, primaryLabel: "Planted", rSurvived, rDead, rTotal: rPlanted };
   };
 
   if (loading) {
@@ -402,13 +372,13 @@ export default function ProgressReportsPage() {
                     <ProgressBar value={metrics.rSurvived} max={metrics.rTotal} color={conf.accent} height={6} />
                   </View>
 
-                  {/* ✅ UPDATED: 2-Column Grid (Primary, Dead) - Removed Rate */}
+                  {/* ✅ SIMPLIFIED: 2-Column Grid (Planted, Dead) */}
                   <View style={styles.miniMetrics}>
                     <View style={styles.miniMetric}>
-                      <View style={[styles.miniMetricIconWrap, { backgroundColor: metrics.isBaseline ? "#EEF2FF" : "#ECFDF5" }]}>
-                        <Ionicons name={metrics.isBaseline ? "layers" : "trending-up"} size={14} color={metrics.isBaseline ? "#4F46E5" : "#10B981"} />
+                      <View style={[styles.miniMetricIconWrap, { backgroundColor: "#ECFDF5" }]}>
+                        <Ionicons name="layers" size={14} color="#10B981" />
                       </View>
-                      <Text style={[styles.miniMetricVal, { color: metrics.isBaseline ? "#4F46E5" : "#10B981" }]}>{metrics.primaryCount.toLocaleString()}</Text>
+                      <Text style={[styles.miniMetricVal, { color: "#10B981" }]}>{metrics.primaryCount.toLocaleString()}</Text>
                       <Text style={styles.miniMetricLabel}>{metrics.primaryLabel}</Text>
                     </View>
                     <View style={styles.miniMetricDivider} />
@@ -469,7 +439,7 @@ export default function ProgressReportsPage() {
                 <Ionicons name="close" size={22} color="#9CA3AF" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.speciesModalSubtitle}>Survived is auto-calculated: (Planted + Added) - Dead</Text>
+            <Text style={styles.speciesModalSubtitle}>Survived is auto-calculated: Total Planted - Total Dead</Text>
             
             <ScrollView showsVerticalScrollIndicator={false} style={{ marginTop: 16 }}>
               {speciesBreakdown.length > 0 ? (
@@ -487,18 +457,11 @@ export default function ProgressReportsPage() {
                       </View>
                     </View>
                     
+                    {/* ✅ SIMPLIFIED: 3-Column Grid (Total Planted, Total Dead, Calculated Survived) */}
                     <View style={styles.speciesMetricsGrid}>
                       <View style={styles.speciesMetricItem}>
-                        <Text style={styles.speciesMetricLabel}>Officially Planted</Text>
-                        <Text style={[styles.speciesMetricValue, { color: "#4F46E5" }]}>{sp.officially_planted}</Text>
-                      </View>
-                      <View style={styles.speciesMetricItem}>
-                        <Text style={styles.speciesMetricLabel}>Added by Grower</Text>
-                        <Text style={[styles.speciesMetricValue, { color: "#10B981" }]}>{sp.total_added}</Text>
-                      </View>
-                      <View style={styles.speciesMetricItem}>
                         <Text style={styles.speciesMetricLabel}>Total Planted</Text>
-                        <Text style={[styles.speciesMetricValue, { color: "#6366F1" }]}>{sp.officially_planted + sp.total_added}</Text>
+                        <Text style={[styles.speciesMetricValue, { color: "#4F46E5" }]}>{sp.total_planted}</Text>
                       </View>
                       <View style={styles.speciesMetricItem}>
                         <Text style={styles.speciesMetricLabel}>Total Dead</Text>
@@ -511,7 +474,7 @@ export default function ProgressReportsPage() {
                     </View>
                     
                     <View style={styles.speciesProgressBarWrap}>
-                      <ProgressBar value={sp.calculated_survived} max={sp.officially_planted + sp.total_added} color={sp.survival_rate >= 80 ? "#22C55E" : sp.survival_rate >= 50 ? "#F59E0B" : "#EF4444"} height={6} />
+                      <ProgressBar value={sp.calculated_survived} max={sp.total_planted} color={sp.survival_rate >= 80 ? "#22C55E" : sp.survival_rate >= 50 ? "#F59E0B" : "#EF4444"} height={6} />
                     </View>
                   </View>
                 ))
@@ -559,14 +522,14 @@ export default function ProgressReportsPage() {
                     <Text style={[styles.statusText, { color: getStatusConf(selectedReport).text }]}>{getStatusConf(selectedReport).label}</Text>
                   </View>
 
-                  {/* ✅ UPDATED: 2-Column Grid (Primary, Dead) - Removed Rate */}
+                  {/* ✅ SIMPLIFIED: 2-Column Grid (Planted, Dead) */}
                   <View style={styles.metricsGridModal}>
-                    <View style={[styles.metricBoxModal, { backgroundColor: m.isBaseline ? "#EEF2FF" : "#ECFDF5" }]}>
-                      <View style={[styles.metricBoxIconWrap, { backgroundColor: m.isBaseline ? "rgba(79,70,229,0.1)" : "rgba(16,185,129,0.1)" }]}>
-                        <Ionicons name={m.isBaseline ? "layers" : "trending-up"} size={20} color={m.isBaseline ? "#4F46E5" : "#10B981"} />
+                    <View style={[styles.metricBoxModal, { backgroundColor: "#ECFDF5" }]}>
+                      <View style={[styles.metricBoxIconWrap, { backgroundColor: "rgba(16,185,129,0.1)" }]}>
+                        <Ionicons name="layers" size={20} color="#10B981" />
                       </View>
-                      <Text style={[styles.metricBoxValue, { color: m.isBaseline ? "#4F46E5" : "#10B981" }]}>{m.primaryCount.toLocaleString()}</Text>
-                      <Text style={styles.metricBoxLabel}>{m.primaryLabel}</Text>
+                      <Text style={[styles.metricBoxValue, { color: "#10B981" }]}>{m.primaryCount.toLocaleString()}</Text>
+                      <Text style={styles.metricBoxLabel}>Planted</Text>
                     </View>
                     <View style={[styles.metricBoxModal, { backgroundColor: "#FFEBEE" }]}>
                       <View style={[styles.metricBoxIconWrap, { backgroundColor: "rgba(198,40,40,0.1)" }]}><Ionicons name="close-circle" size={20} color="#C62828" /></View>
@@ -582,7 +545,7 @@ export default function ProgressReportsPage() {
                     <ProgressBar value={m.rSurvived} max={m.rTotal} color={PRIMARY} height={8} />
                   </View>
 
-                  {/* ✅ UPDATED: Per-Species Breakdown (No Survived text, conditional Planted/Added) */}
+                  {/* ✅ SIMPLIFIED: Per-Species Breakdown (No conditional Added/Planted logic) */}
                   {selectedReport.species && selectedReport.species.length > 0 && (
                     <View style={{ marginTop: 24 }}>
                       <Text style={styles.sectionTitle}>Per-Species Breakdown</Text>
@@ -594,18 +557,8 @@ export default function ProgressReportsPage() {
                               <View style={{ flex: 1 }}>
                                 <Text style={styles.speciesDetailName}>{sp.species_name}</Text>
                                 <View style={styles.speciesDetailMetaRow}>
-                                  {m.isBaseline && sp.no_planted > 0 && (
-                                    <>
-                                      <Text style={styles.speciesDetailMeta}>Planted: {sp.no_planted}</Text>
-                                      <Text style={styles.speciesDetailMetaDivider}>·</Text>
-                                    </>
-                                  )}
-                                  {!m.isBaseline && sp.no_added_by_grower > 0 && (
-                                    <>
-                                      <Text style={styles.speciesDetailMeta}>Added: {sp.no_added_by_grower}</Text>
-                                      <Text style={styles.speciesDetailMetaDivider}>·</Text>
-                                    </>
-                                  )}
+                                  <Text style={styles.speciesDetailMeta}>Planted: {sp.no_planted}</Text>
+                                  <Text style={styles.speciesDetailMetaDivider}>·</Text>
                                   <Text style={styles.speciesDetailMeta}>Dead: {sp.no_dead}</Text>
                                 </View>
                               </View>
@@ -790,7 +743,7 @@ const styles = StyleSheet.create({
   survivalBadgeTextWarn: { color: "#B45309" },
   survivalBadgeTextBad: { color: "#991B1B" },
   speciesMetricsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  speciesMetricItem: { width: "48%", backgroundColor: WHITE, borderRadius: 10, padding: 10, alignItems: "center" },
+  speciesMetricItem: { width: "31%", backgroundColor: WHITE, borderRadius: 10, padding: 10, alignItems: "center" },
   speciesMetricLabel: { fontSize: 10, color: MUTED, fontWeight: "600", textAlign: "center", marginBottom: 4 },
   speciesMetricValue: { fontSize: 16, fontWeight: "800" },
   speciesProgressBarWrap: { marginTop: 12 },

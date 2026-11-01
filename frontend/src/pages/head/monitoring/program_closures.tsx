@@ -13,7 +13,6 @@ interface SiteDetail {
   site: { site_id: number; name: string; total_area_hectares: number; polygon_coordinates: [number, number][] | null };
   metrics: {
     total_planted: number;
-    total_added: number;
     total_dead: number;
     total_survived: number;
     survival_rate: number;
@@ -190,7 +189,7 @@ export default function ProgramClosures() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       <Stat icon={<Package size={15} />} label="Seedlings provided" value={detail.total_seedlings_provided.toLocaleString()} />
                       <Stat icon={<Ruler size={15} />} label="Area planted" value={detail.metrics.planted_area_hectares != null ? `${detail.metrics.planted_area_hectares.toFixed(2)} ha` : "—"} sub={detail.metrics.planted_area_percent != null ? `${detail.metrics.planted_area_percent}% of site` : undefined} />
-                      <Stat icon={<Trees size={15} />} label="Trees planted" value={(detail.metrics.total_planted + detail.metrics.total_added).toLocaleString()} sub={`${detail.metrics.total_dead.toLocaleString()} dead`} />
+                      <Stat icon={<Trees size={15} />} label="Trees planted" value={detail.metrics.total_planted.toLocaleString()} sub={`${detail.metrics.total_dead.toLocaleString()} dead`} />
                       <Stat
                         icon={<TrendingUp size={15} />}
                         label="Survival rate"
