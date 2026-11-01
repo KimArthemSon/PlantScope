@@ -84,7 +84,6 @@ interface SummaryReport {
     active_programs_now: number;
     seedlings_released: number;
     plants_planted: number;
-    plants_added_by_growers: number;
     plants_dead: number;
     sites_planted: number;
     visits: number;
@@ -387,7 +386,7 @@ function SummaryTab({ options, refreshKey }: { options: FilterOptions | null; re
                 <Sprout size={15} className="text-[#0F4A2F]" /> Planting & Survival
               </p>
               <div className="grid grid-cols-2 gap-x-4 divide-y divide-gray-50">
-                <Stat label="Plants planted" value={fmt(s.plants_planted)} sub={`${fmt(s.plants_added_by_growers)} added by growers`} />
+                <Stat label="Plants planted" value={fmt(s.plants_planted)} />
                 <Stat label="Deaths recorded" value={fmt(s.plants_dead)} />
                 <Stat label="Planted area added" value={fmtHa(s.planted_hectares_added)} sub={`Total ${fmtHa(s.planted_hectares_end)}`} />
                 <Stat label="Survival at period end" value={fmtPct(s.survival_rate_end)} sub={`${fmt(s.plants_alive_end)} of ${fmt(s.plants_total_end)} alive`} />

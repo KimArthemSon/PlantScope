@@ -73,10 +73,9 @@ def _build_site_history(site):
     for app in applications_qs.filter(status__in=['completed', 'failed']).order_by('-updated_at'):
         agg = app.progress_reports.filter(status='accepted').aggregate(
             planted=Sum('report_species__no_planted'),
-            added=Sum('report_species__no_added_by_grower'),
         )
         latest = app.progress_reports.filter(status='accepted').order_by('-submitted_at', '-created_at').first()
-        planted = (agg.get('planted') or 0) + (agg.get('added') or 0)
+        planted = agg.get('planted') or 0
         dead = latest.total_dead if latest else 0
         survived = max(0, planted - dead)
         past_programs.append({
@@ -113,7 +112,6 @@ def _build_site_history(site):
         progress_qs
         .annotate(
             planted_sum=Sum('report_species__no_planted'),
-            added_sum=Sum('report_species__no_added_by_grower'),
             total_dead_sum=Sum('report_species__no_dead'),
         )
         .order_by('-submitted_at', '-created_at')[:5]
@@ -122,8 +120,7 @@ def _build_site_history(site):
     recent_monitoring_visits = []
 
     for report in recent_progress_reports:
-        # Same rule as the rest of the app: survived = (planted + added) - dead
-        total_planted = (report.planted_sum or 0) + (report.added_sum or 0)
+        total_planted = report.planted_sum or 0
         total_dead = report.total_dead_sum or 0
         total_survived = max(0, total_planted - total_dead)
         total_plants = total_planted
@@ -140,8 +137,7 @@ def _build_site_history(site):
             'status_label': report.get_status_display(),
             'orientation_conducted': report.orientation_conducted,
             'submitted_at': _format_date(report.submitted_at or report.created_at),
-            'total_planted': report.planted_sum or 0,
-            'total_added': report.added_sum or 0,
+            'total_planted': total_planted,
             'total_survived': total_survived,
             'total_dead': total_dead,
             'total_plants': total_plants,
@@ -244,7 +240,6 @@ def _build_site_history(site):
         'recent_monitoring_visits': recent_monitoring_visits,
         'seedling_summary': seedling_summary,
     }
-
 
 # ─────────────────────────────────────────────
 # SITE DETAILS FOR TREE GROWER

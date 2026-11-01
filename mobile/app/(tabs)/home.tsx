@@ -191,8 +191,6 @@ const QuickAction: React.FC<{ icon: string; label: string; color: string; badge?
   onPress,
 }) => (
   <TouchableOpacity style={styles.quick} activeOpacity={0.75} onPress={onPress}>
-    {/* Opaque white tile carries the shadow; the tint sits inside it so Android
-        doesn't draw its shadow through a see-through background. */}
     <View style={styles.quickIcon}>
       <View style={[styles.quickInner, { backgroundColor: color + "1A" }]}>
         <MaterialCommunityIcons name={icon as any} size={24} color={color} />
@@ -250,7 +248,6 @@ const Home: React.FC = () => {
       return;
     }
     if (!isOnline) {
-      // Logged in but offline → inspector offline mode (saved areas)
       router.replace("/Area");
       return;
     }
@@ -307,7 +304,6 @@ const Home: React.FC = () => {
   const d = data!;
   const openSite = (id: number) => router.push(`/(tabs)/monitoring/${id}` as any);
 
-  // One simple to-do list, most urgent first
   const tasks: Task[] = [
     ...d.returned_reports.map((r) => ({
       key: `ret-${r.id}`,
@@ -361,6 +357,7 @@ const Home: React.FC = () => {
         onPress: () => openSite(s.site_id),
       })),
   ];
+  
   const visibleTasks = showAllTasks ? tasks : tasks.slice(0, TASK_PREVIEW);
   const dueCount = d.sites_due.filter((s) => s.urgency !== "ok").length;
   const m = d.this_month;
@@ -376,7 +373,6 @@ const Home: React.FC = () => {
       >
         <Header inspector={d.inspector} taskCount={tasks.length} isRefreshing={refreshing} />
 
-        {/* Quick actions */}
         <View style={styles.quickRow}>
           <QuickAction icon="clipboard-plus-outline" label="Assess" color={PRIMARY} badge={d.drafts} onPress={() => router.push("/Area")} />
           <QuickAction icon="sprout-outline" label="Monitor" color="#059669" badge={dueCount} onPress={() => router.push("/monitoring")} />
@@ -384,7 +380,6 @@ const Home: React.FC = () => {
           <QuickAction icon="map-search-outline" label="Map" color="#2563EB" onPress={() => router.push("/(tabs)/map")} />
         </View>
 
-        {/* To do */}
         <Text style={styles.section}>To do</Text>
         <View style={styles.card}>
           {tasks.length === 0 ? (
@@ -408,7 +403,6 @@ const Home: React.FC = () => {
           )}
         </View>
 
-        {/* This month */}
         <Text style={styles.section}>This month</Text>
         <View style={[styles.card, styles.monthRow]}>
           <View style={styles.monthItem}>
@@ -427,7 +421,6 @@ const Home: React.FC = () => {
           </View>
         </View>
 
-        {/* Recent assessments */}
         {d.recent_assessments.length > 0 && (
           <>
             <Text style={styles.section}>Recent assessments</Text>

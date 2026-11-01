@@ -587,10 +587,6 @@ class ProgressReportSpecies(models.Model):
         default=0,
         help_text="Number of official seedlings planted (baseline, set in initial visit)"
     )
-    no_added_by_grower = models.IntegerField(
-        default=0,
-        help_text="Extra seedlings added by tree grower from their own source during THIS visit"
-    )
 
     # Monitoring Data per Species
     no_survived = models.IntegerField(

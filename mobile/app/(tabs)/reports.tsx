@@ -41,6 +41,7 @@ interface VisitRow {
   stage: string;
   notes: string | null;
   planted: number;
+  added: number; // Added to support "Added by grower" count
   dead: number;
   species: string[];
   planted_hectares: number | null;
@@ -111,7 +112,6 @@ const Stat: React.FC<{ value: string; label: string; color?: string }> = ({ valu
   </View>
 );
 
-/** Simple 6-month bars: accepted (green) stacked under returned (red), or submitted assessments. */
 const MiniBars: React.FC<{ data: any[]; kind: Kind }> = ({ data, kind }) => {
   const totals = data.map((m) => (kind === "visits" ? m.accepted + m.returned : m.submitted));
   const max = Math.max(1, ...totals);
@@ -134,6 +134,13 @@ const MiniBars: React.FC<{ data: any[]; kind: Kind }> = ({ data, kind }) => {
   );
 };
 
+const Legend: React.FC<{ color: string; label: string }> = ({ color, label }) => (
+  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+    <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: color }} />
+    <Text style={{ fontSize: 10.5, color: MUTED }}>{label}</Text>
+  </View>
+);
+
 /* ──────────────────────────────────────────────────────────────────
    SCREEN
    ──────────────────────────────────────────────────────────────── */
@@ -153,7 +160,6 @@ export default function ReportsScreen() {
   const [error, setError] = useState<string | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Wait until the inspector stops typing before searching
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => setQuery(search.trim()), 400);
@@ -242,7 +248,6 @@ export default function ReportsScreen() {
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={BG} translucent={false} />
 
-      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => (router.canGoBack() ? router.back() : router.replace("/(tabs)/profile" as any))}>
           <Ionicons name="chevron-back" size={22} color={INK} />
@@ -253,7 +258,6 @@ export default function ReportsScreen() {
         </View>
       </View>
 
-      {/* Visits / Assessments */}
       <View style={styles.segment}>
         {(["visits", "assessments"] as Kind[]).map((k) => (
           <TouchableOpacity key={k} style={[styles.segBtn, kind === k && styles.segBtnActive]} onPress={() => switchKind(k)} activeOpacity={0.8}>
@@ -283,7 +287,6 @@ export default function ReportsScreen() {
           />
         }
       >
-        {/* Period */}
         <View style={styles.chipRow}>
           {PERIODS.map((p) => (
             <Chip key={p.key} label={p.label} active={period === p.key} onPress={() => setPeriod(p.key)} />
@@ -304,7 +307,6 @@ export default function ReportsScreen() {
           </View>
         ) : s && data?.type === kind ? (
           <>
-            {/* Summary */}
             <View style={styles.card}>
               {kind === "visits" ? (
                 <>
@@ -327,7 +329,6 @@ export default function ReportsScreen() {
               )}
             </View>
 
-            {/* Last 6 months */}
             <View style={[styles.card, { marginTop: 12 }]}>
               <View style={styles.rowBetween}>
                 <Text style={styles.cardTitle}>Last 6 months</Text>
@@ -341,7 +342,6 @@ export default function ReportsScreen() {
               <MiniBars data={data.monthly} kind={kind} />
             </View>
 
-            {/* Search + status */}
             <View style={styles.search}>
               <Ionicons name="search" size={17} color={FAINT} />
               <TextInput
@@ -370,7 +370,6 @@ export default function ReportsScreen() {
               ))}
             </ScrollView>
 
-            {/* List */}
             {rows.length === 0 ? (
               <View style={[styles.card, styles.empty]}>
                 <MaterialCommunityIcons name="file-search-outline" size={38} color="#D1D5DB" />
@@ -409,10 +408,16 @@ export default function ReportsScreen() {
                           <Text style={styles.noteAction}>Tap to fix and resubmit</Text>
                         </View>
                       ) : (
-                        <Text style={styles.itemMeta}>
-                          {r.status === "pending" ? r.stage : `${fmt(r.planted)} planted · ${fmt(r.dead)} dead`}
-                          {r.planted_hectares ? ` · ${r.planted_hectares} ha` : ""}
-                        </Text>
+                        <View style={styles.rowBetween}>
+                          <Text style={styles.itemMeta}>
+                            {r.status === "pending"
+                              ? r.stage
+                              : r.visit_type === "initial"
+                              ? `${fmt(r.planted)} officially planted`
+                              : `${fmt(r.added)} added`}
+                          </Text>
+                          <Text style={styles.itemMeta}>{fmt(r.dead)} dead</Text>
+                        </View>
                       )}
                     </View>
                   </TouchableOpacity>
@@ -457,13 +462,6 @@ export default function ReportsScreen() {
     </View>
   );
 }
-
-const Legend: React.FC<{ color: string; label: string }> = ({ color, label }) => (
-  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-    <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: color }} />
-    <Text style={{ fontSize: 10.5, color: MUTED }}>{label}</Text>
-  </View>
-);
 
 /* ──────────────────────────────────────────────────────────────────
    STYLES

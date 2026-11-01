@@ -22,7 +22,6 @@ interface GisReviewReport {
   submitted_at: string | null;
   proof_image: string | null;
   group_name: string;
-  total_added_by_grower: number;
   total_dead: number;
   total_planted: number;
   polygon_coordinates: [number, number][];
@@ -259,9 +258,9 @@ export default function PlantingAreaReviews() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5"><FileText size={13} /> Report summary</p>
-                  <div className="grid grid-cols-3 gap-2 text-center">
+                  {/* ✅ SIMPLIFIED: 2-column grid (Planted, Dead) */}
+                  <div className="grid grid-cols-2 gap-2 text-center">
                     <div><p className="text-lg font-bold text-blue-600">{selected.total_planted}</p><p className="text-[10px] text-gray-500 uppercase">Planted</p></div>
-                    <div><p className="text-lg font-bold text-emerald-600">{selected.total_added_by_grower}</p><p className="text-[10px] text-gray-500 uppercase">Added</p></div>
                     <div><p className="text-lg font-bold text-red-600">{selected.total_dead}</p><p className="text-[10px] text-gray-500 uppercase">Dead</p></div>
                   </div>
                   {selected.description && <p className="text-sm text-gray-700 mt-3"><span className="font-semibold">Inspector notes:</span> {selected.description}</p>}

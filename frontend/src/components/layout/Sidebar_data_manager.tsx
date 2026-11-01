@@ -616,12 +616,7 @@ export default function Sidebar_data_manager() {
                 City Environment &amp; Natural Resources Office
               </p>
             </div>
-            <div className="hidden sm:flex items-center gap-1.5 glass-btn rounded-full px-3 py-1.5 ml-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-400/80 text-[11px] font-semibold tracking-wide">
-                LIVE
-              </span>
-            </div>
+            
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
