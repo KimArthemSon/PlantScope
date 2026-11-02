@@ -347,11 +347,9 @@ export default function HazardAssessmentPanel({
           <div className="flex items-center gap-1.5">
             <Map size={12} className="text-red-600" />
             <span className="text-[.7rem] font-bold text-red-800">
-              NASA FIRMS - Live Fires
+              NASA FIRMS - Fires
             </span>
-            <span className="text-[.5rem] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold">
-              LIVE
-            </span>
+            
           </div>
         </div>
 

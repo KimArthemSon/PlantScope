@@ -79,7 +79,8 @@ const roundCoord = (n: number): number => Math.round(n * 1e6) / 1e6;
 // Area as hectares and square meters, e.g. "46.50 ha · 465,012 m²"
 const formatSqm = (ha: number): string =>
   `${Math.round(ha * 10000).toLocaleString()} m²`;
-const formatArea = (ha: number): string => `${ha.toFixed(2)} ha · ${formatSqm(ha)}`;
+const formatArea = (ha: number): string =>
+  `${ha.toFixed(2)} ha · ${formatSqm(ha)}`;
 
 // ✅ MOVED OUTSIDE to prevent reference changes on re-render
 const getHazardColor = (hazardType: string) => {
@@ -346,7 +347,9 @@ const MemoizedClassifiedAreas = memo(
                       </div>
                     </div>
                     {area.description && (
-                      <p className="text-gray-600 mt-1 whitespace-pre-line">{area.description}</p>
+                      <p className="text-gray-600 mt-1 whitespace-pre-line">
+                        {area.description}
+                      </p>
                     )}
                   </div>
                   <button
@@ -677,9 +680,11 @@ export default function Map() {
   const { userRole } = useUserRole();
   // Only GIS Specialists may move site / reforestation area coordinates
   const canEditCoordinates = userRole === "GISSpecialist";
-  const [firmsStartDate, setFirmsStartDate] = useState<string>(() =>
-    formatDate(new Date()),
-  );
+  const [firmsStartDate, setFirmsStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7); // Default to 7 days ago
+    return formatDate(d);
+  });
   const [firmsEndDate, setFirmsEndDate] = useState<string>(() =>
     formatDate(new Date()),
   );
@@ -760,7 +765,10 @@ export default function Map() {
     const handleClick = (e: L.LeafletMouseEvent) => {
       const { lat, lng } = e.latlng;
       if (isDrawingAnalysis) {
-        setAnalysisCoords((prev) => [...prev, [roundCoord(lat), roundCoord(lng)]]);
+        setAnalysisCoords((prev) => [
+          ...prev,
+          [roundCoord(lat), roundCoord(lng)],
+        ]);
         return;
       }
       if (isPickingMarker) {
@@ -1831,7 +1839,7 @@ export default function Map() {
   }
 
   const fetchFirmsData = async (
-    timeRange?: "today" | "24hrs" | "7days",
+    timeRange?: "today" | "24hrs" | "7days" | "custom",
     startDate?: string,
     endDate?: string,
   ) => {
@@ -1948,22 +1956,16 @@ export default function Map() {
     const newState = !showFirms;
     setShowFirms(newState);
     if (!newState) {
-      if (firmsGeoJsonLayer && mapRef.current) {
-        mapRef.current.removeLayer(firmsGeoJsonLayer);
-        setFirmsGeoJsonLayer(null);
-      }
-      setFireCount(0);
-      setIsFirmsLoading(false);
+      // ...
     } else {
       setIsFirmsLoading(true);
       setTimeout(() => {
         if (useCustomDateRange)
-          fetchFirmsData(firmsTimeRange, firmsStartDate, firmsEndDate);
+          fetchFirmsData("custom", firmsStartDate, firmsEndDate); // ✅ Explicitly "custom"
         else fetchFirmsData();
       }, 500);
     }
   };
-
   const updateFirmsTimeRange = (range: "today" | "24hrs" | "7days") => {
     setFirmsTimeRange(range);
     setUseCustomDateRange(false);
@@ -1976,6 +1978,12 @@ export default function Map() {
       setTimeout(() => fetchFirmsData(range, undefined, undefined), 300);
     }
   };
+  // In Map.tsx or HazardAssessmentPanel
+  const getDefaultStartDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split("T")[0];
+  };
 
   const applyCustomDateRange = () => {
     setUseCustomDateRange(true);
@@ -1986,7 +1994,7 @@ export default function Map() {
       }
       setIsFirmsLoading(true);
       setTimeout(
-        () => fetchFirmsData(firmsTimeRange, firmsStartDate, firmsEndDate),
+        () => fetchFirmsData("custom", firmsStartDate, firmsEndDate), // ✅ CORRECT
         300,
       );
     }
@@ -2051,7 +2059,10 @@ export default function Map() {
     }
     // Site markers are off by default, and an area filter could hide this one
     setShowSiteMarkers(true);
-    if (filteredAreaId !== null && filteredAreaId !== site.reforestation_area_id)
+    if (
+      filteredAreaId !== null &&
+      filteredAreaId !== site.reforestation_area_id
+    )
       setFilteredAreaId(null);
     setAreaSearchQuery(site.name);
     setShowAreaDropdown(false);
@@ -2371,36 +2382,36 @@ export default function Map() {
                 </div>
               )}
               {matchedAreas.map((area) => (
-                    <button
-                      key={`area-${area.reforestation_area_id}`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        if (area.coordinate) {
-                          const lat = Number(area.coordinate[0]);
-                          const lng = Number(area.coordinate[1]);
-                          if (!isNaN(lat) && !isNaN(lng))
-                            mapRef.current?.setView([lat, lng], 16);
-                        }
-                        setAreaSearchQuery(area.name);
-                        setShowAreaDropdown(false);
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-50 flex flex-col gap-0.5 border-b border-gray-50 last:border-b-0 transition-colors"
-                    >
-                      <span className="text-[.75rem] font-semibold text-[#0f4a2f] truncate">
-                        {area.name}
-                      </span>
-                      {area.description && (
-                        <span className="text-[.65rem] text-gray-500 truncate">
-                          {area.description}
-                        </span>
-                      )}
-                      {area.barangay && (
-                        <span className="text-[.6rem] text-gray-400 flex items-center gap-1">
-                          <MapPin size={8} /> {area.barangay.name}
-                        </span>
-                      )}
-                    </button>
-                  ))}
+                <button
+                  key={`area-${area.reforestation_area_id}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (area.coordinate) {
+                      const lat = Number(area.coordinate[0]);
+                      const lng = Number(area.coordinate[1]);
+                      if (!isNaN(lat) && !isNaN(lng))
+                        mapRef.current?.setView([lat, lng], 16);
+                    }
+                    setAreaSearchQuery(area.name);
+                    setShowAreaDropdown(false);
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 flex flex-col gap-0.5 border-b border-gray-50 last:border-b-0 transition-colors"
+                >
+                  <span className="text-[.75rem] font-semibold text-[#0f4a2f] truncate">
+                    {area.name}
+                  </span>
+                  {area.description && (
+                    <span className="text-[.65rem] text-gray-500 truncate">
+                      {area.description}
+                    </span>
+                  )}
+                  {area.barangay && (
+                    <span className="text-[.6rem] text-gray-400 flex items-center gap-1">
+                      <MapPin size={8} /> {area.barangay.name}
+                    </span>
+                  )}
+                </button>
+              ))}
               {matchedSites.length > 0 && (
                 <div className="sticky top-0 bg-gray-50 px-3 py-1 text-[.6rem] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-green-500" />
@@ -3374,7 +3385,6 @@ export default function Map() {
         center={ORMOCCITY}
         zoom={13}
         maxZoom={22} // ✅ Allow zooming much closer
-      
         className="h-full w-full"
         style={{ minHeight: "100vh" }}
       >

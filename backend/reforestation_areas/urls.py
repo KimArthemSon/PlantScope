@@ -7,6 +7,7 @@ from . import gis_dashboard_views
 from . import gis_report_views
 from . import views_hazard_analysis    
 urlpatterns = [
+    
     # ═══════════════════════════════════════════════════════════
     # 🌳 REFORESTATION AREA CRUD (Core Container Only)
     # ═══════════════════════════════════════════════════════════
