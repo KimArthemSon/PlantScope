@@ -251,22 +251,37 @@ else:
 
 # settings.py
 
+# In settings.py, replace the LOGGING section with this:
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
         },
     },
     'root': {
         'handlers': ['console'],
-        'level': 'ERROR',  # Change to 'INFO' or 'DEBUG' if you want to see EVERYTHING
+        'level': 'INFO',  # ✅ Changed from 'ERROR' to 'INFO'
     },
     'loggers': {
         'django': {
             'handlers': ['console'],
-            'level': 'ERROR',
+            'level': 'INFO',  # ✅ Changed from 'ERROR' to 'INFO'
+            'propagate': False,
+        },
+        # ✅ Add your app's logger
+        'reforestation_areas': {  # Or whatever your app name is
+            'handlers': ['console'],
+            'level': 'DEBUG',  # ✅ See all detailed logs
             'propagate': False,
         },
     },
