@@ -746,56 +746,61 @@ def evaluate_application(request, application_id):
     """DataManager: Assign site and orientation date, add reason → forward to Head (FIFO Queue)"""
     if request.method not in ('PUT', 'POST'):
         return JsonResponse({'error': 'Only PUT/POST allowed'}, status=405)
-
+    
     user = get_user_from_token(request)
     if not user or user.user_role != 'DataManager':
         return JsonResponse({'error': 'Unauthorized: DataManager only'}, status=403)
-
+    
     app = get_object_or_404(Application, application_id=application_id)
     if app.status not in ['for_evaluation']:
         return JsonResponse({'error': 'Application not in evaluation stage'}, status=400)
-
+    
     site_id = request.POST.get('site_id')
     orientation_date_str = request.POST.get('orientation_date')
     status = request.POST.get('status')
     reason_text = request.POST.get('reason', '').strip()
-
+    
     site = None
     if site_id:
         site = get_object_or_404(Sites, site_id=site_id)
-
+        
     if not orientation_date_str:
         return JsonResponse({'error': 'orientation_date is required'}, status=400)
-
+    
     try:
         orientation_date = datetime.strptime(orientation_date_str, '%Y-%m-%d').date()
     except ValueError:
         return JsonResponse({'error': 'Invalid date format. Please use YYYY-MM-DD.'}, status=400)
-
+    
     try:
         with transaction.atomic():
             app.site = site
             app.orientation_date = orientation_date
             app.status = status
-
+            
+            # ✅ FIX: Save the application FIRST so it is included in the pipeline query below
+            app.save()
+            
             # ✅ FIFO QUEUE LOGIC & ACTIVATION
             if status == 'for_head' and site:
                 if not app.user.is_active:
                     app.user.is_active = True
                     app.user.save()
-
+                    
+                # Now this query will correctly include the current app because app.save() was called
                 pipeline_apps = Application.objects.filter(
                     site=site,
                     status__in=['for_evaluation', 'for_head']
                 ).order_by('created_at')
+                
                 for i, pipeline_app in enumerate(pipeline_apps, start=1):
                     pipeline_app.queue_position = i
                     pipeline_app.save()
-
+                    
                 if site.monitoring_status == 'available':
                     site.monitoring_status = 'reserved'
                     site.save()
-
+                    
             elif status == 'rejected':
                 if app.classification == 'new':
                     try:
@@ -813,7 +818,7 @@ def evaluate_application(request, application_id):
                     except Exception as del_err:
                         logger.error(f"Failed to delete unverified user: {del_err}")
                         app.save()
-
+            
             if status != 'rejected' or app.classification != 'new':
                 Reason.objects.create(
                     user=user,
@@ -822,7 +827,7 @@ def evaluate_application(request, application_id):
                     reason=reason_text,
                     status=status
                 )
-
+            
             if status != 'rejected' or app.classification != 'new':
                 try:
                     site_info = f" at {site.name}" if site else ""
@@ -835,109 +840,142 @@ def evaluate_application(request, application_id):
                     )
                 except Exception as notif_err:
                     logger.error(f"Notification error: {str(notif_err)}")
-
+            
             return JsonResponse({
                 'message': 'Application evaluated and forwarded to Head',
                 'application_id': app.application_id,
                 'queue_position': app.queue_position
             }, status=200)
-
+            
     except Sites.DoesNotExist:
         return JsonResponse({'error': 'Selected site not found'}, status=404)
     except Exception as e:
         return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
 
+
 @csrf_exempt
 def confirm_application(request, application_id):
-    if request.method != 'PUT':
-        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
-
+    """City ENRO Head: Final approval or rejection of a queued application"""
+    if request.method not in ('PUT', 'POST'):
+        return JsonResponse({'error': 'Only PUT/POST allowed'}, status=405)
+        
     user = get_user_from_token(request)
     if not user or user.user_role != 'CityENROHead':
-        return JsonResponse({'error': 'Unauthorized'}, status=403)
-
+        return JsonResponse({'error': 'Unauthorized: City ENRO Head only'}, status=403)
+        
+    # Parse JSON body or fallback to POST data
     try:
-        data = json.loads(request.body)
-        new_status = data.get('status')
-        reason = data.get('reason', '').strip()
-
-        if new_status not in ['accepted', 'rejected']:
-            return JsonResponse({'error': 'Invalid status'}, status=400)
-
-        app = get_object_or_404(Application, application_id=application_id)
-        if app.status != 'for_head':
-            return JsonResponse({'error': 'Application is not pending head confirmation'}, status=400)
-
+        body = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        body = {}
+        
+    new_status = body.get('status') or request.POST.get('status')
+    reason_text = body.get('reason', '') or request.POST.get('reason', '')
+    
+    if new_status not in ['accepted', 'rejected']:
+        return JsonResponse({'error': 'Invalid status'}, status=400)
+        
+    app = get_object_or_404(Application, application_id=application_id)
+    if app.status != 'for_head':
+        return JsonResponse({'error': 'Application is not pending head confirmation'}, status=400)
+        
+    try:
         with transaction.atomic():
             if new_status == 'accepted':
                 app.status = 'accepted'
                 app.queue_position = None
+                app.confirmed_at = timezone.now()  # ✅ FIX: Set confirmed_at timestamp
                 app.save()
-
+                
                 if app.user:
                     app.user.is_active = True
                     app.user.save()
-
+                    
                 if app.site:
                     app.site.monitoring_status = 'under_monitoring'
                     app.site.save()
-
+                    
+                # Reject other queued applications for the same site
                 other_apps = Application.objects.filter(
-                    site=app.site,
+                    site=app.site, 
                     status='for_head'
                 ).exclude(application_id=app.application_id)
+                
                 for other_app in other_apps:
                     other_app.status = 'rejected'
                     other_app.queue_position = None
                     other_app.save()
+                    
+                    # Log reason for auto-rejected queued apps
+                    Reason.objects.create(
+                        user=user,
+                        application=other_app,
+                        status_layer='new_program',
+                        reason='Site allocated to another group.',
+                        status='rejected'
+                    )
+                    
                     try:
                         send_application_rejected_email(
-                            other_app.user,
-                            other_app,
+                            other_app.user, 
+                            other_app, 
                             "This site has been allocated to another tree grower group."
                         )
                     except Exception as e:
                         logger.error(f"Failed to send rejection email to {other_app.user.email}: {e}")
-
+                        
                 try:
                     send_application_accepted_email(app.user, app)
                 except Exception as e:
                     logger.error(f"Failed to send acceptance email to {app.user.email}: {e}")
-
+                    
                 return JsonResponse({
                     'message': 'Application accepted. Other queued applications have been rejected and notified.',
                     'status': app.status
                 }, status=200)
-
-            else:  # REJECTED
+                
+            else: # REJECTED BY HEAD
                 app.status = 'rejected'
                 app.queue_position = None
                 app.save()
-
+                
+                # ✅ FIX: Save to Audit Trail
+                if reason_text:
+                    Reason.objects.create(
+                        user=user,
+                        application=app,
+                        status_layer='new_program',
+                        reason=reason_text,
+                        status='rejected'
+                    )
+                
                 if app.site:
                     remaining_apps = Application.objects.filter(
-                        site=app.site,
-                        status='for_head',
+                        site=app.site, 
+                        status='for_head', 
                         queue_position__isnull=False
                     ).order_by('queue_position')
+                    
                     if remaining_apps.exists():
+                        # Shift queue up
                         for index, remaining_app in enumerate(remaining_apps, start=1):
                             remaining_app.queue_position = index
                             remaining_app.save()
                     else:
+                        # No one else in queue, free up the site
                         app.site.monitoring_status = 'available'
                         app.site.save()
-
+                        
                 try:
-                    send_application_rejected_email(app.user, app, reason)
+                    send_application_rejected_email(app.user, app, reason_text)
                 except Exception as e:
                     logger.error(f"Failed to send rejection email to {app.user.email}: {e}")
-
+                    
                 return JsonResponse({
                     'message': 'Application rejected. Queue updated.',
                     'status': app.status
                 }, status=200)
-
+                
     except Exception as e:
         logger.error(f"Error in confirm_application: {e}")
         return JsonResponse({'error': str(e)}, status=500)
