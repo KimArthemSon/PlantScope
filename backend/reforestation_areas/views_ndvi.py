@@ -33,12 +33,25 @@ CLEAR_THRESHOLD = 0.60
 # many days (0 = the exact range the user asked for).
 WINDOW_EXPANSIONS_DAYS = (0, 60, 120)
 
+# ---------------------------------------------------------------------------
+# Shared NDVI classification.
+# ONE set of breaks drives BOTH the NDVI map (ndvi_canopy) and the suitable
+# sites (suitable_sites), so what is yellow on the map is what gets marked.
+#   class 0: NDVI <  0.2          (grey   - bare / built-up / water)
+#   class 1: 0.2 <= NDVI < 0.4    (yellow - low vegetation = reforestation candidate)
+#   class 2: 0.4 <= NDVI < 0.6    (orange)
+#   class 3: NDVI >= 0.6          (green  - dense canopy)
+# ---------------------------------------------------------------------------
+CANOPY_BREAKS = (0.2, 0.4, 0.6)
+CANDIDATE_CLASS = 1  # the class treated as a reforestation candidate
+
 # Reforestation candidate rules
-SITE_NDVI_MIN = 0.10   # excludes bare surfaces / roads / buildings / water
-SITE_NDVI_MAX = 0.41   # empirical threshold for degraded tropical land
-MIN_PATCH_PIXELS = 50  # 50 px * 100 m2 = 0.5 ha minimum patch size
-MAX_SITES = 500        # cap on polygons returned (largest are kept)
-USE_WORLDCOVER = True
+SITE_NDVI_MIN = CANOPY_BREAKS[0]  # 0.2
+SITE_NDVI_MAX = CANOPY_BREAKS[1]  # 0.4
+DEFAULT_MIN_PATCH_PIXELS = 3      # 3 px * 100 m2 = 0.03 ha (overridable per request)
+MAX_PATCH_PIXELS_LIMIT = 128      # connectedPixelCount maxSize below
+MAX_SITES = 500                   # cap on polygons returned (largest are kept)
+USE_WORLDCOVER = False            # True = also exclude roads/buildings/crops/forest
 # ESA WorldCover classes allowed as candidates: 20 shrub, 30 grass, 60 bare/sparse
 SUITABLE_LANDCOVER = (20, 30, 60)
 
@@ -104,6 +117,21 @@ def _parse_geometry(geojson):
     return roi
 
 
+def _parse_min_patch_pixels(value):
+    """Optional request parameter 'min_patch_pixels' (1..MAX_PATCH_PIXELS_LIMIT)."""
+    if value is None:
+        return DEFAULT_MIN_PATCH_PIXELS
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("min_patch_pixels must be an integer") from None
+    if value < 1 or value > MAX_PATCH_PIXELS_LIMIT:
+        raise ValueError(
+            f"min_patch_pixels must be between 1 and {MAX_PATCH_PIXELS_LIMIT}"
+        )
+    return value
+
+
 def _ndvi(image):
     return image.normalizedDifference(["B8", "B4"]).rename("NDVI")
 
@@ -164,10 +192,13 @@ def get_composite_with_fallback(roi, start_dt, end_dt):
 
 
 def classify_canopy(ndvi_image):
-    """Classify NDVI into canopy classes"""
+    """Classify NDVI into canopy classes using the shared CANOPY_BREAKS.
+
+    Used by BOTH the NDVI map and the suitable-sites analysis."""
+    b1, b2, b3 = CANOPY_BREAKS
     return ndvi_image.expression(
-        "(ndvi >= 0.6) ? 3 : (ndvi >= 0.4) ? 2 : (ndvi >= 0.2) ? 1 : 0",
-        {"ndvi": ndvi_image},
+        "(ndvi >= b3) ? 3 : (ndvi >= b2) ? 2 : (ndvi >= b1) ? 1 : 0",
+        {"ndvi": ndvi_image, "b1": b1, "b2": b2, "b3": b3},
     ).rename("canopy")
 
 
@@ -230,6 +261,7 @@ def ndvi_canopy(request):
             "date_range": f"{start} to {end}",
             "date_range_used": f"{_fmt(used_start)} to {end}",
             "window_expanded": expanded,
+            "canopy_breaks": list(CANOPY_BREAKS),
             "bounds": roi.getInfo()["coordinates"],
         })
     except ValueError as e:
@@ -241,7 +273,11 @@ def ndvi_canopy(request):
 
 @csrf_exempt
 def suitable_sites(request):
-    """POST /api/suitable-sites/ - Find low-NDVI areas for reforestation"""
+    """POST /api/suitable-sites/ - Find low-NDVI areas for reforestation.
+
+    Body: {geometry, start, end, min_patch_pixels?}
+    A candidate pixel is exactly the "low vegetation" class (yellow) of the
+    NDVI map, so the two endpoints always agree."""
     if request.method != "POST":
         return JsonResponse({"error": "Use POST"}, status=405)
 
@@ -256,6 +292,7 @@ def suitable_sites(request):
 
         start_dt, end_dt = _parse_dates(data["start"], data["end"])
         roi = _parse_geometry(data["geometry"])
+        min_patch_pixels = _parse_min_patch_pixels(data.get("min_patch_pixels"))
 
         s2, used_start, expanded = get_composite_with_fallback(roi, start_dt, end_dt)
 
@@ -268,12 +305,12 @@ def suitable_sites(request):
 
         ndvi = _ndvi(s2)
 
-        # Candidate = low (but not bare/negative) NDVI ...
-        candidate = ndvi.gte(SITE_NDVI_MIN).And(ndvi.lt(SITE_NDVI_MAX))
+        # Candidate = exactly the yellow class shown on the NDVI map.
+        candidate = classify_canopy(ndvi).eq(CANDIDATE_CLASS)
 
-        # ... on land cover that can actually be planted (not roads, buildings,
-        # water, existing forest). WorldCover is a 2021 map, so recent land
-        # changes may be misclassified.
+        # Optional: restrict to land cover that can actually be planted (not
+        # roads, buildings, water, existing forest). WorldCover is a 2021 map,
+        # so recent land changes may be misclassified.
         if USE_WORLDCOVER:
             wc = ee.ImageCollection(WORLDCOVER_COLLECTION).first().select("Map")
             allowed = ee.Image(0)
@@ -283,9 +320,11 @@ def suitable_sites(request):
 
         suitable = candidate.selfMask()
 
-        # Drop tiny specks: keep only patches of at least MIN_PATCH_PIXELS.
-        connected = suitable.connectedPixelCount(maxSize=128, eightConnected=True)
-        suitable = suitable.updateMask(connected.gte(MIN_PATCH_PIXELS)).rename("suitable")
+        # Drop tiny specks: keep only patches of at least min_patch_pixels.
+        connected = suitable.connectedPixelCount(
+            maxSize=MAX_PATCH_PIXELS_LIMIT, eightConnected=True
+        )
+        suitable = suitable.updateMask(connected.gte(min_patch_pixels)).rename("suitable")
 
         # Native 10 m resolution of Sentinel-2 B4 and B8.
         vectors = suitable.reduceToVectors(
@@ -352,11 +391,13 @@ def suitable_sites(request):
             "metadata": {
                 "threshold": f"{SITE_NDVI_MIN} <= NDVI < {SITE_NDVI_MAX}",
                 "description": (
-                    "Low-vegetation, plantable land (shrub/grass/sparse) suitable for "
-                    "reforestation. Empirical NDVI threshold for degraded tropical land."
+                    "Low-vegetation land (same class as the yellow layer on the NDVI "
+                    "map) suitable for reforestation. Empirical NDVI threshold for "
+                    "degraded tropical land."
                 ),
                 "land_cover_filter": list(SUITABLE_LANDCOVER) if USE_WORLDCOVER else None,
-                "min_patch_hectares": MIN_PATCH_PIXELS * 100 / 10000,
+                "min_patch_pixels": min_patch_pixels,
+                "min_patch_hectares": min_patch_pixels * 100 / 10000,
                 "resolution_meters": 10,
                 "date_range_used": f"{_fmt(used_start)} to {data['end']}",
                 "window_expanded": expanded,
