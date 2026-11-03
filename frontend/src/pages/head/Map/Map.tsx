@@ -1067,16 +1067,16 @@ export default function Map() {
         setActivePotentialSites(data.data || []);
         setPSAlert({
           type: "success",
-          title: "Potential Sites Loaded",
-          message: `Showing ${data.data?.length || 0} potential site(s).`,
+          title: "Potential Areas Loaded",
+          message: `Showing ${data.data?.length || 0} potential areas(s).`,
         });
       }
     } catch (error) {
-      console.error("Error fetching potential sites:", error);
+      console.error("Error fetching potential areas:", error);
       setPSAlert({
         type: "error",
         title: "Error",
-        message: "Failed to load potential sites.",
+        message: "Failed to load potential areas.",
       });
     }
   };
@@ -1221,7 +1221,7 @@ export default function Map() {
         });
         handleShowPotentialSites(reanalyzeTargetSiteId);
       } else {
-        throw new Error("Failed to save new potential sites");
+        throw new Error("Failed to save new potential Areas");
       }
     } catch (err: any) {
       setPSAlert({
@@ -1249,7 +1249,7 @@ export default function Map() {
     setPSAlert({
       type: "failed",
       title: "Cancelled",
-      message: "Analysis discarded. Existing potential sites remain unchanged.",
+      message: "Analysis discarded. Existing potential Areas remain unchanged.",
     });
   };
   const startMarkerPlacement = () => {
@@ -3269,7 +3269,7 @@ export default function Map() {
                 {suitablePolygons && suitablePolygons.features && (
                   <div className="border-t border-gray-200 pt-2 mt-1">
                     <label className="text-[.7rem] text-gray-600 block mb-1">
-                      Assigned Potential Sites (Optional)
+                      Assigned Potential areas (Optional)
                     </label>
                     <div className="bg-gray-50 p-2 rounded border text-[.7rem] text-center">
                       <strong className="text-green-700 text-lg">
