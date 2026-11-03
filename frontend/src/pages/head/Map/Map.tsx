@@ -46,6 +46,7 @@ import {
   Save,
   Ban,
   Copy,
+  EyeOff,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import { useUserRole } from "@/hooks/authorization";
@@ -119,7 +120,6 @@ function MouseTracker({
 }) {
   const map = useMap();
   const lastUpdate = useRef(0);
-
   useEffect(() => {
     const handleMouseMove = (e: L.LeafletMouseEvent) => {
       const now = Date.now();
@@ -152,7 +152,6 @@ const MemoizedHazardAreas = memo(
     const filteredHazards = hazard_areas.filter(
       (h: any) => h.barangay_id === visibleHazardBarangayId,
     );
-
     return (
       <>
         {filteredHazards.map((hazard: any) => {
@@ -250,11 +249,9 @@ const MemoizedClassifiedAreas = memo(
       classifiedAreasForMap.length === 0
     )
       return null;
-
     const extractPositions = (polygon: any): [number, number][] | null => {
       if (!polygon) return null;
       let coords: any = null;
-
       if (polygon.type === "Polygon" && polygon.coordinates) {
         coords = polygon.coordinates[0];
       } else if (polygon.type === "Feature" && polygon.geometry) {
@@ -283,9 +280,7 @@ const MemoizedClassifiedAreas = memo(
           return null;
         }
       }
-
       if (!coords || !Array.isArray(coords)) return null;
-
       return coords
         .map((c: any) => {
           if (Array.isArray(c) && c.length >= 2) {
@@ -300,7 +295,6 @@ const MemoizedClassifiedAreas = memo(
         })
         .filter((c: any) => c !== null);
     };
-
     return (
       <>
         {classifiedAreasForMap.map((area: any, index: number) => {
@@ -312,7 +306,6 @@ const MemoizedClassifiedAreas = memo(
             );
             return null;
           }
-
           return (
             <Polygon
               key={`classified-${area.classified_area_id}-${index}`}
@@ -379,7 +372,6 @@ interface PolygonGeometry {
   type: "Polygon";
   coordinates: [number, number][];
 }
-
 interface ClassifiedArea {
   classified_area_id: number;
   name: string;
@@ -389,7 +381,6 @@ interface ClassifiedArea {
   description: string;
   created_at: string;
 }
-
 export interface ReforestationArea {
   reforestation_area_id: number;
   name: string;
@@ -398,7 +389,6 @@ export interface ReforestationArea {
   barangay?: { barangay_id: number; name: string } | null;
   created_at: string;
 }
-
 export interface Site {
   site_id: number;
   name: string;
@@ -410,20 +400,17 @@ export interface Site {
   ndvi_value?: number;
   created_at: string;
 }
-
 interface Barangays {
   barangay_id: number;
   name: string;
   description: string;
   coordinate: [number, number];
 }
-
 interface SiteStatistics {
   total: number;
   totalArea: number;
   avgNDVI: number;
 }
-
 interface HazardArea {
   hazard_area_id: number;
   name: string;
@@ -433,7 +420,6 @@ interface HazardArea {
   description: string;
   created_at: string;
 }
-
 const decimalToDMS = (value: number, type: "lat" | "lng") => {
   const absolute = Math.abs(value);
   const degrees = Math.floor(absolute);
@@ -444,7 +430,6 @@ const decimalToDMS = (value: number, type: "lat" | "lng") => {
     type === "lat" ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W";
   return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
 };
-
 const normalizeMarkerCoordinate = (
   coord: [number, number] | null | undefined,
 ): [number, number] | null => {
@@ -476,7 +461,6 @@ const normalizeMarkerCoordinate = (
   }
   return null;
 };
-
 const createMarkerIcon = (
   type: "barangay" | "reforestation" | "site" | "temp" | "edit",
   labelText: string = "",
@@ -502,10 +486,10 @@ const createMarkerIcon = (
   <div style="position: relative; width: 24px; height: 30px; flex-shrink: 0;">
     <svg width="24" height="30" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M12 0C5.373 0 0 5.373 0 12C0 18.627 12 30 12 30C12 30 24 18.627 24 12C24 5.373 18.627 0 12 0Z" fill="${color}" stroke="white" stroke-width="2"/>
+      <div style="position: absolute; top: 5px; left: 6px; width: 12px; height: 12px; display: flex; align-items: center; justify-content: center;">
+        ${icon}
+      </div>
     </svg>
-    <div style="position: absolute; top: 5px; left: 6px; width: 12px; height: 12px; display: flex; align-items: center; justify-content: center;">
-      ${icon}
-    </div>
   </div>
   ${labelText ? `<span style="font-size: 11px; font-weight: 600; color: #1f2937; background: rgba(255,255,255,0.9); padding: 2px 6px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); white-space: nowrap;">${labelText}</span>` : ""}
 </div>
@@ -518,7 +502,6 @@ const createMarkerIcon = (
     popupAnchor: [0, -30],
   });
 };
-
 const createVertexIcon = (index: number) => {
   return L.divIcon({
     className: "custom-vertex-icon",
@@ -527,7 +510,6 @@ const createVertexIcon = (index: number) => {
     iconAnchor: [12, 12],
   });
 };
-
 export default function Map() {
   const token = localStorage.getItem("token");
   const ORMOCCITY: [number, number] = [11.02, 124.61];
@@ -547,13 +529,11 @@ export default function Map() {
     useState(true);
   const [showSiteMarkers, setShowSiteMarkers] = useState(false);
   const [showAnalysisPolygons, setShowAnalysisPolygons] = useState(true);
-
   // ✅ NEW: State for Classified Areas on Map
   const [showClassifiedAreasBarangayId, setShowClassifiedAreasBarangayId] =
     useState<number | null>(null);
   const [classifiedAreasForMap, setClassifiedAreasForMap] = useState<any[]>([]);
   const [isClassifiedLoading, setIsClassifiedLoading] = useState(false);
-
   const [areaForm, setAreaForm] = useState({
     name: "",
     description: "",
@@ -634,7 +614,6 @@ export default function Map() {
     "today" | "24hrs" | "7days"
   >("today");
   const [firmsGeoJsonLayer, setFirmsGeoJsonLayer] = useState<any>(null);
-
   const formatDate = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   const today = new Date();
@@ -706,11 +685,12 @@ export default function Map() {
   const [isEditingAnalysis, setIsEditingAnalysis] = useState(false);
   const [isAnalysisPanelOpen, setIsAnalysisPanelOpen] = useState(false);
   const [isTypingInInput, setIsTypingInInput] = useState(false);
+  // ✅ NEW: State for showing/hiding site polygon on map
+  const [showSitePolygonOnMap, setShowSitePolygonOnMap] = useState(false);
 
   useEffect(() => {
     if (!showNDVI) setShowCanopyGuide(false);
   }, [showNDVI]);
-
   useEffect(() => {
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
@@ -739,7 +719,6 @@ export default function Map() {
       document.removeEventListener("focusout", handleFocusOut);
     };
   }, []);
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && showCanopyGuide) {
@@ -758,7 +737,6 @@ export default function Map() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showNDVI, isNdviPenelOpen, showCanopyGuide, isTypingInInput]);
-
   useEffect(() => {
     if (!mapRef.current) return;
     const map = mapRef.current;
@@ -802,7 +780,6 @@ export default function Map() {
     map.on("click", handleClick);
     return () => map.off("click", handleClick);
   }, [isPickingMarker, isPickingSiteMarker, isMapEditMode, isDrawingAnalysis]);
-
   const handleVertexDrag = (index: number, e: any) => {
     const newLatLng = e.target.getLatLng();
     setAnalysisCoords((prev) => {
@@ -811,7 +788,6 @@ export default function Map() {
       return next;
     });
   };
-
   const handleCoordChange = (
     index: number,
     type: "lat" | "lng",
@@ -827,7 +803,6 @@ export default function Map() {
       return next;
     });
   };
-
   const addCoordinate = () => {
     if (!mapRef.current) return;
     const center = mapRef.current.getCenter();
@@ -837,11 +812,9 @@ export default function Map() {
       : [roundCoord(center.lat), roundCoord(center.lng)];
     setAnalysisCoords((prev) => [...prev, newPoint]);
   };
-
   const removeCoordinate = (index: number) => {
     setAnalysisCoords((prev) => prev.filter((_, i) => i !== index));
   };
-
   const finishDrawing = () => {
     setIsDrawingAnalysis(false);
     setIsEditingAnalysis(true);
@@ -851,7 +824,6 @@ export default function Map() {
       message: "You can now drag corners or edit coordinates.",
     });
   };
-
   const getAnalysisGeoJSON = () => {
     if (analysisCoords.length < 3) return null;
     const closed = [...analysisCoords, analysisCoords[0]];
@@ -860,7 +832,6 @@ export default function Map() {
       coordinates: [closed.map((c) => [c[1], c[0]])],
     };
   };
-
   const startMapEdit = (
     type: "area" | "site",
     id: number,
@@ -892,7 +863,6 @@ export default function Map() {
       message: "Drag the marker, click the map, or type coordinates manually.",
     });
   };
-
   const cancelMapEdit = () => {
     setTempCoordinate(originalCoordinate);
     if (originalCoordinate) {
@@ -912,7 +882,6 @@ export default function Map() {
       message: "Coordinate reverted.",
     });
   };
-
   const handleSaveMapEdit = async () => {
     if (!tempCoordinate) return;
     setIsSavingMapEdit(true);
@@ -985,7 +954,6 @@ export default function Map() {
       setIsSavingMapEdit(false);
     }
   };
-
   const handleLatInput = (value: string) => {
     setLatInput(value);
     const lat = parseFloat(value);
@@ -1001,7 +969,6 @@ export default function Map() {
       setTempCoordinate([lat, lng]);
     }
   };
-
   const handleLngInput = (value: string) => {
     setLngInput(value);
     const lat = parseFloat(latInput);
@@ -1017,7 +984,6 @@ export default function Map() {
       setTempCoordinate([lat, lng]);
     }
   };
-
   const handleShowSiteInMap = async (siteId: number, polygon: any) => {
     setShowPotentialSites(false);
     setActivePotentialSites([]);
@@ -1073,7 +1039,6 @@ export default function Map() {
       });
     }
   };
-
   const handleGenerateHazardReport = (geometry: any, siteName: string) => {
     if (!geometry) {
       setPSAlert({
@@ -1087,7 +1052,6 @@ export default function Map() {
     setReportSiteName(siteName);
     setIsHazardReportOpen(true);
   };
-
   const handleShowPotentialSites = async (siteId: number) => {
     setShowSitePolygon(false);
     setCurrentSitePolygon(null);
@@ -1103,20 +1067,19 @@ export default function Map() {
         setActivePotentialSites(data.data || []);
         setPSAlert({
           type: "success",
-          title: "Potential Sites Loaded",
-          message: `Showing ${data.data?.length || 0} potential site(s).`,
+          title: "Potential Areas Loaded",
+          message: `Showing ${data.data?.length || 0} potential areas(s).`,
         });
       }
     } catch (error) {
-      console.error("Error fetching potential sites:", error);
+      console.error("Error fetching potential areas:", error);
       setPSAlert({
         type: "error",
         title: "Error",
-        message: "Failed to load potential sites.",
+        message: "Failed to load potential areas.",
       });
     }
   };
-
   const handleHideAll = () => {
     setShowSitePolygon(false);
     setShowPotentialSites(false);
@@ -1124,7 +1087,6 @@ export default function Map() {
     setActivePotentialSites([]);
     setActiveShownSiteId(null);
   };
-
   const handleDeletePotentialSite = async (potential_sites_id: number) => {
     try {
       const res = await fetch(
@@ -1151,7 +1113,6 @@ export default function Map() {
       });
     }
   };
-
   const handleDeleteAnalysisSite = (
     siteId: number,
     feature: any,
@@ -1187,7 +1148,6 @@ export default function Map() {
       message: `Potential site ${siteId} has been removed from analysis results.`,
     });
   };
-
   const handleViewTrend = (siteId: number, polygon: any) => {
     setSelectedSiteId(siteId.toString());
     let geometryToUse = polygon;
@@ -1206,7 +1166,6 @@ export default function Map() {
     setSelectedSiteGeometry(geometryToUse);
     setShowSiteTrends(true);
   };
-
   const handleReanalyze = (siteId: number) => {
     setDrawnGeometry(null);
     setSuitablePolygons(null);
@@ -1225,7 +1184,6 @@ export default function Map() {
         "Draw a new area. You will see a preview of the new results before confirming replacement.",
     });
   };
-
   const handleConfirmReplace = async () => {
     if (!reanalyzeTargetSiteId || pendingNewSites.length === 0) return;
     setIsProcessing(true);
@@ -1263,7 +1221,7 @@ export default function Map() {
         });
         handleShowPotentialSites(reanalyzeTargetSiteId);
       } else {
-        throw new Error("Failed to save new potential sites");
+        throw new Error("Failed to save new potential Areas");
       }
     } catch (err: any) {
       setPSAlert({
@@ -1280,7 +1238,6 @@ export default function Map() {
       setAnalysisCoords([]);
     }
   };
-
   const handleCancelReplace = () => {
     setShowReplaceConfirm(false);
     setReanalyzeTargetSiteId(null);
@@ -1292,10 +1249,9 @@ export default function Map() {
     setPSAlert({
       type: "failed",
       title: "Cancelled",
-      message: "Analysis discarded. Existing potential sites remain unchanged.",
+      message: "Analysis discarded. Existing potential Areas remain unchanged.",
     });
   };
-
   const startMarkerPlacement = () => {
     setIsPickingMarker(true);
     setPSAlert({
@@ -1304,7 +1260,6 @@ export default function Map() {
       message: "Click on the map to place the area center marker.",
     });
   };
-
   const startSiteMarkerPlacement = () => {
     setIsPickingSiteMarker(true);
     setPSAlert({
@@ -1313,7 +1268,6 @@ export default function Map() {
       message: "Click on the map to place the site center marker.",
     });
   };
-
   const renderNDVI = async () => {
     setIsNdviLoading(true);
     try {
@@ -1362,7 +1316,6 @@ export default function Map() {
       setIsNdviLoading(false);
     }
   };
-
   const analyzeArea = async () => {
     const geometryToUse = getAnalysisGeoJSON();
     if (!geometryToUse) {
@@ -1433,7 +1386,6 @@ export default function Map() {
       setIsProcessing(false);
     }
   };
-
   const cancelDrawing = () => {
     setDrawnGeometry(null);
     setReanalyzeTargetSiteId(null);
@@ -1451,12 +1403,10 @@ export default function Map() {
       message: "Analysis area removed.",
     });
   };
-
   const handleHome = () => {
     setGoHome(true);
     setTimeout(() => setGoHome(false), 100);
   };
-
   const clearAnalysis = () => {
     setSuitablePolygons(null);
     setDrawnGeometry(null);
@@ -1478,7 +1428,6 @@ export default function Map() {
       message: "All analysis data and drawings removed.",
     });
   };
-
   const startDrawingAnalysis = () => {
     if (!mapRef.current) {
       setPSAlert({
@@ -1499,7 +1448,6 @@ export default function Map() {
       message: "Click on the map to add points.",
     });
   };
-
   const togglePotentialSiteSelection = (featureId: number) => {
     setSelectedPotentialSiteIds((prev) =>
       prev.includes(featureId)
@@ -1507,7 +1455,6 @@ export default function Map() {
         : [...prev, featureId],
     );
   };
-
   // ✅ NEW: Fetch Classified Areas for Map
   const fetchClassifiedAreasForBarangay = async (barangayId: number) => {
     setIsClassifiedLoading(true);
@@ -1531,7 +1478,6 @@ export default function Map() {
       setIsClassifiedLoading(false);
     }
   };
-
   // ✅ NEW: Fetch Hazard Areas for a specific Barangay
   const fetchHazardAreasForBarangay = async (barangayId: number) => {
     try {
@@ -1555,14 +1501,12 @@ export default function Map() {
       return [];
     }
   };
-
   useEffect(() => {
     get_classified_area();
     getBarangays();
     get_all_reforestation_areas();
     get_all_sites();
   }, []);
-
   async function get_classified_area() {
     try {
       const res = await fetch(`${api}api/get_classified_areas/`, {
@@ -1572,7 +1516,6 @@ export default function Map() {
       setClassified_areas(data.data);
     } catch (e) {}
   }
-
   async function getBarangays() {
     try {
       const res = await fetch(`${api}api/get_barangay_list/`, {
@@ -1582,7 +1525,6 @@ export default function Map() {
       setBarangays(data.data);
     } catch (error) {}
   }
-
   async function get_all_reforestation_areas() {
     try {
       const res = await fetch(`${api}api/get_all_reforestation_areas/`, {
@@ -1592,7 +1534,6 @@ export default function Map() {
       setReforestation_areas(data.data);
     } catch (err) {}
   }
-
   async function get_all_sites() {
     try {
       const res = await fetch(`${api}api/get_all_sites/`, {
@@ -1606,10 +1547,8 @@ export default function Map() {
       console.error("Failed to fetch sites:", err);
     }
   }
-
   const formatPolygonCoords = (coords: [number, number][]) =>
     coords.map((c) => `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`).join("\n");
-
   // Rows left fully blank are ignored; any partial/out-of-range row makes the polygon invalid (null)
   const sitePolygonCoords = ((): [number, number][] | null => {
     const coords: [number, number][] = [];
@@ -1633,7 +1572,6 @@ export default function Map() {
   const isSitePolygonValid =
     sitePolygonCoords !== null &&
     (sitePolygonCoords.length === 0 || sitePolygonCoords.length >= 3);
-
   const updateSitePolygonPoint = (
     index: number,
     field: "lat" | "lng",
@@ -1642,7 +1580,6 @@ export default function Map() {
     setSitePolygonPoints((prev) =>
       prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
     );
-
   const copyAnalysisCoords = async () => {
     if (analysisCoords.length < 3) return;
     try {
@@ -1660,7 +1597,6 @@ export default function Map() {
       });
     }
   };
-
   const fillSitePolygonFromAnalysis = () => {
     if (analysisCoords.length < 3) return;
     setSitePolygonPoints(
@@ -1678,8 +1614,9 @@ export default function Map() {
       setSiteCoordinateInput(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
       setSiteMarkerPosition([lat, lng]);
     }
+    // ✅ Auto-show polygon on map when filled
+    setShowSitePolygonOnMap(true);
   };
-
   function closeAll() {
     setIsNdviPenelOpen(false);
     setIsAreaFormPenelOpen(false);
@@ -1688,7 +1625,6 @@ export default function Map() {
     setIsFilterPenelOpen(false);
     setIsHazardPanelOpen(false);
   }
-
   const goToCoordinate = () => {
     const lat = parseFloat(searchLat);
     const lng = parseFloat(searchLng);
@@ -1703,7 +1639,6 @@ export default function Map() {
     setSearchMarkerPosition([lat, lng]);
     mapRef.current?.setView([lat, lng], 16);
   };
-
   async function onSubmitArea(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!areaForm.name.trim() || !areaForm.barangay_id) {
@@ -1747,7 +1682,6 @@ export default function Map() {
       setPSAlert({ type: "error", title: "Error", message: error.message });
     }
   }
-
   async function onSubmitSite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!isSitePolygonValid) {
@@ -1831,13 +1765,13 @@ export default function Map() {
       setSitePolygonPoints([]);
       setSiteMarkerPosition(null);
       setSelectedPotentialSiteIds([]);
+      setShowSitePolygonOnMap(false);
       setIsSiteFormPenelOpen(false);
       get_all_sites();
     } catch (error: any) {
       setPSAlert({ type: "error", title: "Error", message: error.message });
     }
   }
-
   const fetchFirmsData = async (
     timeRange?: "today" | "24hrs" | "7days" | "custom",
     startDate?: string,
@@ -1951,7 +1885,6 @@ export default function Map() {
       setIsFirmsLoading(false);
     }
   };
-
   const toggleFirms = () => {
     const newState = !showFirms;
     setShowFirms(newState);
@@ -1984,7 +1917,6 @@ export default function Map() {
     d.setDate(d.getDate() - 7);
     return d.toISOString().split("T")[0];
   };
-
   const applyCustomDateRange = () => {
     setUseCustomDateRange(true);
     if (showFirms) {
@@ -1999,7 +1931,6 @@ export default function Map() {
       );
     }
   };
-
   (window as any).handleDeletePotentialSite = (potential_sites_id: number) => {
     handleDeletePotentialSite(potential_sites_id);
   };
@@ -2029,16 +1960,13 @@ export default function Map() {
   (window as any).startMapEditSite = (id: number, lat: number, lng: number) => {
     startMapEdit("site", id, [lat, lng]);
   };
-
   const filteredAreaName =
     filteredAreaId !== null
       ? reforestation_areas.find(
           (a) => a.reforestation_area_id === filteredAreaId,
         )?.name || "Unknown Area"
       : null;
-
   const totalAreaHectares = calculateAreaHectares(analysisCoords);
-
   // Search box results: reforestation areas and sites matching the query
   const searchQuery = areaSearchQuery.trim().toLowerCase();
   const matchedAreas = searchQuery
@@ -2049,7 +1977,6 @@ export default function Map() {
   const matchedSites = searchQuery
     ? sites.filter((site) => site.name?.toLowerCase().includes(searchQuery))
     : [];
-
   const focusSite = (site: Site) => {
     const coord = normalizeMarkerCoordinate(site.marker_coordinate);
     if (coord) {
@@ -2067,7 +1994,6 @@ export default function Map() {
     setAreaSearchQuery(site.name);
     setShowAreaDropdown(false);
   };
-
   return (
     <div className="relative h-screen w-full">
       {PSalert && (
@@ -2901,7 +2827,6 @@ export default function Map() {
                     </>
                   )}
                 </button>
-
                 {/* ✅ FIX: Show button as soon as polygon is drawn */}
                 {analysisCoords.length >= 3 && (
                   <button
@@ -2923,7 +2848,6 @@ export default function Map() {
                     {showAnalysisPolygons ? "Hide Analysis" : "Show Analysis"}
                   </button>
                 )}
-
                 <div className="flex gap-2">
                   <button
                     onClick={cancelDrawing}
@@ -3129,6 +3053,103 @@ export default function Map() {
           )}
           {userRole != "DataManager" && userRole != "CityENROHead" && (
             <div className="relative">
+              {/* ✅ SEPARATED FLOATING FORM FOR SITE POLYGON COORDINATES */}
+              {isSiteFormPenelOpen && sitePolygonPoints.length > 0 && (
+                <div
+                  className={`absolute bottom-full mb-3 right-[17rem] w-[320px] max-h-[60vh] overflow-y-auto bg-white border border-green-600 rounded-md shadow-xl transition-all duration-200 ${showSitePolygonOnMap ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+                >
+                  <div className="p-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-bold text-green-700 flex items-center gap-2">
+                        <Layers size={16} /> Site Polygon Coordinates
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setShowSitePolygonOnMap(!showSitePolygonOnMap)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        {showSitePolygonOnMap ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5 mb-3">
+                      {sitePolygonPoints.map((point, idx) => (
+                        <div key={idx} className="flex gap-1 items-center">
+                          <span className="text-[.6rem] font-bold text-white bg-green-600 w-5 h-5 flex items-center justify-center rounded-full shrink-0">
+                            {idx + 1}
+                          </span>
+                          <input
+                            type="number"
+                            step="0.000001"
+                            placeholder="Lat"
+                            value={point.lat}
+                            onChange={(e) =>
+                              updateSitePolygonPoint(idx, "lat", e.target.value)
+                            }
+                            className="w-full min-w-0 text-[.7rem] p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
+                          />
+                          <input
+                            type="number"
+                            step="0.000001"
+                            placeholder="Lng"
+                            value={point.lng}
+                            onChange={(e) =>
+                              updateSitePolygonPoint(idx, "lng", e.target.value)
+                            }
+                            className="w-full min-w-0 text-[.7rem] p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSitePolygonPoints((prev) =>
+                                prev.filter((_, i) => i !== idx),
+                              )
+                            }
+                            className="text-red-500 hover:text-red-700 p-0.5 shrink-0"
+                            title="Delete"
+                          >
+                            <Trash size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    {sitePolygonPoints.length > 0 && (
+                      <p
+                        className={`text-[.6rem] mb-2 ${isSitePolygonValid ? "text-gray-500" : "text-red-500"}`}
+                      >
+                        {sitePolygonCoords === null
+                          ? "Some points have invalid lat/lng"
+                          : sitePolygonCoords.length < 3
+                            ? `${sitePolygonCoords.length} pts — need at least 3`
+                            : `${sitePolygonCoords.length} points · ${formatArea(calculateAreaHectares(sitePolygonCoords))}`}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSitePolygonPoints((prev) => [
+                            ...prev,
+                            { lat: "", lng: "" },
+                          ])
+                        }
+                        className="flex-1 flex items-center justify-center gap-0.5 text-[.65rem] text-gray-700 bg-gray-100 hover:bg-gray-200 py-1.5 rounded"
+                      >
+                        <Plus size={10} /> Add Point
+                      </button>
+                      {analysisCoords.length >= 3 && (
+                        <button
+                          type="button"
+                          onClick={fillSitePolygonFromAnalysis}
+                          title="Fill with the polygon drawn in Analysis Tools"
+                          className="flex-1 flex items-center justify-center gap-0.5 text-[.65rem] text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 py-1.5 rounded"
+                        >
+                          <Pen size={10} /> Use Drawn Area
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
               <form
                 onSubmit={onSubmitSite}
                 className={`absolute bottom-full mb-3 right-0 w-[16rem] max-h-[75vh] overflow-y-auto flex flex-col gap-2 p-2 bg-white border border-green-600 rounded-md shadow-xl transition-all duration-200 ${isSiteFormPenelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
@@ -3182,9 +3203,6 @@ export default function Map() {
                 <div>
                   <label className="text-[.7rem] text-gray-600">
                     Center Coordinate
-                    {sitePolygonCoords && sitePolygonCoords.length >= 3 && (
-                      <span className="text-gray-400"> (optional)</span>
-                    )}
                   </label>
                   <div className="flex gap-2">
                     <input
@@ -3232,104 +3250,26 @@ export default function Map() {
                     </button>
                   </div>
                 </div>
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-[.7rem] text-gray-600">
-                      Polygon Coordinates{" "}
-                      <span className="text-gray-400">(optional)</span>
-                    </label>
-                    {sitePolygonPoints.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setSitePolygonPoints([])}
-                        title="Clear polygon"
-                        className="text-[.6rem] text-red-500 hover:text-red-700"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  <div className="space-y-1 mt-1 max-h-40 overflow-y-auto pr-0.5">
-                    {sitePolygonPoints.map((point, idx) => (
-                      <div key={idx} className="flex gap-1 items-center">
-                        <span className="text-[.6rem] font-bold text-white bg-green-600 w-5 h-5 flex items-center justify-center rounded-full shrink-0">
-                          {idx + 1}
-                        </span>
-                        <input
-                          type="number"
-                          step="0.000001"
-                          placeholder="Lat"
-                          value={point.lat}
-                          onChange={(e) =>
-                            updateSitePolygonPoint(idx, "lat", e.target.value)
-                          }
-                          className="w-full min-w-0 text-[.7rem] p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
-                        />
-                        <input
-                          type="number"
-                          step="0.000001"
-                          placeholder="Lng"
-                          value={point.lng}
-                          onChange={(e) =>
-                            updateSitePolygonPoint(idx, "lng", e.target.value)
-                          }
-                          className="w-full min-w-0 text-[.7rem] p-1 border rounded-md bg-gray-50 focus:ring-2 focus:ring-green-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSitePolygonPoints((prev) =>
-                              prev.filter((_, i) => i !== idx),
-                            )
-                          }
-                          className="text-red-500 hover:text-red-700 p-0.5 shrink-0"
-                          title="Delete"
-                        >
-                          <Trash size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-1 mt-1">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSitePolygonPoints((prev) => [
-                          ...prev,
-                          { lat: "", lng: "" },
-                        ])
+                {/* ✅ TOGGLE BUTTON FOR POLYGON FORM */}
+                <div className="border-t border-gray-200 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (sitePolygonPoints.length === 0) {
+                        setSitePolygonPoints([{ lat: "", lng: "" }]);
                       }
-                      className="flex-1 flex items-center justify-center gap-0.5 text-[.65rem] text-gray-700 bg-gray-100 hover:bg-gray-200 py-1 rounded"
-                    >
-                      <Plus size={10} /> Add Point
-                    </button>
-                    {analysisCoords.length >= 3 && (
-                      <button
-                        type="button"
-                        onClick={fillSitePolygonFromAnalysis}
-                        title="Fill with the polygon drawn in Analysis Tools"
-                        className="flex-1 flex items-center justify-center gap-0.5 text-[.65rem] text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 py-1 rounded"
-                      >
-                        <Pen size={10} /> Use Drawn Area
-                      </button>
-                    )}
-                  </div>
-                  {sitePolygonPoints.length > 0 && (
-                    <p
-                      className={`text-[.6rem] mt-1 ${isSitePolygonValid ? "text-gray-500" : "text-red-500"}`}
-                    >
-                      {sitePolygonCoords === null
-                        ? "Some points have invalid lat/lng"
-                        : sitePolygonCoords.length < 3
-                          ? `${sitePolygonCoords.length} pts — need at least 3`
-                          : `${sitePolygonCoords.length} points · ${formatArea(calculateAreaHectares(sitePolygonCoords))}`}
-                    </p>
-                  )}
+                      setShowSitePolygonOnMap(!showSitePolygonOnMap);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 text-[.7rem] text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 py-1.5 rounded transition-colors"
+                  >
+                    {showSitePolygonOnMap ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {showSitePolygonOnMap ? "Hide Polygon Form" : "Add Polygon Coordinates"}
+                  </button>
                 </div>
                 {suitablePolygons && suitablePolygons.features && (
                   <div className="border-t border-gray-200 pt-2 mt-1">
                     <label className="text-[.7rem] text-gray-600 block mb-1">
-                      Assigned Potential Sites (Optional)
+                      Assigned Potential areas (Optional)
                     </label>
                     <div className="bg-gray-50 p-2 rounded border text-[.7rem] text-center">
                       <strong className="text-green-700 text-lg">
@@ -3355,6 +3295,7 @@ export default function Map() {
                       setSitePolygonPoints([]);
                       setSiteMarkerPosition(null);
                       setSelectedPotentialSiteIds([]);
+                      setShowSitePolygonOnMap(false);
                     }}
                     className="bg-gray-200 hover:bg-gray-300 text-gray-700 h-8 px-2 py-1 rounded-lg text-[.7rem]"
                   >
@@ -3410,7 +3351,6 @@ export default function Map() {
             attribution="NDVI &copy; GEE"
           />
         )}
-
         {/* ✅ FIX: Wrap drawn polygon with showAnalysisPolygons toggle */}
         {showAnalysisPolygons && analysisCoords.length >= 3 && (
           <Polygon
@@ -3491,7 +3431,6 @@ export default function Map() {
             </Popup>
           </Polygon>
         )}
-
         {/* ✅ FIX: Wrap vertex markers with showAnalysisPolygons toggle */}
         {showAnalysisPolygons &&
           analysisCoords.map((coord, idx) => (
@@ -3505,7 +3444,6 @@ export default function Map() {
               }}
             />
           ))}
-
         {showAnalysisPolygons &&
           suitablePolygons &&
           suitablePolygons.features && (
@@ -3819,7 +3757,6 @@ export default function Map() {
                         {area.name}
                       </strong>
                     </div>
-
                     {/* ✅ UPDATED: Toggle Button for Classified Areas */}
                     <button
                       onClick={() => {
@@ -3842,18 +3779,16 @@ export default function Map() {
                           });
                         }
                       }}
-                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${
-                        showClassifiedAreasBarangayId === area.barangay_id
+                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${showClassifiedAreasBarangayId === area.barangay_id
                           ? "bg-purple-600 hover:bg-purple-700 text-white"
                           : "bg-red-600 hover:bg-red-700 text-white"
-                      }`}
+                        }`}
                     >
                       <AreaChart size={14} />{" "}
                       {showClassifiedAreasBarangayId === area.barangay_id
                         ? "Hide Classified Areas"
                         : "View Classified Areas"}
                     </button>
-
                     {/* ✅ UPDATED: Toggle Button for Hazard Areas (Removed auto-fly/fitBounds) */}
                     <button
                       onClick={async () => {
@@ -3884,11 +3819,10 @@ export default function Map() {
                           }
                         }
                       }}
-                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${
-                        visibleHazardBarangayId === area.barangay_id
+                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${visibleHazardBarangayId === area.barangay_id
                           ? "bg-yellow-600 hover:bg-yellow-700 text-white"
                           : "bg-yellow-500 hover:bg-yellow-600 text-white"
-                      }`}
+                        }`}
                     >
                       <AlertTriangle size={14} />{" "}
                       {visibleHazardBarangayId === area.barangay_id
@@ -3915,7 +3849,8 @@ export default function Map() {
             </Popup>
           </Marker>
         )}
-        {isSiteFormPenelOpen &&
+        {/* ✅ RENDER SITE POLYGON ON MAP WITH SHOW/HIDE TOGGLE */}
+        {showSitePolygonOnMap &&
           sitePolygonCoords &&
           sitePolygonCoords.length >= 3 && (
             <Polygon
@@ -3924,9 +3859,19 @@ export default function Map() {
                 color: "#16a34a",
                 weight: 2,
                 dashArray: "6 4",
-                fillOpacity: 0.15,
+                fillColor: "#16a34a",
+                fillOpacity: 0.2,
               }}
-            />
+            >
+              <Popup>
+                <div className="text-sm">
+                  <strong className="text-green-700">Site Polygon</strong>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {formatArea(calculateAreaHectares(sitePolygonCoords))}
+                  </p>
+                </div>
+              </Popup>
+            </Polygon>
           )}
         {siteMarkerPosition && (
           <Marker
@@ -4015,7 +3960,6 @@ export default function Map() {
             }}
           />
         )}
-
         {/* ✅ NEW: Render Classified Areas on Map */}
         <MemoizedClassifiedAreas
           classifiedAreasForMap={classifiedAreasForMap}
@@ -4023,7 +3967,6 @@ export default function Map() {
           setShowClassifiedAreasBarangayId={setShowClassifiedAreasBarangayId}
           setPSAlert={setPSAlert}
         />
-
         {/* ✅ NEW: Render Hazard Areas on Map (Memoized to prevent blinking) */}
         <MemoizedHazardAreas
           hazard_areas={hazard_areas}
@@ -4032,12 +3975,11 @@ export default function Map() {
           setVisibleHazardBarangayId={setVisibleHazardBarangayId}
           setPSAlert={setPSAlert}
         />
-
         <BarangayClassifiedAreas
           barangayId={selectedBarangayId}
           token={token}
           onClose={() => setSelectedBarangayId(null)}
-          onStatusChange={() => {}}
+          onStatusChange={() => { }}
         />
         {showMgbFlood && (
           <TileLayer
@@ -4110,12 +4052,12 @@ export default function Map() {
         isShowingSite={
           showSitePolygon &&
           activeShownSiteId ===
-            (selectedSiteId ? parseInt(selectedSiteId) : null)
+          (selectedSiteId ? parseInt(selectedSiteId) : null)
         }
         isShowingPotentialSites={
           showPotentialSites &&
           activeShownSiteId ===
-            (selectedSiteId ? parseInt(selectedSiteId) : null)
+          (selectedSiteId ? parseInt(selectedSiteId) : null)
         }
         onViewTrend={handleViewTrend}
         onReanalyze={handleReanalyze}
