@@ -5,6 +5,7 @@ Each endpoint takes optional filters and returns "summary", chart data and every
 matching "rows" record (not paginated, so PDF/Excel exports include everything).
 
   gis_report/sites/            every active site: approval, verification, boundary, planted area
+  gis_report/areas/            every reforestation area: sites, hectares, inspectors, assessments
   gis_report/planted_reviews/  planted-area polygons and their DM → GIS review history
   gis_report/assessments/      submitted field assessments with layers and evidence photos
 """
@@ -19,6 +20,7 @@ from django.views.decorators.csrf import csrf_exempt
 from accounts.helper import get_user_from_token
 from accounts.models import User
 from Field_assessment.models import Assigned_onsite_inspector, Field_assessment
+from reforestation_areas.models import Reforestation_areas
 from sites.models import Sites
 from sites.views import OFFICIAL_SITE_STATUSES
 from tree_planting_programs.models import Application, ProgressReport, SeedlingRequest
@@ -66,7 +68,6 @@ PHOTO_LAYERS = {
     'safety_other': 'Other safety', 'surv_soil': 'Soil', 'surv_water': 'Water availability',
     'surv_animal': 'Animal presence', 'surv_slope': 'Slope', 'bound_verification': 'Boundary',
 }
-HIGH_RISK_CONCERNS = {'Armed Threat / Violence', 'Hostile Person on Site'}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -169,6 +170,7 @@ def get_gis_sites_report(request):
     barangay_id = request.GET.get('barangay', '').strip()
     area_id = request.GET.get('area', '').strip()
     issue = request.GET.get('issue', '').strip()       # any | boundary | oversized | no_class
+    land_class = request.GET.get('land_classification', '').strip()   # id | none
     search = request.GET.get('search', '').strip()
     date_from = _parse_date(request.GET.get('date_from'))
     date_to = _parse_date(request.GET.get('date_to'))
@@ -202,12 +204,25 @@ def get_gis_sites_report(request):
             qs = qs.filter(reforestation_area__barangay_id=barangay_id)
         if area_id:
             qs = qs.filter(reforestation_area_id=area_id)
+        if land_class == 'none':
+            qs = qs.filter(Q(meta_verification__isnull=True)
+                           | Q(meta_verification__verified_land_classification__isnull=True))
+        elif land_class.isdigit():
+            qs = qs.filter(meta_verification__verified_land_classification_id=land_class)
         if search:
             qs = qs.filter(Q(name__icontains=search) | Q(reforestation_area__name__icontains=search))
         if date_from:
             qs = qs.filter(created_at__date__gte=date_from)
         if date_to:
             qs = qs.filter(created_at__date__lte=date_to)
+
+        # Every reforestation area in scope (barangay / area filter), with or without sites
+        areas_qs = Reforestation_areas.objects.filter(deleted_at__isnull=True)
+        if barangay_id:
+            areas_qs = areas_qs.filter(barangay_id=barangay_id)
+        if area_id:
+            areas_qs = areas_qs.filter(reforestation_area_id=area_id)
+        areas_total = areas_qs.count()
 
         rows = []
         for s in qs[:MAX_ROWS]:
@@ -268,13 +283,23 @@ def get_gis_sites_report(request):
                 'issues': issues,
             })
 
-        status_counts, verification_counts, brgy = {}, {}, {}
+        status_counts, verification_counts, brgy, class_counts = {}, {}, {}, {}
+
+        def _brgy(name):
+            return brgy.setdefault(name or 'Unassigned',
+                                   {'name': name or 'Unassigned', 'areas': 0, 'sites': 0, 'official': 0,
+                                    'hectares': 0.0, 'planted_hectares': 0.0})
+
+        # Every area counts toward its barangay, even when it has no matching sites
+        for row in areas_qs.values('barangay__name').annotate(n=Count('reforestation_area_id')):
+            _brgy(row['barangay__name'])['areas'] += row['n']
+
         for r in rows:
             status_counts[r['status']] = status_counts.get(r['status'], 0) + 1
             verification_counts[r['verification']] = verification_counts.get(r['verification'], 0) + 1
-            b = brgy.setdefault(r['barangay'] or 'Unassigned',
-                                {'name': r['barangay'] or 'Unassigned', 'sites': 0, 'official': 0,
-                                 'hectares': 0.0, 'planted_hectares': 0.0})
+            lc = r['land_classification'] or 'Unclassified'
+            class_counts[lc] = class_counts.get(lc, 0) + 1
+            b = _brgy(r['barangay'])
             b['sites'] += 1
             b['official'] += 1 if r['official'] else 0
             b['hectares'] += r['site_hectares']
@@ -303,6 +328,7 @@ def get_gis_sites_report(request):
             'with_issues': sum(1 for r in rows if r['issues']),
             'assessments': sum(r['assessments'] for r in rows),
             'areas': len({r['reforestation_area'] for r in rows if r['reforestation_area']}),
+            'areas_total': areas_total,
         }
 
         return JsonResponse({
@@ -310,6 +336,8 @@ def get_gis_sites_report(request):
             'status_breakdown': [s for s in _style_list(status_counts, SITE_STATUS_STYLE)
                                  if s['value'] or s['key'] in ('pending', 'under_review', 'accepted', 'rejected')],
             'verification_breakdown': _style_list(verification_counts, VERIFICATION_STYLE),
+            'land_class_breakdown': [{'name': k, 'value': v}
+                                     for k, v in sorted(class_counts.items(), key=lambda x: -x[1])],
             'by_barangay': [
                 {**b, 'hectares': round(b['hectares'], 2), 'planted_hectares': round(b['planted_hectares'], 2)}
                 for b in sorted(brgy.values(), key=lambda x: -x['hectares'])
@@ -319,6 +347,180 @@ def get_gis_sites_report(request):
         }, status=200)
     except Exception as e:
         logger.error(f'Error in get_gis_sites_report: {e}', exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────
+# REFORESTATION AREAS
+# ─────────────────────────────────────────────────────────────
+ACTIVE_PROGRAM_STATUSES = ('for_evaluation', 'for_head', 'accepted', 'under_monitoring')
+
+
+@csrf_exempt
+def get_gis_areas_report(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    if not _auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    barangay_id = request.GET.get('barangay', '').strip()
+    area_id = request.GET.get('area', '').strip()
+    coverage = request.GET.get('coverage', '').strip()   # with_sites | no_sites | no_inspector | no_assessment
+    search = request.GET.get('search', '').strip()
+    date_from = _parse_date(request.GET.get('date_from'))
+    date_to = _parse_date(request.GET.get('date_to'))
+
+    try:
+        qs = (Reforestation_areas.objects.filter(deleted_at__isnull=True)
+              .select_related('barangay').order_by('barangay__name', 'name'))
+        if barangay_id:
+            qs = qs.filter(barangay_id=barangay_id)
+        if area_id:
+            qs = qs.filter(reforestation_area_id=area_id)
+        if search:
+            # Same search box as the site list: match the area itself or any of its sites
+            qs = qs.filter(Q(name__icontains=search) | Q(description__icontains=search)
+                           | Q(sites__name__icontains=search, sites__is_active=True)).distinct()
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+        areas = list(qs[:MAX_ROWS])
+        ids = [a.reforestation_area_id for a in areas]
+
+        sites_by_area = {}
+        for s in (Sites.objects.filter(is_active=True, reforestation_area_id__in=ids)
+                  .select_related('meta_verification__verified_land_classification')
+                  .prefetch_related(Prefetch(
+                      'progress_reports',
+                      queryset=ProgressReport.objects.filter(status='accepted', planted_area_hectares__isnull=False)
+                      .order_by('submitted_at', 'created_at'),
+                      to_attr='planted_reports'))):
+            sites_by_area.setdefault(s.reforestation_area_id, []).append(s)
+
+        inspectors_by_area = {}
+        for a in (Assigned_onsite_inspector.objects.filter(reforestation_area_id__in=ids)
+                  .select_related('user__profile')):
+            inspectors_by_area.setdefault(a.reforestation_area_id, []).append(_person(a.user))
+
+        assessments_by_area = {}
+        for fa in (Field_assessment.objects.filter(is_submitted=True)
+                   .filter(Q(site__reforestation_area_id__in=ids)
+                           | Q(site__isnull=True, assigned_onsite_inspector__reforestation_area_id__in=ids))
+                   .values('site_id', 'site__reforestation_area_id',
+                           'assigned_onsite_inspector__reforestation_area_id', 'created_at')):
+            aid = fa['site__reforestation_area_id'] or fa['assigned_onsite_inspector__reforestation_area_id']
+            assessments_by_area.setdefault(aid, []).append(fa)
+
+        programs_by_area = {
+            r['site__reforestation_area_id']: r['n']
+            for r in Application.objects.filter(site__reforestation_area_id__in=ids, status__in=ACTIVE_PROGRAM_STATUSES)
+            .values('site__reforestation_area_id').annotate(n=Count('application_id'))
+        }
+
+        rows = []
+        for a in areas:
+            sites = sites_by_area.get(a.reforestation_area_id, [])
+            inspectors = inspectors_by_area.get(a.reforestation_area_id, [])
+            fas = assessments_by_area.get(a.reforestation_area_id, [])
+
+            site_ha = planted_ha = 0.0
+            official = verified = verification_pending = pending = 0
+            classes = set()
+            for s in sites:
+                mv = getattr(s, 'meta_verification', None)
+                site_ha += s.total_area_hectares or 0
+                if s.planted_reports:
+                    planted_ha += s.planted_reports[-1].planted_area_hectares or 0
+                if mv and mv.status == 'verified':
+                    verified += 1
+                    if s.status in OFFICIAL_SITE_STATUSES:
+                        official += 1
+                if mv and mv.status == 'pending':
+                    verification_pending += 1
+                if s.status in ('pending', 'under_review'):
+                    pending += 1
+                if mv and mv.verified_land_classification:
+                    classes.add(mv.verified_land_classification.name)
+
+            issues = []
+            if not sites:
+                issues.append('No sites yet')
+            if not inspectors:
+                issues.append('No assigned inspector')
+            if not fas:
+                issues.append('No field assessment yet')
+
+            if coverage == 'with_sites' and not sites:
+                continue
+            if coverage == 'no_sites' and sites:
+                continue
+            if coverage == 'no_inspector' and inspectors:
+                continue
+            if coverage == 'no_assessment' and fas:
+                continue
+
+            last_fa = max((f['created_at'] for f in fas), default=None)
+            rows.append({
+                'id': a.reforestation_area_id,
+                'name': a.name,
+                'description': a.description,
+                'barangay': a.barangay.name if a.barangay else None,
+                'has_marker': bool(a.coordinate),
+                'created_at': _iso(a.created_at),
+                'sites': len(sites),
+                'official': official,
+                'verified': verified,
+                'verification_pending': verification_pending,
+                'pending_approval': pending,
+                'site_hectares': round(site_ha, 2),
+                'planted_hectares': round(planted_ha, 2),
+                'planted_pct': round(planted_ha / site_ha * 100, 1) if site_ha > 0 and planted_ha else None,
+                'land_classifications': sorted(classes),
+                'inspectors': sorted(i for i in inspectors if i),
+                'assessments': len(fas),
+                'general_assessments': sum(1 for f in fas if not f['site_id']),
+                'specific_assessments': sum(1 for f in fas if f['site_id']),
+                'last_assessment': _iso(last_fa),
+                'active_programs': programs_by_area.get(a.reforestation_area_id, 0),
+                'issues': issues,
+            })
+
+        brgy = {}
+        for r in rows:
+            b = brgy.setdefault(r['barangay'] or 'Unassigned',
+                                {'name': r['barangay'] or 'Unassigned', 'areas': 0, 'sites': 0,
+                                 'hectares': 0.0, 'planted_hectares': 0.0})
+            b['areas'] += 1
+            b['sites'] += r['sites']
+            b['hectares'] += r['site_hectares']
+            b['planted_hectares'] += r['planted_hectares']
+
+        summary = {
+            'total': len(rows),
+            'with_sites': sum(1 for r in rows if r['sites']),
+            'without_sites': sum(1 for r in rows if not r['sites']),
+            'without_inspector': sum(1 for r in rows if not r['inspectors']),
+            'without_assessment': sum(1 for r in rows if not r['assessments']),
+            'sites': sum(r['sites'] for r in rows),
+            'official': sum(r['official'] for r in rows),
+            'hectares': round(sum(r['site_hectares'] for r in rows), 2),
+            'planted_hectares': round(sum(r['planted_hectares'] for r in rows), 2),
+            'assessments': sum(r['assessments'] for r in rows),
+            'active_programs': sum(r['active_programs'] for r in rows),
+            'barangays': len({r['barangay'] for r in rows if r['barangay']}),
+        }
+
+        return JsonResponse({
+            'summary': summary,
+            'by_barangay': [
+                {**b, 'hectares': round(b['hectares'], 2), 'planted_hectares': round(b['planted_hectares'], 2)}
+                for b in sorted(brgy.values(), key=lambda x: -x['areas'])
+            ],
+            'rows': rows,
+        }, status=200)
+    except Exception as e:
+        logger.error(f'Error in get_gis_areas_report: {e}', exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -595,6 +797,95 @@ def _inspector_tracking(assessment_rows, barangay_id, area_id, date_from, date_t
 
 
 # ─────────────────────────────────────────────────────────────
+# ASSESSMENT COVERAGE (used by the field assessments report)
+# ─────────────────────────────────────────────────────────────
+OVERDUE_DAYS = 90    # a site / area is overdue if its last assessment is older than this
+
+
+def _coverage_row(last, count):
+    days = (timezone.localdate() - _local_date(last)).days if last else None
+    status = 'never' if last is None else 'overdue' if days > OVERDUE_DAYS else 'recent'
+    return {'assessments': count, 'last_assessment': _iso(last), 'days_since': days, 'status': status}
+
+
+def _assessment_coverage(barangay_id, area_id):
+    """
+    Every active site and reforestation area with its all-time submitted
+    assessment count and how long ago the last one was. Only the barangay /
+    area filters apply, so gaps stay visible whatever date range is picked.
+    """
+    areas_qs = Reforestation_areas.objects.filter(deleted_at__isnull=True).select_related('barangay')
+    sites_qs = Sites.objects.filter(is_active=True, reforestation_area__deleted_at__isnull=True) \
+        .select_related('reforestation_area__barangay')
+    if barangay_id:
+        areas_qs = areas_qs.filter(barangay_id=barangay_id)
+        sites_qs = sites_qs.filter(reforestation_area__barangay_id=barangay_id)
+    if area_id:
+        areas_qs = areas_qs.filter(reforestation_area_id=area_id)
+        sites_qs = sites_qs.filter(reforestation_area_id=area_id)
+
+    submitted = Field_assessment.objects.filter(is_submitted=True)
+    by_site = {
+        r['site_id']: r
+        for r in submitted.filter(site__isnull=False).values('site_id').annotate(n=Count('field_assessment_id'),
+                                                                                 last=Max('created_at'))
+    }
+    # An area's assessments: general ones done on the area plus site-specific ones on its sites
+    by_area = {}
+    for r in submitted.values('site__reforestation_area_id', 'assigned_onsite_inspector__reforestation_area_id') \
+            .annotate(n=Count('field_assessment_id'), last=Max('created_at')):
+        aid = r['site__reforestation_area_id'] or r['assigned_onsite_inspector__reforestation_area_id']
+        if not aid:
+            continue
+        a = by_area.setdefault(aid, {'n': 0, 'last': None})
+        a['n'] += r['n']
+        a['last'] = max(filter(None, (a['last'], r['last'])), default=None)
+
+    sites = []
+    for s in sites_qs:
+        stat = by_site.get(s.site_id, {})
+        sites.append({
+            'id': s.site_id,
+            'name': s.name,
+            'reforestation_area': s.reforestation_area.name if s.reforestation_area else None,
+            'barangay': _barangay(s),
+            **_coverage_row(stat.get('last'), stat.get('n', 0)),
+        })
+    areas = []
+    for a in areas_qs:
+        stat = by_area.get(a.reforestation_area_id, {})
+        areas.append({
+            'id': a.reforestation_area_id,
+            'name': a.name,
+            'reforestation_area': None,
+            'barangay': a.barangay.name if a.barangay else None,
+            **_coverage_row(stat.get('last'), stat.get('n', 0)),
+        })
+
+    # Never assessed first, then the longest wait
+    def order(r):
+        return (r['days_since'] is not None, -(r['days_since'] or 0), r['name'])
+    sites.sort(key=order)
+    areas.sort(key=order)
+
+    def summarize(rows):
+        waits = [r['days_since'] for r in rows if r['days_since'] is not None]
+        return {
+            'total': len(rows),
+            'never': sum(1 for r in rows if r['status'] == 'never'),
+            'overdue': sum(1 for r in rows if r['status'] == 'overdue'),
+            'recent': sum(1 for r in rows if r['status'] == 'recent'),
+            'oldest_days': max(waits, default=None),
+        }
+
+    return {
+        'overdue_days': OVERDUE_DAYS,
+        'sites': {'summary': summarize(sites), 'rows': sites},
+        'areas': {'summary': summarize(areas), 'rows': areas},
+    }
+
+
+# ─────────────────────────────────────────────────────────────
 # FIELD ASSESSMENTS
 # ─────────────────────────────────────────────────────────────
 @csrf_exempt
@@ -608,7 +899,6 @@ def get_gis_assessments_report(request):
     layer = request.GET.get('layer', '').strip()
     barangay_id = request.GET.get('barangay', '').strip()
     area_id = request.GET.get('area', '').strip()
-    risk = request.GET.get('risk', '').strip()          # any | high
     search = request.GET.get('search', '').strip()
     date_from = _parse_date(request.GET.get('date_from'))
     date_to = _parse_date(request.GET.get('date_to'))
@@ -645,11 +935,6 @@ def get_gis_assessments_report(request):
         photo_counts = {}
         for fa in qs[:MAX_ROWS]:
             concerns = _security_concerns(fa.field_assessment_data)
-            high = any(c in HIGH_RISK_CONCERNS for c in concerns)
-            if risk == 'any' and not concerns:
-                continue
-            if risk == 'high' and not high:
-                continue
             assign = fa.assigned_onsite_inspector
             area = assign.reforestation_area if assign else None
             images = list(fa.images.all())
@@ -673,21 +958,16 @@ def get_gis_assessments_report(request):
                 'photos': len(images),
                 'has_location': bool(fa.location),
                 'security_concerns': concerns,
-                'high_risk': high,
                 'assessment_date': _iso(fa.assessment_date),
                 'submitted': _iso(fa.sent_date or fa.created_at),
             })
 
         layer_counts = {label: 0 for _, (_, label) in LAYER_KEYS.items()}
-        inspectors, months = {}, _months(date_from, date_to)
+        months = _months(date_from, date_to)
         monthly = {k: {'general': 0, 'specific': 0} for k in months}
         for r in rows:
             for l in r['layers']:
                 layer_counts[l] = layer_counts.get(l, 0) + 1
-            if r['inspector']:
-                i = inspectors.setdefault(r['inspector'], {'name': r['inspector'], 'assessments': 0, 'photos': 0})
-                i['assessments'] += 1
-                i['photos'] += r['photos']
             d = _parse_date(r['submitted'])
             if d and (d.year, d.month) in monthly:
                 monthly[(d.year, d.month)]['specific' if r['type'] == 'Specific' else 'general'] += 1
@@ -697,11 +977,8 @@ def get_gis_assessments_report(request):
             'general': sum(1 for r in rows if r['type'] == 'General'),
             'specific': sum(1 for r in rows if r['type'] == 'Specific'),
             'photos': sum(r['photos'] for r in rows),
-            'with_concerns': sum(1 for r in rows if r['security_concerns']),
-            'high_risk': sum(1 for r in rows if r['high_risk']),
-            'without_location': sum(1 for r in rows if not r['has_location']),
             'sites': len({r['site_id'] for r in rows if r['site_id']}),
-            'inspectors': len(inspectors),
+            'inspectors': len({r['inspector_id'] for r in rows if r['inspector_id']}),
         }
 
         return JsonResponse({
@@ -712,8 +989,8 @@ def get_gis_assessments_report(request):
                 for k, v in sorted(photo_counts.items(), key=lambda x: -x[1])
             ],
             'monthly': [{'month': _label(k), **v} for k, v in monthly.items()],
-            'by_inspector': sorted(inspectors.values(), key=lambda x: -x['assessments']),
             'inspector_tracking': _inspector_tracking(rows, barangay_id, area_id, date_from, date_to),
+            'coverage': _assessment_coverage(barangay_id, area_id),
             'rows': rows,
         }, status=200)
     except Exception as e:

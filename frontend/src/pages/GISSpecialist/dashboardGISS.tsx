@@ -28,8 +28,6 @@ import {
   Loader2,
   MapPin,
   MapPinned,
-  RefreshCw,
-  ShieldAlert,
   Sprout,
   TreePine,
   XCircle,
@@ -302,12 +300,10 @@ export default function DashboardGISS() {
 
   const [data, setData] = useState<GisDashboard | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchDashboardData = async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+  const fetchDashboardData = async () => {
+    setLoading(true);
     setError(null);
     try {
       const res = await fetch(`${api}api/gis_dashboard/`, {
@@ -320,7 +316,6 @@ export default function DashboardGISS() {
       setError(err.message || "Could not load dashboard data.");
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
@@ -393,14 +388,6 @@ export default function DashboardGISS() {
               {new Date().toLocaleDateString("en-PH", { weekday: "long", month: "short", day: "numeric", year: "numeric" })}
             </p>
           </div>
-          <button
-            onClick={() => fetchDashboardData(true)}
-            disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0F4A2F] text-white text-sm font-semibold hover:bg-[#1a6b44] transition-colors shadow-sm disabled:opacity-60"
-          >
-            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
-            {refreshing ? "Refreshing…" : "Refresh"}
-          </button>
         </div>
 
         {/* KPI row 1 — what exists */}
@@ -447,27 +434,20 @@ export default function DashboardGISS() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatCard
             icon={<MapPinned size={20} />}
-            label="Planted Areas to Review"
-            value={fmt(s.pending_reviews)}
+            label="Planted Area Reviews"
+            value={fmt(s.pending_reviews + s.reviewed_this_month)}
             sub={
-              s.pending_reviews > 0 && s.oldest_pending_days !== null
-                ? `Oldest waiting ${s.oldest_pending_days} days · ${s.awaiting_dm} with Data Manager`
-                : `${s.awaiting_dm} still with Data Manager`
+              <>
+                {s.pending_reviews} to review · {s.reviewed_this_month} reviewed this month ({s.approved_this_month} confirmed,{" "}
+                {s.changes_this_month} changes)
+                {s.pending_reviews > 0 && s.oldest_pending_days !== null && ` · oldest ${s.oldest_pending_days}d`}
+                {s.avg_review_days !== null && ` · avg ${s.avg_review_days}d`}
+              </>
             }
             accent="bg-indigo-500"
             delay="0.2s"
-            alert={s.pending_reviews > 0 ? "Action needed" : undefined}
+            alert={s.pending_reviews > 0 ? `${s.pending_reviews} to review` : undefined}
             onClick={() => navigate("/GISS/planting-area-reviews")}
-          />
-          <StatCard
-            icon={<CheckCircle2 size={20} />}
-            label="Reviewed This Month"
-            value={fmt(s.reviewed_this_month)}
-            sub={`${s.approved_this_month} confirmed · ${s.changes_this_month} changes requested${
-              s.avg_review_days !== null ? ` · avg ${s.avg_review_days}d` : ""
-            }`}
-            accent="bg-green-500"
-            delay="0.24s"
           />
           <StatCard
             icon={<FileSearch size={20} />}
@@ -475,15 +455,25 @@ export default function DashboardGISS() {
             value={fmt(s.verification_pending)}
             sub={`${s.sites_without_verification} sites with no verification yet · ${s.assessments_this_month} field assessments this month`}
             accent="bg-amber-500"
-            delay="0.28s"
+            delay="0.24s"
           />
           <StatCard
-            icon={<ShieldAlert size={20} />}
-            label="Map Data Checks"
-            value={fmt(s.data_issues)}
-            sub={s.data_issues > 0 ? "Boundaries or classifications to fix" : "All site boundaries look consistent"}
-            accent={s.data_issues > 0 ? "bg-red-500" : "bg-green-500"}
+            icon={<Layers size={20} />}
+            label="Classified Areas"
+            value={fmt(s.classified_areas)}
+            sub={`${data.classified.length} land classification type(s)`}
+            accent="bg-sky-500"
+            delay="0.28s"
+            onClick={() => navigate("/GISS/maintenance/Classified_areas")}
+          />
+          <StatCard
+            icon={<AlertTriangle size={20} />}
+            label="Hazard Areas"
+            value={fmt(s.hazard_areas)}
+            sub={`${data.hazards.length} hazard type(s) mapped`}
+            accent="bg-red-500"
             delay="0.32s"
+            onClick={() => navigate("/GISS/maintenance/hazard_areas")}
           />
         </div>
 
@@ -521,8 +511,48 @@ export default function DashboardGISS() {
             )}
           </Card>
           <Card delay="0.4s">
-            <SectionHeader title="Site Approval Status" sub={`All ${s.sites_total} active sites · ${fmtHa(s.sites_hectares)}`} />
-            <StatusDonut data={data.site_status} showHectares />
+            <SectionHeader
+              title="Planted Area Review Queue"
+              sub="Approved by the Data Manager, waiting for map confirmation"
+              action={{ label: "Open", onClick: () => navigate("/GISS/planting-area-reviews") }}
+            />
+            {data.review_queue.length > 0 ? (
+              <div className="flex flex-col gap-2.5">
+                {data.review_queue.map((r) => {
+                  const oversized =
+                    r.planted_hectares !== null && r.site_hectares !== null && r.site_hectares > 0 && r.planted_hectares > r.site_hectares;
+                  return (
+                    <div key={r.id} className="p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[12.5px] font-bold text-gray-800 truncate">{r.site}</p>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            r.waiting_days > 7 ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {r.waiting_days === 0 ? "Today" : `${r.waiting_days}d waiting`}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-400">
+                        {r.barangay} · {r.visit_type} · {r.inspector}
+                      </p>
+                      <p className={`text-[11px] mt-0.5 ${oversized ? "text-red-500 font-semibold" : "text-gray-500"}`}>
+                        Planted {r.planted_hectares !== null ? fmtHa(r.planted_hectares) : "—"} of site {fmtHa(r.site_hectares)}
+                        {oversized && " — larger than site"}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <CheckCircle2 size={28} className="text-emerald-500 mb-2" />
+                <p className="text-sm text-gray-600 font-medium">Queue is clear</p>
+                <p className="text-[11.5px] text-gray-400">
+                  {s.awaiting_dm > 0 ? `${s.awaiting_dm} report(s) are still with the Data Manager` : "No planted areas waiting"}
+                </p>
+              </div>
+            )}
           </Card>
         </div>
 
@@ -676,55 +706,19 @@ export default function DashboardGISS() {
           </Card>
 
           <Card delay="0.64s">
-            <SectionHeader
-              title="Planted Area Review Queue"
-              sub="Approved by the Data Manager, waiting for map confirmation"
-              action={{ label: "Open", onClick: () => navigate("/GISS/planting-area-reviews") }}
-            />
-            {data.review_queue.length > 0 ? (
-              <div className="flex flex-col gap-2.5">
-                {data.review_queue.map((r) => {
-                  const oversized =
-                    r.planted_hectares !== null && r.site_hectares !== null && r.site_hectares > 0 && r.planted_hectares > r.site_hectares;
-                  return (
-                    <div key={r.id} className="p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[12.5px] font-bold text-gray-800 truncate">{r.site}</p>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            r.waiting_days > 7 ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
-                          }`}
-                        >
-                          {r.waiting_days === 0 ? "Today" : `${r.waiting_days}d waiting`}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-gray-400">
-                        {r.barangay} · {r.visit_type} · {r.inspector}
-                      </p>
-                      <p className={`text-[11px] mt-0.5 ${oversized ? "text-red-500 font-semibold" : "text-gray-500"}`}>
-                        Planted {r.planted_hectares !== null ? fmtHa(r.planted_hectares) : "—"} of site {fmtHa(r.site_hectares)}
-                        {oversized && " — larger than site"}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-10 text-center">
-                <CheckCircle2 size={28} className="text-emerald-500 mb-2" />
-                <p className="text-sm text-gray-600 font-medium">Queue is clear</p>
-                <p className="text-[11.5px] text-gray-400">
-                  {s.awaiting_dm > 0 ? `${s.awaiting_dm} report(s) are still with the Data Manager` : "No planted areas waiting"}
-                </p>
-              </div>
-            )}
+            <SectionHeader title="Site Approval Status" sub={`All ${s.sites_total} active sites · ${fmtHa(s.sites_hectares)}`} />
+            <StatusDonut data={data.site_status} showHectares />
           </Card>
         </div>
 
         {/* Data checks + map layers + activity */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <Card delay="0.68s">
-            <SectionHeader title="Map Data Checks" sub="Site boundaries and records that need fixing" />
+            <SectionHeader
+              title="Map Data Checks"
+              sub="Site boundaries and records that need fixing"
+              badge={`${fmt(s.data_issues)} ${s.data_issues === 1 ? "issue" : "issues"}`}
+            />
             {data.data_issues.length > 0 ? (
               <div className="flex flex-col gap-2">
                 {data.data_issues.map((d, i) => (

@@ -1,6 +1,6 @@
-import { AlertTriangle, Trash2, RotateCcw, X } from "lucide-react";
+import { Trash2, RotateCcw, Save, X } from "lucide-react";
 
-type ConfirmVariant = "danger" | "warning";
+type ConfirmVariant = "danger" | "warning" | "save";
 
 interface PlantScopeConfirmProps {
   title: string;
@@ -33,6 +33,12 @@ export default function PlantScopeConfirm({
       iconBg: "bg-yellow-100",
       iconColor: "text-yellow-600",
       confirmBtn: "bg-yellow-500 hover:bg-yellow-600 text-white",
+    },
+    save: {
+      icon: Save,
+      iconBg: "bg-emerald-100",
+      iconColor: "text-emerald-700",
+      confirmBtn: "bg-[#0F4A2F] hover:bg-[#1a6b44] text-white",
     },
   };
 

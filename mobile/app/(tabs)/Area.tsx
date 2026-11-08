@@ -23,6 +23,7 @@ import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useAlert, ToastHost } from "@/components/AlertContext";
 import { getToken, clearAuthData, isAuthFailure } from "@/utils/auth";
+import { SortMenu, byDateAsc, byDateDesc, byText, type SortOption } from "@/components/SortMenu";
 
 const screenHeight = Dimensions.get("window").height;
 const API_BASE_URL = api + "/api";
@@ -83,6 +84,15 @@ type ReforestationArea = {
 };
 
 type FilterKey = "all" | "saved" | "unassessed" | "drafts";
+type AreaSort = "newest" | "oldest" | "name" | "sites" | "needs_assessment";
+
+const AREA_SORTS: SortOption<AreaSort>[] = [
+  { key: "newest", label: "Newest assigned", icon: "time-outline" },
+  { key: "oldest", label: "Oldest assigned", icon: "hourglass-outline" },
+  { key: "name", label: "Name (A–Z)", icon: "text-outline" },
+  { key: "sites", label: "Most sites", icon: "layers-outline" },
+  { key: "needs_assessment", label: "Needs assessment first", icon: "clipboard-outline" },
+];
 
 const EMPTY_SITES: SiteStats = {
   total: 0,
@@ -254,6 +264,7 @@ const ReforestationAreas: React.FC = () => {
     useState<ReforestationArea | null>(null);
   const [searchText, setSearchText] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [sort, setSort] = useState<AreaSort>("newest");
   const [areas, setAreas] = useState<ReforestationArea[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -547,6 +558,30 @@ const ReforestationAreas: React.FC = () => {
         return true;
     }
   });
+
+  const sortedAreas = useMemo(() => {
+    const list = [...filteredAreas];
+    switch (sort) {
+      case "oldest":
+        return list.sort((a, b) => byDateAsc(a.assigned_at, b.assigned_at));
+      case "name":
+        return list.sort((a, b) => byText(a.name, b.name));
+      case "sites":
+        return list.sort((a, b) => (b.site_stats?.total || 0) - (a.site_stats?.total || 0) || byText(a.name, b.name));
+      case "needs_assessment":
+        // Never assessed first, then the longest since the last assessment
+        return list.sort((a, b) => {
+          const la = a.assessment_stats?.last_assessment_at;
+          const lb = b.assessment_stats?.last_assessment_at;
+          if (!la && !lb) return byDateDesc(a.assigned_at, b.assigned_at);
+          if (!la) return -1;
+          if (!lb) return 1;
+          return byDateAsc(la, lb);
+        });
+      default:
+        return list.sort((a, b) => byDateDesc(a.assigned_at, b.assigned_at));
+    }
+  }, [filteredAreas, sort]);
 
   const FILTERS: { key: FilterKey; label: string }[] = [
     { key: "all", label: "All" },
@@ -900,7 +935,16 @@ const ReforestationAreas: React.FC = () => {
               })}
             </ScrollView>
 
-            <View style={styles.list}>{filteredAreas.map(renderAreaCard)}</View>
+            {filteredAreas.length > 0 && (
+              <View style={styles.sortRow}>
+                <Text style={styles.sortCount}>
+                  {filteredAreas.length} area{filteredAreas.length === 1 ? "" : "s"}
+                </Text>
+                <SortMenu value={sort} options={AREA_SORTS} onChange={setSort} title="Sort areas by" />
+              </View>
+            )}
+
+            <View style={styles.list}>{sortedAreas.map(renderAreaCard)}</View>
 
             {filteredAreas.length === 0 && (
               <View style={styles.emptyState}>
@@ -1218,6 +1262,15 @@ const styles = StyleSheet.create({
   offlineTitle: { fontSize: 13, fontWeight: "700", color: "#92400E" },
   offlineText: { fontSize: 12, color: "#A16207", marginTop: 2, lineHeight: 17 },
   searchContainer: { flexDirection: "row", gap: 10, alignItems: "center" },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  sortCount: { fontSize: 12.5, fontWeight: "600", color: MUTED },
   searchBar: {
     flex: 1,
     flexDirection: "row",

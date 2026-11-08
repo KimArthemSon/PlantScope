@@ -18,11 +18,17 @@ import {
   X,
   ZoomIn,
   Download,
+  RotateCcw,
+  Undo2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import LoaderPending from "@/components/layout/loaderSmall";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
+import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
 import { api } from "@/constant/api";
+import ChangeEmailModal from "@/components/profile/ChangeEmailModal";
+import { notifyProfileUpdated } from "@/hooks/authorization";
+import defaultProfile from "@/assets/default-profile.png";
 
 interface FullProfile {
   id: number;
@@ -49,10 +55,6 @@ interface PasswordConstraint {
   symbol: boolean;
 }
 
-function initials(first: string, last: string) {
-  return `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase() || "?";
-}
-
 export default function MyProfile() {
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
@@ -69,6 +71,11 @@ export default function MyProfile() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
+  const [showEmailChange, setShowEmailChange] = useState(false);
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const [confirmSave, setConfirmSave] = useState(false);
+  // The photo currently stored on the server, used to undo unsaved photo changes
+  const [savedPhoto, setSavedPhoto] = useState("");
 
   const [passwordConstraints, setPasswordConstraints] =
     useState<PasswordConstraint>({
@@ -122,6 +129,7 @@ export default function MyProfile() {
           confirm_pass: "",
           preview_profile: data.profile_img ? `${data.profile_img}` : "",
         });
+        setSavedPhoto(data.profile_img ? `${data.profile_img}` : "");
       } catch {
         setPSAlert({
           type: "error",
@@ -163,13 +171,30 @@ export default function MyProfile() {
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
+    e.target.value = ""; // allow re-selecting the same file after a reset
     setProfileImg(file);
     if (file) {
+      setRemovePhoto(false);
       const reader = new FileReader();
       reader.onloadend = () =>
         setProfile((p) => ({ ...p, preview_profile: reader.result as string }));
       reader.readAsDataURL(file);
     }
+  };
+
+  // Back to the default avatar; the stored photo is cleared on save
+  // Undo a reset or a newly picked photo before saving
+  const revertPhoto = () => {
+    setProfileImg(null);
+    setRemovePhoto(false);
+    setProfile((p) => ({ ...p, preview_profile: savedPhoto }));
+  };
+  const photoChanged = removePhoto || profileImg !== null;
+
+  const resetToDefaultImage = () => {
+    setProfileImg(null);
+    setRemovePhoto(true);
+    setProfile((p) => ({ ...p, preview_profile: "" }));
   };
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -195,6 +220,20 @@ export default function MyProfile() {
       }
     }
 
+    // Valid — ask before saving
+    setConfirmSave(true);
+  }
+
+  // What the confirmation says will change (password and photo are worth calling out)
+  const saveNotes = [
+    profile.password.length > 0 && "Your password will be changed.",
+    removePhoto && "Your photo will be reset to the default.",
+    profileImg && "Your new photo will be uploaded.",
+  ].filter(Boolean) as string[];
+
+  async function performSave() {
+    if (!userId) return;
+    setConfirmSave(false);
     setIsLoading(true);
     const fd = new FormData();
     fd.append("email", profile.email);
@@ -209,6 +248,7 @@ export default function MyProfile() {
     fd.append("gender", profile.gender);
     fd.append("is_active", profile.is_active);
     if (profileImg) fd.append("profile_img", profileImg);
+    else if (removePhoto) fd.append("remove_profile_img", "true");
 
     try {
       const res = await fetch(api + `api/update_user/${userId}`, {
@@ -226,6 +266,24 @@ export default function MyProfile() {
           message: "Profile updated successfully.",
         });
         setProfile((p) => ({ ...p, password: "", confirm_pass: "" }));
+        setRemovePhoto(false);
+        setProfileImg(null);
+        // Show the photo exactly as the server now has it (new, or cleared by a reset)
+        try {
+          const fresh = await fetch(api + `api/get_user/${userId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (fresh.ok) {
+            const saved = await fresh.json();
+            const url = saved.profile_img ? `${saved.profile_img}` : "";
+            setProfile((p) => ({ ...p, preview_profile: url }));
+            setSavedPhoto(url);
+          }
+        } catch {
+          /* keep the local preview */
+        }
+        // Update the sidebar avatar too
+        notifyProfileUpdated();
       }
     } catch {
       setPSAlert({
@@ -269,14 +327,15 @@ export default function MyProfile() {
           background: linear-gradient(135deg, #0a2e1c 0%, #0f4a2f 55%, #166534 100%);
           position: relative; overflow: hidden;
         }
+        /* Decorative layers must not catch clicks meant for the header buttons */
         .mp-hero::before {
-          content: ''; position: absolute; inset: 0;
+          content: ''; position: absolute; inset: 0; pointer-events: none;
           background:
             radial-gradient(ellipse at 15% 60%, rgba(255,255,255,.05) 0%, transparent 55%),
             radial-gradient(ellipse at 85% 10%, rgba(255,255,255,.04) 0%, transparent 45%);
         }
         .mp-hero::after {
-          content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+          content: ''; position: absolute; bottom: -1px; left: 0; right: 0; pointer-events: none;
           height: 56px; background: #f4f6f5;
           clip-path: ellipse(55% 100% at 50% 100%);
         }
@@ -457,29 +516,23 @@ export default function MyProfile() {
 
         {/* ── HERO ── */}
         <div className="mp-hero px-8 pt-8 pb-20 relative z-10">
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-3xl mx-auto relative z-[1]">
             <div className="flex items-end gap-6">
               {/* Avatar */}
               <div className="mp-avatar-ring shrink-0">
                 <div className="mp-avatar-inner">
                   <div className="mp-avatar-wrapper relative w-24 h-24 rounded-full overflow-hidden">
-                    {profile.preview_profile ? (
-                      <img
-                        src={profile.preview_profile}
-                        alt="avatar"
-                        className="w-full h-full object-cover"
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-white text-2xl font-bold">
-                        {initials(profile.first_name, profile.last_name)}
-                      </div>
-                    )}
+                    {/* No photo (or reset): show the same default photo as the Head's account page */}
+                    <img
+                      src={profile.preview_profile || defaultProfile}
+                      alt="avatar"
+                      className="w-full h-full object-cover bg-white"
+                      draggable={false}
+                    />
 
-                    {/* Overlay with two separate buttons */}
-                    {hasImage && (
-                      <div className="mp-avatar-overlay">
-                        {/* View Full Image Button */}
+                    {/* Overlay: view (only with a photo) and change (always, so a reset photo can be replaced) */}
+                    <div className="mp-avatar-overlay">
+                      {hasImage && (
                         <button
                           type="button"
                           className="mp-avatar-action-btn"
@@ -488,19 +541,17 @@ export default function MyProfile() {
                         >
                           <ZoomIn size={18} />
                         </button>
-
-                        {/* Change Image Button */}
-                        <label className="mp-avatar-action-btn cursor-pointer" title="Change photo">
-                          <Camera size={18} />
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleImageChange}
-                            className="hidden"
-                          />
-                        </label>
-                      </div>
-                    )}
+                      )}
+                      <label className="mp-avatar-action-btn cursor-pointer" title="Change photo">
+                        <Camera size={18} />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageChange}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -520,6 +571,33 @@ export default function MyProfile() {
                   )}
                   <span className="text-white/45 text-sm">{profile.email}</span>
                 </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {hasImage && (
+                    <button
+                      type="button"
+                      onClick={resetToDefaultImage}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <RotateCcw size={13} />
+                      Reset to default photo
+                    </button>
+                  )}
+                  {photoChanged && (
+                    <button
+                      type="button"
+                      onClick={revertPhoto}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-900 bg-white hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Undo2 size={13} />
+                      {savedPhoto ? "Undo — keep current photo" : "Undo"}
+                    </button>
+                  )}
+                </div>
+                {photoChanged && (
+                  <p className="mt-2 text-xs text-white/60">
+                    {removePhoto ? "Photo will be removed" : "New photo will be used"} when you save.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -729,21 +807,26 @@ export default function MyProfile() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              {/* Email — read-only */}
+              {/* Email — changed only through a verified code */}
               <div className="col-span-2">
                 <label className={labelCls}>Email Address</label>
                 <div className={inputBase + " bg-stone-50"}>
                   <Mail className={iconCls} />
                   <input
                     type="email"
-                    className={inputField + " text-stone-400"}
+                    className={inputField + " text-stone-500"}
                     readOnly
                     value={profile.email}
                   />
-                  <span className="text-[10px] bg-stone-100 text-stone-400 px-2 py-0.5 rounded-full font-medium shrink-0">
-                    Read-only
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmailChange(true)}
+                    className="text-[11.5px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1 rounded-full shrink-0 transition-colors"
+                  >
+                    Change
+                  </button>
                 </div>
+                <p className="text-[11px] text-stone-400 mt-1">A code will be sent to the new address to confirm the change.</p>
               </div>
 
               {/* New Password */}
@@ -877,6 +960,31 @@ export default function MyProfile() {
           </div>
         </form>
       </div>
+
+      {confirmSave && (
+        <PlantScopeConfirm
+          variant="save"
+          title="Save changes?"
+          message={["Your profile will be updated.", ...saveNotes].join(" ")}
+          confirmLabel="Yes, save"
+          cancelLabel="Keep editing"
+          onConfirm={performSave}
+          onCancel={() => setConfirmSave(false)}
+        />
+      )}
+
+      {showEmailChange && (
+        <ChangeEmailModal
+          currentEmail={profile.email}
+          onClose={() => setShowEmailChange(false)}
+          onChanged={(newEmail) => {
+            setProfile((p) => ({ ...p, email: newEmail }));
+            setShowEmailChange(false);
+            notifyProfileUpdated();
+            setPSAlert({ type: "success", title: "Email updated", message: `Your email is now ${newEmail}.` });
+          }}
+        />
+      )}
     </>
   );
 }

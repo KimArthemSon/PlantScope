@@ -28,7 +28,7 @@ from sites.models import SiteMetaDataVerification, Sites
 from sites.views import OFFICIAL_SITE_STATUSES
 
 from .dashboard_views import (
-    LOW_SURVIVAL_THRESHOLD, OVERDUE_VISIT_DAYS, _build_monitoring_data, _survival, _time_ago,
+    OVERDUE_VISIT_DAYS, _build_monitoring_data, _survival, _time_ago,
 )
 from .models import (
     Application, ProgramClosureRequest, ProgressReport, Reason, SeedlingRequest,
@@ -167,7 +167,7 @@ def load_programs():
 
 
 def build_grower_rows(apps, app_stats, groups, now):
-    """One row per tree grower group: programs, planting results, compliance and standing."""
+    """One row per tree grower group: programs, planting results, compliance and why it needs attention."""
     apps_by_user = {}
     for a in apps:
         apps_by_user.setdefault(a.user_id, []).append(a)
@@ -198,14 +198,14 @@ def build_grower_rows(apps, app_stats, groups, now):
             compliance = 'Non-Compliant'
         n_failed = sum(1 for a in g_apps if a.status == 'failed')
         n_completed = sum(1 for a in g_apps if a.status == 'completed')
-        if not g_apps:
-            standing = 'New'
-        elif (rate is not None and rate < 50) or compliance == 'Non-Compliant' or n_failed > n_completed:
-            standing = 'Needs attention'
-        elif rate is not None and rate >= 80 and n_failed == 0:
-            standing = 'Excellent'
-        else:
-            standing = 'Good'
+        # Why a group needs attention, in plain words (empty = nothing to act on)
+        attention = []
+        if rate is not None and rate < 50:
+            attention.append(f'Low survival ({rate}%)')
+        if compliance == 'Non-Compliant':
+            attention.append(f'No visit in {days} days' if days is not None else 'Active program, no visit yet')
+        if n_failed > n_completed:
+            attention.append(f'{n_failed} failed vs {n_completed} completed programs')
         barangays = sorted({_barangay(a.site) for a in g_apps if _barangay(a.site)})
         rows.append({
             'group_id': g.group_id,
@@ -234,7 +234,7 @@ def build_grower_rows(apps, app_stats, groups, now):
             'last_visit': _iso(last_visit),
             'days_since_visit': days,
             'compliance': compliance,
-            'standing': standing,
+            'attention': attention,
         })
     rows.sort(key=lambda r: (-r['active'], -r['programs'], r['group_name']))
     return rows
@@ -465,7 +465,6 @@ def get_head_dashboard_data(request):
         'plants_alive': ms['total_survived'],
         'plants_dead': ms['total_dead'],
         'survival_rate': ms['survival_rate'],
-        'survival_target': LOW_SURVIVAL_THRESHOLD,
         'seedlings_released': released_total,
         'reforestation_areas': Reforestation_areas.objects.filter(deleted_at__isnull=True).count(),
     }
@@ -638,7 +637,6 @@ def get_head_dashboard_data(request):
         'performance': {
             'summary': {
                 'survival_rate': ms['survival_rate'],
-                'survival_target': LOW_SURVIVAL_THRESHOLD,
                 'plants_planted': ms['total_planted'],
                 'plants_alive': ms['total_survived'],
                 'planted_hectares': ms['planted_hectares'],
@@ -661,8 +659,8 @@ def get_head_dashboard_data(request):
                 'total': len(grower_rows),
                 'active': sum(1 for r in grower_rows if r['active']),
                 'new_this_month': kpis['groups_new_month'],
-                'excellent': sum(1 for r in grower_rows if r['standing'] == 'Excellent'),
-                'needs_attention': sum(1 for r in grower_rows if r['standing'] == 'Needs attention'),
+                'needs_attention': sum(1 for r in grower_rows if r['attention']),
+                'no_programs': sum(1 for r in grower_rows if not r['programs']),
                 'non_compliant': sum(1 for r in grower_rows if r['compliance'] == 'Non-Compliant'),
                 'compliant_days': COMPLIANT_DAYS,
             },
@@ -960,12 +958,43 @@ def get_head_summary_report(request):
     if not highlights:
         highlights.append("No program activity recorded in this period.")
 
+    # Groups that closed programs in the period (completed first)
+    grower_acc = {}
+    for a in closed:
+        group = getattr(a.user, 'tree_grower_group', None) if a.user else None
+        if not group:
+            continue
+        st = app_stats[a.application_id]
+        g = grower_acc.setdefault(group.group_id, {
+            'group_id': group.group_id, 'group_name': group.group_name,
+            'group_type': group.get_group_type_display(),
+            'completed': 0, 'failed': 0, 'planted': 0, 'dead': 0, 'released': 0,
+            'sites': set(), 'last_closed': None,
+        })
+        g['completed' if a.status == 'completed' else 'failed'] += 1
+        g['planted'] += st['planted']
+        g['dead'] += st['dead']
+        g['released'] += st['released']
+        if a.site:
+            g['sites'].add(a.site.name)
+        if st['closed'] and (g['last_closed'] is None or st['closed'] > g['last_closed']):
+            g['last_closed'] = st['closed']
+    grower_accomplishments = []
+    for g in grower_acc.values():
+        _, alive, rate = _survival(g['planted'], g['dead'])
+        grower_accomplishments.append({
+            **g, 'alive': alive, 'survival_rate': rate,
+            'sites': sorted(g['sites']), 'last_closed': _iso(g['last_closed']),
+        })
+    grower_accomplishments.sort(key=lambda g: (-g['completed'], g['failed'], g['group_name']))
+
     return JsonResponse({
         'summary': summary,
         'highlights': highlights,
         'monthly': monthly_rows,
         'by_barangay': by_barangay,
         'species': species_rows,
+        'grower_accomplishments': grower_accomplishments,
         'completed_programs': [{
             'ref': f'APP-{a.application_id:04d}', 'title': a.title, 'group_name': _group_name(a.user),
             'site_name': a.site.name if a.site else None, 'barangay': _barangay(a.site),
@@ -979,6 +1008,208 @@ def get_head_summary_report(request):
 
 
 # ─────────────────────────────────────────────────────────────
+# GROUP HISTORY (everything one tree grower group has done)
+# ─────────────────────────────────────────────────────────────
+VISIT_LABEL = {'accepted': 'accepted', 'pending': 'pending review', 'rejected': 'changes requested'}
+REQUEST_LABEL = {
+    'pending': 'Pending review', 'accepted': 'Awaiting handover', 'confirmed': 'Handed over',
+    'rejected': 'Rejected', 'cancelled': 'Cancelled',
+}
+
+
+@csrf_exempt
+def get_head_group_history(request, group_id):
+    """
+    One tree grower group's full record: each program with its site, orientation,
+    seedling requests, monitoring visits (with running survival) and closure
+    decision, plus a single timeline of everything that happened.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    if not _auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    group = TreeGrowerGroup.objects.select_related('users').filter(group_id=group_id).first()
+    if not group:
+        return JsonResponse({'error': 'Group not found'}, status=404)
+
+    apps = list(
+        Application.objects.filter(user=group.users)
+        .select_related('site__reforestation_area__barangay', 'site__meta_verification__verified_land_classification')
+        .prefetch_related(
+            Prefetch('seedling_requests',
+                     queryset=SeedlingRequest.objects.select_related('assigned_inspector__profile')
+                     .prefetch_related('seedling_species__tree_species').order_by('created_at')),
+            Prefetch('progress_reports',
+                     queryset=ProgressReport.objects.select_related('submitted_by__profile')
+                     .prefetch_related('report_species').order_by('submitted_at', 'created_at')),
+            Prefetch('closure_requests',
+                     queryset=ProgramClosureRequest.objects.select_related('requested_by__profile', 'decided_by__profile')
+                     .order_by('requested_at')),
+        )
+        .order_by('created_at')
+    )
+
+    events = []
+
+    def add(when, kind, title, detail=None, ref=None):
+        if when:
+            events.append({'date': _iso(when), 'sort': str(when), 'kind': kind, 'title': title,
+                           'detail': detail, 'ref': ref})
+
+    add(group.created_at, 'group', 'Group registered', group.get_group_type_display())
+
+    programs = []
+    totals = {'requested': 0, 'released': 0, 'planted': 0, 'dead': 0, 'visits': 0}
+    for a in apps:
+        ref = f'APP-{a.application_id:04d}'
+        site = a.site
+        add(a.created_at, 'program', 'Application submitted', a.title, ref)
+        if a.confirmed_at:
+            add(a.confirmed_at, 'program', 'Application approved', None, ref)
+        if a.orientation_date:
+            add(a.orientation_date, 'orientation', 'Orientation', site.name if site else None, ref)
+
+        requests = []
+        for req in a.seedling_requests.all():
+            species = [{'name': sp.tree_species.name if sp.tree_species else 'Unknown', 'quantity': sp.quantity or 0}
+                       for sp in req.seedling_species.all()]
+            released = sum(sp['quantity'] for sp in species) if req.status in SEEDLING_RELEASED else 0
+            totals['requested'] += req.no_request_seedling or 0
+            totals['released'] += released
+            requests.append({
+                'id': req.seedling_request_id,
+                'date': _iso(req.submitted_at or req.created_at),
+                'requested': req.no_request_seedling or 0,
+                'released': released,
+                'species': species,
+                'status': req.status,
+                'status_label': REQUEST_LABEL.get(req.status, req.get_status_display()),
+                'fulfillment': req.get_fulfillment_type_display() if req.fulfillment_type else None,
+                'inspector': _person(req.assigned_inspector) if req.assigned_inspector else None,
+                'notes': req.reason_accepted or req.reason or None,
+            })
+            add(req.submitted_at or req.created_at, 'seedlings',
+                f'Seedling request — {REQUEST_LABEL.get(req.status, req.status).lower()}',
+                f"{req.no_request_seedling or 0} requested" + (f" · {released} released" if released else ''), ref)
+
+        visits = []
+        run_planted = run_dead = 0
+        for r in a.progress_reports.all():
+            p, d = _report_totals(r)
+            when = r.submitted_at or r.created_at
+            row = {
+                'id': r.progress_report_id,
+                'date': _iso(when),
+                'visit_type': r.get_visit_type_display().split(' (')[0],
+                'status': r.status,
+                'inspector': _person(r.submitted_by),
+                'planted': p,
+                'dead': d,
+                'planted_hectares': round(r.planted_area_hectares, 2) if r.planted_area_hectares else None,
+                'total_planted': None,
+                'survival_rate': None,
+            }
+            if r.status == 'accepted':
+                run_planted, run_dead = run_planted + p, run_dead + d
+                _, _, rate = _survival(run_planted, run_dead)
+                row['total_planted'] = run_planted
+                row['survival_rate'] = rate
+                totals['planted'] += p
+                totals['dead'] += d
+                totals['visits'] += 1
+            visits.append(row)
+            add(when, 'visit', f"{row['visit_type']} — {VISIT_LABEL.get(r.status, r.status)}",
+                f"{p} planted · {d} dead" + (f" · {row['planted_hectares']} ha" if row['planted_hectares'] else ''), ref)
+
+        closure = None
+        for c in a.closure_requests.all():
+            add(c.requested_at, 'closure', f'Closure requested — recommends {c.get_recommendation_display().lower()}',
+                c.recommendation_reason, ref)
+            if c.decided_at:
+                add(c.decided_at, 'closure', f'Closure decided — {c.get_status_display().lower()}', c.head_notes, ref)
+            closure = {
+                'recommendation': c.get_recommendation_display(),
+                'reason': c.recommendation_reason,
+                'requested_by': _person(c.requested_by),
+                'requested_at': _iso(c.requested_at),
+                'status': c.get_status_display(),
+                'final_outcome': c.final_outcome,
+                'decided_by': _person(c.decided_by) if c.decided_by else None,
+                'decided_at': _iso(c.decided_at),
+                'notes': c.head_notes,
+            }
+
+        closed = _closed_date(a)
+        start = a.orientation_date or a.confirmed_at or _local_date(a.created_at)
+        _, alive, rate = _survival(run_planted, run_dead)
+        latest_area = next((v['planted_hectares'] for v in reversed(visits)
+                            if v['status'] == 'accepted' and v['planted_hectares']), None)
+        programs.append({
+            'application_id': a.application_id,
+            'ref': ref,
+            'title': a.title,
+            'classification': a.get_classification_display(),
+            'participants': a.total_treegrowers_will_participate,
+            'status': a.status,
+            'status_label': STATUS_LABEL.get(a.status, a.status),
+            'site_id': site.site_id if site else None,
+            'site_name': site.name if site else None,
+            'barangay': _barangay(site),
+            'site_hectares': round(site.total_area_hectares or 0, 2) if site else None,
+            'land_classification': (site.meta_verification.verified_land_classification.name
+                                    if site and getattr(site, 'meta_verification', None)
+                                    and site.meta_verification.verified_land_classification else None),
+            'submitted': _iso(a.created_at),
+            'approved': _iso(a.confirmed_at),
+            'orientation_date': _iso(a.orientation_date),
+            'closed': _iso(closed),
+            'duration_days': (closed - start).days if closed and start and closed >= start else None,
+            'planted': run_planted,
+            'alive': alive,
+            'dead': run_dead,
+            'survival_rate': rate,
+            'planted_hectares': latest_area,
+            'seedling_requests': requests,
+            'visits': visits,
+            'closure': closure,
+        })
+
+    events.sort(key=lambda e: e['sort'], reverse=True)
+    for e in events:
+        e.pop('sort')
+    _, alive, rate = _survival(totals['planted'], totals['dead'])
+
+    return JsonResponse({
+        'group': {
+            'group_id': group.group_id,
+            'name': group.group_name,
+            'type': group.get_group_type_display(),
+            'contact': group.contact,
+            'address': group.address,
+            'email': group.users.email if group.users else None,
+            'joined': _iso(group.created_at),
+        },
+        'summary': {
+            'programs': len(programs),
+            'completed': sum(1 for p in programs if p['status'] == 'completed'),
+            'failed': sum(1 for p in programs if p['status'] == 'failed'),
+            'active': sum(1 for p in programs if p['status'] in ACTIVE_APP),
+            'sites': len({p['site_id'] for p in programs if p['site_id']}),
+            'seedlings_requested': totals['requested'],
+            'seedlings_released': totals['released'],
+            'planted': totals['planted'],
+            'alive': alive,
+            'dead': totals['dead'],
+            'survival_rate': rate,
+            'visits': totals['visits'],
+        },
+        'programs': list(reversed(programs)),
+        'timeline': events,
+    }, status=200)
+
+
+# ─────────────────────────────────────────────────────────────
 # TREE GROWER GROUPS
 # ─────────────────────────────────────────────────────────────
 @csrf_exempt
@@ -988,7 +1219,7 @@ def get_head_growers_report(request):
     if not _auth(request):
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
-    standing = request.GET.get('standing', '').strip()
+    status = request.GET.get('status', '').strip()   # attention | active | no_programs
     compliance = request.GET.get('compliance', '').strip()
     barangay_id = request.GET.get('barangay', '').strip()
     group_type = request.GET.get('group_type', '').strip()
@@ -1002,7 +1233,11 @@ def get_head_growers_report(request):
     type_by_id = {g.group_id: g.group_type for g in groups}
 
     def keep(r):
-        if standing and r['standing'] != standing:
+        if status == 'attention' and not r['attention']:
+            return False
+        if status == 'active' and not r['active']:
+            return False
+        if status == 'no_programs' and r['programs']:
             return False
         if compliance and r['compliance'] != compliance:
             return False
@@ -1028,10 +1263,8 @@ def get_head_growers_report(request):
         'summary': {
             'total': len(rows),
             'active': sum(1 for r in rows if r['active']),
-            'excellent': count('standing', 'Excellent'),
-            'good': count('standing', 'Good'),
-            'needs_attention': count('standing', 'Needs attention'),
-            'new': count('standing', 'New'),
+            'needs_attention': sum(1 for r in rows if r['attention']),
+            'no_programs': sum(1 for r in rows if not r['programs']),
             'compliant': count('compliance', 'Compliant'),
             'warning': count('compliance', 'Warning'),
             'non_compliant': count('compliance', 'Non-Compliant'),
@@ -1043,12 +1276,6 @@ def get_head_growers_report(request):
             'alive': alive,
             'survival_rate': rate,
         },
-        'standing_breakdown': [
-            {'name': 'Excellent', 'value': count('standing', 'Excellent'), 'fill': '#10b981'},
-            {'name': 'Good', 'value': count('standing', 'Good'), 'fill': '#38bdf8'},
-            {'name': 'Needs attention', 'value': count('standing', 'Needs attention'), 'fill': '#ef4444'},
-            {'name': 'New', 'value': count('standing', 'New'), 'fill': '#d1d5db'},
-        ],
         'rows': rows,
     }, status=200)
 

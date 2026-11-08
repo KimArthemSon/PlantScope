@@ -104,7 +104,7 @@ const RequestEval = lazy(
   () => import("./pages/dataManager/monitoring/SeedlingEvaluation"),
 );
 const Animals = lazy(() => import("./pages/head/maintain/animals"));
-const Reports = lazy(() => import("./pages/dataManager/reports/reports"));
+const Reports = lazy(() => import("./pages/dataManager/reports/dmReports"));
 const Hazard_areas = lazy(
   () => import("./pages/head/maintain/hazard_areas/hazard_areas"),
 );

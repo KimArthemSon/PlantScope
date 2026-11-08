@@ -63,6 +63,7 @@ def get_assigned_reforestation_area(request):
         records = list(
             Assigned_onsite_inspector.objects.filter(user=user)
             .select_related('reforestation_area', 'reforestation_area__barangay')
+            .order_by('-created_at')   # newest assignment first
         )
         area_ids = [r.reforestation_area_id for r in records]
         record_ids = [r.assigned_onsite_inspector_id for r in records]

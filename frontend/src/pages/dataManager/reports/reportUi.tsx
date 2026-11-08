@@ -8,7 +8,9 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { api } from "@/constant/api.ts";
+import { exportCsv, exportPdf, type ExportSpec } from "./reportExport";
 
 // ─── Data fetching ──────────────────────────────────────────────────────────
 
@@ -48,6 +50,13 @@ export function useReport<T>(endpoint: string, params: Record<string, string>) {
   return { data, loading, error, reload: load };
 }
 
+/** Reloads a report whenever the page's Refresh button bumps `refreshKey`. */
+export function useRefresh(refreshKey: number | undefined, reload: () => void) {
+  useEffect(() => {
+    if (refreshKey) reload();
+  }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 // ─── Formatting ─────────────────────────────────────────────────────────────
 
 export const fmt = (n: number | null | undefined) => (n ?? 0).toLocaleString();
@@ -66,10 +75,9 @@ export const fmtDate = (iso: string | null | undefined) =>
       })
     : "—";
 
-export const SURVIVAL_TARGET = 70;
 export function rateColor(rate: number | null | undefined) {
   if (rate === null || rate === undefined) return "#9ca3af";
-  if (rate >= SURVIVAL_TARGET) return "#10b981";
+  if (rate >= 70) return "#10b981";
   if (rate >= 50) return "#f59e0b";
   return "#ef4444";
 }
@@ -255,9 +263,9 @@ export function FilterBar({
         {showReset && (
           <button
             onClick={onReset}
-            className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold text-gray-500 hover:bg-gray-100 transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-red-200 bg-red-50 text-xs font-semibold text-red-600 shadow-sm hover:bg-red-100 hover:border-red-300 transition-colors"
           >
-            <X size={13} /> Clear filters
+            <X size={14} strokeWidth={2.5} /> Clear filters
           </button>
         )}
       </div>
@@ -542,5 +550,138 @@ export function Td({
     <td className={`py-3 px-3 text-[12.5px] text-gray-700 ${right ? "text-right" : ""} ${className}`}>
       {children}
     </td>
+  );
+}
+
+// ─── Filter options & export helpers (shared by every report page) ─────────
+
+export interface FilterOptions {
+  barangays: { id: number; name: string }[];
+  species: { id: number; name: string }[];
+  areas?: { id: number; name: string; barangay_id: number | null }[];
+  land_classifications?: { id: number; name: string; ownership: string }[];
+}
+
+type SelectOption = { value: string; label: string };
+
+export function barangayOptions(options: FilterOptions | null): SelectOption[] {
+  return [
+    { value: "all", label: "All barangays" },
+    ...(options?.barangays ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+  ];
+}
+
+/** Reforestation areas, narrowed to the selected barangay. */
+export function areaOptions(options: FilterOptions | null, barangay: string): SelectOption[] {
+  const areas = (options?.areas ?? []).filter((a) => barangay === "all" || String(a.barangay_id) === barangay);
+  return [{ value: "all", label: "All areas" }, ...areas.map((a) => ({ value: String(a.id), label: a.name }))];
+}
+
+export function landClassOptions(options: FilterOptions | null): SelectOption[] {
+  return [
+    { value: "all", label: "All classifications" },
+    { value: "none", label: "Unclassified" },
+    ...(options?.land_classifications ?? []).map((c) => ({ value: String(c.id), label: c.name })),
+  ];
+}
+
+export function optionLabel(options: SelectOption[], value: string) {
+  return options.find((o) => o.value === value)?.label ?? value;
+}
+
+/** Human label for a date range ("This year (Jan 1 – Dec 31)"), or "" when no range is set. */
+export function dateLabel(from: string, to: string) {
+  const preset = DATE_PRESETS.find((p) => {
+    const [f, t] = p.range();
+    return f === from && t === to;
+  });
+  if (preset && preset.key !== "all") return `${preset.label} (${fmtDate(from)} – ${fmtDate(to)})`;
+  if (!from && !to) return "";
+  return `${from ? fmtDate(from) : "Start"} – ${to ? fmtDate(to) : "Present"}`;
+}
+
+/** Builds the "Filters" lines for exports, skipping filters left at "all". */
+export function describeFilters(entries: [string, string, SelectOption[] | null][]) {
+  return entries
+    .filter(([, value]) => value && value !== "all")
+    .map(([label, value, opts]) => [label, opts ? optionLabel(opts, value) : value] as [string, string]);
+}
+
+/** Date range as an export filter line, or nothing when no range is set. */
+export function dateFilter(label: string, from: string, to: string): [string, string][] {
+  const range = dateLabel(from, to);
+  return range ? [[label, range]] : [];
+}
+
+export function runExport<T>(kind: "pdf" | "excel", spec: ExportSpec<T>) {
+  if (kind === "pdf") exportPdf(spec);
+  else exportCsv(spec);
+}
+
+export function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <Card className="p-10 text-center">
+      <p className="text-sm text-gray-500 mb-3">{message}</p>
+      <button onClick={onRetry} className="px-4 py-2 rounded-lg bg-[#0F4A2F] text-white text-sm font-semibold hover:bg-[#1a6b44]">
+        Retry
+      </button>
+    </Card>
+  );
+}
+
+/** Error / first-load / refetch states around a report body. */
+export function ReportBody<T>({
+  data,
+  error,
+  loading,
+  loadingText,
+  onRetry,
+  children,
+}: {
+  data: T | null;
+  error: string | null;
+  loading: boolean;
+  loadingText: string;
+  onRetry: () => void;
+  children: (data: T) => ReactNode;
+}) {
+  if (error && !data) return <ErrorBox message={error} onRetry={onRetry} />;
+  if (!data) return <LoadingBlock text={loadingText} />;
+  return <div className={`space-y-5 transition-opacity ${loading ? "opacity-60" : ""}`}>{children(data)}</div>;
+}
+
+/** Donut chart with a legend listing every slice (including zero ones). */
+export function DonutLegend({
+  data,
+  extra,
+}: {
+  data: { name: string; value: number; fill: string }[];
+  extra?: (d: any) => string;
+}) {
+  const visible = data.filter((d) => d.value > 0);
+  if (visible.length === 0) return <EmptyState text="No data" />;
+  return (
+    <>
+      <ResponsiveContainer width="100%" height={170}>
+        <PieChart>
+          <Pie data={visible} dataKey="value" nameKey="name" outerRadius={70} innerRadius={40} paddingAngle={2}>
+            {visible.map((d, i) => (
+              <Cell key={i} fill={d.fill} />
+            ))}
+          </Pie>
+          <Tooltip content={<GreenTooltip />} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="flex flex-col gap-1.5 mt-2">
+        {data.map((d) => (
+          <div key={d.name} className="flex items-center gap-2 text-[12px]">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.fill }} />
+            <span className="text-gray-600">{d.name}</span>
+            {extra && <span className="ml-auto text-gray-400 text-[11px]">{extra(d)}</span>}
+            <span className={`${extra ? "" : "ml-auto"} w-8 text-right font-bold text-gray-800`}>{d.value}</span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }

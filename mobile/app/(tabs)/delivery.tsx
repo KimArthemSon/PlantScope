@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { useRouter, useFocusEffect } from "expo-router";
 import {
   View,
@@ -15,6 +15,7 @@ import * as SecureStore from "expo-secure-store";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
+import { SortMenu, byDateAsc, byDateDesc, byText, type SortOption } from "@/components/SortMenu";
 
 // ─── Design Tokens (matches app-wide palette) ───────────────────────────────
 const PRIMARY = "#0F4A2F";
@@ -39,6 +40,14 @@ const cardShadow = {
 // ─── Types ───────────────────────────────────────────────────────────────────
 type DeliveryStatus = "accepted" | "confirmed" | "cancelled" | "rejected" | "pending";
 type FilterTab = "all" | "accepted" | "confirmed" | "cancelled";
+type DeliverySort = "newest" | "oldest" | "group" | "most_seedlings";
+
+const DELIVERY_SORTS: SortOption<DeliverySort>[] = [
+  { key: "newest", label: "Newest request", icon: "time-outline" },
+  { key: "oldest", label: "Oldest request", icon: "hourglass-outline" },
+  { key: "group", label: "Group name (A–Z)", icon: "people-outline" },
+  { key: "most_seedlings", label: "Most seedlings", icon: "leaf-outline" },
+];
 
 interface SeedlingSpeciesItem {
   species_id: number;
@@ -88,6 +97,7 @@ export default function OnsiteInspectorDelivery() {
 
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
+  const [sort, setSort] = useState<DeliverySort>("newest");
 
   // ─── Fetch List ────────────────────────────────────────────────────────────
   const fetchDeliveries = useCallback(
@@ -152,14 +162,25 @@ export default function OnsiteInspectorDelivery() {
   };
 
   // ─── Filtering (Client-side search only, backend handles tab filtering) ───
-  const filteredDeliveries = deliveries.filter((item) => {
+  const filteredDeliveries = useMemo(() => {
     const q = search.toLowerCase();
-    const matchesSearch =
-      !q ||
-      item.group_name?.toLowerCase().includes(q) ||
-      item.application_title?.toLowerCase().includes(q);
-    return matchesSearch;
-  });
+    const list = deliveries.filter(
+      (item) =>
+        !q ||
+        item.group_name?.toLowerCase().includes(q) ||
+        item.application_title?.toLowerCase().includes(q),
+    );
+    switch (sort) {
+      case "oldest":
+        return list.sort((a, b) => byDateAsc(a.submitted_at, b.submitted_at));
+      case "group":
+        return list.sort((a, b) => byText(a.group_name, b.group_name));
+      case "most_seedlings":
+        return list.sort((a, b) => (b.no_request_seedling || 0) - (a.no_request_seedling || 0));
+      default:
+        return list.sort((a, b) => byDateDesc(a.submitted_at, b.submitted_at));
+    }
+  }, [deliveries, search, sort]);
 
   // ─── Navigation to Detail Screen ────────────────────────────────────────────
   const openDetail = (requestId: number) => {
@@ -288,6 +309,16 @@ export default function OnsiteInspectorDelivery() {
         ))}
       </View>
 
+      {/* Count + sort */}
+      {filteredDeliveries.length > 0 && (
+        <View style={styles.sortRow}>
+          <Text style={styles.sortCount}>
+            {filteredDeliveries.length} deliver{filteredDeliveries.length === 1 ? "y" : "ies"}
+          </Text>
+          <SortMenu value={sort} options={DELIVERY_SORTS} onChange={setSort} title="Sort deliveries by" />
+        </View>
+      )}
+
       {/* List */}
       <FlatList
         data={filteredDeliveries}
@@ -365,6 +396,14 @@ const styles = StyleSheet.create({
   tabBtnActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
   tabBtnText: { fontSize: 12, fontWeight: "700", color: MUTED },
   tabBtnTextActive: { color: "#fff" },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    marginTop: 4,
+  },
+  sortCount: { fontSize: 12.5, fontWeight: "600", color: MUTED },
 
   card: {
     backgroundColor: WHITE,

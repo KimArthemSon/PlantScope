@@ -16,6 +16,7 @@ import {
   Shield,
   User,
   RotateCcw,
+  Undo2,
   ZoomIn,
   Download,
   X,
@@ -62,6 +63,8 @@ export function Profile() {
   const { id } = useParams();
   const [profile_img, setProfile_img] = useState<File | null>(null);
   const [useDefaultImg, setUseDefaultImg] = useState(false);
+  // The account's photo as loaded, used to undo unsaved photo changes
+  const [savedPhoto, setSavedPhoto] = useState("");
   const [showFullImage, setShowFullImage] = useState(false);
 
   // Close full-view modal on ESC key and lock page scroll while it's open
@@ -134,6 +137,7 @@ export function Profile() {
         confirm_pass: "",
         preview_profile: data.profile_img ? "" + data.profile_img : "",
       }));
+      setSavedPhoto(data.profile_img ? "" + data.profile_img : "");
       setIsLoading(false);
     } catch (err) {
       setPSAlert({
@@ -180,6 +184,14 @@ export function Profile() {
       setProfile((prev) => ({ ...prev, preview_profile: "" }));
     }
   };
+
+  // Undo a reset or a newly picked photo before saving
+  const revertPhoto = () => {
+    setProfile_img(null);
+    setUseDefaultImg(false);
+    setProfile((prev) => ({ ...prev, preview_profile: savedPhoto }));
+  };
+  const photoChanged = useDefaultImg || profile_img !== null;
 
   const resetToDefaultImage = () => {
     setProfile_img(null);
@@ -347,6 +359,7 @@ export function Profile() {
         }
 
         .profile-header-bg::before {
+          pointer-events: none; /* decoration must not block header buttons */
           content: '';
           position: absolute;
           inset: 0;
@@ -356,6 +369,7 @@ export function Profile() {
         }
 
         .profile-header-bg::after {
+          pointer-events: none; /* decoration must not block header buttons */
           content: '';
           position: absolute;
           bottom: -1px;
@@ -642,15 +656,32 @@ export function Profile() {
                     </span>
                   )}
                 </div>
-                {profile.preview_profile && (
-                  <button
-                    type="button"
-                    onClick={resetToDefaultImage}
-                    className="upload-btn mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-white px-3 py-1.5 rounded-lg cursor-pointer"
-                  >
-                    <RotateCcw size={13} />
-                    Reset to default photo
-                  </button>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {profile.preview_profile && (
+                    <button
+                      type="button"
+                      onClick={resetToDefaultImage}
+                      className="upload-btn inline-flex items-center gap-1.5 text-xs font-medium text-white px-3 py-1.5 rounded-lg cursor-pointer"
+                    >
+                      <RotateCcw size={13} />
+                      Reset to default photo
+                    </button>
+                  )}
+                  {photoChanged && (
+                    <button
+                      type="button"
+                      onClick={revertPhoto}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-900 bg-white hover:bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Undo2 size={13} />
+                      {savedPhoto ? "Undo — keep current photo" : "Undo"}
+                    </button>
+                  )}
+                </div>
+                {photoChanged && (
+                  <p className="mt-2 text-xs text-white/60">
+                    {useDefaultImg ? "The default photo will be used" : "New photo will be used"} when you save.
+                  </p>
                 )}
               </div>
             </div>

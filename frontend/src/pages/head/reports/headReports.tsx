@@ -3,12 +3,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
   Legend,
   Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -21,51 +18,50 @@ import {
   FileText,
   Gavel,
   History,
-  Leaf,
   ListChecks,
+  AlertTriangle,
   Loader2,
   MapPin,
-  MonitorDot,
-  RefreshCw,
   Sparkles,
   Sprout,
   TreePine,
+  Undo2,
   Users,
 } from "lucide-react";
 import NotFoundPage from "../../../components/layout/NotFoundPage";
 import { api } from "@/constant/api.ts";
-import { exportCsv, exportPdf, type ExportSpec } from "../../dataManager/reports/reportExport";
 import SiteHistoryModal from "../../dataManager/reports/SiteHistoryModal";
-import {
-  ProgramsTab,
-  SitesTab,
-  SpeciesTab,
-  VisitsTab,
-  type FilterOptions,
-} from "../../dataManager/reports/reports";
+import GroupHistoryModal from "./GroupHistoryModal";
+import { ProgressTab, StatusTab } from "../../dataManager/reports/dmReports";
 import {
   AXIS_TICK,
   Badge,
+  barangayOptions,
   Card,
   DATE_PRESETS,
+  dateLabel,
   DateRangeFilter,
+  describeFilters,
   EmptyState,
+  ErrorBox,
   ExportButtons,
   FilterBar,
+  fmt,
+  fmtDate,
+  fmtHa,
+  fmtPct,
   GreenTooltip,
   Kpi,
   LoadingBlock,
   Pagination,
   RateBar,
+  runExport,
   SearchFilter,
   SectionTitle,
   SelectFilter,
   Td,
   Th,
-  fmt,
-  fmtDate,
-  fmtHa,
-  fmtPct,
+  type FilterOptions,
   usePaged,
   useReport,
 } from "../../dataManager/reports/reportUi";
@@ -102,6 +98,20 @@ interface SummaryReport {
   monthly: { month: string; submitted: number; approved: number; completed: number; failed: number; planted: number; dead: number; visits: number }[];
   by_barangay: { name: string; approved: number; completed: number; failed: number; active_now: number; planted: number; dead: number; visits: number; survival_rate: number | null }[];
   species: { name: string; planted: number; alive: number; dead: number; survival_rate: number | null }[];
+  grower_accomplishments: {
+    group_id: number;
+    group_name: string;
+    group_type: string;
+    completed: number;
+    failed: number;
+    planted: number;
+    alive: number;
+    dead: number;
+    released: number;
+    sites: string[];
+    last_closed: string | null;
+    survival_rate: number | null;
+  }[];
   completed_programs: {
     ref: string;
     title: string;
@@ -142,17 +152,16 @@ interface GrowerRow {
   last_visit: string | null;
   days_since_visit: number | null;
   compliance: string;
-  standing: string;
+  /** Plain-language reasons the group needs attention; empty when there is nothing to act on */
+  attention: string[];
 }
 
 interface GrowersReport {
   summary: {
     total: number;
     active: number;
-    excellent: number;
-    good: number;
     needs_attention: number;
-    new: number;
+    no_programs: number;
     compliant: number;
     warning: number;
     non_compliant: number;
@@ -164,7 +173,6 @@ interface GrowersReport {
     alive: number;
     survival_rate: number | null;
   };
-  standing_breakdown: { name: string; value: number; fill: string }[];
   rows: GrowerRow[];
 }
 
@@ -207,50 +215,6 @@ interface DecisionsReport {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function barangayOptions(options: FilterOptions | null) {
-  return [{ value: "all", label: "All barangays" }, ...(options?.barangays ?? []).map((b) => ({ value: String(b.id), label: b.name }))];
-}
-
-function optionLabel(opts: { value: string; label: string }[], v: string) {
-  return opts.find((o) => o.value === v)?.label ?? v;
-}
-
-function dateLabel(from: string, to: string) {
-  const preset = DATE_PRESETS.find((p) => {
-    const [f, t] = p.range();
-    return f === from && t === to;
-  });
-  if (preset && preset.key !== "all") return `${preset.label} (${fmtDate(from)} – ${fmtDate(to)})`;
-  if (!from && !to) return "All time";
-  return `${from ? fmtDate(from) : "Start"} – ${to ? fmtDate(to) : "Present"}`;
-}
-
-function describeFilters(entries: [string, string, { value: string; label: string }[] | null][]) {
-  return entries.filter(([, v]) => v && v !== "all").map(([l, v, o]) => [l, o ? optionLabel(o, v) : v] as [string, string]);
-}
-
-function runExport<T>(kind: "pdf" | "excel", spec: ExportSpec<T>) {
-  if (kind === "pdf") exportPdf(spec);
-  else exportCsv(spec);
-}
-
-function useRefresh(refreshKey: number, reload: () => void) {
-  useEffect(() => {
-    if (refreshKey) reload();
-  }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
-}
-
-function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Card className="p-10 text-center">
-      <p className="text-sm text-gray-500 mb-3">{message}</p>
-      <button onClick={onRetry} className="px-4 py-2 rounded-lg bg-[#0F4A2F] text-white text-sm font-semibold hover:bg-[#1a6b44]">
-        Retry
-      </button>
-    </Card>
-  );
-}
-
 function Stat({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="py-2">
@@ -266,13 +230,12 @@ function Stat({ label, value, sub }: { label: string; value: string | number; su
 const thisYear = DATE_PRESETS.find((p) => p.key === "year")!.range();
 const SUMMARY_DEFAULTS = { barangay: "all", date_from: thisYear[0], date_to: thisYear[1] };
 
-function SummaryTab({ options, refreshKey }: { options: FilterOptions | null; refreshKey: number }) {
+function SummaryTab({ options, onGroupHistory }: { options: FilterOptions | null; onGroupHistory: (id: number) => void }) {
   const [f, setF] = useState(SUMMARY_DEFAULTS);
   const { data, loading, error, reload } = useReport<SummaryReport>("head_report/summary/", f);
-  useRefresh(refreshKey, reload);
   const brgyOpts = barangayOptions(options);
   const isFiltered = JSON.stringify(f) !== JSON.stringify(SUMMARY_DEFAULTS);
-  const period = dateLabel(f.date_from, f.date_to);
+  const period = dateLabel(f.date_from, f.date_to) || "All time";
 
   const handleExport = (kind: "pdf" | "excel") => {
     if (!data) return;
@@ -312,6 +275,13 @@ function SummaryTab({ options, refreshKey }: { options: FilterOptions | null; re
           title: "By barangay",
           columns: ["Barangay", "Approved", "Completed", "Failed", "Active now", "Plants planted", "Deaths", "Survival"],
           rows: data.by_barangay.map((b) => [b.name, b.approved, b.completed, b.failed, b.active_now, fmt(b.planted), fmt(b.dead), fmtPct(b.survival_rate)]),
+        },
+        {
+          title: "Tree grower accomplishments",
+          columns: ["Group", "Type", "Completed", "Failed", "Sites", "Planted", "Alive", "Survival", "Last closed"],
+          rows: data.grower_accomplishments.map((g) => [
+            g.group_name, g.group_type, g.completed, g.failed, g.sites.join(", "), fmt(g.planted), fmt(g.alive), fmtPct(g.survival_rate), fmtDate(g.last_closed),
+          ]),
         },
         {
           title: "Species planted",
@@ -452,88 +422,120 @@ function SummaryTab({ options, refreshKey }: { options: FilterOptions | null; re
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <Card>
-              <div className="px-5 pt-5">
-                <SectionTitle icon={<MapPin size={16} />} title="By Barangay" />
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <Th>Barangay</Th>
-                      <Th right>Approved</Th>
-                      <Th right>Done / Failed</Th>
-                      <Th right>Planted</Th>
-                      <Th>Survival</Th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {data.by_barangay.length > 0 ? (
-                      data.by_barangay.map((b) => (
-                        <tr key={b.name}>
-                          <Td className="font-semibold text-gray-800">{b.name}</Td>
-                          <Td right>{b.approved}</Td>
-                          <Td right>
-                            {b.completed} / {b.failed}
-                          </Td>
-                          <Td right>{fmt(b.planted)}</Td>
-                          <Td>
-                            <RateBar rate={b.survival_rate} />
-                          </Td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5}>
-                          <EmptyState text="No activity in this period" className="py-8" />
-                        </td>
+          <Card>
+            <div className="px-5 pt-5">
+              <SectionTitle icon={<MapPin size={16} />} title="By Barangay" sub="Program outcomes and planting in this period" />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <Th>Barangay</Th>
+                    <Th right>Approved</Th>
+                    <Th right>Completed</Th>
+                    <Th right>Failed</Th>
+                    <Th right>Active Now</Th>
+                    <Th right>Planted</Th>
+                    <Th right>Visits</Th>
+                    <Th>Survival</Th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data.by_barangay.length > 0 ? (
+                    data.by_barangay.map((b) => (
+                      <tr key={b.name}>
+                        <Td className="font-semibold text-gray-800">{b.name}</Td>
+                        <Td right>{b.approved}</Td>
+                        <Td right>{b.completed}</Td>
+                        <Td right className={b.failed > 0 ? "text-red-500" : ""}>
+                          {b.failed}
+                        </Td>
+                        <Td right>{b.active_now}</Td>
+                        <Td right>{fmt(b.planted)}</Td>
+                        <Td right>{b.visits}</Td>
+                        <Td>
+                          <RateBar rate={b.survival_rate} />
+                        </Td>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-            <Card>
-              <div className="px-5 pt-5">
-                <SectionTitle icon={<Leaf size={16} />} title="Species Planted" />
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full">
-                  <thead className="bg-gray-50">
+                    ))
+                  ) : (
                     <tr>
-                      <Th>Species</Th>
-                      <Th right>Planted</Th>
-                      <Th right>Dead</Th>
-                      <Th>Survival</Th>
+                      <td colSpan={8}>
+                        <EmptyState text="No activity in this period" className="py-8" />
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {data.species.length > 0 ? (
-                      data.species.map((sp) => (
-                        <tr key={sp.name}>
-                          <Td className="font-semibold text-gray-800">{sp.name}</Td>
-                          <Td right>{fmt(sp.planted)}</Td>
-                          <Td right className="text-red-500">
-                            {fmt(sp.dead)}
-                          </Td>
-                          <Td>
-                            <RateBar rate={sp.survival_rate} />
-                          </Td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={4}>
-                          <EmptyState text="No planting in this period" className="py-8" />
-                        </td>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="px-5 pt-5">
+              <SectionTitle
+                icon={<Users size={16} />}
+                title="Tree Grower Accomplishments"
+                sub="Groups that finished a program in this period — open History for their programs, sites, orientation, seedling requests and visits"
+              />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <Th>Group</Th>
+                    <Th right>Completed</Th>
+                    <Th right>Failed</Th>
+                    <Th>Sites</Th>
+                    <Th right>Planted</Th>
+                    <Th>Survival</Th>
+                    <Th>Last Closed</Th>
+                    <Th>History</Th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data.grower_accomplishments.length > 0 ? (
+                    data.grower_accomplishments.map((g) => (
+                      <tr key={g.group_id} className="hover:bg-gray-50/70 align-top">
+                        <Td>
+                          <p className="font-semibold text-gray-800">{g.group_name}</p>
+                          <p className="text-[11px] text-gray-400">{g.group_type}</p>
+                        </Td>
+                        <Td right className={g.completed > 0 ? "text-emerald-600 font-semibold" : ""}>
+                          {g.completed}
+                        </Td>
+                        <Td right className={g.failed > 0 ? "text-red-500 font-semibold" : ""}>
+                          {g.failed}
+                        </Td>
+                        <Td className="text-[12px] text-gray-600">{g.sites.join(", ") || "—"}</Td>
+                        <Td right>
+                          <p>{fmt(g.planted)}</p>
+                          <p className="text-[11px] text-gray-400">{fmt(g.alive)} alive</p>
+                        </Td>
+                        <Td>
+                          <RateBar rate={g.survival_rate} />
+                        </Td>
+                        <Td className="whitespace-nowrap">{fmtDate(g.last_closed)}</Td>
+                        <Td>
+                          <button
+                            onClick={() => onGroupHistory(g.group_id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 text-[11px] font-semibold hover:bg-emerald-50"
+                          >
+                            <History size={12} /> History
+                          </button>
+                        </Td>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </div>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={8}>
+                        <EmptyState text="No group finished a program in this period" className="py-8" />
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
 
           <Card>
             <div className="px-5 pt-5">
@@ -596,12 +598,11 @@ function SummaryTab({ options, refreshKey }: { options: FilterOptions | null; re
 
 // ─── TAB: TREE GROWERS ──────────────────────────────────────────────────────
 
-const STANDING_OPTIONS = [
-  { value: "all", label: "All" },
-  { value: "Excellent", label: "Excellent" },
-  { value: "Good", label: "Good" },
-  { value: "Needs attention", label: "Needs attention" },
-  { value: "New", label: "New (no programs)" },
+const GROUP_STATUS_OPTIONS = [
+  { value: "all", label: "All groups" },
+  { value: "active", label: "Active program" },
+  { value: "attention", label: "Needs attention" },
+  { value: "no_programs", label: "No programs yet" },
 ];
 const COMPLIANCE_OPTIONS = [
   { value: "all", label: "All" },
@@ -616,32 +617,25 @@ const GROUP_TYPE_OPTIONS = [
   { value: "community_group", label: "Community group" },
   { value: "informal_group", label: "Informal group" },
 ];
-const STANDING_TONE: Record<string, string> = {
-  Excellent: "bg-green-50 text-green-700 border-green-200",
-  Good: "bg-sky-50 text-sky-700 border-sky-200",
-  "Needs attention": "bg-red-50 text-red-700 border-red-200",
-  New: "bg-gray-50 text-gray-600 border-gray-200",
-};
 const COMPLIANCE_TONE: Record<string, string> = {
   Compliant: "text-emerald-600",
   Warning: "text-amber-600",
   "Non-Compliant": "text-red-600",
   "No active program": "text-gray-400",
 };
-const GROWER_DEFAULTS = { search: "", standing: "all", compliance: "all", barangay: "all", group_type: "all", date_from: "", date_to: "" };
+const GROWER_DEFAULTS = { search: "", status: "all", compliance: "all", barangay: "all", group_type: "all", date_from: "", date_to: "" };
 
 function GrowersTab({
   options,
   onSiteHistory,
-  refreshKey,
+  onGroupHistory,
 }: {
   options: FilterOptions | null;
   onSiteHistory: (id: number) => void;
-  refreshKey: number;
+  onGroupHistory: (id: number) => void;
 }) {
   const [f, setF] = useState(GROWER_DEFAULTS);
   const { data, loading, error, reload } = useReport<GrowersReport>("head_report/growers/", f);
-  useRefresh(refreshKey, reload);
   const paged = usePaged(data?.rows ?? []);
   const brgyOpts = barangayOptions(options);
   const isFiltered = JSON.stringify(f) !== JSON.stringify(GROWER_DEFAULTS);
@@ -649,13 +643,13 @@ function GrowersTab({
   const handleExport = (kind: "pdf" | "excel") => {
     if (!data) return;
     const s = data.summary;
-    const range = f.date_from || f.date_to ? dateLabel(f.date_from, f.date_to) : "";
+    const range = dateLabel(f.date_from, f.date_to);
     runExport<GrowerRow>(kind, {
       title: "Tree Grower Groups Report",
       filename: "tree_grower_groups",
       filters: [
         ...describeFilters([
-          ["Standing", f.standing, STANDING_OPTIONS],
+          ["Status", f.status, GROUP_STATUS_OPTIONS],
           ["Compliance", f.compliance, COMPLIANCE_OPTIONS],
           ["Barangay", f.barangay, brgyOpts],
           ["Group type", f.group_type, GROUP_TYPE_OPTIONS],
@@ -666,8 +660,8 @@ function GrowersTab({
       summary: [
         ["Groups", fmt(s.total)],
         ["With an active program", fmt(s.active)],
-        ["Excellent / Good", `${s.excellent} / ${s.good}`],
         ["Needs attention", fmt(s.needs_attention)],
+        ["No programs yet", fmt(s.no_programs)],
         ["Compliant / Warning / Non-compliant", `${s.compliant} / ${s.warning} / ${s.non_compliant}`],
         ["Programs (completed / failed)", `${s.programs} (${s.completed} / ${s.failed})`],
         ["Seedlings released", fmt(s.seedlings_released)],
@@ -691,7 +685,7 @@ function GrowersTab({
         { header: "Survival", value: (r) => fmtPct(r.survival_rate) },
         { header: "Last visit", value: (r) => fmtDate(r.last_visit) },
         { header: "Compliance", value: (r) => r.compliance },
-        { header: "Standing", value: (r) => r.standing },
+        { header: "Needs attention", value: (r) => r.attention.join("; ") },
       ],
       rows: data.rows,
     });
@@ -703,7 +697,7 @@ function GrowersTab({
     <div className="space-y-5">
       <FilterBar onReset={() => setF(GROWER_DEFAULTS)} showReset={isFiltered}>
         <SearchFilter value={f.search} onChange={(v) => setF({ ...f, search: v })} placeholder="Group or current site…" />
-        <SelectFilter label="Standing" value={f.standing} onChange={(v) => setF({ ...f, standing: v })} options={STANDING_OPTIONS} />
+        <SelectFilter label="Status" value={f.status} onChange={(v) => setF({ ...f, status: v })} options={GROUP_STATUS_OPTIONS} />
         <SelectFilter label="Compliance" value={f.compliance} onChange={(v) => setF({ ...f, compliance: v })} options={COMPLIANCE_OPTIONS} />
         <SelectFilter label="Barangay" value={f.barangay} onChange={(v) => setF({ ...f, barangay: v })} options={brgyOpts} />
         <SelectFilter label="Group type" value={f.group_type} onChange={(v) => setF({ ...f, group_type: v })} options={GROUP_TYPE_OPTIONS} />
@@ -718,7 +712,7 @@ function GrowersTab({
         <div className={`space-y-5 transition-opacity ${loading ? "opacity-60" : ""}`}>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Kpi icon={<Users size={16} />} label="Groups" value={fmt(s.total)} sub={`${s.active} with an active program`} />
-            <Kpi icon={<CheckCircle2 size={16} />} label="Excellent / Good" value={`${s.excellent} / ${s.good}`} sub={`${s.new} new (no programs yet)`} accent="bg-green-600" />
+            <Kpi icon={<CheckCircle2 size={16} />} label="Completed / Failed Programs" value={`${s.completed} / ${s.failed}`} sub={`${s.programs} programs · ${s.no_programs} groups with none yet`} accent="bg-green-600" />
             <Kpi
               icon={<ListChecks size={16} />}
               label="Needs Attention"
@@ -730,42 +724,7 @@ function GrowersTab({
             <Kpi icon={<Sprout size={16} />} label="Plants Planted" value={fmt(s.planted)} sub={`${fmt(s.alive)} alive · ${fmtPct(s.survival_rate)} survival`} accent="bg-emerald-500" />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             <Card className="p-5">
-              <SectionTitle icon={<Users size={16} />} title="Group Standing" />
-              {data.standing_breakdown.some((b) => b.value > 0) ? (
-                <>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <PieChart>
-                      <Pie data={data.standing_breakdown.filter((b) => b.value > 0)} dataKey="value" nameKey="name" outerRadius={66} innerRadius={38} paddingAngle={2}>
-                        {data.standing_breakdown
-                          .filter((b) => b.value > 0)
-                          .map((b, i) => (
-                            <Cell key={i} fill={b.fill} />
-                          ))}
-                      </Pie>
-                      <Tooltip content={<GreenTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="flex flex-col gap-1.5 mt-2">
-                    {data.standing_breakdown.map((b) => (
-                      <div key={b.name} className="flex items-center gap-2 text-[12px]">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: b.fill }} />
-                        <span className="text-gray-600">{b.name}</span>
-                        <span className="ml-auto font-bold text-gray-800">{b.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <EmptyState text="No groups" />
-              )}
-              <p className="text-[10.5px] text-gray-400 mt-3">
-                Excellent: ≥ 80% survival, no failed programs. Needs attention: below 50% survival, more failed than completed programs, or
-                no visit in 90+ days while active.
-              </p>
-            </Card>
-            <Card className="p-5 lg:col-span-2">
               <SectionTitle icon={<BarChart3 size={16} />} title="Programs per Group" sub="Active, completed and failed programs" />
               {data.rows.some((r) => r.programs > 0) ? (
                 <ResponsiveContainer width="100%" height={Math.max(180, data.rows.filter((r) => r.programs > 0).length * 34)}>
@@ -784,14 +743,13 @@ function GrowersTab({
                 <EmptyState text="No programs yet" />
               )}
             </Card>
-          </div>
 
           <Card>
             <div className="px-5 pt-5">
               <SectionTitle
                 icon={<FileText size={16} />}
                 title="Group Records"
-                sub="Survival here counts only visits linked to each group's programs"
+                sub="Use History to see a group's programs, sites, orientation, seedling requests and visits · survival counts only visits linked to each group's programs"
                 right={<ExportButtons onPdf={() => handleExport("pdf")} onExcel={() => handleExport("excel")} disabled={data.rows.length === 0} count={data.rows.length} />}
               />
             </div>
@@ -806,7 +764,8 @@ function GrowersTab({
                     <Th right>Planted</Th>
                     <Th>Survival</Th>
                     <Th>Compliance</Th>
-                    <Th>Standing</Th>
+                    <Th>Needs Attention</Th>
+                    <Th>History</Th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -848,13 +807,31 @@ function GrowersTab({
                           <p className="text-[11px] text-gray-400">{r.days_since_visit !== null ? `Last visit ${r.days_since_visit}d ago` : "No visits"}</p>
                         </Td>
                         <Td>
-                          <Badge label={r.standing} tone={STANDING_TONE[r.standing] ?? STANDING_TONE.New} />
+                          {r.attention.length > 0 ? (
+                            <div className="flex flex-col gap-0.5">
+                              {r.attention.map((reason) => (
+                                <span key={reason} className="text-[11.5px] text-red-600 flex items-center gap-1">
+                                  <AlertTriangle size={11} className="shrink-0" /> {reason}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[11.5px] text-gray-400">{r.programs === 0 ? "No programs yet" : "—"}</span>
+                          )}
+                        </Td>
+                        <Td>
+                          <button
+                            onClick={() => onGroupHistory(r.group_id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-emerald-200 text-emerald-700 text-[11px] font-semibold hover:bg-emerald-50"
+                          >
+                            <History size={12} /> History
+                          </button>
                         </Td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmptyState text="No groups match the filters" />
                       </td>
                     </tr>
@@ -870,7 +847,7 @@ function GrowersTab({
   );
 }
 
-// ─── TAB: MY DECISIONS ──────────────────────────────────────────────────────
+// ─── TAB: DECISIONS ─────────────────────────────────────────────────────────
 
 const KIND_OPTIONS = [
   { value: "all", label: "All decisions" },
@@ -895,17 +872,16 @@ const OUTCOME_TONE: Record<string, string> = {
 };
 const DECISION_DEFAULTS = { search: "", kind: "all", outcome: "all", date_from: "", date_to: "" };
 
-function DecisionsTab({ onSiteHistory, refreshKey }: { onSiteHistory: (id: number) => void; refreshKey: number }) {
+function DecisionsTab({ onSiteHistory }: { onSiteHistory: (id: number) => void }) {
   const [f, setF] = useState(DECISION_DEFAULTS);
   const { data, loading, error, reload } = useReport<DecisionsReport>("head_report/decisions/", f);
-  useRefresh(refreshKey, reload);
   const paged = usePaged(data?.rows ?? []);
   const isFiltered = JSON.stringify(f) !== JSON.stringify(DECISION_DEFAULTS);
 
   const handleExport = (kind: "pdf" | "excel") => {
     if (!data) return;
     const s = data.summary;
-    const range = f.date_from || f.date_to ? dateLabel(f.date_from, f.date_to) : "";
+    const range = dateLabel(f.date_from, f.date_to);
     runExport<DecisionRow>(kind, {
       title: "City ENRO Head Decisions",
       filename: "head_decisions",
@@ -966,7 +942,7 @@ function DecisionsTab({ onSiteHistory, refreshKey }: { onSiteHistory: (id: numbe
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Kpi icon={<Gavel size={16} />} label="Decisions" value={fmt(s.total)} sub={s.avg_turnaround_days !== null ? `Avg. ${s.avg_turnaround_days} days to decide` : undefined} />
             <Kpi icon={<CheckCircle2 size={16} />} label="Applications Approved" value={fmt(s.approved)} sub={`${s.rejected} rejected/cancelled`} accent="bg-green-600" />
-            <Kpi icon={<RefreshCw size={16} />} label="Returned to Data Manager" value={fmt(s.returned)} sub="Sent back for changes" accent="bg-amber-500" />
+            <Kpi icon={<Undo2 size={16} />} label="Returned to Data Manager" value={fmt(s.returned)} sub="Sent back for changes" accent="bg-amber-500" />
             <Kpi
               icon={<ClipboardList size={16} />}
               label="Program Closures"
@@ -1075,30 +1051,54 @@ function DecisionsTab({ onSiteHistory, refreshKey }: { onSiteHistory: (id: numbe
 
 // ─── Main page ──────────────────────────────────────────────────────────────
 
-type TabKey = "summary" | "programs" | "sites" | "growers" | "visits" | "species" | "decisions";
+type TabKey = "summary" | "status" | "progress" | "growers" | "decisions";
 
 const TABS: { key: TabKey; label: string; icon: ReactElement; sub: string }[] = [
-  { key: "summary", label: "Accomplishments", icon: <Sparkles size={15} />, sub: "What the office achieved in a period — ready to export for meetings and reporting" },
-  { key: "programs", label: "Programs", icon: <ClipboardList size={15} />, sub: "Every tree planting program with outcomes, planting and survival" },
-  { key: "sites", label: "Sites", icon: <TreePine size={15} />, sub: "Official site statuses, area, current programs and site history" },
-  { key: "growers", label: "Tree Growers", icon: <Users size={15} />, sub: "Tree grower group performance, compliance and standing" },
-  { key: "visits", label: "Monitoring Visits", icon: <MonitorDot size={15} />, sub: "Field visit log, review outcomes and inspector activity" },
-  { key: "species", label: "Species", icon: <Leaf size={15} />, sub: "Seedlings released vs planted and survival per species" },
-  { key: "decisions", label: "My Decisions", icon: <Gavel size={15} />, sub: "Your application approvals and program closure decisions" },
+  {
+    key: "summary",
+    label: "Accomplishments",
+    icon: <Sparkles size={15} />,
+    sub: "What the office achieved in a period — highlights and totals, ready to export for meetings and reporting",
+  },
+  {
+    key: "status",
+    label: "Operations Status",
+    icon: <ClipboardList size={15} />,
+    sub: "What is going on — programs, official sites, seedling requests and monitoring visits by status",
+  },
+  {
+    key: "progress",
+    label: "Planting Progress",
+    icon: <Sprout size={15} />,
+    sub: "How far along the planting is — trees planted and alive, survival and planted area per month, site and species",
+  },
+  {
+    key: "growers",
+    label: "Tree Growers",
+    icon: <Users size={15} />,
+    sub: "Who is doing the planting — each group's programs, results, compliance and what needs attention",
+  },
+  {
+    key: "decisions",
+    label: "Decisions",
+    icon: <Gavel size={15} />,
+    sub: "Application approvals and program closure decisions made by the City ENRO Head",
+  },
 ];
 
 export default function HeadReports() {
   const [isAuthorize, setIsAuthorize] = useState<boolean | null>(null);
   const [tab, setTab] = useState<TabKey>(() => {
     try {
-      return (localStorage.getItem("head_reports_tab") as TabKey) || "summary";
+      const saved = localStorage.getItem("head_reports_tab") as TabKey;
+      return TABS.some((t) => t.key === saved) ? saved : "summary";
     } catch {
       return "summary";
     }
   });
   const [options, setOptions] = useState<FilterOptions | null>(null);
   const [historySiteId, setHistorySiteId] = useState<number | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [historyGroupId, setHistoryGroupId] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -1150,19 +1150,11 @@ export default function HeadReports() {
   return (
     <div className="min-h-screen bg-[#f5faf6]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <main className="max-w-[1400px] mx-auto p-6 space-y-5">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-[#0F4A2F] flex items-center gap-2">
-              <BarChart3 size={24} /> Reports
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">{active.sub}</p>
-          </div>
-          <button
-            onClick={() => setRefreshKey((k) => k + 1)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50"
-          >
-            <RefreshCw size={15} /> Refresh
-          </button>
+        <div>
+          <h1 className="text-2xl font-bold text-[#0F4A2F] flex items-center gap-2">
+            <BarChart3 size={24} /> Reports
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">{active.sub}</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-1.5 flex flex-wrap gap-1.5 w-fit max-w-full">
@@ -1179,17 +1171,16 @@ export default function HeadReports() {
           ))}
         </div>
 
-        {tab === "summary" && <SummaryTab options={options} refreshKey={refreshKey} />}
-        {tab === "programs" && (
-          <ProgramsTab options={options} onSiteHistory={setHistorySiteId} refreshKey={refreshKey} programLinkBase="/maintenance_evaluation" />
-        )}
-        {tab === "sites" && <SitesTab options={options} onSiteHistory={setHistorySiteId} refreshKey={refreshKey} />}
-        {tab === "growers" && <GrowersTab options={options} onSiteHistory={setHistorySiteId} refreshKey={refreshKey} />}
-        {tab === "visits" && <VisitsTab options={options} onSiteHistory={setHistorySiteId} refreshKey={refreshKey} />}
-        {tab === "species" && <SpeciesTab options={options} refreshKey={refreshKey} />}
-        {tab === "decisions" && <DecisionsTab onSiteHistory={setHistorySiteId} refreshKey={refreshKey} />}
+        {tab === "summary" && <SummaryTab options={options} onGroupHistory={setHistoryGroupId} />}
+        {tab === "status" && <StatusTab options={options} onSiteHistory={setHistorySiteId} />}
+        {tab === "progress" && <ProgressTab options={options} onSiteHistory={setHistorySiteId} />}
+        {tab === "growers" && <GrowersTab options={options} onSiteHistory={setHistorySiteId} onGroupHistory={setHistoryGroupId} />}
+        {tab === "decisions" && <DecisionsTab onSiteHistory={setHistorySiteId} />}
       </main>
 
+      {historyGroupId !== null && (
+        <GroupHistoryModal groupId={historyGroupId} onClose={() => setHistoryGroupId(null)} onSiteHistory={setHistorySiteId} />
+      )}
       {historySiteId !== null && <SiteHistoryModal siteId={historySiteId} onClose={() => setHistorySiteId(null)} />}
     </div>
   );

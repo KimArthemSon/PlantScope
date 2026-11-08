@@ -421,6 +421,94 @@ def get_official_sites(request):
     return JsonResponse({"data": data, "total_page": total_page, "page": page, "entries": entries, "total": total}, status=200)
 
 
+def _grower_info(user):
+    """Display name, type and contact for the tree grower who owns an application."""
+    group = getattr(user, 'tree_grower_group', None)
+    if group:
+        return {
+            "name": group.group_name,
+            "type": group.get_group_type_display(),
+            "contact": group.contact or None,
+            "profile_img": get_cloudinary_url(str(group.profile_img)) if group.profile_img else None,
+        }
+    prof = getattr(user, 'profile', None)
+    if prof:
+        full_name = " ".join(p for p in [prof.first_name, prof.middle_name, prof.last_name] if p)
+        return {
+            "name": full_name or user.email,
+            "type": "Individual",
+            "contact": prof.contact or None,
+            "profile_img": get_cloudinary_url(str(prof.profile_img)) if prof.profile_img else None,
+        }
+    return {"name": user.email, "type": "Individual", "contact": None, "profile_img": None}
+
+
+def _site_planting_history(site):
+    """Every tree planting program that has been assigned to this site, newest first."""
+    from django.core.exceptions import ObjectDoesNotExist
+    from django.db.models import Prefetch
+    from tree_planting_programs.models import ProgressReport, SeedlingRequest
+
+    apps = (
+        Application.objects.filter(site=site)
+        .select_related('user')
+        .prefetch_related(
+            Prefetch(
+                'seedling_requests',
+                queryset=SeedlingRequest.objects.filter(status__in=['accepted', 'confirmed']),
+                to_attr='approved_seedlings',
+            ),
+            Prefetch(
+                'progress_reports',
+                queryset=ProgressReport.objects.filter(status='accepted')
+                .prefetch_related('report_species')
+                .order_by('-submitted_at', '-created_at'),
+                to_attr='accepted_reports',
+            ),
+        )
+        .order_by('-created_at')
+    )
+
+    history = []
+    for app in apps:
+        try:
+            grower = _grower_info(app.user)
+        except ObjectDoesNotExist:
+            grower = {"name": app.user.email, "type": "Individual", "contact": None, "profile_img": None}
+
+        reports = app.accepted_reports
+        latest = reports[0] if reports else None
+        initial = next((r for r in reports if r.visit_type == 'initial'), None)
+
+        planted = sum(s.no_planted for s in initial.report_species.all()) if initial else 0
+        survived = sum(s.no_survived for s in latest.report_species.all()) if latest else 0
+        dead = sum(s.no_dead for s in latest.report_species.all()) if latest else 0
+        counted = survived + dead
+
+        history.append({
+            "application_id": app.application_id,
+            "title": app.title,
+            "status": app.status,
+            "status_label": app.get_status_display(),
+            "classification": app.classification,
+            "grower": {**grower, "email": app.user.email},
+            "participants": app.total_treegrowers_will_participate,
+            "queue_position": app.queue_position,
+            "applied_at": app.created_at.isoformat() if app.created_at else None,
+            "confirmed_at": app.confirmed_at.isoformat() if app.confirmed_at else None,
+            "orientation_date": app.orientation_date.isoformat() if app.orientation_date else None,
+            "last_updated": app.updated_at.isoformat() if app.updated_at else None,
+            "seedlings_received": sum(r.no_request_seedling for r in app.approved_seedlings),
+            "trees_planted": planted,
+            "trees_survived": survived,
+            "trees_dead": dead,
+            "survival_rate": round(survived / counted * 100, 1) if counted else None,
+            "monitoring_visits": len(reports),
+            "last_visit_at": (latest.submitted_at or latest.created_at).isoformat() if latest else None,
+        })
+    return history
+
+
 @csrf_exempt
 def get_site(request, site_id):
     if request.method != "GET": 
@@ -520,6 +608,7 @@ def get_site(request, site_id):
         # ✅ NEW: Include reforestation area details in the response
         "reforestation_area_id": reforestation_area_id,
         "reforestation_area_name": reforestation_area_name,
+        "tree_planting_history": _site_planting_history(site),
     })
 
 # ─────────────────────────────────────────────

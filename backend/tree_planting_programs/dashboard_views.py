@@ -381,9 +381,23 @@ def get_dashboard_data(request):
     pending = Application.objects.filter(status__in=['for_evaluation', 'for_head']).count()
     rejected = Application.objects.filter(status__in=['rejected', 'failed', 'cancelled']).count()
     completed_applications = Application.objects.filter(status='completed').count()
-    completed_sites = Sites.objects.filter(monitoring_status='completed').count()
+    active_sites = Sites.objects.filter(is_active=True, reforestation_area__deleted_at__isnull=True)
 
-    areas_assessed = SiteMetaDataVerification.objects.filter(status='verified').count()
+    # Site status = the GIS Specialist's decision on the site
+    site_decision_counts = {r['status']: r['n'] for r in active_sites.values('status').annotate(n=Count('site_id'))}
+    # Meta-data verification = the Data Manager's review of the site's field data
+    verification_counts = {
+        r['meta_verification__status'] or 'none': r['n']
+        for r in active_sites.values('meta_verification__status').annotate(n=Count('site_id'))
+    }
+
+    areas_qs = Reforestation_areas.objects.filter(deleted_at__isnull=True)
+    reforestation_areas = {
+        "total": areas_qs.count(),
+        "with_sites": areas_qs.filter(sites__is_active=True).distinct().count(),
+        "sites": active_sites.count(),
+        "hectares": round(active_sites.aggregate(h=Coalesce(Sum('total_area_hectares'), 0.0))['h'], 2),
+    }
     assessors_count = User.objects.filter(user_role='OnsiteInspector', is_active=True).count()
 
     # Seedlings: endorsed (distributed) from accepted requests
@@ -448,29 +462,19 @@ def get_dashboard_data(request):
     # ═══════════════════════════════════════════════════════════
     # 4. ASSESSMENT DATA (By Barangay)
     # ═══════════════════════════════════════════════════════════
-    barangay_stats = Sites.objects.filter(
+    barangay_stats = active_sites.filter(
         reforestation_area__barangay__isnull=False
     ).values(
         barangay_name=F('reforestation_area__barangay__name')
     ).annotate(
-        assessed=Count('site_id'),
-        approved=Count('site_id', filter=Q(status__in=['accepted', 'completed']))
-    ).order_by('-assessed')[:6]
+        sites=Count('site_id'),
+        accepted=Count('site_id', filter=Q(status='accepted')),
+        verified=Count('site_id', filter=Q(meta_verification__status='verified')),
+    ).order_by('-sites')[:6]
 
-    assessment_data = [
-        {"name": i['barangay_name'], "assessed": i['assessed'], "approved": i['approved']}
+    sites_by_barangay = [
+        {"name": i['barangay_name'], "sites": i['sites'], "accepted": i['accepted'], "verified": i['verified']}
         for i in barangay_stats
-    ]
-
-    # ═══════════════════════════════════════════════════════════
-    # 5. APPROVAL RATE TREND
-    # ═══════════════════════════════════════════════════════════
-    approval_rate = [
-        {
-            "month": e['month'].strftime('%b'),
-            "rate": int(round((e['approved'] / e['submitted'] * 100), 0)) if e['submitted'] > 0 else 0
-        }
-        for e in monthly_apps_list
     ]
 
     # ═══════════════════════════════════════════════════════════
@@ -514,11 +518,6 @@ def get_dashboard_data(request):
         Application.objects.select_related('site__reforestation_area__barangay')
         .order_by('-created_at')[:5]
     ]
-    all_apps = [
-        _format_app(a) for a in
-        Application.objects.select_related('site__reforestation_area__barangay')
-        .order_by('-created_at')[:20]
-    ]
 
     # ═══════════════════════════════════════════════════════════
     # 8. ASSESSORS (OnsiteInspectors)
@@ -529,9 +528,9 @@ def get_dashboard_data(request):
 
     assessors = []
     for insp in inspectors:
-        verifications = SiteMetaDataVerification.objects.filter(verified_by=insp)
-        assessments_done = verifications.count()
-        approved_count = verifications.filter(status='verified').count()
+        submitted = Field_assessment.objects.filter(assigned_onsite_inspector__user=insp, is_submitted=True)
+        assessments_done = submitted.count()
+        sites_assessed = submitted.filter(site__isnull=False).values('site_id').distinct().count()
         pending_seedlings = SeedlingRequest.objects.filter(
             assigned_inspector=insp, status='accepted'
         ).count()
@@ -545,7 +544,7 @@ def get_dashboard_data(request):
                      if hasattr(insp, 'profile') and insp.profile
                      else insp.email),
             "assessments": assessments_done,
-            "approved": approved_count,
+            "sites_assessed": sites_assessed,
             "pending_seedlings": pending_seedlings,
             "status": "Active",
             "avatar": avatar,
@@ -574,25 +573,25 @@ def get_dashboard_data(request):
             })
 
     # ═══════════════════════════════════════════════════════════
-    # 10. SITE VERIFICATION PIPELINE
+    # 10. SITE DECISION (GIS) & META-DATA VERIFICATION (DM)
     # ═══════════════════════════════════════════════════════════
-    verification_counts = (SiteMetaDataVerification.objects
-        .values('status')
-        .annotate(count=Count('id')))
+    def _pipeline(counts, styles):
+        return [{"key": k, "name": name, "value": counts.get(k, 0), "fill": color}
+                for k, (name, color) in styles.items()]
 
-    verification_map = {
-        'pending':  ('Pending',  '#f59e0b'),
-        'verified': ('Verified', '#10b981'),
-        'rejected': ('Rejected', '#ef4444'),
-        'draft':    ('Draft',    '#9ca3af'),
-    }
-    verification_pipeline = []
-    for item in verification_counts:
-        if item['status'] in verification_map:
-            name, color = verification_map[item['status']]
-            verification_pipeline.append({
-                "name": name, "value": item['count'], "fill": color
-            })
+    site_decision_pipeline = _pipeline(site_decision_counts, {
+        'pending':      ('Pending',      '#f59e0b'),
+        'under_review': ('Under Review', '#3b82f6'),
+        'accepted':     ('Accepted',     '#10b981'),
+        'rejected':     ('Rejected',     '#ef4444'),
+    })
+    verification_pipeline = _pipeline(verification_counts, {
+        'none':     ('Not started', '#d1d5db'),
+        'draft':    ('Draft',       '#9ca3af'),
+        'pending':  ('Pending',     '#f59e0b'),
+        'verified': ('Verified',    '#10b981'),
+        'rejected': ('Rejected',    '#ef4444'),
+    })
 
     # ═══════════════════════════════════════════════════════════
     # 11. PROGRESS REPORT STATS (Initial vs Ongoing)
@@ -626,25 +625,18 @@ def get_dashboard_data(request):
             "rejected": rejected,
             "under_monitoring_applications": under_monitoring_applications,
             "completed_applications": completed_applications,
-            "completed_sites": completed_sites,
-            "total_seedlings_planted": summary["total_planted"],
-            "total_area_planted": summary["planted_hectares"],
-            "areas_assessed": areas_assessed,
             "assessors": assessors_count,
             "trees_endorsed": trees_endorsed,
-            "overall_survival_rate": summary["survival_rate"],
-            "official_sites": summary["official_sites"],
-            "official_hectares": summary["official_hectares"],
         },
+        "reforestation_areas": reforestation_areas,
         "application_trend": application_trend,
         "status_data": status_data,
-        "assessment_data": assessment_data,
-        "approval_rate": approval_rate,
+        "sites_by_barangay": sites_by_barangay,
         "recent_activities": recent_activities,
         "recent_apps": recent_apps,
-        "all_apps": all_apps,
         "assessors": assessors,
         "seedling_request_pipeline": seedling_pipeline,
+        "site_decision_pipeline": site_decision_pipeline,
         "site_verification_pipeline": verification_pipeline,
         "progress_report_stats": progress_report_stats,
         **monitoring,
@@ -703,6 +695,7 @@ from django.views.decorators.csrf import csrf_exempt
 from accounts.helper import get_user_from_token
 from barangay.models import Barangay
 from Field_assessment.models import Field_assessment
+from land_classifications.models import LandClassification
 from reforestation_areas.models import Reforestation_areas
 from sites.models import Sites
 from sites.views import OFFICIAL_SITE_STATUSES
@@ -830,6 +823,17 @@ def _month_range(date_from, date_to, default_months=12):
     return months
 
 
+def _filter_land_class(qs, site_path, value):
+    """Filter by the site's verified land classification (an id, or 'none' for unclassified)."""
+    prefix = f'{site_path}__' if site_path else ''
+    if value == 'none':
+        return qs.filter(Q(**{f'{prefix}meta_verification__isnull': True})
+                         | Q(**{f'{prefix}meta_verification__verified_land_classification__isnull': True}))
+    if value.isdigit():
+        return qs.filter(**{f'{prefix}meta_verification__verified_land_classification_id': value})
+    return qs
+
+
 def _month_label(key):
     return date(key[0], key[1], 1).strftime("%b '%y")
 
@@ -875,6 +879,10 @@ def get_report_filter_options(request):
             {"id": a.reforestation_area_id, "name": a.name, "barangay_id": a.barangay_id}
             for a in Reforestation_areas.objects.filter(deleted_at__isnull=True).order_by('name')
         ],
+        "land_classifications": [
+            {"id": lc.land_classification_id, "name": lc.name, "ownership": lc.ownership_type}
+            for lc in LandClassification.objects.order_by('name')
+        ],
         "program_statuses": [
             {"value": k, "label": k.capitalize()} for k in PROGRAM_STATUS_GROUPS
         ],
@@ -905,6 +913,45 @@ def _closure_note(app):
     return latest.head_notes or latest.recommendation_reason
 
 
+def _progress_trend(events, months):
+    """
+    Month-by-month progress of the listed programs, from accepted monitoring visits:
+    trees planted / dead that month, running totals, survival rate and planted area
+    (each program's latest planted polygon so far). Visits before the first month
+    count toward the starting totals.
+    """
+    events = sorted(e for e in events if e[0])
+    trend = []
+    i = cum_planted = cum_dead = 0
+    area_by_program = {}
+    for y, m in months:
+        month_end = date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
+        new_planted = new_dead = visits = 0
+        while i < len(events) and events[i][0] <= month_end:
+            d, program_id, planted, dead, area = events[i]
+            cum_planted += planted
+            cum_dead += dead
+            if area:
+                area_by_program[program_id] = area
+            if (d.year, d.month) == (y, m):
+                new_planted += planted
+                new_dead += dead
+                visits += 1
+            i += 1
+        _, alive, rate = _survival(cum_planted, cum_dead)
+        trend.append({
+            "month": _month_label((y, m)),
+            "new_planted": new_planted,
+            "new_dead": new_dead,
+            "visits": visits,
+            "total_planted": cum_planted,
+            "alive": alive,
+            "survival_rate": rate,
+            "planted_hectares": round(sum(area_by_program.values()), 2),
+        })
+    return trend
+
+
 @csrf_exempt
 def get_programs_report(request):
     if request.method != 'GET':
@@ -915,6 +962,8 @@ def get_programs_report(request):
     status_group = request.GET.get('status', 'all').strip().lower()
     barangay_id = request.GET.get('barangay', '').strip()
     classification = request.GET.get('classification', '').strip()
+    area_id = request.GET.get('area', '').strip()
+    land_class = request.GET.get('land_classification', '').strip()   # id | none
     search = request.GET.get('search', '').strip()
     date_basis = request.GET.get('date_basis', 'submitted').strip()  # submitted | closed
     date_from = _parse_date(request.GET.get('date_from'))
@@ -941,6 +990,9 @@ def get_programs_report(request):
         qs = qs.filter(site__reforestation_area__barangay_id=barangay_id)
     if classification in ('new', 'old'):
         qs = qs.filter(classification=classification)
+    if area_id:
+        qs = qs.filter(site__reforestation_area_id=area_id)
+    qs = _filter_land_class(qs, 'site', land_class)
     if search:
         qs = qs.filter(
             Q(title__icontains=search)
@@ -955,6 +1007,7 @@ def get_programs_report(request):
 
     today = timezone.localdate()
     rows = []
+    events = []   # (visit date, program id, planted, dead, planted area) for the progress trend
     for app in qs[:MAX_ROWS * 2]:
         closed = _closed_date(app)
         if date_basis == 'closed' and (date_from or date_to) and not _in_range(closed, date_from, date_to):
@@ -963,12 +1016,14 @@ def get_programs_report(request):
         planted = dead = 0
         last_visit = None
         planted_area = None
+        app_events = []
         for r in sorted(app.accepted_reports, key=lambda r: r.submitted_at or r.created_at):
             p, d = _report_totals(r)
             planted, dead = planted + p, dead + d
             last_visit = r.submitted_at or r.created_at
             if r.planted_area_hectares:
                 planted_area = r.planted_area_hectares
+            app_events.append((_local_date(last_visit), app.application_id, p, d, r.planted_area_hectares))
         total, survived, rate = _survival(planted, dead)
 
         endorsed = sum(
@@ -1007,6 +1062,7 @@ def get_programs_report(request):
             "planted_hectares": round(planted_area, 2) if planted_area else None,
             "closure_note": _closure_note(app),
         })
+        events.extend(app_events)
         if len(rows) >= MAX_ROWS:
             break
 
@@ -1051,6 +1107,7 @@ def get_programs_report(request):
         if closed and (closed.year, closed.month) in monthly and r["status"] in ('completed', 'failed'):
             monthly[(closed.year, closed.month)][r["status"]] += 1
     monthly_list = [{"month": _month_label(k), **v} for k, v in monthly.items()]
+    progress_trend = _progress_trend(events, months)
 
     # ── By barangay ──
     brgy = {}
@@ -1085,6 +1142,7 @@ def get_programs_report(request):
         "summary": summary,
         "status_breakdown": status_breakdown,
         "monthly": monthly_list,
+        "progress_trend": progress_trend,
         "by_barangay": by_barangay,
         "rows": rows,
         "truncated": len(rows) >= MAX_ROWS,
@@ -1103,8 +1161,13 @@ def get_sites_report(request):
 
     monitoring_status = request.GET.get('monitoring_status', '').strip()
     barangay_id = request.GET.get('barangay', '').strip()
+    area_id = request.GET.get('area', '').strip()
+    land_class = request.GET.get('land_classification', '').strip()
     search = request.GET.get('search', '').strip()
     attention = request.GET.get('attention', '').strip()  # overdue | low_survival | no_visit
+    # Dates only set the months shown in the progress trend
+    date_from = _parse_date(request.GET.get('date_from'))
+    date_to = _parse_date(request.GET.get('date_to'))
 
     qs = (Sites.objects
           .filter(is_active=True, meta_verification__status='verified', status__in=OFFICIAL_SITE_STATUSES)
@@ -1122,11 +1185,15 @@ def get_sites_report(request):
         qs = qs.filter(monitoring_status=monitoring_status)
     if barangay_id:
         qs = qs.filter(reforestation_area__barangay_id=barangay_id)
+    if area_id:
+        qs = qs.filter(reforestation_area_id=area_id)
+    qs = _filter_land_class(qs, '', land_class)
     if search:
         qs = qs.filter(Q(name__icontains=search) | Q(reforestation_area__name__icontains=search))
 
     today = timezone.localdate()
     rows = []
+    events = []   # (visit date, site id, planted, dead, planted area) for the progress trend
     for site in qs[:MAX_ROWS]:
         apps = list(site.applications.all())
         active = next((a for a in apps if a.status in ('for_evaluation', 'for_head', 'accepted', 'under_monitoring')), None)
@@ -1135,12 +1202,14 @@ def get_sites_report(request):
         planted = dead = 0
         last_visit = None
         planted_area = None
+        site_events = []
         for r in sorted(site.accepted_reports, key=lambda r: r.submitted_at or r.created_at):
             p, d = _report_totals(r)
             planted, dead = planted + p, dead + d
             last_visit = r.submitted_at or r.created_at
             if r.planted_area_hectares:
                 planted_area = r.planted_area_hectares
+            site_events.append((_local_date(last_visit), site.site_id, p, d, r.planted_area_hectares))
         total, survived, rate = _survival(planted, dead)
         last_visit_date = _local_date(last_visit)
         days_since = (today - last_visit_date).days if last_visit_date else None
@@ -1184,6 +1253,7 @@ def get_sites_report(request):
             "overdue": overdue,
             "no_visit": no_visit,
         })
+        events.extend(site_events)
 
     status_breakdown = []
     colors = {'available': '#10b981', 'reserved': '#f59e0b', 'under_monitoring': '#6366f1',
@@ -1215,9 +1285,11 @@ def get_sites_report(request):
 
     all_planted = sum(r["planted"] for r in rows)
     all_dead = sum(r["dead"] for r in rows)
-    _, _, all_rate = _survival(all_planted, all_dead)
+    _, all_survived, all_rate = _survival(all_planted, all_dead)
 
     summary = {
+        "survived": all_survived,
+        "dead": all_dead,
         "total_sites": len(rows),
         "total_hectares": round(sum(r["hectares"] for r in rows), 2),
         "planted_hectares": round(sum(r["planted_hectares"] or 0 for r in rows), 2),
@@ -1237,7 +1309,162 @@ def get_sites_report(request):
         "status_breakdown": status_breakdown,
         "by_barangay": by_barangay,
         "land_classification": land_classification,
+        "progress_trend": _progress_trend(events, _month_range(date_from, date_to)),
         "rows": rows,
+    }, status=200)
+
+
+# ─────────────────────────────────────────────────────────────
+# OPERATIONS STATUS (Data Manager: totals and activity over time)
+# ─────────────────────────────────────────────────────────────
+REQUEST_STATUS_STYLE = {
+    'pending':   ('Pending review',     '#f59e0b'),
+    'accepted':  ('Awaiting handover',  '#3b82f6'),
+    'confirmed': ('Handed over',        '#10b981'),
+    'rejected':  ('Rejected',           '#ef4444'),
+    'cancelled': ('Cancelled',          '#9ca3af'),
+}
+VISIT_STATUS_STYLE = {
+    'pending':  ('Pending review',    '#f59e0b'),
+    'accepted': ('Accepted',          '#10b981'),
+    'rejected': ('Changes requested', '#ef4444'),
+}
+PROGRAM_GROUP_STYLE = {
+    'pending':   ('Pending review', '#f59e0b'),
+    'ongoing':   ('Ongoing',        '#6366f1'),
+    'completed': ('Completed',      '#059669'),
+    'failed':    ('Failed',         '#ef4444'),
+    'rejected':  ('Rejected',       '#f87171'),
+    'cancelled': ('Cancelled',      '#9ca3af'),
+}
+SITE_STATUS_COLORS = {'available': '#10b981', 'reserved': '#f59e0b', 'under_monitoring': '#6366f1',
+                      'completed': '#059669', 'failed': '#ef4444', 'onhold': '#9ca3af'}
+
+
+@csrf_exempt
+def get_status_report(request):
+    """
+    What is going on right now: programs, official sites, seedling requests and
+    monitoring visits by status, plus how many of each came in per month.
+    Barangay / area filter everything; dates filter programs, requests and
+    visits by when they were created (sites are a current snapshot).
+    """
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    if not _auth(request):
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    barangay_id = request.GET.get('barangay', '').strip()
+    area_id = request.GET.get('area', '').strip()
+    land_class = request.GET.get('land_classification', '').strip()
+    date_from = _parse_date(request.GET.get('date_from'))
+    date_to = _parse_date(request.GET.get('date_to'))
+
+    def scoped(qs, site_path, dated=True):
+        if barangay_id:
+            qs = qs.filter(**{f'{site_path}__reforestation_area__barangay_id': barangay_id})
+        if area_id:
+            qs = qs.filter(**{f'{site_path}__reforestation_area_id': area_id})
+        qs = _filter_land_class(qs, site_path, land_class)
+        if dated and date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        if dated and date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+        return qs
+
+    programs = scoped(Application.objects.all(), 'site')
+    requests_qs = scoped(SeedlingRequest.objects.all(), 'application__site')
+    visits = scoped(ProgressReport.objects.all(), 'site')
+    # Official sites are a current snapshot, so no date filter
+    sites = Sites.objects.filter(is_active=True, meta_verification__status='verified',
+                                 status__in=OFFICIAL_SITE_STATUSES)
+    if barangay_id:
+        sites = sites.filter(reforestation_area__barangay_id=barangay_id)
+    if area_id:
+        sites = sites.filter(reforestation_area_id=area_id)
+    sites = _filter_land_class(sites, '', land_class)
+
+    # ── Status breakdowns ──
+    app_counts = {r['status']: r['n'] for r in programs.values('status').annotate(n=Count('application_id'))}
+    program_breakdown = [
+        {"key": k, "name": label, "fill": color,
+         "value": sum(app_counts.get(st, 0) for st in PROGRAM_STATUS_GROUPS[k])}
+        for k, (label, color) in PROGRAM_GROUP_STYLE.items()
+    ]
+    site_rows = {r['monitoring_status']: r for r in sites.values('monitoring_status')
+                 .annotate(n=Count('site_id'), ha=Coalesce(Sum('total_area_hectares'), Value(0.0)))}
+    site_breakdown = [
+        {"key": k, "name": label, "fill": SITE_STATUS_COLORS[k],
+         "value": site_rows[k]['n'] if k in site_rows else 0,
+         "hectares": round(site_rows[k]['ha'], 2) if k in site_rows else 0.0}
+        for k, label in MONITORING_STATUS_SHORT.items()
+    ]
+    req_counts = {r['status']: r['n'] for r in requests_qs.values('status').annotate(n=Count('seedling_request_id'))}
+    request_breakdown = [{"key": k, "name": label, "fill": color, "value": req_counts.get(k, 0)}
+                         for k, (label, color) in REQUEST_STATUS_STYLE.items()]
+    visit_counts = {r['status']: r['n'] for r in visits.values('status').annotate(n=Count('progress_report_id'))}
+    visit_breakdown = [{"key": k, "name": label, "fill": color, "value": visit_counts.get(k, 0)}
+                       for k, (label, color) in VISIT_STATUS_STYLE.items()]
+
+    # ── Seedling request records ──
+    request_rows = []
+    for req in (requests_qs.select_related('application__user__tree_grower_group',
+                                           'application__site__reforestation_area__barangay',
+                                           'assigned_inspector__profile')
+                .prefetch_related('seedling_species').order_by('-created_at')[:MAX_ROWS]):
+        app = req.application
+        site = app.site if app else None
+        released = (sum(sp.quantity or 0 for sp in req.seedling_species.all())
+                    if req.status in SEEDLING_RELEASED_STATUSES else 0)
+        request_rows.append({
+            "id": req.seedling_request_id,
+            "date": _iso(req.created_at),
+            "program": f"APP-{app.application_id:04d}" if app else None,
+            "group_name": _group_name(app.user) if app else None,
+            "site_id": site.site_id if site else None,
+            "site_name": site.name if site else None,
+            "barangay": _barangay_name(site),
+            "requested": req.no_request_seedling or 0,
+            "released": released,
+            "status": req.status,
+            "status_label": REQUEST_STATUS_STYLE.get(req.status, (req.status, ''))[0],
+            "inspector": _person_name(req.assigned_inspector) if req.assigned_inspector else None,
+        })
+
+    # ── Activity per month ──
+    months = _month_range(date_from, date_to)
+    monthly = {k: {"programs": 0, "requests": 0, "visits": 0} for k in months}
+    for key, qs in (("programs", programs), ("requests", requests_qs), ("visits", visits)):
+        for row in qs.annotate(m=TruncMonth('created_at')).values('m').annotate(n=Count('pk')):
+            if row['m'] and (row['m'].year, row['m'].month) in monthly:
+                monthly[(row['m'].year, row['m'].month)][key] += row['n']
+
+    summary = {
+        "programs": sum(app_counts.values()),
+        "programs_pending": program_breakdown[0]["value"],
+        "programs_ongoing": program_breakdown[1]["value"],
+        "sites": sum(r['n'] for r in site_rows.values()),
+        "site_hectares": round(sum(r['ha'] for r in site_rows.values()), 2),
+        "sites_under_monitoring": site_rows['under_monitoring']['n'] if 'under_monitoring' in site_rows else 0,
+        "sites_available": site_rows['available']['n'] if 'available' in site_rows else 0,
+        "requests": sum(req_counts.values()),
+        "requests_pending": req_counts.get('pending', 0),
+        "requests_awaiting_handover": req_counts.get('accepted', 0),
+        "seedlings_requested": sum(r["requested"] for r in request_rows),
+        "seedlings_released": sum(r["released"] for r in request_rows),
+        "visits": sum(visit_counts.values()),
+        "visits_pending": visit_counts.get('pending', 0),
+        "visits_changes_requested": visit_counts.get('rejected', 0),
+    }
+
+    return JsonResponse({
+        "summary": summary,
+        "program_status": program_breakdown,
+        "site_status": site_breakdown,
+        "request_status": request_breakdown,
+        "visit_status": visit_breakdown,
+        "monthly": [{"month": _month_label(k), **v} for k, v in monthly.items()],
+        "requests": request_rows,
     }, status=200)
 
 
@@ -1419,29 +1646,6 @@ def get_site_history(request, site_id):
             "planted_hectares": round(latest_area, 4) if latest_area else None,
         })
 
-    assessments = []
-    for fa in (Field_assessment.objects.filter(site=site, is_submitted=True)
-               .select_related('assigned_onsite_inspector__user__profile', 'land_classification')
-               .prefetch_related('images')
-               .order_by('-created_at')):
-        data = fa.field_assessment_data or {}
-        layers = [label for key, label in (('meta_data', 'Meta'), ('safety', 'Safety'),
-                                           ('survivability', 'Survivability'),
-                                           ('boundary_verification', 'Boundary')) if data.get(key)]
-        inspector = fa.assigned_onsite_inspector.user if fa.assigned_onsite_inspector else None
-        when = fa.sent_date or fa.created_at
-        photos = fa.images.count()
-        assessments.append({
-            "id": fa.field_assessment_id,
-            "title": fa.title or f"Assessment #{fa.field_assessment_id}",
-            "date": _iso(when),
-            "inspector": _person_name(inspector),
-            "layers": layers,
-            "photos": photos,
-            "land_classification": fa.land_classification.name if fa.land_classification else None,
-        })
-        add(when, 'assessment', 'Field assessment submitted',
-            f"{', '.join(layers) or 'No layers'} · {photos} photos · by {_person_name(inspector)}")
     if site.updated_at and site.updated_at - site.created_at > timedelta(minutes=5):
         add(site.updated_at, 'site', 'Site record last updated', None)
 
@@ -1474,7 +1678,6 @@ def get_site_history(request, site_id):
         "visits_total": len(visits),
         "visits_accepted": len(accepted),
         "visits_unlinked": sum(1 for v in visits if not v["linked"]),
-        "assessments": len(assessments),
         "last_visit": last_visit,
         "days_since_visit": (timezone.localdate() - _parse_date(last_visit)).days if last_visit else None,
     }
@@ -1504,7 +1707,6 @@ def get_site_history(request, site_id):
         "progress_trend": progress_trend,
         "programs": list(reversed(programs)),
         "visits": visits,
-        "assessments": assessments,
         "timeline": events,
     }, status=200)
 
@@ -1522,6 +1724,8 @@ def get_visits_report(request):
     visit_type = request.GET.get('visit_type', '').strip()
     status = request.GET.get('status', '').strip()
     barangay_id = request.GET.get('barangay', '').strip()
+    area_id = request.GET.get('area', '').strip()
+    land_class = request.GET.get('land_classification', '').strip()
     search = request.GET.get('search', '').strip()
     date_from = _parse_date(request.GET.get('date_from'))
     date_to = _parse_date(request.GET.get('date_to'))
@@ -1537,6 +1741,9 @@ def get_visits_report(request):
         qs = qs.filter(status=status)
     if barangay_id:
         qs = qs.filter(site__reforestation_area__barangay_id=barangay_id)
+    if area_id:
+        qs = qs.filter(site__reforestation_area_id=area_id)
+    qs = _filter_land_class(qs, 'site', land_class)
     if search:
         qs = qs.filter(
             Q(site__name__icontains=search)
@@ -1618,6 +1825,8 @@ def get_species_report(request):
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
     barangay_id = request.GET.get('barangay', '').strip()
+    area_id = request.GET.get('area', '').strip()
+    land_class = request.GET.get('land_classification', '').strip()
     date_from = _parse_date(request.GET.get('date_from'))
     date_to = _parse_date(request.GET.get('date_to'))
 
@@ -1631,6 +1840,11 @@ def get_species_report(request):
         endorsed_qs = endorsed_qs.filter(
             seedling_request__application__site__reforestation_area__barangay_id=barangay_id)
         report_qs = report_qs.filter(progress_report__site__reforestation_area__barangay_id=barangay_id)
+    if area_id:
+        endorsed_qs = endorsed_qs.filter(seedling_request__application__site__reforestation_area_id=area_id)
+        report_qs = report_qs.filter(progress_report__site__reforestation_area_id=area_id)
+    endorsed_qs = _filter_land_class(endorsed_qs, 'seedling_request__application__site', land_class)
+    report_qs = _filter_land_class(report_qs, 'progress_report__site', land_class)
     if date_from:
         endorsed_qs = endorsed_qs.filter(seedling_request__created_at__date__gte=date_from)
         report_qs = report_qs.filter(progress_report__created_at__date__gte=date_from)

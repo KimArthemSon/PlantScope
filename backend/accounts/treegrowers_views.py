@@ -337,6 +337,8 @@ def update_tree_grower(request, user_id):
         )
 
         group_profile_img = files.get('group_profile_img') if files else None
+        # "Reset to default photo": clear the group image so the default is shown
+        remove_group_img = str(get_value('remove_group_profile_img', '')).lower() == 'true' and not group_profile_img
 
         # =========================================================
         # VALIDATIONS
@@ -397,13 +399,15 @@ def update_tree_grower(request, user_id):
 
             if group_profile_img:
                 tree_grower_group.profile_img = group_profile_img
+            elif remove_group_img:
+                tree_grower_group.profile_img = None
 
             tree_grower_group.save()
 
         # =========================================================
         # DELETE OLD GROUP IMAGE AFTER SUCCESSFUL SAVE
         # =========================================================
-        if group_profile_img and old_group_image:
+        if (group_profile_img or remove_group_img) and old_group_image:
             try:
                 delete_cloudinary_resource(old_group_image, resource_type='image')
             except Exception as cloudinary_error:
@@ -431,7 +435,7 @@ def update_tree_grower(request, user_id):
             _new['password'] = '***'
             _changed.append('password')
 
-        if group_profile_img:
+        if group_profile_img or remove_group_img:
             _changed.append('group_profile_img')
 
         # =========================================================

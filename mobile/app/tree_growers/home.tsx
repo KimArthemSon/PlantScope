@@ -20,6 +20,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { api } from "@/constants/url_fixed";
 import { clearAuthData, isAuthFailure } from "@/utils/auth";
+import HowToPlantGuide from "@/components/guides/how_to_plant";
+import HowToApplyGuide from "@/components/guides/how_to_apply";
+import GettingStartedGuide from "@/components/guides/getting_started";
+import AboutPlantScope from "@/components/guides/about_plantscope";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -56,18 +60,67 @@ type UserData = {
   user_role: string | null;
 };
 
+// Built from /api/get_tree_grower_application/ (same data as the My Site tab)
 type MySiteData = {
-  id: number;
-  name: string;
-  barangay: string;
-  area: string;
-  status: string;
-  progress: number;
-  label: string;
+  status: string; // raw application status, e.g. "for_evaluation"
+  title: string; // application project title
+  siteName: string | null; // null until ENRO assigns a site
+  barangay: string | null;
+  areaName: string | null;
+  hectares: number | null;
+  imageUrl: string | null;
+  growers: number;
+  appliedAt: string;
+  orientationDate: string | null;
+  seedlingsApproved: number;
+  reportCount: number;
 } | null;
+
+const APP_STATUS: Record<string, { label: string; color: string; bg: string }> = {
+  for_evaluation: { label: "For Evaluation", color: "#B45309", bg: "#FFFBEB" },
+  for_head: { label: "For Head Review", color: "#1D4ED8", bg: "#EFF6FF" },
+  accepted: { label: "Needs Orientation", color: "#047857", bg: "#ECFDF5" },
+  under_monitoring: { label: "Under Monitoring", color: "#047857", bg: "#ECFDF5" },
+  final_review: { label: "Final Review", color: "#4338CA", bg: "#EEF2FF" },
+  completed: { label: "Completed", color: "#0284C7", bg: "#E0F2FE" },
+  rejected: { label: "Rejected", color: "#B91C1C", bg: "#FEF2F2" },
+  cancelled: { label: "Cancelled", color: "#B91C1C", bg: "#FEF2F2" },
+  failed: { label: "Not Completed", color: "#B91C1C", bg: "#FEF2F2" },
+};
+
+const CLOSED_STATUSES = ["rejected", "cancelled", "failed"];
+
+// Same steps as the progress timeline on the My Site tab (application.tsx)
+const TRACK_STEPS = [
+  { key: "for_evaluation", label: "Evaluation", icon: "search" },
+  { key: "for_head", label: "Head Review", icon: "people" },
+  { key: "accepted", label: "Approved", icon: "checkmark-circle" },
+  { key: "under_monitoring", label: "Active", icon: "leaf" },
+  { key: "final_review", label: "Final Review", icon: "ribbon" },
+  { key: "completed", label: "Completed", icon: "trophy" },
+] as const;
+
+const formatDate = (raw: string | null) => {
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+};
+
+const resolveUrl = (url: string) => (url.startsWith("http") ? url : `${api}${url}`);
 
 // ─── MOCK DATA FOR CAROUSEL ───────────────────────────────────────────────
 const carouselItems = [
+  {
+    id: 3,
+    key: "getting-started",
+    title: "Getting Started",
+    description:
+      "New to PlantScope? Learn how the app works and what to expect as a tree grower.",
+    cta: "How to apply",
+    image: require("@/assets/images/treegrower.png"),
+    route: "/tree_growers/getting-started",
+  },
   {
     id: 0,
     key: "apply",
@@ -99,14 +152,6 @@ const carouselItems = [
     route: "/tree_growers/about",
   },
 ];
-
-type RecommendedSite = {
-  id: number;
-  name: string;
-  barangay: string;
-  area: string;
-  status: string;
-};
 
 // ─── STYLES ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
@@ -194,25 +239,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: "bold" },
   viewAllButton: { flexDirection: "row", alignItems: "center", gap: 2 },
   viewAllText: { fontSize: 14, fontWeight: "600" },
-  courseCard: {
-    flexDirection: "row",
-    gap: 12,
-    padding: 12,
-    borderRadius: 16,
-    backgroundColor: C.white,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  courseThumbnail: {
-    width: 80,
-    height: 64,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   courseContent: { flex: 1 },
   courseTitle: {
     fontSize: 14,
@@ -221,17 +247,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   courseLevel: { fontSize: 12, color: C.grayLight, marginBottom: 6 },
-  studentInfo: { flexDirection: "row", alignItems: "center", gap: 8 },
-  studentText: { fontSize: 12, color: C.gray },
-  avatarItem: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: C.white,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   progressContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -286,19 +301,125 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: "500",
   },
-  sectionHeaderStacked: {
+  mySiteEmpty: { borderColor: C.border, borderStyle: "dashed" },
+
+  // My Site card (styled like the cards on the Sites screen)
+  siteCardShadow: {
+    borderRadius: 18,
+    backgroundColor: C.white,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  siteCard: { borderRadius: 18 },
+  // Gray background so the photo area isn't a white gap while the image loads.
+  // Rounded top corners are set here instead of clipping the whole card.
+  siteImageBox: {
+    height: 130,
+    position: "relative",
+    backgroundColor: "#E2E8F0",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    overflow: "hidden",
+  },
+  siteImage: { width: "100%", height: "100%" },
+  siteImagePlaceholder: {
+    backgroundColor: "#F1F5F9",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 4,
+  },
+  siteImagePlaceholderText: { fontSize: 11, color: C.grayLight, fontWeight: "600" },
+  siteStatus: {
+    position: "absolute",
+    top: 10,
+    left: 10,
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    marginBottom: 12,
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  sectionTitleMain: { fontSize: 16, fontWeight: "bold" },
-  sectionTitleSub: {
-    fontSize: 12,
-    color: C.grayLight,
-    fontWeight: "500",
-    marginTop: 1,
+  siteStatusDot: { width: 7, height: 7, borderRadius: 4 },
+  siteStatusText: { fontSize: 11, fontWeight: "700" },
+  siteBody: { padding: 14 },
+  siteName: { fontSize: 15, fontWeight: "800", color: C.navy },
+  siteLocationRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3 },
+  siteLocation: { flex: 1, fontSize: 12, color: C.gray },
+  siteMetaRow: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 8 },
+  siteMeta: { flexDirection: "row", alignItems: "center", gap: 4 },
+  siteMetaText: { fontSize: 11.5, color: C.gray, fontWeight: "500" },
+  trackRow: {
+    flexDirection: "row",
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
   },
+  // Timeline styles copied from floatTimelineStyles in application.tsx
+  // Each step takes an equal share of the row so all 6 fit without scrolling
+  trackStep: {
+    flex: 1,
+    alignItems: "center",
+  },
+  // Same height for every circle slot so the connector lines stay centered
+  trackCircleSlot: {
+    height: 36,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  trackCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  trackCircleActive: { backgroundColor: C.primary },
+  trackCircleCurrent: {
+    backgroundColor: C.primary,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 3,
+    borderColor: "#BBF7D0",
+  },
+  trackLabel: {
+    fontSize: 9,
+    color: "#D1D5DB",
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 12,
+    paddingHorizontal: 1,
+  },
+  trackLabelActive: { color: "#111827", fontWeight: "700" },
+  trackLabelCurrent: { color: C.primary, fontWeight: "800" },
+  // Runs from this step's center to the next step's center
+  trackConnector: {
+    position: "absolute",
+    top: 17,
+    left: "50%",
+    right: "-50%",
+    height: 2,
+    backgroundColor: "#E5E7EB",
+  },
+  trackConnectorActive: { backgroundColor: C.primary },
+  siteFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: C.bg,
+  },
+  siteFooterText: { flex: 1, fontSize: 12, color: C.navy, fontWeight: "600" },
+
   carouselCard: {
     height: 230,
     borderRadius: 24,
@@ -471,114 +592,197 @@ const styles = StyleSheet.create({
 
 // ─── COMPONENTS ──────────────────────────────────────────────────────────────
 
-function SiteCard({
-  item,
-  onPress,
-}: {
-  item: RecommendedSite;
-  onPress: () => void;
-}) {
+// Copy of the progress timeline on the My Site tab, so both look the same
+function StatusTracker({ status }: { status: string }) {
+  const currentIndex = Math.max(
+    0,
+    TRACK_STEPS.findIndex((s) => s.key === status),
+  );
   return (
-    <TouchableOpacity
-      style={styles.courseCard}
-      activeOpacity={0.85}
-      onPress={onPress}
-    >
-      <View style={[styles.courseThumbnail, { backgroundColor: C.primary }]}>
-        <Icon name="map-marker-radius" size={32} color="white" />
-      </View>
-      <View style={styles.courseContent}>
-        <Text style={styles.courseTitle}>{item.name}</Text>
-        <Text style={styles.courseLevel}>
-          {item.barangay} • {item.area}
-        </Text>
-        <View style={styles.studentInfo}>
-          <View style={[styles.avatarItem, { backgroundColor: C.green }]}>
-            <Icon name="check" size={10} color="white" />
+    // Fixed row (no horizontal ScrollView): a scroll view nested inside this
+    // tappable card made the whole card render blank on Android.
+    <View style={styles.trackRow}>
+      {TRACK_STEPS.map((step, index) => {
+        const isActive = index <= currentIndex;
+        const isCurrent = index === currentIndex;
+        return (
+          <View key={step.key} style={styles.trackStep}>
+            {/* Line to the next step, drawn behind the circles */}
+            {index < TRACK_STEPS.length - 1 && (
+              <View
+                style={[
+                  styles.trackConnector,
+                  index < currentIndex && styles.trackConnectorActive,
+                ]}
+              />
+            )}
+            <View style={styles.trackCircleSlot}>
+              <View
+                style={[
+                  styles.trackCircle,
+                  isActive && styles.trackCircleActive,
+                  isCurrent && styles.trackCircleCurrent,
+                ]}
+              >
+                <Ionicons
+                  name={step.icon}
+                  size={isCurrent ? 16 : 13}
+                  color={isActive ? C.white : "#D1D5DB"}
+                />
+              </View>
+            </View>
+            <Text
+              style={[
+                styles.trackLabel,
+                isActive && styles.trackLabelActive,
+                isCurrent && styles.trackLabelCurrent,
+              ]}
+              numberOfLines={2}
+            >
+              {step.label}
+            </Text>
           </View>
-          <Text style={styles.studentText}>{item.status}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 
+// One short line telling the grower what happens next
+const nextStepText = (item: NonNullable<MySiteData>) => {
+  switch (item.status) {
+    case "for_evaluation":
+      return "City ENRO staff are reviewing your application.";
+    case "for_head":
+      return "Waiting for the City ENRO Head's approval.";
+    case "accepted":
+      return item.orientationDate
+        ? `Orientation on ${formatDate(item.orientationDate)}`
+        : "Approved! Wait for your orientation schedule.";
+    case "under_monitoring":
+      return `${item.seedlingsApproved} seedlings approved · ${item.reportCount} reports submitted`;
+    case "final_review":
+      return "ENRO is reviewing your tree survival results.";
+    case "completed":
+      return "Program completed. Great work!";
+    default:
+      return "Open My Site to see the details.";
+  }
+};
+
 function MySiteCard({
   item,
-  progressAnim,
   onPress,
+  onFindSite,
 }: {
   item: MySiteData;
-  progressAnim: Animated.Value;
   onPress: () => void;
+  onFindSite: () => void;
 }) {
-  if (!item) {
+  // Falls back to the placeholder if the site photo can't load
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => setImageFailed(false), [item?.imageUrl]);
+
+  // No application, or the last one was closed
+  if (!item || CLOSED_STATUSES.includes(item.status)) {
+    const closed = !!item;
     return (
-      <View
-        style={[
-          styles.mySiteCard,
-          { borderColor: C.border, borderStyle: "dashed" },
-        ]}
+      <TouchableOpacity
+        style={[styles.mySiteCard, styles.mySiteEmpty]}
+        activeOpacity={0.85}
+        onPress={closed ? onPress : onFindSite}
       >
-        <View style={[styles.mySiteThumb, { backgroundColor: C.grayLight }]}>
-          <Icon name="clock-outline" size={26} color="white" />
+        <View style={[styles.mySiteThumb, { backgroundColor: closed ? C.red : C.grayLight }]}>
+          <Icon name={closed ? "close-circle-outline" : "map-search-outline"} size={26} color="white" />
         </View>
         <View style={styles.courseContent}>
-          <Text style={[styles.courseTitle, { color: C.gray }]}>
-            Pending Assignment
+          <Text style={styles.courseTitle}>
+            {closed ? `Application ${APP_STATUS[item!.status].label}` : "No Active Application"}
           </Text>
           <Text style={styles.courseLevel}>
-            Your application is currently under review.
-          </Text>
-          <Text style={styles.mySiteLabel}>
-            We will notify you once a site is assigned.
+            {closed
+              ? "Tap to see the details. You can apply for a new program."
+              : "Find a reforestation site and apply to start planting."}
           </Text>
         </View>
-      </View>
+        <Icon name="chevron-right" size={20} color={C.grayLight} />
+      </TouchableOpacity>
     );
   }
 
+  const conf = APP_STATUS[item.status] ?? { label: item.status, color: C.gray, bg: C.bg };
+  const location = [item.barangay && `Brgy. ${item.barangay}`, item.areaName]
+    .filter(Boolean)
+    .join(" · ");
+
+  // Shadow lives on the outer View and the tap effect on the inner one.
+  // Putting shadow + clipping + tap fade on the same view breaks drawing on Android.
   return (
-    <TouchableOpacity
-      style={styles.mySiteCard}
-      activeOpacity={0.85}
-      onPress={onPress}
-    >
-      <View style={styles.mySiteThumb}>
-        <Icon name="sprout" size={26} color="white" />
+    <View style={styles.siteCardShadow}>
+    <TouchableOpacity style={styles.siteCard} activeOpacity={0.9} onPress={onPress}>
+      {/* Photo + status badge */}
+      <View style={styles.siteImageBox}>
+        {item.imageUrl && !imageFailed ? (
+          <Image
+            source={{ uri: item.imageUrl }}
+            style={styles.siteImage}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <View style={[styles.siteImage, styles.siteImagePlaceholder]}>
+            <Icon name={item.siteName ? "image-outline" : "map-marker-question-outline"} size={30} color="#CBD5E1" />
+            <Text style={styles.siteImagePlaceholderText}>
+              {item.siteName ? "No photo yet" : "Site to be assigned"}
+            </Text>
+          </View>
+        )}
+        <View style={[styles.siteStatus, { backgroundColor: conf.bg }]}>
+          <View style={[styles.siteStatusDot, { backgroundColor: conf.color }]} />
+          <Text style={[styles.siteStatusText, { color: conf.color }]}>{conf.label}</Text>
+        </View>
       </View>
-      <View style={styles.courseContent}>
-        <Text style={styles.courseTitle}>{item.name}</Text>
-        <Text style={styles.courseLevel}>
-          {item.barangay} • {item.area}
+
+      <View style={styles.siteBody}>
+        <Text style={styles.siteName} numberOfLines={1}>
+          {item.siteName || item.title}
         </Text>
-        <View style={styles.mySiteStatusRow}>
-          <View style={styles.mySiteStatusPill}>
-            <Icon name="map-marker-check" size={12} color={C.primary} />
-            <Text style={styles.mySiteStatusText}>{item.status}</Text>
+        <View style={styles.siteLocationRow}>
+          <Icon name="map-marker" size={13} color={C.primary} />
+          <Text style={styles.siteLocation} numberOfLines={1}>
+            {location || "ENRO will assign the best available site"}
+          </Text>
+        </View>
+
+        <View style={styles.siteMetaRow}>
+          {item.hectares != null && (
+            <View style={styles.siteMeta}>
+              <Icon name="arrow-expand-all" size={13} color={C.gray} />
+              <Text style={styles.siteMetaText}>{item.hectares.toFixed(2)} ha</Text>
+            </View>
+          )}
+          <View style={styles.siteMeta}>
+            <Icon name="account-group-outline" size={13} color={C.gray} />
+            <Text style={styles.siteMetaText}>{item.growers} growers</Text>
+          </View>
+          <View style={styles.siteMeta}>
+            <Icon name="calendar-outline" size={13} color={C.gray} />
+            <Text style={styles.siteMetaText}>Applied {formatDate(item.appliedAt)}</Text>
           </View>
         </View>
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBar}>
-            <Animated.View
-              style={[
-                styles.progressFill,
-                {
-                  backgroundColor: C.primary,
-                  width: progressAnim.interpolate({
-                    inputRange: [0, 100],
-                    outputRange: ["0%", "100%"],
-                  }),
-                },
-              ]}
-            />
-          </View>
-          <Text style={styles.progressText}>{item.progress}%</Text>
+
+        <StatusTracker status={item.status} />
+
+        <View style={styles.siteFooter}>
+          <Icon name="information-outline" size={14} color={C.primary} />
+          <Text style={styles.siteFooterText} numberOfLines={2}>
+            {nextStepText(item)}
+          </Text>
+          <Icon name="chevron-right" size={18} color={C.grayLight} />
         </View>
-        <Text style={styles.mySiteLabel}>{item.label}</Text>
       </View>
-      <Icon name="chevron-right" size={20} color={C.grayLight} />
     </TouchableOpacity>
+    </View>
   );
 }
 
@@ -751,7 +955,6 @@ export default function Home() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [carouselIndex, setCarouselIndex] = useState(0);
-  const mySiteProgressAnim = useRef(new Animated.Value(0)).current;
   const carouselRef = useRef<FlatList>(null);
   const crossfadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -761,11 +964,12 @@ export default function Home() {
 
   const [mySite, setMySite] = useState<MySiteData>(null);
   const [showNotifModal, setShowNotifModal] = useState(false);
+  const [showPlantGuide, setShowPlantGuide] = useState(false);
+  const [showApplyGuide, setShowApplyGuide] = useState(false);
+  const [showStartGuide, setShowStartGuide] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [unreadNotifs, setUnreadNotifs] = useState<HomeNotification[]>([]);
 
-  const [recommendedSites, setRecommendedSites] = useState<RecommendedSite[]>([]);
-  const [userBarangay, setUserBarangay] = useState<string | null>(null);
-  const [loadingRecommended, setLoadingRecommended] = useState(true);
 
   useEffect(() => {
     fetchUserData();
@@ -806,9 +1010,6 @@ export default function Home() {
         if (data.user_role === "treeGrowers") {
           fetchTreeGrowerSite(token);
           fetchLatestNotification(token);
-          fetchRecommendedSites(token);
-        } else {
-          setLoadingRecommended(false);
         }
       } else {
         console.warn("Failed to fetch user data:", res.status);
@@ -827,62 +1028,40 @@ export default function Home() {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.assigned_site) {
-          const site = data.assigned_site;
-          const appStatus = data.application?.status;
-
-          // Map status to readable format
-          let statusText = "Pending";
-          if (appStatus === "accepted") statusText = "Needs Orientation";
-          else if (appStatus === "under_monitoring")
-            statusText = "Under Monitoring";
-          else if (appStatus === "completed") statusText = "Completed";
-
-          setMySite({
-            id: site.site_id,
-            name: site.name,
-            barangay: site.barangay_name || "Unknown Barangay",
-            area: `${site.total_area_hectares} ha`,
-            status: statusText,
-            progress: 85, // Placeholder progress; can be calculated from total_survived/total_planted if available
-            label:
-              statusText === "Completed"
-                ? "Program Concluded"
-                : "Monitoring Active",
-          });
-        } else {
-          setMySite(null); // No site assigned yet
+        const app = data.application;
+        if (!app) {
+          setMySite(null); // No application yet
+          return;
         }
+        const site = data.assigned_site;
+        const image = site?.main_image_url || site?.general_images?.[0]?.image_url;
+        const seedlingsApproved = (data.seedling_requests || [])
+          .filter((r: any) => r.status === "accepted")
+          .reduce(
+            (sum: number, r: any) =>
+              sum + (r.species || []).reduce((s: number, sp: any) => s + (sp.quantity || 0), 0),
+            0,
+          );
+
+        setMySite({
+          // While the Head decides the final result, show "Final Review"
+          status: app.final_review_pending ? "final_review" : app.status,
+          title: app.title,
+          siteName: site?.name ?? null,
+          barangay: site?.barangay_name ?? null,
+          areaName: site?.reforestation_area_name ?? null,
+          hectares: site?.total_area_hectares != null ? Number(site.total_area_hectares) : null,
+          imageUrl: image ? resolveUrl(image) : null,
+          growers: app.total_treegrowers_will_participate,
+          appliedAt: app.created_at,
+          orientationDate: app.orientation_date,
+          seedlingsApproved,
+          // Backend sends { my_reports, site_history }; count only this application's reports
+          reportCount: data.progress_reports?.my_reports?.length ?? 0,
+        });
       }
     } catch (error) {
       console.error("Error fetching tree grower application:", error);
-    }
-  };
-
-  // ✅ Top Recommended: only sites in the same barangay as the tree grower
-  const fetchRecommendedSites = async (token: string) => {
-    try {
-      const res = await fetch(
-        `${api}/api/get_available_sites_for_tree_grower/?nearby=1&page=1&entries=10`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setUserBarangay(data.user_barangay || null);
-        setRecommendedSites(
-          (data.data || []).slice(0, 3).map((s: any) => ({
-            id: s.site_id,
-            name: s.name,
-            barangay: `Brgy. ${s.barangay}`,
-            area: `${s.total_area_hectares} ha`,
-            status: s.monitoring_status === "reserved" ? "Reserved" : "Available",
-          })),
-        );
-      }
-    } catch (error) {
-      console.error("Error fetching recommended sites:", error);
-    } finally {
-      setLoadingRecommended(false);
     }
   };
 
@@ -980,17 +1159,6 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (mySite) {
-      Animated.timing(mySiteProgressAnim, {
-        toValue: mySite.progress,
-        duration: 800,
-        delay: 500,
-        useNativeDriver: false,
-      }).start();
-    }
-  }, [mySite, mySiteProgressAnim]);
-
-  useEffect(() => {
     const interval = setInterval(() => {
       setCarouselIndex((prevIndex) => {
         const nextIndex = (prevIndex + 1) % carouselItems.length;
@@ -1020,7 +1188,25 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [crossfadeAnim]);
 
-  const goTo = (route: string) => router.push(route as any);
+  const goTo = (route: string) => {
+    if (route === "/tree_growers/getting-started") {
+      setShowStartGuide(true);
+      return;
+    }
+    if (route === "/tree_growers/how-to-plant") {
+      setShowPlantGuide(true);
+      return;
+    }
+    if (route === "/tree_growers/application") {
+      setShowApplyGuide(true);
+      return;
+    }
+    if (route === "/tree_growers/about") {
+      setShowAbout(true);
+      return;
+    }
+    router.push(route as any);
+  };
   const displayName = userData?.full_name || "Tree Grower";
   const profileImage = userData?.profile_img;
   const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
@@ -1171,52 +1357,11 @@ export default function Home() {
           </View>
           <MySiteCard
             item={mySite}
-            progressAnim={mySiteProgressAnim}
             onPress={() => router.push("/tree_growers/application" as any)}
+            onFindSite={() => router.push("/tree_growers/sites" as any)}
           />
         </View>
 
-        {/* Available Sites */}
-        <View style={{ marginBottom: 20 }}>
-          <View style={styles.sectionHeaderStacked}>
-            <View>
-              <Text style={[styles.sectionTitleMain, { color: C.primary }]}>
-                Top Recommended
-              </Text>
-              <Text style={styles.sectionTitleSub}>
-                {userBarangay
-                  ? `in Brgy. ${userBarangay}`
-                  : "in your nearest location"}
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.viewAllButton}
-              onPress={() => router.push("/tree_growers/sites" as any)}
-            >
-              <Text style={[styles.viewAllText, { color: C.primary }]}>
-                View All
-              </Text>
-              <Icon name="chevron-right" size={14} color={C.primary} />
-            </TouchableOpacity>
-          </View>
-          {loadingRecommended ? (
-            <ActivityIndicator size="small" color={C.primary} />
-          ) : recommendedSites.length === 0 ? (
-            <Text style={styles.courseLevel}>
-              {userBarangay
-                ? `No available sites in Brgy. ${userBarangay} right now.`
-                : "No sites found in your barangay. Make sure your group address includes your barangay."}
-            </Text>
-          ) : (
-            recommendedSites.map((site) => (
-              <SiteCard
-                key={site.id}
-                item={site}
-                onPress={() => router.push("/tree_growers/sites" as any)}
-              />
-            ))
-          )}
-        </View>
       </ScrollView>
 
       {/* ✅ Notification Modal */}
@@ -1227,6 +1372,40 @@ export default function Home() {
         onMarkAllRead={handleMarkAllRead}
         onOpen={handleOpenNotification}
         onViewAll={handleViewAllNotifications}
+      />
+
+      {/* How to Plant guide (opened from the carousel "View Guide" button) */}
+      <HowToPlantGuide
+        visible={showPlantGuide}
+        onClose={() => setShowPlantGuide(false)}
+      />
+
+      {/* Getting Started guide (first carousel card). Closes first, then opens
+          the other guide, so two modals are never stacked. */}
+      <GettingStartedGuide
+        visible={showStartGuide}
+        onClose={() => setShowStartGuide(false)}
+        onOpenApplyGuide={() => {
+          setShowStartGuide(false);
+          setTimeout(() => setShowApplyGuide(true), 350);
+        }}
+        onOpenPlantGuide={() => {
+          setShowStartGuide(false);
+          setTimeout(() => setShowPlantGuide(true), 350);
+        }}
+      />
+
+      {/* About PlantScope (opened from the carousel "About Us" card) */}
+      <AboutPlantScope visible={showAbout} onClose={() => setShowAbout(false)} />
+
+      {/* How to Apply guide (opened from the carousel "Apply Now" button) */}
+      <HowToApplyGuide
+        visible={showApplyGuide}
+        onClose={() => setShowApplyGuide(false)}
+        onFindSite={() => {
+          setShowApplyGuide(false);
+          router.push("/tree_growers/sites" as any);
+        }}
       />
     </View>
   );

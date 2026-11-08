@@ -13,10 +13,32 @@ from accounts.helper import (
 
 from .models import (
     Application,
+    ProgramClosureRequest,
     ProgressReport,
     Reason,
     SeedlingRequest,
 )
+
+ROLE_LABEL = {
+    'DataManager': 'Data Manager',
+    'CityENROHead': 'City ENRO Head',
+    'GISSpecialist': 'GIS Specialist',
+    'OnsiteInspector': 'Onsite Inspector',
+    'treeGrowers': 'Tree Grower',
+}
+
+
+def _iso(dt):
+    return dt.isoformat() if dt else None
+
+
+def _who(user):
+    """Display name and role of a staff member, for the grower's history view."""
+    if not user:
+        return None
+    prof = getattr(user, 'profile', None)
+    name = f"{prof.first_name} {prof.last_name}".strip() if prof and prof.first_name else user.email
+    return {"name": name, "role": ROLE_LABEL.get(user.user_role, user.user_role)}
 
 
 # Define the logger at the module level (outside any function)
@@ -49,10 +71,10 @@ def serialize_progress_report_species(progress_report):
         "species_id": s.tree_species.tree_specie_id,
         "species_name": s.tree_species.name,
         "no_planted": s.no_planted,
-        "no_added_by_grower": s.no_added_by_grower,
+        "no_added_by_grower": 0,  # field removed in migration 0018; kept for older app versions
         "no_survived": s.no_survived,
         "no_dead": s.no_dead,
-        "total_accounted": s.no_planted + s.no_added_by_grower,
+        "total_accounted": s.no_planted,
         "total": s.no_survived + s.no_dead,
         "survival_rate": s.survival_rate,
     } for s in progress_report.report_species.select_related('tree_species').all()]
@@ -107,8 +129,13 @@ def get_tree_grower_application_detail(request, application_id):
     } if hasattr(app.user, 'profile') and app.user.profile else None
 
     seedling_requests = SeedlingRequest.objects.filter(application=app).order_by('-created_at')
-    progress_reports = ProgressReport.objects.filter(application=app).order_by('-created_at')
-    latest_reason = Reason.objects.filter(application=app).order_by('-created').first()
+    progress_reports = (ProgressReport.objects.filter(application=app)
+                        .select_related('submitted_by__profile', 'dm_reviewed_by__profile', 'gis_reviewed_by__profile')
+                        .order_by('-created_at'))
+    reasons = list(Reason.objects.filter(application=app).select_related('user__profile').order_by('created'))
+    latest_reason = reasons[-1] if reasons else None
+    closures = list(ProgramClosureRequest.objects.filter(application=app)
+                    .select_related('requested_by__profile', 'decided_by__profile').order_by('requested_at'))
 
     assigned_site_data = None
     if app.site:
@@ -199,7 +226,9 @@ def get_tree_grower_application_detail(request, application_id):
                 "name": f"{sr.assigned_inspector.profile.first_name} {sr.assigned_inspector.profile.last_name}".strip() if hasattr(sr.assigned_inspector, 'profile') and sr.assigned_inspector.profile else (sr.assigned_inspector.email if sr.assigned_inspector else "Unassigned"),
                 "contact": sr.assigned_inspector.profile.contact if hasattr(sr.assigned_inspector, 'profile') and sr.assigned_inspector.profile else "",
             } if sr.assigned_inspector else None,
-            "submitted_at": sr.submitted_at.isoformat() if sr.submitted_at else None
+            "submitted_at": sr.submitted_at.isoformat() if sr.submitted_at else None,
+            "created_at": _iso(sr.created_at),
+            "updated_at": _iso(sr.updated_at),
         } for sr in seedling_requests],
         
         "progress_reports": [{
@@ -214,8 +243,45 @@ def get_tree_grower_application_detail(request, application_id):
             "status": pr.status,
             "proof_image": get_cloudinary_url(str(pr.proof_image_monitor_required)) if pr.proof_image_monitor_required else None,
             "agreement_image": get_cloudinary_url(str(pr.agreement_image)) if pr.agreement_image else None,
-            "submitted_at": pr.submitted_at.isoformat() if pr.submitted_at else None
+            "submitted_at": pr.submitted_at.isoformat() if pr.submitted_at else None,
+            "created_at": _iso(pr.created_at),
+            "submitted_by": _who(pr.submitted_by),
+            "planted_area_hectares": pr.planted_area_hectares,
+            "polygon_coordinates": pr.polygon_coordinates,
+            "dm_review": {
+                "status": pr.dm_review_status,
+                "label": pr.get_dm_review_status_display(),
+                "notes": pr.dm_review_notes,
+                "by": _who(pr.dm_reviewed_by),
+                "at": _iso(pr.dm_reviewed_at),
+            },
+            "gis_review": {
+                "status": pr.gis_review_status,
+                "label": pr.get_gis_review_status_display(),
+                "notes": pr.gis_review_notes,
+                "by": _who(pr.gis_reviewed_by),
+                "at": _iso(pr.gis_reviewed_at),
+            },
         } for pr in progress_reports],
+        # Every decision on this application, oldest first
+        "status_history": [{
+            "status": r.status,
+            "label": r.get_status_display(),
+            "layer": r.get_status_layer_display(),
+            "reason": r.reason,
+            "by": _who(r.user),
+            "created": _iso(r.created),
+        } for r in reasons],
+        "closure_requests": [{
+            "recommendation": c.get_recommendation_display(),
+            "reason": c.recommendation_reason,
+            "status": c.status,
+            "status_label": c.get_status_display(),
+            "final_outcome": c.final_outcome,
+            "head_notes": c.head_notes,
+            "requested_at": _iso(c.requested_at),
+            "decided_at": _iso(c.decided_at),
+        } for c in closures],
         "latest_reason": {
             "reason": latest_reason.reason,
             "status": latest_reason.status,

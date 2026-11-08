@@ -41,6 +41,17 @@ import {
   Pencil,
   ChevronLeft,
   ZoomIn,
+  Users,
+  Sprout,
+  TreePine,
+  CalendarDays,
+  Activity,
+  Phone,
+  Mail,
+  HeartPulse,
+  EyeOff,
+  Crosshair,
+  Hexagon,
 } from "lucide-react";
 import {
   MapContainer,
@@ -48,6 +59,8 @@ import {
   Marker,
   Popup,
   Polygon,
+  CircleMarker,
+  Tooltip,
   useMap,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -153,6 +166,35 @@ interface SiteResponse {
   validation_data: ValidationData;
   reforestation_area_id?: number;
   reforestation_area_name?: string;
+  tree_planting_history?: PlantingHistoryItem[];
+}
+
+interface PlantingHistoryItem {
+  application_id: number;
+  title: string;
+  status: string;
+  status_label: string;
+  classification: "new" | "old";
+  grower: {
+    name: string;
+    type: string;
+    contact: string | null;
+    email: string;
+    profile_img: string | null;
+  };
+  participants: number;
+  queue_position: number | null;
+  applied_at: string | null;
+  confirmed_at: string | null;
+  orientation_date: string | null;
+  last_updated: string | null;
+  seedlings_received: number;
+  trees_planted: number;
+  trees_survived: number;
+  trees_dead: number;
+  survival_rate: number | null;
+  monitoring_visits: number;
+  last_visit_at: string | null;
 }
 
 interface TreeSpeciesOption {
@@ -479,8 +521,11 @@ const EditableSelectField: React.FC<{
 // ────────────────────────────────────────────
 // STAT CARD
 // ────────────────────────────────────────────
-const StatCard: React.FC<{ icon: any; label: string; value: string | number; subtext?: string; accent?: "emerald" | "blue" | "purple" | "gray"; }> = ({ icon: Icon, label, value, subtext, accent = "gray" }) => {
+const StatCard: React.FC<{ icon: any; label: string; value: string | number; subtext?: string; accent?: "emerald" | "blue" | "purple" | "gray" | "amber" | "red" | "teal"; }> = ({ icon: Icon, label, value, subtext, accent = "gray" }) => {
   const accentStyles = {
+    amber: { bg: "bg-amber-50", border: "border-amber-100", iconBg: "bg-amber-100", iconColor: "text-amber-600", valueColor: "text-amber-700" },
+    red: { bg: "bg-red-50", border: "border-red-100", iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-700" },
+    teal: { bg: "bg-teal-50", border: "border-teal-100", iconBg: "bg-teal-100", iconColor: "text-teal-600", valueColor: "text-teal-700" },
     emerald: { bg: "bg-emerald-50", border: "border-emerald-100", iconBg: "bg-emerald-100", iconColor: "text-emerald-600", valueColor: "text-emerald-700" },
     blue: { bg: "bg-blue-50", border: "border-blue-100", iconBg: "bg-blue-100", iconColor: "text-blue-600", valueColor: "text-blue-700" },
     purple: { bg: "bg-purple-50", border: "border-purple-100", iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700" },
@@ -608,19 +653,180 @@ const GoToCenterButton: React.FC<{ center: [number, number] }> = ({ center }) =>
   );
 };
 
+// Polygons may arrive as a flat ring or wrapped in an extra array; return the outer ring.
+function normalizePolygon(raw: unknown): [number, number][] {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  const ring = Array.isArray(raw[0]) && Array.isArray((raw[0] as unknown[])[0]) ? (raw[0] as unknown[]) : raw;
+  return ring
+    .filter((p): p is [number, number] => Array.isArray(p) && p.length >= 2 && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])))
+    .map((p) => [Number(p[0]), Number(p[1])]);
+}
+
+// Drop the repeated closing point so each vertex is listed once.
+function uniqueVertices(ring: [number, number][]): [number, number][] {
+  if (ring.length > 1) {
+    const [a, b] = [ring[0], ring[ring.length - 1]];
+    if (a[0] === b[0] && a[1] === b[1]) return ring.slice(0, -1);
+  }
+  return ring;
+}
+
+const FitPolygonButton: React.FC<{ polygon: [number, number][] }> = ({ polygon }) => {
+  const map = useMap();
+  return (
+    <button onClick={() => map.flyToBounds(L.latLngBounds(polygon), { padding: [30, 30], duration: 1.2 })} style={{ position: "absolute", bottom: "16px", left: "16px", zIndex: 1000 }} className="bg-white text-gray-800 px-3 py-2 rounded-md shadow-lg hover:bg-gray-100 transition-colors flex items-center gap-2 text-xs font-medium border border-gray-200">
+      <Hexagon size={14} /> Fit Polygon
+    </button>
+  );
+};
+
 const SiteMap: React.FC<{ coordinates: [number, number]; polygon?: [number, number][] | null; siteName?: string; }> = ({ coordinates, polygon, siteName }) => {
+  const [showPolygon, setShowPolygon] = useState(true);
+  const ring = normalizePolygon(polygon);
+  const vertices = uniqueVertices(ring);
+  const hasPolygon = vertices.length >= 3;
+
   return (
     <div className="relative w-full h-full min-h-[400px] rounded-lg overflow-hidden border border-gray-200">
       <MapContainer center={coordinates} zoom={16} scrollWheelZoom style={{ width: "100%", height: "100%", zIndex: 0 }} className="z-0">
         <TileLayer url={`https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`} tileSize={512} zoomOffset={-1} attribution='&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>' />
         <Marker position={coordinates}><Popup><strong>{siteName || "Site Location"}</strong><br />Lat: {coordinates[0].toFixed(6)}<br />Lng: {coordinates[1].toFixed(6)}</Popup></Marker>
-        {polygon && polygon.length >= 3 && <Polygon positions={polygon} pathOptions={{ color: "#374151", fillColor: "#374151", fillOpacity: 0.2, weight: 2 }} />}
+        {hasPolygon && showPolygon && (
+          <>
+            <Polygon positions={vertices} pathOptions={{ color: "#10b981", fillColor: "#10b981", fillOpacity: 0.2, weight: 2 }} />
+            {vertices.map((p, i) => (
+              <CircleMarker key={i} center={p} radius={4} pathOptions={{ color: "#ffffff", weight: 1.5, fillColor: "#059669", fillOpacity: 1 }}>
+                <Tooltip direction="top" offset={[0, -4]}>Point {i + 1}: {p[0].toFixed(6)}, {p[1].toFixed(6)}</Tooltip>
+              </CircleMarker>
+            ))}
+          </>
+        )}
         <GoToCenterButton center={coordinates} />
+        {hasPolygon && showPolygon && <FitPolygonButton polygon={vertices} />}
       </MapContainer>
+      {hasPolygon && (
+        <button
+          onClick={() => setShowPolygon((v) => !v)}
+          style={{ position: "absolute", top: "12px", right: "12px", zIndex: 1000 }}
+          className={`px-3 py-1.5 rounded-md shadow-sm text-xs font-medium border flex items-center gap-1.5 transition-colors ${showPolygon ? "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700" : "bg-white/95 text-gray-700 border-gray-200 hover:bg-white"}`}
+          title={showPolygon ? "Hide site polygon" : "Show site polygon"}
+        >
+          {showPolygon ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+          Polygon {showPolygon ? "On" : "Off"}
+        </button>
+      )}
       <div style={{ position: "absolute", top: "12px", left: "12px", zIndex: 1000 }} className="bg-white/95 backdrop-blur px-3 py-1.5 rounded-md shadow-sm text-xs font-mono text-gray-700 border border-gray-200 flex items-center gap-1.5">
         <MapIcon className="w-3.5 h-3.5 text-gray-600" />{coordinates[0].toFixed(5)}, {coordinates[1].toFixed(5)}
       </div>
     </div>
+  );
+};
+
+// ─────────────────────────────────────────────
+// COORDINATES
+// ─────────────────────────────────────────────
+const fmtCoord = (n: number) => n.toFixed(6);
+
+// Section with a clickable header that hides or shows its content.
+const CollapsibleSection: React.FC<{
+  icon: any;
+  title: string;
+  summary?: string;
+  defaultOpen?: boolean;
+  tone?: "blue" | "emerald";
+  children: React.ReactNode;
+}> = ({ icon: Icon, title, summary, defaultOpen = true, tone = "emerald", children }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  const toneStyles = tone === "blue"
+    ? { border: "border-blue-200", headerBg: "bg-blue-50 hover:bg-blue-100", text: "text-blue-700" }
+    : { border: "border-emerald-200", headerBg: "bg-emerald-50 hover:bg-emerald-100", text: "text-emerald-700" };
+  return (
+    <div className={`rounded-md border ${toneStyles.border} overflow-hidden`}>
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors ${toneStyles.headerBg}`}
+      >
+        <span className={`text-xs font-medium uppercase tracking-wide flex items-center gap-1.5 ${toneStyles.text}`}>
+          <Icon size={13} /> {title}
+          {summary && <span className="normal-case tracking-normal font-normal text-gray-500">· {summary}</span>}
+        </span>
+        <span className={`flex items-center gap-1 text-[11px] ${toneStyles.text}`}>
+          {open ? "Hide" : "Show"}
+          {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </span>
+      </button>
+      {open && <div className="p-3 bg-white">{children}</div>}
+    </div>
+  );
+};
+
+// Long polygon lists start collapsed so they don't take over the page.
+const POLYGON_AUTO_COLLAPSE_POINTS = 8;
+
+const SiteCoordinatesCard: React.FC<{ center: [number, number] | null; polygon: [number, number][] | null }> = ({ center, polygon }) => {
+  const vertices = uniqueVertices(normalizePolygon(polygon));
+
+  return (
+    <BentoCard header={{ icon: Crosshair, title: "Site Coordinates", badge: vertices.length ? `${vertices.length} points` : undefined }}>
+      <div className="space-y-3">
+        <CollapsibleSection
+          icon={MapPin}
+          title="Center Coordinate"
+          summary={center ? `${fmtCoord(center[0])}, ${fmtCoord(center[1])}` : "not recorded"}
+          tone="blue"
+        >
+          {center ? (
+            <div className="grid grid-cols-2 gap-2 font-mono text-sm text-gray-900">
+              <div><span className="block text-[10px] font-sans text-gray-500 uppercase tracking-wide">Latitude</span>{fmtCoord(center[0])}</div>
+              <div><span className="block text-[10px] font-sans text-gray-500 uppercase tracking-wide">Longitude</span>{fmtCoord(center[1])}</div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 italic">No center coordinate recorded</p>
+          )}
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          icon={Hexagon}
+          title="Polygon Coordinates"
+          summary={vertices.length ? `${vertices.length} points` : "none"}
+          defaultOpen={vertices.length <= POLYGON_AUTO_COLLAPSE_POINTS}
+        >
+          {vertices.length > 0 ? (
+            <>
+              <div className="border border-gray-200 rounded-md overflow-hidden">
+                <div className="max-h-72 overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500 sticky top-0">
+                      <tr>
+                        <th className="text-left font-medium px-3 py-2 w-16">Point</th>
+                        <th className="text-left font-medium px-3 py-2">Latitude</th>
+                        <th className="text-left font-medium px-3 py-2">Longitude</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 font-mono text-gray-800">
+                      {vertices.map((p, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-3 py-1.5 font-sans text-xs text-gray-500">#{i + 1}</td>
+                          <td className="px-3 py-1.5">{fmtCoord(p[0])}</td>
+                          <td className="px-3 py-1.5">{fmtCoord(p[1])}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-400 mt-2">Coordinates are in WGS84 decimal degrees (latitude, longitude).</p>
+            </>
+          ) : (
+            <div className="text-center py-6 text-gray-400">
+              <Hexagon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No polygon coordinates for this site</p>
+            </div>
+          )}
+        </CollapsibleSection>
+      </div>
+    </BentoCard>
   );
 };
 
@@ -1140,6 +1346,180 @@ const PotentialSitesCard: React.FC<{ sites: PotentialSite[]; unit: AreaUnit }> =
   );
 };
 
+// ─────────────────────────────────────────────
+// TREE PLANTING PROGRESS
+// ─────────────────────────────────────────────
+// A grower has "taken" the site once their program was accepted.
+const TAKEN_STATUSES = ["accepted", "under_monitoring", "completed", "failed"];
+const ACTIVE_STATUSES = ["accepted", "under_monitoring"];
+const QUEUED_STATUSES = ["for_evaluation", "for_head"];
+
+const PROGRAM_STATUS_STYLES: Record<string, string> = {
+  for_evaluation: "bg-amber-50 text-amber-700 border-amber-200",
+  for_head: "bg-purple-50 text-purple-700 border-purple-200",
+  accepted: "bg-blue-50 text-blue-700 border-blue-200",
+  under_monitoring: "bg-teal-50 text-teal-700 border-teal-200",
+  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  failed: "bg-red-50 text-red-700 border-red-200",
+  rejected: "bg-gray-100 text-gray-600 border-gray-200",
+  cancelled: "bg-gray-100 text-gray-600 border-gray-200",
+};
+
+type HistoryFilter = "all" | "active" | "completed" | "failed" | "other";
+const HISTORY_FILTERS: { key: HistoryFilter; label: string; match: (s: string) => boolean }[] = [
+  { key: "all", label: "All", match: () => true },
+  { key: "active", label: "Active", match: (s) => ACTIVE_STATUSES.includes(s) },
+  { key: "completed", label: "Completed", match: (s) => s === "completed" },
+  { key: "failed", label: "Failed", match: (s) => s === "failed" },
+  { key: "other", label: "Queued / Closed", match: (s) => !TAKEN_STATUSES.includes(s) },
+];
+
+const formatDate = (value: string | null) =>
+  value ? new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—";
+
+const survivalColor = (rate: number | null) =>
+  rate === null ? "text-gray-400" : rate >= 80 ? "text-emerald-700" : rate >= 50 ? "text-amber-700" : "text-red-700";
+
+const HistoryMetric: React.FC<{ icon: any; label: string; value: React.ReactNode; valueClass?: string }> = ({ icon: Icon, label, value, valueClass = "text-gray-800" }) => (
+  <div className="bg-gray-50 border border-gray-200 rounded-md px-3 py-2 min-w-0">
+    <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1"><Icon size={10} />{label}</p>
+    <p className={`text-sm font-semibold mt-0.5 truncate ${valueClass}`}>{value}</p>
+  </div>
+);
+
+const PlantingHistoryRow: React.FC<{ item: PlantingHistoryItem }> = ({ item }) => {
+  const [expanded, setExpanded] = useState(false);
+  const statusStyle = PROGRAM_STATUS_STYLES[item.status] ?? PROGRAM_STATUS_STYLES.cancelled;
+  const initials = item.grower.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
+
+  return (
+    <div className="border border-gray-200 rounded-lg bg-white hover:border-gray-300 transition-colors">
+      <button onClick={() => setExpanded(!expanded)} className="w-full text-left p-4 flex items-start gap-3">
+        {item.grower.profile_img ? (
+          <img src={item.grower.profile_img} alt={item.grower.name} className="w-10 h-10 rounded-full object-cover border border-gray-200 flex-shrink-0" />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm font-semibold flex-shrink-0">{initials}</div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-gray-900 truncate">{item.grower.name}</p>
+            <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{item.grower.type}</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${item.classification === "old" ? "bg-indigo-50 text-indigo-700" : "bg-sky-50 text-sky-700"}`}>{item.classification === "old" ? "Returning" : "First-time"}</span>
+          </div>
+          <p className="text-xs text-gray-600 mt-0.5 truncate">{item.title} <span className="text-gray-400">· Program #{item.application_id}</span></p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11px] text-gray-500">
+            <span className="flex items-center gap-1"><CalendarDays size={11} /> Applied {formatDate(item.applied_at)}</span>
+            <span className="flex items-center gap-1"><TreePine size={11} /> {item.trees_planted.toLocaleString()} planted</span>
+            <span className={`flex items-center gap-1 ${survivalColor(item.survival_rate)}`}><HeartPulse size={11} /> {item.survival_rate === null ? "No survival data" : `${item.survival_rate}% survival`}</span>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <span className={`px-2.5 py-1 rounded-md text-[11px] font-medium border whitespace-nowrap ${statusStyle}`}>{item.status_label}</span>
+          {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-3">
+            <HistoryMetric icon={Users} label="Participants" value={item.participants.toLocaleString()} />
+            <HistoryMetric icon={Sprout} label="Seedlings received" value={item.seedlings_received.toLocaleString()} />
+            <HistoryMetric icon={TreePine} label="Trees planted" value={item.trees_planted.toLocaleString()} />
+            <HistoryMetric icon={HeartPulse} label="Survival rate" value={item.survival_rate === null ? "—" : `${item.survival_rate}%`} valueClass={survivalColor(item.survival_rate)} />
+            <HistoryMetric icon={Leaf} label="Survived (latest)" value={item.trees_survived.toLocaleString()} valueClass="text-emerald-700" />
+            <HistoryMetric icon={XCircle} label="Dead (latest)" value={item.trees_dead.toLocaleString()} valueClass="text-red-700" />
+            <HistoryMetric icon={Activity} label="Monitoring visits" value={item.monitoring_visits} />
+            <HistoryMetric icon={Clock} label="Last visit" value={formatDate(item.last_visit_at)} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-md border border-gray-200 p-3">
+              <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-2">Timeline</p>
+              <dl className="grid grid-cols-2 gap-y-1.5 text-xs">
+                <dt className="text-gray-500">Applied</dt><dd className="text-gray-800 text-right">{formatDate(item.applied_at)}</dd>
+                <dt className="text-gray-500">Confirmed by Head</dt><dd className="text-gray-800 text-right">{formatDate(item.confirmed_at)}</dd>
+                <dt className="text-gray-500">Orientation</dt><dd className="text-gray-800 text-right">{formatDate(item.orientation_date)}</dd>
+                <dt className="text-gray-500">Last updated</dt><dd className="text-gray-800 text-right">{formatDate(item.last_updated)}</dd>
+                {item.queue_position !== null && (<><dt className="text-gray-500">Queue position</dt><dd className="text-gray-800 text-right">#{item.queue_position}</dd></>)}
+              </dl>
+            </div>
+            <div className="rounded-md border border-gray-200 p-3">
+              <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide mb-2">Tree Grower Contact</p>
+              <div className="space-y-1.5 text-xs text-gray-700">
+                <p className="flex items-center gap-2 min-w-0"><Mail size={12} className="text-gray-400 flex-shrink-0" /><span className="truncate">{item.grower.email}</span></p>
+                <p className="flex items-center gap-2"><Phone size={12} className="text-gray-400 flex-shrink-0" />{item.grower.contact || <span className="italic text-gray-400">No contact number</span>}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const TreePlantingProgressCard: React.FC<{ history: PlantingHistoryItem[] }> = ({ history }) => {
+  const [filter, setFilter] = useState<HistoryFilter>("all");
+
+  const taken = history.filter((h) => TAKEN_STATUSES.includes(h.status));
+  const growersTaken = new Set(taken.map((h) => h.grower.email)).size;
+  const active = history.find((h) => ACTIVE_STATUSES.includes(h.status));
+  const queued = history.filter((h) => QUEUED_STATUSES.includes(h.status)).length;
+  const completed = history.filter((h) => h.status === "completed").length;
+  const failed = history.filter((h) => h.status === "failed").length;
+  const totalPlanted = taken.reduce((sum, h) => sum + h.trees_planted, 0);
+  const totalSeedlings = taken.reduce((sum, h) => sum + h.seedlings_received, 0);
+  const survived = taken.reduce((sum, h) => sum + h.trees_survived, 0);
+  const counted = survived + taken.reduce((sum, h) => sum + h.trees_dead, 0);
+  const overallSurvival = counted ? Math.round((survived / counted) * 1000) / 10 : null;
+
+  const activeFilter = HISTORY_FILTERS.find((f) => f.key === filter)!;
+  const visible = history.filter((h) => activeFilter.match(h.status));
+
+  return (
+    <BentoCard header={{ icon: Sprout, title: "Tree Planting Progress", badge: history.length ? `${history.length} program${history.length === 1 ? "" : "s"}` : undefined }}>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          <StatCard icon={Users} label="Tree Growers" value={growersTaken} subtext="have taken this site" accent="emerald" />
+          <StatCard icon={Activity} label="Current Program" value={active ? active.status_label : "None"} subtext={active ? active.grower.name : queued ? `${queued} in queue` : "site is free"} accent="teal" />
+          <StatCard icon={CheckCircle} label="Completed" value={completed} subtext="programs" accent="blue" />
+          <StatCard icon={XCircle} label="Failed" value={failed} subtext="programs" accent="red" />
+          <StatCard icon={TreePine} label="Trees Planted" value={totalPlanted.toLocaleString()} subtext={`${totalSeedlings.toLocaleString()} seedlings received`} accent="purple" />
+          <StatCard icon={HeartPulse} label="Survival Rate" value={overallSurvival === null ? "—" : `${overallSurvival}%`} subtext={counted ? `${survived.toLocaleString()} of ${counted.toLocaleString()} alive` : "no monitoring yet"} accent="amber" />
+        </div>
+
+        {history.length > 0 ? (
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h4 className="text-xs font-medium text-gray-600 uppercase tracking-wide">Tree Grower History</h4>
+              <div className="flex flex-wrap gap-1">
+                {HISTORY_FILTERS.map((f) => {
+                  const count = history.filter((h) => f.match(h.status)).length;
+                  return (
+                    <button key={f.key} onClick={() => setFilter(f.key)} className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${filter === f.key ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"}`}>
+                      {f.label} <span className="opacity-70">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {visible.length > 0 ? (
+              <div className="space-y-2">{visible.map((item) => <PlantingHistoryRow key={item.application_id} item={item} />)}</div>
+            ) : (
+              <p className="text-center text-sm text-gray-400 py-6 bg-gray-50 rounded-md border border-dashed border-gray-200">No programs in this category</p>
+            )}
+            <p className="text-[11px] text-gray-400 mt-3">Planted counts come from the accepted initial visit; survival uses each program's latest accepted monitoring report.</p>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-400 bg-gray-50 rounded-md border border-dashed border-gray-200">
+            <Sprout className="w-10 h-10 mx-auto mb-2 opacity-30" />
+            <p className="text-sm font-medium text-gray-600">No tree growers have taken this site yet</p>
+            <p className="text-xs mt-1">Programs assigned to this site will appear here</p>
+          </div>
+        )}
+      </div>
+    </BentoCard>
+  );
+};
+
 // ────────────────────────────────────────────
 // SKELETON
 // ─────────────────────────────────────────────
@@ -1340,9 +1720,8 @@ export default function SiteInformation(): JSX.Element {
           
           {/* ROW 1: Stats Cards (12 cols) */}
           <div className="col-span-12">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <AreaStatCard hectares={siteData.area_hectares} unit={areaUnit} onUnitChange={handleAreaUnitChange} />
-              <StatCard icon={FileText} label="Documents" value={siteData.permits.length} subtext="recorded" accent="blue" />
               <StatCard icon={PawPrint} label="Animals" value={siteData.meta_verification?.verified_animals?.length || 0} subtext="verified" accent="purple" />
             </div>
           </div>
@@ -1394,6 +1773,11 @@ export default function SiteInformation(): JSX.Element {
             />
           </div>
 
+          {/* Coordinates (Full Width) */}
+          <div className="col-span-12">
+            <SiteCoordinatesCard center={siteData.marker_coordinate} polygon={siteData.polygon_coordinates} />
+          </div>
+
           {/* ROW 3: Verification (6 cols) + Species (6 cols) */}
           <div className="col-span-12 lg:col-span-6">
             <MetadataVerificationCard verification={siteData.meta_verification} landClassificationName={landClassificationName} />
@@ -1407,6 +1791,11 @@ export default function SiteInformation(): JSX.Element {
               canEdit={canEdit && !isLocked}
               lockedReason={isLocked ? `Species can't be changed while the site is ${siteData.monitoring_status.replace(/_/g, " ")}. Make the site available first.` : null}
             />
+          </div>
+
+          {/* Tree Planting Progress (Full Width) */}
+          <div className="col-span-12">
+            <TreePlantingProgressCard history={siteData.tree_planting_history ?? []} />
           </div>
 
           {/* ROW 4: Images (Full Width) */}
