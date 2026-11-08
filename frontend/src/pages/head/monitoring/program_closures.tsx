@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Search, MapPin, Gavel, CheckCircle2, XCircle, Package, Trees, TrendingUp, Ruler, ExternalLink, Users, FileText, Undo2 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import ReportAreaMap from "@/components/map/ReportAreaMap";
@@ -34,6 +34,9 @@ interface SiteDetail {
 export default function ProgramClosures() {
   const token = localStorage.getItem("token");
   const navigate = useNavigate();
+  // ?id=<closure request> opens that request directly (e.g. from the Head dashboard)
+  const [searchParams] = useSearchParams();
+  const linkedId = Number(searchParams.get("id")) || null;
   const [scope, setScope] = useState<"pending" | "decided">("pending");
   const [search, setSearch] = useState("");
   const [items, setItems] = useState<ClosureRequest[]>([]);
@@ -54,7 +57,8 @@ export default function ProgramClosures() {
       if (!res.ok) throw new Error(data.error ?? "Failed to load");
       setItems(data.data);
       setPendingCount(data.pending_count);
-      setSelectedId((prev) => (data.data.some((c: ClosureRequest) => c.closure_request_id === prev) ? prev : data.data[0]?.closure_request_id ?? null));
+      const has = (id: number | null) => data.data.some((c: ClosureRequest) => c.closure_request_id === id);
+      setSelectedId((prev) => (has(prev) ? prev : has(linkedId) ? linkedId : data.data[0]?.closure_request_id ?? null));
     } catch (err: any) {
       setAlert({ type: "error", title: "Error", message: err.message });
     } finally {

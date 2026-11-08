@@ -22,6 +22,7 @@ import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
 import { useAlert, ToastHost } from "@/components/AlertContext";
 import { getToken, clearAuthData, isAuthFailure } from "@/utils/auth";
+import { SortMenu, byDateAsc, byDateDesc, byText, type SortOption } from "@/components/SortMenu";
 
 const API_BASE = api;
 const OFFLINE_SITES_KEY = "@plantscope_offline_sites";
@@ -63,6 +64,16 @@ const MONITORING_LABEL: Record<string, string> = {
 };
 
 type FilterKey = "all" | "accepted" | "pending" | "rejected" | "unassessed";
+type SiteSort = "newest" | "oldest" | "name" | "largest" | "needs_assessment" | "recently_assessed";
+
+const SITE_SORTS: SortOption<SiteSort>[] = [
+  { key: "newest", label: "Newest", icon: "time-outline" },
+  { key: "oldest", label: "Oldest", icon: "hourglass-outline" },
+  { key: "name", label: "Name (A–Z)", icon: "text-outline" },
+  { key: "largest", label: "Largest area", icon: "resize-outline" },
+  { key: "needs_assessment", label: "Needs assessment first", icon: "clipboard-outline" },
+  { key: "recently_assessed", label: "Recently assessed", icon: "checkmark-done-outline" },
+];
 
 /* ──────────────────────────────────────────────────────────────────
    HELPERS
@@ -132,6 +143,7 @@ export default function SelectSite() {
   const [showingSaved, setShowingSaved] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [sort, setSort] = useState<SiteSort>("newest");
 
   // All saved sites (every area), keyed by site id
   const [offlineSites, setOfflineSites] = useState<Map<string, any>>(new Map());
@@ -379,6 +391,31 @@ export default function SelectSite() {
     }
   });
 
+  const sortedSites = useMemo(() => {
+    const list = [...visibleSites];
+    switch (sort) {
+      case "oldest":
+        return list.sort((a, b) => byDateAsc(a.created_at, b.created_at));
+      case "name":
+        return list.sort((a, b) => byText(a.name, b.name));
+      case "largest":
+        return list.sort((a, b) => (Number(b.area_hectares) || 0) - (Number(a.area_hectares) || 0));
+      case "needs_assessment":
+        // Never assessed first, then the longest since the last assessment
+        return list.sort((a, b) => {
+          if (!a.last_assessed_at && !b.last_assessed_at) return byDateDesc(a.created_at, b.created_at);
+          if (!a.last_assessed_at) return -1;
+          if (!b.last_assessed_at) return 1;
+          return byDateAsc(a.last_assessed_at, b.last_assessed_at);
+        });
+      case "recently_assessed":
+        return list.sort((a, b) => byDateDesc(a.last_assessed_at, b.last_assessed_at));
+      default:
+        // Server order: pinned sites first, then newest
+        return list;
+    }
+  }, [visibleSites, sort]);
+
   /* ── Render pieces ───────────────────────────────────────────── */
   const renderSite = ({ item }: { item: any }) => {
     const siteId = getSiteId(item);
@@ -573,6 +610,16 @@ export default function SelectSite() {
             );
           })}
         </ScrollView>
+      )}
+
+      {/* Count + sort */}
+      {visibleSites.length > 0 && (
+        <View style={styles.sortRow}>
+          <Text style={styles.sortCount}>
+            {visibleSites.length} site{visibleSites.length === 1 ? "" : "s"}
+          </Text>
+          <SortMenu value={sort} options={SITE_SORTS} onChange={setSort} title="Sort sites by" />
+        </View>
       )}
     </>
   );
@@ -927,6 +974,14 @@ const styles = StyleSheet.create({
     ...cardShadow,
   },
   searchInput: { flex: 1, fontSize: 14, color: INK, fontWeight: "500" },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  sortCount: { fontSize: 12.5, fontWeight: "600", color: MUTED },
   filterRow: { paddingHorizontal: 16, gap: 8, paddingTop: 12, paddingBottom: 14 },
   filterChip: {
     flexDirection: "row",

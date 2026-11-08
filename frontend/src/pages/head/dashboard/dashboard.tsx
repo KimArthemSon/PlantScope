@@ -27,8 +27,6 @@ import {
   Layers,
   Loader2,
   MapPin,
-  Package,
-  RefreshCw,
   TrendingUp,
   Trophy,
   Users,
@@ -75,7 +73,6 @@ interface Kpis {
   plants_alive: number;
   plants_dead: number;
   survival_rate: number;
-  survival_target: number;
   seedlings_released: number;
   reforestation_areas: number;
 }
@@ -168,7 +165,6 @@ interface HeadDashboard {
   performance: {
     summary: {
       survival_rate: number;
-      survival_target: number;
       plants_planted: number;
       plants_alive: number;
       planted_hectares: number;
@@ -216,8 +212,8 @@ interface HeadDashboard {
       total: number;
       active: number;
       new_this_month: number;
-      excellent: number;
       needs_attention: number;
+      no_programs: number;
       non_compliant: number;
       compliant_days: number;
     };
@@ -238,7 +234,8 @@ interface HeadDashboard {
       visits: number;
       days_since_visit: number | null;
       compliance: string;
-      standing: string;
+      /** Plain-language reasons the group needs attention; empty when there is nothing to act on */
+      attention: string[];
     }[];
   };
   coverage: {
@@ -264,11 +261,36 @@ interface HeadDashboard {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: "overview", label: "Executive Overview", icon: <Activity size={15} /> },
-  { id: "approvals", label: "My Decisions", icon: <Gavel size={15} /> },
-  { id: "performance", label: "Program Performance", icon: <TrendingUp size={15} /> },
-  { id: "growers", label: "Tree Growers", icon: <Users size={15} /> },
-  { id: "coverage", label: "Barangay Coverage", icon: <MapPin size={15} /> },
+  {
+    id: "decisions",
+    label: "Decisions",
+    icon: <Gavel size={15} />,
+    sub: "What needs your decision — applications to approve and programs to close",
+  },
+  {
+    id: "status",
+    label: "Operations Status",
+    icon: <Activity size={15} />,
+    sub: "What is going on — programs, sites, groups and the work waiting in each office",
+  },
+  {
+    id: "progress",
+    label: "Planting Progress",
+    icon: <TrendingUp size={15} />,
+    sub: "How far along the reforestation is — area planted, survival, active programs and sites that need attention",
+  },
+  {
+    id: "growers",
+    label: "Tree Growers",
+    icon: <Users size={15} />,
+    sub: "Who is doing the planting — each group's programs, results and monitoring compliance",
+  },
+  {
+    id: "coverage",
+    label: "Barangay Coverage",
+    icon: <MapPin size={15} />,
+    sub: "Where the reforestation is happening — areas, sites and planting per barangay",
+  },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -279,12 +301,6 @@ const ACT_STYLE: Record<string, { bg: string; icon: ReactNode }> = {
   danger: { bg: "bg-red-50 text-red-700", icon: <XCircle size={12} /> },
 };
 
-const STANDING_TONE: Record<string, string> = {
-  Excellent: "bg-green-50 text-green-700 border-green-200",
-  Good: "bg-sky-50 text-sky-700 border-sky-200",
-  "Needs attention": "bg-red-50 text-red-700 border-red-200",
-  New: "bg-gray-50 text-gray-600 border-gray-200",
-};
 const COMPLIANCE_TONE: Record<string, string> = {
   Compliant: "text-emerald-600",
   Warning: "text-amber-600",
@@ -702,9 +718,9 @@ function SiteUptake({ data, onSiteHistory }: { data: SiteUptakeData; onSiteHisto
   );
 }
 
-// ─── TAB: EXECUTIVE OVERVIEW ────────────────────────────────────────────────
+// ─── TAB: OPERATIONS STATUS ─────────────────────────────────────────────────
 
-function TabOverview({
+function TabStatus({
   data,
   goTo,
   onSiteHistory,
@@ -715,60 +731,14 @@ function TabOverview({
 }) {
   const navigate = useNavigate();
   const k = data.kpis;
-  const decisions = k.pending_approvals + k.pending_closures;
   const lifecycleMax = Math.max(1, ...data.lifecycle.map((l) => l.value));
 
   return (
     <div className="space-y-5">
-      {/* Decisions banner */}
-      <div
-        className={`rounded-2xl p-5 border animate-fadeUp flex flex-wrap items-center gap-4 ${
-          decisions > 0 ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"
-        }`}
-      >
-        <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${decisions > 0 ? "bg-amber-500" : "bg-emerald-500"} text-white`}>
-          {decisions > 0 ? <Gavel size={20} /> : <CheckCircle2 size={20} />}
-        </div>
-        <div className="flex-1 min-w-[200px]">
-          <p className={`text-[15px] font-bold ${decisions > 0 ? "text-amber-900" : "text-emerald-900"}`}>
-            {decisions > 0 ? `${decisions} decision${decisions > 1 ? "s" : ""} waiting for you` : "No decisions waiting for you"}
-          </p>
-          <p className={`text-[12px] ${decisions > 0 ? "text-amber-800/80" : "text-emerald-800/80"}`}>
-            {k.pending_approvals} application approval{k.pending_approvals !== 1 ? "s" : ""}
-            {k.oldest_approval_days !== null ? ` (oldest ${k.oldest_approval_days}d)` : ""} · {k.pending_closures} program closure
-            {k.pending_closures !== 1 ? "s" : ""}
-            {k.oldest_closure_days !== null ? ` (oldest ${k.oldest_closure_days}d)` : ""}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => navigate("/applications")}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-          >
-            <ClipboardCheck size={14} /> Applications {k.pending_approvals > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full">{k.pending_approvals}</span>}
-          </button>
-          <button
-            onClick={() => navigate("/program-closures")}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-          >
-            <Gavel size={14} /> Closures {k.pending_closures > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full">{k.pending_closures}</span>}
-          </button>
-          {decisions > 0 && (
-            <button
-              onClick={() => goTo("approvals")}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0F4A2F] text-white text-[12px] font-semibold hover:bg-[#1a6b44]"
-            >
-              Review details <ArrowRight size={14} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={<Activity size={20} />}
-          label="Active Programs"
+          label="Programs in Progress"
           value={fmt(k.active_programs)}
           sub={`${k.awaiting_orientation} awaiting orientation · ${k.total_applications} applications all-time`}
           accent="bg-indigo-500"
@@ -783,29 +753,26 @@ function TabOverview({
           delay="0.08s"
         />
         <StatCard
+          icon={<MapPin size={20} />}
+          label="Official Sites"
+          value={fmt(k.official_sites)}
+          sub={`${fmtHa(k.official_hectares)} · ${k.available_sites} available for new programs`}
+          accent="bg-emerald-600"
+          delay="0.12s"
+        />
+        <StatCard
           icon={<Users size={20} />}
           label="Tree Grower Groups"
           value={fmt(k.groups)}
           sub={`${k.groups_active} with an active program · ${k.groups_new_month} new this month`}
           accent="bg-teal-500"
-          delay="0.12s"
-          onClick={() => goTo("growers")}
-        />
-        <StatCard
-          icon={<Package size={20} />}
-          label="Seedlings Released"
-          value={fmt(k.seedlings_released)}
-          sub="Accepted + confirmed seedling requests"
-          accent="bg-teal-600"
           delay="0.16s"
+          onClick={() => goTo("growers")}
         />
       </div>
 
-      {/* Reforestation health with trendlines */}
-      <ReforestationHealth trend={data.trend} />
-
       {/* Office backlog */}
-      <Card delay="0.36s">
+      <Card delay="0.2s">
         <SectionHeader title="Operations by Office" sub="Work waiting in each office right now" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {data.offices.map((o) => (
@@ -847,7 +814,7 @@ function TabOverview({
         <Card className="lg:col-span-2" delay="0.4s">
           <SectionHeader
             title="Program Activity — Last 12 Months"
-            sub="Applications submitted, approved by you, and programs completed or failed"
+            sub="Applications submitted, approved, and programs completed or failed"
           />
           <ResponsiveContainer width="100%" height={270}>
             <BarChart data={data.trend}>
@@ -918,16 +885,60 @@ function TabOverview({
   );
 }
 
-// ─── TAB: MY DECISIONS ──────────────────────────────────────────────────────
+// ─── TAB: DECISIONS ─────────────────────────────────────────────────────────
 
-function TabApprovals({ data, onSiteHistory }: { data: HeadDashboard["approvals"]; onSiteHistory: (id: number) => void }) {
+function TabDecisions({
+  data,
+  kpis: k,
+  onSiteHistory,
+}: {
+  data: HeadDashboard["approvals"];
+  kpis: Kpis;
+  onSiteHistory: (id: number) => void;
+}) {
   const navigate = useNavigate();
+  const waiting = k.pending_approvals + k.pending_closures;
   return (
     <div className="space-y-5">
+      <div
+        className={`rounded-2xl p-5 border animate-fadeUp flex flex-wrap items-center gap-4 ${
+          waiting > 0 ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"
+        }`}
+      >
+        <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${waiting > 0 ? "bg-amber-500" : "bg-emerald-500"} text-white`}>
+          {waiting > 0 ? <Gavel size={20} /> : <CheckCircle2 size={20} />}
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <p className={`text-[15px] font-bold ${waiting > 0 ? "text-amber-900" : "text-emerald-900"}`}>
+            {waiting > 0 ? `${waiting} decision${waiting > 1 ? "s" : ""} waiting` : "No decisions waiting"}
+          </p>
+          <p className={`text-[12px] ${waiting > 0 ? "text-amber-800/80" : "text-emerald-800/80"}`}>
+            {k.pending_approvals} application approval{k.pending_approvals !== 1 ? "s" : ""}
+            {k.oldest_approval_days !== null ? ` (oldest ${k.oldest_approval_days}d)` : ""} · {k.pending_closures} program closure
+            {k.pending_closures !== 1 ? "s" : ""}
+            {k.oldest_closure_days !== null ? ` (oldest ${k.oldest_closure_days}d)` : ""}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => navigate("/applications")}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            <ClipboardCheck size={14} /> All applications
+          </button>
+          <button
+            onClick={() => navigate("/program-closures")}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-gray-200 text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            <Gavel size={14} /> All closures
+          </button>
+        </div>
+      </div>
+
       <Card>
         <SectionHeader
-          title="Applications Waiting for Your Approval"
-          sub="Evaluated by the Data Manager and forwarded to you — oldest first"
+          title="Applications Waiting for Approval"
+          sub="Evaluated by the Data Manager and forwarded for approval — oldest first"
           badge={`${data.pending_approvals.length} pending`}
         />
         {data.pending_approvals.length > 0 ? (
@@ -967,9 +978,9 @@ function TabApprovals({ data, onSiteHistory }: { data: HeadDashboard["approvals"
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-400">Site data</p>
+                    <p className="text-gray-400">Site meta-data</p>
                     <p className={`font-semibold ${a.site_verified ? "text-emerald-600" : "text-amber-600"}`}>
-                      {a.site_verified ? "Verified" : "Not verified"}
+                      {a.site_verified ? "Verified by Data Manager" : "Not verified yet"}
                     </p>
                     <p className="text-gray-400">{a.land_classification ?? "—"}</p>
                   </div>
@@ -1000,7 +1011,7 @@ function TabApprovals({ data, onSiteHistory }: { data: HeadDashboard["approvals"
         ) : (
           <div className="flex flex-col items-center py-10 text-center">
             <CheckCircle2 size={30} className="text-emerald-500 mb-2" />
-            <p className="text-sm text-gray-600 font-medium">No applications waiting for your approval</p>
+            <p className="text-sm text-gray-600 font-medium">No applications waiting for approval</p>
           </div>
         )}
       </Card>
@@ -1008,9 +1019,8 @@ function TabApprovals({ data, onSiteHistory }: { data: HeadDashboard["approvals"
       <Card>
         <SectionHeader
           title="Program Closure Requests"
-          sub="The Data Manager recommends ending these programs — you make the final call"
+          sub="The Data Manager recommends ending these programs — the Head makes the final call"
           badge={`${data.pending_closures.length} pending`}
-          action={{ label: "Open closures", onClick: () => navigate("/program-closures") }}
         />
         {data.pending_closures.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1053,9 +1063,20 @@ function TabApprovals({ data, onSiteHistory }: { data: HeadDashboard["approvals"
                     </p>
                   </div>
                 </div>
-                <p className="text-[11px] text-gray-400 mt-3">
-                  Requested by {c.requested_by} · {c.days_waiting === 0 ? "today" : `${c.days_waiting} days ago`}
-                </p>
+                <div className="flex items-center justify-between mt-4">
+                  <p className="text-[11px] text-gray-400">
+                    Requested by {c.requested_by} ·{" "}
+                    <span className={c.days_waiting > 7 ? "text-red-500 font-semibold" : ""}>
+                      {c.days_waiting === 0 ? "today" : `${c.days_waiting} days waiting`}
+                    </span>
+                  </p>
+                  <button
+                    onClick={() => navigate(`/program-closures?id=${c.id}`)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#0F4A2F] text-white text-[12px] font-semibold hover:bg-[#1a6b44]"
+                  >
+                    Review & decide <ArrowRight size={13} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -1070,21 +1091,55 @@ function TabApprovals({ data, onSiteHistory }: { data: HeadDashboard["approvals"
   );
 }
 
-// ─── TAB: PROGRAM PERFORMANCE ───────────────────────────────────────────────
+// ─── TAB: PLANTING PROGRESS ─────────────────────────────────────────────────
 
-function TabPerformance({ data, onSiteHistory }: { data: HeadDashboard["performance"]; onSiteHistory: (id: number) => void }) {
+function TabProgress({
+  data,
+  trend,
+  onSiteHistory,
+}: {
+  data: HeadDashboard["performance"];
+  trend: TrendPoint[];
+  onSiteHistory: (id: number) => void;
+}) {
   const s = data.summary;
+  const overdueActive = data.active_programs.filter((p) => p.overdue).length;
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Tile label="Active programs" value={data.active_programs.length} sub={`${data.active_programs.filter((p) => p.overdue).length} overdue for a visit`} />
-        <Tile label="Avg. days to complete" value={s.avg_completed_days !== null ? s.avg_completed_days : "—"} sub="Orientation to closure, completed programs" />
-        <Tile label="Visits (last 30 days)" value={s.visits_last_30_days} sub="Accepted monitoring visits" />
-        <Tile label="Sites overdue for a visit" value={s.overdue_sites} tone={s.overdue_sites > 0 ? "text-red-500" : "text-gray-800"} sub="No accepted visit in 90+ days" />
-      </div>
+      <ReforestationHealth trend={trend} />
+
+      {data.attention_sites.length > 0 && (
+        <Card>
+          <SectionHeader
+            title="Sites Needing Attention"
+            sub="Overdue visits, never visited, or low survival"
+            badge={s.overdue_sites > 0 ? `${s.overdue_sites} overdue for a visit` : undefined}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {data.attention_sites.map((a) => (
+              <button
+                key={a.site_id}
+                onClick={() => onSiteHistory(a.site_id)}
+                className="flex items-start gap-3 p-3 rounded-xl border border-amber-100 bg-amber-50/40 text-left hover:bg-amber-50"
+              >
+                <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[12.5px] font-bold text-gray-800 truncate">{a.name}</p>
+                  <p className="text-[11px] text-gray-500">{a.barangay}</p>
+                  <p className="text-[11px] font-semibold text-amber-700 mt-0.5">{a.reason}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card>
-        <SectionHeader title="Active Programs" sub="Lowest survival first — check visit recency and progress" badge={`${data.active_programs.length} active`} />
+        <SectionHeader
+          title="Active Programs"
+          sub={`Lowest survival first · ${s.visits_last_30_days} accepted visits in the last 30 days${overdueActive > 0 ? ` · ${overdueActive} overdue for a visit` : ""}`}
+          badge={`${data.active_programs.length} active`}
+        />
         {data.active_programs.length > 0 ? (
           <div className="overflow-x-auto -mx-2">
             <table className="w-full text-left min-w-[760px]">
@@ -1141,7 +1196,10 @@ function TabPerformance({ data, onSiteHistory }: { data: HeadDashboard["performa
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card>
-          <SectionHeader title="Recent Program Outcomes" sub="Last completed or failed programs" />
+          <SectionHeader
+            title="Recent Program Outcomes"
+            sub={`Last completed or failed programs${s.avg_completed_days !== null ? ` · completed programs take ${s.avg_completed_days} days on average` : ""}`}
+          />
           {data.program_outcomes.length > 0 ? (
             <div className="flex flex-col gap-2.5">
               {data.program_outcomes.map((o) => (
@@ -1189,27 +1247,6 @@ function TabPerformance({ data, onSiteHistory }: { data: HeadDashboard["performa
         </Card>
       </div>
 
-      {data.attention_sites.length > 0 && (
-        <Card>
-          <SectionHeader title="Sites Needing Attention" sub="Overdue visits, never visited, or low survival" />
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {data.attention_sites.map((a) => (
-              <button
-                key={a.site_id}
-                onClick={() => onSiteHistory(a.site_id)}
-                className="flex items-start gap-3 p-3 rounded-xl border border-amber-100 bg-amber-50/40 text-left hover:bg-amber-50"
-              >
-                <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[12.5px] font-bold text-gray-800 truncate">{a.name}</p>
-                  <p className="text-[11px] text-gray-500">{a.barangay}</p>
-                  <p className="text-[11px] font-semibold text-amber-700 mt-0.5">{a.reason}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        </Card>
-      )}
     </div>
   );
 }
@@ -1218,19 +1255,23 @@ function TabPerformance({ data, onSiteHistory }: { data: HeadDashboard["performa
 
 function TabGrowers({ data }: { data: HeadDashboard["growers"] }) {
   const navigate = useNavigate();
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<"all" | "active" | "attention" | "none">("all");
   const s = data.summary;
   const rows = data.rows.filter((r) =>
-    filter === "all" ? true : filter === "active" ? r.active > 0 : r.standing === filter,
+    filter === "active" ? r.active > 0 : filter === "attention" ? r.attention.length > 0 : filter === "none" ? r.programs === 0 : true,
   );
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Tile label="Groups" value={s.total} sub={`${s.new_this_month} joined this month`} />
         <Tile label="With an active program" value={s.active} tone="text-indigo-600" />
-        <Tile label="Excellent" value={s.excellent} tone="text-emerald-600" sub="≥ 80% survival, no failed programs" />
-        <Tile label="Needs attention" value={s.needs_attention} tone={s.needs_attention > 0 ? "text-red-500" : "text-gray-800"} sub="Low survival, failed or non-compliant" />
-        <Tile label="Non-compliant" value={s.non_compliant} tone={s.non_compliant > 0 ? "text-red-500" : "text-gray-800"} sub={`Active but no visit in 90+ days`} />
+        <Tile
+          label="Needs attention"
+          value={s.needs_attention}
+          tone={s.needs_attention > 0 ? "text-red-500" : "text-gray-800"}
+          sub={`${s.non_compliant} with no visit in 90+ days`}
+        />
+        <Tile label="No programs yet" value={s.no_programs} sub="Registered but never applied" />
       </div>
       <Card>
         <SectionHeader
@@ -1238,15 +1279,15 @@ function TabGrowers({ data }: { data: HeadDashboard["growers"] }) {
           sub={`Programs, planting results and monitoring compliance (compliant = accepted visit within ${s.compliant_days} days)`}
           action={{ label: "Manage groups", onClick: () => navigate("/tree-growers") }}
         />
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          {[
-            ["all", "All"],
-            ["active", "Active program"],
-            ["Excellent", "Excellent"],
-            ["Good", "Good"],
-            ["Needs attention", "Needs attention"],
-            ["New", "New"],
-          ].map(([key, label]) => (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {(
+            [
+              ["all", `All (${s.total})`],
+              ["active", `Active program (${s.active})`],
+              ["attention", `Needs attention (${s.needs_attention})`],
+              ["none", `No programs yet (${s.no_programs})`],
+            ] as [typeof filter, string][]
+          ).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setFilter(key)}
@@ -1267,7 +1308,7 @@ function TabGrowers({ data }: { data: HeadDashboard["growers"] }) {
                   <th className="px-2 py-2 font-semibold text-right">Planted</th>
                   <th className="px-2 py-2 font-semibold">Survival</th>
                   <th className="px-2 py-2 font-semibold">Compliance</th>
-                  <th className="px-2 py-2 font-semibold">Standing</th>
+                  <th className="px-2 py-2 font-semibold">Needs Attention</th>
                 </tr>
               </thead>
               <tbody>
@@ -1301,7 +1342,17 @@ function TabGrowers({ data }: { data: HeadDashboard["growers"] }) {
                       </p>
                     </td>
                     <td className="px-2 py-2.5">
-                      <Badge label={r.standing} tone={STANDING_TONE[r.standing] ?? STANDING_TONE.New} />
+                      {r.attention.length > 0 ? (
+                        <div className="flex flex-col gap-0.5">
+                          {r.attention.map((reason) => (
+                            <span key={reason} className="text-[11.5px] text-red-600 flex items-center gap-1">
+                              <AlertTriangle size={11} className="shrink-0" /> {reason}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11.5px] text-gray-400">{r.programs === 0 ? "No programs yet" : "—"}</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1327,7 +1378,12 @@ function TabCoverage({ data }: { data: HeadDashboard["coverage"] }) {
         <Tile label="Barangays covered" value={s.barangays} sub="With a reforestation area or site" />
         <Tile label="Reforestation areas" value={s.areas} />
         <Tile label="Official site area" value={fmtHa(s.official_hectares)} />
-        <Tile label="Planted area" value={fmtHa(s.planted_hectares)} tone="text-emerald-600" />
+        <Tile
+          label="Planted"
+          value={fmtHa(s.planted_hectares)}
+          tone="text-emerald-600"
+          sub={s.official_hectares > 0 ? `${Math.round((s.planted_hectares / s.official_hectares) * 100)}% of official site area` : undefined}
+        />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Card className="lg:col-span-2">
@@ -1424,7 +1480,7 @@ function TabCoverage({ data }: { data: HeadDashboard["coverage"] }) {
 
 export default function HeadDashboard() {
   const [isAuthorize, setIsAuthorize] = useState<boolean | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId | null>(null);
   const [data, setData] = useState<HeadDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1465,6 +1521,14 @@ export default function HeadDashboard() {
     if (isAuthorize) fetchDashboardData();
   }, [isAuthorize]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Open on Decisions when something is waiting, otherwise on Operations Status
+  useEffect(() => {
+    if (data && activeTab === null) {
+      const k = data.executive.kpis;
+      setActiveTab(k.pending_approvals + k.pending_closures > 0 ? "decisions" : "status");
+    }
+  }, [data, activeTab]);
+
   if (isAuthorize === null) {
     return (
       <div className="min-h-screen bg-[#f5faf6] flex items-center justify-center">
@@ -1475,6 +1539,7 @@ export default function HeadDashboard() {
   if (!isAuthorize) return <NotFoundPage />;
 
   const pendingDecisions = data ? data.executive.kpis.pending_approvals + data.executive.kpis.pending_closures : 0;
+  const tabInfo = TABS.find((t) => t.id === activeTab);
 
   return (
     <>
@@ -1488,21 +1553,12 @@ export default function HeadDashboard() {
       `}</style>
 
       <div className="dash-root bg-[#f5faf6] min-h-screen p-6 overflow-x-hidden">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fadeUp">
-          <div>
-            <h1 className="dash-title text-[28px] font-bold text-[#0F4A2F]">City ENRO Head Dashboard</h1>
-            <p className="text-[13px] text-gray-500 mt-0.5">
-              Oversight of every office and reforestation program · Ormoc City ·{" "}
-              {new Date().toLocaleDateString("en-PH", { weekday: "long", month: "short", day: "numeric", year: "numeric" })}
-            </p>
-          </div>
-          <button
-            onClick={fetchDashboardData}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0F4A2F] text-white text-sm font-semibold hover:bg-[#1a6b44] disabled:opacity-60"
-          >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> {loading ? "Refreshing…" : "Refresh"}
-          </button>
+        <div className="mb-6 animate-fadeUp">
+          <h1 className="dash-title text-[28px] font-bold text-[#0F4A2F]">City ENRO Head Dashboard</h1>
+          <p className="text-[13px] text-gray-500 mt-0.5">
+            Oversight of every office and reforestation program · Ormoc City ·{" "}
+            {new Date().toLocaleDateString("en-PH", { weekday: "long", month: "short", day: "numeric", year: "numeric" })}
+          </p>
         </div>
 
         <div className="flex gap-1.5 mb-6 bg-white rounded-xl p-1.5 border border-gray-100 shadow-[0_1px_8px_rgba(0,0,0,0.05)] w-fit max-w-full overflow-x-auto animate-fadeUp">
@@ -1515,12 +1571,13 @@ export default function HeadDashboard() {
               }`}
             >
               {tab.icon} {tab.label}
-              {tab.id === "approvals" && pendingDecisions > 0 && (
+              {tab.id === "decisions" && pendingDecisions > 0 && (
                 <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">{pendingDecisions}</span>
               )}
             </button>
           ))}
         </div>
+        {tabInfo && <p className="text-[12.5px] text-gray-500 -mt-3 mb-5">{tabInfo.sub}</p>}
 
         {loading && !data ? (
           <div className="flex flex-col items-center justify-center py-20">
@@ -1536,9 +1593,13 @@ export default function HeadDashboard() {
           </div>
         ) : (
           <>
-            {activeTab === "overview" && <TabOverview data={data.executive} goTo={setActiveTab} onSiteHistory={setHistorySiteId} />}
-            {activeTab === "approvals" && <TabApprovals data={data.approvals} onSiteHistory={setHistorySiteId} />}
-            {activeTab === "performance" && <TabPerformance data={data.performance} onSiteHistory={setHistorySiteId} />}
+            {activeTab === "decisions" && (
+              <TabDecisions data={data.approvals} kpis={data.executive.kpis} onSiteHistory={setHistorySiteId} />
+            )}
+            {activeTab === "status" && <TabStatus data={data.executive} goTo={setActiveTab} onSiteHistory={setHistorySiteId} />}
+            {activeTab === "progress" && (
+              <TabProgress data={data.performance} trend={data.executive.trend} onSiteHistory={setHistorySiteId} />
+            )}
             {activeTab === "growers" && <TabGrowers data={data.growers} />}
             {activeTab === "coverage" && <TabCoverage data={data.coverage} />}
           </>

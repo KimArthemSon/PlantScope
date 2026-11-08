@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/constants/url_fixed";
-import ReportPolygonMapModal from "@/components/forms/ReportPolygonMapModal";
+import { SortMenu, byDateAsc, byDateDesc, byText, type SortOption } from "@/components/SortMenu";
 
 const API_BASE = api + "/api";
 
@@ -80,6 +80,17 @@ const FILTER_STATUSES: Record<Exclude<FilterKey, "all">, string[]> = {
   closed: ["rejected", "failed", "cancelled"],
 };
 
+type AppSort = "newest" | "oldest" | "updated" | "title" | "planted" | "survival";
+
+const APP_SORTS: SortOption<AppSort>[] = [
+  { key: "newest", label: "Newest", icon: "time-outline" },
+  { key: "oldest", label: "Oldest", icon: "hourglass-outline" },
+  { key: "updated", label: "Recently updated", icon: "refresh-outline" },
+  { key: "title", label: "Title (A–Z)", icon: "text-outline" },
+  { key: "planted", label: "Most planted", icon: "leaf-outline" },
+  { key: "survival", label: "Highest survival", icon: "trending-up-outline" },
+];
+
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "All" },
   { key: "in_review", label: "In Review" },
@@ -109,9 +120,6 @@ const STATUS_CONFIG: Record<
   final_review: { label: "Final Review", bg: "#EEF2FF", text: "#4338CA", dot: "#6366F1" },
 };
 
-const reportStatusKey = (r: Report) =>
-  r.status === "pending" && r.review_stage === "gis_specialist" ? "map_check" : r.status;
-
 const getConf = (s: string | undefined) =>
   (s && STATUS_CONFIG[s]) || {
     label: (s || "Unknown").replace(/_/g, " ").toUpperCase(),
@@ -119,12 +127,6 @@ const getConf = (s: string | undefined) =>
     text: "#555",
     dot: "#999",
   };
-
-const VISIT_LABEL: Record<string, string> = {
-  initial: "Initial Orientation",
-  ongoing: "Ongoing Monitoring",
-  inactive_check: "Inactive Check",
-};
 
 const fmt = (iso: string | null | undefined) => {
   if (!iso) return "—";
@@ -136,9 +138,6 @@ const fmt = (iso: string | null | undefined) => {
     day: "numeric",
   });
 };
-
-const reportTime = (r: Report) =>
-  new Date(r.submitted_at || r.created_at || 0).getTime();
 
 // Planted = sum of no_planted from all accepted reports.
 // Survived = sum of no_survived from all accepted reports.
@@ -174,47 +173,6 @@ const StatusBadge = ({ status, small }: { status: string | undefined; small?: bo
   );
 };
 
-const ReportRow = ({ report, onViewMap }: { report: Report; onViewMap: (r: Report) => void }) => (
-  <View style={s.reportRow}>
-    <View style={s.reportRowTop}>
-      <View style={{ flex: 1 }}>
-        <Text style={s.reportType}>
-          {VISIT_LABEL[report.visit_type] || "Monitoring Visit"}
-        </Text>
-        <Text style={s.reportDate}>{fmt(report.submitted_at || report.created_at)}</Text>
-      </View>
-      <StatusBadge status={reportStatusKey(report)} small />
-    </View>
-    <View style={s.reportStats}>
-      <Text style={s.reportStat}>
-        Planted{" "}
-        <Text style={[s.reportStatVal, { color: "#1D4ED8" }]}>
-          {report.species.reduce((sum, sp) => sum + (sp.no_planted || 0), 0)}
-        </Text>
-      </Text>
-      <Text style={s.reportStat}>
-        Dead{" "}
-        <Text style={[s.reportStatVal, { color: "#DC2626" }]}>{report.total_dead}</Text>
-      </Text>
-      <Text style={s.reportStat}>
-        Species <Text style={s.reportStatVal}>{report.species.length}</Text>
-      </Text>
-    </View>
-    {report.planted_area_hectares != null && (
-      <View style={s.reportAreaRow}>
-        <Ionicons name="map-outline" size={13} color="#0F4A2F" />
-        <Text style={s.reportAreaTxt}>Planted area {report.planted_area_hectares.toFixed(2)} ha</Text>
-        {(report.polygon_coordinates?.length ?? 0) >= 3 && (
-          <TouchableOpacity style={s.mapLink} onPress={() => onViewMap(report)} hitSlop={8}>
-            <Text style={s.mapLinkTxt}>View on map</Text>
-            <Ionicons name="chevron-forward" size={13} color="#0F4A2F" />
-          </TouchableOpacity>
-        )}
-      </View>
-    )}
-  </View>
-);
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ReportsScreen() {
@@ -226,8 +184,7 @@ export default function ReportsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
-  const [expandedApp, setExpandedApp] = useState<number | null>(null);
-  const [mapView, setMapView] = useState<{ report: Report; app: ApplicationSummary } | null>(null);
+  const [sort, setSort] = useState<AppSort>("newest");
   const hasLoaded = useRef(false);
 
   const fetchAll = useCallback(async (mode: "initial" | "refresh" | "silent") => {
@@ -247,11 +204,6 @@ export default function ReportsScreen() {
         (a: ApplicationSummary) => ({ ...a, reports: a.reports || [] }),
       );
       setApplications(apps);
-
-      // Auto-expand the most recent application on first load only
-      if (!hasLoaded.current && apps.length > 0) {
-        setExpandedApp(apps[0].application_id);
-      }
       hasLoaded.current = true;
     } catch (e: any) {
       // Keep showing existing data on a background refresh failure
@@ -296,13 +248,28 @@ export default function ReportsScreen() {
       ? applications.length
       : applications.filter((a) => FILTER_STATUSES[key].includes(a.status)).length;
 
-  const visibleApps = useMemo(
-    () =>
+  const visibleApps = useMemo(() => {
+    const list =
       filter === "all"
-        ? applications
-        : applications.filter((a) => FILTER_STATUSES[filter].includes(a.status)),
-    [applications, filter],
-  );
+        ? [...applications]
+        : applications.filter((a) => FILTER_STATUSES[filter].includes(a.status));
+    switch (sort) {
+      case "oldest":
+        return list.sort((a, b) => byDateAsc(a.created_at, b.created_at));
+      case "updated":
+        return list.sort((a, b) => byDateDesc(a.updated_at, b.updated_at));
+      case "title":
+        return list.sort((a, b) => byText(a.title, b.title));
+      case "planted":
+        return list.sort((a, b) => getApplicationMetrics(b).totalPlanted - getApplicationMetrics(a).totalPlanted);
+      case "survival":
+        return list.sort((a, b) => getApplicationMetrics(b).survivalRate - getApplicationMetrics(a).survivalRate);
+      default:
+        return list.sort((a, b) => byDateDesc(a.created_at, b.created_at));
+    }
+  }, [applications, filter, sort]);
+
+  const openDetails = (id: number) => router.push(`/tree_growers/report-detail/${id}` as any);
 
   const goBack = () => router.replace("/tree_growers/profile");
 
@@ -430,10 +397,13 @@ export default function ReportsScreen() {
             </ScrollView>
 
             <View style={s.historyHeader}>
-              <Text style={s.historyTitle}>Application History</Text>
-              <Text style={s.historyCount}>
-                {visibleApps.length} application{visibleApps.length !== 1 ? "s" : ""}
-              </Text>
+              <View>
+                <Text style={s.historyTitle}>Application History</Text>
+                <Text style={s.historyCount}>
+                  {visibleApps.length} application{visibleApps.length !== 1 ? "s" : ""}
+                </Text>
+              </View>
+              <SortMenu value={sort} options={APP_SORTS} onChange={setSort} title="Sort applications" />
             </View>
 
             {visibleApps.length === 0 && (
@@ -445,19 +415,13 @@ export default function ReportsScreen() {
 
             {/* ── Applications list ── */}
             {visibleApps.map((app) => {
-              const isExpanded = expandedApp === app.application_id;
               const metrics = getApplicationMetrics(app);
-              const sortedReports = [...app.reports].sort(
-                (a, b) => reportTime(b) - reportTime(a),
-              );
 
               return (
                 <View key={app.application_id} style={s.appSection}>
                   <TouchableOpacity
                     style={s.appCard}
-                    onPress={() =>
-                      setExpandedApp(isExpanded ? null : app.application_id)
-                    }
+                    onPress={() => openDetails(app.application_id)}
                     activeOpacity={0.85}
                   >
                     <View style={s.appCardTop}>
@@ -477,12 +441,6 @@ export default function ReportsScreen() {
                       </View>
                       <View style={s.appCardRight}>
                         <StatusBadge status={app.final_review_pending ? "final_review" : app.status} small />
-                        <Ionicons
-                          name={isExpanded ? "chevron-up" : "chevron-down"}
-                          size={20}
-                          color="rgba(255,255,255,0.7)"
-                          style={{ marginTop: 6 }}
-                        />
                       </View>
                     </View>
 
@@ -523,42 +481,17 @@ export default function ReportsScreen() {
                         </Text>
                       </Text>
                     </View>
+
+                    <View style={s.viewDetailsRow}>
+                      <Text style={s.viewDetailsRowTxt}>
+                        {app.final_review_pending
+                          ? "Head is reviewing the results · View details"
+                          : "View site, seedlings, reports & history"}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={16} color="#A7F3D0" />
+                    </View>
                   </TouchableOpacity>
 
-                  {isExpanded && (
-                    <View style={s.reportsSection}>
-                      {app.final_review_pending && (
-                        <View style={s.finalReviewBox}>
-                          <Ionicons name="ribbon-outline" size={18} color="#4338CA" />
-                          <Text style={s.finalReviewTxt}>
-                            The City ENRO Head is reviewing this program's results to decide if it is completed. You will be notified of the decision.
-                          </Text>
-                        </View>
-                      )}
-                      {sortedReports.length === 0 ? (
-                        <Text style={s.noReports}>
-                          No monitoring reports yet for this application.
-                        </Text>
-                      ) : (
-                        sortedReports.map((r) => (
-                          <ReportRow key={r.report_id} report={r} onViewMap={(rep) => setMapView({ report: rep, app })} />
-                        ))
-                      )}
-
-                      <TouchableOpacity
-                        style={s.viewDetailsBtn}
-                        onPress={() =>
-                          router.push(
-                            `/tree_growers/application-detail/${app.application_id}` as any,
-                          )
-                        }
-                      >
-                        <Ionicons name="information-circle-outline" size={18} color="#0F4A2F" />
-                        <Text style={s.viewDetailsBtnText}>View Full Application Details</Text>
-                        <Ionicons name="chevron-forward" size={18} color="#0F4A2F" />
-                      </TouchableOpacity>
-                    </View>
-                  )}
                 </View>
               );
             })}
@@ -566,15 +499,6 @@ export default function ReportsScreen() {
         )}
       </ScrollView>
 
-      <ReportPolygonMapModal
-        visible={!!mapView}
-        onClose={() => setMapView(null)}
-        title={mapView ? `${VISIT_LABEL[mapView.report.visit_type] || "Monitoring Visit"} · ${fmt(mapView.report.submitted_at || mapView.report.created_at)}` : ""}
-        subtitle={mapView?.app.site_name || mapView?.app.title}
-        reportPolygon={mapView?.report.polygon_coordinates}
-        sitePolygon={mapView?.app.site_polygon_coordinates}
-        areaHectares={mapView?.report.planted_area_hectares}
-      />
     </View>
   );
 }
@@ -778,6 +702,16 @@ const s = StyleSheet.create({
   reportStats: { flexDirection: "row", gap: 16, marginTop: 8 },
   reportStat: { fontSize: 12, color: "#6B7280" },
   reportStatVal: { fontWeight: "700", color: "#111827" },
+  viewDetailsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.12)",
+  },
+  viewDetailsRowTxt: { fontSize: 12.5, fontWeight: "700", color: "#A7F3D0" },
   viewDetailsBtn: {
     flexDirection: "row",
     alignItems: "center",

@@ -23,6 +23,10 @@ urlpatterns = [
     path('send_otp/', emailviews.send_otp, name='send_otp'),
     path('verify_otp/', emailviews.verify_otp, name='verify_otp'),
 
+    # Change email (signed in; the new address must be verified)
+    path('email_change/request/', emailviews.request_email_change, name='email_change_request'),
+    path('email_change/confirm/', emailviews.confirm_email_change, name='email_change_confirm'),
+
     # Forgot password
     path('password_reset/request/', password_reset_views.request_reset_code, name='password_reset_request'),
     path('password_reset/verify/', password_reset_views.verify_reset_code, name='password_reset_verify'),

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import {
   Bar,
   BarChart,
@@ -7,8 +7,6 @@ import {
   ComposedChart,
   Legend,
   Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -25,38 +23,46 @@ import {
   FileText,
   History,
   Layers,
+  Map as MapIcon,
   MapPin,
   MapPinned,
-  RefreshCw,
   ShieldAlert,
   TreePine,
   Users,
 } from "lucide-react";
 import { api } from "@/constant/api";
-import { exportCsv, exportPdf, type ExportSpec } from "../dataManager/reports/reportExport";
 import SiteHistoryModal from "../dataManager/reports/SiteHistoryModal";
-import { ProgramsTab, type FilterOptions } from "../dataManager/reports/reports";
+import { ProgramsTab } from "../dataManager/reports/reports";
 import {
+  areaOptions,
   AXIS_TICK,
   Badge,
+  barangayOptions,
   Card,
-  DATE_PRESETS,
+  dateFilter,
   DateRangeFilter,
+  describeFilters,
+  DonutLegend,
   EmptyState,
   ExportButtons,
   FilterBar,
+  type FilterOptions,
+  fmt,
+  fmtDate,
+  fmtHa,
   GreenTooltip,
   Kpi,
+  landClassOptions,
   LoadingBlock,
+  optionLabel,
   Pagination,
+  ReportBody,
+  runExport,
   SearchFilter,
   SectionTitle,
   SelectFilter,
   Td,
   Th,
-  fmt,
-  fmtDate,
-  fmtHa,
   usePaged,
   useReport,
 } from "../dataManager/reports/reportUi";
@@ -111,12 +117,58 @@ interface SitesReport {
     with_issues: number;
     assessments: number;
     areas: number;
+    areas_total: number;
   };
   status_breakdown: Breakdown[];
   verification_breakdown: Breakdown[];
-  by_barangay: { name: string; sites: number; official: number; hectares: number; planted_hectares: number }[];
+  land_class_breakdown: { name: string; value: number }[];
+  by_barangay: { name: string; areas: number; sites: number; official: number; hectares: number; planted_hectares: number }[];
   monthly: { month: string; created: number; verified: number }[];
   rows: SiteRow[];
+}
+
+interface AreaRow {
+  id: number;
+  name: string;
+  description: string | null;
+  barangay: string | null;
+  has_marker: boolean;
+  created_at: string;
+  sites: number;
+  official: number;
+  verified: number;
+  verification_pending: number;
+  pending_approval: number;
+  site_hectares: number;
+  planted_hectares: number;
+  planted_pct: number | null;
+  land_classifications: string[];
+  inspectors: string[];
+  assessments: number;
+  general_assessments: number;
+  specific_assessments: number;
+  last_assessment: string | null;
+  active_programs: number;
+  issues: string[];
+}
+
+interface AreasReport {
+  summary: {
+    total: number;
+    with_sites: number;
+    without_sites: number;
+    without_inspector: number;
+    without_assessment: number;
+    sites: number;
+    official: number;
+    hectares: number;
+    planted_hectares: number;
+    assessments: number;
+    active_programs: number;
+    barangays: number;
+  };
+  by_barangay: { name: string; areas: number; sites: number; hectares: number; planted_hectares: number }[];
+  rows: AreaRow[];
 }
 
 interface ReviewRow {
@@ -179,9 +231,6 @@ interface AssessmentRow {
   land_classification: string | null;
   layers: string[];
   photos: number;
-  has_location: boolean;
-  security_concerns: string[];
-  high_risk: boolean;
   assessment_date: string | null;
   submitted: string;
 }
@@ -192,18 +241,37 @@ interface AssessmentsReport {
     general: number;
     specific: number;
     photos: number;
-    with_concerns: number;
-    high_risk: number;
-    without_location: number;
     sites: number;
     inspectors: number;
   };
   layers: { name: string; value: number }[];
   photos_by_layer: { name: string; group: string; value: number }[];
   monthly: { month: string; general: number; specific: number }[];
-  by_inspector: { name: string; assessments: number; photos: number }[];
   inspector_tracking: InspectorTracking;
+  coverage: AssessmentCoverage;
   rows: AssessmentRow[];
+}
+
+interface CoverageRow {
+  id: number;
+  name: string;
+  reforestation_area: string | null;
+  barangay: string | null;
+  assessments: number;
+  last_assessment: string | null;
+  days_since: number | null;
+  status: "never" | "overdue" | "recent";
+}
+
+interface CoverageGroup {
+  summary: { total: number; never: number; overdue: number; recent: number; oldest_days: number | null };
+  rows: CoverageRow[];
+}
+
+interface AssessmentCoverage {
+  overdue_days: number;
+  sites: CoverageGroup;
+  areas: CoverageGroup;
 }
 
 interface InspectorRow {
@@ -292,89 +360,7 @@ const LAYER_COLOR: Record<string, string> = {
   Boundary: "#3b82f6",
 };
 
-function barangayOptions(options: FilterOptions | null) {
-  return [
-    { value: "all", label: "All barangays" },
-    ...(options?.barangays ?? []).map((b) => ({ value: String(b.id), label: b.name })),
-  ];
-}
-
-function areaOptions(options: FilterOptions | null, barangay: string) {
-  const areas = (options?.areas ?? []).filter((a) => barangay === "all" || String(a.barangay_id) === barangay);
-  return [{ value: "all", label: "All areas" }, ...areas.map((a) => ({ value: String(a.id), label: a.name }))];
-}
-
-function optionLabel(options: { value: string; label: string }[], value: string) {
-  return options.find((o) => o.value === value)?.label ?? value;
-}
-
-function dateLabel(from: string, to: string) {
-  const preset = DATE_PRESETS.find((p) => {
-    const [f, t] = p.range();
-    return f === from && t === to;
-  });
-  if (preset && preset.key !== "all") return `${preset.label} (${fmtDate(from)} – ${fmtDate(to)})`;
-  if (!from && !to) return "";
-  return `${from ? fmtDate(from) : "Start"} – ${to ? fmtDate(to) : "Present"}`;
-}
-
-function describeFilters(entries: [string, string, { value: string; label: string }[] | null][]) {
-  return entries
-    .filter(([, v]) => v && v !== "all")
-    .map(([label, v, opts]) => [label, opts ? optionLabel(opts, v) : v] as [string, string]);
-}
-
-function runExport<T>(kind: "pdf" | "excel", spec: ExportSpec<T>) {
-  if (kind === "pdf") exportPdf(spec);
-  else exportCsv(spec);
-}
-
-function useRefresh(refreshKey: number, reload: () => void) {
-  useEffect(() => {
-    if (refreshKey) reload();
-  }, [refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
-}
-
-function ErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Card className="p-10 text-center">
-      <p className="text-sm text-gray-500 mb-3">{message}</p>
-      <button onClick={onRetry} className="px-4 py-2 rounded-lg bg-[#0F4A2F] text-white text-sm font-semibold hover:bg-[#1a6b44]">
-        Retry
-      </button>
-    </Card>
-  );
-}
-
-function Donut({ data }: { data: Breakdown[] }) {
-  const visible = data.filter((d) => d.value > 0);
-  if (visible.length === 0) return <EmptyState text="No data" />;
-  return (
-    <>
-      <ResponsiveContainer width="100%" height={160}>
-        <PieChart>
-          <Pie data={visible} dataKey="value" nameKey="name" outerRadius={66} innerRadius={38} paddingAngle={2}>
-            {visible.map((d, i) => (
-              <Cell key={i} fill={d.fill} />
-            ))}
-          </Pie>
-          <Tooltip content={<GreenTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="flex flex-col gap-1.5 mt-2">
-        {data.map((d) => (
-          <div key={d.key} className="flex items-center gap-2 text-[12px]">
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.fill }} />
-            <span className="text-gray-600">{d.name}</span>
-            <span className="ml-auto font-bold text-gray-800">{d.value}</span>
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
-// ─── TAB: SITE REGISTRY ─────────────────────────────────────────────────────
+// ─── TAB: REFORESTATION REGISTRY ───────────────────────────────────────────
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All statuses" },
@@ -407,210 +393,37 @@ const ISSUE_OPTIONS = [
   { value: "oversized", label: "Planted polygon > site" },
   { value: "no_class", label: "No land classification" },
 ];
-const SITE_DEFAULTS = {
+const COVERAGE_OPTIONS = [
+  { value: "all", label: "All areas" },
+  { value: "with_sites", label: "With sites" },
+  { value: "no_sites", label: "No sites yet" },
+  { value: "no_inspector", label: "No assigned inspector" },
+  { value: "no_assessment", label: "No field assessment yet" },
+];
+const REGISTRY_DEFAULTS = {
   search: "",
   status: "all",
   verification: "all",
   monitoring_status: "all",
   barangay: "all",
   area: "all",
+  land_classification: "all",
   issue: "all",
   date_from: "",
   date_to: "",
 };
 
-function SitesTab({
-  options,
-  onSiteHistory,
-  refreshKey,
-}: {
-  options: FilterOptions | null;
-  onSiteHistory: (id: number) => void;
-  refreshKey: number;
-}) {
-  const [f, setF] = useState(SITE_DEFAULTS);
-  const { data, loading, error, reload } = useReport<SitesReport>("gis_report/sites/", f);
-  useRefresh(refreshKey, reload);
-  const paged = usePaged(data?.rows ?? []);
-  const brgyOpts = barangayOptions(options);
-  const areaOpts = areaOptions(options, f.barangay);
-  const isFiltered = JSON.stringify(f) !== JSON.stringify(SITE_DEFAULTS);
-
-  const handleExport = (kind: "pdf" | "excel") => {
-    if (!data) return;
-    const s = data.summary;
-    const range = dateLabel(f.date_from, f.date_to);
-    runExport<SiteRow>(kind, {
-      title: "Site Registry Report",
-      filename: "gis_site_registry",
-      filters: [
-        ...describeFilters([
-          ["Approval status", f.status, STATUS_OPTIONS],
-          ["Verification", f.verification, VERIFICATION_OPTIONS],
-          ["Monitoring", f.monitoring_status, MONITORING_OPTIONS],
-          ["Barangay", f.barangay, brgyOpts],
-          ["Reforestation area", f.area, areaOpts],
-          ["Map data", f.issue, ISSUE_OPTIONS],
-          ["Search", f.search, null],
-        ]),
-        ...(range ? [["Date created", range] as [string, string]] : []),
-      ],
-      summary: [
-        ["Sites", fmt(s.total)],
-        ["Mapped area", fmtHa(s.hectares)],
-        ["Official sites", fmt(s.official)],
-        ["Official area", fmtHa(s.official_hectares)],
-        ["Planted area (latest polygons)", fmtHa(s.planted_hectares)],
-        ["Pending approval", fmt(s.pending)],
-        ["Verification pending", fmt(s.verification_pending)],
-        ["Not yet verified", fmt(s.not_verified)],
-        ["Sites with map data issues", fmt(s.with_issues)],
-        ["Reforestation areas", fmt(s.areas)],
-      ],
-      sections: [
-        {
-          title: "Sites by barangay",
-          columns: ["Barangay", "Sites", "Official", "Mapped area", "Planted area"],
-          rows: data.by_barangay.map((b) => [b.name, b.sites, b.official, fmtHa(b.hectares), fmtHa(b.planted_hectares)]),
-        },
-      ],
-      recordsTitle: "Sites",
-      columns: [
-        { header: "Site", value: (r) => r.name },
-        { header: "Reforestation area", value: (r) => r.reforestation_area },
-        { header: "Barangay", value: (r) => r.barangay },
-        { header: "Approval", value: (r) => r.status_label },
-        { header: "Verification", value: (r) => r.verification_label },
-        { header: "Verified by", value: (r) => (r.verified_by ? `${r.verified_by} (${fmtDate(r.verified_at)})` : null) },
-        { header: "Monitoring", value: (r) => r.monitoring_label },
-        { header: "Land class", value: (r) => r.land_classification },
-        { header: "Site area", value: (r) => fmtHa(r.site_hectares) },
-        { header: "Planted area", value: (r) => (r.planted_hectares ? fmtHa(r.planted_hectares) : null) },
-        { header: "Assessments", value: (r) => r.assessments },
-        { header: "Programs", value: (r) => r.programs },
-        { header: "Created", value: (r) => fmtDate(r.created_at) },
-        { header: "Issues", value: (r) => r.issues.join("; ") },
-      ],
-      rows: data.rows,
-    });
-  };
-
-  const s = data?.summary;
-
+function SiteTable({ rows, onSiteHistory }: { rows: SiteRow[]; onSiteHistory: (id: number) => void }) {
+  const paged = usePaged(rows);
   return (
-    <div className="space-y-5">
-      <FilterBar onReset={() => setF(SITE_DEFAULTS)} showReset={isFiltered}>
-        <SearchFilter value={f.search} onChange={(v) => setF({ ...f, search: v })} placeholder="Site or reforestation area…" />
-        <SelectFilter label="Approval" value={f.status} onChange={(v) => setF({ ...f, status: v })} options={STATUS_OPTIONS} />
-        <SelectFilter label="Verification" value={f.verification} onChange={(v) => setF({ ...f, verification: v })} options={VERIFICATION_OPTIONS} />
-        <SelectFilter label="Monitoring" value={f.monitoring_status} onChange={(v) => setF({ ...f, monitoring_status: v })} options={MONITORING_OPTIONS} />
-        <SelectFilter label="Barangay" value={f.barangay} onChange={(v) => setF({ ...f, barangay: v, area: "all" })} options={brgyOpts} />
-        <SelectFilter label="Reforestation area" value={f.area} onChange={(v) => setF({ ...f, area: v })} options={areaOpts} />
-        <SelectFilter label="Map data" value={f.issue} onChange={(v) => setF({ ...f, issue: v })} options={ISSUE_OPTIONS} />
-        <DateRangeFilter label="Date created" from={f.date_from} to={f.date_to} onChange={(a, b) => setF({ ...f, date_from: a, date_to: b })} />
-      </FilterBar>
-
-      {error && !data ? (
-        <ErrorBox message={error} onRetry={reload} />
-      ) : !data || !s ? (
-        <LoadingBlock text="Building site registry…" />
-      ) : (
-        <div className={`space-y-5 transition-opacity ${loading ? "opacity-60" : ""}`}>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <Kpi icon={<MapPin size={16} />} label="Sites" value={fmt(s.total)} sub={`${fmtHa(s.hectares)} mapped · ${s.areas} areas`} />
-            <Kpi icon={<TreePine size={16} />} label="Official Sites" value={fmt(s.official)} sub={`${fmtHa(s.official_hectares)} verified`} accent="bg-green-600" />
-            <Kpi
-              icon={<FileSearch size={16} />}
-              label="Awaiting Approval / Verification"
-              value={`${s.pending} / ${s.verification_pending}`}
-              sub={`${s.not_verified} not yet verified`}
-              accent="bg-amber-500"
-            />
-            <Kpi
-              icon={<ShieldAlert size={16} />}
-              label="Map Data Issues"
-              value={fmt(s.with_issues)}
-              valueColor={s.with_issues > 0 ? "#ef4444" : undefined}
-              sub={`Planted area ${fmtHa(s.planted_hectares)}`}
-              accent={s.with_issues > 0 ? "bg-red-500" : "bg-green-500"}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <Card className="p-5 lg:col-span-2">
-              <SectionTitle icon={<BarChart3 size={16} />} title="Sites Created vs Verified" sub="Per month for the filtered sites" />
-              {data.monthly.some((m) => m.created || m.verified) ? (
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={data.monthly} barGap={2}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0fdf4" vertical={false} />
-                    <XAxis dataKey="month" tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                    <YAxis allowDecimals={false} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                    <Tooltip content={<GreenTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="created" name="Created" fill="#a7f3d0" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="verified" name="Verified" fill="#059669" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState text="No sites created or verified in this period" />
-              )}
-            </Card>
-            <Card className="p-5">
-              <SectionTitle icon={<Layers size={16} />} title="Approval Status" sub={`${s.total} sites`} />
-              <Donut data={data.status_breakdown} />
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <Card className="p-5 lg:col-span-2">
-              <SectionTitle icon={<MapPin size={16} />} title="Area by Barangay" sub="Mapped site area vs planted area" />
-              {data.by_barangay.length > 0 ? (
-                <ResponsiveContainer width="100%" height={240}>
-                  <ComposedChart data={data.by_barangay}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0fdf4" vertical={false} />
-                    <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="ha" tick={AXIS_TICK} axisLine={false} tickLine={false} unit=" ha" />
-                    <YAxis yAxisId="n" orientation="right" allowDecimals={false} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                    <Tooltip content={<GreenTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar yAxisId="ha" dataKey="hectares" name="Mapped (ha)" fill="#a7f3d0" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="ha" dataKey="planted_hectares" name="Planted (ha)" fill="#059669" radius={[4, 4, 0, 0]} />
-                    <Line yAxisId="n" dataKey="sites" name="Sites" stroke="#6366f1" strokeWidth={2.5} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              ) : (
-                <EmptyState text="No sites match the filters" />
-              )}
-            </Card>
-            <Card className="p-5">
-              <SectionTitle icon={<FileSearch size={16} />} title="Site Data Verification" sub="Review status of site data" />
-              <Donut data={data.verification_breakdown} />
-            </Card>
-          </div>
-
-          <Card>
-            <div className="px-5 pt-5">
-              <SectionTitle
-                icon={<FileText size={16} />}
-                title="Site Records"
-                sub="Every active site — open History for its full timeline of verification, assessments, programs and reviews"
-                right={
-                  <ExportButtons
-                    onPdf={() => handleExport("pdf")}
-                    onExcel={() => handleExport("excel")}
-                    disabled={data.rows.length === 0}
-                    count={data.rows.length}
-                  />
-                }
-              />
-            </div>
+    <>
             <div className="overflow-x-auto">
               <table className="min-w-full">
                 <thead className="bg-gray-50">
                   <tr>
                     <Th>Site</Th>
                     <Th>Approval</Th>
-                    <Th>Verification</Th>
+                    <Th>Meta-data</Th>
                     <Th>Monitoring</Th>
                     <Th right>Site Area</Th>
                     <Th right>Planted</Th>
@@ -699,9 +512,437 @@ function SitesTab({
               </table>
             </div>
             <Pagination {...paged} />
-          </Card>
-        </div>
-      )}
+    </>
+  );
+}
+
+function AreaTable({ rows }: { rows: AreaRow[] }) {
+  const paged = usePaged(rows);
+  return (
+    <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <Th>Reforestation Area</Th>
+                        <Th right>Sites</Th>
+                        <Th right>Area</Th>
+                        <Th>Land Classes</Th>
+                        <Th>Inspectors</Th>
+                        <Th right>Assessments</Th>
+                        <Th right>Programs</Th>
+                        <Th>Created</Th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {paged.pageRows.length > 0 ? (
+                        paged.pageRows.map((r) => (
+                          <tr key={r.id} className="hover:bg-gray-50/70 align-top">
+                            <Td>
+                              <p className="font-semibold text-gray-800">{r.name}</p>
+                              <p className="text-[11px] text-gray-400">{r.barangay ?? "No barangay"}</p>
+                              {r.issues.map((i) => (
+                                <p key={i} className="text-[10.5px] text-amber-700 flex items-center gap-1 mt-0.5">
+                                  <AlertTriangle size={10} /> {i}
+                                </p>
+                              ))}
+                            </Td>
+                            <Td right>
+                              <p className="font-semibold">{r.sites}</p>
+                              {r.sites > 0 && (
+                                <p className="text-[10.5px] text-gray-400 whitespace-nowrap">
+                                  {r.official} official · {r.pending_approval} pending
+                                </p>
+                              )}
+                            </Td>
+                            <Td right>
+                              <p>{fmtHa(r.site_hectares)}</p>
+                              {r.planted_hectares > 0 && (
+                                <p className="text-[10.5px] text-gray-400 whitespace-nowrap">
+                                  {fmtHa(r.planted_hectares)} planted{r.planted_pct !== null ? ` · ${r.planted_pct}%` : ""}
+                                </p>
+                              )}
+                            </Td>
+                            <Td>
+                              {r.land_classifications.length > 0 ? (
+                                <div className="flex flex-col gap-0.5">
+                                  {r.land_classifications.map((c) => (
+                                    <span key={c} className="text-[10.5px] text-purple-700">
+                                      {c}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-gray-400">—</span>
+                              )}
+                            </Td>
+                            <Td>
+                              {r.inspectors.length > 0 ? (
+                                <div className="flex flex-wrap gap-1 max-w-50">
+                                  {r.inspectors.map((n) => (
+                                    <span key={n} className="text-[10.5px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                                      {n}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-gray-400">None</span>
+                              )}
+                            </Td>
+                            <Td right>
+                              <p>{r.assessments}</p>
+                              {r.assessments > 0 && (
+                                <p className="text-[10.5px] text-gray-400 whitespace-nowrap">
+                                  {r.general_assessments} gen · {r.specific_assessments} site
+                                </p>
+                              )}
+                              {r.last_assessment && <p className="text-[10.5px] text-gray-400">{fmtDate(r.last_assessment)}</p>}
+                            </Td>
+                            <Td right>{r.active_programs}</Td>
+                            <Td className="whitespace-nowrap">{fmtDate(r.created_at)}</Td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={8}>
+                            <EmptyState text="No reforestation areas match the filters" />
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination {...paged} />
+    </>
+  );
+}
+
+type RegistryView = "areas" | "sites";
+
+function RegistryTab({ options, onSiteHistory }: { options: FilterOptions | null; onSiteHistory: (id: number) => void }) {
+  const [f, setF] = useState(REGISTRY_DEFAULTS);
+  const [view, setView] = useState<RegistryView>("areas");
+  const [coverage, setCoverage] = useState("all");
+  const sites = useReport<SitesReport>("gis_report/sites/", f);
+  // Areas share the location / search / date filters; coverage only applies to the area list
+  const areas = useReport<AreasReport>("gis_report/areas/", {
+    search: f.search,
+    barangay: f.barangay,
+    area: f.area,
+    coverage,
+    date_from: f.date_from,
+    date_to: f.date_to,
+  });
+  const brgyOpts = barangayOptions(options);
+  const areaOpts = areaOptions(options, f.barangay);
+  const classOpts = landClassOptions(options);
+  const isFiltered = JSON.stringify(f) !== JSON.stringify(REGISTRY_DEFAULTS);
+
+  const sharedFilters = (): [string, string][] => [
+    ...describeFilters([
+      ["Barangay", f.barangay, brgyOpts],
+      ["Reforestation area", f.area, areaOpts],
+      ["Search", f.search, null],
+    ]),
+    ...dateFilter("Date created", f.date_from, f.date_to),
+  ];
+
+  const exportSites = (kind: "pdf" | "excel") => {
+    const data = sites.data;
+    if (!data) return;
+    const s = data.summary;
+    runExport<SiteRow>(kind, {
+      title: "Reforestation Registry — Sites",
+      filename: "gis_registry_sites",
+      filters: [
+        ...describeFilters([
+          ["Approval status", f.status, STATUS_OPTIONS],
+          ["Meta-data verification", f.verification, VERIFICATION_OPTIONS],
+          ["Monitoring", f.monitoring_status, MONITORING_OPTIONS],
+          ["Land classification", f.land_classification, classOpts],
+          ["Map data", f.issue, ISSUE_OPTIONS],
+        ]),
+        ...sharedFilters(),
+      ],
+      summary: [
+        ["Reforestation areas", `${fmt(s.areas_total)} (${fmt(s.areas)} with sites)`],
+        ["Sites", fmt(s.total)],
+        ["Mapped area", fmtHa(s.hectares)],
+        ["Official sites", fmt(s.official)],
+        ["Official area", fmtHa(s.official_hectares)],
+        ["Planted area (latest polygons)", fmtHa(s.planted_hectares)],
+        ["Pending approval", fmt(s.pending)],
+        ["Meta-data verification pending", fmt(s.verification_pending)],
+        ["Meta-data not yet verified", fmt(s.not_verified)],
+        ["Sites with map data issues", fmt(s.with_issues)],
+      ],
+      sections: [
+        {
+          title: "By barangay",
+          columns: ["Barangay", "Areas", "Sites", "Official", "Mapped area", "Planted area"],
+          rows: data.by_barangay.map((b) => [b.name, b.areas, b.sites, b.official, fmtHa(b.hectares), fmtHa(b.planted_hectares)]),
+        },
+        {
+          title: "Sites by land classification",
+          columns: ["Land classification", "Sites"],
+          rows: data.land_class_breakdown.map((c) => [c.name, c.value]),
+        },
+      ],
+      recordsTitle: "Sites",
+      columns: [
+        { header: "Site", value: (r) => r.name },
+        { header: "Reforestation area", value: (r) => r.reforestation_area },
+        { header: "Barangay", value: (r) => r.barangay },
+        { header: "Approval", value: (r) => r.status_label },
+        { header: "Meta-data verification", value: (r) => r.verification_label },
+        { header: "Verified by", value: (r) => (r.verified_by ? `${r.verified_by} (${fmtDate(r.verified_at)})` : null) },
+        { header: "Monitoring", value: (r) => r.monitoring_label },
+        { header: "Land class", value: (r) => r.land_classification },
+        { header: "Site area", value: (r) => fmtHa(r.site_hectares) },
+        { header: "Planted area", value: (r) => (r.planted_hectares ? fmtHa(r.planted_hectares) : null) },
+        { header: "Assessments", value: (r) => r.assessments },
+        { header: "Programs", value: (r) => r.programs },
+        { header: "Created", value: (r) => fmtDate(r.created_at) },
+        { header: "Issues", value: (r) => r.issues.join("; ") },
+      ],
+      rows: data.rows,
+    });
+  };
+
+  const exportAreas = (kind: "pdf" | "excel") => {
+    const data = areas.data;
+    if (!data) return;
+    const s = data.summary;
+    runExport<AreaRow>(kind, {
+      title: "Reforestation Registry — Areas",
+      filename: "gis_registry_areas",
+      filters: [
+        ...sharedFilters(),
+        ...describeFilters([["Coverage", coverage, COVERAGE_OPTIONS]]),
+      ],
+      summary: [
+        ["Reforestation areas", fmt(s.total)],
+        ["Barangays covered", fmt(s.barangays)],
+        ["Areas with sites", fmt(s.with_sites)],
+        ["Areas without sites", fmt(s.without_sites)],
+        ["Areas without an inspector", fmt(s.without_inspector)],
+        ["Areas without a field assessment", fmt(s.without_assessment)],
+        ["Sites", `${fmt(s.sites)} (${fmt(s.official)} official)`],
+        ["Mapped site area", fmtHa(s.hectares)],
+        ["Planted area", fmtHa(s.planted_hectares)],
+        ["Field assessments", fmt(s.assessments)],
+        ["Active programs", fmt(s.active_programs)],
+      ],
+      sections: [
+        {
+          title: "Areas by barangay",
+          columns: ["Barangay", "Areas", "Sites", "Mapped area", "Planted area"],
+          rows: data.by_barangay.map((b) => [b.name, b.areas, b.sites, fmtHa(b.hectares), fmtHa(b.planted_hectares)]),
+        },
+      ],
+      recordsTitle: "Reforestation areas",
+      columns: [
+        { header: "Reforestation area", value: (r) => r.name },
+        { header: "Barangay", value: (r) => r.barangay },
+        { header: "Sites", value: (r) => r.sites },
+        { header: "Official", value: (r) => r.official },
+        { header: "Meta-data verified", value: (r) => r.verified },
+        { header: "Pending approval", value: (r) => r.pending_approval },
+        { header: "Mapped area", value: (r) => fmtHa(r.site_hectares) },
+        { header: "Planted area", value: (r) => fmtHa(r.planted_hectares) },
+        { header: "Land classes", value: (r) => r.land_classifications.join(", ") },
+        { header: "Inspectors", value: (r) => r.inspectors.join(", ") },
+        { header: "Assessments (gen/site)", value: (r) => `${r.assessments} (${r.general_assessments}/${r.specific_assessments})` },
+        { header: "Last assessment", value: (r) => fmtDate(r.last_assessment) },
+        { header: "Active programs", value: (r) => r.active_programs },
+        { header: "Created", value: (r) => fmtDate(r.created_at) },
+        { header: "Issues", value: (r) => r.issues.join("; ") },
+      ],
+      rows: data.rows,
+    });
+  };
+
+  return (
+    <div className="space-y-5">
+      <FilterBar onReset={() => setF(REGISTRY_DEFAULTS)} showReset={isFiltered}>
+        <SearchFilter value={f.search} onChange={(v) => setF({ ...f, search: v })} placeholder="Site or reforestation area…" />
+        <SelectFilter label="Barangay" value={f.barangay} onChange={(v) => setF({ ...f, barangay: v, area: "all" })} options={brgyOpts} />
+        <SelectFilter label="Reforestation area" value={f.area} onChange={(v) => setF({ ...f, area: v })} options={areaOpts} />
+        <SelectFilter label="Approval" value={f.status} onChange={(v) => setF({ ...f, status: v })} options={STATUS_OPTIONS} />
+        <SelectFilter label="Meta-data verification" value={f.verification} onChange={(v) => setF({ ...f, verification: v })} options={VERIFICATION_OPTIONS} />
+        <SelectFilter label="Monitoring" value={f.monitoring_status} onChange={(v) => setF({ ...f, monitoring_status: v })} options={MONITORING_OPTIONS} />
+        <SelectFilter label="Land classification" value={f.land_classification} onChange={(v) => setF({ ...f, land_classification: v })} options={classOpts} />
+        <SelectFilter label="Map data" value={f.issue} onChange={(v) => setF({ ...f, issue: v })} options={ISSUE_OPTIONS} />
+        <DateRangeFilter label="Date created" from={f.date_from} to={f.date_to} onChange={(a, b) => setF({ ...f, date_from: a, date_to: b })} />
+      </FilterBar>
+
+      <ReportBody data={sites.data} error={sites.error} loading={sites.loading} loadingText="Building reforestation registry…" onRetry={sites.reload}>
+        {(data) => {
+          const s = data.summary;
+          const a = areas.data?.summary;
+          const records = view === "sites" ? data.rows.length : (areas.data?.rows.length ?? 0);
+          return (
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <Kpi
+                  icon={<MapIcon size={16} />}
+                  label="Reforestation Areas"
+                  value={fmt(s.areas_total)}
+                  sub={a ? `${a.without_sites} without sites · ${a.without_inspector} without inspector` : `${s.areas} with matching sites`}
+                  accent="bg-teal-500"
+                />
+                <Kpi icon={<MapPin size={16} />} label="Sites" value={fmt(s.total)} sub={`${fmtHa(s.hectares)} mapped · ${fmtHa(s.planted_hectares)} planted`} />
+                <Kpi icon={<TreePine size={16} />} label="Official Sites" value={fmt(s.official)} sub={`${fmtHa(s.official_hectares)} verified`} accent="bg-green-600" />
+                <Kpi
+                  icon={<FileSearch size={16} />}
+                  label="Awaiting Approval / Meta-data"
+                  value={`${s.pending} / ${s.verification_pending}`}
+                  sub={`${s.not_verified} meta-data not yet verified`}
+                  accent="bg-amber-500"
+                />
+                <Kpi
+                  icon={<ShieldAlert size={16} />}
+                  label="Map Data Issues"
+                  value={fmt(s.with_issues)}
+                  valueColor={s.with_issues > 0 ? "#ef4444" : undefined}
+                  sub="Missing boundary, oversized polygon or no land class"
+                  accent={s.with_issues > 0 ? "bg-red-500" : "bg-green-500"}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <Card className="p-5 lg:col-span-2">
+                  <SectionTitle icon={<BarChart3 size={16} />} title="Sites Created vs Verified" sub="Per month for the filtered sites" />
+                  {data.monthly.some((m) => m.created || m.verified) ? (
+                    <ResponsiveContainer width="100%" height={240}>
+                      <BarChart data={data.monthly} barGap={2}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0fdf4" vertical={false} />
+                        <XAxis dataKey="month" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                        <YAxis allowDecimals={false} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                        <Tooltip content={<GreenTooltip />} />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="created" name="Created" fill="#a7f3d0" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="verified" name="Verified" fill="#059669" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <EmptyState text="No sites created or verified in this period" />
+                  )}
+                </Card>
+                <Card className="p-5">
+                  <SectionTitle icon={<Layers size={16} />} title="Approval Status" sub={`${s.total} sites`} />
+                  <DonutLegend data={data.status_breakdown} />
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <Card className="p-5 lg:col-span-2">
+                  <SectionTitle icon={<MapPin size={16} />} title="Areas and Sites by Barangay" sub="Mapped vs planted hectares, with area and site counts" />
+                  {data.by_barangay.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <ComposedChart data={data.by_barangay}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0fdf4" vertical={false} />
+                        <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                        <YAxis yAxisId="ha" tick={AXIS_TICK} axisLine={false} tickLine={false} unit=" ha" />
+                        <YAxis yAxisId="n" orientation="right" allowDecimals={false} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                        <Tooltip content={<GreenTooltip />} />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Bar yAxisId="ha" dataKey="hectares" name="Mapped (ha)" fill="#a7f3d0" radius={[4, 4, 0, 0]} />
+                        <Bar yAxisId="ha" dataKey="planted_hectares" name="Planted (ha)" fill="#059669" radius={[4, 4, 0, 0]} />
+                        <Line yAxisId="n" dataKey="areas" name="Areas" stroke="#14b8a6" strokeWidth={2.5} />
+                        <Line yAxisId="n" dataKey="sites" name="Sites" stroke="#6366f1" strokeWidth={2.5} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <EmptyState text="No areas or sites match the filters" />
+                  )}
+                </Card>
+                <Card className="p-5">
+                  <SectionTitle icon={<FileSearch size={16} />} title="Meta-Data Verification" sub="Review status of each site's meta-data" />
+                  <DonutLegend data={data.verification_breakdown} />
+                  {data.land_class_breakdown.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-gray-100">
+                      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Land classification</p>
+                      <div className="flex flex-col gap-1.5">
+                        {data.land_class_breakdown.map((c) => (
+                          <div key={c.name} className="flex items-center gap-2 text-[12px]">
+                            <span className={`truncate ${c.name === "Unclassified" ? "text-gray-400" : "text-purple-700"}`}>{c.name}</span>
+                            <span className="ml-auto font-bold text-gray-800">{c.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </div>
+
+              <Card>
+                <div className="px-5 pt-5">
+                  <SectionTitle
+                    icon={<FileText size={16} />}
+                    title="Registry Records"
+                    sub={
+                      view === "sites"
+                        ? "Every site — open History for its full timeline"
+                        : "Every reforestation area — its sites, inspectors and field work. Uses the location, search and date filters."
+                    }
+                    right={
+                      <ExportButtons
+                        onPdf={() => (view === "sites" ? exportSites("pdf") : exportAreas("pdf"))}
+                        onExcel={() => (view === "sites" ? exportSites("excel") : exportAreas("excel"))}
+                        disabled={records === 0}
+                        count={records}
+                      />
+                    }
+                  />
+                  <div className="flex flex-wrap items-center gap-3 mb-4">
+                    <div className="inline-flex p-1 rounded-xl bg-gray-100">
+                      {([
+                        ["areas", `Areas (${a ? a.total : "…"})`],
+                        ["sites", `Sites (${s.total})`],
+                      ] as [RegistryView, string][]).map(([key, label]) => (
+                        <button
+                          key={key}
+                          onClick={() => setView(key)}
+                          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                            view === key ? "bg-white text-[#0F4A2F] shadow-sm" : "text-gray-500 hover:text-gray-700"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {view === "areas" && (
+                      <select
+                        value={coverage}
+                        onChange={(e) => setCoverage(e.target.value)}
+                        className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white focus:border-[#0F4A2F] focus:outline-none"
+                      >
+                        {COVERAGE_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+                {view === "sites" ? (
+                  <SiteTable rows={data.rows} onSiteHistory={onSiteHistory} />
+                ) : areas.data ? (
+                  <div className={`transition-opacity ${areas.loading ? "opacity-60" : ""}`}>
+                    <AreaTable rows={areas.data.rows} />
+                  </div>
+                ) : areas.error ? (
+                  <EmptyState text={areas.error} />
+                ) : (
+                  <LoadingBlock text="Loading reforestation areas…" />
+                )}
+              </Card>
+            </>
+          );
+        }}
+      </ReportBody>
     </div>
   );
 }
@@ -722,18 +963,9 @@ const OVERSIZED_OPTIONS = [
 ];
 const REVIEW_DEFAULTS = { search: "", stage: "all", barangay: "all", oversized: "all", date_from: "", date_to: "" };
 
-function ReviewsTab({
-  options,
-  onSiteHistory,
-  refreshKey,
-}: {
-  options: FilterOptions | null;
-  onSiteHistory: (id: number) => void;
-  refreshKey: number;
-}) {
+function ReviewsTab({ options, onSiteHistory }: { options: FilterOptions | null; onSiteHistory: (id: number) => void }) {
   const [f, setF] = useState(REVIEW_DEFAULTS);
   const { data, loading, error, reload } = useReport<ReviewsReport>("gis_report/planted_reviews/", f);
-  useRefresh(refreshKey, reload);
   const paged = usePaged(data?.rows ?? []);
   const brgyOpts = barangayOptions(options);
   const isFiltered = JSON.stringify(f) !== JSON.stringify(REVIEW_DEFAULTS);
@@ -741,7 +973,6 @@ function ReviewsTab({
   const handleExport = (kind: "pdf" | "excel") => {
     if (!data) return;
     const s = data.summary;
-    const range = dateLabel(f.date_from, f.date_to);
     runExport<ReviewRow>(kind, {
       title: "Planted Area Review History",
       filename: "gis_planted_area_reviews",
@@ -752,7 +983,7 @@ function ReviewsTab({
           ["Polygons", f.oversized, OVERSIZED_OPTIONS],
           ["Search", f.search, null],
         ]),
-        ...(range ? [["Submitted", range] as [string, string]] : []),
+        ...dateFilter("Submitted", f.date_from, f.date_to),
       ],
       summary: [
         ["Planted-area reports", fmt(s.total)],
@@ -793,8 +1024,6 @@ function ReviewsTab({
     });
   };
 
-  const s = data?.summary;
-
   return (
     <div className="space-y-5">
       <FilterBar onReset={() => setF(REVIEW_DEFAULTS)} showReset={isFiltered}>
@@ -805,12 +1034,11 @@ function ReviewsTab({
         <DateRangeFilter label="Submitted" from={f.date_from} to={f.date_to} onChange={(a, b) => setF({ ...f, date_from: a, date_to: b })} />
       </FilterBar>
 
-      {error && !data ? (
-        <ErrorBox message={error} onRetry={reload} />
-      ) : !data || !s ? (
-        <LoadingBlock text="Building review history…" />
-      ) : (
-        <div className={`space-y-5 transition-opacity ${loading ? "opacity-60" : ""}`}>
+      <ReportBody data={data} error={error} loading={loading} loadingText="Building review history…" onRetry={reload}>
+        {(data) => {
+          const s = data.summary;
+          return (
+        <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Kpi
               icon={<Clock size={16} />}
@@ -865,7 +1093,7 @@ function ReviewsTab({
             </Card>
             <Card className="p-5">
               <SectionTitle icon={<Layers size={16} />} title="Review Stage" sub={`${s.total} reports`} />
-              <Donut data={data.stage_breakdown} />
+              <DonutLegend data={data.stage_breakdown} />
             </Card>
           </div>
 
@@ -874,7 +1102,7 @@ function ReviewsTab({
               <SectionTitle
                 icon={<FileText size={16} />}
                 title="Review History"
-                sub="Every planted-area polygon submitted from the field and who reviewed it"
+                sub="Who reviewed each polygon and when"
                 right={
                   <ExportButtons
                     onPdf={() => handleExport("pdf")}
@@ -962,8 +1190,10 @@ function ReviewsTab({
             </div>
             <Pagination {...paged} />
           </Card>
-        </div>
-      )}
+        </>
+          );
+        }}
+      </ReportBody>
     </div>
   );
 }
@@ -990,7 +1220,6 @@ function inspectorFlags(r: InspectorRow) {
   if (r.handovers_waiting > 0) flags.push(`${r.handovers_waiting} seedling handover(s) to confirm`);
   if (r.visits_rejected > 0 && r.acceptance_rate !== null && r.acceptance_rate < 50)
     flags.push("Most visits sent back for changes");
-  if (r.without_gps > 0) flags.push(`${r.without_gps} assessment(s) without GPS`);
   return flags;
 }
 
@@ -1239,6 +1468,164 @@ function InspectorTrackingSection({
   );
 }
 
+// ─── ASSESSMENT COVERAGE (inside Field Assessments) ─────────────────────────
+
+const COVERAGE_STYLE: Record<CoverageRow["status"], { label: string; tone: string }> = {
+  never: { label: "Never assessed", tone: "bg-red-50 text-red-700 border-red-200" },
+  overdue: { label: "Overdue", tone: "bg-amber-50 text-amber-700 border-amber-200" },
+  recent: { label: "Up to date", tone: "bg-green-50 text-green-700 border-green-200" },
+};
+
+function coverageSub(s: CoverageGroup["summary"], overdueDays: number) {
+  const parts = [`${s.overdue} overdue (> ${overdueDays} days)`];
+  if (s.oldest_days !== null) parts.push(`oldest ${s.oldest_days}d ago`);
+  return parts.join(" · ");
+}
+
+function daysAgo(days: number | null) {
+  if (days === null) return "—";
+  if (days === 0) return "Today";
+  return days === 1 ? "1 day ago" : `${days} days ago`;
+}
+
+function CoverageSection({ coverage, filtersLabel }: { coverage: AssessmentCoverage; filtersLabel: [string, string][] }) {
+  const [view, setView] = useState<"sites" | "areas">("sites");
+  const [status, setStatus] = useState<"all" | CoverageRow["status"]>("all");
+  const group = coverage[view];
+  // Memoized so pagination doesn't reset to page 1 on every render
+  const rows = useMemo(() => group.rows.filter((r) => status === "all" || r.status === status), [group, status]);
+  const paged = usePaged(rows, 10);
+  const statusOptions = [
+    { value: "all", label: "All statuses" },
+    { value: "never", label: "Never assessed" },
+    { value: "overdue", label: `Overdue (> ${coverage.overdue_days} days)` },
+    { value: "recent", label: "Up to date" },
+  ];
+
+  const handleExport = (kind: "pdf" | "excel") => {
+    const s = group.summary;
+    runExport<CoverageRow>(kind, {
+      title: view === "sites" ? "Site Assessment Coverage" : "Reforestation Area Assessment Coverage",
+      filename: view === "sites" ? "gis_site_assessment_coverage" : "gis_area_assessment_coverage",
+      filters: [...filtersLabel, ...(status !== "all" ? [["Status", optionLabel(statusOptions, status)] as [string, string]] : [])],
+      summary: [
+        [view === "sites" ? "Sites" : "Reforestation areas", fmt(s.total)],
+        ["Never assessed", fmt(s.never)],
+        [`Overdue (> ${coverage.overdue_days} days)`, fmt(s.overdue)],
+        ["Up to date", fmt(s.recent)],
+        ["Longest since last assessment", s.oldest_days !== null ? `${s.oldest_days} days` : "—"],
+      ],
+      recordsTitle: view === "sites" ? "Sites" : "Reforestation areas",
+      columns: [
+        { header: view === "sites" ? "Site" : "Reforestation area", value: (r) => r.name },
+        ...(view === "sites" ? [{ header: "Reforestation area", value: (r: CoverageRow) => r.reforestation_area }] : []),
+        { header: "Barangay", value: (r) => r.barangay },
+        { header: "Assessments", value: (r) => r.assessments },
+        { header: "Last assessment", value: (r) => fmtDate(r.last_assessment) },
+        { header: "Days since", value: (r) => r.days_since },
+        { header: "Status", value: (r) => COVERAGE_STYLE[r.status].label },
+      ],
+      rows,
+    });
+  };
+
+  return (
+    <Card>
+      <div className="px-5 pt-5">
+        <SectionTitle
+          icon={<Clock size={16} />}
+          title="Assessment Coverage"
+          sub={`Which sites and areas still need a field assessment, and how long since the last one · all-time, follows the barangay and area filters`}
+          right={
+            <ExportButtons
+              onPdf={() => handleExport("pdf")}
+              onExcel={() => handleExport("excel")}
+              disabled={rows.length === 0}
+              count={rows.length}
+            />
+          }
+        />
+      </div>
+
+      <div className="px-5 pb-3 flex flex-wrap items-center gap-3">
+        <div className="inline-flex p-1 rounded-xl bg-gray-100">
+          {(
+            [
+              ["sites", `Sites (${coverage.sites.summary.total})`],
+              ["areas", `Areas (${coverage.areas.summary.total})`],
+            ] as ["sites" | "areas", string][]
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                view === key ? "bg-white text-[#0F4A2F] shadow-sm" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value as typeof status)}
+          className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white focus:border-[#0F4A2F] focus:outline-none"
+        >
+          {statusOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              <Th>{view === "sites" ? "Site" : "Reforestation Area"}</Th>
+              <Th right>Assessments</Th>
+              <Th>Last Assessment</Th>
+              <Th>Status</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {paged.pageRows.length > 0 ? (
+              paged.pageRows.map((r) => (
+                <tr key={`${view}-${r.id}`} className="hover:bg-gray-50/70 align-top">
+                  <Td>
+                    <p className="font-semibold text-gray-800">{r.name}</p>
+                    <p className="text-[11px] text-gray-400">
+                      {view === "sites" ? `${r.reforestation_area ?? "—"} · ${r.barangay ?? "—"}` : (r.barangay ?? "No barangay")}
+                    </p>
+                  </Td>
+                  <Td right>{r.assessments}</Td>
+                  <Td className="whitespace-nowrap">
+                    <p>{r.last_assessment ? fmtDate(r.last_assessment) : "—"}</p>
+                    <p className={`text-[10.5px] ${r.status === "overdue" ? "text-amber-600 font-semibold" : "text-gray-400"}`}>
+                      {daysAgo(r.days_since)}
+                    </p>
+                  </Td>
+                  <Td>
+                    <Badge label={COVERAGE_STYLE[r.status].label} tone={COVERAGE_STYLE[r.status].tone} />
+                  </Td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={4}>
+                  <EmptyState text="Nothing matches this status" />
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <Pagination {...paged} />
+    </Card>
+  );
+}
+
 // ─── TAB: FIELD ASSESSMENTS ─────────────────────────────────────────────────
 
 const TYPE_OPTIONS = [
@@ -1253,34 +1640,19 @@ const LAYER_OPTIONS = [
   { value: "survivability", label: "Survivability" },
   { value: "boundary", label: "Boundary" },
 ];
-const RISK_OPTIONS = [
-  { value: "all", label: "All" },
-  { value: "any", label: "Any security concern" },
-  { value: "high", label: "High risk only" },
-];
 const ASSESSMENT_DEFAULTS = {
   search: "",
   type: "all",
   layer: "all",
-  risk: "all",
   barangay: "all",
   area: "all",
   date_from: "",
   date_to: "",
 };
 
-function AssessmentsTab({
-  options,
-  onSiteHistory,
-  refreshKey,
-}: {
-  options: FilterOptions | null;
-  onSiteHistory: (id: number) => void;
-  refreshKey: number;
-}) {
+function AssessmentsTab({ options, onSiteHistory }: { options: FilterOptions | null; onSiteHistory: (id: number) => void }) {
   const [f, setF] = useState(ASSESSMENT_DEFAULTS);
   const { data, loading, error, reload } = useReport<AssessmentsReport>("gis_report/assessments/", f);
-  useRefresh(refreshKey, reload);
   const paged = usePaged(data?.rows ?? []);
   const brgyOpts = barangayOptions(options);
   const areaOpts = areaOptions(options, f.barangay);
@@ -1289,7 +1661,6 @@ function AssessmentsTab({
   const handleExport = (kind: "pdf" | "excel") => {
     if (!data) return;
     const s = data.summary;
-    const range = dateLabel(f.date_from, f.date_to);
     runExport<AssessmentRow>(kind, {
       title: "Field Assessments Report",
       filename: "gis_field_assessments",
@@ -1297,31 +1668,24 @@ function AssessmentsTab({
         ...describeFilters([
           ["Type", f.type, TYPE_OPTIONS],
           ["Layer", f.layer, LAYER_OPTIONS],
-          ["Security", f.risk, RISK_OPTIONS],
           ["Barangay", f.barangay, brgyOpts],
           ["Reforestation area", f.area, areaOpts],
           ["Search", f.search, null],
         ]),
-        ...(range ? [["Submitted", range] as [string, string]] : []),
+        ...dateFilter("Submitted", f.date_from, f.date_to),
       ],
       summary: [
         ["Assessments", fmt(s.total)],
         ["General / specific", `${s.general} / ${s.specific}`],
         ["Evidence photos", fmt(s.photos)],
         ["Sites assessed", fmt(s.sites)],
-        ["With security concerns", fmt(s.with_concerns)],
-        ["High risk", fmt(s.high_risk)],
-        ["Without GPS location", fmt(s.without_location)],
         ["Inspectors", fmt(s.inspectors)],
+        ["Sites never assessed", `${fmt(data.coverage.sites.summary.never)} of ${fmt(data.coverage.sites.summary.total)}`],
+        ["Areas never assessed", `${fmt(data.coverage.areas.summary.never)} of ${fmt(data.coverage.areas.summary.total)}`],
       ],
       sections: [
         { title: "Assessments by layer", columns: ["Layer", "Assessments"], rows: data.layers.map((l) => [l.name, l.value]) },
         { title: "Evidence photos by type", columns: ["Type", "Photos"], rows: data.photos_by_layer.map((p) => [p.name, p.value]) },
-        {
-          title: "Assessments per inspector",
-          columns: ["Inspector", "Assessments", "Photos"],
-          rows: data.by_inspector.map((i) => [i.name, i.assessments, i.photos]),
-        },
       ],
       recordsTitle: "Assessments",
       columns: [
@@ -1335,14 +1699,10 @@ function AssessmentsTab({
         { header: "Layers", value: (r) => r.layers.join(", ") },
         { header: "Photos", value: (r) => r.photos },
         { header: "Land class", value: (r) => r.land_classification },
-        { header: "Security concerns", value: (r) => r.security_concerns.join(", ") },
-        { header: "GPS", value: (r) => (r.has_location ? "Yes" : "No") },
       ],
       rows: data.rows,
     });
   };
-
-  const s = data?.summary;
 
   return (
     <div className="space-y-5">
@@ -1350,35 +1710,34 @@ function AssessmentsTab({
         <SearchFilter value={f.search} onChange={(v) => setF({ ...f, search: v })} placeholder="Title, site, area or inspector…" />
         <SelectFilter label="Type" value={f.type} onChange={(v) => setF({ ...f, type: v })} options={TYPE_OPTIONS} />
         <SelectFilter label="Layer" value={f.layer} onChange={(v) => setF({ ...f, layer: v })} options={LAYER_OPTIONS} />
-        <SelectFilter label="Security" value={f.risk} onChange={(v) => setF({ ...f, risk: v })} options={RISK_OPTIONS} />
         <SelectFilter label="Barangay" value={f.barangay} onChange={(v) => setF({ ...f, barangay: v, area: "all" })} options={brgyOpts} />
         <SelectFilter label="Reforestation area" value={f.area} onChange={(v) => setF({ ...f, area: v })} options={areaOpts} />
         <DateRangeFilter label="Submitted" from={f.date_from} to={f.date_to} onChange={(a, b) => setF({ ...f, date_from: a, date_to: b })} />
       </FilterBar>
 
-      {error && !data ? (
-        <ErrorBox message={error} onRetry={reload} />
-      ) : !data || !s ? (
-        <LoadingBlock text="Building assessments report…" />
-      ) : (
-        <div className={`space-y-5 transition-opacity ${loading ? "opacity-60" : ""}`}>
+      <ReportBody data={data} error={error} loading={loading} loadingText="Building assessments report…" onRetry={reload}>
+        {(data) => {
+          const s = data.summary;
+          return (
+        <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Kpi icon={<ClipboardList size={16} />} label="Assessments" value={fmt(s.total)} sub={`${s.general} general · ${s.specific} site-specific`} />
             <Kpi icon={<Camera size={16} />} label="Evidence Photos" value={fmt(s.photos)} sub={`${s.sites} sites assessed`} accent="bg-teal-500" />
             <Kpi
-              icon={<ShieldAlert size={16} />}
-              label="Security Concerns"
-              value={fmt(s.with_concerns)}
-              valueColor={s.high_risk > 0 ? "#ef4444" : undefined}
-              sub={`${s.high_risk} high risk`}
+              icon={<MapPin size={16} />}
+              label="Sites Never Assessed"
+              value={`${data.coverage.sites.summary.never} / ${data.coverage.sites.summary.total}`}
+              valueColor={data.coverage.sites.summary.never > 0 ? "#ef4444" : undefined}
+              sub={coverageSub(data.coverage.sites.summary, data.coverage.overdue_days)}
               accent="bg-red-500"
             />
             <Kpi
-              icon={<Users size={16} />}
-              label="Inspectors"
-              value={fmt(s.inspectors)}
-              sub={s.without_location > 0 ? `${s.without_location} assessment(s) without GPS` : "All assessments have GPS"}
-              accent="bg-indigo-500"
+              icon={<MapIcon size={16} />}
+              label="Areas Never Assessed"
+              value={`${data.coverage.areas.summary.never} / ${data.coverage.areas.summary.total}`}
+              valueColor={data.coverage.areas.summary.never > 0 ? "#d97706" : undefined}
+              sub={coverageSub(data.coverage.areas.summary, data.coverage.overdue_days)}
+              accent="bg-amber-500"
             />
           </div>
 
@@ -1431,6 +1790,14 @@ function AssessmentsTab({
             </Card>
           </div>
 
+          <CoverageSection
+            coverage={data.coverage}
+            filtersLabel={describeFilters([
+              ["Barangay", f.barangay, brgyOpts],
+              ["Reforestation area", f.area, areaOpts],
+            ])}
+          />
+
           {data.inspector_tracking && (
             <InspectorTrackingSection
               tracking={data.inspector_tracking}
@@ -1441,7 +1808,7 @@ function AssessmentsTab({
                   ["Type", f.type, TYPE_OPTIONS],
                   ["Layer", f.layer, LAYER_OPTIONS],
                 ]),
-                ...(dateLabel(f.date_from, f.date_to) ? [["Date", dateLabel(f.date_from, f.date_to)] as [string, string]] : []),
+                ...dateFilter("Date", f.date_from, f.date_to),
               ]}
             />
           )}
@@ -1470,7 +1837,6 @@ function AssessmentsTab({
                     <Th>Area / Site</Th>
                     <Th>Layers</Th>
                     <Th right>Photos</Th>
-                    <Th>Security</Th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1487,7 +1853,6 @@ function AssessmentsTab({
                           <p className="font-semibold text-gray-800">{r.title}</p>
                           <p className="text-[11px] text-gray-400">
                             {r.type} · {r.inspector ?? "—"}
-                            {!r.has_location && <span className="text-amber-600"> · no GPS</span>}
                           </p>
                         </Td>
                         <Td>
@@ -1515,24 +1880,11 @@ function AssessmentsTab({
                           </div>
                         </Td>
                         <Td right>{r.photos}</Td>
-                        <Td>
-                          {r.security_concerns.length > 0 ? (
-                            <div className="flex flex-col gap-0.5">
-                              {r.security_concerns.map((c) => (
-                                <span key={c} className={`text-[11px] ${r.high_risk ? "text-red-600 font-semibold" : "text-amber-700"}`}>
-                                  {c}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-[11px] text-gray-400">None</span>
-                          )}
-                        </Td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6}>
+                      <td colSpan={5}>
                         <EmptyState text="No assessments match the filters" />
                       </td>
                     </tr>
@@ -1542,34 +1894,36 @@ function AssessmentsTab({
             </div>
             <Pagination {...paged} />
           </Card>
-        </div>
-      )}
+        </>
+          );
+        }}
+      </ReportBody>
     </div>
   );
 }
 
 // ─── Main page ──────────────────────────────────────────────────────────────
 
-type TabKey = "sites" | "reviews" | "assessments" | "programs";
+type TabKey = "registry" | "reviews" | "assessments" | "programs";
 
 const TABS: { key: TabKey; label: string; icon: ReactElement; sub: string }[] = [
-  { key: "sites", label: "Site Registry", icon: <MapPin size={15} />, sub: "Every site with its approval, verification, boundary and planted area — open History for a site's full timeline" },
-  { key: "reviews", label: "Planted Area Reviews", icon: <MapPinned size={15} />, sub: "Planted-area polygons from the field and the Data Manager → GIS review history" },
-  { key: "assessments", label: "Field Assessments", icon: <ClipboardList size={15} />, sub: "Submitted field assessments, layers covered, evidence photos and security concerns" },
-  { key: "programs", label: "Site Programs", icon: <TreePine size={15} />, sub: "Tree planting programs run on each site — outcomes, planting and survival" },
+  { key: "registry", label: "Reforestation Registry", icon: <MapIcon size={15} />, sub: "Every reforestation area and the sites inside it — sizes, approval, meta-data verification, land classification, and what still needs fixing" },
+  { key: "reviews", label: "Planted Area Reviews", icon: <MapPinned size={15} />, sub: "Track planted-area polygons from the field through Data Manager and GIS review, and how long each review takes" },
+  { key: "assessments", label: "Field Assessments", icon: <ClipboardList size={15} />, sub: "See what inspectors found on the ground, which sites and areas still need an assessment, and how active each inspector is" },
+  { key: "programs", label: "Site Programs", icon: <TreePine size={15} />, sub: "Results of the tree planting programs run on each site — planting progress and survival" },
 ];
 
 export default function GISReports() {
   const [tab, setTab] = useState<TabKey>(() => {
     try {
-      return (localStorage.getItem("gis_reports_tab") as TabKey) || "sites";
+      const saved = localStorage.getItem("gis_reports_tab") as TabKey;
+      return TABS.some((t) => t.key === saved) ? saved : "registry";
     } catch {
-      return "sites";
+      return "registry";
     }
   });
   const [options, setOptions] = useState<FilterOptions | null>(null);
   const [historySiteId, setHistorySiteId] = useState<number | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     try {
@@ -1597,19 +1951,11 @@ export default function GISReports() {
   return (
     <div className="min-h-screen bg-[#f5faf6]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <main className="max-w-[1400px] mx-auto p-6 space-y-5">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-[#0F4A2F] flex items-center gap-2">
-              <BarChart3 size={24} /> GIS Reports
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">{active.sub}</p>
-          </div>
-          <button
-            onClick={() => setRefreshKey((k) => k + 1)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-700 text-sm font-semibold hover:bg-gray-50 transition-colors"
-          >
-            <RefreshCw size={15} /> Refresh
-          </button>
+        <div>
+          <h1 className="text-2xl font-bold text-[#0F4A2F] flex items-center gap-2">
+            <BarChart3 size={24} /> GIS Reports
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">{active.sub}</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-1.5 flex flex-wrap gap-1.5 w-fit">
@@ -1626,11 +1972,11 @@ export default function GISReports() {
           ))}
         </div>
 
-        {tab === "sites" && <SitesTab options={options} onSiteHistory={setHistorySiteId} refreshKey={refreshKey} />}
-        {tab === "reviews" && <ReviewsTab options={options} onSiteHistory={setHistorySiteId} refreshKey={refreshKey} />}
-        {tab === "assessments" && <AssessmentsTab options={options} onSiteHistory={setHistorySiteId} refreshKey={refreshKey} />}
+        {tab === "registry" && <RegistryTab options={options} onSiteHistory={setHistorySiteId} />}
+        {tab === "reviews" && <ReviewsTab options={options} onSiteHistory={setHistorySiteId} />}
+        {tab === "assessments" && <AssessmentsTab options={options} onSiteHistory={setHistorySiteId} />}
         {tab === "programs" && (
-          <ProgramsTab options={options} onSiteHistory={setHistorySiteId} refreshKey={refreshKey} programLinkBase={null} />
+          <ProgramsTab options={options} onSiteHistory={setHistorySiteId} />
         )}
       </main>
 

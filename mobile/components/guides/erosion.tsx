@@ -157,7 +157,7 @@ export default function ErosionGuide({ visible, onClose }: ErosionGuideProps) {
                   </Text>
                 </View>
                 <View style={styles.criteriaItem}>
-                  <Ionicons name="grass-outline" size={14} color="#16A34A" />
+                  <Ionicons name="flower-outline" size={14} color="#16A34A" />
                   <Text style={styles.criteriaValue}>
                     Thick grass or plants.
                   </Text>

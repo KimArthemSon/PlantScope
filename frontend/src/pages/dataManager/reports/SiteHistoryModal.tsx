@@ -135,7 +135,6 @@ interface SiteHistory {
     visits_total: number;
     visits_accepted: number;
     visits_unlinked: number;
-    assessments: number;
     last_visit: string | null;
     days_since_visit: number | null;
   };
@@ -151,15 +150,6 @@ interface SiteHistory {
   }[];
   programs: Program[];
   visits: Visit[];
-  assessments: {
-    id: number;
-    title: string;
-    date: string | null;
-    inspector: string;
-    layers: string[];
-    photos: number;
-    land_classification: string | null;
-  }[];
   timeline: {
     date: string;
     kind: string;
@@ -169,7 +159,7 @@ interface SiteHistory {
   }[];
 }
 
-type Tab = "overview" | "timeline" | "programs" | "visits" | "assessments";
+type Tab = "overview" | "timeline" | "programs" | "visits";
 
 const TONE_STYLE = {
   success: { dot: "bg-emerald-500", icon: <CheckCircle2 size={12} /> },
@@ -184,7 +174,6 @@ const KIND_LABEL: Record<string, string> = {
   closure: "Closure",
   visit: "Visit",
   gis: "GIS review",
-  assessment: "Assessment",
 };
 
 /** Route prefix of the current role, used for links to site pages. */
@@ -340,13 +329,6 @@ export default function SiteHistoryModal({ siteId, onClose }: { siteId: number; 
             v.planted, v.dead, v.planted_hectares !== null ? `${v.planted_hectares} ha` : "—",
           ]),
         },
-        {
-          title: "Field assessments",
-          columns: ["Date", "Assessment", "Inspector", "Layers", "Photos", "Land classification"],
-          rows: (data.assessments ?? []).map((a) => [
-            fmtDate(a.date), a.title, a.inspector, a.layers.join(", ") || "—", a.photos, a.land_classification ?? "—",
-          ]),
-        },
       ],
       recordsTitle: "Timeline",
       columns: [
@@ -496,7 +478,6 @@ export default function SiteHistoryModal({ siteId, onClose }: { siteId: number; 
                   ["timeline", `Timeline (${data.timeline.length})`],
                   ["programs", `Programs & Growers (${data.programs.length})`],
                   ["visits", `Visits (${data.visits.length})`],
-                  ["assessments", `Assessments (${data.assessments?.length ?? 0})`],
                 ] as [Tab, string][]
               ).map(([key, label]) => (
                 <button
@@ -831,40 +812,6 @@ export default function SiteHistoryModal({ siteId, onClose }: { siteId: number; 
                   </div>
                 ))}
 
-              {tab === "assessments" &&
-                ((data.assessments ?? []).length === 0 ? (
-                  <EmptyState text="No field assessments linked to this site" />
-                ) : (
-                  (data.assessments ?? []).map((a) => (
-                    <div key={a.id} className="bg-white rounded-xl border border-gray-100 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[13.5px] font-bold text-gray-800 truncate">{a.title}</p>
-                          <p className="text-[12px] text-gray-500">
-                            {fmtDate(a.date)} · {a.inspector}
-                          </p>
-                        </div>
-                        <span className="text-[11px] text-gray-500 shrink-0">{a.photos} photos</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {a.layers.length > 0 ? (
-                          a.layers.map((l) => (
-                            <span key={l} className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700">
-                              {l}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-[11px] text-gray-400">No layers recorded</span>
-                        )}
-                        {a.land_classification && (
-                          <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700">
-                            {a.land_classification}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                ))}
             </div>
           </>
         )}

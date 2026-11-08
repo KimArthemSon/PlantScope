@@ -14,6 +14,10 @@ import * as SecureStore from "expo-secure-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ Added for safe area spacing
 import { api } from "@/constants/url_fixed";
 import { useAlert } from "@/components/AlertContext";
+import AboutPlantScope from "@/components/guides/about_plantscope";
+
+// Menu items with this path open the About modal instead of navigating
+const ABOUT_PATH = "about";
 
 const API = api + "/api";
 
@@ -66,8 +70,7 @@ const MENU: {
   {
     section: "Support",
     items: [
-      { icon: "help-circle-outline", label: "Help & Support", path: "/" },
-      { icon: "information-outline", label: "About", path: "/" },
+      { icon: "information-outline", label: "About PlantScope", path: ABOUT_PATH },
     ],
   },
 ];
@@ -90,6 +93,7 @@ export default function ProfilePage() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showAbout, setShowAbout] = useState(false);
 
   // Fetch user data on mount
   useEffect(() => {
@@ -282,7 +286,11 @@ export default function ProfilePage() {
                   styles.menuItem,
                   idx < group.items.length - 1 && styles.menuItemBorder,
                 ]}
-                onPress={() => router.push({ pathname: item.path as any })}
+                onPress={() =>
+                  item.path === ABOUT_PATH
+                    ? setShowAbout(true)
+                    : router.push({ pathname: item.path as any })
+                }
                 activeOpacity={0.7}
               >
                 <View style={styles.menuIconWrap}>
@@ -320,6 +328,8 @@ export default function ProfilePage() {
       </TouchableOpacity>
 
       <Text style={styles.version}>PlantScope v2.0 · Tree Grower Module</Text>
+
+      <AboutPlantScope visible={showAbout} onClose={() => setShowAbout(false)} />
     </ScrollView>
   );
 }

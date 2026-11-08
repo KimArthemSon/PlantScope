@@ -9,7 +9,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  LineChart,
   Line,
   PieChart,
   Pie,
@@ -17,21 +16,14 @@ import {
   AreaChart,
   Area,
   ComposedChart,
-  ReferenceLine,
 } from "recharts";
 import {
   Activity,
-  TrendingUp,
   MapPin,
   CheckCircle2,
   Clock,
   XCircle,
   Sprout,
-  Globe2,
-  Droplets,
-  Wind,
-  Thermometer,
-  Eye,
   ClipboardList,
   Loader2,
   Package,
@@ -43,6 +35,8 @@ import {
   Trophy,
   CalendarClock,
   FileClock,
+  ShieldCheck,
+  FileSearch,
 } from "lucide-react";
 
 // ─────────────────────────────────────────
@@ -67,6 +61,13 @@ interface SiteProgress {
   reason?: string;
 }
 
+interface Pipeline {
+  key: string;
+  name: string;
+  value: number;
+  fill: string;
+}
+
 interface DashboardData {
   stats: {
     total_applications: number;
@@ -75,16 +76,10 @@ interface DashboardData {
     rejected: number;
     under_monitoring_applications: number;
     completed_applications: number;
-    completed_sites: number;
-    total_seedlings_planted: number;
-    total_area_planted: number;
-    areas_assessed: number;
     assessors: number;
     trees_endorsed: number;
-    overall_survival_rate: number;
-    official_sites: number;
-    official_hectares: number;
   };
+  reforestation_areas: { total: number; with_sites: number; sites: number; hectares: number };
   application_trend: {
     month: string;
     submitted: number;
@@ -92,8 +87,7 @@ interface DashboardData {
     rejected: number;
   }[];
   status_data: { name: string; value: number; fill: string }[];
-  assessment_data: { name: string; assessed: number; approved: number }[];
-  approval_rate: { month: string; rate: number }[];
+  sites_by_barangay: { name: string; sites: number; accepted: number; verified: number }[];
   recent_activities: {
     id: number;
     type: string;
@@ -115,13 +109,16 @@ interface DashboardData {
   assessors: {
     name: string;
     assessments: number;
-    approved: number;
+    sites_assessed: number;
     pending_seedlings: number;
     status: string;
     avatar: string;
   }[];
   seedling_request_pipeline: { name: string; value: number; fill: string }[];
-  site_verification_pipeline: { name: string; value: number; fill: string }[];
+  /** Site status — decided by the GIS Specialist */
+  site_decision_pipeline: Pipeline[];
+  /** Site meta-data verification — done by the Data Manager */
+  site_verification_pipeline: Pipeline[];
   progress_report_stats: {
     total_initial: number;
     initial_completed: number;
@@ -181,13 +178,6 @@ interface DashboardData {
 // ─────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────
-const WEATHER_DATA = [
-  { icon: <Thermometer size={14} />, label: "Temp", value: "27°C" },
-  { icon: <Droplets size={14} />, label: "Humidity", value: "74%" },
-  { icon: <Wind size={14} />, label: "Wind", value: "12 km/h" },
-  { icon: <Eye size={14} />, label: "Visibility", value: "Good" },
-];
-
 const TABS = [
   { id: "overview", label: "Overview", icon: <Activity size={13} /> },
   { id: "monitoring", label: "Monitoring", icon: <Heart size={13} /> },
@@ -233,11 +223,9 @@ const ZONE_ACCENTS = [
 
 const AXIS_TICK = { fontSize: 11, fill: "#94a3b8" };
 
-// Matches LOW_SURVIVAL_THRESHOLD in the backend
-const SURVIVAL_TARGET = 70;
-
+/** Colour for a survival rate: green when high, amber when middling, red when low. */
 function rateColor(rate: number) {
-  if (rate >= SURVIVAL_TARGET) return "#10b981";
+  if (rate >= 70) return "#10b981";
   if (rate >= 50) return "#f59e0b";
   return "#ef4444";
 }
@@ -245,6 +233,7 @@ function rateColor(rate: number) {
 const fmt = (n: number | undefined | null) => (n ?? 0).toLocaleString();
 const fmtHa = (n: number | undefined | null) =>
   `${(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ha`;
+const countOf = (pipeline: Pipeline[], key: string) => pipeline.find((p) => p.key === key)?.value ?? 0;
 
 // ─────────────────────────────────────────
 // SUB-COMPONENTS
@@ -408,6 +397,10 @@ function TabOverview({ data }: { data: DashboardData }) {
       ? Math.round((s.approved / s.total_applications) * 100)
       : 0;
 
+  const ra = data.reforestation_areas;
+  const decisions = data.site_decision_pipeline;
+  const verification = data.site_verification_pipeline;
+
   const STAT_CARDS = [
     {
       icon: <ClipboardList size={20} />,
@@ -438,17 +431,24 @@ function TabOverview({ data }: { data: DashboardData }) {
       color: "bg-indigo-500",
     },
     {
-      icon: <TreePine size={20} />,
-      label: "Official Sites",
-      value: fmt(s.official_sites),
-      sub: `${fmtHa(s.official_hectares)} total area`,
+      icon: <Layers size={20} />,
+      label: "Reforestation Areas",
+      value: fmt(ra.total),
+      sub: `${fmtHa(ra.hectares)} mapped · ${ra.sites} sites in ${ra.with_sites} areas`,
       color: "bg-emerald-600",
     },
     {
-      icon: <MapPin size={20} />,
-      label: "Sites Verified",
-      value: fmt(s.areas_assessed),
-      sub: `${s.completed_sites} sites with completed programs`,
+      icon: <ShieldCheck size={20} />,
+      label: "Sites Accepted · GIS Specialist",
+      value: fmt(countOf(decisions, "accepted")),
+      sub: `${countOf(decisions, "pending") + countOf(decisions, "under_review")} awaiting GIS decision`,
+      color: "bg-blue-500",
+    },
+    {
+      icon: <FileSearch size={20} />,
+      label: "Meta-data Verified · Data Manager",
+      value: fmt(countOf(verification, "verified")),
+      sub: `${countOf(verification, "pending")} awaiting your verification`,
       color: "bg-teal-600",
     },
     {
@@ -457,13 +457,6 @@ function TabOverview({ data }: { data: DashboardData }) {
       value: fmt(s.trees_endorsed),
       sub: "From accepted seedling requests",
       color: "bg-green-500",
-    },
-    {
-      icon: <Sprout size={20} />,
-      label: "Seedlings Planted",
-      value: fmt(s.total_seedlings_planted),
-      sub: `${fmtHa(s.total_area_planted)} planted`,
-      color: "bg-green-600",
     },
   ];
 
@@ -571,64 +564,26 @@ function TabOverview({ data }: { data: DashboardData }) {
 
         <Card delay="0.53s">
           <SectionHeader
-            title="Site Verification Pipeline"
-            sub="Site data review status"
+            title="Site Decision"
+            sub="Site status set by the GIS Specialist"
+            badge="GIS Specialist"
           />
           <DonutWithLegend
-            data={data.site_verification_pipeline}
-            emptyText="No verifications yet"
+            data={decisions}
+            emptyText="No sites yet"
           />
         </Card>
 
         <Card delay="0.56s">
           <SectionHeader
-            title="Approval Rate Trend"
-            sub="Monthly approval rate %"
+            title="Meta-data Verification"
+            sub="Review of each site's field data by the Data Manager"
+            badge="Data Manager"
           />
-          <ResponsiveContainer width="100%" height={140}>
-            <LineChart data={data.approval_rate}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="#f0fdf4"
-                vertical={false}
-              />
-              <XAxis
-                dataKey="month"
-                tick={AXIS_TICK}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                domain={[0, 100]}
-                tick={AXIS_TICK}
-                axisLine={false}
-                tickLine={false}
-              />
-              <Tooltip content={<GreenTooltip />} />
-              <Line
-                type="monotone"
-                dataKey="rate"
-                name="Approval %"
-                stroke="#10b981"
-                strokeWidth={2.5}
-                dot={{ r: 3, fill: "#10b981", strokeWidth: 0 }}
-                activeDot={{ r: 5, fill: "#0F4A2F" }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-          <div className="flex items-center gap-2 mt-3 bg-emerald-50 rounded-xl px-4 py-2.5">
-            <TrendingUp size={14} className="text-emerald-600" />
-            <span className="text-[12px] text-emerald-700 font-medium">
-              Avg{" "}
-              {data.approval_rate.length > 0
-                ? Math.round(
-                    data.approval_rate.reduce((sum, r) => sum + r.rate, 0) /
-                      data.approval_rate.length,
-                  )
-                : 0}
-              % approval rate
-            </span>
-          </div>
+          <DonutWithLegend
+            data={verification}
+            emptyText="No sites yet"
+          />
         </Card>
       </div>
 
@@ -637,11 +592,11 @@ function TabOverview({ data }: { data: DashboardData }) {
         <Card delay="0.6s" className="lg:col-span-2">
           <SectionHeader
             title="Sites by Barangay"
-            sub="Top barangays by number of proposed sites"
+            sub="Sites accepted by the GIS Specialist vs meta-data verified by the Data Manager"
           />
-          {data.assessment_data.length > 0 ? (
+          {data.sites_by_barangay.length > 0 ? (
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={data.assessment_data} barGap={4}>
+              <BarChart data={data.sites_by_barangay} barGap={4}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="#f0fdf4"
@@ -662,14 +617,20 @@ function TabOverview({ data }: { data: DashboardData }) {
                 <Tooltip content={<GreenTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar
-                  dataKey="assessed"
+                  dataKey="sites"
                   name="Total Sites"
                   fill="#c7d2fe"
                   radius={[5, 5, 0, 0]}
                 />
                 <Bar
-                  dataKey="approved"
-                  name="Accepted"
+                  dataKey="accepted"
+                  name="Accepted (GIS Specialist)"
+                  fill="#3b82f6"
+                  radius={[5, 5, 0, 0]}
+                />
+                <Bar
+                  dataKey="verified"
+                  name="Meta-data Verified (Data Manager)"
                   fill="#10b981"
                   radius={[5, 5, 0, 0]}
                 />
@@ -699,7 +660,7 @@ function TabOverview({ data }: { data: DashboardData }) {
                       {a.name}
                     </p>
                     <p className="text-[10.5px] text-gray-400">
-                      {a.assessments} verified · {a.approved} approved
+                      {a.assessments} field assessments · {a.sites_assessed} sites
                     </p>
                   </div>
                   <span
@@ -811,7 +772,7 @@ function TabMonitoring({ data }: { data: DashboardData }) {
       icon: <TreePine size={20} />,
       label: "Official Sites",
       value: fmt(m.official_sites),
-      sub: `${fmtHa(m.official_hectares)} total area`,
+      sub: `${fmtHa(m.official_hectares)} · GIS accepted + meta-data verified`,
       color: "bg-emerald-600",
     },
     {
@@ -846,11 +807,8 @@ function TabMonitoring({ data }: { data: DashboardData }) {
       icon: <Heart size={20} />,
       label: "Survival Rate",
       value: `${m.survival_rate}%`,
-      sub:
-        m.survival_rate >= SURVIVAL_TARGET
-          ? `On target (≥ ${SURVIVAL_TARGET}%)`
-          : `Below ${SURVIVAL_TARGET}% target`,
-      color: m.survival_rate >= SURVIVAL_TARGET ? "bg-green-500" : "bg-red-500",
+      sub: "Alive out of all planted",
+      color: "bg-green-500",
     },
   ];
 
@@ -872,8 +830,8 @@ function TabMonitoring({ data }: { data: DashboardData }) {
         <Card className="lg:col-span-2" delay="0.3s">
           <SectionHeader
             title="Planting Progress"
-            sub="Plants planted each month, with running totals of plants and planted area"
-            badge={`${fmtHa(m.planted_hectares)} planted`}
+            sub="Plants planted each month, with running totals of plants, planted area and survival rate"
+            badge={`${fmtHa(m.planted_hectares)} planted · ${m.survival_rate}% survival`}
           />
           {hasTrend ? (
             <ResponsiveContainer width="100%" height={280}>
@@ -906,6 +864,16 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                   tickLine={false}
                   unit=" ha"
                 />
+                <YAxis
+                  yAxisId="pct"
+                  orientation="right"
+                  domain={[0, 100]}
+                  tick={AXIS_TICK}
+                  axisLine={false}
+                  tickLine={false}
+                  unit="%"
+                  width={42}
+                />
                 <Tooltip content={<GreenTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Area
@@ -935,6 +903,18 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                   dot={{ r: 3, fill: "#6366f1", strokeWidth: 0 }}
                   activeDot={{ r: 5, fill: "#0F4A2F" }}
                 />
+                <Line
+                  yAxisId="pct"
+                  type="monotone"
+                  dataKey="survival_rate"
+                  name="Survival Rate (%)"
+                  stroke="#f97316"
+                  strokeWidth={2}
+                  strokeDasharray="5 3"
+                  connectNulls
+                  dot={{ r: 3, fill: "#f97316", strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: "#0F4A2F" }}
+                />
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
@@ -947,8 +927,8 @@ function TabMonitoring({ data }: { data: DashboardData }) {
 
         <Card delay="0.34s">
           <SectionHeader
-            title="Official Site Status"
-            sub={`${m.official_sites} sites · ${fmtHa(m.official_hectares)}`}
+            title="Official Site Monitoring"
+            sub={`${m.official_sites} official sites · ${fmtHa(m.official_hectares)}`}
           />
           {m.official_sites > 0 ? (
             <>
@@ -999,8 +979,8 @@ function TabMonitoring({ data }: { data: DashboardData }) {
         </Card>
       </div>
 
-      {/* Sites planted trend + Survival trend + Visit compliance */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* Sites planted trend + Visit compliance */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card delay="0.38s">
           <SectionHeader
             title="Sites Planted"
@@ -1048,62 +1028,6 @@ function TabMonitoring({ data }: { data: DashboardData }) {
             </ResponsiveContainer>
           ) : (
             <EmptyState text="No planted sites yet" className="py-16" />
-          )}
-        </Card>
-
-        <Card delay="0.42s">
-          <SectionHeader
-            title="Survival Rate Trend"
-            sub={`Running survival rate · target ${SURVIVAL_TARGET}%`}
-          />
-          {trend.some((t) => t.survival_rate !== null) ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={trend}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#f0fdf4"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="month"
-                  tick={AXIS_TICK}
-                  axisLine={false}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  domain={[0, 100]}
-                  tick={AXIS_TICK}
-                  axisLine={false}
-                  tickLine={false}
-                  unit="%"
-                />
-                <Tooltip content={<GreenTooltip />} />
-                <ReferenceLine
-                  y={SURVIVAL_TARGET}
-                  stroke="#f59e0b"
-                  strokeDasharray="4 4"
-                  label={{
-                    value: "Target",
-                    position: "insideTopRight",
-                    fontSize: 10,
-                    fill: "#f59e0b",
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="survival_rate"
-                  name="Survival %"
-                  stroke="#10b981"
-                  strokeWidth={2.5}
-                  connectNulls
-                  dot={{ r: 3, fill: "#10b981", strokeWidth: 0 }}
-                  activeDot={{ r: 5, fill: "#0F4A2F" }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyState text="No survival data yet" className="py-16" />
           )}
         </Card>
 
@@ -1313,11 +1237,6 @@ function TabMonitoring({ data }: { data: DashboardData }) {
                   width={110}
                 />
                 <Tooltip content={<GreenTooltip />} />
-                <ReferenceLine
-                  x={SURVIVAL_TARGET}
-                  stroke="#f59e0b"
-                  strokeDasharray="4 4"
-                />
                 <Bar dataKey="rate" name="Survival %" radius={[0, 5, 5, 0]}>
                   {data.survival_by_species.map((sp, i) => (
                     <Cell key={i} fill={rateColor(sp.rate)} />
@@ -1383,7 +1302,7 @@ function TabMonitoring({ data }: { data: DashboardData }) {
       <Card delay="0.62s">
         <SectionHeader
           title="Sites Needing Attention"
-          sub={`Overdue visits (> ${m.overdue_days} days), no visit yet, or survival below ${SURVIVAL_TARGET}%`}
+          sub={`Overdue visits (> ${m.overdue_days} days), no visit yet, or low survival`}
         />
         {data.sites_needing_attention.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1439,14 +1358,8 @@ function TabMonitoring({ data }: { data: DashboardData }) {
 export default function DashboardAFA() {
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
-  const [time, setTime] = useState(new Date());
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const t = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -1528,18 +1441,6 @@ export default function DashboardAFA() {
       </div>
     );
   }
-
-  const dateStr = time.toLocaleDateString("en-PH", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const timeStr = time.toLocaleTimeString("en-PH", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 
   return (
     <>

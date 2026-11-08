@@ -714,7 +714,8 @@ export default function ApplicationPage() {
     );
   }
 
-  const application = detail!.application;
+  // Safe: isTerminalState above already returned when there is no application
+  const application = detail!.application!;
   // While the Head reviews the results, show "Final Review" instead of "Active"
   const finalReviewPending = !!application?.final_review_pending;
   const displayStatus = finalReviewPending ? "final_review" : application?.status;

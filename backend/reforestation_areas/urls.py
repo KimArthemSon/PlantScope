@@ -35,6 +35,7 @@ urlpatterns = [
     path('gis_dashboard/', gis_dashboard_views.get_gis_dashboard, name='gis_dashboard'),
     path('gis_pending_review_count/', gis_dashboard_views.get_gis_pending_review_count, name='gis_pending_review_count'),
     path('gis_report/sites/', gis_report_views.get_gis_sites_report, name='gis_report_sites'),
+    path('gis_report/areas/', gis_report_views.get_gis_areas_report, name='gis_report_areas'),
     path('gis_report/planted_reviews/', gis_report_views.get_gis_planted_reviews_report, name='gis_report_planted_reviews'),
     path('gis_report/assessments/', gis_report_views.get_gis_assessments_report, name='gis_report_assessments'),
     path('gis_sites_list/', report_views.get_gis_sites_list, name='gis_sites_list'),

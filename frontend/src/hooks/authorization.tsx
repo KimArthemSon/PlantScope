@@ -60,10 +60,19 @@ export const useAuthorize = (requiredRole?: UserRole) => {
     };
 
     checkIfStillLogin();
+
+    // Reload the signed-in user (name, email, photo) after the profile is saved,
+    // so the sidebar avatar updates without a full page refresh
+    window.addEventListener(PROFILE_UPDATED_EVENT, checkIfStillLogin);
+    return () => window.removeEventListener(PROFILE_UPDATED_EVENT, checkIfStillLogin);
   }, [requiredRole]);
 
   return { isAuthorized, isLoading, user_data };
 };
+
+/** Fired after the signed-in user's own profile changes (photo, name, email). */
+export const PROFILE_UPDATED_EVENT = "plantscope:profile-updated";
+export const notifyProfileUpdated = () => window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT));
 
 
 export const useUserRole = () => {

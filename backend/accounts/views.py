@@ -467,8 +467,11 @@ def update_user(request, user_id):
         user_profile.contact = contact
         user_profile.address = address
         user_profile.gender = gender
-        if profile_img:
+        if request.FILES.get('profile_img'):
             user_profile.profile_img = profile_img
+        elif request.POST.get('remove_profile_img') == 'true':
+            # "Reset to default photo": no image, so the default avatar is shown
+            user_profile.profile_img = None
         user_profile.save()
 
         _new = {

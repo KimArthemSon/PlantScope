@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
 import { useAlert, ToastHost } from "@/components/AlertContext";
 import CustomPicker from "@/components/CustomPicker";
+import ChangeEmailModal from "@/components/ChangeEmailModal";
 
 const API = api + "/api";
 
@@ -94,6 +95,10 @@ const EMPTY: Profile = {
   group_contact: "",
   preview_group_profile: "",
 };
+
+/** Editable fields as a string, to tell whether anything differs from what is saved. */
+const snapshotOf = (p: Profile) =>
+  JSON.stringify({ ...p, password: "", confirm_pass: "", preview_profile: "", preview_group_profile: "" });
 
 // Map backend display names back to raw DB values
 const groupTypeMap: Record<string, string> = {
@@ -282,13 +287,18 @@ export default function EditProfile() {
   const [userId, setUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showEmailChange, setShowEmailChange] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [showCfm, setShowCfm] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // The profile as loaded / last saved; unsaved changes = anything that differs from it
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
 
   const [profileImgFile, setProfileImgFile] = useState<any>(null);
   const [groupImgFile, setGroupImgFile] = useState<any>(null);
+  // "Reset to default photo": cleared on the server when the profile is saved
+  const [removeProfileImg, setRemoveProfileImg] = useState(false);
+  const [removeGroupImg, setRemoveGroupImg] = useState(false);
 
   // Animation for success feedback
   const successScale = useRef(new Animated.Value(1)).current;
@@ -321,12 +331,25 @@ export default function EditProfile() {
 
       if (type === "profile") {
         setProfileImgFile(fileObj);
+        setRemoveProfileImg(false);
         setProfile((p) => ({ ...p, preview_profile: asset.uri }));
       } else {
         setGroupImgFile(fileObj);
+        setRemoveGroupImg(false);
         setProfile((p) => ({ ...p, preview_group_profile: asset.uri }));
       }
-      setHasUnsavedChanges(true);
+    }
+  };
+
+  const resetToDefaultPhoto = (type: "profile" | "group_profile") => {
+    if (type === "profile") {
+      setProfileImgFile(null);
+      setRemoveProfileImg(true);
+      setProfile((p) => ({ ...p, preview_profile: "" }));
+    } else {
+      setGroupImgFile(null);
+      setRemoveGroupImg(true);
+      setProfile((p) => ({ ...p, preview_group_profile: "" }));
     }
   };
 
@@ -370,7 +393,7 @@ export default function EditProfile() {
           const mappedGroupType = groupTypeMap[rawGroupType] || rawGroupType;
 
           // Tree growers no longer have personal profile fields loaded
-          setProfile({
+          const loaded: Profile = {
             ...EMPTY,
             id: tgData.id,
             email: tgData.email,
@@ -382,7 +405,9 @@ export default function EditProfile() {
             group_address: tgData.group?.address || "",
             group_contact: tgData.group?.contact || "",
             preview_group_profile: tgData.group?.profile_img || "",
-          });
+          };
+          setProfile(loaded);
+          setSavedSnapshot(snapshotOf(loaded));
         } else {
           // Onsite Inspectors and other roles
           const pRes = await fetch(`${API}/get_user/${me.id}`, {
@@ -396,14 +421,16 @@ export default function EditProfile() {
 
           const data = await pRes.json();
 
-          setProfile({
+          const loaded: Profile = {
             ...EMPTY,
             ...data,
             user_role: me.user_role,
             password: "",
             confirm_pass: "",
             preview_profile: data.profile_img ? `${data.profile_img}` : "",
-          });
+          };
+          setProfile(loaded);
+          setSavedSnapshot(snapshotOf(loaded));
         }
       } catch (e: any) {
         console.error("Load profile error:", e);
@@ -414,12 +441,15 @@ export default function EditProfile() {
     })();
   }, []);
 
-  // Track unsaved changes
-  useEffect(() => {
-    if (!loading) {
-      setHasUnsavedChanges(true);
-    }
-  }, [profile, profileImgFile, groupImgFile]);
+  const hasUnsavedChanges =
+    savedSnapshot !== null &&
+    (snapshotOf(profile) !== savedSnapshot ||
+      profile.password.length > 0 ||
+      profile.confirm_pass.length > 0 ||
+      !!profileImgFile ||
+      !!groupImgFile ||
+      removeProfileImg ||
+      removeGroupImg);
 
   /* ---- Save ---- */
   const handleSave = async () => {
@@ -495,6 +525,8 @@ export default function EditProfile() {
             name: profileImgFile.name,
             type: profileImgFile.type,
           } as any);
+        } else if (removeProfileImg) {
+          fd.append("remove_profile_img", "true");
         }
       }
 
@@ -512,6 +544,8 @@ export default function EditProfile() {
             name: groupImgFile.name,
             type: groupImgFile.type,
           } as any);
+        } else if (removeGroupImg) {
+          fd.append("remove_group_profile_img", "true");
         }
         endpoint = `${API}/update_tree_grower/${userId}/`;
       }
@@ -574,7 +608,9 @@ export default function EditProfile() {
       setProfile((p) => ({ ...p, password: "", confirm_pass: "" }));
       setProfileImgFile(null);
       setGroupImgFile(null);
-      setHasUnsavedChanges(false);
+      setRemoveProfileImg(false);
+      setRemoveGroupImg(false);
+      setSavedSnapshot(snapshotOf(profile));
 
       alert.success("Saved", "Profile updated successfully.");
       setTimeout(() => router.back(), 1500);
@@ -698,6 +734,19 @@ export default function EditProfile() {
               </Text>
             </View>
           ) : null}
+          {profile.user_role !== "treeGrowers" && !!profile.preview_profile && (
+            <TouchableOpacity
+              style={styles.resetPhotoBtn}
+              onPress={() => resetToDefaultPhoto("profile")}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="restore" size={14} color="#0F4A2F" />
+              <Text style={styles.resetPhotoText}>Reset to default photo</Text>
+            </TouchableOpacity>
+          )}
+          {profile.user_role !== "treeGrowers" && removeProfileImg && !profile.preview_profile && (
+            <Text style={styles.resetPhotoNote}>Photo will be removed when you save.</Text>
+          )}
         </View>
 
         {/* ── Personal Information ── */}
@@ -826,6 +875,21 @@ export default function EditProfile() {
                 <Text style={styles.groupAvatarHint}>
                   Tap the icon to change
                 </Text>
+                {!!profile.preview_group_profile && (
+                  <TouchableOpacity
+                    style={[styles.resetPhotoBtn, { alignSelf: "flex-start", marginTop: 6 }]}
+                    onPress={() => resetToDefaultPhoto("group_profile")}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialCommunityIcons name="restore" size={14} color="#0F4A2F" />
+                    <Text style={styles.resetPhotoText}>Reset to default photo</Text>
+                  </TouchableOpacity>
+                )}
+                {removeGroupImg && !profile.preview_group_profile && (
+                  <Text style={[styles.resetPhotoNote, { textAlign: "left" }]}>
+                    Logo will be removed when you save.
+                  </Text>
+                )}
               </View>
             </View>
 
@@ -874,7 +938,7 @@ export default function EditProfile() {
           title="Account & Security"
           subtitle="Email and password settings"
         >
-          {/* Email read-only */}
+          {/* Email — changed only through a verified code */}
           <View style={styles.fieldWrap}>
             <Text style={styles.label}>Email Address</Text>
             <View style={[styles.inputRow, styles.inputReadonly]}>
@@ -884,11 +948,20 @@ export default function EditProfile() {
                 color="#9CA3AF"
                 style={styles.inputIcon}
               />
-              <Text style={styles.readonlyText}>{profile.email}</Text>
-              <View style={styles.readonlyTag}>
-                <Text style={styles.readonlyTagText}>Read-only</Text>
-              </View>
+              <Text style={[styles.readonlyText, { color: "#374151" }]} numberOfLines={1}>
+                {profile.email}
+              </Text>
+              <TouchableOpacity
+                style={styles.changeEmailBtn}
+                onPress={() => setShowEmailChange(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.changeEmailText}>Change</Text>
+              </TouchableOpacity>
             </View>
+            <Text style={styles.labelHint}>
+              A code will be sent to the new address to confirm the change.
+            </Text>
           </View>
 
           {/* New Password */}
@@ -1051,9 +1124,21 @@ export default function EditProfile() {
         value={profile.birthday}
         onConfirm={(date) => {
           setProfile((p) => ({ ...p, birthday: date }));
-          setHasUnsavedChanges(true);
         }}
         onClose={() => setShowDatePicker(false)}
+      />
+
+      {/* Change Email (verified with a code sent to the new address) */}
+      <ChangeEmailModal
+        visible={showEmailChange}
+        currentEmail={profile.email}
+        onClose={() => setShowEmailChange(false)}
+        onChanged={(newEmail) => {
+          setProfile((p) => ({ ...p, email: newEmail }));
+          setSavedSnapshot((snap) => (snap ? snapshotOf({ ...(JSON.parse(snap) as Profile), email: newEmail }) : snap));
+          setShowEmailChange(false);
+          alert.success("Email updated", `Your email is now ${newEmail}.`);
+        }}
       />
     </View>
   );
@@ -1324,6 +1409,27 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   readonlyTagText: { fontSize: 9, color: "#9CA3AF", fontWeight: "600" },
+  resetPhotoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#D1FAE5",
+  },
+  resetPhotoText: { fontSize: 12, fontWeight: "700", color: "#0F4A2F" },
+  resetPhotoNote: { fontSize: 11.5, color: "#6B7280", marginTop: 8, textAlign: "center" },
+  changeEmailBtn: {
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  changeEmailText: { fontSize: 12, fontWeight: "700", color: "#0F4A2F" },
   inputMatch: { borderColor: "#22C55E", backgroundColor: "#F0FDF4" },
   inputMismatch: { borderColor: "#EF4444", backgroundColor: "#FEF2F2" },
   matchHint: { fontSize: 11, marginTop: 4 },

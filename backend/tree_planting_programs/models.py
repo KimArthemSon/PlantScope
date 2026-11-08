@@ -537,11 +537,8 @@ class ProgressReport(models.Model):
 
     @property
     def total_added_by_grower(self):
-        """Calculate total plants added by grower in this visit"""
-        return sum(
-            species.no_added_by_grower
-            for species in self.report_species.all()
-        )
+        """Plants added by the grower in this visit (no longer recorded since migration 0018)."""
+        return 0
 
     @property
     def is_initial_visit(self):
@@ -619,7 +616,7 @@ class ProgressReportSpecies(models.Model):
     @property
     def total_accounted(self):
         """Total plants accounted for (planted + added)"""
-        return self.no_planted + self.no_added_by_grower
+        return self.no_planted  # no_added_by_grower was removed in migration 0018
 
     @property
     def total_plants(self):

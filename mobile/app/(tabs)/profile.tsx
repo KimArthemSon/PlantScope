@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useRouter } from "expo-router";
+import { useState, useCallback } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
   StatusBar,
+  RefreshControl,
 } from "react-native";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
@@ -69,13 +70,6 @@ const MENU: {
       },
     ],
   },
-  {
-    section: "Support",
-    items: [
-      { icon: "help-circle-outline", label: "Help & Support", path: "/" },
-      { icon: "information-outline", label: "About", path: "/" },
-    ],
-  },
 ];
 
 /* ---------- ROLE DISPLAY MAP ---------- */
@@ -96,12 +90,23 @@ export default function ProfilePage() {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch user data on mount
-  useEffect(() => {
-    fetchUserData();
-    fetchUnreadNotifications();
-  }, []);
+  // Load on open and whenever the screen comes back into view
+  // (e.g. after changing the email or photo in Edit Profile)
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserData();
+      fetchUnreadNotifications();
+    }, []), // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Pull down to refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([fetchUserData(), fetchUnreadNotifications()]);
+    setRefreshing(false);
+  };
 
   const fetchUserData = async () => {
     try {
@@ -234,6 +239,15 @@ export default function ProfilePage() {
           { paddingBottom: insets.bottom + 36 },
         ]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#0F4A2F"
+            colors={["#0F4A2F"]}
+            progressViewOffset={insets.top}
+          />
+        }
       >
         {/* Hero Card - Dark tone */}
         <View style={[styles.heroCard, { paddingTop: insets.top + 32 }]}>
