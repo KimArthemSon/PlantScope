@@ -4,7 +4,6 @@ import {
   ChevronRight,
   ChevronLeft,
   Eye,
-  Trash2,
   Pin,
   PinOff,
   ShieldCheck,
@@ -24,7 +23,6 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
-import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api";
@@ -54,7 +52,6 @@ interface Site {
   reforestation_area: string;
   barangay: string;
   name: string;
-  // ✅ REMOVED: status and program_status (redundant for Official Sites page)
   monitoring_status: "available" | "reserved" | "under_monitoring" | "completed" | "failed" | "onhold";
   is_pinned: boolean;
   created_at: string;
@@ -177,9 +174,6 @@ export default function OfficialSites() {
   const [loadingAreas, setLoadingAreas] = useState(false);
   const [loadingSites, setLoadingSites] = useState(false);
   
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
@@ -360,31 +354,6 @@ export default function OfficialSites() {
     } catch {}
   };
 
-  const setDelete = (siteId: number) => {
-    setDeleteId(siteId);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      const response = await fetch(`${api}api/delete_site/${deleteId}/`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setPSAlert({ type: "success", title: "Deleted", message: data.message });
-        fetchSites();
-      } else {
-        setPSAlert({ type: "failed", title: "Failed", message: data.message || "Delete failed" });
-      }
-    } catch {
-      setPSAlert({ type: "error", title: "Error", message: "Something went wrong" });
-    }
-    setIsDeleteModalOpen(false);
-  };
-
   const clearSiteFilters = () => {
     setSiteFilter({ ...DEFAULT_SITE_FILTER, total_page: siteFilter.total_page });
   };
@@ -417,7 +386,6 @@ export default function OfficialSites() {
   return (
     <div className="flex min-h-dvh bg-slate-50">
       {PSalert && <PlantScopeAlert type={PSalert.type} title={PSalert.title} message={PSalert.message} onClose={() => setPSAlert(null)} />}
-      <Delete_modal setIsDeleteModalOpen={setIsDeleteModalOpen} isDeleteModalOpen={isDeleteModalOpen} onDelete={handleDelete} />
 
       <main className="flex-1 p-5 w-full">
         <div className="flex gap-5 h-[calc(100vh-120px)]">
@@ -786,15 +754,6 @@ export default function OfficialSites() {
                               >
                                 <Eye size={12} />
                               </button>
-                              {userRole === "DataManager" && (
-                                <button
-                                  onClick={() => setDelete(site.site_id)}
-                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors border border-red-600"
-                                  title="Delete Site"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              )}
                             </div>
                           </td>
                         </tr>

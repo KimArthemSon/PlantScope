@@ -124,6 +124,9 @@ export default function SiteValidationPanel({
 
   if (!isOpen || !site) return null;
 
+  const previous = site.validation_data?.site_data;
+  const previousDecision = previous?.final_decision;
+
   return (
     <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
       {psAlert && (
@@ -272,6 +275,26 @@ export default function SiteValidationPanel({
                 </p>
               </div>
             </div>
+
+            {previousDecision && (
+              <div
+                className={`p-3 rounded-lg border text-[10px] ${
+                  previousDecision === "ACCEPT"
+                    ? "border-green-300 bg-green-100 text-green-800"
+                    : "border-red-300 bg-red-100 text-red-800"
+                }`}
+              >
+                <p className="font-semibold">
+                  Previous decision: {previousDecision === "ACCEPT" ? "Accepted" : "Rejected"}
+                  {previous?.validated_at &&
+                    ` on ${new Date(previous.validated_at).toLocaleDateString()}`}
+                  {previous?.validated_by && ` by ${previous.validated_by}`}
+                </p>
+                <p className="mt-0.5">
+                  The notes from that decision are loaded below. Edit them and accept or reject again to revalidate.
+                </p>
+              </div>
+            )}
 
             <label className="block text-[10px] font-semibold text-gray-700 uppercase tracking-wider">
               Final Decision Note *

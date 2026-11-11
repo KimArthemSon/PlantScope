@@ -34,6 +34,7 @@ export interface Site {
   site_id: number;
   name: string;
   status: "pending" | "under_review" | "accepted" | "rejected" | "completed";
+  monitoring_status?: string | null;
   is_pinned: boolean;
   marker_coordinate?: [number, number] | null;
   polygon_coordinates?: [number, number][];
@@ -119,24 +120,10 @@ export function useSites() {
     [fetchWithAuth],
   );
 
-  const fetchSites = useCallback(
-    async (areaId: string) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await fetchWithAuth(
-          `${BASE_URL}/api/get_sites/${areaId}/`,
-        );
-        setSites(data.data || []);
-      } catch (err: any) {
-        console.error("❌ [useSites] fetchSites error:", err);
-        setError(err.message || "Failed to fetch sites");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [fetchWithAuth],
-  );
+  // Reload uses the same endpoint as the first load. get_sites defaults to
+  // accepted + verified sites only, which made other sites vanish after a
+  // refresh, pin or decision.
+  const fetchSites = fetchMCDAData;
 
   const fetchSiteDetail = useCallback(
     async (siteId: number) => {
@@ -306,12 +293,7 @@ export function useSites() {
             }),
           },
         );
-        if (result) {
-          const urlAreaId = new URLSearchParams(window.location.search).get(
-            "areaId",
-          );
-          if (urlAreaId) await fetchSites(urlAreaId);
-        }
+        // The calling page reloads the site list after this
         return !!result;
       } catch (err: any) {
         console.error("❌ [useSites] finalizeSite error:", err);
@@ -319,7 +301,7 @@ export function useSites() {
         return false;
       }
     },
-    [fetchWithAuth, fetchSites],
+    [fetchWithAuth],
   );
 
   const togglePin = useCallback(
