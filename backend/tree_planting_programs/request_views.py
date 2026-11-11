@@ -42,7 +42,8 @@ def serialize_seedling_request(req):
         "description": req.description,
         "reason": req.reason,
         "reason_accepted": req.reason_accepted,
-        "proof_of_delivery": req.proof_of_delivery.url if req.proof_of_delivery else None,
+        # secure=True → https URL; mobile (Android/iOS) blocks plain http images
+        "proof_of_delivery": req.proof_of_delivery.build_url(secure=True) if req.proof_of_delivery else None,
         "submitted_at": req.submitted_at.isoformat() if req.submitted_at else None,
         "assigned_inspector": inspector_data,
         "created_by_admin": req.created_by_id is not None,

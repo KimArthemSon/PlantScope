@@ -18,6 +18,7 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/constants/url_fixed";
@@ -81,6 +82,7 @@ interface SiteProgressReport {
   description: string | null;
   status: "pending" | "accepted" | "rejected";
   proof_image: string | null;
+  agreement_image?: string | null;
   submitted_at: string | null;
   created_at: string;
   polygon_coordinates: [number, number][] | null;
@@ -874,8 +876,28 @@ export default function SiteMonitoringDetailScreen() {
     }
   };
 
-  // ✅ SIMPLIFIED: Load report for resubmit without added_by_grower logic
-  const loadReportForResubmit = (report: SiteProgressReport) => {
+  // Download a saved report photo to the phone so it can be uploaded again
+  // (the upload needs a local file, not a web link)
+  const downloadReportImage = async (
+    url: string | null | undefined,
+    name: string,
+  ): Promise<ImagePicker.ImagePickerAsset | null> => {
+    if (!url) return null;
+    try {
+      const target = `${FileSystem.cacheDirectory}${name}-${Date.now()}.jpg`;
+      const res = await FileSystem.downloadAsync(
+        url.startsWith("http") ? url : `${api}${url}`,
+        target,
+      );
+      if (res.status !== 200) return null;
+      return { uri: res.uri, width: 0, height: 0 } as ImagePicker.ImagePickerAsset;
+    } catch (err) {
+      console.warn("Couldn't load report photo:", err);
+      return null;
+    }
+  };
+
+  const loadReportForResubmit = async (report: SiteProgressReport) => {
     const species: ReportSpeciesItem[] = report.species.map((sp) => {
       return {
         tree_species_id: sp.species_id,
@@ -894,16 +916,37 @@ export default function SiteMonitoringDetailScreen() {
         longitude: Number(lng),
       })),
     );
+    setOrientationConducted(!!report.orientation_conducted);
     setSelectedSpeciesId("");
     setTempPlanted("");
     setTempDead("");
     setShowHistoryModal(false);
 
-    success(
-      "Previous report loaded",
-      "Fix what was requested, then re-attach the photos and submit.",
-      5000,
-    );
+    // Load the photos back from the previous report
+    const [proof, agreement] = await Promise.all([
+      downloadReportImage(report.proof_image, `proof-${report.report_id}`),
+      downloadReportImage(report.agreement_image, `agreement-${report.report_id}`),
+    ]);
+    setProofImage(proof);
+    setAgreementImage(agreement);
+
+    const missingPhoto =
+      (!!report.proof_image && !proof) ||
+      (!!report.agreement_image && !agreement) ||
+      !report.proof_image;
+    if (missingPhoto) {
+      warning(
+        "Previous report loaded",
+        "Some photos couldn't be loaded. Re-attach them, fix what was requested, then submit.",
+        6000,
+      );
+    } else {
+      success(
+        "Previous report loaded",
+        "Photos included. Fix what was requested, change photos if needed, then submit.",
+        5000,
+      );
+    }
   };
 
   // ✅ SIMPLIFIED: Handle add species without added_by_grower logic
@@ -1857,7 +1900,7 @@ export default function SiteMonitoringDetailScreen() {
                   </View>
                   <Text style={styles.changesFooter}>
                     Edit & Resubmit fills the form below with this report's
-                    data. Photos need to be attached again.
+                    data and photos. Change anything that was requested, then submit.
                   </Text>
                 </View>
               )}

@@ -206,6 +206,7 @@ interface AssignedSite {
   polygon_coordinates: [number, number][] | string | null;
   marker_coordinate?: any;
   planted_area_polygon?: [number, number][] | null;
+  planted_area_hectares?: number | null;
   reforestation_area_name: string | null;
   barangay_name: string | null;
   accessibility: any;
@@ -221,7 +222,7 @@ interface AssignedSite {
 
 interface SeedlingRequest {
   request_id: number;
-  status: "pending" | "accepted" | "rejected";
+  status: "pending" | "accepted" | "confirmed" | "rejected" | "cancelled";
   species: { species_name: string; quantity: number }[];
 }
 
@@ -238,7 +239,10 @@ interface ApplicationDetail {
   group: GroupData | null;
   assigned_site: AssignedSite | null;
   seedling_requests: SeedlingRequest[];
-  progress_reports: ProgressReport[];
+  // Backend sends { my_reports, site_history }; older builds sent a plain list
+  progress_reports:
+    | { my_reports: ProgressReport[]; site_history: ProgressReport[] }
+    | ProgressReport[];
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -604,17 +608,25 @@ export default function ApplicationPage() {
   const siteMarker: LatLng | null = toLatLng(detail?.assigned_site?.marker_coordinate);
   const hasMapData = sitePolygon.length >= 3 || plantedPolygon.length >= 3 || !!siteMarker;
 
-  const acceptedSeedlings =
-    detail?.seedling_requests?.filter((r) => r.status === "accepted") || [];
-  const totalApprovedSeedlings = acceptedSeedlings.reduce(
-    (sum, req) => sum + getTotalSeedlings(req.species),
-    0,
-  );
-  const ongoingRequestCount =
-    detail?.seedling_requests?.filter(
-      (r) => r.status === "pending" || r.status === "accepted",
-    ).length || 0;
-  const reportCount = detail?.progress_reports?.length || 0;
+  // Seedlings: "confirmed" = handed over, "accepted" = approved and on the way
+  const requests = detail?.seedling_requests || [];
+  const sumSeedlings = (status: SeedlingRequest["status"]) =>
+    requests
+      .filter((r) => r.status === status)
+      .reduce((sum, r) => sum + getTotalSeedlings(r.species || []), 0);
+  const receivedSeedlings = sumSeedlings("confirmed");
+  const incomingSeedlings = sumSeedlings("accepted");
+  const totalApprovedSeedlings = receivedSeedlings + incomingSeedlings;
+  const ongoingRequestCount = requests.filter(
+    (r) => r.status === "pending" || r.status === "accepted",
+  ).length;
+
+  // Only this program's own reports count (not other groups' site history)
+  const rawReports = detail?.progress_reports;
+  const myReports: ProgressReport[] = Array.isArray(rawReports)
+    ? rawReports
+    : rawReports?.my_reports || [];
+  const reportCount = myReports.length;
 
   if (loading) {
     return (
@@ -757,15 +769,21 @@ export default function ApplicationPage() {
         }
       >
         <View style={styles.heroContainer}>
-          <Image
-            source={{
-              uri: heroImage?.image_url?.startsWith("http")
-                ? heroImage.image_url
-                : `${api}${heroImage?.image_url}`,
-            }}
-            style={styles.heroImage}
-            resizeMode="cover"
-          />
+          {heroImage?.image_url ? (
+            <Image
+              source={{
+                uri: heroImage.image_url.startsWith("http")
+                  ? heroImage.image_url
+                  : `${api}${heroImage.image_url}`,
+              }}
+              style={styles.heroImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.heroFallback}>
+              <Ionicons name="leaf" size={56} color="rgba(255,255,255,0.35)" />
+            </View>
+          )}
         </View>
 
         <View style={styles.floatingTimelinePosition}>
@@ -778,7 +796,9 @@ export default function ApplicationPage() {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {assigned_site?.total_area_hectares?.toFixed(2) || "—"}
+                {assigned_site?.total_area_hectares != null
+                  ? Number(assigned_site.total_area_hectares).toFixed(2)
+                  : "—"}
               </Text>
               <Text style={styles.statLabel}>Hectares</Text>
             </View>
@@ -1346,6 +1366,12 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   heroImage: { width: "100%", height: "100%" },
+  heroFallback: {
+    flex: 1,
+    backgroundColor: PRIMARY,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   floatingTimelinePosition: {
     position: "relative",
     zIndex: 10,
@@ -1371,7 +1397,6 @@ const styles = StyleSheet.create({
   finalReviewBanner: {
     flexDirection: "row",
     gap: 12,
-    marginHorizontal: 20,
     marginBottom: 16,
     padding: 14,
     borderRadius: 16,

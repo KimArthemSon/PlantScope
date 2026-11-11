@@ -173,12 +173,6 @@ export default function NotificationsPage() {
     }
   };
 
-  const handleNavigate = (link: string | null) => {
-    if (link) {
-      router.push(link as any);
-    }
-  };
-
   const renderNotification = (notif: Notification, index: number) => {
     const config = NOTIF_CONFIG[notif.type];
     const isLast = index === notifications.length - 1;
@@ -193,7 +187,6 @@ export default function NotificationsPage() {
         ]}
         onPress={() => {
           if (!notif.is_read) handleMarkAsRead(notif.notification_id);
-          handleNavigate(notif.link);
         }}
         activeOpacity={0.7}
       >
@@ -226,16 +219,7 @@ export default function NotificationsPage() {
           {notif.description ? (
             <Text style={styles.notifDesc}>{notif.description}</Text>
           ) : null}
-
-          {notif.link && (
-            <View style={styles.linkContainer}>
-              <Text style={styles.linkText}>View details →</Text>
-            </View>
-          )}
         </View>
-
-        {/* Chevron */}
-        <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
       </TouchableOpacity>
     );
   };
@@ -509,14 +493,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6B7280",
     lineHeight: 18,
-  },
-  linkContainer: {
-    marginTop: 4,
-  },
-  linkText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#10B981",
   },
 
   /* Empty State */

@@ -3088,7 +3088,9 @@ def get_site_monitoring_details(request, site_id):
             "species": species_data,
             "description": report.description,
             "status": report.status,
-            "proof_image": report.proof_image_monitor_required.url if report.proof_image_monitor_required else None,
+            "proof_image": report.proof_image_monitor_required.build_url(secure=True) if report.proof_image_monitor_required else None,
+            # Sent so the inspector's "Edit & Resubmit" can load the photos back
+            "agreement_image": report.agreement_image.build_url(secure=True) if report.agreement_image else None,
             "submitted_at": report.submitted_at.isoformat() if report.submitted_at else None,
             "created_at": report.created_at.isoformat() if report.created_at else None,
             **serialize_report_review(report),
