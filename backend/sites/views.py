@@ -31,6 +31,38 @@ def is_site_locked(site):
     """Check if site is in an active/official state and cannot be modified."""
     return site.monitoring_status in LOCKED_MONITORING_STATUSES
 
+
+# Validation fields kept when a site is finalized, so a revalidation starts
+# from the previous notes and decision instead of a blank draft
+CARRIED_VALIDATION_KEYS = (
+    'safety', 'survivability', 'final_decision_note',
+    'final_decision', 'validated_at', 'validated_by',
+)
+
+def _carry_validation(site_data):
+    site_data = site_data or {}
+    return {k: site_data[k] for k in CARRIED_VALIDATION_KEYS if k in site_data}
+
+def _validation_site_data(site):
+    """Current draft's validation data. Sites finalized before notes were
+    carried forward have an empty current draft, so fall back to the last
+    finalized version."""
+    current = site.site_data_versions.filter(is_current=True).first()
+    if current and current.site_data:
+        return current.site_data
+    previous = site.site_data_versions.filter(is_current=False).order_by('-version').first()
+    return _carry_validation(previous.site_data) if previous else {}
+
+def _validation_summary(site_data):
+    site_data = site_data or {}
+    final_decision = site_data.get('final_decision')
+    return {
+        "has_safety_note": bool((site_data.get('safety') or {}).get('decision_note', '').strip()),
+        "has_survivability_note": bool((site_data.get('survivability') or {}).get('decision_note', '').strip()),
+        "final_decision": final_decision,
+        "is_ready_to_finalize": bool(final_decision),
+    }
+
 def _sanitize_legal_documents(legal_docs):
     if not isinstance(legal_docs, dict):
         return legal_docs
@@ -550,7 +582,7 @@ def get_site(request, site_id):
     if current_site_data:
         validation_data = {
             'version': current_site_data.version,
-            'site_data': _sanitize_field_assessment_data(current_site_data.site_data),
+            'site_data': _sanitize_field_assessment_data(_validation_site_data(site)),
             'field_assessment_snapshot': _sanitize_field_assessment_data(current_site_data.field_assessment_snapshot),
             'validated_by': current_site_data.validated_by,
             'validated_at': current_site_data.validated_at.isoformat() if current_site_data.validated_at else None,
@@ -800,7 +832,7 @@ def save_validation_draft(request, site_id):
             return JsonResponse({"error": "Cannot modify validation for an official/active site."}, status=403)
             
         sd, created = Site_data.objects.get_or_create(site=site, is_current=True, defaults={'version': 1, 'site_data': {}})
-        if not sd.site_data: sd.site_data = {}
+        if not sd.site_data: sd.site_data = _validation_site_data(site)
         
         if 'safety' in body and 'decision_note' in body['safety']:
             if 'safety' not in sd.site_data: sd.site_data['safety'] = {}
@@ -869,7 +901,10 @@ def finalize_site(request, site_id):
             current_sd.is_current = False
             current_sd.save()
             
-            Site_data.objects.create(site=site, version=current_sd.version + 1, is_current=True, site_data={}, field_assessment_snapshot={})
+            Site_data.objects.create(
+                site=site, version=current_sd.version + 1, is_current=True,
+                site_data=_carry_validation(current_sd.site_data), field_assessment_snapshot={},
+            )
             
             site.status = "accepted" if final_decision == "ACCEPT" else "rejected"
             
@@ -1058,12 +1093,19 @@ def update_site_verification(request, site_id):
         if 'verified_accessibility' in data: verification.verified_accessibility = data['verified_accessibility']
         if 'verified_land_classification_id' in data: verification.verified_land_classification_id = data['verified_land_classification_id']
         if 'decision_note' in data: verification.decision_note = data['decision_note']
-        if 'status' in data: verification.status = data['status']
         if 'referenced_assessment_ids' in data: verification.referenced_assessment_ids = data['referenced_assessment_ids']
 
-        if verification.status in ['verified', 'rejected']:
+        # A draft save keeps an earlier decision; it only moves pending -> draft
+        new_status = data.get('status')
+        is_decision = new_status in ['verified', 'rejected']
+        if new_status not in (None, 'draft', 'verified', 'rejected'):
+            return JsonResponse({'error': "status must be 'draft', 'verified' or 'rejected'"}, status=400)
+        if is_decision:
+            verification.status = new_status
             verification.verified_by = user
             verification.verified_at = timezone.now()
+        elif verification.status == 'pending':
+            verification.status = 'draft'
         verification.save()
         
         # ✅ DUAL-APPROVAL LOGIC: If Meta is verified AND GISS accepted, make it available
@@ -1383,21 +1425,30 @@ def get_mcda_data(request, reforestation_area_id):
         
         sites_qs = Sites.objects.filter(
             reforestation_area_id=reforestation_area_id, is_active=True
-        ).values('site_id', 'name', 'marker_coordinate', 'polygon_coordinates', 'status', 'monitoring_status', 'is_pinned', 'total_area_hectares', 'created_at')
-        
+        ).prefetch_related('site_data_versions')
+
         sites_data = []
         for s in sites_qs:
+            # Use the prefetched versions to avoid one query per site
+            versions = sorted(s.site_data_versions.all(), key=lambda v: v.version, reverse=True)
+            current = next((v for v in versions if v.is_current), None)
+            if current and current.site_data:
+                validation_source = current.site_data
+            else:
+                previous = next((v for v in versions if not v.is_current), None)
+                validation_source = _carry_validation(previous.site_data) if previous else {}
+
             sites_data.append({
-                "site_id": s["site_id"],
-                "name": s["name"],
-                "marker_coordinate": s["marker_coordinate"],
-                "polygon_coordinates": s["polygon_coordinates"],
-                "status": s["status"],
-                "monitoring_status": s["monitoring_status"], # ✅ NEW
-                "is_pinned": s["is_pinned"],
-                "created_at": s["created_at"].isoformat() if s["created_at"] else None,
-                "metrics": {"area_hectares": s["total_area_hectares"] or 0.0},
-                "validation": {"has_safety_note": False, "has_survivability_note": False, "final_decision": None, "is_ready_to_finalize": False}
+                "site_id": s.site_id,
+                "name": s.name,
+                "marker_coordinate": s.marker_coordinate,
+                "polygon_coordinates": s.polygon_coordinates,
+                "status": s.status,
+                "monitoring_status": s.monitoring_status,
+                "is_pinned": s.is_pinned,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "metrics": {"area_hectares": s.total_area_hectares or 0.0},
+                "validation": _validation_summary(validation_source),
             })
             
         return JsonResponse({

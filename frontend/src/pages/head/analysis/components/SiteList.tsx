@@ -11,8 +11,10 @@ import {
   FileText,
   Eye,
   Target,
+  Lock,
 } from "lucide-react";
 import type { Site } from "../types/siteTypes";
+import { getValidationLockLabel } from "../types/siteTypes";
 import { useUserRole } from "@/hooks/authorization";
 
 interface SiteListProps {
@@ -180,6 +182,7 @@ export default function SiteList({
           const validationBadge = getValidationBadge(site.validation);
           const ValidationIcon = validationBadge.icon;
           const isSelected = selectedSiteId === String(site.site_id);
+          const lockLabel = getValidationLockLabel(site.monitoring_status);
 
           return (
             <div
@@ -233,6 +236,16 @@ export default function SiteList({
                   {validationBadge.label}
                 </span>
 
+                {lockLabel && (
+                  <span
+                    className="ml-1 inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700"
+                    title="This site is in use by a tree planting program and cannot be validated"
+                  >
+                    <Lock size={10} />
+                    {lockLabel}
+                  </span>
+                )}
+
                 <div className="flex gap-1 mt-1">
                   {site.validation?.has_safety_note && (
                     <span
@@ -280,15 +293,22 @@ export default function SiteList({
 
                 <button
                   onClick={() => onValidateSite(site)}
-                  disabled={
-                    !site.validation?.has_safety_note &&
-                    !site.validation?.has_survivability_note &&
-                    site.status !== "pending"
-                  }
+                  // Only locked while the site is in use by a program;
+                  // accepted/rejected sites can be revalidated anytime
+                  disabled={!!lockLabel}
                   className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 text-[10px] font-medium px-2 py-1 rounded transition flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={
+                    lockLabel
+                      ? `Cannot validate: site is ${lockLabel.toLowerCase()}`
+                      : site.status === "accepted" || site.status === "rejected"
+                        ? "Revalidate this site"
+                        : "Validate this site"
+                  }
                 >
-                  <CheckCircle size={10} />
-                  Validate
+                  {lockLabel ? <Lock size={10} /> : <CheckCircle size={10} />}
+                  {site.status === "accepted" || site.status === "rejected"
+                    ? "Revalidate"
+                    : "Validate"}
                 </button>
                 <button
                   onClick={() => onSiteSelectForFilter?.(site)}

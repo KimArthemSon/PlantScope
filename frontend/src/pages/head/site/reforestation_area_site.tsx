@@ -1046,7 +1046,7 @@ export default function ReforestationAreaSiteCombined() {
                           ></div>
                         </div>
                         
-                        {/* Keep Delete button accessible */}
+                        {/* Keep Delete button accessible (DataManager restricted) */}
                         {userRole !== "DataManager" && (
                           <div className="flex justify-end">
                             <button
@@ -1370,6 +1370,13 @@ export default function ReforestationAreaSiteCombined() {
                       );
                       const VerificationIcon = verificationBadge.icon;
 
+                      // ✅ Restrict Delete: DataManager cannot delete. GISSpecialist can ONLY delete if both status and verification are rejected.
+                      const canDeleteSite =
+                        userRole !== "DataManager" &&
+                        (userRole !== "GISSpecialist" ||
+                          (site.verification.status === "rejected" &&
+                            site.status === "rejected"));
+
                       return (
                         <tr
                           key={site.site_id}
@@ -1459,13 +1466,15 @@ export default function ReforestationAreaSiteCombined() {
                                   <ShieldCheck size={12} />
                                 </button>
                               )}
-                              {userRole !== "DataManager" && (
+                              
+                              {/* ✅ Conditional Delete Button */}
+                              {canDeleteSite && (
                                 <button
                                   onClick={() =>
                                     setDelete(site.site_id, "site")
                                   }
                                   className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors border border-red-600"
-                                  title="Delete"
+                                  title="Delete Site"
                                 >
                                   <Trash2 size={12} />
                                 </button>

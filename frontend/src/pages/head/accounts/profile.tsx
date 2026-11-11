@@ -66,21 +66,6 @@ export function Profile() {
   // The account's photo as loaded, used to undo unsaved photo changes
   const [savedPhoto, setSavedPhoto] = useState("");
   const [showFullImage, setShowFullImage] = useState(false);
-
-  // Close full-view modal on ESC key and lock page scroll while it's open
-  useEffect(() => {
-    if (!showFullImage) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShowFullImage(false);
-    };
-    window.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [showFullImage]);
   const [isLoading, setIsLoading] = useState(false);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -115,13 +100,29 @@ export function Profile() {
   });
 
   const [action, __] = useState<"Create" | "Update">(id ? "Update" : "Create");
+  const navigate = useNavigate();
+
+  // Close full-view modal on ESC key and lock page scroll while it's open
+  useEffect(() => {
+    if (!showFullImage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowFullImage(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [showFullImage]);
 
   async function get_user() {
     try {
       const token = localStorage.getItem("token");
       setIsLoading(true);
       if (!token) return;
-      const res = await fetch(api+"api/get_user/" + id, {
+      const res = await fetch(api + "api/get_user/" + id, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -143,7 +144,7 @@ export function Profile() {
       setPSAlert({
         type: "error",
         title: "Error",
-        message: "Failed to load users.",
+        message: "Failed to load user.",
       });
       setIsLoading(false);
     }
@@ -151,6 +152,7 @@ export function Profile() {
 
   useEffect(() => {
     if (id) get_user();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -163,8 +165,6 @@ export function Profile() {
       symbol: /[^A-Za-z0-9]/.test(password),
     });
   }, [profile.password]);
-
-  const navigate = useNavigate();
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
@@ -201,11 +201,15 @@ export function Profile() {
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    
+    // GUARD: Prevent multiple submissions if already processing
+    if (isLoading) return;
+
     setIsLoading(true);
 
     if (
-      (action == "Update" && profile.password.length != 0) ||
-      action == "Create"
+      (action === "Update" && profile.password.length !== 0) ||
+      action === "Create"
     ) {
       if (
         !passwordConstraints.length ||
@@ -223,15 +227,17 @@ export function Profile() {
         return;
       }
     }
+    
     if (profile.password !== profile.confirm_pass) {
+      setIsLoading(false);
       setPSAlert({
         type: "error",
         title: "Passwords don't match",
         message: "Password and Confirm Password must be the same.",
       });
-      setIsLoading(false);
       return;
     }
+
     const form_data = new FormData();
     form_data.append("email", profile.email);
     form_data.append("password", profile.password);
@@ -245,74 +251,95 @@ export function Profile() {
     form_data.append("gender", profile.gender);
     form_data.append("is_active", profile.is_active);
 
-    if (profile_img) form_data.append("profile_img", profile_img);
-    else if (action === "Create" || useDefaultImg) {
+    if (profile_img) {
+      form_data.append("profile_img", profile_img);
+    } else if (action === "Create" || useDefaultImg) {
       // No photo chosen: upload the default avatar so one isn't required
-      const blob = await (await fetch(defaultProfile)).blob();
-      form_data.append(
-        "profile_img",
-        new File([blob], "default-profile.png", { type: blob.type }),
-      );
+      try {
+        const blob = await (await fetch(defaultProfile)).blob();
+        form_data.append(
+          "profile_img",
+          new File([blob], "default-profile.png", { type: blob.type })
+        );
+      } catch (err) {
+        setIsLoading(false);
+        setPSAlert({
+          type: "error",
+          title: "Error",
+          message: "Failed to load default profile image.",
+        });
+        return;
+      }
     }
-    if (action === "Create") handleCreate(form_data);
-    else handleUpdate(form_data);
+
+    if (action === "Create") {
+      await handleCreate(form_data);
+    } else {
+      await handleUpdate(form_data);
+    }
   }
 
   async function handleCreate(formData: FormData) {
     const token = localStorage.getItem("token");
     try {
-      const res = await fetch(api+"api/register/", {
+      const res = await fetch(api + "api/register/", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
       const data = await res.json();
+      
       if (!res.ok) {
-        setPSAlert({ type: "error", title: "Error", message: data.error });
-        setIsLoading(false);
+        setPSAlert({ type: "error", title: "Error", message: data.error || "Failed to create user." });
         return;
       }
+      
       setPSAlert({
         type: "success",
         title: "Account Created",
-        message: data.message,
+        message: data.message || "Account created successfully.",
       });
       setTimeout(() => navigate("/account-management/"), 3000);
-      setIsLoading(false);
     } catch (err: any) {
-      setIsLoading(false);
       setPSAlert({
         type: "error",
         title: "Error",
         message: "Failed to create user.",
       });
+    } finally {
+      setIsLoading(false);
     }
   }
 
   async function handleUpdate(formData: FormData) {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+    
     try {
-      const token = localStorage.getItem("token");
-      if (!token) return;
-      const res = await fetch(api+"api/update_user/" + id, {
+      const res = await fetch(api + "api/update_user/" + id, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
       const data = await res.json();
+      
       if (!res.ok) {
-        setIsLoading(false);
-        setPSAlert({ type: "error", title: "Error", message: data.error });
+        setPSAlert({ type: "error", title: "Error", message: data.error || "Failed to update user." });
         return;
       }
+      
       setPSAlert({
         type: "success",
         title: "Profile Updated",
-        message: data.message,
+        message: data.message || "Profile updated successfully.",
       });
-      setIsLoading(false);
     } catch (e) {
-      setIsLoading(false);
       setPSAlert({ type: "error", title: "Error", message: "Server Error!" });
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -359,7 +386,7 @@ export function Profile() {
         }
 
         .profile-header-bg::before {
-          pointer-events: none; /* decoration must not block header buttons */
+          pointer-events: none;
           content: '';
           position: absolute;
           inset: 0;
@@ -369,7 +396,7 @@ export function Profile() {
         }
 
         .profile-header-bg::after {
-          pointer-events: none; /* decoration must not block header buttons */
+          pointer-events: none;
           content: '';
           position: absolute;
           bottom: -1px;
@@ -519,14 +546,20 @@ export function Profile() {
           cursor: pointer;
           display: flex;
           align-items: center;
+          justify-content: center;
           gap: 8px;
           transition: all 0.2s;
           box-shadow: 0 2px 8px rgba(13,61,38,0.3);
         }
-        .btn-primary:hover {
+        .btn-primary:hover:not(:disabled) {
           background: linear-gradient(135deg, #0d3d26, #0a2f1e);
           box-shadow: 0 4px 16px rgba(13,61,38,0.4);
           transform: translateY(-1px);
+        }
+        .btn-primary:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+          transform: none;
         }
 
         .btn-ghost {
@@ -601,8 +634,6 @@ export function Profile() {
         {/* ── HERO HEADER ── */}
         <div className="profile-header-bg px-8 pt-8 pb-20 relative z-10">
           <div className="max-w-4xl mx-auto">
-          
-
             <div className="flex items-end gap-6">
               {/* Avatar */}
               <div className="avatar-ring shrink-0">
@@ -680,7 +711,10 @@ export function Profile() {
                 </div>
                 {photoChanged && (
                   <p className="mt-2 text-xs text-white/60">
-                    {useDefaultImg ? "The default photo will be used" : "New photo will be used"} when you save.
+                    {useDefaultImg
+                      ? "The default photo will be used"
+                      : "New photo will be used"}{" "}
+                    when you save.
                   </p>
                 )}
               </div>
@@ -709,7 +743,6 @@ export function Profile() {
                   )}
                 </div>
                 <div className="pf-modal-actions">
-                  {/* Only a real photo is worth downloading, not the default avatar */}
                   {profile.preview_profile && (
                     <a
                       href={profile.preview_profile}
@@ -734,7 +767,8 @@ export function Profile() {
               <div className="pf-modal-body">
                 <img
                   src={profile.preview_profile || defaultProfile}
-                  alt={`${profile.first_name} ${profile.last_name}`.trim() || "Profile picture"}
+                  alt={`${profile.first_name} ${profile.last_name}`.trim() ||
+                    "Profile picture"}
                 />
               </div>
             </div>
@@ -864,7 +898,7 @@ export function Profile() {
                     >
                       <option value="M">Male</option>
                       <option value="F">Female</option>
-                      <option value="O">Other</option>
+                      <option value="o">Other</option>
                     </select>
                   </div>
                 </div>
@@ -973,10 +1007,16 @@ export function Profile() {
                 {/* Status */}
                 <div>
                   <label className={labelClass}>Account Status</label>
-                  <div className={`${inputBase} ${action === "Create" ? "opacity-60" : ""}`}>
+                  <div
+                    className={`${inputBase} ${
+                      action === "Create" ? "opacity-60" : ""
+                    }`}
+                  >
                     <Unlock className={iconClass} />
                     <select
-                      className={`${inputField} ${action === "Create" ? "cursor-not-allowed" : "cursor-pointer"}`}
+                      className={`${inputField} ${
+                        action === "Create" ? "cursor-not-allowed" : "cursor-pointer"
+                      }`}
                       value={profile.is_active}
                       onChange={(e) =>
                         setProfile((p) => ({ ...p, is_active: e.target.value }))
@@ -1000,7 +1040,10 @@ export function Profile() {
                 {/* Password */}
                 <div>
                   <label className={labelClass}>
-                    Password {action === "Create" && <span className="text-red-500">*</span>}
+                    Password{" "}
+                    {action === "Create" && (
+                      <span className="text-red-500">*</span>
+                    )}
                     {action === "Update" && (
                       <span className="ml-2 normal-case font-normal text-stone-400">
                         (leave blank to keep current)
@@ -1034,13 +1077,18 @@ export function Profile() {
                       <div
                         className="password-strength-fill"
                         style={{
-                          width: `${(Object.values(passwordConstraints).filter(Boolean).length / 5) * 100}%`,
+                          width: `${
+                            (Object.values(passwordConstraints).filter(Boolean)
+                              .length /
+                              5) *
+                            100
+                          }%`,
                           background: allConstraintsMet
                             ? "#16a34a"
                             : Object.values(passwordConstraints).filter(Boolean)
-                                  .length >= 3
-                              ? "#f59e0b"
-                              : "#ef4444",
+                                .length >= 3
+                            ? "#f59e0b"
+                            : "#ef4444",
                         }}
                       />
                     </div>
@@ -1051,7 +1099,11 @@ export function Profile() {
                     {constraints.map(({ key, label }) => (
                       <div
                         key={key}
-                        className={`constraint-item ${passwordConstraints[key] ? "constraint-met" : "constraint-unmet"}`}
+                        className={`constraint-item ${
+                          passwordConstraints[key]
+                            ? "constraint-met"
+                            : "constraint-unmet"
+                        }`}
                       >
                         <CheckCircle2
                           size={13}
@@ -1071,7 +1123,10 @@ export function Profile() {
                 {/* Confirm Password */}
                 <div>
                   <label className={labelClass}>
-                    Confirm Password {action === "Create" && <span className="text-red-500">*</span>}
+                    Confirm Password{" "}
+                    {action === "Create" && (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <div
                     className={
@@ -1080,9 +1135,9 @@ export function Profile() {
                       profile.password !== profile.confirm_pass
                         ? " !border-red-400 !ring-2 !ring-red-100"
                         : profile.confirm_pass &&
-                            profile.password === profile.confirm_pass
-                          ? " !border-emerald-400"
-                          : "")
+                          profile.password === profile.confirm_pass
+                        ? " !border-emerald-400"
+                        : "")
                     }
                   >
                     <Lock className={iconClass} />
@@ -1101,9 +1156,7 @@ export function Profile() {
                     />
                     <button
                       type="button"
-                      onClick={() =>
-                        setShowPasswordConfirm(!showPasswordConfirm)
-                      }
+                      onClick={() => setShowPasswordConfirm(!showPasswordConfirm)}
                       className="text-stone-400 hover:text-emerald-600 transition-colors"
                     >
                       {showPasswordConfirm ? (
@@ -1136,13 +1189,27 @@ export function Profile() {
                 type="button"
                 className="btn-ghost"
                 onClick={() => navigate(-1)}
+                disabled={isLoading}
               >
                 <ArrowLeft size={15} />
                 Cancel
               </button>
-              <button type="submit" className="btn-primary">
-                <Save size={15} />
-                {action === "Create" ? "Create Account" : "Save Changes"}
+              <button 
+                type="submit" 
+                className="btn-primary"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    {action === "Create" ? "Creating..." : "Saving..."}
+                  </span>
+                ) : (
+                  <>
+                    <Save size={15} />
+                    {action === "Create" ? "Create Account" : "Save Changes"}
+                  </>
+                )}
               </button>
             </div>
           </div>

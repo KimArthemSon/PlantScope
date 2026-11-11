@@ -12,10 +12,26 @@ export interface SiteMetrics {
   seedlings: number;
 }
 
+// Same list as LOCKED_MONITORING_STATUSES in backend/sites/views.py.
+// Sites in these states are in use by a program and cannot be validated.
+export const LOCKED_MONITORING_STATUSES: Record<string, string> = {
+  reserved: "Reserved",
+  under_monitoring: "Under Monitoring",
+  completed: "Monitoring Completed",
+  failed: "Monitoring Failed",
+  onhold: "On Hold",
+};
+
+export const getValidationLockLabel = (
+  monitoringStatus?: string | null,
+): string | null =>
+  (monitoringStatus && LOCKED_MONITORING_STATUSES[monitoringStatus]) || null;
+
 export interface Site {
   site_id: number;
   name: string;
   status: "pending" | "under_review" | "accepted" | "rejected" | "completed";
+  monitoring_status?: string | null;
   is_pinned: boolean;
   created_at: string;
   validation: ValidationStatus;
@@ -39,6 +55,8 @@ export interface ValidationData {
     };
     final_decision?: "ACCEPT" | "REJECT";
     final_decision_note?: string;
+    validated_at?: string;
+    validated_by?: string;
   };
   validated_at?: string | null;
   validated_by?: string | null;

@@ -53,6 +53,7 @@ export default function Accounts() {
     order: "desc",
   });
   const [loading, setLoading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false); // New state for delete action
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -77,15 +78,15 @@ export default function Accounts() {
       });
 
       const response = await fetch(
-        api+`api/list_users/?${params.toString()}`,
+        api + `api/list_users/?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-        },
+        }
       );
       if (!response.ok) throw new Error("Failed to fetch users.");
 
       const data = await response.json();
-      console.log(data)
+      console.log(data);
       setUsers(data.accounts);
 
       setFilter((prev) => ({ ...prev, total_page: data.total_pages }));
@@ -102,6 +103,7 @@ export default function Accounts() {
 
   useEffect(() => {
     fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter.role, filter.page, filter.entries, filter.sort_by, filter.order]); // refetch when filters change
 
   // Clicking the active column flips the order; a new column starts ascending
@@ -139,30 +141,45 @@ export default function Accounts() {
   };
 
   const handleDelete = async () => {
-    if (!idDelete) return;
-    const response = await fetch(
-      api+`api/delete_user/${idDelete}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
+    // Guard clause: prevent multiple clicks if already deleting or no ID
+    if (!idDelete || isDeleting) return;
 
-    if (response.ok) {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(
+        api + `api/delete_user/${idDelete}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (response.ok) {
+        setPSAlert({
+          type: "success",
+          title: "Deleted",
+          message: "User deleted successfully.",
+        });
+        setIsDeleteModalOpen(false);
+        fetchUsers(); // refresh list after delete
+      } else {
+        setPSAlert({
+          type: "failed",
+          title: "Failed",
+          message: "Failed to delete user.",
+        });
+        setIsDeleteModalOpen(false);
+      }
+    } catch (error) {
       setPSAlert({
-        type: "success",
-        title: "Deleted",
-        message: "User deleted successfully.",
+        type: "error",
+        title: "Error",
+        message: "An unexpected error occurred while deleting.",
       });
       setIsDeleteModalOpen(false);
-      fetchUsers(); // refresh list after delete
-    } else {
-      setPSAlert({
-        type: "failed",
-        title: "Failed",
-        message: "Failed to delete user.",
-      });
-      setIsDeleteModalOpen(false);
+    } finally {
+      // Always reset the deleting state when the request finishes
+      setIsDeleting(false);
     }
   };
 
@@ -180,13 +197,12 @@ export default function Accounts() {
         setIsDeleteModalOpen={setIsDeleteModalOpen}
         isDeleteModalOpen={isDeleteModalOpen}
         onDelete={handleDelete}
+        isLoading={isDeleting} // Pass loading state to disable button/show spinner in modal
       />
      
       <main className="flex-1 p-8 max-w-[1636px] mt-10">
-        {/* Header */}
-
         {/* Filters */}
-        <div className="flex items-center mb-7 gap-4">
+        <div className="flex items-center mb-7 gap-4 flex-wrap">
           <label>Show entries: </label>
           <select
             value={filter.entries}
@@ -205,7 +221,7 @@ export default function Accounts() {
             <option value={100}>100</option>
           </select>
 
-          <label className="ml-auto text-bold">User roles: </label>
+          <label className="ml-auto font-bold">User roles: </label>
           <select
             value={filter.role}
             onChange={(e) =>
@@ -263,7 +279,6 @@ export default function Accounts() {
                 <SortableHeader label="Status" sortKey="is_active" />
                 <SortableHeader label="Created at" sortKey="created_at" />
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
-
               </tr>
             </thead>
             <tbody>
@@ -278,9 +293,9 @@ export default function Accounts() {
                     </td>
                     <td className="py-3 px-5">
                       <img
-                        src={user.profile_img}
+                        src={user.profile_img || "https://via.placeholder.com/80"} // Fallback added for safety
                         alt="profile"
-                        className="rounded-full w-20 h-[90%] min-h-20 max-h-25"
+                        className="rounded-full w-20 h-20 object-cover"
                       />
                     </td>
                     <td className="py-3 px-5 text-[.9rem]">{user.email}</td>
@@ -289,7 +304,7 @@ export default function Accounts() {
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-semibold ${
                           user.is_active
-                            ? "bg-yellow-100 text-green-700"
+                            ? "bg-green-100 text-green-700" // Fixed: was bg-yellow-100 for active
                             : "bg-red-100 text-red-700"
                         }`}
                       >
@@ -303,13 +318,13 @@ export default function Accounts() {
                           onClick={() =>
                             navigate("/account-management/profile/" + user.id)
                           }
-                          className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
+                          className="text-black px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer hover:bg-gray-100"
                         >
                           <Edit size={18} />
                         </button>
                         <button
                           onClick={() => setDelete(user.id)}
-                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
+                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer hover:bg-red-50"
                         >
                           <Trash2 size={18} />
                         </button>
@@ -320,10 +335,10 @@ export default function Accounts() {
               ) : (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={7} // Fixed: Changed from 5 to 7 to match total columns
                     className="text-center py-5 text-gray-500 italic"
                   >
-                    No users found.
+                    {loading ? "Loading users..." : "No users found."}
                   </td>
                 </tr>
               )}
@@ -334,11 +349,11 @@ export default function Accounts() {
         {/* Pagination */}
         <div className="flex items-center gap-1 mt-5 w-full">
           <button
-            disabled={filter.page <= 1}
+            disabled={filter.page <= 1 || loading}
             onClick={() =>
               setFilter((prev) => ({ ...prev, page: prev.page - 1 }))
             }
-            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer"
+            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 ml-auto cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ChevronLeft size={19} />
           </button>
@@ -348,7 +363,7 @@ export default function Accounts() {
               <button
                 key={p}
                 onClick={() => setFilter((prev) => ({ ...prev, page: p }))}
-                className={`px-2 py-1 border rounded-md cursor-pointer text-[.8rem] ${
+                className={`px-3 py-1 border rounded-md cursor-pointer text-[.8rem] ${
                   p === filter.page
                     ? "bg-green-600 text-white"
                     : "text-gray-700 hover:bg-gray-100"
@@ -356,15 +371,15 @@ export default function Accounts() {
               >
                 {p}
               </button>
-            ),
+            )
           )}
 
           <button
-            disabled={filter.page >= filter.total_page}
+            disabled={filter.page >= filter.total_page || loading}
             onClick={() =>
               setFilter((prev) => ({ ...prev, page: prev.page + 1 }))
             }
-            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 cursor-pointer"
+            className="px-2 py-1 border rounded-md text-gray-700 hover:bg-gray-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ChevronRight size={19} />
           </button>

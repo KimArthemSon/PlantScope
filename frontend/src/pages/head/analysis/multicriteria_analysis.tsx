@@ -54,6 +54,7 @@ import type {
 import { useHazardLayers } from "./hooks/useHazardLayers";
 import { useSites } from "./hooks/useSites";
 import type { Site, SiteDetail } from "./hooks/useSites";
+import { getValidationLockLabel } from "./types/siteTypes";
 import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 
@@ -1721,6 +1722,15 @@ export default function MulticriteriaAnalysis() {
 
   const handleValidateSite = useCallback(
     async (site: Site) => {
+      const lockLabel = getValidationLockLabel(site.monitoring_status);
+      if (lockLabel) {
+        setAlert({
+          type: "error",
+          title: "Cannot Validate",
+          message: `"${site.name}" is ${lockLabel.toLowerCase()} and cannot be validated.`,
+        });
+        return;
+      }
       try {
         sites.setError(null);
         setAlert({

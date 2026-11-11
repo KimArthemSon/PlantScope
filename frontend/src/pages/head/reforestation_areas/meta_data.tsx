@@ -86,9 +86,20 @@ interface SiteInfo {
   site_id: number;
   name: string;
   status: string;
+  monitoring_status?: string | null;
   reforestation_area_id: number;
   reforestation_area_name: string;
 }
+
+// Same list as LOCKED_MONITORING_STATUSES in backend/sites/views.py.
+// The backend refuses any verification change while a site is in these states.
+const LOCKED_MONITORING_LABELS: Record<string, string> = {
+  reserved: "reserved",
+  under_monitoring: "under monitoring",
+  completed: "done with monitoring",
+  failed: "marked as failed monitoring",
+  onhold: "on hold",
+};
 
 interface AnimalInfo {
   animal_id: number;
@@ -665,6 +676,10 @@ export default function MetaDataVerification() {
     userRole === "DataManager" || userRole === "CityENROHead";
 
   const [siteInfo, setSiteInfo] = useState<SiteInfo | null>(null);
+  const lockedLabel =
+    (siteInfo?.monitoring_status &&
+      LOCKED_MONITORING_LABELS[siteInfo.monitoring_status]) ||
+    null;
   const [verification, setVerification] = useState<VerificationRecord | null>(
     null,
   );
@@ -985,7 +1000,17 @@ export default function MetaDataVerification() {
 
   async function saveVerification(status: "draft" | "verified" | "rejected") {
     if (!id || !token) return;
-    if (!decisionNote.trim()) {
+    if (lockedLabel) {
+      setPSAlert({
+        type: "failed",
+        title: "Site Locked",
+        message: `This site is ${lockedLabel}, so its verification cannot be changed.`,
+      });
+      return;
+    }
+    const isDraft = status === "draft";
+    // A draft only saves what was typed; the decision note is needed to decide
+    if (!isDraft && !decisionNote.trim()) {
       setPSAlert({
         type: "failed",
         title: "Validation Error",
@@ -1012,7 +1037,8 @@ export default function MetaDataVerification() {
         verified_land_classification_id: verifiedLandClassificationId || null,
         decision_note: decisionNote,
         referenced_assessment_ids: referencedAssessmentIds,
-        status: status,
+        // Drafts leave the status alone so an earlier Accept/Reject is kept
+        ...(isDraft ? {} : { status }),
         verified_animals: verifiedAnimals.map((a) => ({
           animal_id: a.animal_id,
           notes: a.admin_notes || "",
@@ -1036,10 +1062,14 @@ export default function MetaDataVerification() {
             : status === "verified"
               ? "approved"
               : "rejected";
+        const kept = verification?.status;
         setPSAlert({
           type: "success",
           title: "Success",
-          message: `Verification ${action}.`,
+          message:
+            isDraft && (kept === "verified" || kept === "rejected")
+              ? `Draft saved. The status stays ${kept === "verified" ? "Accepted" : "Rejected"}.`
+              : `Verification ${action}.`,
         });
         await fetchSiteVerification();
       } else {
@@ -2347,6 +2377,16 @@ export default function MetaDataVerification() {
           </div>
         </div>
 
+        {lockedLabel && (
+          <div className="shrink-0 border-t-2 border-orange-200 bg-orange-50 px-6 py-3 flex items-start gap-2 text-sm text-orange-800">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+            <p>
+              <span className="font-semibold">This site is {lockedLabel}.</span>{" "}
+              It is in use by a tree planting program, so the verification cannot be saved, accepted or rejected.
+            </p>
+          </div>
+        )}
+
         {/* Footer Actions */}
         <div className="shrink-0 border-t-2 border-slate-200 px-6 py-4 bg-gradient-to-r from-white to-slate-50 flex items-center gap-3">
           <button
@@ -2360,7 +2400,7 @@ export default function MetaDataVerification() {
           <button
             onClick={() => saveVerification("draft")}
             className="flex-1 border-2 border-slate-400 text-slate-900 hover:bg-slate-100 rounded-lg p-2.5 flex items-center justify-center gap-2 font-semibold transition-all disabled:opacity-40"
-            disabled={saving}
+            disabled={saving || !!lockedLabel}
           >
             {saving ? (
               <Loader2 className="animate-spin" size={18} />
@@ -2373,14 +2413,14 @@ export default function MetaDataVerification() {
             <button
               onClick={() => saveVerification("rejected")}
               className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 font-semibold text-sm disabled:opacity-40 transition-all shadow-sm hover:shadow-md"
-              disabled={saving || !decisionNote.trim()}
+              disabled={saving || !decisionNote.trim() || !!lockedLabel}
             >
               <XCircle size={18} /> Reject
             </button>
             <button
               onClick={() => saveVerification("verified")}
               className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-2 font-semibold text-sm disabled:opacity-40 transition-all shadow-sm hover:shadow-md"
-              disabled={saving || !decisionNote.trim()}
+              disabled={saving || !decisionNote.trim() || !!lockedLabel}
             >
               <CheckCircle size={18} /> Accept
             </button>
