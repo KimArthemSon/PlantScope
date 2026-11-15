@@ -2719,12 +2719,11 @@ def get_monitoring_sites(request):
         site=OuterRef('pk')
     ).order_by().values('site').annotate(cnt=Count('progress_report_id')).values('cnt')
 
-    has_initial_report_sq = Exists(
-        ProgressReport.objects.filter(
-            site=OuterRef('pk'),
-            visit_type='initial',
-            status='accepted'
-        )
+    # Needs initial visit = the site is under monitoring and its application is
+    # still 'accepted' (orientation pending). Accepting the initial report moves
+    # the application to 'under_monitoring', which clears this flag.
+    needs_initial_sq = Exists(
+        Application.objects.filter(site=OuterRef('pk'), status='accepted')
     )
 
     has_reports_sq = Exists(
@@ -2761,7 +2760,7 @@ def get_monitoring_sites(request):
     ).annotate(
         latest_report_date=Subquery(latest_report_date_sq),
         total_reports=Coalesce(Subquery(total_reports_sq), 0),
-        has_initial_report=has_initial_report_sq,
+        has_pending_initial_app=needs_initial_sq,
         active_application_status=Coalesce(
             Subquery(active_app_status_sq),
             Value('inactive', output_field=fields.CharField())
@@ -2796,22 +2795,17 @@ def get_monitoring_sites(request):
     if search:
         qs = qs.filter(Q(name__icontains=search) | Q(reforestation_area__name__icontains=search))
     if needs_initial:
-        qs = qs.filter(has_initial_report=False)
+        qs = qs.filter(monitoring_status='under_monitoring', has_pending_initial_app=True)
 
     today = timezone.now().date()
+    # "N+ days" = N days or more since the latest report (so 30+ also includes
+    # 60+ and 90+ sites). Compared by date to match days_since_last_report below.
+    days_thresholds = {'30_plus': 30, '60_plus': 60, '90_plus': 90}
     if days_since_filter == 'no_report':
         qs = qs.filter(latest_report_date__isnull=True)
-    elif days_since_filter == '30_plus':
-        cutoff_30 = today - timedelta(days=30)
-        cutoff_60 = today - timedelta(days=60)
-        qs = qs.filter(latest_report_date__gte=cutoff_60, latest_report_date__lt=cutoff_30)
-    elif days_since_filter == '60_plus':
-        cutoff_60 = today - timedelta(days=60)
-        cutoff_90 = today - timedelta(days=90)
-        qs = qs.filter(latest_report_date__gte=cutoff_90, latest_report_date__lt=cutoff_60)
-    elif days_since_filter == '90_plus':
-        cutoff_90 = today - timedelta(days=90)
-        qs = qs.filter(latest_report_date__lt=cutoff_90)
+    elif days_since_filter in days_thresholds:
+        cutoff = today - timedelta(days=days_thresholds[days_since_filter])
+        qs = qs.filter(latest_report_date__isnull=False, latest_report_date__date__lte=cutoff)
 
     qs = qs.order_by(F('latest_report_date').desc(nulls_last=True))
 
@@ -2836,7 +2830,7 @@ def get_monitoring_sites(request):
             "latest_report_date": site.latest_report_date.isoformat() if site.latest_report_date else None,
             "days_since_last_report": days_since,
             "total_reports": site.total_reports,
-            "needs_initial": not site.has_initial_report,
+            "needs_initial": site.monitoring_status == 'under_monitoring' and site.has_pending_initial_app,
             "active_application_status": site.active_application_status,
             "monitoring_status": site.monitoring_status,
             "review_status": (
