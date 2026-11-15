@@ -63,6 +63,14 @@ def log_activity(performed_by, email, action_type, entity_type='', entity_id=Non
     )
 
 
+def _sort_args(request, allowed):
+    """Build order_by() args from ?sort_by=&order= using a whitelist of fields.
+    Defaults to newest first; id is a tie-breaker so paging stays stable."""
+    field = allowed.get(request.GET.get('sort_by', ''), 'timestamp')
+    prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
+    return [prefix + field, prefix + 'id']
+
+
 @csrf_exempt
 def get_recent_logs(request):
     if request.method != 'GET':
@@ -83,6 +91,14 @@ def get_recent_logs(request):
     if date_from:  logs = logs.filter(timestamp__date__gte=date_from)
     if date_to:    logs = logs.filter(timestamp__date__lte=date_to)
     if event_type: logs = logs.filter(event_type=event_type)
+
+    logs = logs.select_related('user').order_by(*_sort_args(request, {
+        'email':      'email',
+        'user_role':  'user__user_role',
+        'event_type': 'event_type',
+        'ip_address': 'ip_address',
+        'timestamp':  'timestamp',
+    }))
 
     total  = logs.count()
     offset = (page - 1) * page_size
@@ -143,6 +159,15 @@ def get_activity_log(request):
     if action_type:     qs = qs.filter(action_type=action_type)
     if entity_type:     qs = qs.filter(entity_type=entity_type)
     if entity_id:       qs = qs.filter(entity_id=entity_id)
+
+    qs = qs.select_related('performed_by').order_by(*_sort_args(request, {
+        'performed_by_email': 'performed_by_email',
+        'action_type':        'action_type',
+        'entity_type':        'entity_type',
+        'description':        'description',
+        'ip_address':         'ip_address',
+        'timestamp':          'timestamp',
+    }))
 
     total  = qs.count()
     offset = (page - 1) * page_size

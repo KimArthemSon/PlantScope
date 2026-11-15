@@ -17,6 +17,11 @@ import {
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
+import SortableTh, {
+  applySortParams,
+  nextSort,
+  type SortState,
+} from "../../../components/table/SortableTh";
 import { api } from "@/constant/api.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -197,6 +202,12 @@ export default function TreeGrowersAccounts() {
     total_page: 1,
   });
   const [loading, setLoading] = useState(false);
+  const [sort, setSort] = useState<SortState>({ by: "created_at", order: "desc" });
+
+  const handleSort = (key: string) => {
+    setSort((prev) => nextSort(prev, key));
+    setFilter((prev) => ({ ...prev, page: 1 }));
+  };
 
   // Delete
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -225,6 +236,7 @@ export default function TreeGrowersAccounts() {
         page: filter.page.toString(),
         entries: filter.entries.toString(),
       });
+      applySortParams(params, sort);
       const res = await fetch(api + `api/list_tree_growers/?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -245,7 +257,7 @@ export default function TreeGrowersAccounts() {
 
   useEffect(() => {
     fetchTreeGrowers();
-  }, [filter.page, filter.entries, filter.site_status]);
+  }, [filter.page, filter.entries, filter.site_status, sort]);
 
   // ── Fetch detail ─────────────────────────────────────────────────────────────
 
@@ -664,13 +676,13 @@ export default function TreeGrowersAccounts() {
             <thead className="bg-[#0f4a2fe0] text-white">
               <tr>
                 <th className="py-3 px-5 text-left text-[.9rem]">No</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Group Name</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Group Type</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Email</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Contact</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Address</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Current Site</th>
-                <th className="py-3 px-5 text-left text-[.9rem]">Status</th>
+                <SortableTh label="Group Name" sortKey="group_name" sort={sort} onSort={handleSort} />
+                <SortableTh label="Group Type" sortKey="group_type" sort={sort} onSort={handleSort} />
+                <SortableTh label="Email" sortKey="email" sort={sort} onSort={handleSort} />
+                <SortableTh label="Contact" sortKey="group_contact" sort={sort} onSort={handleSort} />
+                <SortableTh label="Address" sortKey="group_address" sort={sort} onSort={handleSort} />
+                <SortableTh label="Current Site" sortKey="current_site" sort={sort} onSort={handleSort} />
+                <SortableTh label="Status" sortKey="is_active" sort={sort} onSort={handleSort} />
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
