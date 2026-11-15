@@ -1322,12 +1322,12 @@ const ValidationDataCard: React.FC<{ validationData: ValidationData | null }> = 
 };
 
 // ────────────────────────────────────────────
-// POTENTIAL SITES
+// POTENTIAL AREAS
 // ─────────────────────────────────────────────
 const PotentialSitesCard: React.FC<{ sites: PotentialSite[]; unit: AreaUnit }> = ({ sites, unit }) => {
   if (sites.length === 0) return null;
   return (
-    <BentoCard header={{ icon: MapPin, title: "Consolidated Potential Sites", badge: `${sites.length}` }}>
+    <BentoCard header={{ icon: MapPin, title: "Consolidated Potential Areas", badge: `${sites.length}` }}>
       <div className="space-y-2">
         {sites.map((site) => (
           <div key={site.potential_sites_id} className="p-3 bg-gray-50 rounded-md border border-gray-200 hover:border-gray-300 transition-colors">
@@ -1810,7 +1810,7 @@ export default function SiteInformation(): JSX.Element {
             <ValidationDataCard validationData={siteData.validation_data} />
           </div>
 
-          {/* ROW 6: Potential Sites (Full Width) */}
+          {/* ROW 6: Potential Areas (Full Width) */}
           {siteData.potential_sites.length > 0 && (
             <div className="col-span-12">
               <PotentialSitesCard sites={siteData.potential_sites} unit={areaUnit} />

@@ -32,6 +32,13 @@ export default function Login() {
 
   const navigate = useNavigate();
 
+  const goToDashboard = (role: string) => {
+    if (role === "CityENROHead") navigate("/dashboard");
+    else if (role === "DataManager") navigate("/dashboard-data-manager");
+    else if (role === "GISSpecialist") navigate("/dashboard/GISS");
+    else if (role === "AFA") navigate("/dashboard/AFA");
+  };
+
   /* ─── Auth check (unchanged) ─── */
   useEffect(() => {
     checkIfStillLogin();
@@ -57,18 +64,8 @@ export default function Login() {
       const data = await response.json();
       if (response.ok) {
         setIsLoading(false);
-        setPSAlert({
-          type: "success",
-          title: "Login Successful",
-          message: `Redirecting to dashboard...`,
-        });
         if (data.token) localStorage.setItem("token", data.token);
-        setTimeout(() => {
-          if (data.user_role === "CityENROHead") navigate("/dashboard");
-          else if (data.user_role === "DataManager") navigate("/dashboard-data-manager");
-          else if (data.user_role === "GISSpecialist") navigate("/dashboard/GISS");
-          else if (data.user_role === "AFA") navigate("/dashboard/AFA");
-        }, 2000);
+        goToDashboard(data.user_role);
       }
     } catch (error) {
       setIsLoading(false);
@@ -102,17 +99,8 @@ export default function Login() {
       if (response.ok) {
         setIsLoading(false);
         setAttemptsLeft(null);
-        setPSAlert({
-          type: "success",
-          title: "Login Successful",
-          message: `Redirecting to dashboard...`,
-        });
         if (data.token) localStorage.setItem("token", data.token);
-        setTimeout(() => {
-          if (data.user_role === "DataManager") navigate("/dashboard-data-manager");
-          else if (data.user_role === "CityENROHead") navigate("/dashboard");
-          else if (data.user_role === "GISSpecialist") navigate("/dashboard/GISS");
-        }, 3000);
+        goToDashboard(data.user_role);
       } else if (response.status === 403) {
         setIsLoading(false);
         setAttemptsLeft(0);

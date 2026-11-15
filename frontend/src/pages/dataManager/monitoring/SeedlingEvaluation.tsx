@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import LoaderPending from "../../../components/layout/loaderSmall";
+import SeedlingProgressPanel from "./components/SeedlingProgressPanel";
 import { api } from "@/constant/api.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -468,6 +469,15 @@ export default function RequestEval() {
     setSelectedSpeciesToAdd("");
   };
 
+  // "Provide more" from the progress panel
+  const handleAddSpeciesFromProgress = (speciesId: number, speciesName: string) => {
+    if (adjustedProvision.some((p) => p.species_id === speciesId)) return;
+    setAdjustedProvision([
+      ...adjustedProvision,
+      { species_id: speciesId, species_name: speciesName, quantity: 0, provided_by: "ENRO Nursery" },
+    ]);
+  };
+
   const handleRemoveSpecies = (speciesId: number) => {
     setAdjustedProvision(
       adjustedProvision.filter((p) => p.species_id !== speciesId),
@@ -672,6 +682,22 @@ export default function RequestEval() {
         siteName: request!.site_info.site_name,
         barangay: request!.site_info.barangay,
       };
+
+  const isReadOnly = !isCreate && request!.status !== "pending";
+
+  // Seedling Provision section (create with a grower picked, or a pending request)
+  const showProvisionSection = isCreate
+    ? !!selectedGrower && !growerLoading
+    : request!.status === "pending";
+  const progressSiteId = isCreate
+    ? (appDetails?.assigned_site?.site_id ?? null)
+    : (request?.site_info?.site_id ?? null);
+  const progressApplicationId = isCreate
+    ? (selectedGrower?.application_id ?? null)
+    : (request?.application_id ?? null);
+  const openRequests = (appDetails?.seedling_requests ?? []).filter(
+    (r) => isCreate || r.request_id !== request?.request_id,
+  );
 
   // ─── Shared Cards ────────────────────────────────────────────────────────
   const fulfillmentCard = (step: number) => (
@@ -975,619 +1001,836 @@ export default function RequestEval() {
       </div>
 
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* ─── Left Column: Context ────────────────────────────────────── */}
-          <div className="space-y-6">
-            {/* Create mode: Tree Grower picker */}
-            {isCreate && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
-                  Select Tree Grower
-                </h3>
-                <div className="relative mb-4">
-                  <Search
-                    size={16}
-                    className="absolute left-3 top-3 text-gray-400"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Search group, application, site, or barangay..."
-                    value={growerSearch}
-                    onChange={(e) => setGrowerSearch(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0F4A2F] focus:border-transparent"
-                  />
-                </div>
-                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                  {growers.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-6">
-                      No tree growers with an active (accepted / under
-                      monitoring) application.
-                    </p>
-                  ) : filteredGrowers.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-4">
-                      No match for "{growerSearch}".
-                    </p>
-                  ) : (
-                    filteredGrowers.map((g) => {
-                      const selected =
-                        selectedGrower?.application_id === g.application_id;
-                      return (
-                        <button
-                          key={g.application_id}
-                          onClick={() => handleSelectGrower(g)}
-                          className={`w-full flex items-start justify-between gap-3 p-3 rounded-lg border text-left transition-all ${
-                            selected
-                              ? "border-[#0F4A2F] bg-green-50"
-                              : "border-gray-200 hover:bg-gray-50"
-                          }`}
-                        >
-                          <div className="flex items-start gap-3 min-w-0">
-                            <div
-                              className={`p-2 rounded-full shrink-0 ${selected ? "bg-[#0F4A2F] text-white" : "bg-gray-100 text-gray-500"}`}
-                            >
-                              <Users size={16} />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-gray-900 truncate">
-                                {g.group_name}
-                              </p>
-                              <p className="text-xs text-gray-500 truncate">
-                                {g.application_title} · {g.application_status}
-                              </p>
-                              <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                                <MapPin size={11} />
-                                {g.site_name
-                                  ? `${g.site_name}${g.barangay ? ` • Brgy. ${g.barangay}` : ""}`
-                                  : "No site assigned"}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
-                            {selected && (
-                              <CheckCircle2
-                                size={20}
-                                className="text-[#0F4A2F]"
-                              />
-                            )}
-                            {g.pending_requests > 0 && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 font-semibold whitespace-nowrap">
-                                {g.pending_requests} pending
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-
-            {isCreate && growerLoading && (
-              <div className="flex items-center justify-center py-10 text-sm text-gray-500 gap-2">
-                <Loader2 size={16} className="animate-spin" /> Loading grower
-                details…
-              </div>
-            )}
-
-            {/* Maintenance Plan Section */}
-            {appDetails?.maintenance_plan && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
-                  Maintenance Plan
-                </h3>
-                <button
-                  onClick={handleDownloadMaintenancePlan}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group cursor-pointer disabled:cursor-wait disabled:opacity-80"
-                  type="button"
-                  disabled={downloadingPlan}
-                >
-                  <div className="w-9 h-9 rounded-lg bg-[#0F4A2F] flex items-center justify-center shrink-0">
-                    <FileText size={16} className="text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <p className="text-sm font-semibold text-[#0F4A2F] truncate">
-                      {appDetails.maintenance_plan.split("/").pop() ||
-                        "Maintenance Plan"}
-                    </p>
-                    <p className="text-xs text-green-600">
-                      {downloadingPlan ? "Downloading..." : "Click to download"}
-                    </p>
-                  </div>
-                  {downloadingPlan ? (
-                    <Loader2 size={16} className="text-[#0F4A2F] animate-spin" />
-                  ) : (
-                    <Download
-                      size={16}
-                      className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
-                    />
-                  )}
-                </button>
-              </div>
-            )}
-
-            {/* Application Stats */}
-            {appDetails && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
-                  Application Details
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-green-50 rounded-lg border border-green-100">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Users size={14} className="text-[#0F4A2F]" />
-                      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                        Total Tree Growers
+        {isReadOnly ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              {/* Maintenance Plan Section */}
+              {appDetails?.maintenance_plan && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                    Maintenance Plan
+                  </h3>
+                  <button
+                    onClick={handleDownloadMaintenancePlan}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group cursor-pointer disabled:cursor-wait disabled:opacity-80"
+                    type="button"
+                    disabled={downloadingPlan}
+                  >
+                    <div className="w-9 h-9 rounded-lg bg-[#0F4A2F] flex items-center justify-center shrink-0">
+                      <FileText size={16} className="text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className="text-sm font-semibold text-[#0F4A2F] truncate">
+                        {appDetails.maintenance_plan.split("/").pop() ||
+                          "Maintenance Plan"}
+                      </p>
+                      <p className="text-xs text-green-600">
+                        {downloadingPlan ? "Downloading..." : "Click to download"}
                       </p>
                     </div>
-                    <p className="text-2xl font-bold text-[#0F4A2F]">
-                      {appDetails.total_treegrowers_will_participate}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Sprout size={14} className="text-blue-600" />
-                      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                        {isCreate ? "Previous Requests" : "Seedlings Requested"}
-                      </p>
-                    </div>
-                    <p className="text-2xl font-bold text-blue-700">
-                      {isCreate
-                        ? appDetails.seedling_requests.length
-                        : request!.no_request_seedling}
-                    </p>
-                  </div>
+                    {downloadingPlan ? (
+                      <Loader2 size={16} className="text-[#0F4A2F] animate-spin" />
+                    ) : (
+                      <Download
+                        size={16}
+                        className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
+                      />
+                    )}
+                  </button>
                 </div>
-              </div>
-            )}
-
-            {/* Grower Info */}
-            {ctx && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
-                  Grower Information
-                </h3>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-xs text-gray-500">Group Name</p>
-                    <p className="font-semibold text-gray-900">
-                      {ctx.groupName}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">
-                      {isCreate ? "Account Email" : "Representative"}
-                    </p>
-                    <p className="text-sm text-gray-800">
-                      {ctx.representativeName}
-                    </p>
-                  </div>
+              )}
+              {/* Application Stats */}
+              {appDetails && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                    Application Details
+                  </h3>
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-500">Group Contact</p>
-                      <p className="text-sm text-gray-800">
-                        {ctx.groupContact || "N/A"}
-                      </p>
-                    </div>
-                    {!isCreate && (
-                      <div>
-                        <p className="text-xs text-gray-500">Rep. Contact</p>
-                        <p className="text-sm text-gray-800">
-                          {ctx.representativeContact || "N/A"}
+                    <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Users size={14} className="text-[#0F4A2F]" />
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                          Total Tree Growers
                         </p>
                       </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Site Info with View Details Button */}
-            {ctx && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                    Assigned Site
-                  </h3>
-                  {appDetails?.assigned_site && (
-                    <button
-                      onClick={() =>
-                        navigate(
-                          `/DataManager/reforestation/site/${appDetails.assigned_site!.reforestation_area_id}/information/${appDetails.assigned_site!.site_id}`,
-                        )
-                      }
-                      className="flex items-center gap-1 text-xs text-[#0F4A2F] hover:underline font-medium"
-                    >
-                      View Details <ExternalLink size={12} />
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-green-50 rounded-lg">
-                    <MapPin size={20} className="text-[#0F4A2F]" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">{ctx.siteName}</p>
-                    <p className="text-sm text-gray-500">{ctx.barangay}</p>
-                  </div>
-                </div>
-                {isCreate &&
-                  appDetails &&
-                  appDetails.recommended_species.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-100">
-                      <p className="text-xs text-gray-500 mb-2">
-                        Recommended species for this site
+                      <p className="text-2xl font-bold text-[#0F4A2F]">
+                        {appDetails.total_treegrowers_will_participate}
                       </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {appDetails.recommended_species.map((r) => (
-                          <span
-                            key={`${r.species_id}-${r.rank}`}
-                            className="px-2 py-0.5 rounded-full text-xs bg-green-50 text-[#0F4A2F] border border-green-200"
-                          >
-                            {r.species_name}
-                          </span>
-                        ))}
-                      </div>
                     </div>
-                  )}
-              </div>
-            )}
-
-            {/* Create mode: Previous requests for this application */}
-            {isCreate && appDetails && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                  <History size={13} /> Previous Seedling Requests
-                </h3>
-                {appDetails.seedling_requests.length > 0 ? (
-                  <div className="space-y-2">
-                    {appDetails.seedling_requests.map((sr) => (
-                      <div
-                        key={sr.request_id}
-                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"
-                      >
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Sprout size={14} className="text-blue-600" />
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                          {isCreate ? "Previous Requests" : "Seedlings Requested"}
+                        </p>
+                      </div>
+                      <p className="text-2xl font-bold text-blue-700">
+                        {isCreate
+                          ? appDetails.seedling_requests.length
+                          : request!.no_request_seedling}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Grower Info */}
+              {ctx && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                    Grower Information
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-gray-500">Group Name</p>
+                      <p className="font-semibold text-gray-900">
+                        {ctx.groupName}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">
+                        {isCreate ? "Account Email" : "Representative"}
+                      </p>
+                      <p className="text-sm text-gray-800">
+                        {ctx.representativeName}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-500">Group Contact</p>
+                        <p className="text-sm text-gray-800">
+                          {ctx.groupContact || "N/A"}
+                        </p>
+                      </div>
+                      {!isCreate && (
                         <div>
-                          <p className="text-sm font-medium text-gray-800">
-                            {sr.no_request_seedling.toLocaleString()} seedlings
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {formatDate(sr.submitted_at)}
+                          <p className="text-xs text-gray-500">Rep. Contact</p>
+                          <p className="text-sm text-gray-800">
+                            {ctx.representativeContact || "N/A"}
                           </p>
                         </div>
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${STATUS_BADGE[sr.status] || STATUS_BADGE.cancelled}`}
-                        >
-                          {sr.status.charAt(0).toUpperCase() + sr.status.slice(1)}
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* Site Info with View Details Button */}
+              {ctx && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                      Assigned Site
+                    </h3>
+                    {appDetails?.assigned_site && (
+                      <button
+                        onClick={() =>
+                          navigate(
+                            `/DataManager/reforestation/site/${appDetails.assigned_site!.reforestation_area_id}/information/${appDetails.assigned_site!.site_id}`,
+                          )
+                        }
+                        className="flex items-center gap-1 text-xs text-[#0F4A2F] hover:underline font-medium"
+                      >
+                        View Details <ExternalLink size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-green-50 rounded-lg">
+                      <MapPin size={20} className="text-[#0F4A2F]" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">{ctx.siteName}</p>
+                      <p className="text-sm text-gray-500">{ctx.barangay}</p>
+                    </div>
+                  </div>
+                  {isCreate &&
+                    appDetails &&
+                    appDetails.recommended_species.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <p className="text-xs text-gray-500 mb-2">
+                          Recommended species for this site
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {appDetails.recommended_species.map((r) => (
+                            <span
+                              key={`${r.species_id}-${r.rank}`}
+                              className="px-2 py-0.5 rounded-full text-xs bg-green-50 text-[#0F4A2F] border border-green-200"
+                            >
+                              {r.species_name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                </div>
+              )}
+              {/* Eval mode: Original Requested Seedlings */}
+              {!isCreate && request && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                    Originally Requested
+                  </h3>
+                  <div className="space-y-2">
+                    {request.species.map((sp, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Sprout size={16} className="text-[#0F4A2F]" />
+                          <span className="text-sm font-medium text-gray-800">
+                            {sp.species_name}
+                          </span>
+                        </div>
+                        <span className="text-sm font-bold text-[#0F4A2F]">
+                          {sp.quantity.toLocaleString()}
                         </span>
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <p className="text-sm text-gray-400 text-center py-3">
-                    No previous requests for this application.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Eval mode: Original Requested Seedlings */}
-            {!isCreate && request && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
-                  Originally Requested
-                </h3>
-                <div className="space-y-2">
-                  {request.species.map((sp, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Sprout size={16} className="text-[#0F4A2F]" />
-                        <span className="text-sm font-medium text-gray-800">
-                          {sp.species_name}
-                        </span>
-                      </div>
-                      <span className="text-sm font-bold text-[#0F4A2F]">
-                        {sp.quantity.toLocaleString()}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
-                  <span className="text-sm font-semibold text-gray-600">
-                    Total Requested
-                  </span>
-                  <span className="text-lg font-bold text-[#0F4A2F]">
-                    {request.no_request_seedling.toLocaleString()}
-                  </span>
-                </div>
-                {request.description && (
-                  <p className="mt-3 text-xs text-gray-500 italic">
-                    “{request.description}”
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* ─── Right Column: Action Form ────────────────────────────────── */}
-          <div className="space-y-6">
-            {isCreate ? (
-              selectedGrower ? (
-                <>
-                  {fulfillmentCard(1)}
-                  {inspectorCard(2)}
-                  {provisionCard(3)}
-                  {notesCard(
-                    4,
-                    "Notes for the Tree Grower (Optional)",
-                    "e.g., Seedlings are ready for pickup at the ENRO Nursery.",
+                  <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
+                    <span className="text-sm font-semibold text-gray-600">
+                      Total Requested
+                    </span>
+                    <span className="text-lg font-bold text-[#0F4A2F]">
+                      {request.no_request_seedling.toLocaleString()}
+                    </span>
+                  </div>
+                  {request.description && (
+                    <p className="mt-3 text-xs text-gray-500 italic">
+                      “{request.description}”
+                    </p>
                   )}
-
-                  <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-xs text-blue-800">
-                    Since ENRO is providing these seedlings, the request is
-                    created as <b>Accepted</b> right away — no separate
-                    approval. The tree grower and the assigned inspector will
-                    both be notified, and the inspector confirms on handover.
-                  </div>
-
-                  <div className="flex gap-4 pt-2 pb-10">
-                    <button
-                      onClick={() => navigate("/DataManager/request")}
-                      disabled={submitting}
-                      className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-600 font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleCreate}
-                      disabled={
-                        submitting ||
-                        totalProvision <= 0 ||
-                        !selectedInspectorId
-                      }
-                      className="flex-2 py-3 rounded-xl bg-[#0F4A2F] text-white font-semibold hover:bg-[#1a6b44] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {submitting ? (
-                        "Creating..."
-                      ) : (
-                        <>
-                          <Send size={18} /> Create & Assign
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="bg-white p-10 rounded-xl border border-dashed border-gray-300 flex flex-col items-center justify-center text-center gap-2 text-gray-400">
-                  <Users size={32} />
-                  <p className="text-sm font-medium text-gray-500">
-                    Select a tree grower to continue
-                  </p>
-                  <p className="text-xs">
-                    Their application, site, and previous requests will appear
-                    here, then you can choose the seedlings to provide.
-                  </p>
                 </div>
-              )
-            ) : request!.status === "pending" ? (
-              <>
-                {fulfillmentCard(1)}
-                {inspectorCard(2)}
+              )}
+            </div>
+            <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-4">
+              <h3 className="text-lg font-bold text-[#0F4A2F] mb-4">
+                Request Status Details
+              </h3>
 
-                {/* Step 3: Build Provision List */}
-                {provisionCard(3)}
-
-                {/* Step 4: Notes */}
-                {notesCard(
-                  4,
-                  "Notes (Optional)",
-                  "e.g., Approved, but Mahogany quantity reduced due to low nursery stock.",
-                )}
-
-                {/* Action Buttons */}
-                <div className="flex gap-4 pt-2 pb-10">
-                  <button
-                    onClick={handleReject}
-                    disabled={submitting}
-                    className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-semibold hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    <XCircle size={18} /> Reject Request
-                  </button>
-                  <button
-                    onClick={handleApprove}
-                    disabled={
-                      submitting ||
-                      !selectedInspectorId ||
-                      adjustedProvision.length === 0
-                    }
-                    className="flex-2 py-3 rounded-xl bg-[#0F4A2F] text-white font-semibold hover:bg-[#1a6b44] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {submitting ? (
-                      "Processing..."
+              {request!.fulfillment_type && (
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-1">
+                    Fulfillment Method
+                  </p>
+                  <p className="text-sm font-medium text-gray-900 capitalize flex items-center gap-2">
+                    {request!.fulfillment_type === "deliver" ? (
+                      <Truck size={16} />
                     ) : (
-                      <>
-                        <CheckCircle2 size={18} /> Approve & Assign
-                      </>
+                      <Home size={16} />
                     )}
-                  </button>
+                    {request!.fulfillment_type === "deliver"
+                      ? "Deliver to Site"
+                      : "Grower Pickup"}
+                  </p>
                 </div>
-              </>
-            ) : (
-              // Read-only view for non-pending requests
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-4">
-                <h3 className="text-lg font-bold text-[#0F4A2F] mb-4">
-                  Request Status Details
-                </h3>
+              )}
 
-                {request!.fulfillment_type && (
-                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">
-                      Fulfillment Method
-                    </p>
-                    <p className="text-sm font-medium text-gray-900 capitalize flex items-center gap-2">
-                      {request!.fulfillment_type === "deliver" ? (
-                        <Truck size={16} />
-                      ) : (
-                        <Home size={16} />
-                      )}
-                      {request!.fulfillment_type === "deliver"
-                        ? "Deliver to Site"
-                        : "Grower Pickup"}
-                    </p>
+              {request!.assigned_inspector && (
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-1">
+                    Assigned Inspector
+                  </p>
+                  <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                    <User size={16} /> {request!.assigned_inspector.name}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1 ml-6">
+                    {request!.assigned_inspector.contact}
+                  </p>
+                </div>
+              )}
+
+              {/* Seedlings provided / requested */}
+              <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase">
+                    {request!.status === "confirmed"
+                      ? "Seedlings Delivered"
+                      : request!.status === "accepted"
+                        ? "Seedlings to Provide"
+                        : "Seedlings Requested"}
+                  </p>
+                  <span className="text-[11px] text-gray-400">
+                    {request!.species.length} species
+                  </span>
+                </div>
+                {request!.species.length > 0 ? (
+                  <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400">
+                        <tr>
+                          <th className="text-left font-semibold px-3 py-2">Species</th>
+                          <th className="text-left font-semibold px-3 py-2">Provided By</th>
+                          <th className="text-right font-semibold px-3 py-2">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {request!.species.map((sp) => (
+                          <tr key={sp.species_id} className="border-t border-gray-100">
+                            <td className="px-3 py-2">
+                              <span className="flex items-center gap-2 font-medium text-gray-800">
+                                <Sprout size={14} className="text-[#0F4A2F] shrink-0" />
+                                {sp.species_name}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-gray-500">
+                              {sp.provided_by || "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right font-bold text-[#0F4A2F]">
+                              {sp.quantity.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-gray-200 bg-green-50/60">
+                          <td colSpan={2} className="px-3 py-2 text-xs font-semibold text-gray-600">
+                            Total
+                          </td>
+                          <td className="px-3 py-2 text-right text-base font-bold text-[#0F4A2F]">
+                            {request!.no_request_seedling.toLocaleString()}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">No species recorded.</p>
                 )}
+              </div>
 
-                {request!.assigned_inspector && (
-                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">
-                      Assigned Inspector
-                    </p>
-                    <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
-                      <User size={16} /> {request!.assigned_inspector.name}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1 ml-6">
-                      {request!.assigned_inspector.contact}
-                    </p>
-                  </div>
-                )}
+              {/* Notes — Data Manager vs Inspector */}
+              {(() => {
+                const { manager, inspector } = splitNotes(request!.reason_accepted);
+                const isNegative =
+                  request!.status === "rejected" || request!.status === "cancelled";
+                return (
+                  <>
+                    {isNegative && request!.reason && (
+                      <div className="p-4 bg-red-50 rounded-xl border border-red-200">
+                        <p className="text-xs font-semibold text-red-700 uppercase mb-1">
+                          {request!.status === "rejected" ? "Rejection Reason" : "Cancellation Reason"}
+                        </p>
+                        <p className="text-sm text-red-900">{request!.reason}</p>
+                      </div>
+                    )}
+                    {manager && (
+                      <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+                        <p className="text-xs font-semibold text-blue-700 uppercase mb-1">
+                          Data Manager Notes
+                        </p>
+                        <p className="text-sm text-blue-900">{manager}</p>
+                      </div>
+                    )}
+                    {inspector && (
+                      <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+                        <p className="text-xs font-semibold text-amber-700 uppercase mb-1">
+                          Inspector Notes
+                        </p>
+                        <p className="text-sm text-amber-900">{inspector}</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
-                {/* Seedlings provided / requested */}
+              {/* Proof of delivery */}
+              {request!.proof_of_delivery && (
                 <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-xs font-semibold text-gray-500 uppercase">
-                      {request!.status === "confirmed"
-                        ? "Seedlings Delivered"
-                        : request!.status === "accepted"
-                          ? "Seedlings to Provide"
-                          : "Seedlings Requested"}
+                      Proof of Delivery
                     </p>
-                    <span className="text-[11px] text-gray-400">
-                      {request!.species.length} species
-                    </span>
-                  </div>
-                  {request!.species.length > 0 ? (
-                    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400">
-                          <tr>
-                            <th className="text-left font-semibold px-3 py-2">Species</th>
-                            <th className="text-left font-semibold px-3 py-2">Provided By</th>
-                            <th className="text-right font-semibold px-3 py-2">Qty</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {request!.species.map((sp) => (
-                            <tr key={sp.species_id} className="border-t border-gray-100">
-                              <td className="px-3 py-2">
-                                <span className="flex items-center gap-2 font-medium text-gray-800">
-                                  <Sprout size={14} className="text-[#0F4A2F] shrink-0" />
-                                  {sp.species_name}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-gray-500">
-                                {sp.provided_by || "—"}
-                              </td>
-                              <td className="px-3 py-2 text-right font-bold text-[#0F4A2F]">
-                                {sp.quantity.toLocaleString()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t border-gray-200 bg-green-50/60">
-                            <td colSpan={2} className="px-3 py-2 text-xs font-semibold text-gray-600">
-                              Total
-                            </td>
-                            <td className="px-3 py-2 text-right text-base font-bold text-[#0F4A2F]">
-                              {request!.no_request_seedling.toLocaleString()}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-400 italic">No species recorded.</p>
-                  )}
-                </div>
-
-                {/* Notes — Data Manager vs Inspector */}
-                {(() => {
-                  const { manager, inspector } = splitNotes(request!.reason_accepted);
-                  const isNegative =
-                    request!.status === "rejected" || request!.status === "cancelled";
-                  return (
-                    <>
-                      {isNegative && request!.reason && (
-                        <div className="p-4 bg-red-50 rounded-xl border border-red-200">
-                          <p className="text-xs font-semibold text-red-700 uppercase mb-1">
-                            {request!.status === "rejected" ? "Rejection Reason" : "Cancellation Reason"}
-                          </p>
-                          <p className="text-sm text-red-900">{request!.reason}</p>
-                        </div>
-                      )}
-                      {manager && (
-                        <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
-                          <p className="text-xs font-semibold text-blue-700 uppercase mb-1">
-                            Data Manager Notes
-                          </p>
-                          <p className="text-sm text-blue-900">{manager}</p>
-                        </div>
-                      )}
-                      {inspector && (
-                        <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
-                          <p className="text-xs font-semibold text-amber-700 uppercase mb-1">
-                            Inspector Notes
-                          </p>
-                          <p className="text-sm text-amber-900">{inspector}</p>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-
-                {/* Proof of delivery */}
-                {request!.proof_of_delivery && (
-                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs font-semibold text-gray-500 uppercase">
-                        Proof of Delivery
-                      </p>
-                      <a
-                        href={request!.proof_of_delivery}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1 text-xs text-[#0F4A2F] hover:underline font-medium"
-                      >
-                        Open full size <ExternalLink size={12} />
-                      </a>
-                    </div>
-                    <a href={request!.proof_of_delivery} target="_blank" rel="noreferrer">
-                      <img
-                        src={request!.proof_of_delivery}
-                        alt="Proof of delivery"
-                        className="w-full max-h-80 object-cover rounded-lg border border-gray-200 hover:opacity-90 transition-opacity"
-                      />
+                    <a
+                      href={request!.proof_of_delivery}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 text-xs text-[#0F4A2F] hover:underline font-medium"
+                    >
+                      Open full size <ExternalLink size={12} />
                     </a>
                   </div>
-                )}
+                  <a href={request!.proof_of_delivery} target="_blank" rel="noreferrer">
+                    <img
+                      src={request!.proof_of_delivery}
+                      alt="Proof of delivery"
+                      className="w-full max-h-80 object-cover rounded-lg border border-gray-200 hover:opacity-90 transition-opacity"
+                    />
+                  </a>
+                </div>
+              )}
 
-                {request!.status === "confirmed" && (
-                  <div className="p-4 bg-green-50 rounded-xl border border-green-200">
-                    <p className="text-xs font-semibold text-green-700 uppercase mb-1">
-                      Status
-                    </p>
-                    <p className="text-sm text-green-900 flex items-center gap-2">
-                      <CheckCircle2 size={16} /> Seedlings successfully
-                      delivered and confirmed.
-                    </p>
+              {request!.status === "confirmed" && (
+                <div className="p-4 bg-green-50 rounded-xl border border-green-200">
+                  <p className="text-xs font-semibold text-green-700 uppercase mb-1">
+                    Status
+                  </p>
+                  <p className="text-sm text-green-900 flex items-center gap-2">
+                    <CheckCircle2 size={16} /> Seedlings successfully
+                    delivered and confirmed.
+                  </p>
+                </div>
+              )}
+            </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+          {/* Create mode: Tree Grower picker */}
+          {isCreate && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                Select Tree Grower
+              </h3>
+              <div className="relative mb-4">
+                <Search
+                  size={16}
+                  className="absolute left-3 top-3 text-gray-400"
+                />
+                <input
+                  type="text"
+                  placeholder="Search group, application, site, or barangay..."
+                  value={growerSearch}
+                  onChange={(e) => setGrowerSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0F4A2F] focus:border-transparent"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+                {growers.length === 0 ? (
+                  <p className="col-span-full text-sm text-gray-400 text-center py-6">
+                    No tree growers with an active (accepted / under
+                    monitoring) application.
+                  </p>
+                ) : filteredGrowers.length === 0 ? (
+                  <p className="col-span-full text-sm text-gray-400 text-center py-4">
+                    No match for "{growerSearch}".
+                  </p>
+                ) : (
+                  filteredGrowers.map((g) => {
+                    const selected =
+                      selectedGrower?.application_id === g.application_id;
+                    return (
+                      <button
+                        key={g.application_id}
+                        onClick={() => handleSelectGrower(g)}
+                        className={`w-full flex items-start justify-between gap-3 p-3 rounded-lg border text-left transition-all ${
+                          selected
+                            ? "border-[#0F4A2F] bg-green-50"
+                            : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div
+                            className={`p-2 rounded-full shrink-0 ${selected ? "bg-[#0F4A2F] text-white" : "bg-gray-100 text-gray-500"}`}
+                          >
+                            <Users size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">
+                              {g.group_name}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {g.application_title} · {g.application_status}
+                            </p>
+                            <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                              <MapPin size={11} />
+                              {g.site_name
+                                ? `${g.site_name}${g.barangay ? ` • Brgy. ${g.barangay}` : ""}`
+                                : "No site assigned"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {selected && (
+                            <CheckCircle2
+                              size={20}
+                              className="text-[#0F4A2F]"
+                            />
+                          )}
+                          {g.pending_requests > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 font-semibold whitespace-nowrap">
+                              {g.pending_requests} pending
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {isCreate && growerLoading && (
+            <div className="flex items-center justify-center py-10 text-sm text-gray-500 gap-2">
+              <Loader2 size={16} className="animate-spin" /> Loading grower
+              details…
+            </div>
+          )}
+
+            {/* Overview: grower · site · application */}
+            {ctx && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Grower Info */}
+                {ctx && (
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                      Grower Information
+                    </h3>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs text-gray-500">Group Name</p>
+                        <p className="font-semibold text-gray-900">
+                          {ctx.groupName}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">
+                          {isCreate ? "Account Email" : "Representative"}
+                        </p>
+                        <p className="text-sm text-gray-800">
+                          {ctx.representativeName}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-xs text-gray-500">Group Contact</p>
+                          <p className="text-sm text-gray-800">
+                            {ctx.groupContact || "N/A"}
+                          </p>
+                        </div>
+                        {!isCreate && (
+                          <div>
+                            <p className="text-xs text-gray-500">Rep. Contact</p>
+                            <p className="text-sm text-gray-800">
+                              {ctx.representativeContact || "N/A"}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
+                {/* Site Info with View Details Button */}
+                {ctx && (
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                        Assigned Site
+                      </h3>
+                      {appDetails?.assigned_site && (
+                        <button
+                          onClick={() =>
+                            navigate(
+                              `/DataManager/reforestation/site/${appDetails.assigned_site!.reforestation_area_id}/information/${appDetails.assigned_site!.site_id}`,
+                            )
+                          }
+                          className="flex items-center gap-1 text-xs text-[#0F4A2F] hover:underline font-medium"
+                        >
+                          View Details <ExternalLink size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-green-50 rounded-lg">
+                        <MapPin size={20} className="text-[#0F4A2F]" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-900">{ctx.siteName}</p>
+                        <p className="text-sm text-gray-500">{ctx.barangay}</p>
+                      </div>
+                    </div>
+                    {isCreate &&
+                      appDetails &&
+                      appDetails.recommended_species.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          <p className="text-xs text-gray-500 mb-2">
+                            Recommended species for this site
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {appDetails.recommended_species.map((r) => (
+                              <span
+                                key={`${r.species_id}-${r.rank}`}
+                                className="px-2 py-0.5 rounded-full text-xs bg-green-50 text-[#0F4A2F] border border-green-200"
+                              >
+                                {r.species_name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                )}
+                <div className="space-y-6">
+                  {/* Application Stats */}
+                  {appDetails && (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                      <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                        Application Details
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Users size={14} className="text-[#0F4A2F]" />
+                            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                              Total Tree Growers
+                            </p>
+                          </div>
+                          <p className="text-2xl font-bold text-[#0F4A2F]">
+                            {appDetails.total_treegrowers_will_participate}
+                          </p>
+                        </div>
+                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Sprout size={14} className="text-blue-600" />
+                            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                              {isCreate ? "Previous Requests" : "Seedlings Requested"}
+                            </p>
+                          </div>
+                          <p className="text-2xl font-bold text-blue-700">
+                            {isCreate
+                              ? appDetails.seedling_requests.length
+                              : request!.no_request_seedling}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Maintenance Plan Section */}
+                  {appDetails?.maintenance_plan && (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                      <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                        Maintenance Plan
+                      </h3>
+                      <button
+                        onClick={handleDownloadMaintenancePlan}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl border border-dashed border-green-300 bg-green-50 hover:bg-green-100 transition-colors group cursor-pointer disabled:cursor-wait disabled:opacity-80"
+                        type="button"
+                        disabled={downloadingPlan}
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-[#0F4A2F] flex items-center justify-center shrink-0">
+                          <FileText size={16} className="text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-sm font-semibold text-[#0F4A2F] truncate">
+                            {appDetails.maintenance_plan.split("/").pop() ||
+                              "Maintenance Plan"}
+                          </p>
+                          <p className="text-xs text-green-600">
+                            {downloadingPlan ? "Downloading..." : "Click to download"}
+                          </p>
+                        </div>
+                        {downloadingPlan ? (
+                          <Loader2 size={16} className="text-[#0F4A2F] animate-spin" />
+                        ) : (
+                          <Download
+                            size={16}
+                            className="text-green-500 group-hover:text-[#0F4A2F] transition-colors"
+                          />
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Steps 1–2 side by side */}
+            {ctx && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                <div className="space-y-6">
+                  {fulfillmentCard(1)}
+                  {/* Create mode: Previous requests for this application */}
+                  {isCreate && appDetails && (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                      <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <History size={13} /> Previous Seedling Requests
+                      </h3>
+                      {appDetails.seedling_requests.length > 0 ? (
+                        <div className="space-y-2">
+                          {appDetails.seedling_requests.map((sr) => (
+                            <div
+                              key={sr.request_id}
+                              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"
+                            >
+                              <div>
+                                <p className="text-sm font-medium text-gray-800">
+                                  {sr.no_request_seedling.toLocaleString()} seedlings
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {formatDate(sr.submitted_at)}
+                                </p>
+                              </div>
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${STATUS_BADGE[sr.status] || STATUS_BADGE.cancelled}`}
+                              >
+                                {sr.status.charAt(0).toUpperCase() + sr.status.slice(1)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-400 text-center py-3">
+                          No previous requests for this application.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {/* Eval mode: Original Requested Seedlings */}
+                  {!isCreate && request && (
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                      <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">
+                        Originally Requested
+                      </h3>
+                      <div className="space-y-2">
+                        {request.species.map((sp, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Sprout size={16} className="text-[#0F4A2F]" />
+                              <span className="text-sm font-medium text-gray-800">
+                                {sp.species_name}
+                              </span>
+                            </div>
+                            <span className="text-sm font-bold text-[#0F4A2F]">
+                              {sp.quantity.toLocaleString()}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
+                        <span className="text-sm font-semibold text-gray-600">
+                          Total Requested
+                        </span>
+                        <span className="text-lg font-bold text-[#0F4A2F]">
+                          {request.no_request_seedling.toLocaleString()}
+                        </span>
+                      </div>
+                      {request.description && (
+                        <p className="mt-3 text-xs text-gray-500 italic">
+                          “{request.description}”
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {inspectorCard(2)}
               </div>
             )}
           </div>
-        </div>
+        )}
+
+        {/* ─── Seedling Provision: progress (left) vs. what to provide (right) ─── */}
+        {showProvisionSection && (
+          <section className="mt-10">
+            <div className="mb-4 flex items-end justify-between gap-4 border-b border-gray-200 pb-3">
+              <div>
+                <h2 className="text-base font-bold text-[#0F4A2F] flex items-center gap-2">
+                  <Sprout size={18} /> Seedling Provision
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Check how earlier seedlings are doing on the left before
+                  deciding what to provide on the right.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+              <SeedlingProgressPanel
+                siteId={progressSiteId}
+                applicationId={progressApplicationId}
+                openRequests={openRequests}
+                provisionSpeciesIds={adjustedProvision.map((p) => p.species_id)}
+                onAddSpecies={handleAddSpeciesFromProgress}
+              />
+              <div className="space-y-6">
+                {provisionCard(3)}
+                {isCreate ? (
+                  <>
+                    {notesCard(
+                      4,
+                      "Notes for the Tree Grower (Optional)",
+                      "e.g., Seedlings are ready for pickup at the ENRO Nursery.",
+                    )}
+
+                    <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 text-xs text-blue-800">
+                      Since ENRO is providing these seedlings, the request is
+                      created as <b>Accepted</b> right away — no separate
+                      approval. The tree grower and the assigned inspector will
+                      both be notified, and the inspector confirms on handover.
+                    </div>
+
+                    <div className="flex gap-4 pt-2 pb-10">
+                      <button
+                        onClick={() => navigate("/DataManager/request")}
+                        disabled={submitting}
+                        className="flex-1 py-3 rounded-xl bg-gray-100 text-gray-600 font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleCreate}
+                        disabled={
+                          submitting ||
+                          totalProvision <= 0 ||
+                          !selectedInspectorId
+                        }
+                        className="flex-2 py-3 rounded-xl bg-[#0F4A2F] text-white font-semibold hover:bg-[#1a6b44] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {submitting ? (
+                          "Creating..."
+                        ) : (
+                          <>
+                            <Send size={18} /> Create & Assign
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Step 4: Notes */}
+                    {notesCard(
+                      4,
+                      "Notes (Optional)",
+                      "e.g., Approved, but Mahogany quantity reduced due to low nursery stock.",
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-4 pt-2 pb-10">
+                      <button
+                        onClick={handleReject}
+                        disabled={submitting}
+                        className="flex-1 py-3 rounded-xl bg-red-50 text-red-600 font-semibold hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <XCircle size={18} /> Reject Request
+                      </button>
+                      <button
+                        onClick={handleApprove}
+                        disabled={
+                          submitting ||
+                          !selectedInspectorId ||
+                          adjustedProvision.length === 0
+                        }
+                        className="flex-2 py-3 rounded-xl bg-[#0F4A2F] text-white font-semibold hover:bg-[#1a6b44] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {submitting ? (
+                          "Processing..."
+                        ) : (
+                          <>
+                            <CheckCircle2 size={18} /> Approve & Assign
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

@@ -183,131 +183,36 @@ export function useBarangayAreas(
     }
   }, [mapRef]);
 
+  // While drawing, map clicks add vertices; the form panel is open the whole time
   const startDrawingHazard = useCallback(() => {
     clearHazardDrawing();
     clearEditPreview();
     setHazardPolygonPoints([]);
     setCompletedHazardPolygon(null);
-    setShowHazardForm(false);
     setEditingHazardArea(null);
+    setShowHazardForm(true);
     setIsDrawingHazard(true);
     setIsMapEditMode(false);
   }, [clearHazardDrawing, clearEditPreview]);
 
-  const addHazardPoint = useCallback(
-    (lat: number, lng: number) => {
-      const map = mapRef.current;
-      if (!map) return;
-
-      const newPoint: [number, number] = [lat, lng];
-      setHazardPolygonPoints((prev) => {
-        const updated = [...prev, newPoint];
-
-        const marker = L.marker(newPoint, {
-          icon: L.divIcon({
-            className: "hazard-draw-vertex",
-            html: `<div style="
-              background:#eab308;width:14px;height:14px;border-radius:50%;
-              border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);
-              display:flex;align-items:center;justify-content:center;
-              font-size:8px;color:white;font-weight:bold;
-            ">${updated.length}</div>`,
-            iconSize: [14, 14],
-            iconAnchor: [7, 7],
-          }),
-        }).addTo(map);
-
-        marker.on("dblclick", () => {
-          const idx = updated.findIndex((p) => p[0] === lat && p[1] === lng);
-          if (idx !== -1) {
-            const newPoints = updated.filter((_, i) => i !== idx);
-            setHazardPolygonPoints(newPoints);
-            map.removeLayer(marker);
-            hazardDrawingMarkersRef.current = hazardDrawingMarkersRef.current.filter((m) => m !== marker);
-            if (hazardDrawingLineRef.current) map.removeLayer(hazardDrawingLineRef.current);
-            if (newPoints.length >= 2) {
-              hazardDrawingLineRef.current = L.polyline(newPoints, {
-                color: "#ca8a04", weight: 3, dashArray: "5, 5",
-              }).addTo(map);
-            }
-            hazardDrawingMarkersRef.current.forEach((m, i) => {
-              m.setIcon(
-                L.divIcon({
-                  className: "hazard-draw-vertex",
-                  html: `<div style="
-                    background:#eab308;width:14px;height:14px;border-radius:50%;
-                    border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);
-                    display:flex;align-items:center;justify-content:center;
-                    font-size:8px;color:white;font-weight:bold;
-                  ">${i + 1}</div>`,
-                  iconSize: [14, 14],
-                  iconAnchor: [7, 7],
-                })
-              );
-            });
-          }
-        });
-
-        hazardDrawingMarkersRef.current.push(marker);
-
-        if (hazardDrawingLineRef.current) map.removeLayer(hazardDrawingLineRef.current);
-        if (updated.length >= 2) {
-          hazardDrawingLineRef.current = L.polyline(updated, {
-            color: "#ca8a04", weight: 3, dashArray: "5, 5",
-          }).addTo(map);
-        }
-
-        return updated;
-      });
-    },
-    [mapRef]
-  );
+  const addHazardPoint = useCallback((lat: number, lng: number) => {
+    setHazardPolygonPoints((prev) => [...prev, [lat, lng]]);
+  }, []);
 
   const removeLastHazardPoint = useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    setHazardPolygonPoints((prev) => {
-      if (prev.length === 0) return prev;
-      const lastMarker = hazardDrawingMarkersRef.current.pop();
-      if (lastMarker) map.removeLayer(lastMarker);
-      const newPoints = prev.slice(0, -1);
-      if (hazardDrawingLineRef.current) map.removeLayer(hazardDrawingLineRef.current);
-      if (newPoints.length >= 2) {
-        hazardDrawingLineRef.current = L.polyline(newPoints, {
-          color: "#ca8a04", weight: 3, dashArray: "5, 5",
-        }).addTo(map);
-      } else {
-        hazardDrawingLineRef.current = null;
-      }
-      return newPoints;
-    });
-  }, [mapRef]);
+    setHazardPolygonPoints((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev));
+  }, []);
 
+  // Stop adding points on map click (the form stays open)
   const finishDrawingHazard = useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (hazardPolygonPoints.length < 3) return;
-
-    hazardDrawingMarkersRef.current.forEach((m) => map.removeLayer(m));
-    hazardDrawingMarkersRef.current = [];
-    if (hazardDrawingLineRef.current) {
-      map.removeLayer(hazardDrawingLineRef.current);
-      hazardDrawingLineRef.current = null;
-    }
-
-    const polygon = L.polygon(hazardPolygonPoints, {
-      color: "#ca8a04",
-      fillColor: "#eab308",
-      fillOpacity: 0.3,
-      weight: 3,
-      dashArray: "5, 5",
-    }).addTo(map);
-    hazardCompletedPolygonRef.current = polygon;
-
-    setCompletedHazardPolygon([...hazardPolygonPoints]);
+    setHazardPolygonPoints((prev) =>
+      // A map double-click also fires two clicks at the same spot — drop repeats
+      prev.filter(
+        (p, i) => i === 0 || p[0] !== prev[i - 1][0] || p[1] !== prev[i - 1][1]
+      )
+    );
     setIsDrawingHazard(false);
-    setShowHazardForm(true);
-  }, [hazardPolygonPoints, mapRef]);
+  }, []);
 
   const cancelDrawingHazard = useCallback(() => {
     clearHazardDrawing();
@@ -327,7 +232,6 @@ export function useBarangayAreas(
       clearEditPreview();
       setEditingHazardArea(hazard);
 
-      // Extract coordinates
       let coords: [number, number][] = [];
       if (Array.isArray(hazard.polygon.coordinates[0])) {
         coords = typeof hazard.polygon.coordinates[0][0] === "number"
@@ -335,135 +239,84 @@ export function useBarangayAreas(
           : (hazard.polygon.coordinates as [number, number][][])[0];
       }
 
-      // Draw the existing polygon on map
       const map = mapRef.current;
-      if (map && coords.length >= 3) {
-        const polygon = L.polygon(coords, {
-          color: "#ca8a04",
-          fillColor: "#eab308",
-          fillOpacity: 0.3,
-          weight: 3,
-          dashArray: "5, 5",
-        }).addTo(map);
-        hazardCompletedPolygonRef.current = polygon;
-
-        // Add vertex markers
-        coords.forEach((point, i) => {
-          const marker = L.marker(point, {
-            icon: L.divIcon({
-              className: "hazard-draw-vertex",
-              html: `<div style="
-                background:#eab308;width:14px;height:14px;border-radius:50%;
-                border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);
-                display:flex;align-items:center;justify-content:center;
-                font-size:8px;color:white;font-weight:bold;
-              ">${i + 1}</div>`,
-              iconSize: [14, 14],
-              iconAnchor: [7, 7],
-            }),
-          }).addTo(map);
-          hazardDrawingMarkersRef.current.push(marker);
-        });
-
-        // Fit bounds
-        map.fitBounds(polygon.getBounds(), { padding: [50, 50] });
-      }
+      if (map && coords.length >= 3)
+        map.fitBounds(L.latLngBounds(coords), { padding: [50, 50] });
 
       setHazardPolygonPoints(coords);
       setCompletedHazardPolygon(coords);
+      setIsDrawingHazard(false);
       setShowHazardForm(true);
       setIsMapEditMode(false);
     },
     [clearHazardDrawing, clearEditPreview, mapRef]
   );
 
-  // ── NEW: Map Edit Mode Functions ────────────────────────────────────────
-  const startMapEditMode = useCallback(() => {
-    // Clear the original polygon markers so user can see map clearly
-    clearHazardDrawing();
-    setIsMapEditMode(true);
-  }, [clearHazardDrawing]);
+  // Kept for compatibility: "map edit mode" is now just drawing mode
+  const startMapEditMode = useCallback(() => setIsDrawingHazard(true), []);
+  const exitMapEditMode = useCallback(() => setIsDrawingHazard(false), []);
+  const addVertexOnMap = addHazardPoint;
+  const removeLastVertexOnMap = removeLastHazardPoint;
 
-  const exitMapEditMode = useCallback(() => {
-    setIsMapEditMode(false);
-  }, []);
+  // ── Render the hazard being drawn/edited from its points ────────────────
+  const isDraggingHazardVertexRef = useRef(false);
+  const hazardFormOpen = isDrawingHazard || showHazardForm;
 
-  const addVertexOnMap = useCallback(
-    (lat: number, lng: number) => {
-      setHazardPolygonPoints((prev) => [...prev, [lat, lng]]);
-    },
-    []
-  );
-
-  const removeLastVertexOnMap = useCallback(() => {
-    setHazardPolygonPoints((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev));
-  }, []);
-
-  // ── NEW: Render preview polygon during map edit mode ────────────────────
-  const renderEditPreview = useCallback(() => {
+  useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    const pts = hazardPolygonPoints;
 
-    // Clear previous preview
-    previewMarkersRef.current.forEach((m) => map.removeLayer(m));
-    previewMarkersRef.current = [];
-    if (previewLineRef.current) {
-      map.removeLayer(previewLineRef.current);
-      previewLineRef.current = null;
-    }
-    if (previewPolygonRef.current) {
-      map.removeLayer(previewPolygonRef.current);
-      previewPolygonRef.current = null;
+    // Mid-drag: only move the outline so the dragged marker isn't rebuilt
+    if (isDraggingHazardVertexRef.current) {
+      const shape = hazardCompletedPolygonRef.current ?? hazardDrawingLineRef.current;
+      shape?.setLatLngs(pts);
+      return;
     }
 
-    if (!isMapEditMode || hazardPolygonPoints.length === 0) return;
+    clearHazardDrawing();
+    if (!hazardFormOpen || pts.length === 0) return;
 
-    // Draw polygon fill if 3+ points
-    if (hazardPolygonPoints.length >= 3) {
-      previewPolygonRef.current = L.polygon(hazardPolygonPoints, {
-        color: "#3b82f6",
-        fillColor: "#60a5fa",
-        fillOpacity: 0.3,
-        weight: 3,
-        dashArray: "5, 5",
-      }).addTo(map);
-    }
+    const style = {
+      color: "#ca8a04",
+      fillColor: "#eab308",
+      fillOpacity: 0.3,
+      weight: 3,
+      dashArray: "5, 5",
+    };
+    if (pts.length >= 3) hazardCompletedPolygonRef.current = L.polygon(pts, style).addTo(map);
+    else if (pts.length === 2) hazardDrawingLineRef.current = L.polyline(pts, style).addTo(map);
 
-    // Draw connecting line
-    if (hazardPolygonPoints.length >= 2) {
-      previewLineRef.current = L.polyline(hazardPolygonPoints, {
-        color: "#3b82f6",
-        weight: 3,
-        dashArray: "5, 5",
-      }).addTo(map);
-    }
-
-    // Add vertex markers
-    hazardPolygonPoints.forEach((point, i) => {
+    pts.forEach((point, i) => {
       const marker = L.marker(point, {
+        draggable: true,
         icon: L.divIcon({
-          className: "edit-preview-vertex",
-          html: `<div style="
-            background:#3b82f6;width:18px;height:18px;border-radius:50%;
-            border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);
-            display:flex;align-items:center;justify-content:center;
-            font-size:9px;color:white;font-weight:bold;
-          ">${i + 1}</div>`,
+          className: "hazard-draw-vertex",
+          html: `<div style="background:#eab308;width:18px;height:18px;border-radius:50%;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:9px;color:white;font-weight:bold;cursor:grab;">${i + 1}</div>`,
           iconSize: [18, 18],
           iconAnchor: [9, 9],
         }),
       }).addTo(map);
-
-      // Double-click to remove vertex
-      marker.on("dblclick", () => {
-        if (hazardPolygonPoints.length <= 3) return;
-        const newPoints = hazardPolygonPoints.filter((_, idx) => idx !== i);
-        setHazardPolygonPoints(newPoints);
+      marker.bindTooltip("Drag to move · double-click to delete", { direction: "top" });
+      marker.on("dragstart", () => {
+        isDraggingHazardVertexRef.current = true;
       });
-
-      previewMarkersRef.current.push(marker);
+      marker.on("drag", (e) => {
+        const ll = (e.target as L.Marker).getLatLng();
+        setHazardPolygonPoints((prev) =>
+          prev.map((p, idx) => (idx === i ? [ll.lat, ll.lng] : p))
+        );
+      });
+      marker.on("dragend", () => {
+        isDraggingHazardVertexRef.current = false;
+        setHazardPolygonPoints((prev) => [...prev]); // rebuild markers
+      });
+      marker.on("dblclick", () =>
+        setHazardPolygonPoints((prev) => prev.filter((_, idx) => idx !== i))
+      );
+      hazardDrawingMarkersRef.current.push(marker);
     });
-  }, [isMapEditMode, hazardPolygonPoints]);
+  }, [hazardPolygonPoints, hazardFormOpen, mapRef, clearHazardDrawing]);
 
   // ── API Functions ───────────────────────────────────────────────────────
   const createHazardArea = useCallback(
@@ -506,6 +359,7 @@ export function useBarangayAreas(
         setCompletedHazardPolygon(null);
         setHazardPolygonPoints([]);
         setShowHazardForm(false);
+        setIsDrawingHazard(false);
         setIsMapEditMode(false);
         setEditingHazardArea(null);
 
@@ -559,6 +413,7 @@ export function useBarangayAreas(
         setCompletedHazardPolygon(null);
         setHazardPolygonPoints([]);
         setShowHazardForm(false);
+        setIsDrawingHazard(false);
         setIsMapEditMode(false);
         setEditingHazardArea(null);
 
@@ -749,6 +604,10 @@ export function useBarangayAreas(
         setHazardAreas([]);
         return;
       }
+      // Route the map to the selected barangay
+      const b = barangayList.find((x) => x.barangay_id === barangayId);
+      if (b?.coordinate && mapRef.current)
+        mapRef.current.flyTo(b.coordinate, 16, { duration: 1.5 });
       setLoading(true);
       try {
         await Promise.all([fetchClassifiedAreas(barangayId), fetchHazardAreas(barangayId)]);
@@ -756,7 +615,7 @@ export function useBarangayAreas(
         setLoading(false);
       }
     },
-    [clearLayers, fetchClassifiedAreas, fetchHazardAreas, cancelDrawingHazard]
+    [clearLayers, fetchClassifiedAreas, fetchHazardAreas, cancelDrawingHazard, barangayList, mapRef]
   );
 
   const flyToBarangay = useCallback(() => {
@@ -769,15 +628,6 @@ export function useBarangayAreas(
   useEffect(() => { fetchBarangayList(); }, [fetchBarangayList]);
   useEffect(() => { renderClassifiedAreas(); }, [renderClassifiedAreas]);
   useEffect(() => { renderHazardAreas(); }, [renderHazardAreas]);
-
-  // ── NEW: Update preview when in map edit mode ──────────────────────────
-  useEffect(() => {
-    if (isMapEditMode) {
-      renderEditPreview();
-    } else {
-      clearEditPreview();
-    }
-  }, [isMapEditMode, hazardPolygonPoints, renderEditPreview, clearEditPreview]);
 
   useEffect(() => {
     return () => {

@@ -4,8 +4,6 @@ import type { MutableRefObject } from "react";
 import { createPortal } from "react-dom";
 import L from "leaflet";
 import {
-  ClipboardCopy,
-  ClipboardPaste,
   Eye,
   EyeOff,
   GripHorizontal,
@@ -47,23 +45,11 @@ const parseRow = (row: PointRow): [number, number] | null => {
 const calculateAreaHa = (coords: [number, number][]): number =>
   polygonAreaHa(coords);
 
-// Accepts one "lat, lng" pair per line (comma, space, tab or semicolon separated)
-const parseBulk = (text: string): PointRow[] =>
-  text
-    .split(/\r?\n/)
-    .map((line) => line.trim().split(/[\s,;]+/).filter(Boolean))
-    .filter((parts) => parts.length >= 2)
-    .map(([lat, lng]) => ({ lat, lng }))
-    .filter((row) => parseRow(row) !== null);
-
 export default function DrawPolygonTool({ mapRef }: DrawPolygonToolProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
   const [rows, setRows] = useState<PointRow[]>([]);
-  const [showPaste, setShowPaste] = useState(false);
-  const [pasteText, setPasteText] = useState("");
-  const [copied, setCopied] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [hasPosition, setHasPosition] = useState(false);
 
@@ -247,26 +233,6 @@ export default function DrawPolygonTool({ mapRef }: DrawPolygonToolProps) {
       });
   };
 
-  const applyPaste = () => {
-    const parsed = parseBulk(pasteText);
-    if (parsed.length === 0) return;
-    setRows(parsed);
-    setPasteText("");
-    setShowPaste(false);
-    setIsVisible(true);
-  };
-
-  const copyCoordinates = async () => {
-    const text = coords.map(([lat, lng]) => `${lat}, ${lng}`).join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard not available */
-    }
-  };
-
   const invalidCount = rows.length - validPoints.length;
 
   return (
@@ -367,21 +333,6 @@ export default function DrawPolygonTool({ mapRef }: DrawPolygonToolProps) {
               </button>
               <button
                 type="button"
-                onClick={() => setShowPaste((s) => !s)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-medium"
-              >
-                <ClipboardPaste size={11} /> Paste
-              </button>
-              <button
-                type="button"
-                onClick={copyCoordinates}
-                disabled={coords.length === 0}
-                className="flex items-center gap-1 px-2.5 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-medium disabled:opacity-40"
-              >
-                <ClipboardCopy size={11} /> {copied ? "Copied!" : "Copy"}
-              </button>
-              <button
-                type="button"
                 onClick={clearAll}
                 disabled={rows.length === 0}
                 className="flex items-center gap-1 px-2.5 py-1 rounded bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-medium disabled:opacity-40"
@@ -396,41 +347,11 @@ export default function DrawPolygonTool({ mapRef }: DrawPolygonToolProps) {
               </p>
             )}
 
-            {showPaste && (
-              <div className="px-3 py-2 border-b border-gray-100">
-                <textarea
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                  rows={4}
-                  placeholder={"One \"lat, lng\" per line\n11.0086, 124.6086\n11.0090, 124.6100"}
-                  className="w-full text-[11px] font-mono border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                />
-                <div className="flex justify-end gap-1.5 mt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowPaste(false)}
-                    className="px-2.5 py-1 rounded text-[11px] text-gray-600 hover:bg-gray-100"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={applyPaste}
-                    disabled={parseBulk(pasteText).length === 0}
-                    className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-semibold disabled:opacity-40"
-                  >
-                    Replace Points ({parseBulk(pasteText).length})
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Editable coordinate list */}
             <div className="flex-1 overflow-y-auto px-3 py-2">
               {rows.length === 0 ? (
                 <p className="text-[11px] text-gray-400 text-center py-4">
-                  No vertices yet. Start drawing, paste coordinates, or add a point
-                  manually.
+                  No vertices yet. Start drawing or add a point manually.
                 </p>
               ) : (
                 <table className="w-full text-[11px]">
