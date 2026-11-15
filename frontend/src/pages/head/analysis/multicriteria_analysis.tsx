@@ -32,8 +32,8 @@ import {
 import { polygonCentroid } from "@/utils/geoArea";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
-import SiteCoordinatesEditor from "./components/SiteCoordinatesEditor";
 import AssessmentBoundaryImporter from "./components/AssessmentBoundaryImporter";
+import EditPolygonPanel from "./components/EditPolygonPanel";
 import SiteReportModal from "./components/SiteReportModal";
 import CoordinateSearch from "./components/CoordinateSearch";
 import DrawPolygonTool from "./components/DrawPolygonTool";
@@ -1066,14 +1066,19 @@ export default function MulticriteriaAnalysis() {
           iconAnchor: [10, 10],
         }),
       }).addTo(map);
+      // Live-update the outline and the coordinate inputs while dragging;
+      // rebuild markers only on drop so the dragged marker isn't destroyed
+      let dragCoords = coordinates;
       vertexMarker.on("drag", (e) => {
         const latlng = e.target.getLatLng();
-        const newCoords = [...coordinates];
-        newCoords[index] = [latlng.lat, latlng.lng];
-        setEditedPolygon(newCoords);
+        dragCoords = [...coordinates];
+        dragCoords[index] = [latlng.lat, latlng.lng];
+        setEditedPolygon(dragCoords);
         if (editablePolygonRef.current)
-          editablePolygonRef.current.setLatLngs(newCoords);
-        renderAllMarkersRef.current(newCoords);
+          editablePolygonRef.current.setLatLngs(dragCoords);
+      });
+      vertexMarker.on("dragend", () => {
+        renderAllMarkersRef.current(dragCoords);
       });
       vertexMarker.on("dblclick", () => {
         if (coordinates.length <= 3) {
@@ -1096,32 +1101,6 @@ export default function MulticriteriaAnalysis() {
       });
       vertexMarkersRef.current.push(vertexMarker);
     });
-    for (let i = 0; i < coordinates.length; i++) {
-      const nextIndex = (i + 1) % coordinates.length;
-      const midLat = (coordinates[i][0] + coordinates[nextIndex][0]) / 2;
-      const midLng = (coordinates[i][1] + coordinates[nextIndex][1]) / 2;
-      const addMarker = L.marker([midLat, midLng], {
-        icon: L.divIcon({
-          className: "add-vertex-marker",
-          html: `<div style="background:#10B981;width:18px;height:18px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:12px;color:white;font-weight:bold;cursor:pointer;">+</div>`,
-          iconSize: [18, 18],
-          iconAnchor: [9, 9],
-        }),
-      }).addTo(map);
-      addMarker.on("click", () => {
-        const newCoords = [...coordinates];
-        newCoords.splice(i + 1, 0, [midLat, midLng]);
-        setEditedPolygon(newCoords);
-        if (editablePolygonRef.current)
-          editablePolygonRef.current.setLatLngs(newCoords);
-        renderAllMarkersRef.current(newCoords);
-      });
-      addMarker.bindTooltip("Click to add vertex", {
-        permanent: false,
-        direction: "top",
-      });
-      addVertexMarkersRef.current.push(addMarker);
-    }
   }, []);
 
   useEffect(() => {
@@ -1305,7 +1284,7 @@ export default function MulticriteriaAnalysis() {
             : L.geoJSON(geometry, { style: () => style })
         ).addTo(map);
         polygon.bindPopup(
-          `<div style="text-align:center;font-family:sans-serif;"><strong style="color:#2563eb;font-size:13px;">Potential Site</strong><br/><span style="font-size:11px;color:#666;">Suitability: ${score}%</span></div>`,
+          `<div style="text-align:center;font-family:sans-serif;"><strong style="color:#2563eb;font-size:13px;">Potential Area</strong><br/><span style="font-size:11px;color:#666;">Suitability: ${score}%</span></div>`,
         );
         potentialSiteLayersRef.current.push(polygon);
       }
@@ -2495,6 +2474,40 @@ export default function MulticriteriaAnalysis() {
     renderAllMarkersRef.current(newCoords);
   }, [editedPolygon, isDrawingNewPolygon]);
 
+  // Latest edited polygon for map handlers that shouldn't re-bind on every change
+  const editedPolygonRef = useRef<[number, number][] | null>(null);
+  useEffect(() => {
+    editedPolygonRef.current = editedPolygon;
+  }, [editedPolygon]);
+
+  // Map click while editing: insert the point into the nearest polygon edge
+  const insertEditVertexAt = useCallback((latlng: L.LatLng) => {
+    const map = mapRef.current;
+    const current = editedPolygonRef.current;
+    if (!map || !current) return;
+    const point: [number, number] = [latlng.lat, latlng.lng];
+    let insertAt = current.length;
+    if (current.length >= 2) {
+      const p = map.latLngToLayerPoint(latlng);
+      let best = Infinity;
+      for (let i = 0; i < current.length; i++) {
+        const a = map.latLngToLayerPoint(current[i]);
+        const b = map.latLngToLayerPoint(current[(i + 1) % current.length]);
+        const cost = a.distanceTo(p) + p.distanceTo(b) - a.distanceTo(b);
+        if (cost < best) {
+          best = cost;
+          insertAt = i + 1;
+        }
+      }
+    }
+    const newCoords = [...current];
+    newCoords.splice(insertAt, 0, point);
+    setEditedPolygon(newCoords);
+    if (editablePolygonRef.current)
+      editablePolygonRef.current.setLatLngs(newCoords);
+    renderAllMarkersRef.current(newCoords);
+  }, []);
+
   const handleEditMarkerChange = useCallback(
     (axis: "lat" | "lng", value: string) => {
       const numValue = parseFloat(value);
@@ -2547,6 +2560,8 @@ export default function MulticriteriaAnalysis() {
         return;
       }
       if (isDrawingNewPolygon) handleMapClickForNewPolygon(e);
+      else if (isEditMode && editedPolygonRef.current)
+        insertEditVertexAt(e.latlng);
       else if (isPlacingNewMarker) handleMapClickForNewMarker(e);
       else if (barangayAreas.isDrawingHazard)
         barangayAreas.addHazardPoint(e.latlng.lat, e.latlng.lng);
@@ -2564,6 +2579,7 @@ export default function MulticriteriaAnalysis() {
     };
     const isAnyDrawing =
       isDrawingNewPolygon ||
+      (isEditMode && !!editedPolygonRef.current) ||
       isPlacingNewMarker ||
       isPickingMarkerLocation ||
       isCoordinateProbeMode ||
@@ -2584,6 +2600,9 @@ export default function MulticriteriaAnalysis() {
     };
   }, [
     isDrawingNewPolygon,
+    isEditMode,
+    !!editedPolygon,
+    insertEditVertexAt,
     isPlacingNewMarker,
     isPickingMarkerLocation,
     isCoordinateProbeMode,
@@ -2762,8 +2781,9 @@ export default function MulticriteriaAnalysis() {
         </div>
       )}
       <main className="flex-1 p-3 flex flex-col gap-3">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-3 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-2 py-1 flex items-center justify-between">
+          {/* Tools stay on one row and scroll horizontally when they don't fit */}
+          <div className="flex items-center gap-3 flex-nowrap overflow-x-auto min-w-0 whitespace-nowrap [&>*]:shrink-0 p-1.5 [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-400">
             <button
               onClick={() => setShowSites(!showSites)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium ${
@@ -2792,7 +2812,7 @@ export default function MulticriteriaAnalysis() {
               title={
                 viewingSite
                   ? undefined
-                  : "Select a site to view its potential sites"
+                  : "Select a site to view its potential areas"
               }
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed ${
                 showPotentialSites
@@ -2802,10 +2822,10 @@ export default function MulticriteriaAnalysis() {
             >
               <Target size={12} />{" "}
               {!viewingSite
-                ? "Potential Sites"
+                ? "Potential Areas"
                 : showPotentialSites
                 ? `Hide Potential (${potentialSites.length})`
-                : `Potential Sites (${potentialSites.length})`}
+                : `Potential Areas (${potentialSites.length})`}
             </button>
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
             <button
@@ -2832,10 +2852,10 @@ export default function MulticriteriaAnalysis() {
             >
               <Shield size={12} /> Hazards
             </button>
-            <div className="flex items-center gap-2">
-              <BarangayAreasPanel barangayAreas={barangayAreas} />
+            <div className="flex items-center gap-3">
               <CoordinateSearch onGo={handleGoToCoordinate} />
               <DrawPolygonTool mapRef={mapRef} />
+              <BarangayAreasPanel barangayAreas={barangayAreas} />
               <button
                 onClick={() => {
                   if (!barangayAreas.selectedBarangayId) {
@@ -3013,113 +3033,33 @@ export default function MulticriteriaAnalysis() {
         )}
 
         {showCoordinateModal && editedPolygon && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                    <Navigation size={20} />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold">
-                      Edit Polygon Coordinates
-                    </h2>
-                    <p className="text-xs text-white/80">
-                      {viewingSite?.name || "Site"} • {editedPolygon.length}{" "}
-                      vertices
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowCoordinateModal(false)}
-                  className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center transition"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-6">
-                <AssessmentBoundaryImporter
-                  polygons={assessmentBoundaryPolygons}
-                  onApply={applyBoundaryToEditedPolygon}
-                  accent="orange"
-                />
-                <SiteCoordinatesEditor
-                  coordinates={editedPolygon}
-                  center={editedMarker}
-                  onVertexChange={handleEditVertexChange}
-                  onRemoveVertex={handleEditRemoveVertex}
-                  onAddVertex={handleEditAddVertex}
-                  onCenterChange={handleEditMarkerChange}
-                  title="Polygon Vertices"
-                  isEditing={true}
-                />
-                {editedPolygon && editedPolygon.length >= 3 && (
-                  <div className="mt-4 pt-4 border-t border-gray-200 flex gap-2 flex-wrap">
-                    <button
-                      onClick={handleAutoMarker}
-                      className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition"
-                    >
-                      <Target size={14} /> Auto-Calculate Marker from Polygon
-                    </button>
-                    <button
-                      onClick={() => {
-                        const newState = !isPickingMarkerLocation;
-                        setIsPickingMarkerLocation(newState);
-                        if (newState)
-                          setAlert({
-                            type: "success",
-                            title: "Pick Marker Mode",
-                            message:
-                              "Click the map or an assessment marker to place the site marker.",
-                          });
-                      }}
-                      className={`flex items-center gap-2 px-4 py-2 text-white text-xs font-semibold rounded-lg transition ${
-                        isPickingMarkerLocation
-                          ? "bg-red-600 hover:bg-red-700"
-                          : "bg-blue-600 hover:bg-blue-700"
-                      }`}
-                    >
-                      <MapPin size={14} />{" "}
-                      {isPickingMarkerLocation
-                        ? "Cancel Pick"
-                        : "Pick from Map"}
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="border-t border-gray-200 px-6 py-4 flex items-center justify-between bg-gray-50">
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <Info size={14} />{" "}
-                  <span>Drag vertices on map or edit coordinates above</span>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowCoordinateModal(false)}
-                    className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg border border-gray-300"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={handleSaveCoordinates}
-                    disabled={
-                      isSavingCoordinates ||
-                      !editedPolygon ||
-                      !editedMarker ||
-                      editedPolygon.length < 3
-                    }
-                    className="flex items-center gap-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50"
-                  >
-                    {isSavingCoordinates ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <Save size={12} />
-                    )}{" "}
-                    Save Changes
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <EditPolygonPanel
+            siteName={viewingSite?.name || "Site"}
+            coordinates={editedPolygon}
+            center={editedMarker}
+            boundaryPolygons={assessmentBoundaryPolygons}
+            isPickingMarker={isPickingMarkerLocation}
+            isSaving={isSavingCoordinates}
+            onVertexChange={handleEditVertexChange}
+            onRemoveVertex={handleEditRemoveVertex}
+            onAddVertex={handleEditAddVertex}
+            onCenterChange={handleEditMarkerChange}
+            onApplyBoundary={applyBoundaryToEditedPolygon}
+            onAutoMarker={handleAutoMarker}
+            onTogglePickMarker={() => {
+              const newState = !isPickingMarkerLocation;
+              setIsPickingMarkerLocation(newState);
+              if (newState)
+                setAlert({
+                  type: "success",
+                  title: "Pick Marker Mode",
+                  message:
+                    "Click the map or an assessment marker to place the site marker.",
+                });
+            }}
+            onSave={handleSaveCoordinates}
+            onClose={() => setShowCoordinateModal(false)}
+          />
         )}
 
         <div className="flex gap-3 flex-1 min-h-0">
@@ -3975,32 +3915,6 @@ export default function MulticriteriaAnalysis() {
                     </button>
                     <button
                       onClick={handleCancelNewPolygon}
-                      className="px-3 py-1.5 bg-gray-500 hover:bg-gray-600 text-white text-xs font-semibold rounded transition flex items-center gap-1"
-                    >
-                      <X size={12} /> Cancel
-                    </button>
-                  </>
-                )}
-                {barangayAreas.isDrawingHazard && (
-                  <>
-                    <button
-                      onClick={() => barangayAreas.finishDrawingHazard()}
-                      disabled={barangayAreas.hazardPolygonPoints.length < 3}
-                      className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-300 text-white text-xs font-semibold rounded transition flex items-center gap-1"
-                    >
-                      <CheckCircle size={12} /> Finish Hazard
-                    </button>
-                    <button
-                      onClick={() => barangayAreas.removeLastHazardPoint()}
-                      disabled={
-                        barangayAreas.hazardPolygonPoints.length === 0
-                      }
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-xs font-semibold rounded transition flex items-center gap-1"
-                    >
-                      <Undo2 size={12} /> Undo
-                    </button>
-                    <button
-                      onClick={() => barangayAreas.cancelDrawingHazard()}
                       className="px-3 py-1.5 bg-gray-500 hover:bg-gray-600 text-white text-xs font-semibold rounded transition flex items-center gap-1"
                     >
                       <X size={12} /> Cancel

@@ -45,7 +45,6 @@ import {
   Pencil,
   Save,
   Ban,
-  Copy,
   EyeOff,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
@@ -502,13 +501,24 @@ const createMarkerIcon = (
     popupAnchor: [0, -30],
   });
 };
-const createVertexIcon = (index: number) => {
-  return L.divIcon({
-    className: "custom-vertex-icon",
-    html: `<div style="background-color: #3b82f6; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${index + 1}</div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-  });
+// Cached per index so re-renders during a drag don't swap the icon element
+// (a new icon instance makes Leaflet rebuild the marker and drops the drag).
+const vertexIconCache: Record<string, L.DivIcon> = {};
+const createVertexIcon = (
+  index: number,
+  draggable = false,
+  color?: string,
+) => {
+  const key = `${index}-${draggable}-${color ?? ""}`;
+  if (!vertexIconCache[key]) {
+    vertexIconCache[key] = L.divIcon({
+      className: "custom-vertex-icon",
+      html: `<div style="background-color: ${color ?? (draggable ? "#f97316" : "#3b82f6")}; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3); cursor: ${draggable ? "move" : "pointer"};">${index + 1}</div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    });
+  }
+  return vertexIconCache[key];
 };
 export default function Map() {
   const token = localStorage.getItem("token");
@@ -687,6 +697,7 @@ export default function Map() {
   const [isTypingInInput, setIsTypingInInput] = useState(false);
   // ✅ NEW: State for showing/hiding site polygon on map
   const [showSitePolygonOnMap, setShowSitePolygonOnMap] = useState(false);
+  const [isPickingSitePolygon, setIsPickingSitePolygon] = useState(false);
 
   useEffect(() => {
     if (!showNDVI) setShowCanopyGuide(false);
@@ -760,6 +771,17 @@ export default function Map() {
           message: "Area center location set.",
         });
       }
+      if (isPickingSitePolygon && showSitePolygonOnMap && !isPickingSiteMarker) {
+        const point = { lat: lat.toFixed(6), lng: lng.toFixed(6) };
+        setSitePolygonPoints((prev) => {
+          // Fill a trailing empty row (e.g. the initial blank one) instead of appending
+          const last = prev[prev.length - 1];
+          if (last && !last.lat.trim() && !last.lng.trim())
+            return [...prev.slice(0, -1), point];
+          return [...prev, point];
+        });
+        return;
+      }
       if (isPickingSiteMarker) {
         setSiteMarkerPosition([lat, lng]);
         setSiteForm((prev) => ({ ...prev, marker_coordinate: [lat, lng] }));
@@ -779,7 +801,14 @@ export default function Map() {
     };
     map.on("click", handleClick);
     return () => map.off("click", handleClick);
-  }, [isPickingMarker, isPickingSiteMarker, isMapEditMode, isDrawingAnalysis]);
+  }, [
+    isPickingMarker,
+    isPickingSiteMarker,
+    isMapEditMode,
+    isDrawingAnalysis,
+    isPickingSitePolygon,
+    showSitePolygonOnMap,
+  ]);
   const handleVertexDrag = (index: number, e: any) => {
     const newLatLng = e.target.getLatLng();
     setAnalysisCoords((prev) => {
@@ -1100,7 +1129,7 @@ export default function Map() {
         setPSAlert({
           type: "success",
           title: "Deleted",
-          message: "Potential site removed successfully.",
+          message: "Potential area removed successfully.",
         });
       } else {
         throw new Error("Failed to delete");
@@ -1109,7 +1138,7 @@ export default function Map() {
       setPSAlert({
         type: "error",
         title: "Error",
-        message: "Failed to delete potential site.",
+        message: "Failed to delete potential area.",
       });
     }
   };
@@ -1145,7 +1174,7 @@ export default function Map() {
     setPSAlert({
       type: "success",
       title: "Site Deleted",
-      message: `Potential site ${siteId} has been removed from analysis results.`,
+      message: `Potential area ${siteId} has been removed from analysis results.`,
     });
   };
   const handleViewTrend = (siteId: number, polygon: any) => {
@@ -1217,7 +1246,7 @@ export default function Map() {
         setPSAlert({
           type: "success",
           title: "Updated Successfully",
-          message: `Replaced ALL old sites with ${result.created_count} new potential site(s).`,
+          message: `Replaced ALL old potential areas with ${result.created_count} new potential area(s).`,
         });
         handleShowPotentialSites(reanalyzeTargetSiteId);
       } else {
@@ -1365,7 +1394,7 @@ export default function Map() {
         setPSAlert({
           type: "success",
           title: "Analysis Complete",
-          message: `Found ${data.features.length} potential site(s).`,
+          message: `Found ${data.features.length} potential area(s).`,
         });
       } else {
         setPSAlert({
@@ -1385,23 +1414,6 @@ export default function Map() {
     if (!showReplaceConfirm) {
       setIsProcessing(false);
     }
-  };
-  const cancelDrawing = () => {
-    setDrawnGeometry(null);
-    setReanalyzeTargetSiteId(null);
-    setShowReplaceConfirm(false);
-    setPendingNewSites([]);
-    setPendingNewCount(0);
-    setIsProcessing(false);
-    setAnalysisCoords([]);
-    setIsDrawingAnalysis(false);
-    setIsEditingAnalysis(false);
-    setIsAnalysisPanelOpen(false);
-    setPSAlert({
-      type: "success",
-      title: "Drawing Cancelled",
-      message: "Analysis area removed.",
-    });
   };
   const handleHome = () => {
     setGoHome(true);
@@ -1547,8 +1559,6 @@ export default function Map() {
       console.error("Failed to fetch sites:", err);
     }
   }
-  const formatPolygonCoords = (coords: [number, number][]) =>
-    coords.map((c) => `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`).join("\n");
   // Rows left fully blank are ignored; any partial/out-of-range row makes the polygon invalid (null)
   const sitePolygonCoords = ((): [number, number][] | null => {
     const coords: [number, number][] = [];
@@ -1580,23 +1590,6 @@ export default function Map() {
     setSitePolygonPoints((prev) =>
       prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
     );
-  const copyAnalysisCoords = async () => {
-    if (analysisCoords.length < 3) return;
-    try {
-      await navigator.clipboard.writeText(formatPolygonCoords(analysisCoords));
-      setPSAlert({
-        type: "success",
-        title: "Copied",
-        message: `${analysisCoords.length} coordinates copied to clipboard.`,
-      });
-    } catch {
-      setPSAlert({
-        type: "failed",
-        title: "Copy Failed",
-        message: "Could not access the clipboard.",
-      });
-    }
-  };
   const fillSitePolygonFromAnalysis = () => {
     if (analysisCoords.length < 3) return;
     setSitePolygonPoints(
@@ -1763,6 +1756,7 @@ export default function Map() {
       });
       setSiteCoordinateInput("");
       setSitePolygonPoints([]);
+      setIsPickingSitePolygon(false);
       setSiteMarkerPosition(null);
       setSelectedPotentialSiteIds([]);
       setShowSitePolygonOnMap(false);
@@ -2137,19 +2131,31 @@ export default function Map() {
             >
               <Plus size={12} /> Add Coordinate
             </button>
-            <button
-              onClick={copyAnalysisCoords}
-              disabled={analysisCoords.length < 3}
-              title="Copy coordinates for Create Site"
-              className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1 disabled:opacity-50"
-            >
-              <Copy size={12} /> Copy Coordinates
-            </button>
           </div>
+          {analysisCoords.length >= 3 && (
+            <button
+              onClick={() => {
+                setShowAnalysisPolygons(!showAnalysisPolygons);
+                setPSAlert({
+                  type: "success",
+                  title: showAnalysisPolygons
+                    ? "Analysis Hidden"
+                    : "Analysis Shown",
+                  message: showAnalysisPolygons
+                    ? "Analysis polygons hidden. You can now place markers without interference."
+                    : "Analysis polygons visible again.",
+                });
+              }}
+              className={`w-full mb-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1 transition-colors ${showAnalysisPolygons ? "bg-gray-100 hover:bg-gray-200 text-gray-700" : "bg-blue-100 hover:bg-blue-200 text-blue-700"}`}
+            >
+              <Eye size={12} />{" "}
+              {showAnalysisPolygons ? "Hide Analysis" : "Show Analysis"}
+            </button>
+          )}
           <p className="text-[10px] text-gray-500 mb-2 flex items-center gap-1">
             <Info size={10} />{" "}
             {isDrawingAnalysis
-              ? "Click map to add points"
+              ? "Click map to add points, drag corners to adjust"
               : "Drag corners on map or edit values above"}
           </p>
           <div className="flex gap-2 mt-auto">
@@ -2203,7 +2209,7 @@ export default function Map() {
             <p className="text-sm text-gray-600 mb-6 leading-relaxed">
               The new analysis found{" "}
               <strong className="text-blue-600">{pendingNewCount}</strong>{" "}
-              potential site(s){" "}
+              potential area(s){" "}
               <span className="text-gray-400">(shown in blue on the map)</span>.
               <br />
               <br />
@@ -2211,7 +2217,7 @@ export default function Map() {
               <strong className="text-red-600">
                 permanently delete all {activePotentialSites.length} existing
               </strong>{" "}
-              potential site(s) for this area and replace them with these new
+              potential area(s) for this site and replace them with these new
               results.
             </p>
             <div className="flex gap-3 justify-end">
@@ -2785,6 +2791,33 @@ export default function Map() {
                     <Pen size={16} /> Analysis Tools
                   </h2>
                 </div>
+                {reanalyzeTargetSiteId ? (
+                  <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
+                    <span className="mt-1 h-2 w-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-amber-800">
+                        Re-analysis Mode
+                      </p>
+                      <p className="text-[11px] text-amber-700 truncate">
+                        Replacing results for{" "}
+                        {sites.find((s) => s.site_id === reanalyzeTargetSiteId)
+                          ?.name ?? `Site #${reanalyzeTargetSiteId}`}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2">
+                    <span className="mt-1 h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                    <div>
+                      <p className="text-xs font-bold text-green-800">
+                        New Analysis
+                      </p>
+                      <p className="text-[11px] text-green-700">
+                        Not linked to an existing site
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <button
                   onClick={startDrawingAnalysis}
                   className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white h-10 px-3 py-2 rounded-lg text-sm font-medium"
@@ -2802,66 +2835,12 @@ export default function Map() {
                     <Pencil size={16} /> Edit Analysis Area
                   </button>
                 )}
-                {analysisCoords.length >= 3 && (
-                  <button
-                    onClick={copyAnalysisCoords}
-                    title="Copy coordinates for Create Site"
-                    className="flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 h-10 px-3 py-2 rounded-lg text-sm font-medium"
-                  >
-                    <Copy size={16} /> Copy Coordinates
-                  </button>
-                )}
                 <button
-                  onClick={analyzeArea}
-                  disabled={isProcessing}
-                  className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-sm font-medium ${isProcessing ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-green-600 hover:bg-green-700 text-white"}`}
+                  onClick={clearAnalysis}
+                  className="bg-red-100 hover:bg-red-200 text-red-700 h-9 px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                 >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />{" "}
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      <Activity size={16} /> Analyze
-                    </>
-                  )}
+                  <Trash size={14} /> Clear
                 </button>
-                {/* ✅ FIX: Show button as soon as polygon is drawn */}
-                {analysisCoords.length >= 3 && (
-                  <button
-                    onClick={() => {
-                      setShowAnalysisPolygons(!showAnalysisPolygons);
-                      setPSAlert({
-                        type: "success",
-                        title: showAnalysisPolygons
-                          ? "Analysis Hidden"
-                          : "Analysis Shown",
-                        message: showAnalysisPolygons
-                          ? "Analysis polygons hidden. You can now place markers without interference."
-                          : "Analysis polygons visible again.",
-                      });
-                    }}
-                    className={`flex items-center justify-center gap-2 h-10 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${showAnalysisPolygons ? "bg-gray-100 hover:bg-gray-200 text-gray-700" : "bg-blue-100 hover:bg-blue-200 text-blue-700"}`}
-                  >
-                    <Eye size={16} />{" "}
-                    {showAnalysisPolygons ? "Hide Analysis" : "Show Analysis"}
-                  </button>
-                )}
-                <div className="flex gap-2">
-                  <button
-                    onClick={cancelDrawing}
-                    className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 h-9 px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
-                  >
-                    <X size={14} /> Cancel
-                  </button>
-                  <button
-                    onClick={clearAnalysis}
-                    className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 h-9 px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
-                  >
-                    <Trash size={14} /> Clear
-                  </button>
-                </div>
               </div>
               <button
                 onClick={() => {
@@ -3136,6 +3115,19 @@ export default function Map() {
                       >
                         <Plus size={10} /> Add Point
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = !isPickingSitePolygon;
+                          setIsPickingSitePolygon(next);
+                          if (next) setIsPickingSiteMarker(false);
+                        }}
+                        title="Click on the map to add polygon points"
+                        className={`flex-1 flex items-center justify-center gap-0.5 text-[.65rem] py-1.5 rounded border ${isPickingSitePolygon ? "bg-green-600 hover:bg-green-700 text-white border-green-600" : "bg-green-50 hover:bg-green-100 text-green-700 border-green-200"}`}
+                      >
+                        <MapPin size={10} />{" "}
+                        {isPickingSitePolygon ? "Done Clicking" : "Click Map"}
+                      </button>
                       {analysisCoords.length >= 3 && (
                         <button
                           type="button"
@@ -3293,6 +3285,7 @@ export default function Map() {
                       });
                       setSiteCoordinateInput("");
                       setSitePolygonPoints([]);
+                      setIsPickingSitePolygon(false);
                       setSiteMarkerPosition(null);
                       setSelectedPotentialSiteIds([]);
                       setShowSitePolygonOnMap(false);
@@ -3437,8 +3430,11 @@ export default function Map() {
             <Marker
               key={`vertex-${idx}`}
               position={coord}
-              icon={createVertexIcon(idx)}
-              draggable={isEditingAnalysis}
+              icon={createVertexIcon(
+                idx,
+                isEditingAnalysis || isDrawingAnalysis,
+              )}
+              draggable={isEditingAnalysis || isDrawingAnalysis}
               eventHandlers={{
                 drag: (e) => handleVertexDrag(idx, e),
               }}
@@ -3468,7 +3464,7 @@ export default function Map() {
                 const isSelected = selectedPotentialSiteIds.includes(
                   props.potential_sites_id,
                 );
-                const popupContent = `<div style="font-size: 12px; min-width: 180px;"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg><strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Site"}</strong></div><div style="margin-bottom: 4px;"><strong>Area:</strong> ${props.area_hectares != null ? formatArea(props.area_hectares) : "N/A"}</div><div style="margin-bottom: 4px;"><strong>NDVI:</strong> ${props.avg_ndvi?.toFixed(3) || "N/A"}</div><div style="margin-bottom: 4px;"><strong>Suitability:</strong> ${props.suitability_score?.toFixed(2) || "N/A"}</div><hr style="margin: 6px 0;"/><button id="hazard-report-btn-analyze-${props.potential_sites_id}" style="width: 100%; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:4px;">${isSelected ? "Deselect" : "Select for Site"}</button><button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer; margin-bottom:4px;">View Trends</button><button id="delete-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:#EF4444; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-size:12px; display:flex; align-items:center; justify-content:center; gap:4px; margin-top:4px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>Delete Site</button></div>`;
+                const popupContent = `<div style="font-size: 12px; min-width: 180px;"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg><strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Area"}</strong></div><div style="margin-bottom: 4px;"><strong>Area:</strong> ${props.area_hectares != null ? formatArea(props.area_hectares) : "N/A"}</div><div style="margin-bottom: 4px;"><strong>NDVI:</strong> ${props.avg_ndvi?.toFixed(3) || "N/A"}</div><div style="margin-bottom: 4px;"><strong>Suitability:</strong> ${props.suitability_score?.toFixed(2) || "N/A"}</div><hr style="margin: 6px 0;"/><button id="hazard-report-btn-analyze-${props.potential_sites_id}" style="width: 100%; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:4px;">${isSelected ? "Deselect" : "Select for Site"}</button><button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer; margin-bottom:4px;">View Trends</button><button id="delete-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:#EF4444; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-size:12px; display:flex; align-items:center; justify-content:center; gap:4px; margin-top:4px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>Delete Site</button></div>`;
                 layer.bindPopup(popupContent);
                 layer.on("popupopen", () => {
                   const hazardBtn = document.getElementById(
@@ -3479,7 +3475,7 @@ export default function Map() {
                       layer.closePopup();
                       handleGenerateHazardReport(
                         feature.geometry,
-                        props.site_id || "Potential Site",
+                        props.site_id || "Potential Area",
                       );
                     };
                   }
@@ -3873,6 +3869,39 @@ export default function Map() {
               </Popup>
             </Polygon>
           )}
+        {/* Draggable corners for the site polygon form */}
+        {showSitePolygonOnMap &&
+          sitePolygonPoints.map((point, idx) => {
+            const lat = parseFloat(point.lat);
+            const lng = parseFloat(point.lng);
+            if (
+              !Number.isFinite(lat) ||
+              !Number.isFinite(lng) ||
+              Math.abs(lat) > 90 ||
+              Math.abs(lng) > 180
+            )
+              return null;
+            return (
+              <Marker
+                key={`site-vertex-${idx}`}
+                position={[lat, lng]}
+                icon={createVertexIcon(idx, true, "#16a34a")}
+                draggable
+                eventHandlers={{
+                  drag: (e) => {
+                    const p = e.target.getLatLng();
+                    setSitePolygonPoints((prev) =>
+                      prev.map((pt, i) =>
+                        i === idx
+                          ? { lat: p.lat.toFixed(6), lng: p.lng.toFixed(6) }
+                          : pt,
+                      ),
+                    );
+                  },
+                }}
+              />
+            );
+          })}
         {siteMarkerPosition && (
           <Marker
             position={siteMarkerPosition}
@@ -3941,7 +3970,7 @@ export default function Map() {
             })}
             onEachFeature={(feature, layer) => {
               const p = feature.properties;
-              const popupContent = `<div style="min-width: 200px; font-family: system-ui;"><h3 style="margin-bottom: 8px; font-weight: bold; color: #dc2626; font-size: 14px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Potential Site</h3><div style="font-size: 12px; margin-bottom: 4px;"><strong>Area:</strong> ${p.area_hectares != null ? formatArea(p.area_hectares) : "N/A"}</div><div style="font-size: 12px; margin-bottom: 8px;"><strong>Avg NDVI:</strong> ${p.avg_ndvi?.toFixed(3) || "N/A"}</div><button id="hazard-report-btn-${p.potential_sites_id}" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button onclick="window.handleViewTrend(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #3B82F6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">View NDVI Trend</button><button onclick="window.handleDeletePotentialSite(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #EF4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">Delete Potential Site</button></div>`;
+              const popupContent = `<div style="min-width: 200px; font-family: system-ui;"><h3 style="margin-bottom: 8px; font-weight: bold; color: #dc2626; font-size: 14px; border-bottom: 1px solid #eee; padding-bottom: 4px;">Potential Area</h3><div style="font-size: 12px; margin-bottom: 4px;"><strong>Area:</strong> ${p.area_hectares != null ? formatArea(p.area_hectares) : "N/A"}</div><div style="font-size: 12px; margin-bottom: 8px;"><strong>Avg NDVI:</strong> ${p.avg_ndvi?.toFixed(3) || "N/A"}</div><button id="hazard-report-btn-${p.potential_sites_id}" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button onclick="window.handleViewTrend(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #3B82F6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">View NDVI Trend</button><button onclick="window.handleDeletePotentialSite(${p.potential_sites_id})" style="width: 100%; margin-bottom: 6px; padding: 6px; background: #EF4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;">Delete Potential Area</button></div>`;
               layer.bindPopup(popupContent);
               layer.on("popupopen", () => {
                 const btn = document.getElementById(
@@ -3952,7 +3981,7 @@ export default function Map() {
                     layer.closePopup();
                     handleGenerateHazardReport(
                       feature.geometry,
-                      p.name || `Potential Site ${p.potential_sites_id}`,
+                      p.name || `Potential Area ${p.potential_sites_id}`,
                     );
                   };
                 }

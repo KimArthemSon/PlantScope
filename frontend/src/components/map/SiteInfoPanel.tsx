@@ -22,7 +22,9 @@ import {
   ChevronDown,
   ChevronUp,
   Target,
+  ExternalLink,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/constant/api";
 import { useUserRole } from "@/hooks/authorization"; // ✅ Added import for role checking
 
@@ -36,6 +38,7 @@ interface SiteImage {
 
 interface SiteData {
   site_id: number;
+  reforestation_area_id?: number | null;
   name: string;
   description: string | null;
   status: string;
@@ -137,6 +140,13 @@ export default function SiteInfoPanel({
   onViewTrend,
 }: SiteInfoPanelProps) {
   const { userRole } = useUserRole(); // ✅ Get user role
+  const navigate = useNavigate();
+  const userPath =
+    userRole === "GISSpecialist"
+      ? "/GISS"
+      : userRole === "DataManager"
+        ? "/DataManager"
+        : "";
 
   const [siteData, setSiteData] = useState<SiteData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -304,7 +314,7 @@ export default function SiteInfoPanel({
                 {/* ✅ Buttons 2, 3, 4: Only shown if user is GISSpecialist */}
                 {userRole === "GISSpecialist" && (
                   <>
-                    {/* Button 2: Show/Hide Potential Sites */}
+                    {/* Button 2: Show/Hide Potential Areas */}
                     <button
                       onClick={() => {
                         if (isShowingPotentialSites) {
@@ -314,7 +324,7 @@ export default function SiteInfoPanel({
                         }
                       }}
                       className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-gray-50 transition-colors"
-                      title="Show Potential Sites"
+                      title="Show Potential Areas"
                     >
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isShowingPotentialSites ? 'bg-emerald-100' : 'bg-purple-100'}`}>
                         {isShowingPotentialSites ? (
@@ -373,6 +383,19 @@ export default function SiteInfoPanel({
               {siteData.description && (
                 <p className="text-xs text-gray-600 mt-2 leading-relaxed">{siteData.description}</p>
               )}
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(
+                    `${userPath}/reforestation/site/${siteData.reforestation_area_id}/information/${siteData.site_id}`,
+                  )
+                }
+                disabled={!siteData.reforestation_area_id}
+                title={siteData.reforestation_area_id ? "Open the full site information page" : "This site has no reforestation area"}
+                className="mt-3 w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ExternalLink size={13} /> View Details
+              </button>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">

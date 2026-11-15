@@ -34,7 +34,7 @@ export function usePotentialSites() {
       const data = await res.json();
       setPotentialSites(data.data || []);
     } catch (err: any) {
-      setError(err.message || "Failed to fetch potential sites");
+      setError(err.message || "Failed to fetch potential areas");
       setPotentialSites([]);
     } finally {
       setLoading(false);

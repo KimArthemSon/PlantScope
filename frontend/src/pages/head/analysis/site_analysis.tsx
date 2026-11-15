@@ -800,7 +800,7 @@ export default function MulticriteriaAnalysis() {
 
         polygon.bindPopup(`
           <div style="text-align:center;font-family:sans-serif;">
-            <strong style="color:#2563eb;font-size:13px;">Potential Site</strong><br/>
+            <strong style="color:#2563eb;font-size:13px;">Potential Area</strong><br/>
             <span style="font-size:11px;color:#666;">Suitability: ${score}%</span>
           </div>
         `);
@@ -2007,7 +2007,7 @@ export default function MulticriteriaAnalysis() {
                 ? "Loading..."
                 : showPotentialSites
                   ? `Hide Potential (${potentialSitesHook.potentialSites.length})`
-                  : `Potential Sites (${potentialSitesHook.potentialSites.length})`}
+                  : `Potential Areas (${potentialSitesHook.potentialSites.length})`}
             </button>
             <div className="w-px h-5 bg-gray-200 mx-0.5" />
 
@@ -2758,7 +2758,7 @@ export default function MulticriteriaAnalysis() {
                   potentialSitesHook.potentialSites.length > 0 && (
                     <span className="flex items-center gap-1 text-blue-600">
                       <Target size={12} />{" "}
-                      {potentialSitesHook.potentialSites.length} potential site
+                      {potentialSitesHook.potentialSites.length} potential area
                       {potentialSitesHook.potentialSites.length !== 1
                         ? "s"
                         : ""}

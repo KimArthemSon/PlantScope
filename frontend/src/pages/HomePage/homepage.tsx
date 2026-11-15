@@ -559,7 +559,7 @@ export default function Homepage() {
                   <div className="map-label l3">FIELD CHECK</div>
                   <div className="map-legend">
                     <span>
-                      <b /> Potential site
+                      <b /> Potential area
                     </span>
                     <span>
                       <b className="water" /> Water
@@ -605,7 +605,7 @@ export default function Homepage() {
                 className="text-sm leading-relaxed"
                 style={{ color: "var(--text-secondary)" }}
               >
-                Verify potential sites in the field using GPS location, photos,
+                Verify potential areas in the field using GPS location, photos,
                 site observations, boundaries, and relevant land information.
               </p>
             </div>
@@ -749,7 +749,7 @@ export default function Homepage() {
                 <li>
                   <Minus size={16} />
                   <span>
-                    Potential sites still need field verification before
+                    Potential areas still need field verification before
                     planting decisions.
                   </span>
                 </li>

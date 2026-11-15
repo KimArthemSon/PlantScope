@@ -13,8 +13,8 @@ export default function BarangayAreasPanel({ barangayAreas }: BarangayAreasPanel
   } = barangayAreas;
 
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="w-px h-5 bg-gray-200 mx-0.5" />
+    <div className="flex items-center gap-2">
+      <div className="w-px h-5 bg-gray-200 mx-1" />
       <select
         value={selectedBarangayId || ""}
         onChange={(e) => selectBarangay(e.target.value ? Number(e.target.value) : null)}

@@ -16,6 +16,8 @@ export default function CoordinateSearch({ onGo }: CoordinateSearchProps) {
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Popover uses fixed positioning so a scrolling toolbar can't clip it
+  const [popoverPos, setPopoverPos] = useState({ left: 0, top: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const latInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,7 +71,14 @@ export default function CoordinateSearch({ onGo }: CoordinateSearchProps) {
     <div ref={containerRef} className="relative">
       <button
         type="button"
-        onClick={() => setIsOpen((o) => !o)}
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setPopoverPos({
+            left: Math.max(8, Math.min(rect.left, window.innerWidth - 296)),
+            top: rect.bottom + 8,
+          });
+          setIsOpen((o) => !o);
+        }}
         className={`flex items-center gap-1 px-3 py-1.5 rounded transition text-xs font-medium ${
           isOpen
             ? "bg-indigo-600 hover:bg-indigo-700 text-white"
@@ -83,7 +92,8 @@ export default function CoordinateSearch({ onGo }: CoordinateSearchProps) {
       {isOpen && (
         <form
           onSubmit={handleSubmit}
-          className="absolute left-0 top-full mt-2 z-[1100] w-72 bg-white rounded-lg shadow-xl border border-gray-200 p-3"
+          style={popoverPos}
+          className="fixed z-[1100] w-72 bg-white rounded-lg shadow-xl border border-gray-200 p-3"
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
