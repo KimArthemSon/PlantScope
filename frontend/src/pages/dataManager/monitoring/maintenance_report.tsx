@@ -1188,17 +1188,33 @@ export default function SiteMonitoringDetails() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge
-              status={
-                current_application ? current_application.status : "inactive"
-              }
-            />
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${monitoringBadge.color}`}
+          <div className="flex items-end gap-3">
+            <div
+              className="flex flex-col items-start gap-1"
+              title="Status of the tree grower's current application (program) on this site"
             >
-              <MonitoringIcon size={13} /> {monitoringBadge.label}
-            </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-green-200">
+                Application Status
+              </span>
+              <StatusBadge
+                status={
+                  current_application ? current_application.status : "inactive"
+                }
+              />
+            </div>
+            <div
+              className="flex flex-col items-start gap-1"
+              title="Monitoring lifecycle status of the site itself"
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-green-200">
+                Site Status
+              </span>
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${monitoringBadge.color}`}
+              >
+                <MonitoringIcon size={13} /> {monitoringBadge.label}
+              </span>
+            </div>
           </div>
         </div>
       </header>
