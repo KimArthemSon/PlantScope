@@ -336,6 +336,8 @@ export function Profile() {
         title: "Profile Updated",
         message: data.message || "Profile updated successfully.",
       });
+      // Let the alert show for its 3 seconds, then return to the accounts list
+      setTimeout(() => navigate("/account-management/"), 3000);
     } catch (e) {
       setPSAlert({ type: "error", title: "Error", message: "Server Error!" });
     } finally {

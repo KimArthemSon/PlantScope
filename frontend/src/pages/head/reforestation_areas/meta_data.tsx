@@ -24,8 +24,6 @@ import {
   Target,
   Building2,
   Filter,
-  ChevronDown,
-  ChevronRight,
   Shield,
   Car,
   Check,
@@ -352,7 +350,61 @@ function AnimalBadge({ animal }: { animal: AnimalInfo }) {
   );
 }
 
-function AssessmentDataViewer({
+// ─────────────────────────────────────────────
+// Inspector submission details — same order as the Verification Form:
+// 1 Land Classification → 2 Legal Documents → 3 Security Concerns →
+// 4 Accessibility → 5 Animals
+// ─────────────────────────────────────────────
+function SubmissionSection({
+  step,
+  icon: Icon,
+  title,
+  isEmpty,
+  emptyText = "Not recorded",
+  last = false,
+  children,
+}: {
+  step: number;
+  icon: any;
+  title: string;
+  isEmpty: boolean;
+  emptyText?: string;
+  last?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-2.5">
+      <div className="flex flex-col items-center">
+        <span
+          className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+            isEmpty
+              ? "bg-slate-100 text-slate-400"
+              : "bg-emerald-600 text-white"
+          }`}
+        >
+          {step}
+        </span>
+        {!last && <span className="w-px flex-1 bg-slate-200 mt-1" />}
+      </div>
+      <div className={`flex-1 min-w-0 ${last ? "" : "pb-3"}`}>
+        <div className="flex items-center gap-1.5 mb-1">
+          <Icon
+            size={13}
+            className={isEmpty ? "text-slate-400" : "text-emerald-600"}
+          />
+          <span className="text-xs font-semibold text-slate-800">{title}</span>
+        </div>
+        {isEmpty ? (
+          <p className="text-[11px] text-slate-400 italic">{emptyText}</p>
+        ) : (
+          children
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SubmissionDetails({
   data,
   landClassification,
   animalsPresent,
@@ -361,304 +413,153 @@ function AssessmentDataViewer({
   landClassification?: { id: number; name: string } | null;
   animalsPresent?: AnimalInfo[];
 }) {
-  const [expandedSections, setExpandedSections] = useState<
-    Record<string, boolean>
-  >({
-    accessibility: true,
-    legal_documents: true,
-    security_concerns: true,
-    land_classification: true,
-    animals: true,
-  });
+  const meta = data?.meta_data ?? {};
+  const legal = meta.legal_documents ?? {};
+  const security = meta.security_concerns ?? {};
+  const access = meta.accessibility ?? {};
+  const animals = animalsPresent ?? [];
 
-  if (!data || !data.meta_data)
-    return (
-      <p className="text-xs text-slate-400 italic">
-        No assessment data available
-      </p>
-    );
-  const metaData = data.meta_data;
-  const toggleSection = (section: string) =>
-    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  const lcNotes = legal.land_classification?.inspector_notes;
+  const otherDocs = Array.isArray(legal.other_documents)
+    ? legal.other_documents
+    : [];
+  const hasLegal = !!(legal.land_title || legal.tax_declaration || otherDocs.length);
+  const concerns: string[] = Array.isArray(security.selected)
+    ? security.selected
+    : [];
+  const vehicleAccess: string[] = Array.isArray(access.vehicle_access)
+    ? access.vehicle_access
+    : access.vehicle_access
+      ? [access.vehicle_access]
+      : [];
+  const hasAccess = !!(
+    vehicleAccess.length ||
+    access.notes ||
+    access.route_description
+  );
+
+  const Note = ({ children }: { children: React.ReactNode }) => (
+    <p className="text-[11px] text-slate-600 italic mt-1">"{children}"</p>
+  );
 
   return (
-    <div className="space-y-2.5">
-      {landClassification && (
-        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
-          <button
-            onClick={() => toggleSection("land_classification")}
-            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <Layers size={16} className="text-emerald-600" />
-              <span className="text-sm font-semibold text-slate-800">
-                Land Classification
-              </span>
-            </div>
-            {expandedSections.land_classification ? (
-              <ChevronDown size={16} className="text-slate-400" />
-            ) : (
-              <ChevronRight size={16} className="text-slate-400" />
-            )}
-          </button>
-          {expandedSections.land_classification && (
-            <div className="p-4 bg-slate-50 border-t border-slate-200">
-              <div className="flex items-center gap-2">
-                <CheckCircle size={14} className="text-emerald-600" />
-                <p className="text-sm font-semibold text-slate-800">
-                  {landClassification.name}
-                </p>
-              </div>
-              {metaData.legal_documents?.land_classification
-                ?.inspector_notes && (
-                <p className="text-xs text-slate-600 mt-3 italic">
-                  "
-                  {metaData.legal_documents.land_classification.inspector_notes}
-                  "
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      {animalsPresent && animalsPresent.length > 0 && (
-        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
-          <button
-            onClick={() => toggleSection("animals")}
-            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <PawPrint size={16} className="text-emerald-600" />
-              <span className="text-sm font-semibold text-slate-800">
-                Animals Observed ({animalsPresent.length})
-              </span>
-            </div>
-            {expandedSections.animals ? (
-              <ChevronDown size={16} className="text-slate-400" />
-            ) : (
-              <ChevronRight size={16} className="text-slate-400" />
-            )}
-          </button>
-          {expandedSections.animals && (
-            <div className="p-4 bg-slate-50 border-t border-slate-200">
-              <div className="flex flex-wrap gap-2">
-                {animalsPresent.map((animal) => (
-                  <div
-                    key={animal.animal_id}
-                    className="p-3 bg-white rounded-lg border border-emerald-200 hover:border-emerald-300 transition-colors"
-                  >
-                    <p className="text-xs font-bold text-slate-800">
-                      {animal.name}
-                    </p>
-                    {animal.scientific_name && (
-                      <p className="text-[11px] text-slate-500 italic mt-1">
-                        {animal.scientific_name}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {metaData.accessibility && (
-        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
-          <button
-            onClick={() => toggleSection("accessibility")}
-            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <Car size={16} className="text-emerald-600" />
-              <span className="text-sm font-semibold text-slate-800">
-                Accessibility
-              </span>
-            </div>
-            {expandedSections.accessibility ? (
-              <ChevronDown size={16} className="text-slate-400" />
-            ) : (
-              <ChevronRight size={16} className="text-slate-400" />
-            )}
-          </button>
-          {expandedSections.accessibility && (
-            <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-4">
-              {metaData.accessibility.vehicle_access && (
-                <div>
-                  <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
-                    Vehicle Access
-                  </p>
-                  {Array.isArray(metaData.accessibility.vehicle_access) ? (
-                    <div className="flex flex-wrap gap-2">
-                      {metaData.accessibility.vehicle_access.map(
-                        (access: string, idx: number) => (
-                          <span
-                            key={idx}
-                            className="px-3 py-1.5 bg-white text-slate-700 rounded-lg text-xs font-medium border border-slate-200"
-                          >
-                            {access}
-                          </span>
-                        ),
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-slate-700">
-                      {metaData.accessibility.vehicle_access}
-                    </p>
-                  )}
-                </div>
-              )}
-              {metaData.accessibility.notes && (
-                <div>
-                  <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
-                    Notes
-                  </p>
-                  <p className="text-sm text-slate-700">
-                    {metaData.accessibility.notes}
-                  </p>
-                </div>
-              )}
-              {metaData.accessibility.route_description && (
-                <div>
-                  <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
-                    Route Description
-                  </p>
-                  <p className="text-sm text-slate-700">
-                    {metaData.accessibility.route_description}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+    <div>
+      <SubmissionSection
+        step={1}
+        icon={Layers}
+        title="Land Classification"
+        isEmpty={!landClassification}
+      >
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+          <CheckCircle size={11} /> {landClassification?.name}
+        </span>
+        {lcNotes && <Note>{lcNotes}</Note>}
+      </SubmissionSection>
 
-      {metaData.legal_documents && (
-        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
-          <button
-            onClick={() => toggleSection("legal_documents")}
-            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <FileText size={16} className="text-emerald-600" />
-              <span className="text-sm font-semibold text-slate-800">
-                Legal Documents
-              </span>
-            </div>
-            {expandedSections.legal_documents ? (
-              <ChevronDown size={16} className="text-slate-400" />
-            ) : (
-              <ChevronRight size={16} className="text-slate-400" />
-            )}
-          </button>
-          {expandedSections.legal_documents && (
-            <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
-              {metaData.legal_documents.land_title && (
-                <div className="p-3 bg-white rounded-lg border border-slate-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle size={14} className="text-emerald-600" />
-                    <p className="text-xs font-semibold text-slate-800">
-                      Land Title
-                    </p>
-                  </div>
-                  {metaData.legal_documents.land_title.note && (
-                    <p className="text-xs text-slate-600 italic">
-                      "{metaData.legal_documents.land_title.note}"
-                    </p>
-                  )}
-                </div>
-              )}
-              {metaData.legal_documents.tax_declaration && (
-                <div className="p-3 bg-white rounded-lg border border-slate-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle size={14} className="text-emerald-600" />
-                    <p className="text-xs font-semibold text-slate-800">
-                      Tax Declaration
-                    </p>
-                  </div>
-                  {metaData.legal_documents.tax_declaration.note && (
-                    <p className="text-xs text-slate-600 italic">
-                      "{metaData.legal_documents.tax_declaration.note}"
-                    </p>
-                  )}
-                </div>
-              )}
-              {metaData.legal_documents.other_documents &&
-                Array.isArray(metaData.legal_documents.other_documents) && (
-                  <div>
-                    <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
-                      Other Documents
-                    </p>
-                    {metaData.legal_documents.other_documents.map(
-                      (doc: any, idx: number) => (
-                        <div
-                          key={idx}
-                          className="p-3 bg-white rounded-lg border border-slate-200 mb-2"
-                        >
-                          {doc.note && (
-                            <p className="text-xs text-slate-600 italic">
-                              "{doc.note}"
-                            </p>
-                          )}
-                        </div>
-                      ),
-                    )}
-                  </div>
-                )}
+      <SubmissionSection
+        step={2}
+        icon={FileText}
+        title="Legal Documents"
+        isEmpty={!hasLegal}
+        emptyText="No documents submitted"
+      >
+        <div className="space-y-1.5">
+          {legal.land_title && (
+            <div className="px-2 py-1.5 bg-white rounded-md border border-slate-200">
+              <p className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
+                <CheckCircle size={11} className="text-emerald-600" /> Land Title
+              </p>
+              {legal.land_title.note && <Note>{legal.land_title.note}</Note>}
             </div>
           )}
+          {legal.tax_declaration && (
+            <div className="px-2 py-1.5 bg-white rounded-md border border-slate-200">
+              <p className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
+                <CheckCircle size={11} className="text-emerald-600" /> Tax
+                Declaration
+              </p>
+              {legal.tax_declaration.note && (
+                <Note>{legal.tax_declaration.note}</Note>
+              )}
+            </div>
+          )}
+          {otherDocs.map((doc: any, idx: number) => (
+            <div
+              key={idx}
+              className="px-2 py-1.5 bg-white rounded-md border border-slate-200"
+            >
+              <p className="text-[11px] font-semibold text-slate-800 flex items-center gap-1">
+                <FileText size={11} className="text-slate-500" /> Other Document
+              </p>
+              {doc.note && <Note>{doc.note}</Note>}
+            </div>
+          ))}
         </div>
-      )}
+      </SubmissionSection>
 
-      {metaData.security_concerns && (
-        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-slate-300 transition-colors">
-          <button
-            onClick={() => toggleSection("security_concerns")}
-            className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <ShieldAlert size={16} className="text-emerald-600" />
-              <span className="text-sm font-semibold text-slate-800">
-                Security Concerns
+      <SubmissionSection
+        step={3}
+        icon={ShieldAlert}
+        title="Security Concerns"
+        isEmpty={!concerns.length && !security.note}
+        emptyText="None reported"
+      >
+        {concerns.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {concerns.map((c, idx) => (
+              <SecurityBadge key={idx} concern={c} />
+            ))}
+          </div>
+        )}
+        {security.note && <Note>{security.note}</Note>}
+      </SubmissionSection>
+
+      <SubmissionSection
+        step={4}
+        icon={Car}
+        title="Accessibility"
+        isEmpty={!hasAccess}
+      >
+        {vehicleAccess.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {vehicleAccess.map((a, idx) => (
+              <span
+                key={idx}
+                className="px-2 py-1 bg-blue-50 text-blue-800 rounded-md text-[11px] font-medium border border-blue-200"
+              >
+                {a}
               </span>
-            </div>
-            {expandedSections.security_concerns ? (
-              <ChevronDown size={16} className="text-slate-400" />
-            ) : (
-              <ChevronRight size={16} className="text-slate-400" />
-            )}
-          </button>
-          {expandedSections.security_concerns && (
-            <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-4">
-              {metaData.security_concerns.selected &&
-                Array.isArray(metaData.security_concerns.selected) &&
-                metaData.security_concerns.selected.length > 0 && (
-                  <div>
-                    <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
-                      Selected Concerns
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {metaData.security_concerns.selected.map(
-                        (concern: string, idx: number) => (
-                          <SecurityBadge key={idx} concern={concern} />
-                        ),
-                      )}
-                    </div>
-                  </div>
-                )}
-              {metaData.security_concerns.note && (
-                <div>
-                  <p className="text-xs uppercase font-semibold text-slate-500 mb-2">
-                    Additional Notes
-                  </p>
-                  <p className="text-sm text-slate-700">
-                    {metaData.security_concerns.note}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+            ))}
+          </div>
+        )}
+        {access.route_description && (
+          <p className="text-[11px] text-slate-600 mt-1">
+            <span className="font-semibold">Route:</span>{" "}
+            {access.route_description}
+          </p>
+        )}
+        {access.notes && <Note>{access.notes}</Note>}
+      </SubmissionSection>
+
+      <SubmissionSection
+        step={5}
+        icon={PawPrint}
+        title={`Animals Observed${animals.length ? ` (${animals.length})` : ""}`}
+        isEmpty={!animals.length}
+        emptyText="None observed"
+        last
+      >
+        <div className="flex flex-wrap gap-1.5">
+          {animals.map((animal) => (
+            <span
+              key={animal.animal_id}
+              title={animal.scientific_name || undefined}
+            >
+              <AnimalBadge animal={animal} />
+            </span>
+          ))}
         </div>
-      )}
+      </SubmissionSection>
     </div>
   );
 }
@@ -1607,55 +1508,14 @@ export default function MetaDataVerification() {
                     <AssessmentTypeBadge type={item.type} />
                   </div>
 
-                  {(item.land_classification ||
-                    (item.animals_present &&
-                      item.animals_present.length > 0)) && (
-                    <div className="mb-3 space-y-2">
-                      {item.land_classification && (
-                        <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg">
-                          <Layers
-                            size={12}
-                            className="text-emerald-600 flex-shrink-0"
-                          />
-                          <span className="text-xs font-semibold text-emerald-900">
-                            {item.land_classification.name}
-                          </span>
-                        </div>
-                      )}
-                      {item.animals_present &&
-                        item.animals_present.length > 0 && (
-                          <div>
-                            <div className="flex items-center gap-2 mb-2 px-2">
-                              <PawPrint
-                                size={12}
-                                className="text-emerald-600"
-                              />
-                              <span className="text-xs font-semibold text-emerald-900">
-                                {item.animals_present.length} animal
-                                {item.animals_present.length !== 1 ? "s" : ""}
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 px-2">
-                              {item.animals_present
-                                .slice(0, 3)
-                                .map((animal) => (
-                                  <AnimalBadge
-                                    key={animal.animal_id}
-                                    animal={animal}
-                                  />
-                                ))}
-                              {item.animals_present.length > 3 && (
-                                <span className="text-xs text-slate-500 self-center font-medium">
-                                  +{item.animals_present.length - 3}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                    </div>
-                  )}
-
-                  <label className="flex items-center gap-2 mb-3 p-2.5 bg-emerald-50/50 rounded-lg cursor-pointer hover:bg-emerald-100/50 transition-colors border border-emerald-200/50">
+                  {/* Use as evidence */}
+                  <label
+                    className={`flex items-center gap-2 mb-3 px-2.5 py-2 rounded-lg cursor-pointer transition-colors border ${
+                      isSelected
+                        ? "bg-emerald-100 border-emerald-300"
+                        : "bg-slate-50 border-slate-200 hover:bg-emerald-50"
+                    }`}
+                  >
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -1663,26 +1523,54 @@ export default function MetaDataVerification() {
                       className="rounded accent-emerald-600"
                     />
                     <span className="text-xs font-semibold text-emerald-900">
-                      Use as evidence
+                      {isSelected ? "Used as evidence" : "Use as evidence"}
                     </span>
                   </label>
 
-                  {item.images && item.images.length > 0 && (
-                    <div className="mb-3">
-                      <p className="text-xs uppercase font-bold text-slate-500 mb-2">
-                        📎 Attachments ({item.images.length})
-                      </p>
+                  {/* Findings — same order as the Verification Form */}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 mb-3">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2.5">
+                      Findings
+                    </p>
+                    <SubmissionDetails
+                      data={item.field_assessment_data}
+                      landClassification={item.land_classification}
+                      animalsPresent={item.animals_present}
+                    />
+                  </div>
+
+                  {/* Location */}
+                  <div className="mb-3">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1.5">
+                      Location
+                    </p>
+                    {hasLocation ? (
+                      <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg font-medium">
+                        <MapPin size={12} className="text-emerald-600" />
+                        <span>
+                          {Number(item.location.latitude).toFixed(5)},{" "}
+                          {Number(item.location.longitude).toFixed(5)}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-xs text-orange-700 bg-orange-50 px-2.5 py-1.5 rounded-lg font-medium">
+                        <AlertCircle size={12} className="text-orange-600" />
+                        <span>No location</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Images — last */}
+                  <div className="mb-3">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1.5 flex items-center gap-1">
+                      <ImageIcon size={11} /> Images ({item.images?.length ?? 0})
+                    </p>
+                    {item.images && item.images.length > 0 ? (
                       <div className="grid grid-cols-4 gap-1.5">
                         {item.images.slice(0, 8).map((img) => (
                           <a
                             key={img.image_id}
-                            href={
-                              img.url
-                                ? img.url.startsWith("http")
-                                  ? img.url
-                                  : `${img.url}`
-                                : "#"
-                            }
+                            href={img.url || "#"}
                             target="_blank"
                             rel="noreferrer"
                             className="block aspect-square rounded-lg overflow-hidden border-2 border-slate-200 hover:border-emerald-400 transition-all hover:shadow-md"
@@ -1690,11 +1578,7 @@ export default function MetaDataVerification() {
                           >
                             {img.url ? (
                               <img
-                                src={
-                                  img.url.startsWith("http")
-                                    ? img.url
-                                    : `${img.url}`
-                                }
+                                src={img.url}
                                 alt={img.description || img.layer}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
@@ -1718,70 +1602,41 @@ export default function MetaDataVerification() {
                           </div>
                         )}
                       </div>
-                    </div>
-                  )}
-
-                  <div className="mb-2.5 flex flex-col gap-2.5">
-                    <div className="flex items-center gap-2">
-                      {hasLocation ? (
-                        <div className="flex items-center gap-1.5 text-xs text-emerald-700 flex-1 bg-emerald-50 px-2.5 py-1.5 rounded-lg font-medium">
-                          <MapPin size={12} className="text-emerald-600" />
-                          <span>
-                            {Number(item.location.latitude).toFixed(5)},{" "}
-                            {Number(item.location.longitude).toFixed(5)}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-xs text-orange-700 flex-1 bg-orange-50 px-2.5 py-1.5 rounded-lg font-medium">
-                          <AlertCircle size={12} className="text-orange-600" />
-                          <span>No location</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {canManageAssessments && (
-                        <>
-                          <button
-                            onClick={() => handleUnsendAssessment(item.id)}
-                            title="Unsend Assessment"
-                            className="flex items-center justify-center p-2 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all border border-slate-200 hover:border-amber-200"
-                          >
-                            <RotateCcw size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteAssessment(item.id)}
-                            title="Delete Assessment"
-                            className="flex items-center justify-center p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all border border-slate-200 hover:border-red-200"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </>
-                      )}
-                      <button
-                        onClick={() => openMapModal(item)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm hover:shadow-md"
-                      >
-                        <MapIcon size={14} />
-                        {hasLocation ? "View Map" : "Set Location"}
-                      </button>
-                    </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 italic">
+                        No images attached
+                      </p>
+                    )}
                   </div>
 
-                  {item.field_assessment_data && (
-                    <details className="text-xs mt-3 border-t border-slate-200 pt-3">
-                      <summary className="cursor-pointer text-slate-600 hover:text-slate-900 font-semibold text-xs select-none">
-                        📋 View assessment data
-                      </summary>
-                      <div className="mt-3">
-                        <AssessmentDataViewer
-                          data={item.field_assessment_data}
-                          landClassification={item.land_classification}
-                          animalsPresent={item.animals_present}
-                        />
-                      </div>
-                    </details>
-                  )}
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 pt-3 border-t border-slate-200">
+                    {canManageAssessments && (
+                      <>
+                        <button
+                          onClick={() => handleUnsendAssessment(item.id)}
+                          title="Unsend Assessment"
+                          className="flex items-center justify-center p-2 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all border border-slate-200 hover:border-amber-200"
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAssessment(item.id)}
+                          title="Delete Assessment"
+                          className="flex items-center justify-center p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all border border-slate-200 hover:border-red-200"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={() => openMapModal(item)}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all shadow-sm hover:shadow-md"
+                    >
+                      <MapIcon size={14} />
+                      {hasLocation ? "View Map" : "Set Location"}
+                    </button>
+                  </div>
                 </div>
               );
             })

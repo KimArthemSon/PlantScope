@@ -76,7 +76,6 @@ export default function Logout({ setIsLogout, isLogout }: LogoutProps) {
           type={alert.type}
           title={alert.title}
           message={alert.message}
-          duration={3000}
           onClose={() => setAlert({ ...alert, show: false })}
         />
       )}

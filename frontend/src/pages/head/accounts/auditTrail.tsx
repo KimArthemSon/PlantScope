@@ -354,8 +354,8 @@ export default function AuditTrail() {
         {(
           [
             { key: "session",     label: "Authentication & Session Log" },
-            { key: "audit",       label: "Account-Level Audit Trail" },
             { key: "operational", label: "Operational Activity History" },
+            { key: "audit",       label: "Account-Level Audit Trail" },
           ] as { key: ActiveTab; label: string }[]
         ).map(({ key, label }) => (
           <button

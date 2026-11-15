@@ -79,6 +79,11 @@ const roundCoord = (n: number): number => Math.round(n * 1e6) / 1e6;
 // Area as hectares and square meters, e.g. "46.50 ha · 465,012 m²"
 const formatSqm = (ha: number): string =>
   `${Math.round(ha * 10000).toLocaleString()} m²`;
+// Analysis results come back with ids like "SITE-001"; they are potential
+// areas (not official sites yet), so show them as "Potential Area 001".
+const potentialAreaLabel = (id?: string | number | null): string =>
+  id ? String(id).replace(/^SITE-?/i, "Potential Area ") : "Potential Area";
+
 const formatArea = (ha: number): string =>
   `${ha.toFixed(2)} ha · ${formatSqm(ha)}`;
 
@@ -577,6 +582,8 @@ export default function Map() {
   const [selectedSiteGeometry, setSelectedSiteGeometry] = useState<any>(null);
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   const [selectedSiteName, setSelectedSiteName] = useState<string>("");
+  // Title shown in the NDVI trends panel (opened from potential areas)
+  const [trendsTitle, setTrendsTitle] = useState<string>("");
   const [searchLat, setSearchLat] = useState("");
   const [searchLng, setSearchLng] = useState("");
   const [searchMarkerPosition, setSearchMarkerPosition] = useState<
@@ -1097,7 +1104,7 @@ export default function Map() {
         setPSAlert({
           type: "success",
           title: "Potential Areas Loaded",
-          message: `Showing ${data.data?.length || 0} potential areas(s).`,
+          message: `Showing ${data.data?.length || 0} potential area(s).`,
         });
       }
     } catch (error) {
@@ -1173,7 +1180,7 @@ export default function Map() {
     }
     setPSAlert({
       type: "success",
-      title: "Site Deleted",
+      title: "Potential Area Deleted",
       message: `Potential area ${siteId} has been removed from analysis results.`,
     });
   };
@@ -1193,6 +1200,7 @@ export default function Map() {
       geometryToUse = { type: "Polygon", coordinates: [coordinates] };
     }
     setSelectedSiteGeometry(geometryToUse);
+    setTrendsTitle(`Potential Area ${siteId}`);
     setShowSiteTrends(true);
   };
   const handleReanalyze = (siteId: number) => {
@@ -1250,7 +1258,7 @@ export default function Map() {
         });
         handleShowPotentialSites(reanalyzeTargetSiteId);
       } else {
-        throw new Error("Failed to save new potential Areas");
+        throw new Error("Failed to save new potential areas");
       }
     } catch (err: any) {
       setPSAlert({
@@ -1278,7 +1286,7 @@ export default function Map() {
     setPSAlert({
       type: "failed",
       title: "Cancelled",
-      message: "Analysis discarded. Existing potential Areas remain unchanged.",
+      message: "Analysis discarded. Existing potential areas remain unchanged.",
     });
   };
   const startMarkerPlacement = () => {
@@ -1399,9 +1407,9 @@ export default function Map() {
       } else {
         setPSAlert({
           type: "failed",
-          title: "No Sites Found",
+          title: "No Potential Areas Found",
           message:
-            "No suitable sites found. Try adjusting the date range or drawing a different area.",
+            "No potential areas found. Try adjusting the date range or drawing a different area.",
         });
       }
     } catch (err: any) {
@@ -2554,7 +2562,7 @@ export default function Map() {
           <div className="text-xs space-y-2">
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-1">
-                <MapPin size={12} className="text-gray-500" /> Total Sites:
+                <MapPin size={12} className="text-gray-500" /> Potential Areas:
               </span>
               <strong className="text-[#0f4a2f]">{siteStats.total}</strong>
             </div>
@@ -3261,16 +3269,35 @@ export default function Map() {
                 {suitablePolygons && suitablePolygons.features && (
                   <div className="border-t border-gray-200 pt-2 mt-1">
                     <label className="text-[.7rem] text-gray-600 block mb-1">
-                      Assigned Potential areas (Optional)
+                      Potential Areas (Optional)
                     </label>
-                    <div className="bg-gray-50 p-2 rounded border text-[.7rem] text-center">
-                      <strong className="text-green-700 text-lg">
-                        {selectedPotentialSiteIds.length}
-                      </strong>
-                      <span className="text-gray-500 block">
-                        Click red polygons on map to select
-                      </span>
-                    </div>
+                    {/* Status only: the selected potential areas are all
+                        assigned to the new site when it is created */}
+                    {selectedPotentialSiteIds.length > 0 ? (
+                      <div className="flex items-start gap-2 bg-green-50 border border-green-300 p-2 rounded text-[.7rem]">
+                        <CheckCircle size={16} className="text-green-600 shrink-0 mt-px" />
+                        <div>
+                          <span className="font-semibold text-green-700 block">
+                            Assigned
+                          </span>
+                          <span className="text-green-700/80">
+                            Selected potential areas will be linked to this site.
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2 bg-gray-50 border border-dashed border-gray-300 p-2 rounded text-[.7rem]">
+                        <MapPin size={16} className="text-gray-400 shrink-0 mt-px" />
+                        <div>
+                          <span className="font-semibold text-gray-600 block">
+                            Not assigned
+                          </span>
+                          <span className="text-gray-500">
+                            Click a red polygon on the map, then "Select for Site".
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="flex flex-row gap-1 mt-2">
@@ -3464,7 +3491,7 @@ export default function Map() {
                 const isSelected = selectedPotentialSiteIds.includes(
                   props.potential_sites_id,
                 );
-                const popupContent = `<div style="font-size: 12px; min-width: 180px;"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg><strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${props.site_id || "Potential Area"}</strong></div><div style="margin-bottom: 4px;"><strong>Area:</strong> ${props.area_hectares != null ? formatArea(props.area_hectares) : "N/A"}</div><div style="margin-bottom: 4px;"><strong>NDVI:</strong> ${props.avg_ndvi?.toFixed(3) || "N/A"}</div><div style="margin-bottom: 4px;"><strong>Suitability:</strong> ${props.suitability_score?.toFixed(2) || "N/A"}</div><hr style="margin: 6px 0;"/><button id="hazard-report-btn-analyze-${props.potential_sites_id}" style="width: 100%; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:4px;">${isSelected ? "Deselect" : "Select for Site"}</button><button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer; margin-bottom:4px;">View Trends</button><button id="delete-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:#EF4444; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-size:12px; display:flex; align-items:center; justify-content:center; gap:4px; margin-top:4px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>Delete Site</button></div>`;
+                const popupContent = `<div style="font-size: 12px; min-width: 180px;"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ddd;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${isSelected ? "#16a34a" : "#dc2626"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg><strong style="color: ${isSelected ? "#16a34a" : "#dc2626"};">${potentialAreaLabel(props.site_id)}</strong></div><div style="margin-bottom: 4px;"><strong>Area:</strong> ${props.area_hectares != null ? formatArea(props.area_hectares) : "N/A"}</div><div style="margin-bottom: 4px;"><strong>NDVI:</strong> ${props.avg_ndvi?.toFixed(3) || "N/A"}</div><div style="margin-bottom: 4px;"><strong>Suitability:</strong> ${props.suitability_score?.toFixed(2) || "N/A"}</div><hr style="margin: 6px 0;"/><button id="hazard-report-btn-analyze-${props.potential_sites_id}" style="width: 100%; padding: 6px; background: #0f4a2f; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; transition: background 0.2s;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Generate Hazard Report</button><button id="select-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:${isSelected ? "#dc2626" : "#16a34a"}; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:4px;">${isSelected ? "Deselect" : "Select for Site"}</button><button id="view-trends-btn-${props.site_id}" style="width:100%; padding:4px; background:#0f4a2f; color:white; border:none; border-radius:4px; cursor:pointer; margin-bottom:4px;">View Trends</button><button id="delete-site-btn-${props.potential_sites_id}" style="width:100%; padding:6px; background:#EF4444; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-size:12px; display:flex; align-items:center; justify-content:center; gap:4px; margin-top:4px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>Delete Potential Area</button></div>`;
                 layer.bindPopup(popupContent);
                 layer.on("popupopen", () => {
                   const hazardBtn = document.getElementById(
@@ -3496,6 +3523,7 @@ export default function Map() {
                       layer.closePopup();
                       setSelectedSiteGeometry(feature.geometry);
                       setSelectedSiteId(props.site_id);
+                      setTrendsTitle(potentialAreaLabel(props.site_id));
                       setShowSiteTrends(true);
                     };
                   }
@@ -4064,7 +4092,7 @@ export default function Map() {
         onClose={() => setShowSiteTrends(false)}
         siteGeometry={selectedSiteGeometry}
         siteId={selectedSiteId}
-        siteName={selectedSiteName}
+        siteName={trendsTitle}
         token={token}
       />
       <SiteInfoPanel

@@ -17,7 +17,7 @@ export default function PlantScopeAlert({
   type,
   title,
   message,
-  duration = 5000,
+  duration = 3000, // app-wide default: every alert closes after 3 seconds
   onClose,
 }: PlantScopeAlertProps) {
   const [isVisible, setIsVisible] = useState(true);
