@@ -4,7 +4,15 @@ import NotFoundPage from "../../../components/layout/NotFoundPage";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import { useAuthorize } from "../../../hooks/authorization";
 import { useNavigate } from "react-router-dom";
+import SortableTh, {
+  applySortParams,
+  nextSort,
+  type SortState,
+} from "../../../components/table/SortableTh";
 import { api } from "@/constant/api.ts";
+
+const NEWEST_FIRST: SortState = { by: "timestamp", order: "desc" };
+const ACCOUNT_DEFAULT_SORT: SortState = { by: "created_at", order: "desc" };
 
 type ActiveTab = "session" | "audit" | "operational";
 type AuditAccountType = "admins" | "treeGrowers";
@@ -115,6 +123,7 @@ export default function AuditTrail() {
   const [sessionFilter, setSessionFilter] = useState({
     page: 1, page_size: 20, date_from: "", date_to: "", event_type: "",
   });
+  const [sessionSort, setSessionSort] = useState<SortState>(NEWEST_FIRST);
 
   // ── Audit tab — account list ─────────────────────────────────────────────────
   const [auditAccountType, setAuditAccountType] = useState<AuditAccountType>("admins");
@@ -124,6 +133,7 @@ export default function AuditTrail() {
   const [accountListSearch, setAccountListSearch] = useState("");
   const [accountListLoading, setAccountListLoading] = useState(false);
   const [accountListError, setAccountListError] = useState("");
+  const [accountSort, setAccountSort] = useState<SortState>(ACCOUNT_DEFAULT_SORT);
 
   // ── Activity modal state ─────────────────────────────────────────────────────
   const [activityModal, setActivityModal] = useState<{ id: number; email: string; name: string } | null>(null);
@@ -134,6 +144,7 @@ export default function AuditTrail() {
   const [modalDateFrom, setModalDateFrom] = useState("");
   const [modalDateTo, setModalDateTo] = useState("");
   const [modalLoading, setModalLoading] = useState(false);
+  const [modalSort, setModalSort] = useState<SortState>(NEWEST_FIRST);
 
   // ── Operational state ────────────────────────────────────────────────────────
   const [opEntries, setOpEntries] = useState<ActivityEntry[]>([]);
@@ -142,6 +153,7 @@ export default function AuditTrail() {
     page: 1, page_size: 20, date_from: "", date_to: "",
     action_type: "", entity_type: "", entity_id: "", performed_by_id: "",
   });
+  const [opSort, setOpSort] = useState<SortState>(NEWEST_FIRST);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -161,6 +173,7 @@ export default function AuditTrail() {
       if (sessionFilter.date_from)  p.set("date_from", sessionFilter.date_from);
       if (sessionFilter.date_to)    p.set("date_to", sessionFilter.date_to);
       if (sessionFilter.event_type) p.set("event_type", sessionFilter.event_type);
+      applySortParams(p, sessionSort);
 
       const res = await fetch(`${BASE}/get_recent_logs/?${p}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -172,7 +185,7 @@ export default function AuditTrail() {
     } catch (err: any) {
       setError(err.message || "Unable to fetch session logs.");
     } finally { setLoading(false); }
-  }, [sessionFilter, token]);
+  }, [sessionFilter, sessionSort, token]);
 
   const fetchAccountList = useCallback(async () => {
     setAccountListLoading(true); setAccountListError("");
@@ -181,6 +194,7 @@ export default function AuditTrail() {
       p.set("search", accountListSearch);
       p.set("page", String(accountListPage));
       p.set("entries", "10");
+      applySortParams(p, accountSort);
 
       const url = auditAccountType === "admins"
         ? `${BASE_ACCOUNTS}/list_users/?${p}`
@@ -215,7 +229,7 @@ export default function AuditTrail() {
     } catch (err: any) {
       setAccountListError(err.message || "Unable to fetch accounts.");
     } finally { setAccountListLoading(false); }
-  }, [auditAccountType, accountListPage, accountListSearch, token]);
+  }, [auditAccountType, accountListPage, accountListSearch, accountSort, token]);
 
   const fetchUserActivity = useCallback(async () => {
     if (!activityModal) return;
@@ -228,6 +242,7 @@ export default function AuditTrail() {
       if (modalActionType) p.set("action_type", modalActionType);
       if (modalDateFrom)   p.set("date_from", modalDateFrom);
       if (modalDateTo)     p.set("date_to", modalDateTo);
+      applySortParams(p, modalSort);
 
       const res = await fetch(`${BASE}/get_activity_log/?${p}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -239,7 +254,7 @@ export default function AuditTrail() {
     } catch {
       setModalActivity([]);
     } finally { setModalLoading(false); }
-  }, [activityModal, modalPage, modalActionType, modalDateFrom, modalDateTo, token]);
+  }, [activityModal, modalPage, modalActionType, modalDateFrom, modalDateTo, modalSort, token]);
 
   const fetchOperationalHistory = useCallback(async () => {
     setLoading(true); setError("");
@@ -253,6 +268,7 @@ export default function AuditTrail() {
       if (opFilter.entity_type)     p.set("entity_type", opFilter.entity_type);
       if (opFilter.entity_id)       p.set("entity_id", opFilter.entity_id);
       if (opFilter.performed_by_id) p.set("performed_by_id", opFilter.performed_by_id);
+      applySortParams(p, opSort);
 
       const res = await fetch(`${BASE}/get_activity_log/?${p}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -264,7 +280,7 @@ export default function AuditTrail() {
     } catch (err: any) {
       setError(err.message || "Unable to fetch operational history.");
     } finally { setLoading(false); }
-  }, [opFilter, token]);
+  }, [opFilter, opSort, token]);
 
   useEffect(() => { if (tab === "session")     fetchSessionLogs(); },       [tab, fetchSessionLogs]);
   useEffect(() => { if (tab === "audit")       fetchAccountList(); },        [tab, fetchAccountList]);
@@ -274,11 +290,33 @@ export default function AuditTrail() {
     if (activityModal) fetchUserActivity();
   }, [activityModal, fetchUserActivity]);
 
-  // Reset page when switching account type
-  useEffect(() => { setAccountListPage(1); }, [auditAccountType]);
+  // Reset page and sort when switching account type (their sortable columns differ)
+  useEffect(() => {
+    setAccountListPage(1);
+    setAccountSort(ACCOUNT_DEFAULT_SORT);
+  }, [auditAccountType]);
+
+  // Sort handlers: change the column/order and go back to page 1
+  const sortSession = (key: string) => {
+    setSessionSort((s) => nextSort(s, key));
+    setSessionFilter((f) => ({ ...f, page: 1 }));
+  };
+  const sortAccounts = (key: string) => {
+    setAccountSort((s) => nextSort(s, key));
+    setAccountListPage(1);
+  };
+  const sortOperational = (key: string) => {
+    setOpSort((s) => nextSort(s, key));
+    setOpFilter((f) => ({ ...f, page: 1 }));
+  };
+  const sortModal = (key: string) => {
+    setModalSort((s) => nextSort(s, key));
+    setModalPage(1);
+  };
 
   function openActivityModal(account: AccountEntry) {
     setModalPage(1);
+    setModalSort(NEWEST_FIRST);
     setModalActionType("");
     setModalDateFrom("");
     setModalDateTo("");
@@ -402,10 +440,10 @@ export default function AuditTrail() {
               {loading && <LoaderPending />}
               <thead className="bg-[#0f4a2fe0] text-white">
                 <tr>
-                  <Th>User</Th>
-                  <Th>Event</Th>
-                  <Th>IP Address</Th>
-                  <Th>Timestamp</Th>
+                  <STh label="User" sortKey="email" sort={sessionSort} onSort={sortSession} />
+                  <STh label="Event" sortKey="event_type" sort={sessionSort} onSort={sortSession} />
+                  <STh label="IP Address" sortKey="ip_address" sort={sessionSort} onSort={sortSession} />
+                  <STh label="Timestamp" sortKey="timestamp" sort={sessionSort} onSort={sortSession} />
                 </tr>
               </thead>
               <tbody>
@@ -498,9 +536,12 @@ export default function AuditTrail() {
               {accountListLoading && <LoaderPending />}
               <thead className="bg-[#0f4a2fe0] text-white">
                 <tr>
-                  <Th>Account</Th>
-                  <Th>Role</Th>
-                  <Th>Status</Th>
+                  <STh label="Account" sortKey="email" sort={accountSort} onSort={sortAccounts} />
+                  {/* Every tree grower has the same role, so only staff can be sorted by it */}
+                  {auditAccountType === "admins"
+                    ? <STh label="Role" sortKey="user_role" sort={accountSort} onSort={sortAccounts} />
+                    : <Th>Role</Th>}
+                  <STh label="Status" sortKey="is_active" sort={accountSort} onSort={sortAccounts} />
                   <Th>Action</Th>
                 </tr>
               </thead>
@@ -573,8 +614,13 @@ export default function AuditTrail() {
               {loading && <LoaderPending />}
               <thead className="bg-[#0f4a2fe0] text-white">
                 <tr>
-                  <Th>Performed By</Th><Th>Action</Th><Th>Entity</Th>
-                  <Th>Changed Fields</Th><Th>Description</Th><Th>IP Address</Th><Th>Timestamp</Th>
+                  <STh label="Performed By" sortKey="performed_by_email" sort={opSort} onSort={sortOperational} />
+                  <STh label="Action" sortKey="action_type" sort={opSort} onSort={sortOperational} />
+                  <STh label="Entity" sortKey="entity_type" sort={opSort} onSort={sortOperational} />
+                  <Th>Changed Fields</Th>
+                  <STh label="Description" sortKey="description" sort={opSort} onSort={sortOperational} />
+                  <STh label="IP Address" sortKey="ip_address" sort={opSort} onSort={sortOperational} />
+                  <STh label="Timestamp" sortKey="timestamp" sort={opSort} onSort={sortOperational} />
                 </tr>
               </thead>
               <tbody>
@@ -687,11 +733,11 @@ export default function AuditTrail() {
                   {modalLoading && <LoaderPending />}
                   <thead className="bg-[#0f4a2fe0] text-white">
                     <tr>
-                      <Th>Action</Th>
-                      <Th>Entity</Th>
-                      <Th>Description</Th>
-                      <Th>IP Address</Th>
-                      <Th>Timestamp</Th>
+                      <STh label="Action" sortKey="action_type" sort={modalSort} onSort={sortModal} />
+                      <STh label="Entity" sortKey="entity_type" sort={modalSort} onSort={sortModal} />
+                      <STh label="Description" sortKey="description" sort={modalSort} onSort={sortModal} />
+                      <STh label="IP Address" sortKey="ip_address" sort={modalSort} onSort={sortModal} />
+                      <STh label="Timestamp" sortKey="timestamp" sort={modalSort} onSort={sortModal} />
                     </tr>
                   </thead>
                   <tbody>
@@ -746,6 +792,11 @@ export default function AuditTrail() {
 
 function Th({ children }: { children: React.ReactNode }) {
   return <th className="py-3 px-5 text-left text-[.85rem]">{children}</th>;
+}
+
+// Sortable header with the same styling as Th
+function STh(props: { label: string; sortKey: string; sort: SortState; onSort: (key: string) => void }) {
+  return <SortableTh {...props} className="py-3 px-5 text-left text-[.85rem]" />;
 }
 
 function EmptyRow({ colSpan }: { colSpan: number }) {

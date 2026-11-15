@@ -640,6 +640,28 @@ def list_tree_growers(request):
         where_sql += ' AND NOT ' + has_site_sql
         where_params += ongoing_statuses
 
+    # Sorting — whitelist so user input never reaches the SQL directly.
+    # current_site sorts by the site name of the grower's latest ongoing application.
+    current_site_name_sql = (
+        "(SELECT s.name FROM tree_planting_programs_application AS a2 "
+        "JOIN sites_sites AS s ON s.site_id = a2.site_id "
+        "WHERE a2.user_id = u.id AND a2.site_id IS NOT NULL "
+        "AND a2.status IN ('for_evaluation', 'for_head', 'accepted', 'under_monitoring') "
+        "ORDER BY a2.created_at DESC LIMIT 1)"
+    )
+    sortable_columns = {
+        'group_name':    'LOWER(g.group_name)',
+        'group_type':    'g.group_type',
+        'email':         'LOWER(u.email)',
+        'group_contact': 'g.contact',
+        'group_address': 'LOWER(g.address)',
+        'current_site':  current_site_name_sql,
+        'is_active':     'u.is_active',
+        'created_at':    'u.created_at',
+    }
+    sort_column = sortable_columns.get(request.GET.get('sort_by', ''), 'u.created_at')
+    sort_order = 'ASC' if request.GET.get('order', 'desc').lower() == 'asc' else 'DESC'
+
     with connection.cursor() as cursor:
         # 1️⃣ Total count (search: email OR group name, + site filter)
         cursor.execute(
@@ -672,7 +694,7 @@ def list_tree_growers(request):
             FROM accounts_user AS u
             LEFT JOIN accounts_treegrowergroup AS g ON u.id = g.users_id
             WHERE {where_sql}
-            ORDER BY u.created_at DESC
+            ORDER BY {sort_column} {sort_order} NULLS LAST, u.id {sort_order}
             LIMIT %s OFFSET %s
             ''',
             where_params + [entries, offset]
