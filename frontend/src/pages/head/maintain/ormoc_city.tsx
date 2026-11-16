@@ -42,6 +42,17 @@ let DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon;
 
+// Coordinates are limited to 6 decimal places (~0.1 m precision)
+const COORD_DECIMALS = 6;
+const round6 = (n: number) => Number(n.toFixed(COORD_DECIMALS));
+// Trim typed input to at most 6 decimals while still allowing partial input like "11." or "-"
+const limitDecimals = (value: string) => {
+  const m = value.match(/^(-?\d*)(\.\d*)?/);
+  if (!m) return "";
+  return m[1] + (m[2] ? m[2].slice(0, COORD_DECIMALS + 1) : "");
+};
+const roundPair = (c: [number, number]): [number, number] => [round6(c[0]), round6(c[1])];
+
 // 📍 Mapbox Token
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -83,11 +94,15 @@ export default function Ormoc_City() {
         });
         const data = await response.json();
         if (response.ok) {
+          if (Array.isArray(data.polygon)) {
+            data.polygon = data.polygon.map(roundPair);
+          }
           if (data.marker && Array.isArray(data.marker) && data.marker.length === 2) {
-            setMarker([data.marker[0], data.marker[1]]);
-            setMarkerInput({ lat: data.marker[0].toString(), lng: data.marker[1].toString() });
-            setOriginalMarker([data.marker[0], data.marker[1]]);
-            mapRef.current?.flyTo([data.marker[0], data.marker[1]], 16);
+            const m = roundPair([data.marker[0], data.marker[1]]);
+            setMarker(m);
+            setMarkerInput({ lat: m[0].toString(), lng: m[1].toString() });
+            setOriginalMarker(m);
+            mapRef.current?.flyTo(m, 16);
           } else if (data.polygon?.length) {
             setPolygon(data.polygon);
             mapRef.current?.flyTo(data.polygon[0], 15);
@@ -150,169 +165,90 @@ export default function Ormoc_City() {
     setPSAlert({ type: "success", title: "Reverted", message: "Coordinates restored to the last saved state." });
   }
 
-  /* ---------------- Auto-Fetch Boundary Logic (IMPROVED) ---------------- */
-/* ---------------- Auto-Fetch Boundary Logic (UPDATED) ---------------- */
-async function fetchOrmocBoundary() {
-  setFetchingBoundary(true);
-  try {
-    // Use Overpass API with specific query for full administrative boundary
-    const overpassQuery = `
-      [out:json][timeout:25];
-      area["name"="Ormoc"]->.searchArea;
-      relation["admin_level"="6"](area.searchArea);
-      out geom;
-    `;
-    
-    const response = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      body: overpassQuery,
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
-
-    if (!response.ok) throw new Error("Network response was not ok");
-
-    const data = await response.json();
-
-    if (data.elements && data.elements.length > 0) {
-      const relation = data.elements[0];
-      let coords: [number, number][] = [];
-
-      if (relation.geometry) {
-        coords = relation.geometry.map((node: any) => [node.lat, node.lon]);
-      } else if (relation.members) {
-        // Collect all nodes from ways
-        const nodes = new Map();
-        relation.members.forEach((member: any) => {
-          if (member.type === "way" && member.geometry) {
-            member.geometry.forEach((node: any) => {
-              const key = `${node.lat},${node.lon}`;
-              if (!nodes.has(key)) {
-                nodes.set(key, [node.lat, node.lon]);
-              }
-            });
-          }
-        });
-        coords = Array.from(nodes.values());
-      }
-
-      if (coords.length > 50) { // Full city boundary should have many points
-        setPolygon(coords);
-        
-        // Calculate center
-        const lats = coords.map(c => c[0]);
-        const lngs = coords.map(c => c[1]);
-        const centerLat = (Math.max(...lats) + Math.min(...lats)) / 2;
-        const centerLng = (Math.max(...lngs) + Math.min(...lngs)) / 2;
-        
-        setMarker([centerLat, centerLng]);
-        setMarkerInput({ 
-          lat: centerLat.toFixed(6), 
-          lng: centerLng.toFixed(6) 
-        });
-        
-        // Fit bounds to show entire city
-        const bounds = L.latLngBounds(coords);
-        mapRef.current?.fitBounds(bounds, { padding: [50, 50] });
-
-        setPSAlert({
-          type: "success",
-          title: "Success",
-          message: `Full Ormoc City boundary fetched with ${coords.length} points covering all barangays.`,
-        });
-      } else {
-        throw new Error(`Boundary has insufficient points (${coords.length})`);
-      }
-    } else {
-      // Fallback: Try direct relation search
-      const fallbackQuery = `
-        [out:json][timeout:25];
-        relation["name"="Ormoc"]["admin_level"="6"];
-        out geom;
-      `;
-      
-      const fallbackResponse = await fetch("https://overpass-api.de/api/interpreter", {
-        method: "POST",
-        body: fallbackQuery,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  /* ---------------- Auto-Fetch Boundary Logic ---------------- */
+  // Uses Nominatim, which returns the city's OSM relation already assembled into
+  // a proper GeoJSON polygon (Overpass rejects these browser requests with 406
+  // and returns unordered way segments).
+  async function fetchOrmocBoundary() {
+    setFetchingBoundary(true);
+    try {
+      const params = new URLSearchParams({
+        q: "Ormoc City, Leyte, Philippines",
+        format: "json",
+        polygon_geojson: "1",
+        limit: "1",
+        countrycodes: "ph",
       });
-      
-      const fallbackData = await fallbackResponse.json();
-      
-      if (fallbackData.elements && fallbackData.elements.length > 0) {
-        const relation = fallbackData.elements[0];
-        let coords: [number, number][] = [];
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?${params}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!response.ok) throw new Error(`Nominatim HTTP ${response.status}`);
 
-        if (relation.geometry) {
-          coords = relation.geometry.map((node: any) => [node.lat, node.lon]);
-        }
+      const results = await response.json();
+      const geo = results?.[0]?.geojson;
+      if (!geo) throw new Error("City boundary not found in OpenStreetMap");
 
-        if (coords.length > 50) {
-          setPolygon(coords);
-          
-          const lats = coords.map(c => c[0]);
-          const lngs = coords.map(c => c[1]);
-          const centerLat = (Math.max(...lats) + Math.min(...lats)) / 2;
-          const centerLng = (Math.max(...lngs) + Math.min(...lngs)) / 2;
-          
-          setMarker([centerLat, centerLng]);
-          setMarkerInput({ 
-            lat: centerLat.toFixed(6), 
-            lng: centerLng.toFixed(6) 
-          });
-          
-          const bounds = L.latLngBounds(coords);
-          mapRef.current?.fitBounds(bounds, { padding: [50, 50] });
-
-          setPSAlert({
-            type: "success",
-            title: "Success",
-            message: `Full Ormoc City boundary fetched with ${coords.length} points.`,
-          });
-        } else {
-          throw new Error("Could not retrieve full city boundary");
-        }
+      // GeoJSON is [lng, lat]; take the outer ring (largest one for MultiPolygon)
+      let ring: number[][] = [];
+      if (geo.type === "Polygon") {
+        ring = geo.coordinates[0];
+      } else if (geo.type === "MultiPolygon") {
+        ring = geo.coordinates
+          .map((poly: number[][][]) => poly[0])
+          .reduce((a: number[][], b: number[][]) => (b.length > a.length ? b : a), []);
       } else {
-        throw new Error("City boundary not found in OpenStreetMap");
+        throw new Error(`Unexpected geometry type: ${geo.type}`);
       }
+
+      let coords: [number, number][] = ring.map((c) => roundPair([c[1], c[0]]));
+      // Drop the closing point (polygon is closed implicitly)
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      if (coords.length > 1 && first[0] === last[0] && first[1] === last[1]) {
+        coords = coords.slice(0, -1);
+      }
+      if (coords.length < 3) throw new Error("Boundary has too few points");
+
+      applyFetchedBoundary(coords, "OpenStreetMap");
+    } catch (error) {
+      console.error("Fetch error:", error);
+      setPSAlert({
+        type: "error",
+        title: "Fetch Failed",
+        message: "Could not fetch the Ormoc City boundary. Check your internet connection or add points manually.",
+      });
+    } finally {
+      setFetchingBoundary(false);
     }
-  } catch (error) {
-    console.error("Fetch error:", error);
-    setPSAlert({
-      type: "error",
-      title: "Fetch Failed",
-      message: "Could not fetch full Ormoc City boundary. The area might not be fully mapped in OpenStreetMap. Please add points manually.",
-    });
-  } finally {
-    setFetchingBoundary(false);
   }
-}
 
   // Helper to apply the fetched coordinates
   function applyFetchedBoundary(coords: [number, number][], source: string) {
     setPolygon(coords);
-    
+
     const lats = coords.map(c => c[0]);
     const lngs = coords.map(c => c[1]);
-    const centerLat = (Math.max(...lats) + Math.min(...lats)) / 2;
-    const centerLng = (Math.max(...lngs) + Math.min(...lngs)) / 2;
-    
+    const centerLat = round6((Math.max(...lats) + Math.min(...lats)) / 2);
+    const centerLng = round6((Math.max(...lngs) + Math.min(...lngs)) / 2);
+
     setMarker([centerLat, centerLng]);
     setMarkerInput({ lat: centerLat.toFixed(6), lng: centerLng.toFixed(6) });
-    
+
     const bounds = L.latLngBounds(coords);
     mapRef.current?.fitBounds(bounds, { padding: [50, 50] });
 
     setPSAlert({
       type: "success",
       title: "Success",
-      message: `Full Ormoc City boundary fetched via ${source} with ${coords.length} points.`,
+      message: `Ormoc City boundary fetched from ${source} with ${coords.length} points.`,
     });
   }
 
   /* ---------------- Marker Logic ---------------- */
   function addMarker() {
-    const lat = parseFloat(markerInput.lat);
-    const lng = parseFloat(markerInput.lng);
+    const lat = round6(parseFloat(markerInput.lat));
+    const lng = round6(parseFloat(markerInput.lng));
     if (isNaN(lat) || isNaN(lng)) return;
     setMarker([lat, lng]);
     mapRef.current?.flyTo([lat, lng], 16);
@@ -333,7 +269,7 @@ async function fetchOrmocBoundary() {
   }
 
   function updatePolygon(index: number, lat: number, lng: number) {
-    setPolygon((prev) => prev.map((p, i) => (i === index ? [lat, lng] : p)));
+    setPolygon((prev) => prev.map((p, i) => (i === index ? roundPair([lat, lng]) : p)));
   }
 
   function flyToPolygon() {
@@ -384,7 +320,8 @@ async function fetchOrmocBoundary() {
   function MapClickHandler() {
     useMapEvents({
       click(e) {
-        const { lat, lng } = e.latlng;
+        const lat = round6(e.latlng.lat);
+        const lng = round6(e.latlng.lng);
         if (mode === "marker") {
           setMarker([lat, lng]);
           setMarkerInput({ lat: lat.toString(), lng: lng.toString() });
@@ -483,16 +420,16 @@ async function fetchOrmocBoundary() {
             </div>
             <div className="flex gap-2 mb-3">
               <input
-                type="number" step="any" placeholder="Latitude"
+                type="number" step="0.000001" placeholder="Latitude"
                 className="border border-gray-200 rounded-lg p-2 text-xs w-1/2 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 value={markerInput.lat}
-                onChange={(e) => setMarkerInput((p) => ({ ...p, lat: e.target.value }))}
+                onChange={(e) => setMarkerInput((p) => ({ ...p, lat: limitDecimals(e.target.value) }))}
               />
               <input
-                type="number" step="any" placeholder="Longitude"
+                type="number" step="0.000001" placeholder="Longitude"
                 className="border border-gray-200 rounded-lg p-2 text-xs w-1/2 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 value={markerInput.lng}
-                onChange={(e) => setMarkerInput((p) => ({ ...p, lng: e.target.value }))}
+                onChange={(e) => setMarkerInput((p) => ({ ...p, lng: limitDecimals(e.target.value) }))}
               />
             </div>
             <div className="flex gap-2">
@@ -559,17 +496,17 @@ async function fetchOrmocBoundary() {
                 <div key={i} className="flex items-center gap-1.5 group">
                   <span className="text-xs text-gray-400 w-5 text-right shrink-0">{i + 1}</span>
                   <input
-                    type="number" step="any"
+                    type="number" step="0.000001"
                     className="border border-gray-200 p-1.5 text-xs rounded-lg w-1/2 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     value={coord[0]}
-                    onChange={(e) => updatePolygon(i, Number(e.target.value), coord[1])}
+                    onChange={(e) => updatePolygon(i, Number(limitDecimals(e.target.value)), coord[1])}
                     placeholder="Lat"
                   />
                   <input
-                    type="number" step="any"
+                    type="number" step="0.000001"
                     className="border border-gray-200 p-1.5 text-xs rounded-lg w-1/2 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     value={coord[1]}
-                    onChange={(e) => updatePolygon(i, coord[0], Number(e.target.value))}
+                    onChange={(e) => updatePolygon(i, coord[0], Number(limitDecimals(e.target.value)))}
                     placeholder="Lng"
                   />
                   {polygon.length > 1 && (
@@ -632,9 +569,9 @@ async function fetchOrmocBoundary() {
                 draggable
                 eventHandlers={{
                   dragend: (e) => {
-                    const m = e.target.getLatLng();
-                    setMarker([m.lat, m.lng]);
-                    setMarkerInput({ lat: m.lat.toString(), lng: m.lng.toString() });
+                    const m = roundPair([e.target.getLatLng().lat, e.target.getLatLng().lng]);
+                    setMarker(m);
+                    setMarkerInput({ lat: m[0].toString(), lng: m[1].toString() });
                   },
                 }}
               >

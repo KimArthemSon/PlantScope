@@ -21,7 +21,6 @@ export default function PlantScopeAlert({
   onClose,
 }: PlantScopeAlertProps) {
   const [isVisible, setIsVisible] = useState(true);
-  const [isPaused, setIsPaused] = useState(false);
   const [remaining, setRemaining] = useState(duration);
 
   // Keep the latest onClose without restarting the timer on every re-render
@@ -34,9 +33,9 @@ export default function PlantScopeAlert({
     setIsVisible(true);
   }, [type, title, message, duration]);
 
-  // Countdown (pauses while hovered), then auto-dismiss
+  // Countdown, then auto-dismiss
   useEffect(() => {
-    if (duration === 0 || !isVisible || isPaused) return;
+    if (duration === 0 || !isVisible) return;
     if (remaining <= 0) {
       setIsVisible(false);
       const t = setTimeout(() => onCloseRef.current?.(), 300);
@@ -45,7 +44,7 @@ export default function PlantScopeAlert({
     const step = 100;
     const t = setTimeout(() => setRemaining((r) => r - step), step);
     return () => clearTimeout(t);
-  }, [remaining, duration, isVisible, isPaused]);
+  }, [remaining, duration, isVisible]);
 
   if (!isVisible) return null;
 
@@ -91,8 +90,6 @@ export default function PlantScopeAlert({
       `
         .trim()
         .replace(/\s+/g, " ")}
-      onMouseEnter={() => setIsPaused(true)}
-      onMouseLeave={() => setIsPaused(false)}
     >
       {/* Icon */}
       <div
