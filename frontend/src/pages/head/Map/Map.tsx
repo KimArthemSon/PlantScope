@@ -3374,7 +3374,13 @@ export default function Map() {
         {/* ✅ FIX: Wrap drawn polygon with showAnalysisPolygons toggle */}
         {showAnalysisPolygons && analysisCoords.length >= 3 && (
           <Polygon
+            // Remount when draw mode toggles: `interactive` can't be changed on a live layer.
+            // While drawing, clicks pass through to the map (adding points) instead of
+            // opening the popup; once finished, clicks open the popup without adding a point.
+            key={isDrawingAnalysis ? "analysis-drawing" : "analysis-done"}
             positions={analysisCoords}
+            interactive={!isDrawingAnalysis}
+            bubblingMouseEvents={false}
             pathOptions={{
               color: "#3b82f6",
               weight: 2,

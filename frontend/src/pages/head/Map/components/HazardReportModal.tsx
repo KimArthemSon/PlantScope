@@ -276,7 +276,9 @@ export default function HazardReportModal({
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    // Backend queries MGB flood, MGB landslide, PHIVOLCS EIL (+ mirror) and USGS
+    // sequentially, each with its own 20–30s timeout, so allow well over 30s here.
+    const timeoutId = setTimeout(() => controller.abort(), 150000);
 
     try {
       const token = localStorage.getItem("token");
