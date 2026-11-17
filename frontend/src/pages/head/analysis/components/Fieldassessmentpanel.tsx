@@ -37,8 +37,11 @@ const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: numbe
 
   // ✅ Extract specific fields to render side-by-side at the top level
   const sideBySideKeys = ['overall_note', 'location_context'];
-  const sideBySideEntries = entries.filter(([key]) => sideBySideKeys.includes(key.toLowerCase()));
-  const otherEntries = entries.filter(([key]) => !sideBySideKeys.includes(key.toLowerCase()));
+  // Only split at the top level — nested objects (e.g. safety.flood.overall_note)
+  // must render their notes inline, otherwise they'd be dropped entirely.
+  const isSideBySide = (key: string) => level === 0 && sideBySideKeys.includes(key.toLowerCase());
+  const sideBySideEntries = entries.filter(([key]) => isSideBySide(key));
+  const otherEntries = entries.filter(([key]) => !isSideBySide(key));
 
   return (
     <div className={`space-y-4 ${level > 0 ? 'ml-3 border-l-2 border-gray-200 pl-3' : ''}`}>
