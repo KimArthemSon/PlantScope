@@ -3,6 +3,7 @@ import { Crosshair, Navigation, X } from "lucide-react";
 
 interface CoordinateSearchProps {
   onGo: (lat: number, lng: number) => void;
+  onOpenChange?: (open: boolean) => void;
 }
 
 // Accepts "11.0086, 124.6086" (or space-separated) pasted into either field
@@ -11,8 +12,15 @@ const splitPair = (value: string): [string, string] | null => {
   return parts.length === 2 ? [parts[0], parts[1]] : null;
 };
 
-export default function CoordinateSearch({ onGo }: CoordinateSearchProps) {
+export default function CoordinateSearch({
+  onGo,
+  onOpenChange,
+}: CoordinateSearchProps) {
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +82,7 @@ export default function CoordinateSearch({ onGo }: CoordinateSearchProps) {
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           setPopoverPos({
-            left: Math.max(8, Math.min(rect.left, window.innerWidth - 296)),
+            left: Math.max(8, Math.min(rect.left, window.innerWidth - 328)),
             top: rect.bottom + 8,
           });
           setIsOpen((o) => !o);
@@ -93,7 +101,7 @@ export default function CoordinateSearch({ onGo }: CoordinateSearchProps) {
         <form
           onSubmit={handleSubmit}
           style={popoverPos}
-          className="fixed z-[1100] w-72 bg-white rounded-lg shadow-xl border border-gray-200 p-3"
+          className="fixed z-[1100] w-80 box-border overflow-hidden bg-white rounded-lg shadow-xl border border-gray-200 p-3"
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
@@ -110,33 +118,35 @@ export default function CoordinateSearch({ onGo }: CoordinateSearchProps) {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] text-gray-600 font-semibold uppercase">
+            <label className="flex flex-col gap-1 min-w-0">
+              <span className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide">
                 Latitude
-              </label>
+              </span>
               <input
                 ref={latInputRef}
                 type="text"
                 inputMode="decimal"
+                size={1}
                 value={lat}
                 onChange={(e) => handleChange("lat", e.target.value)}
                 placeholder="11.0086"
-                className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="block w-full min-w-0 box-border text-xs border border-gray-300 rounded px-2 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-600 font-semibold uppercase">
+            </label>
+            <label className="flex flex-col gap-1 min-w-0">
+              <span className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide">
                 Longitude
-              </label>
+              </span>
               <input
                 type="text"
                 inputMode="decimal"
+                size={1}
                 value={lng}
                 onChange={(e) => handleChange("lng", e.target.value)}
                 placeholder="124.6086"
-                className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="block w-full min-w-0 box-border text-xs border border-gray-300 rounded px-2 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
-            </div>
+            </label>
           </div>
 
           <p className="text-[10px] text-gray-400 mt-1.5">

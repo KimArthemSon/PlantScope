@@ -209,6 +209,7 @@ export default function MulticriteriaAnalysis() {
     null,
   );
   const [isSavingCoordinates, setIsSavingCoordinates] = useState(false);
+  const [isCoordinateSearchOpen, setIsCoordinateSearchOpen] = useState(false);
   const [showCoordinateModal, setShowCoordinateModal] = useState(false);
   const [showViewingSitePolygon, setShowViewingSitePolygon] = useState(true);
   const [isPickingMarkerLocation, setIsPickingMarkerLocation] = useState(false);
@@ -2853,7 +2854,10 @@ export default function MulticriteriaAnalysis() {
               <Shield size={12} /> Hazards
             </button>
             <div className="flex items-center gap-3">
-              <CoordinateSearch onGo={handleGoToCoordinate} />
+              <CoordinateSearch
+                onGo={handleGoToCoordinate}
+                onOpenChange={setIsCoordinateSearchOpen}
+              />
               <DrawPolygonTool mapRef={mapRef} />
               <BarangayAreasPanel barangayAreas={barangayAreas} />
               <button
@@ -3068,6 +3072,7 @@ export default function MulticriteriaAnalysis() {
               ref={mapContainerRef}
               className="w-full rounded-lg shadow-inner border-2 border-gray-300 relative overflow-hidden h-[75vh] min-h-[450px]"
             >
+              {!isCoordinateSearchOpen && (
               <div className="absolute top-4 right-4 z-[1001] bg-white px-3 py-2 rounded-lg shadow-lg border border-gray-300 text-xs font-mono">
                 <div className="flex items-center gap-2">
                   <Globe size={14} className="text-green-700" />
@@ -3099,6 +3104,7 @@ export default function MulticriteriaAnalysis() {
                   </button>
                 </div>
               </div>
+              )}
 
               {isPickingSiteCenter && (
                 <div className="absolute top-3 left-3 bg-white/95 px-3 py-1.5 rounded-lg shadow-md border border-blue-200 z-[100]">
