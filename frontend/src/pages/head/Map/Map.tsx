@@ -509,11 +509,7 @@ const createMarkerIcon = (
 // Cached per index so re-renders during a drag don't swap the icon element
 // (a new icon instance makes Leaflet rebuild the marker and drops the drag).
 const vertexIconCache: Record<string, L.DivIcon> = {};
-const createVertexIcon = (
-  index: number,
-  draggable = false,
-  color?: string,
-) => {
+const createVertexIcon = (index: number, draggable = false, color?: string) => {
   const key = `${index}-${draggable}-${color ?? ""}`;
   if (!vertexIconCache[key]) {
     vertexIconCache[key] = L.divIcon({
@@ -778,7 +774,11 @@ export default function Map() {
           message: "Area center location set.",
         });
       }
-      if (isPickingSitePolygon && showSitePolygonOnMap && !isPickingSiteMarker) {
+      if (
+        isPickingSitePolygon &&
+        showSitePolygonOnMap &&
+        !isPickingSiteMarker
+      ) {
         const point = { lat: lat.toFixed(6), lng: lng.toFixed(6) };
         setSitePolygonPoints((prev) => {
           // Fill a trailing empty row (e.g. the initial blank one) instead of appending
@@ -1757,6 +1757,16 @@ export default function Map() {
         title: "Site Created",
         message: `Site "${siteForm.name}" created successfully!`,
       });
+
+      // ✅ Auto-show site markers filtered by the parent reforestation area
+      setShowSiteMarkers(true);
+      setFilteredAreaId(siteForm.reforestation_area_id);
+
+      // Focus map on the newly created site
+      if (siteForm.marker_coordinate && mapRef.current) {
+        mapRef.current.setView(siteForm.marker_coordinate, 17);
+      }
+
       setSiteForm({
         reforestation_area_id: 0,
         name: "",
@@ -2531,6 +2541,7 @@ export default function Map() {
                 <button
                   onClick={() => {
                     setFilteredAreaId(null);
+                    setShowSiteMarkers(false);
                     setPSAlert({
                       type: "success",
                       title: "Filter Cleared",
@@ -2539,7 +2550,7 @@ export default function Map() {
                   }}
                   className="w-full flex items-center justify-center gap-1.5 bg-[#0f4a2f] hover:bg-[#0f4a2fdd] text-white text-xs font-semibold py-2 px-3 rounded-lg transition-colors"
                 >
-                  <X size={12} /> Clear Filter (Show All Sites)
+                  <X size={12} /> Clear Filter (Hide Sites)
                 </button>
               </div>
             )}
@@ -3052,10 +3063,16 @@ export default function Map() {
                       </h3>
                       <button
                         type="button"
-                        onClick={() => setShowSitePolygonOnMap(!showSitePolygonOnMap)}
+                        onClick={() =>
+                          setShowSitePolygonOnMap(!showSitePolygonOnMap)
+                        }
                         className="text-gray-400 hover:text-gray-600"
                       >
-                        {showSitePolygonOnMap ? <EyeOff size={16} /> : <Eye size={16} />}
+                        {showSitePolygonOnMap ? (
+                          <EyeOff size={16} />
+                        ) : (
+                          <Eye size={16} />
+                        )}
                       </button>
                     </div>
                     <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5 mb-3">
@@ -3262,8 +3279,14 @@ export default function Map() {
                     }}
                     className="w-full flex items-center justify-center gap-2 text-[.7rem] text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 py-1.5 rounded transition-colors"
                   >
-                    {showSitePolygonOnMap ? <EyeOff size={14} /> : <Eye size={14} />}
-                    {showSitePolygonOnMap ? "Hide Polygon Form" : "Add Polygon Coordinates"}
+                    {showSitePolygonOnMap ? (
+                      <EyeOff size={14} />
+                    ) : (
+                      <Eye size={14} />
+                    )}
+                    {showSitePolygonOnMap
+                      ? "Hide Polygon Form"
+                      : "Add Polygon Coordinates"}
                   </button>
                 </div>
                 {suitablePolygons && suitablePolygons.features && (
@@ -3275,25 +3298,33 @@ export default function Map() {
                         assigned to the new site when it is created */}
                     {selectedPotentialSiteIds.length > 0 ? (
                       <div className="flex items-start gap-2 bg-green-50 border border-green-300 p-2 rounded text-[.7rem]">
-                        <CheckCircle size={16} className="text-green-600 shrink-0 mt-px" />
+                        <CheckCircle
+                          size={16}
+                          className="text-green-600 shrink-0 mt-px"
+                        />
                         <div>
                           <span className="font-semibold text-green-700 block">
                             Assigned
                           </span>
                           <span className="text-green-700/80">
-                            Selected potential areas will be linked to this site.
+                            Selected potential areas will be linked to this
+                            site.
                           </span>
                         </div>
                       </div>
                     ) : (
                       <div className="flex items-start gap-2 bg-gray-50 border border-dashed border-gray-300 p-2 rounded text-[.7rem]">
-                        <MapPin size={16} className="text-gray-400 shrink-0 mt-px" />
+                        <MapPin
+                          size={16}
+                          className="text-gray-400 shrink-0 mt-px"
+                        />
                         <div>
                           <span className="font-semibold text-gray-600 block">
                             Not assigned
                           </span>
                           <span className="text-gray-500">
-                            Click a red polygon on the map, then "Select for Site".
+                            Click a red polygon on the map, then "Select for
+                            Site".
                           </span>
                         </div>
                       </div>
@@ -3809,10 +3840,11 @@ export default function Map() {
                           });
                         }
                       }}
-                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${showClassifiedAreasBarangayId === area.barangay_id
+                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${
+                        showClassifiedAreasBarangayId === area.barangay_id
                           ? "bg-purple-600 hover:bg-purple-700 text-white"
                           : "bg-red-600 hover:bg-red-700 text-white"
-                        }`}
+                      }`}
                     >
                       <AreaChart size={14} />{" "}
                       {showClassifiedAreasBarangayId === area.barangay_id
@@ -3849,10 +3881,11 @@ export default function Map() {
                           }
                         }
                       }}
-                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${visibleHazardBarangayId === area.barangay_id
+                      className={`flex items-center justify-center gap-1.5 h-8 px-3 py-1.5 rounded text-[.75rem] font-semibold w-full transition-colors shadow-sm ${
+                        visibleHazardBarangayId === area.barangay_id
                           ? "bg-yellow-600 hover:bg-yellow-700 text-white"
                           : "bg-yellow-500 hover:bg-yellow-600 text-white"
-                        }`}
+                      }`}
                     >
                       <AlertTriangle size={14} />{" "}
                       {visibleHazardBarangayId === area.barangay_id
@@ -4042,7 +4075,7 @@ export default function Map() {
           barangayId={selectedBarangayId}
           token={token}
           onClose={() => setSelectedBarangayId(null)}
-          onStatusChange={() => { }}
+          onStatusChange={() => {}}
         />
         {showMgbFlood && (
           <TileLayer
@@ -4115,12 +4148,12 @@ export default function Map() {
         isShowingSite={
           showSitePolygon &&
           activeShownSiteId ===
-          (selectedSiteId ? parseInt(selectedSiteId) : null)
+            (selectedSiteId ? parseInt(selectedSiteId) : null)
         }
         isShowingPotentialSites={
           showPotentialSites &&
           activeShownSiteId ===
-          (selectedSiteId ? parseInt(selectedSiteId) : null)
+            (selectedSiteId ? parseInt(selectedSiteId) : null)
         }
         onViewTrend={handleViewTrend}
         onReanalyze={handleReanalyze}

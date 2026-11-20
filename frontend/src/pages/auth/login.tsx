@@ -244,22 +244,7 @@ export default function Login() {
                   assessments, planting records, and monitoring in one platform.
                 </p>
 
-                <ul className="space-y-3 mt-8 inline-block text-left">
-                  {[
-                    "Scientific site prioritization with MCDA scoring",
-                    "Field-validated GIS workflows for inspectors",
-                    "Community tree planting program management",
-                  ].map((text, i) => (
-                    <li
-                      key={i}
-                      className="flex items-center gap-3 text-sm"
-                      style={{ color: "rgba(255,255,255,0.8)" }}
-                    >
-                      <CheckCircle2 size={18} color="#7CD56A" className="flex-shrink-0" />
-                      <span>{text}</span>
-                    </li>
-                  ))}
-                </ul>
+              
               </div>
 
               {/* RIGHT — floating glass login card */}
