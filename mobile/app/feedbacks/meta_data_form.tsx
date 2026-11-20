@@ -144,6 +144,10 @@ export default function MetaDataForm() {
   const [landClassifications, setLandClassifications] = useState<
     LandClassificationOption[]
   >([]);
+  
+  // ✅ NEW: Land Classification Filter State
+  const [landClassFilter, setLandClassFilter] = useState<"all" | "public" | "private">("all");
+
   const [animals, setAnimals] = useState<AnimalOption[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showAnimalModal, setShowAnimalModal] = useState(false);
@@ -903,6 +907,24 @@ export default function MetaDataForm() {
     return `${Math.round(gpsReadinessAge / 24)}d ago`;
   };
 
+  /* ---------- ✅ NEW: Land Classification Filter Logic ---------- */
+  const handleLandClassFilterChange = (filter: "all" | "public" | "private") => {
+    setLandClassFilter(filter);
+    if (landClassId) {
+      const selected = landClassifications.find(
+        (lc) => lc.land_classification_id === landClassId
+      );
+      if (selected && filter !== "all" && selected.ownership_type !== filter) {
+        setLandClassId(null);
+      }
+    }
+  };
+
+  const filteredLandClassifications = landClassifications.filter((lc) => {
+    if (landClassFilter === "all") return true;
+    return lc.ownership_type === landClassFilter;
+  });
+
   /* ---------- UI ---------- */
   return (
     <View style={styles.root}>
@@ -1504,8 +1526,32 @@ export default function MetaDataForm() {
         <View style={modalStyles.overlay}>
           <View style={modalStyles.modal}>
             <Text style={modalStyles.title}>Select Land Classification</Text>
+            
+            {/* ✅ NEW: Ownership Type Filter */}
+            <View style={modalStyles.filterRow}>
+              {(["all", "public", "private"] as const).map((filter) => (
+                <TouchableOpacity
+                  key={filter}
+                  style={[
+                    modalStyles.filterBtn,
+                    landClassFilter === filter && modalStyles.filterBtnActive,
+                  ]}
+                  onPress={() => handleLandClassFilterChange(filter)}
+                >
+                  <Text
+                    style={[
+                      modalStyles.filterBtnText,
+                      landClassFilter === filter && modalStyles.filterBtnTextActive,
+                    ]}
+                  >
+                    {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             <ScrollView style={modalStyles.list}>
-              {landClassifications.map((lc) => (
+              {filteredLandClassifications.map((lc) => (
                 <TouchableOpacity
                   key={lc.land_classification_id}
                   style={[
@@ -1533,6 +1579,9 @@ export default function MetaDataForm() {
                   )}
                 </TouchableOpacity>
               ))}
+              {filteredLandClassifications.length === 0 && (
+                <Text style={modalStyles.emptyText}>No classifications found.</Text>
+              )}
             </ScrollView>
             <TouchableOpacity
               style={modalStyles.cancelBtn}
@@ -2192,6 +2241,45 @@ const modalStyles = StyleSheet.create({
   },
   title: { fontSize: 16, fontWeight: "700", color: "#0F2D1C", marginBottom: 4 },
   subtitle: { fontSize: 12, color: "#6B7280", marginBottom: 16 },
+  
+  // ✅ NEW: Filter styles for Land Classification Modal
+  filterRow: {
+    flexDirection: "row",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 12,
+    gap: 4,
+  },
+  filterBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  filterBtnActive: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  filterBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  filterBtnTextActive: {
+    color: "#0F4A2F",
+  },
+  emptyText: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+    paddingVertical: 20,
+  },
+
   list: { maxHeight: 400, marginBottom: 16 },
   listItem: {
     flexDirection: "row",

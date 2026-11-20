@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Image,
   StyleSheet,
   Dimensions,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,11 +33,52 @@ interface LandslideGuideProps {
   onClose: () => void;
 }
 
+// Image data structure for full-screen viewer
+interface GuideImage {
+  id: string;
+  source: any;
+  category: "safe" | "danger";
+  label: string;
+}
+
+const allImages: GuideImage[] = [
+  { id: "safe1", source: safeLandslide1, category: "safe", label: "Safe Landslide" },
+  { id: "safe2", source: safeLandslide2, category: "safe", label: "Safe Landslide" },
+  { id: "safe3", source: safeLandslide3, category: "safe", label: "Safe Landslide" },
+  { id: "danger1", source: dangerLandslide1, category: "danger", label: "Danger Landslide" },
+  { id: "danger2", source: dangerLandslide2, category: "danger", label: "Danger Landslide" },
+  { id: "danger3", source: dangerLandslide3, category: "danger", label: "Danger Landslide" },
+];
+
 export default function LandslideGuide({
   visible,
   onClose,
 }: LandslideGuideProps) {
   const insets = useSafeAreaInsets();
+  
+  // Full screen image viewer state
+  const [fullScreenImage, setFullScreenImage] = useState<GuideImage | null>(null);
+  const [imageIndex, setImageIndex] = useState(0);
+
+  const openFullScreen = (image: GuideImage, index: number) => {
+    setFullScreenImage(image);
+    setImageIndex(index);
+  };
+
+  const closeFullScreen = () => {
+    setFullScreenImage(null);
+  };
+
+  const navigateImage = (direction: "prev" | "next") => {
+    const currentIndex = allImages.findIndex((img) => img.id === fullScreenImage?.id);
+    let newIndex = direction === "next" ? currentIndex + 1 : currentIndex - 1;
+    
+    if (newIndex < 0) newIndex = allImages.length - 1;
+    if (newIndex >= allImages.length) newIndex = 0;
+    
+    setImageIndex(newIndex);
+    setFullScreenImage(allImages[newIndex]);
+  };
 
   return (
     <Modal
@@ -47,7 +89,7 @@ export default function LandslideGuide({
       statusBarTranslucent
     >
       <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { paddingBottom: insets.bottom }]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerIconWrap}>
@@ -84,44 +126,54 @@ export default function LandslideGuide({
                 showsHorizontalScrollIndicator={false}
                 style={styles.imageCarousel}
               >
-                <Image source={safeLandslide1} style={styles.carouselImage} />
-                <Image source={safeLandslide2} style={styles.carouselImage} />
-                <Image source={safeLandslide3} style={styles.carouselImage} />
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[0], 0)}
+                >
+                  <Image source={safeLandslide1} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#16A34A" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[1], 1)}
+                >
+                  <Image source={safeLandslide2} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#16A34A" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[2], 2)}
+                >
+                  <Image source={safeLandslide3} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#16A34A" />
+                  </View>
+                </TouchableOpacity>
               </ScrollView>
 
               <View style={styles.criteriaList}>
                 <View style={styles.criteriaItem}>
-                  <Ionicons
-                    name="trending-up-outline"
-                    size={14}
-                    color="#16A34A"
-                  />
-                  <Text style={styles.criteriaValue}>
-                    Flat or gentle slope.
-                  </Text>
+                  <Ionicons name="trending-up-outline" size={14} color="#16A34A" />
+                  <Text style={styles.criteriaValue}>Flat or gentle slope.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
                   <Ionicons name="leaf-outline" size={14} color="#16A34A" />
-                  <Text style={styles.criteriaValue}>
-                    Trees stand straight.
-                  </Text>
+                  <Text style={styles.criteriaValue}>Trees stand straight.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
                   <Ionicons name="flower-outline" size={14} color="#16A34A" />
-                  <Text style={styles.criteriaValue}>
-                    Thick grass covers ground.
-                  </Text>
+                  <Text style={styles.criteriaValue}>Thick grass covers ground.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
                   <Ionicons name="remove-outline" size={14} color="#16A34A" />
                   <Text style={styles.criteriaValue}>No ground cracks.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
-                  <Ionicons
-                    name="hand-left-outline"
-                    size={14}
-                    color="#16A34A"
-                  />
+                  <Ionicons name="hand-left-outline" size={14} color="#16A34A" />
                   <Text style={styles.criteriaValue}>Soil feels firm.</Text>
                 </View>
               </View>
@@ -139,26 +191,42 @@ export default function LandslideGuide({
                 showsHorizontalScrollIndicator={false}
                 style={styles.imageCarousel}
               >
-                <Image source={dangerLandslide1} style={styles.carouselImage} />
-                <Image source={dangerLandslide2} style={styles.carouselImage} />
-                <Image source={dangerLandslide3} style={styles.carouselImage} />
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[3], 3)}
+                >
+                  <Image source={dangerLandslide1} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#DC2626" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[4], 4)}
+                >
+                  <Image source={dangerLandslide2} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#DC2626" />
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => openFullScreen(allImages[5], 5)}
+                >
+                  <Image source={dangerLandslide3} style={styles.carouselImage} />
+                  <View style={styles.imageHint}>
+                    <Ionicons name="expand-outline" size={12} color="#DC2626" />
+                  </View>
+                </TouchableOpacity>
               </ScrollView>
 
               <View style={styles.criteriaList}>
                 <View style={styles.criteriaItem}>
-                  <Ionicons
-                    name="git-branch-outline"
-                    size={14}
-                    color="#DC2626"
-                  />
+                  <Ionicons name="git-branch-outline" size={14} color="#DC2626" />
                   <Text style={styles.criteriaValue}>Ground cracks.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
-                  <Ionicons
-                    name="trending-down-outline"
-                    size={14}
-                    color="#DC2626"
-                  />
+                  <Ionicons name="trending-down-outline" size={14} color="#DC2626" />
                   <Text style={styles.criteriaValue}>Leaning trees.</Text>
                 </View>
                 <View style={styles.criteriaItem}>
@@ -176,43 +244,108 @@ export default function LandslideGuide({
             <View style={styles.commentSection}>
               <Text style={styles.commentTitle}>YOUR COMMENT EXAMPLES</Text>
               <View style={styles.commentBox}>
-                <Ionicons
-                  name="chatbubble-ellipses-outline"
-                  size={16}
-                  color="#16A34A"
-                />
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#16A34A" />
                 <Text style={styles.commentText}>
                   <Text style={styles.commentLabel}>Good: </Text>
                   "The ground is stable. Walay bitak ug tarong ang mga kahoy."
                 </Text>
               </View>
               <View style={styles.commentBox}>
-                <Ionicons
-                  name="chatbubble-ellipses-outline"
-                  size={16}
-                  color="#DC2626"
-                />
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#DC2626" />
                 <Text style={styles.commentText}>
                   <Text style={styles.commentLabel}>Problem: </Text>
-                  "High risk of landslide. May bitak sa yuta ug nagbaluktot nga
-                  kahoy."
+                  "High risk of landslide. May bitak sa yuta ug nagbaluktot nga kahoy."
                 </Text>
               </View>
             </View>
           </ScrollView>
 
           {/* Footer Close Button */}
-          <TouchableOpacity
-            style={[
-              styles.footerButton,
-              { marginBottom: Math.max(insets.bottom, 0) + 20 },
-            ]}
-            onPress={onClose}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.footerButtonText}>Close Guide</Text>
-          </TouchableOpacity>
+          <View style={[styles.footerContainer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+            <TouchableOpacity
+              style={styles.footerButton}
+              onPress={onClose}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.footerButtonText}>Close Guide</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Full Screen Image Viewer Modal */}
+        <Modal
+          visible={!!fullScreenImage}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={closeFullScreen}
+        >
+          <View style={fullScreenStyles.container}>
+            <TouchableWithoutFeedback onPress={closeFullScreen}>
+              <View style={fullScreenStyles.background} />
+            </TouchableWithoutFeedback>
+            
+            <View style={fullScreenStyles.imageContainer}>
+              {/* Header */}
+              <View style={fullScreenStyles.header}>
+                <TouchableOpacity
+                  style={fullScreenStyles.navButton}
+                  onPress={() => navigateImage("prev")}
+                >
+                  <Ionicons name="chevron-back" size={24} color="#fff" />
+                </TouchableOpacity>
+                
+                <View style={fullScreenStyles.headerInfo}>
+                  <Text style={fullScreenStyles.categoryLabel}>
+                    {fullScreenImage?.label}
+                  </Text>
+                  <Text style={fullScreenStyles.imageCounter}>
+                    {imageIndex + 1} / {allImages.length}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={fullScreenStyles.navButton}
+                  onPress={() => navigateImage("next")}
+                >
+                  <Ionicons name="chevron-forward" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Zoomable Image */}
+              <ScrollView
+                style={fullScreenStyles.scrollContainer}
+                maximumZoomScale={3}
+                minimumZoomScale={1}
+                showsVerticalScrollIndicator={false}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={fullScreenStyles.scrollContent}
+              >
+                <Image
+                  source={fullScreenImage?.source}
+                  style={fullScreenStyles.fullImage}
+                  resizeMode="contain"
+                />
+              </ScrollView>
+
+              {/* Close Button */}
+              <TouchableOpacity
+                style={fullScreenStyles.closeButton}
+                onPress={closeFullScreen}
+              >
+                <View style={fullScreenStyles.closeButtonBg}>
+                  <Ionicons name="close" size={24} color="#fff" />
+                </View>
+              </TouchableOpacity>
+
+              {/* Instructions */}
+              <View style={fullScreenStyles.instructions}>
+                <Text style={fullScreenStyles.instructionsText}>
+                  Pinch to zoom • Swipe to navigate
+                </Text>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -286,7 +419,6 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  // SAFE Section
   sectionHeaderSafe: {
     flexDirection: "row",
     alignItems: "center",
@@ -299,7 +431,6 @@ const styles = StyleSheet.create({
     color: "#16A34A",
     letterSpacing: 0.5,
   },
-  // DANGER Section
   sectionHeaderDanger: {
     flexDirection: "row",
     alignItems: "center",
@@ -321,6 +452,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginRight: 12,
     backgroundColor: "#E2E8F0",
+  },
+  imageHint: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
   },
   criteriaList: {
     gap: 8,
@@ -373,10 +516,13 @@ const styles = StyleSheet.create({
     fontStyle: "normal",
     fontWeight: "700",
   },
+  footerContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    backgroundColor: "#F8FAFC",
+  },
   footerButton: {
     backgroundColor: "#854D0E",
-    margin: 20,
-    marginTop: 10,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",
@@ -390,5 +536,102 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "700",
+  },
+});
+
+// Full screen image viewer styles
+const fullScreenStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.95)",
+  },
+  background: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  imageContainer: {
+    flex: 1,
+    position: "relative",
+  },
+  header: {
+    position: "absolute",
+    top: 50,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    zIndex: 10,
+  },
+  navButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    backdropFilter: "blur(10px)",
+  },
+  headerInfo: {
+    alignItems: "center",
+  },
+  categoryLabel: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  imageCounter: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: "100%",
+  },
+  fullImage: {
+    width: "100%",
+    height: "100%",
+    minHeight: 400,
+  },
+  closeButton: {
+    position: "absolute",
+    bottom: 80,
+    right: 20,
+    zIndex: 10,
+  },
+  closeButtonBg: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#854D0E", // Matches landslide guide theme
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  instructions: {
+    position: "absolute",
+    bottom: 30,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  instructionsText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
