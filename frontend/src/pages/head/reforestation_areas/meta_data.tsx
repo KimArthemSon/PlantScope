@@ -181,9 +181,11 @@ interface AnimalOption {
   description: string;
 }
 
+type AccessibilityType = "Road" | "Trail" | "None" | "Other";
+
 interface AccessibilityEntry {
   id: string;
-  type: string;
+  type: AccessibilityType;
   description: string;
 }
 
@@ -646,11 +648,16 @@ export default function MetaDataVerification() {
     verification_notes: "",
   });
 
-  const [newAccessibility, setNewAccessibility] = useState<AccessibilityEntry>({
+  const [newAccessibility, setNewAccessibility] = useState<{
+    id: string;
+    type: AccessibilityType | "";
+    description: string;
+  }>({
     id: "",
     type: "",
     description: "",
   });
+  
   const [newAnimalId, setNewAnimalId] = useState<number | "">("");
   const [newAnimalNotes, setNewAnimalNotes] = useState("");
 
@@ -815,7 +822,7 @@ export default function MetaDataVerification() {
           setVerifiedAccessibility(
             backendAcc.map((a: any, i: number) => ({
               id: `acc-${i}`,
-              type: a.type || "vehicle_accessible",
+              type: (a.type as AccessibilityType) || "Other",
               description: a.description || "",
             })),
           );
@@ -827,7 +834,7 @@ export default function MetaDataVerification() {
           setVerifiedAccessibility([
             {
               id: "acc-0",
-              type: backendAcc.type || "vehicle_accessible",
+              type: (backendAcc.type as AccessibilityType) || "Other",
               description: backendAcc.description || "",
             },
           ]);
@@ -1093,7 +1100,7 @@ export default function MetaDataVerification() {
       return;
     }
     if (
-      newAccessibility.type === "other" &&
+      newAccessibility.type === "Other" &&
       !newAccessibility.description.trim()
     ) {
       setPSAlert({
@@ -1105,7 +1112,7 @@ export default function MetaDataVerification() {
     }
     const entry: AccessibilityEntry = {
       id: `acc-${Date.now()}`,
-      type: newAccessibility.type,
+      type: newAccessibility.type as AccessibilityType,
       description: newAccessibility.description,
     };
     setVerifiedAccessibility((prev) => [...prev, entry]);
@@ -1998,8 +2005,8 @@ export default function MetaDataVerification() {
                       className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200"
                     >
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-slate-900 capitalize">
-                          {entry.type.replace(/_/g, " ")}
+                        <p className="text-sm font-semibold text-slate-900">
+                          {entry.type}
                         </p>
                         {entry.description && (
                           <p className="text-xs text-slate-600 mt-1.5">
@@ -2029,20 +2036,17 @@ export default function MetaDataVerification() {
                       onChange={(e) =>
                         setNewAccessibility({
                           ...newAccessibility,
-                          type: e.target.value,
+                          type: e.target.value as AccessibilityType | "",
                           description: "",
                         })
                       }
                       className="w-full border-2 border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                     >
                       <option value="">-- Select --</option>
-                      <option value="vehicle_accessible">
-                        Vehicle Accessible
-                      </option>
-                      <option value="motorcycle_only">Motorcycle Only</option>
-                      <option value="footpath_only">Footpath Only</option>
-                      <option value="not_accessible">Not Accessible</option>
-                      <option value="other">Other</option>
+                      <option value="Road">Road</option>
+                      <option value="Trail">Trail</option>
+                      <option value="None">None</option>
+                      <option value="Other">Other</option>
                     </select>
                   </div>
                   <div>
