@@ -6,6 +6,10 @@ import heroVideo from "@/assets/homepage/hero.mp4";
 import { api } from "@/constant/api";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 
+import profile1 from "@/assets/homepage/profile1.jpg";
+import profile2 from "@/assets/homepage/profile2.png";
+import profile3 from "@/assets/homepage/profile3.png";
+
 import {
   ArrowRight,
   Download,
@@ -875,8 +879,15 @@ export default function Homepage() {
             Research &amp; Development Team
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-14">
+            {/* Team Member 1 */}
             <div className="team-card highlight">
-              <div className="team-avatar">KAS</div>
+              <div className="team-avatar overflow-hidden">
+                <img 
+                  src={profile1} 
+                  alt="Kim Arthem Son" 
+                  className="w-full h-full object-cover" 
+                />
+              </div>
               <h3
                 className="text-lg font-bold"
                 style={{ color: "var(--text-primary)" }}
@@ -921,8 +932,16 @@ export default function Homepage() {
                 </ul>
               </div>
             </div>
+
+            {/* Team Member 2 */}
             <div className="team-card">
-              <div className="team-avatar">MXG</div>
+              <div className="team-avatar overflow-hidden">
+                <img 
+                  src={profile2} 
+                  alt="Marc Xyver L. Gica" 
+                  className="w-full h-full object-cover" 
+                />
+              </div>
               <h3
                 className="text-lg font-bold"
                 style={{ color: "var(--text-primary)" }}
@@ -988,8 +1007,16 @@ export default function Homepage() {
                 </ul>
               </div>
             </div>
+
+            {/* Team Member 3 */}
             <div className="team-card">
-              <div className="team-avatar">CKP</div>
+              <div className="team-avatar overflow-hidden">
+                <img 
+                  src={profile3} 
+                  alt="Charles Ken D. Perez" 
+                  className="w-full h-full object-cover" 
+                />
+              </div>
               <h3
                 className="text-lg font-bold"
                 style={{ color: "var(--text-primary)" }}
