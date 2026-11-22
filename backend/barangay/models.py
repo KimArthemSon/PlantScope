@@ -8,3 +8,6 @@ class Barangay(models.Model):
     description = models.CharField(max_length=255)
     coordinate = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
+    # Archived barangays are hidden from lists/dropdowns but kept so they can be restored
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)

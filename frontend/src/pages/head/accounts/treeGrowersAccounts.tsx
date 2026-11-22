@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
   ChevronRight,
   ChevronLeft,
   Eye,
@@ -23,6 +22,12 @@ import SortableTh, {
   type SortState,
 } from "../../../components/table/SortableTh";
 import { api } from "@/constant/api.ts";
+import {
+  useArchive,
+  ArchiveToggleButton,
+  ArchiveRowButton,
+  RestoreRowButton,
+} from "../../../components/archive/useArchive";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +36,7 @@ interface TreeGrower {
   email: string;
   is_active: boolean;
   created_at?: string;
+  archived_at?: string | null;
   group_name?: string;
   group_type?: string;
   group_type_display?: string;
@@ -209,10 +215,6 @@ export default function TreeGrowersAccounts() {
     setFilter((prev) => ({ ...prev, page: 1 }));
   };
 
-  // Delete
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [idDelete, setIdDelete] = useState<number | null>(null);
-
   // View detail
   const [viewDetail, setViewDetail] = useState<GrowerDetail | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
@@ -225,6 +227,15 @@ export default function TreeGrowersAccounts() {
 
   const token = localStorage.getItem("token");
 
+  // Archive view lists archived accounts and offers Restore instead of Activate/Archive
+  const { showArchived, toggleArchived, openConfirm, confirmModalProps } = useArchive({
+    resource: "user",
+    label: "tree grower account",
+    trailingSlash: true,
+    setAlert: setPSAlert,
+    onDone: () => fetchTreeGrowers(),
+  });
+
   // ── Fetch list ───────────────────────────────────────────────────────────────
 
   const fetchTreeGrowers = async () => {
@@ -235,6 +246,7 @@ export default function TreeGrowersAccounts() {
         site_status: filter.site_status,
         page: filter.page.toString(),
         entries: filter.entries.toString(),
+        archived: showArchived ? "1" : "0",
       });
       applySortParams(params, sort);
       const res = await fetch(api + `api/list_tree_growers/?${params}`, {
@@ -257,7 +269,7 @@ export default function TreeGrowersAccounts() {
 
   useEffect(() => {
     fetchTreeGrowers();
-  }, [filter.page, filter.entries, filter.site_status, sort]);
+  }, [filter.page, filter.entries, filter.site_status, sort, showArchived]);
 
   // ── Fetch detail ─────────────────────────────────────────────────────────────
 
@@ -282,12 +294,7 @@ export default function TreeGrowersAccounts() {
     }
   };
 
-  // ── Delete / toggle ──────────────────────────────────────────────────────────
-
-  const setDelete = (id: number) => {
-    setIdDelete(id);
-    setIsDeleteModalOpen(true);
-  };
+  // ── Activate / deactivate ───────────────────────────────────────────────────
 
   const handleToggleStatus = async (id: number, currentStatus: boolean) => {
     const res = await fetch(api + `api/toggle_user_status/${id}/`, {
@@ -320,30 +327,6 @@ export default function TreeGrowersAccounts() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!idDelete) return;
-    const res = await fetch(api + `api/delete_user/${idDelete}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      setPSAlert({
-        type: "success",
-        title: "Deleted",
-        message: "Tree grower deleted successfully.",
-      });
-      setIsDeleteModalOpen(false);
-      fetchTreeGrowers();
-    } else {
-      setPSAlert({
-        type: "failed",
-        title: "Failed",
-        message: "Failed to delete tree grower.",
-      });
-      setIsDeleteModalOpen(false);
-    }
-  };
-
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -356,11 +339,7 @@ export default function TreeGrowersAccounts() {
           onClose={() => setPSAlert(null)}
         />
       )}
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
+      <Delete_modal {...confirmModalProps} />
 
       {/* ── Detail Modal ──────────────────────────────────────────────────── */}
       {(viewDetail || viewLoading) && (
@@ -651,9 +630,18 @@ export default function TreeGrowersAccounts() {
             <option value="without_site">No current site</option>
           </select>
 
+          <ArchiveToggleButton
+            showArchived={showArchived}
+            onClick={() => {
+              toggleArchived();
+              setFilter((prev) => ({ ...prev, page: 1 }));
+            }}
+            className="ml-auto"
+          />
+
           <input
             type="text"
-            placeholder="Search by email or group name..."
+            placeholder={showArchived ? "Search archived accounts..." : "Search by email or group name..."}
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -665,7 +653,7 @@ export default function TreeGrowersAccounts() {
             onKeyDown={(e) => {
               if (e.key === "Enter") fetchTreeGrowers();
             }}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem]"
           />
         </div>
 
@@ -683,6 +671,9 @@ export default function TreeGrowersAccounts() {
                 <SortableTh label="Address" sortKey="group_address" sort={sort} onSort={handleSort} />
                 <SortableTh label="Current Site" sortKey="current_site" sort={sort} onSort={handleSort} />
                 <SortableTh label="Status" sortKey="is_active" sort={sort} onSort={handleSort} />
+                {showArchived && (
+                  <th className="py-3 px-5 text-left text-[.9rem]">Archived At</th>
+                )}
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -767,6 +758,9 @@ export default function TreeGrowersAccounts() {
                           {grower.is_active ? "Active" : "Inactive"}
                         </span>
                       </td>
+                      {showArchived && (
+                        <td className="py-3 px-5 text-[.9rem]">{grower.archived_at ?? "—"}</td>
+                      )}
                       <td className="py-3 px-5">
                         <div className="flex items-center gap-2">
                           <Eye
@@ -774,6 +768,10 @@ export default function TreeGrowersAccounts() {
                             onClick={() => openDetail(grower.id)}
                             className="cursor-pointer"
                           />
+                          {showArchived ? (
+                            <RestoreRowButton onClick={() => openConfirm(grower.id, "restore")} />
+                          ) : (
+                          <>
                           <button
                             onClick={() =>
                               handleToggleStatus(grower.id, grower.is_active)
@@ -787,12 +785,9 @@ export default function TreeGrowersAccounts() {
                           >
                             <Power size={16} />
                           </button>
-                          <button
-                            onClick={() => setDelete(grower.id)}
-                            className="text-red-500 px-2 py-1.5 rounded-md flex items-center cursor-pointer hover:bg-red-50 transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <ArchiveRowButton onClick={() => openConfirm(grower.id, "archive")} />
+                          </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -801,10 +796,10 @@ export default function TreeGrowersAccounts() {
               ) : (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={showArchived ? 10 : 9}
                     className="text-center py-5 text-gray-500 italic"
                   >
-                    No tree growers found.
+                    {showArchived ? "No archived tree grower accounts." : "No tree growers found."}
                   </td>
                 </tr>
               )}

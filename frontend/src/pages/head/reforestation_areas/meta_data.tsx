@@ -33,6 +33,7 @@ import {
   PawPrint,
   Landmark,
   ArrowRight,
+  NotebookPen,
 } from "lucide-react";
 import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import PlantScopeConfirm from "@/components/alert/PlantScopeConfirm";
@@ -355,7 +356,7 @@ function AnimalBadge({ animal }: { animal: AnimalInfo }) {
 // ─────────────────────────────────────────────
 // Inspector submission details — same order as the Verification Form:
 // 1 Land Classification → 2 Legal Documents → 3 Security Concerns →
-// 4 Accessibility → 5 Animals
+// 4 Accessibility → 5 Other Observations → 6 Animals
 // ─────────────────────────────────────────────
 function SubmissionSection({
   step,
@@ -419,6 +420,8 @@ function SubmissionDetails({
   const legal = meta.legal_documents ?? {};
   const security = meta.security_concerns ?? {};
   const access = meta.accessibility ?? {};
+  // Free-text "anything else" the inspector noticed on site (mobile meta-data form)
+  const otherObservations: string = meta.other_observations?.notes?.trim() ?? "";
   const animals = animalsPresent ?? [];
 
   const lcNotes = legal.land_classification?.inspector_notes;
@@ -545,6 +548,18 @@ function SubmissionDetails({
 
       <SubmissionSection
         step={5}
+        icon={NotebookPen}
+        title="Other Observations"
+        isEmpty={!otherObservations}
+        emptyText="None reported"
+      >
+        <p className="text-[11px] text-slate-700 whitespace-pre-line bg-white rounded-md border border-slate-200 px-2 py-1.5">
+          {otherObservations}
+        </p>
+      </SubmissionSection>
+
+      <SubmissionSection
+        step={6}
         icon={PawPrint}
         title={`Animals Observed${animals.length ? ` (${animals.length})` : ""}`}
         isEmpty={!animals.length}

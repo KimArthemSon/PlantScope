@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
   Edit,
   Plus,
   ChevronRight,
@@ -14,6 +13,12 @@ import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import { api } from "@/constant/api";
+import {
+  useArchive,
+  ArchiveToggleButton,
+  ArchiveRowButton,
+  RestoreRowButton,
+} from "../../../components/archive/useArchive";
 
 interface Animal {
   animal_id: number;
@@ -21,6 +26,7 @@ interface Animal {
   scientific_name: string;
   description: string;
   created_at: string;
+  archived_at?: string | null;
 }
 
 interface AnimalForm {
@@ -60,7 +66,6 @@ export default function Animals() {
   const [loading, setLoading] = useState(false);
   const [form_loading, setForm_loading] = useState(false);
   const [editAnimalId, setEditAnimalId] = useState<number>(0);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [action, setAction] = useState<"Add" | "Edit">("Add");
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -68,7 +73,12 @@ export default function Animals() {
     message: string;
   } | null>(null);
 
-  const [animalIdToDelete, setAnimalIdToDelete] = useState<number | null>(null);
+  const { showArchived, toggleArchived, openConfirm, confirmModalProps } = useArchive({
+    resource: "animal",
+    label: "animal",
+    setAlert: setPSAlert,
+    onDone: () => fetchAnimals(),
+  });
   const token = localStorage.getItem("token");
 
   const inputWrapper =
@@ -88,6 +98,7 @@ export default function Animals() {
         entries: filter.entries.toString(),
         sort_by: filter.sort_by,
         order: filter.order,
+        archived: showArchived ? "1" : "0",
       });
 
       const response = await fetch(
@@ -114,7 +125,7 @@ export default function Animals() {
 
   useEffect(() => {
     fetchAnimals();
-  }, [filter.page, filter.entries, filter.sort_by, filter.order]);
+  }, [filter.page, filter.entries, filter.sort_by, filter.order, showArchived]);
 
   // Clicking the active column flips the order; a new column starts ascending
   const handleSort = (key: SortKey) => {
@@ -144,39 +155,6 @@ export default function Animals() {
       </button>
     </th>
   );
-
-  const setDelete = (animal_id: number) => {
-    setAnimalIdToDelete(animal_id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!animalIdToDelete) return;
-    const response = await fetch(
-      api+`api/delete_animal/${animalIdToDelete}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    const data = await response.json();
-    if (response.ok) {
-      setPSAlert({
-        type: "success",
-        title: "Deleted",
-        message: data.message,
-      });
-      setIsDeleteModalOpen(false);
-      fetchAnimals();
-    } else {
-      setPSAlert({
-        type: "failed",
-        title: "Failed",
-        message: "Failed to delete animal.",
-      });
-      setIsDeleteModalOpen(false);
-    }
-  };
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -279,11 +257,7 @@ export default function Animals() {
           onClose={() => setPSAlert(null)}
         />
       )}
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
+      <Delete_modal {...confirmModalProps} />
       <main className="flex-1 p-8 w-full max-w-450">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
@@ -305,9 +279,18 @@ export default function Animals() {
             <option value={100}>100</option>
           </select>
 
+          <ArchiveToggleButton
+            showArchived={showArchived}
+            onClick={() => {
+              toggleArchived();
+              setFilter((prev) => ({ ...prev, page: 1 }));
+            }}
+            className="ml-auto"
+          />
+
           <input
             type="text"
-            placeholder="Search animals..."
+            placeholder={showArchived ? "Search archived animals..." : "Search animals..."}
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -321,8 +304,9 @@ export default function Animals() {
                 fetchAnimals();
               }
             }}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem]"
           />
+          {!showArchived && (
           <button
             onClick={() => {
               setIsOpenAddEditModal(true);
@@ -333,6 +317,7 @@ export default function Animals() {
           >
             <Plus size={20} /> Add new animal
           </button>
+          )}
         </div>
 
         {/* Table */}
@@ -346,6 +331,9 @@ export default function Animals() {
                 <SortableHeader label="Scientific Name" sortKey="scientific_name" />
                 <SortableHeader label="Description" sortKey="description" />
                 <SortableHeader label="Created At" sortKey="created_at" />
+                {showArchived && (
+                  <th className="py-3 px-5 text-left text-[.9rem]">Archived At</th>
+                )}
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -369,7 +357,15 @@ export default function Animals() {
                     <td className="py-3 px-5 text-[.9rem]">
                       {animal.created_at}
                     </td>
+                    {showArchived && (
+                      <td className="py-3 px-5 text-[.9rem]">{animal.archived_at ?? "—"}</td>
+                    )}
                     <td className="py-3 px-5">
+                      {showArchived ? (
+                        <RestoreRowButton
+                          onClick={() => openConfirm(animal.animal_id, "restore")}
+                        />
+                      ) : (
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
@@ -386,23 +382,21 @@ export default function Animals() {
                         >
                           <Edit size={18} />
                         </button>
-                        <button
-                          onClick={() => setDelete(animal.animal_id)}
-                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer hover:bg-red-50"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <ArchiveRowButton
+                          onClick={() => openConfirm(animal.animal_id, "archive")}
+                        />
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={showArchived ? 7 : 6}
                     className="text-center py-5 text-gray-500 italic"
                   >
-                    No animals found.
+                    {showArchived ? "No archived animals." : "No animals found."}
                   </td>
                 </tr>
               )}

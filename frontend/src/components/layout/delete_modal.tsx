@@ -4,12 +4,18 @@ interface LogoutProps {
   setIsDeleteModalOpen: (value: boolean) => void;
   isDeleteModalOpen: boolean;
   onDelete: () => void;
+  title?: string;
+  message?: string;
+  confirmLabel?: string;
 }
 
 export default function Delete_modal({
   setIsDeleteModalOpen,
   isDeleteModalOpen,
   onDelete,
+  title = "Confirm Deletion",
+  message = "This action cannot be undone. Are you sure you want to delete this item?",
+  confirmLabel = "Delete Item",
 }: LogoutProps) {
   return (
     <div
@@ -33,12 +39,11 @@ export default function Delete_modal({
         />
 
         <h2 className="text-lg font-semibold text-gray-800">
-          Confirm Deletion
+          {title}
         </h2>
 
         <p className="text-sm text-gray-600 mb-5">
-          This action cannot be undone. Are you sure you want to delete this
-          item?
+          {message}
         </p>
 
         <div className="flex flex-cols items-center w-full gap-2">
@@ -46,7 +51,7 @@ export default function Delete_modal({
             className="bg-red-500 text-white px-4 py-2 w-[50%] rounded-md border border-red-600 hover:bg-white hover:text-red-600 transition cursor-pointer"
             onClick={onDelete}
           >
-            Delete Item
+            {confirmLabel}
           </button>
 
           <button

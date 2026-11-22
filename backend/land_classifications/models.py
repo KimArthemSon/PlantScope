@@ -18,6 +18,9 @@ class LandClassification(models.Model):
     )
     
     created_at = models.DateTimeField(auto_now_add=True)
+    # Archived records are hidden from lists/dropdowns but kept so they can be restored
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} ({self.get_ownership_type_display()})"
@@ -45,4 +48,7 @@ class Classified_areas(models.Model):
     )
     polygon = models.JSONField()
     description = models.CharField(max_length=255)
+    # Archived records are hidden from lists/maps but kept so they can be restored
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

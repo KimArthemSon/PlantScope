@@ -1,4 +1,6 @@
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from backend.archiving import linked_records_error
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import LandClassification, Classified_areas
@@ -62,7 +64,7 @@ def get_land_classifications_list(request):
     # ✅ UPDATED: Filter by ownership_type instead of for_reforestation
     ownership_type = request.GET.get('ownership_type', '').strip().lower()
     
-    classifications = LandClassification.objects.all().order_by('created_at')
+    classifications = LandClassification.objects.filter(is_archived=False).order_by('created_at')
     
     # If 'public' or 'private' is specified, filter. Otherwise, return ALL.
     if ownership_type in ['public', 'private']:
@@ -109,7 +111,9 @@ def get_land_classifications(request):
         sort_by = 'created_at'
     prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
 
-    classifications = LandClassification.objects.all().order_by(f'{prefix}{sort_by}', f'{prefix}pk')
+    # ?archived=1 lists the archive instead of the active records
+    archived = request.GET.get('archived', '0').lower() in ('1', 'true')
+    classifications = LandClassification.objects.filter(is_archived=archived).order_by(f'{prefix}{sort_by}', f'{prefix}pk')
 
     if search:
         classifications = classifications.filter(name__icontains=search)
@@ -129,6 +133,7 @@ def get_land_classifications(request):
             "description": lc.description,
             "ownership_type": lc.ownership_type,  # ✅ UPDATED
             "created_at": lc.created_at.strftime("%Y-%m-%d") if lc.created_at else None,
+            "archived_at": lc.archived_at.strftime("%Y-%m-%d") if lc.archived_at else None,
         })
 
     return JsonResponse({
@@ -277,3 +282,61 @@ def delete_land_classification(request, classification_id):
     classification.delete()
     return JsonResponse({'message': 'Successfully deleted!'}, status=200)
 
+
+
+
+# -------------------- Archive / Restore Land classification --------------------
+
+@csrf_exempt
+def archive_land_classification(request, classification_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(LandClassification, pk=classification_id)
+    if obj.is_archived:
+        return JsonResponse({'error': 'Land classification is already archived.'}, status=400)
+
+    # Block archiving while other records still point at this one
+    blocked = linked_records_error(obj, obj.name)
+    if blocked:
+        return JsonResponse(blocked, status=400)
+
+    obj.is_archived = True
+    obj.archived_at = timezone.now()
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='LandClassification',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Land classification "{obj.name}" archived.',
+    )
+
+    return JsonResponse({'message': 'Successfully archived!'}, status=200)
+
+
+@csrf_exempt
+def restore_land_classification(request, classification_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(LandClassification, pk=classification_id)
+    if not (obj.is_archived):
+        return JsonResponse({'error': 'Land classification is not archived.'}, status=400)
+
+    obj.is_archived = False
+    obj.archived_at = None
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='LandClassification',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Land classification "{obj.name}" restored from archive.',
+    )
+
+    return JsonResponse({'message': 'Successfully restored!'}, status=200)

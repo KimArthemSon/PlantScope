@@ -1,4 +1,6 @@
 import json
+from django.utils import timezone
+from backend.archiving import linked_records_error
 import math
 import logging
 from django.http import JsonResponse
@@ -54,6 +56,7 @@ def _serialize_area(a):
             'name': a.barangay.name
         } if a.barangay else None,
         'created_at': created_date,  # ✅ Changed from '%Y-%m-%d %H:%M:%S'
+        'archived_at': a.deleted_at.strftime('%Y-%m-%d') if a.deleted_at else None,
         'site_count': total_sites,
         'total_area_hectares': total_area_hectares,
         # Site statistics
@@ -74,7 +77,7 @@ def _serialize_area(a):
 def get_all_reforestation_areas(request):
     if request.method != 'GET': 
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
-    areas = Reforestation_areas.objects.all().order_by('-created_at')
+    areas = Reforestation_areas.objects.filter(deleted_at__isnull=True).order_by('-created_at')
     return JsonResponse({'data': [_serialize_area(a) for a in areas]}, status=200)
 
 @csrf_exempt
@@ -104,7 +107,9 @@ def get_reforestation_areas(request):
     sort_field = sortable_fields.get(request.GET.get('sort_by', ''), 'created_at')
     prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
 
-    areas = Reforestation_areas.objects.all()
+    # ?archived=1 lists the archive (soft-deleted areas) instead of the active ones
+    archived = request.GET.get('archived', '0').lower() in ('1', 'true')
+    areas = Reforestation_areas.objects.filter(deleted_at__isnull=not archived)
     if sort_field == 'site_count':
         # Same count shown in the Sites column (active sites only)
         areas = areas.annotate(site_count=Count('sites', filter=Q(sites__is_active=True)))
@@ -230,3 +235,43 @@ def delete_reforestation_areas(request, reforestation_area_id):
     area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
     area.delete()
     return JsonResponse({'message': 'Successfully deleted'}, status=200)
+
+
+
+# -------------------- Archive / Restore Reforestation area --------------------
+
+@csrf_exempt
+def archive_reforestation_area(request, reforestation_area_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(Reforestation_areas, pk=reforestation_area_id)
+    if obj.deleted_at is not None:
+        return JsonResponse({'error': 'Reforestation area is already archived.'}, status=400)
+
+    # Block archiving while other records still point at this one
+    blocked = linked_records_error(obj, obj.name)
+    if blocked:
+        return JsonResponse(blocked, status=400)
+
+    obj.deleted_at = timezone.now()
+    obj.save(update_fields=['deleted_at'])
+
+
+    return JsonResponse({'message': 'Successfully archived!'}, status=200)
+
+
+@csrf_exempt
+def restore_reforestation_area(request, reforestation_area_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(Reforestation_areas, pk=reforestation_area_id)
+    if not (obj.deleted_at is not None):
+        return JsonResponse({'error': 'Reforestation area is not archived.'}, status=400)
+
+    obj.deleted_at = None
+    obj.save(update_fields=['deleted_at'])
+
+
+    return JsonResponse({'message': 'Successfully restored!'}, status=200)

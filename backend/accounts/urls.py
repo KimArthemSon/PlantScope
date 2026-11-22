@@ -12,6 +12,8 @@ urlpatterns = [
     path('delete_user/<int:user_id>', views.delete_user, name='delete_user'),
     path('get_user/<int:user_id>', views.get_user, name='get_user'),
     path('toggle_user_status/<int:user_id>/', views.toggle_user_status, name='toggle_user_status'),
+    path('archive_user/<int:user_id>/', views.archive_user, name='archive_user'),
+    path('restore_user/<int:user_id>/', views.restore_user, name='restore_user'),
     
     # Tree grower specific
     path('register_tree_grower/', treegrowers_views.register_tree_grower, name='register_tree_grower'),

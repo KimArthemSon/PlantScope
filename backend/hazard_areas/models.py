@@ -28,6 +28,9 @@ class HazardArea(models.Model):
     polygon = models.JSONField()
     description = models.CharField(max_length=255, blank=True, default="")
     
+    # Archived records are hidden from lists/maps but kept so they can be restored
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

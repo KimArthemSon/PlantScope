@@ -6,6 +6,8 @@ from barangay.models import Barangay
 from .models import Classified_areas
 from reforestation_areas.models import Reforestation_areas
 from django.conf import settings
+from django.utils import timezone
+from backend.archiving import linked_records_error
 from security.views import log_activity
 import json
 import math
@@ -71,7 +73,7 @@ def get_barangay_classified_areas(request, barangay_id):
         # ✅ Use .filter() for One-to-Many: get ALL classified areas for this barangay
         # ✅ Use select_related to optimize DB queries for land_classification
         areas = Classified_areas.objects.filter(
-            barangay=barangay
+            barangay=barangay, is_archived=False
         ).select_related('land_classification')
         
         # ✅ Serialize data for frontend consumption
@@ -128,7 +130,7 @@ def get_classified_areas_by_reforestation_area(request, reforestation_area_id):
         
         # ✅ Get classified areas for this barangay
         areas = Classified_areas.objects.filter(
-            barangay=reforestation_area.barangay
+            barangay=reforestation_area.barangay, is_archived=False
         ).select_related('land_classification')
         
         # ✅ Serialize
@@ -198,10 +200,12 @@ def get_classified_areas(request):
     sort_field = sortable_fields.get(request.GET.get('sort_by', ''), 'created_at')
     prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
 
+    # ?archived=1 lists the archive instead of the active records
+    archived = request.GET.get('archived', '0').lower() in ('1', 'true')
     classified_areas = (
         Classified_areas.objects
         .select_related('land_classification', 'barangay')
-        .all()
+        .filter(is_archived=archived)
         .order_by(f'{prefix}{sort_field}', f'{prefix}pk')
     )
 
@@ -231,6 +235,7 @@ def get_classified_areas(request):
             'polygon': area.polygon,
             'description': area.description,
             'created_at': area.created_at.strftime("%Y-%m-%d") if area.created_at else None,
+            'archived_at': area.archived_at.strftime("%Y-%m-%d") if area.archived_at else None,
         }
         for area in paginated_areas
     ]
@@ -453,7 +458,7 @@ def get_all_classified_polygons(request):
         # Get all classified areas without pagination
         all_areas = Classified_areas.objects.select_related(
             'land_classification', 'barangay'
-        ).all().order_by('name')
+        ).filter(is_archived=False).order_by('name')
         
         data = []
         for area in all_areas:
@@ -495,3 +500,71 @@ def get_all_classified_polygons(request):
             'error': str(e),
             'success': False
         }, status=500)
+
+
+
+# -------------------- Archive / Restore Classified area --------------------
+
+@csrf_exempt
+def archive_classified_area(request, classified_area_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(Classified_areas, pk=classified_area_id)
+    if obj.is_archived:
+        return JsonResponse({'error': 'Classified area is already archived.'}, status=400)
+
+    # Block archiving while other records still point at this one
+    blocked = linked_records_error(obj, obj.name)
+    if blocked:
+        return JsonResponse(blocked, status=400)
+
+    obj.is_archived = True
+    obj.archived_at = timezone.now()
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='ClassifiedArea',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Classified area "{obj.name}" archived.',
+    )
+    return JsonResponse({'message': 'Successfully archived!'}, status=200)
+
+
+@csrf_exempt
+def restore_classified_area(request, classified_area_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(Classified_areas, pk=classified_area_id)
+    if not obj.is_archived:
+        return JsonResponse({'error': 'Classified area is not archived.'}, status=400)
+
+    # Don't bring this back while the record it belongs to is still archived
+    if obj.land_classification and obj.land_classification.is_archived:
+        return JsonResponse({
+            'error': f'Cannot restore "{obj.name}" because its land classification '
+                     f'"{obj.land_classification.name}" is archived. Restore the land classification first.'
+        }, status=400)
+    if obj.barangay and obj.barangay.is_archived:
+        return JsonResponse({
+            'error': f'Cannot restore "{obj.name}" because its barangay '
+                     f'"{obj.barangay.name}" is archived. Restore the barangay first.'
+        }, status=400)
+
+    obj.is_archived = False
+    obj.archived_at = None
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='ClassifiedArea',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Classified area "{obj.name}" restored from archive.',
+    )
+    return JsonResponse({'message': 'Successfully restored!'}, status=200)

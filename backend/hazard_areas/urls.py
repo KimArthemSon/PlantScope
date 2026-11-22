@@ -8,6 +8,8 @@ urlpatterns = [
     path('create_hazard_area/', views.create_hazard_area, name="create_hazard_area"),
     path('update_hazard_area/<int:hazard_area_id>/', views.update_hazard_area, name="update_hazard_area"),
     path('delete_hazard_area/<int:hazard_area_id>/', views.delete_hazard_area, name="delete_hazard_area"),
+    path('archive_hazard_area/<int:hazard_area_id>/', views.archive_hazard_area, name="archive_hazard_area"),
+    path('restore_hazard_area/<int:hazard_area_id>/', views.restore_hazard_area, name="restore_hazard_area"),
     
     # Dedicated endpoint to fetch hazards for a specific barangay
     path(

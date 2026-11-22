@@ -21,7 +21,7 @@ def get_restricted_zones_for_area(request, reforestation_area_id):
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
     try:
         reforestation_area = get_object_or_404(Reforestation_areas, reforestation_area_id=reforestation_area_id)
-        classified_areas_list = reforestation_area.barangay.classified_areas.all()
+        classified_areas_list = reforestation_area.barangay.classified_areas.filter(is_archived=False)
         data = {
             "reforestation_area": {
                 "name": reforestation_area.name,

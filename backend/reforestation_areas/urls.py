@@ -17,6 +17,8 @@ urlpatterns = [
     path('create_reforestation_areas/', views.create_reforestation_areas, name="create_reforestation_areas"),
     path('update_reforestation_areas/<int:reforestation_area_id>/', views.update_reforestation_areas, name="update_reforestation_areas"),
     path('delete_reforestation_areas/<int:reforestation_area_id>/', views.delete_reforestation_areas, name="delete_reforestation_areas"),
+    path('archive_reforestation_area/<int:reforestation_area_id>/', views.archive_reforestation_area, name="archive_reforestation_area"),
+    path('restore_reforestation_area/<int:reforestation_area_id>/', views.restore_reforestation_area, name="restore_reforestation_area"),
 
    
 

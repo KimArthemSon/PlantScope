@@ -13,6 +13,9 @@ import math
 class Sites(models.Model):
     site_id = models.BigAutoField(primary_key=True)
 
+    # is_active=False means archived; used by backend.archiving to skip archived sites
+    ARCHIVE_ACTIVE_FILTER = {'is_active': True}
+
     reforestation_area = models.ForeignKey(
         Reforestation_areas,
         on_delete=models.RESTRICT,

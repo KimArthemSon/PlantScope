@@ -40,7 +40,7 @@ const GPS_LIVE_TIMEOUT_MS = 30000; // 30 seconds
 
 // Remembers that the map background was saved, per area, so the status
 // survives leaving the page (the tiles themselves live in the WebView cache).
-const mapBackgroundKey = (areaId: number) =>
+export const mapBackgroundKey = (areaId: number) =>
   `@plantscope_map_background_${areaId}`;
 
 type MapBackgroundInfo = {
@@ -558,6 +558,12 @@ interface FloatingMapButtonProps {
   userLng?: number;
   mapPoints?: MapPoint[]; // ✅ NEW PROP
   initialOpen?: boolean; // ✅ ADD THIS
+  /** Don't render the floating map button (the caller opens the map itself) */
+  hideFab?: boolean;
+  /** Jump straight to "Save Map Offline" once the map has loaded */
+  autoOpenSaveMap?: boolean;
+  /** Called when the full-screen map is closed */
+  onClose?: () => void;
 }
 
 type GPSReadiness = "ready" | "aging" | "cold" | "checking";
@@ -837,7 +843,10 @@ export default function FloatingMapButton({
   userLat,
   userLng,
   mapPoints = [],
-  initialOpen
+  initialOpen,
+  hideFab = false,
+  autoOpenSaveMap = false,
+  onClose,
 }: FloatingMapButtonProps) {
   const insets = useSafeAreaInsets();
   // Modals draw behind the system bars on Android, so sheets pad for the nav bar.
@@ -1356,6 +1365,23 @@ export default function FloatingMapButton({
     if (!showMap || !mapReady || loading || hasFitted.current) return;
     if (goToArea(true)) hasFitted.current = true;
   }, [showMap, mapReady, loading, areaBounds, areaCoords]);
+
+  // Opened from an area's details to save it offline: go straight to "Save Map Offline"
+  // once the map page and the area location are ready, so the download sizes correctly.
+  const autoSaveOpened = useRef(false);
+  useEffect(() => {
+    if (!autoOpenSaveMap || autoSaveOpened.current) return;
+    if (!showMap || !mapReady || loading || !(areaBounds || areaCoords)) return;
+    autoSaveOpened.current = true;
+    downloadMapBackground();
+  }, [autoOpenSaveMap, showMap, mapReady, loading, areaBounds, areaCoords]);
+
+  // Let the caller know when the map is closed
+  const wasOpen = useRef(!!initialOpen);
+  useEffect(() => {
+    if (wasOpen.current && !showMap) onClose?.();
+    wasOpen.current = !!showMap;
+  }, [showMap]);
 
   // Show / hide barangay markers (re-applied when the map page reloads)
   useEffect(() => {
@@ -2147,9 +2173,11 @@ export default function FloatingMapButton({
 
   return (
     <>
-      <TouchableOpacity style={styles.fab} onPress={() => setShowMap(true)} activeOpacity={0.85}>
-        <Ionicons name="map" size={24} color="#FFFFFF" />
-      </TouchableOpacity>
+      {!hideFab && (
+        <TouchableOpacity style={styles.fab} onPress={() => setShowMap(true)} activeOpacity={0.85}>
+          <Ionicons name="map" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
 
       <Modal visible={showMap} animationType="slide" onRequestClose={() => setShowMap(false)}>
         <View style={[styles.modalContainer, { paddingBottom: insets.bottom }]}>

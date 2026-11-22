@@ -298,7 +298,7 @@ def get_gis_dashboard(request):
             })
 
         # ── Map layers ──
-        hazard_rows = HazardArea.objects.values('hazard_type').annotate(count=Count('hazard_area_id'))
+        hazard_rows = HazardArea.objects.filter(is_archived=False).values('hazard_type').annotate(count=Count('hazard_area_id'))
         hazard_labels = dict(HazardArea.HAZARD_TYPES)
         hazards = [
             {'name': hazard_labels.get(h['hazard_type'], h['hazard_type']), 'value': h['count'],
@@ -307,7 +307,7 @@ def get_gis_dashboard(request):
         ]
         classified = [
             {'name': c['lc'], 'value': c['value']}
-            for c in Classified_areas.objects
+            for c in Classified_areas.objects.filter(is_archived=False)
             .values(lc=Coalesce('land_classification__name', Value('Unclassified')))
             .annotate(value=Count('classified_area_id')).order_by('-value')
         ]

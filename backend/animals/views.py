@@ -7,6 +7,8 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db import IntegrityError
 from django.conf import settings
+from django.utils import timezone
+from backend.archiving import linked_records_error
 from security.views import log_activity
 from .models import Animal
 
@@ -77,7 +79,9 @@ def get_animals(request):
         sort_by = 'created_at'
     prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
 
-    animals = Animal.objects.all().order_by(f'{prefix}{sort_by}', f'{prefix}pk')
+    # ?archived=1 lists the archive instead of the active records
+    archived = request.GET.get('archived', '0').lower() in ('1', 'true')
+    animals = Animal.objects.filter(is_archived=archived).order_by(f'{prefix}{sort_by}', f'{prefix}pk')
     if search:
         animals = animals.filter(name__icontains=search)
 
@@ -92,6 +96,7 @@ def get_animals(request):
             "scientific_name": a.scientific_name,
             "description":a.description,
             "created_at": a.created_at.strftime("%Y-%m-%d") if a.created_at else None,
+            "archived_at": a.archived_at.strftime("%Y-%m-%d") if a.archived_at else None,
         })
     
  
@@ -254,7 +259,7 @@ def get_animals_list(request):
         return JsonResponse({'error': 'Only GET allowed'}, status=405)
 
     try:
-        animals = Animal.objects.all().order_by('name').values(
+        animals = Animal.objects.filter(is_archived=False).order_by('name').values(
             'animal_id', 'name', 'scientific_name', 'description'
         )
         
@@ -273,3 +278,58 @@ def get_animals_list(request):
     except Exception as e:
         logging.error(f"Error fetching animals list: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# -------------------- Archive / Restore Animal --------------------
+
+@csrf_exempt
+def archive_animal(request, animal_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(Animal, pk=animal_id)
+    if obj.is_archived:
+        return JsonResponse({'error': 'Animal is already archived.'}, status=400)
+
+    # Block archiving while other records still point at this one
+    blocked = linked_records_error(obj, obj.name)
+    if blocked:
+        return JsonResponse(blocked, status=400)
+
+    obj.is_archived = True
+    obj.archived_at = timezone.now()
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='Animal',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Animal "{obj.name}" archived.',
+    )
+    return JsonResponse({'message': 'Successfully archived!'}, status=200)
+
+
+@csrf_exempt
+def restore_animal(request, animal_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(Animal, pk=animal_id)
+    if not obj.is_archived:
+        return JsonResponse({'error': 'Animal is not archived.'}, status=400)
+
+    obj.is_archived = False
+    obj.archived_at = None
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='Animal',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Animal "{obj.name}" restored from archive.',
+    )
+    return JsonResponse({'message': 'Successfully restored!'}, status=200)

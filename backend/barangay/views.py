@@ -3,6 +3,8 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import Barangay
 from django.conf import settings
+from django.utils import timezone
+from backend.archiving import linked_records_error
 from security.views import log_activity
 import json
 import math
@@ -60,6 +62,7 @@ def get_barangay_list(request):
     
     barangays = (
         Barangay.objects
+        .filter(is_archived=False)
         .order_by('created_at')
         .values('barangay_id', 'name', 'coordinate', 'description')
     )
@@ -101,7 +104,14 @@ def get_barangays(request):
         sort_by = 'created_at'
     prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
 
-    barangays = Barangay.objects.all().order_by(f'{prefix}{sort_by}', f'{prefix}barangay_id')
+    # ?archived=1 lists the archive instead of the active barangays
+    archived = request.GET.get('archived', '0').lower() in ('1', 'true')
+
+    barangays = (
+        Barangay.objects
+        .filter(is_archived=archived)
+        .order_by(f'{prefix}{sort_by}', f'{prefix}barangay_id')
+    )
 
     if search:
         barangays = barangays.filter(name__icontains=search)
@@ -116,7 +126,8 @@ def get_barangays(request):
             'name': b.name,
             'description': b.description,
             'coordinate': b.coordinate,
-            'created_at': b.created_at.strftime('%Y-%m-%d') if b.created_at else None
+            'created_at': b.created_at.strftime('%Y-%m-%d') if b.created_at else None,
+            'archived_at': b.archived_at.strftime('%Y-%m-%d') if b.archived_at else None,
         })
 
     return JsonResponse({
@@ -250,3 +261,62 @@ def delete_barangay(request, barangay_id):
     barangay.delete()
 
     return JsonResponse({'message': 'Successfully deleted!'}, status=200)
+
+
+# -------------------- Archive Barangay --------------------
+
+@csrf_exempt
+def archive_barangay(request, barangay_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    barangay = get_object_or_404(Barangay, barangay_id=barangay_id)
+    if barangay.is_archived:
+        return JsonResponse({'error': 'Barangay is already archived.'}, status=400)
+
+    # Block archiving while other records still point at this barangay
+    blocked = linked_records_error(barangay, barangay.name)
+    if blocked:
+        return JsonResponse(blocked, status=400)
+
+    barangay.is_archived = True
+    barangay.archived_at = timezone.now()
+    barangay.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='Barangay',
+        entity_id=barangay_id,
+        entity_label=barangay.name,
+        description=f'Barangay "{barangay.name}" archived.',
+    )
+
+    return JsonResponse({'message': 'Successfully archived!'}, status=200)
+
+
+# -------------------- Restore Barangay --------------------
+
+@csrf_exempt
+def restore_barangay(request, barangay_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    barangay = get_object_or_404(Barangay, barangay_id=barangay_id)
+    if not barangay.is_archived:
+        return JsonResponse({'error': 'Barangay is not archived.'}, status=400)
+
+    barangay.is_archived = False
+    barangay.archived_at = None
+    barangay.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='Barangay',
+        entity_id=barangay_id,
+        entity_label=barangay.name,
+        description=f'Barangay "{barangay.name}" restored from archive.',
+    )
+
+    return JsonResponse({'message': 'Successfully restored!'}, status=200)

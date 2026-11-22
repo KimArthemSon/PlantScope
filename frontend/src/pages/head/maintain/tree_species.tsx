@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
   Edit,
   Plus,
   ChevronRight,
@@ -14,12 +13,19 @@ import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import { api } from "@/constant/api";
+import {
+  useArchive,
+  ArchiveToggleButton,
+  ArchiveRowButton,
+  RestoreRowButton,
+} from "../../../components/archive/useArchive";
 
 interface Tree_species {
   tree_specie_id: number;
   name: string;
   description: string;
   created_at: string;
+  archived_at?: string | null;
 }
 interface Tree_specie {
   name: string;
@@ -56,7 +62,6 @@ export default function Tree_species() {
   const [loading, setLoading] = useState(false);
   const [form_loading, setForm_loading] = useState(false);
   const [edittree_specie_Id, setEdittree_specie_Id] = useState<number>(0);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [action, setAction] = useState<"Add" | "Edit">("Add");
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -64,9 +69,12 @@ export default function Tree_species() {
     message: string;
   } | null>(null);
 
-  const [tree_specie_idDelete, settree_specie_IdDelete] = useState<
-    number | null
-  >(null);
+  const { showArchived, toggleArchived, openConfirm, confirmModalProps } = useArchive({
+    resource: "tree_specie",
+    label: "tree species",
+    setAlert: setPSAlert,
+    onDone: () => fetchtree_species(),
+  });
 
   const token = localStorage.getItem("token");
 
@@ -87,6 +95,7 @@ export default function Tree_species() {
         entries: filter.entries.toString(),
         sort_by: filter.sort_by,
         order: filter.order,
+        archived: showArchived ? "1" : "0",
       });
 
       const response = await fetch(
@@ -113,7 +122,7 @@ export default function Tree_species() {
 
   useEffect(() => {
     fetchtree_species();
-  }, [filter.page, filter.entries, filter.sort_by, filter.order]); // refetch when filters change
+  }, [filter.page, filter.entries, filter.sort_by, filter.order, showArchived]); // refetch when filters change
 
   // Clicking the active column flips the order; a new column starts ascending
   const handleSort = (key: SortKey) => {
@@ -143,39 +152,6 @@ export default function Tree_species() {
       </button>
     </th>
   );
-
-  const setDelete = (tree_specie_id: number) => {
-    settree_specie_IdDelete(tree_specie_id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!tree_specie_idDelete) return;
-    const response = await fetch(
-      api+`api/delete_tree_specie/${tree_specie_idDelete}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    const data = await response.json();
-    if (response.ok) {
-      setPSAlert({
-        type: "success",
-        title: "Deleted",
-        message: data.message,
-      });
-      setIsDeleteModalOpen(false);
-      fetchtree_species(); // refresh list after delete
-    } else {
-      setPSAlert({
-        type: "failed",
-        title: "Failed",
-        message: "Failed to delete tree specie.",
-      });
-      setIsDeleteModalOpen(false);
-    }
-  };
 
   function handleSubmit(e: any) {
     e.preventDefault();
@@ -279,11 +255,7 @@ export default function Tree_species() {
           onClose={() => setPSAlert(null)}
         />
       )}
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
+      <Delete_modal {...confirmModalProps} />
       <main className="flex-1 p-8 w-full max-w-609">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4">
@@ -305,9 +277,18 @@ export default function Tree_species() {
             <option value={100}>100</option>
           </select>
 
+          <ArchiveToggleButton
+            showArchived={showArchived}
+            onClick={() => {
+              toggleArchived();
+              setFilter((prev) => ({ ...prev, page: 1 }));
+            }}
+            className="ml-auto"
+          />
+
           <input
             type="text"
-            placeholder="Search tree_species..."
+            placeholder={showArchived ? "Search archived tree species..." : "Search tree_species..."}
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -321,8 +302,9 @@ export default function Tree_species() {
                 fetchtree_species();
               }
             }}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem]"
           />
+          {!showArchived && (
           <button
             onClick={() => {
               setIsOpenAddEditModal(true);
@@ -333,6 +315,7 @@ export default function Tree_species() {
           >
             <Plus size={20} /> Add new tree specie
           </button>
+          )}
         </div>
 
         {/* Table */}
@@ -345,6 +328,9 @@ export default function Tree_species() {
                 <SortableHeader label="Name" sortKey="name" />
                 <SortableHeader label="Description" sortKey="description" />
                 <SortableHeader label="Created at" sortKey="created_at" />
+                {showArchived && (
+                  <th className="py-3 px-5 text-left text-[.9rem]">Archived at</th>
+                )}
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -365,7 +351,15 @@ export default function Tree_species() {
                     <td className="py-3 px-5 text-[.9rem]">
                       {tree_specie.created_at}
                     </td>
+                    {showArchived && (
+                      <td className="py-3 px-5 text-[.9rem]">{tree_specie.archived_at ?? "—"}</td>
+                    )}
                     <td className="py-3 px-5">
+                      {showArchived ? (
+                        <RestoreRowButton
+                          onClick={() => openConfirm(tree_specie.tree_specie_id, "restore")}
+                        />
+                      ) : (
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
@@ -381,23 +375,21 @@ export default function Tree_species() {
                         >
                           <Edit size={18} />
                         </button>
-                        <button
-                          onClick={() => setDelete(tree_specie.tree_specie_id)}
-                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <ArchiveRowButton
+                          onClick={() => openConfirm(tree_specie.tree_specie_id, "archive")}
+                        />
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={showArchived ? 6 : 5}
                     className="text-center py-5 text-gray-500 italic"
                   >
-                    No tree_species found.
+                    {showArchived ? "No archived tree species." : "No tree_species found."}
                   </td>
                 </tr>
               )}

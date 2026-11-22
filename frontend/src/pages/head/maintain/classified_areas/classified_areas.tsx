@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
   Edit,
   Plus,
   ChevronRight,
@@ -16,6 +15,12 @@ import { useNavigate } from "react-router-dom";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api";
+import {
+  useArchive,
+  ArchiveToggleButton,
+  ArchiveRowButton,
+  RestoreRowButton,
+} from "@/components/archive/useArchive";
 
 interface ClassifiedArea {
   classified_area_id: number;
@@ -26,6 +31,7 @@ interface ClassifiedArea {
   barangay_name: string;
   description: string;
   created_at: string;
+  archived_at?: string | null;
 }
 
 interface Filter {
@@ -73,15 +79,17 @@ export default function Classified_areas() {
   >([]);
   const [barangayList, setBarangayList] = useState<Barangay[]>([]);
   const [loading, setLoading] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
     message: string;
   } | null>(null);
-  const [classifiedAreaIdDelete, setClassifiedAreaIdDelete] = useState<
-    number | null
-  >(null);
+  const { showArchived, toggleArchived, openConfirm, confirmModalProps } = useArchive({
+    resource: "classified_area",
+    label: "classified area",
+    setAlert: setPSAlert,
+    onDone: () => fetchClassifiedAreas(),
+  });
   const navigate = useNavigate();
 
   const { userRole } = useUserRole();
@@ -141,6 +149,7 @@ export default function Classified_areas() {
         entries: filter.entries.toString(),
         sort_by: filter.sort_by,
         order: filter.order,
+        archived: showArchived ? "1" : "0",
       });
       if (filter.land_classification_id !== "")
         params.append(
@@ -178,6 +187,7 @@ export default function Classified_areas() {
     filter.barangay_id,
     filter.sort_by,
     filter.order,
+    showArchived,
   ]);
 
   // Clicking the active column flips the order; a new column starts ascending
@@ -222,32 +232,6 @@ export default function Classified_areas() {
     (filter.land_classification_id !== "" ? 1 : 0) +
     (filter.barangay_id !== "" ? 1 : 0);
 
-  const setDelete = (id: number) => {
-    setClassifiedAreaIdDelete(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!classifiedAreaIdDelete) return;
-    const response = await fetch(
-      api+`api/delete_classified_area/${classifiedAreaIdDelete}`,
-      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
-    );
-    const data = await response.json();
-    if (response.ok) {
-      setPSAlert({ type: "success", title: "Deleted", message: data.message });
-      setIsDeleteModalOpen(false);
-      fetchClassifiedAreas();
-    } else {
-      setPSAlert({
-        type: "failed",
-        title: "Failed",
-        message: data.message || "Failed to delete",
-      });
-      setIsDeleteModalOpen(false);
-    }
-  };
-
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
       {PSalert && (
@@ -258,11 +242,7 @@ export default function Classified_areas() {
           onClose={() => setPSAlert(null)}
         />
       )}
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
+      <Delete_modal {...confirmModalProps} />
 
       <main className="flex-1 p-8 w-full max-w-609">
         {/* ── Top bar: entries + search + add ── */}
@@ -389,9 +369,17 @@ export default function Classified_areas() {
               <X size={12} /> Clear filters ({activeFilterCount})
             </button>
           )}
+          <ArchiveToggleButton
+            showArchived={showArchived}
+            onClick={() => {
+              toggleArchived();
+              setFilter((prev) => ({ ...prev, page: 1 }));
+            }}
+            className="ml-auto"
+          />
           <input
             type="text"
-            placeholder="Search classified areas..."
+            placeholder={showArchived ? "Search archived classified areas..." : "Search classified areas..."}
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -403,8 +391,9 @@ export default function Classified_areas() {
             onKeyDown={(e) => {
               if (e.key === "Enter") fetchClassifiedAreas();
             }}
-            className="border border-gray-300 rounded-md p-2 w-72 text-[.8rem] ml-auto"
+            className="border border-gray-300 rounded-md p-2 w-72 text-[.8rem]"
           />
+          {!showArchived && (
           <button
             onClick={() =>
               navigate(`${useruserRole}/maintenance/classified_area_form/`)
@@ -413,6 +402,7 @@ export default function Classified_areas() {
           >
             <Plus size={18} /> Add classified area
           </button>
+          )}
         </div>
 
         {/* ── Table ── */}
@@ -427,6 +417,9 @@ export default function Classified_areas() {
                 {sortableHeader("Barangay", "barangay")}
                 {sortableHeader("Description", "description")}
                 {sortableHeader("Created At", "created_at")}
+                {showArchived && (
+                  <th className="py-3 px-5 text-left text-[.9rem]">Archived At</th>
+                )}
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -457,7 +450,17 @@ export default function Classified_areas() {
                     <td className="py-3 px-5 text-[.9rem] whitespace-nowrap">
                       {area.created_at}
                     </td>
+                    {showArchived && (
+                      <td className="py-3 px-5 text-[.9rem] whitespace-nowrap">
+                        {area.archived_at ?? "—"}
+                      </td>
+                    )}
                     <td className="py-3 px-5">
+                      {showArchived ? (
+                        <RestoreRowButton
+                          onClick={() => openConfirm(area.classified_area_id, "restore")}
+                        />
+                      ) : (
                       <div className="flex gap-1">
                         <button
                           onClick={() =>
@@ -469,23 +472,21 @@ export default function Classified_areas() {
                         >
                           <Edit size={16} />
                         </button>
-                        <button
-                          onClick={() => setDelete(area.classified_area_id)}
-                          className="p-2 rounded-lg hover:bg-red-50 text-red-500 cursor-pointer transition-colors"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <ArchiveRowButton
+                          onClick={() => openConfirm(area.classified_area_id, "archive")}
+                        />
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={showArchived ? 8 : 7}
                     className="text-center py-8 text-gray-400 italic text-sm"
                   >
-                    No classified areas found.
+                    {showArchived ? "No archived classified areas." : "No classified areas found."}
                   </td>
                 </tr>
               )}
