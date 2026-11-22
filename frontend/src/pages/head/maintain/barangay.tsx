@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
   Edit,
   Plus,
   ChevronRight,
@@ -17,6 +16,12 @@ import PlantScopeAlert from "../../../components/alert/PlantScopeAlert";
 import Delete_modal from "../../../components/layout/delete_modal";
 import LoaderPending from "../../../components/layout/loaderSmall";
 import { api } from "@/constant/api";
+import {
+  useArchive,
+  ArchiveToggleButton,
+  ArchiveRowButton,
+  RestoreRowButton,
+} from "../../../components/archive/useArchive";
 
 // 🗺️ Leaflet Imports
 import {
@@ -145,6 +150,7 @@ interface Barangay {
   description: string;
   coordinate: any;
   created_at: string;
+  archived_at?: string | null;
 }
 
 interface BarangayForm {
@@ -189,7 +195,6 @@ export default function Barangays() {
   const [loading, setLoading] = useState(false);
   const [form_loading, setForm_loading] = useState(false);
   const [editBarangayId, setEditBarangayId] = useState<number>(0);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [action, setAction] = useState<"Add" | "Edit">("Add");
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -197,7 +202,13 @@ export default function Barangays() {
     message: string;
   } | null>(null);
 
-  const [barangayIdDelete, setBarangayIdDelete] = useState<number | null>(null);
+  // Archive view lists archived barangays and offers Restore instead of Edit/Archive
+  const { showArchived, toggleArchived, openConfirm, confirmModalProps } = useArchive({
+    resource: "barangay",
+    label: "barangay",
+    setAlert: setPSAlert,
+    onDone: () => fetchBarangays(),
+  });
 
   const token = localStorage.getItem("token");
 
@@ -218,6 +229,7 @@ export default function Barangays() {
         entries: filter.entries.toString(),
         sort_by: filter.sort_by,
         order: filter.order,
+        archived: showArchived ? "1" : "0",
       });
 
       const response = await fetch(
@@ -259,7 +271,12 @@ export default function Barangays() {
 
   useEffect(() => {
     fetchBarangays();
-  }, [filter.page, filter.entries, filter.sort_by, filter.order]);
+  }, [filter.page, filter.entries, filter.sort_by, filter.order, showArchived]);
+
+  const toggleArchiveView = () => {
+    toggleArchived();
+    setFilter((prev) => ({ ...prev, page: 1 }));
+  };
 
   // Clicking the active column flips the order; a new column starts ascending
   const handleSort = (key: SortKey) => {
@@ -299,39 +316,6 @@ export default function Barangays() {
   const otherBarangays = allBarangays.filter(
     (b) => action === "Add" || b.barangay_id !== editBarangayId,
   );
-
-  const setDelete = (id: number) => {
-    setBarangayIdDelete(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!barangayIdDelete) return;
-    const response = await fetch(
-      api+`api/delete_barangay/${barangayIdDelete}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    const data = await response.json();
-    if (response.ok) {
-      setPSAlert({
-        type: "success",
-        title: "Deleted",
-        message: data.message,
-      });
-      setIsDeleteModalOpen(false);
-      fetchBarangays();
-    } else {
-      setPSAlert({
-        type: "failed",
-        title: "Failed",
-        message: "Failed to delete barangay.",
-      });
-      setIsDeleteModalOpen(false);
-    }
-  };
 
   const handleSubmit = (e: any) => {
     e.preventDefault();
@@ -430,11 +414,7 @@ export default function Barangays() {
         />
       )}
 
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
+      <Delete_modal {...confirmModalProps} />
 
       <main className="flex-1 p-8 flex flex-col items-center">
         {/* Filters */}
@@ -457,9 +437,15 @@ export default function Barangays() {
             <option value={100}>100</option>
           </select>
 
+          <ArchiveToggleButton
+            showArchived={showArchived}
+            onClick={toggleArchiveView}
+            className="ml-auto"
+          />
+
           <input
             type="text"
-            placeholder="Search Barangays..."
+            placeholder={showArchived ? "Search archived Barangays..." : "Search Barangays..."}
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -469,8 +455,9 @@ export default function Barangays() {
               }))
             }
             onKeyDown={(e) => e.key === "Enter" && fetchBarangays()}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem]"
           />
+          {!showArchived && (
           <button
             onClick={() => {
               setIsOpenAddEditModal(true);
@@ -481,6 +468,7 @@ export default function Barangays() {
           >
             <Plus size={20} /> Add new Barangay
           </button>
+          )}
         </div>
 
         {/* Table */}
@@ -494,6 +482,9 @@ export default function Barangays() {
                 <SortableHeader label="Description" sortKey="description" />
                 <th className="py-3 px-5 text-left text-[.9rem]">Coordinate</th>
                 <SortableHeader label="Created at" sortKey="created_at" />
+                {showArchived && (
+                  <th className="py-3 px-5 text-left text-[.9rem]">Archived at</th>
+                )}
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -514,8 +505,14 @@ export default function Barangays() {
                       Lat: {b.coordinate?.[0]?.toFixed(5)}, Lng: {b.coordinate?.[1]?.toFixed(5)}
                     </td>
                     <td className="py-3 px-5 text-[.9rem]">{b.created_at}</td>
+                    {showArchived && (
+                      <td className="py-3 px-5 text-[.9rem]">{b.archived_at ?? "—"}</td>
+                    )}
 
                     <td className="py-3 px-5">
+                      {showArchived ? (
+                        <RestoreRowButton onClick={() => openConfirm(b.barangay_id, "restore")} />
+                      ) : (
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
@@ -535,23 +532,19 @@ export default function Barangays() {
                           <Edit size={18} />
                         </button>
 
-                        <button
-                          onClick={() => setDelete(b.barangay_id)}
-                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <ArchiveRowButton onClick={() => openConfirm(b.barangay_id, "archive")} />
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={showArchived ? 7 : 6}
                     className="text-center py-5 text-gray-500 italic"
                   >
-                    No Barangays found.
+                    {showArchived ? "No archived Barangays." : "No Barangays found."}
                   </td>
                 </tr>
               )}

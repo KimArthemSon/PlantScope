@@ -146,7 +146,7 @@ def request_reset_code(request):
     user = _find_user(email)
     if not user:
         return JsonResponse({'error': 'No account found with that email.'}, status=404)
-    if not user.is_active:
+    if not user.is_active or user.is_archived:
         return JsonResponse({'error': 'This account is deactivated. Please contact the administrator.'}, status=403)
     platform_error = _platform_error(user, str(body.get('platform', '')))
     if platform_error:

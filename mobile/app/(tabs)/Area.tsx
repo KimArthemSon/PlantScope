@@ -24,6 +24,7 @@ import { useNetworkStatus } from "@/utils/networkStatus";
 import { useAlert, ToastHost } from "@/components/AlertContext";
 import { getToken, clearAuthData, isAuthFailure } from "@/utils/auth";
 import { SortMenu, byDateAsc, byDateDesc, byText, type SortOption } from "@/components/SortMenu";
+import FloatingMapButton, { mapBackgroundKey } from "@/components/FloatingMapButton";
 
 const screenHeight = Dimensions.get("window").height;
 const API_BASE_URL = api + "/api";
@@ -82,6 +83,9 @@ type ReforestationArea = {
   site_stats?: SiteStats;
   assessment_stats?: AssessmentStats;
 };
+
+// What FloatingMapButton records after "Save Map Offline" finishes for an area
+type SavedMapInfo = { savedAt: string; tiles: number; failed: number };
 
 type FilterKey = "all" | "saved" | "unassessed" | "drafts";
 type AreaSort = "newest" | "oldest" | "name" | "sites" | "needs_assessment";
@@ -197,6 +201,24 @@ const MiniStat: React.FC<{
   </View>
 );
 
+/** Small "ready / not saved" pill for offline readiness. */
+const ReadyChip: React.FC<{ ok: boolean; icon: string; label: string }> = ({
+  ok,
+  icon,
+  label,
+}) => (
+  <View style={[styles.readyChip, ok ? styles.readyChipOk : styles.readyChipMissing]}>
+    <Ionicons
+      name={(ok ? "checkmark-circle" : icon) as any}
+      size={12}
+      color={ok ? PRIMARY : FAINT}
+    />
+    <Text style={[styles.readyChipText, { color: ok ? PRIMARY : MUTED }]}>
+      {label}
+    </Text>
+  </View>
+);
+
 /** Stacked bar showing accepted / pending / rejected sites. */
 const SiteStatusBar: React.FC<{ stats: SiteStats }> = ({ stats }) => {
   const other = Math.max(
@@ -273,6 +295,10 @@ const ReforestationAreas: React.FC = () => {
 
   const [offlineAreaIds, setOfflineAreaIds] = useState<Set<string>>(new Set());
   const [savingOffline, setSavingOffline] = useState<string | null>(null);
+  // Saved offline map per area id (null = no map saved yet)
+  const [savedMaps, setSavedMaps] = useState<Record<string, SavedMapInfo | null>>({});
+  // Area whose offline map is being downloaded (opens the full map on "Save Map Offline")
+  const [offlineMapArea, setOfflineMapArea] = useState<ReforestationArea | null>(null);
 
   const router = useRouter();
   const isOnline = useNetworkStatus();
@@ -461,6 +487,40 @@ const ReforestationAreas: React.FC = () => {
     [fetchAssignedAreas],
   );
 
+  /* ── Offline map status ──────────────────────────────────────── */
+  const loadSavedMaps = useCallback(async (list: ReforestationArea[]) => {
+    try {
+      const ids = list.map((a) => a.reforestation_area_id).filter(Boolean);
+      const rows = await AsyncStorage.multiGet(
+        ids.map((id) => mapBackgroundKey(Number(id))),
+      );
+      const next: Record<string, SavedMapInfo | null> = {};
+      rows.forEach(([, raw], i) => {
+        try {
+          next[ids[i]] = raw ? JSON.parse(raw) : null;
+        } catch {
+          next[ids[i]] = null;
+        }
+      });
+      setSavedMaps(next);
+    } catch (e) {
+      console.error("Error loading offline map status:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSavedMaps(areas);
+  }, [areas, loadSavedMaps]);
+
+  const openOfflineMapDownload = (area: ReforestationArea) => {
+    if (!isOnline) {
+      warning("Offline Mode", "Connect to the internet to download the map.");
+      return;
+    }
+    closeModal(); // the map is full-screen; don't stack it on the details sheet
+    setOfflineMapArea(area);
+  };
+
   /* ── Modals / navigation ─────────────────────────────────────── */
   const openModal = (area: ReforestationArea) => {
     if (!isOnline) {
@@ -530,8 +590,17 @@ const ReforestationAreas: React.FC = () => {
   const savedCount = areas.filter((a) =>
     offlineAreaIds.has(a.reforestation_area_id),
   ).length;
+  const savedMapCount = areas.filter(
+    (a) => !!savedMaps[a.reforestation_area_id],
+  ).length;
+  // Fully ready = area data and its map are both on the phone
+  const readyCount = areas.filter(
+    (a) =>
+      offlineAreaIds.has(a.reforestation_area_id) &&
+      !!savedMaps[a.reforestation_area_id],
+  ).length;
   const offlinePct =
-    areas.length > 0 ? Math.round((savedCount / areas.length) * 100) : 0;
+    areas.length > 0 ? Math.round((readyCount / areas.length) * 100) : 0;
 
   const filterCounts: Record<FilterKey, number> = {
     all: areas.length,
@@ -594,6 +663,7 @@ const ReforestationAreas: React.FC = () => {
   const renderAreaCard = (area: ReforestationArea) => {
     const isSaved = offlineAreaIds.has(area.reforestation_area_id);
     const isSaving = savingOffline === area.reforestation_area_id;
+    const savedMap = savedMaps[area.reforestation_area_id];
     const s = area.site_stats || EMPTY_SITES;
     const f = area.assessment_stats || EMPTY_ASSESSMENTS;
     const lastAssessed = timeAgo(f.last_assessment_at);
@@ -618,12 +688,30 @@ const ReforestationAreas: React.FC = () => {
               </Text>
             </View>
           </View>
-          {isSaved && (
+          {isSaved && !!savedMap && (
             <View style={styles.savedBadge}>
               <Ionicons name="cloud-done" size={12} color={PRIMARY} />
-              <Text style={styles.savedBadgeText}>Offline</Text>
+              <Text style={styles.savedBadgeText}>Offline ready</Text>
             </View>
           )}
+        </View>
+
+        {/* Offline readiness: area data + map tiles */}
+        <View style={styles.readyRow}>
+          <ReadyChip
+            ok={isSaved}
+            icon="document-text-outline"
+            label={isSaved ? "Data offline" : "Data not saved"}
+          />
+          <ReadyChip
+            ok={!!savedMap}
+            icon="map-outline"
+            label={
+              savedMap
+                ? `Map offline${timeAgo(savedMap.savedAt) ? ` · ${timeAgo(savedMap.savedAt)}` : ""}`
+                : "Map not saved"
+            }
+          />
         </View>
 
         {!!area.description && (
@@ -846,7 +934,7 @@ const ReforestationAreas: React.FC = () => {
               <View style={styles.offlineReadyRow}>
                 <Text style={styles.offlineReadyLabel}>Offline readiness</Text>
                 <Text style={styles.offlineReadyValue}>
-                  {savedCount}/{areas.length} saved · {offlinePct}%
+                  {readyCount}/{areas.length} ready · {offlinePct}%
                 </Text>
               </View>
               <View style={styles.progressBg}>
@@ -854,6 +942,9 @@ const ReforestationAreas: React.FC = () => {
                   style={[styles.progressFill, { width: `${offlinePct}%` }]}
                 />
               </View>
+              <Text style={styles.offlineReadySub}>
+                {savedCount} with area data · {savedMapCount} with map
+              </Text>
             </View>
           </View>
         )}
@@ -1072,6 +1163,64 @@ const ReforestationAreas: React.FC = () => {
                       </View>
                     ))}
                   </View>
+
+                  {/* Offline readiness + direct map download */}
+                  {(() => {
+                    const id = selectedArea.reforestation_area_id;
+                    const dataSaved = offlineAreaIds.has(id);
+                    const mapInfo = savedMaps[id];
+                    return (
+                      <View style={styles.offlineBox}>
+                        <Text style={styles.offlineBoxTitle}>Offline use</Text>
+                        <View style={styles.readyRow}>
+                          <ReadyChip
+                            ok={dataSaved}
+                            icon="document-text-outline"
+                            label={dataSaved ? "Data offline" : "Data not saved"}
+                          />
+                          <ReadyChip
+                            ok={!!mapInfo}
+                            icon="map-outline"
+                            label={mapInfo ? "Map offline" : "Map not saved"}
+                          />
+                        </View>
+                        {mapInfo && (
+                          <Text style={styles.offlineBoxText}>
+                            Map saved {formatDate(mapInfo.savedAt)} ·{" "}
+                            {mapInfo.tiles.toLocaleString()} tiles
+                            {mapInfo.failed > 0 ? ` (${mapInfo.failed} failed)` : ""}
+                          </Text>
+                        )}
+                        <View style={styles.offlineBoxBtns}>
+                          {!dataSaved && (
+                            <Pressable
+                              style={styles.offlineBoxBtnGhost}
+                              onPress={() => saveAreaForOffline(selectedArea)}
+                              disabled={savingOffline === id}
+                            >
+                              {savingOffline === id ? (
+                                <ActivityIndicator size="small" color={PRIMARY} />
+                              ) : (
+                                <>
+                                  <Ionicons name="cloud-download-outline" size={15} color={PRIMARY} />
+                                  <Text style={styles.offlineBoxBtnGhostText}>Save area data</Text>
+                                </>
+                              )}
+                            </Pressable>
+                          )}
+                          <Pressable
+                            style={styles.offlineBoxBtn}
+                            onPress={() => openOfflineMapDownload(selectedArea)}
+                          >
+                            <Ionicons name="map" size={15} color="#FFFFFF" />
+                            <Text style={styles.offlineBoxBtnText}>
+                              {mapInfo ? "Update offline map" : "Download offline map"}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })()}
                 </ScrollView>
                 <View
                   style={[
@@ -1166,6 +1315,22 @@ const ReforestationAreas: React.FC = () => {
         </Pressable>
         <ToastHost />
       </Modal>
+
+      {/* Full map opened straight on "Save Map Offline" for one area */}
+      {offlineMapArea && (
+        <FloatingMapButton
+          key={offlineMapArea.reforestation_area_id}
+          areaId={Number(offlineMapArea.reforestation_area_id)}
+          areaName={offlineMapArea.name}
+          initialOpen
+          hideFab
+          autoOpenSaveMap
+          onClose={() => {
+            setOfflineMapArea(null);
+            loadSavedMaps(areas); // pick up the newly saved map
+          }}
+        />
+      )}
     </View>
   );
 
@@ -1478,6 +1643,54 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   savedBadgeText: { fontSize: 10.5, fontWeight: "700", color: PRIMARY },
+  readyRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
+  readyChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  readyChipOk: { backgroundColor: "#ECFDF5", borderColor: "#A7F3D0" },
+  readyChipMissing: { backgroundColor: "#F9FAFB", borderColor: LINE },
+  readyChipText: { fontSize: 11, fontWeight: "600" },
+  offlineReadySub: { fontSize: 11, color: "#B7D3C6", marginTop: 6 },
+  offlineBox: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: LINE,
+    backgroundColor: "#FAFBFC",
+  },
+  offlineBoxTitle: { fontSize: 13, fontWeight: "700", color: INK },
+  offlineBoxText: { fontSize: 11.5, color: MUTED, marginTop: 8 },
+  offlineBoxBtns: { flexDirection: "row", gap: 8, marginTop: 12 },
+  offlineBoxBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: PRIMARY,
+  },
+  offlineBoxBtnText: { fontSize: 13, fontWeight: "700", color: "#FFFFFF" },
+  offlineBoxBtnGhost: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: PRIMARY,
+  },
+  offlineBoxBtnGhostText: { fontSize: 13, fontWeight: "700", color: PRIMARY },
   cardDesc: { fontSize: 12.5, color: MUTED, lineHeight: 18, marginTop: 10 },
   miniRow: {
     flexDirection: "row",

@@ -6,6 +6,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from backend.archiving import linked_records_error
 
 from accounts.helper import get_user_from_token, get_cloudinary_url, delete_cloudinary_resource
 
@@ -205,6 +206,8 @@ def get_sites(request, reforestation_area_id):
     verification_filter = request.GET.get("verification_status", "verified").strip().lower()
     land_classification_filter = request.GET.get("land_classification_id", "").strip()
     all_filter = request.GET.get("all", "").strip().lower()
+    # ?archived=1 lists archived (inactive) sites instead of active ones
+    is_active = request.GET.get("archived", "0").strip().lower() not in ("1", "true")
 
     offset = (page - 1) * entries
 
@@ -221,12 +224,12 @@ def get_sites(request, reforestation_area_id):
     ordering = ("-is_pinned", f"{prefix}{sort_field}", f"{prefix}pk")
 
     if all_filter == "true":
-        sites = Sites.objects.filter(is_active=True).select_related(
+        sites = Sites.objects.filter(is_active=is_active).select_related(
             'meta_verification', 'meta_verification__verified_land_classification'
         ).order_by(*ordering)
     else:
         sites = Sites.objects.filter(
-            reforestation_area_id=reforestation_area_id, is_active=True
+            reforestation_area_id=reforestation_area_id, is_active=is_active
         ).select_related(
             'meta_verification', 'meta_verification__verified_land_classification'
         ).order_by(*ordering)
@@ -288,7 +291,9 @@ def get_sites(request, reforestation_area_id):
             "metrics": {
                 "area_hectares": s.total_area_hectares,
             },
-            "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            "created_at": s.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            # updated_at is touched when a site is archived
+            "archived_at": s.updated_at.strftime("%Y-%m-%d") if not s.is_active and s.updated_at else None,
         })
 
     return JsonResponse({"data": data, "total_page": total_page, "page": page, "entries": entries, "total": total}, status=200)
@@ -955,6 +960,58 @@ def delete_site(request, site_id):
     except Exception as e:
         logger.error(f"Delete site error: {e}", exc_info=True)
         return JsonResponse({"error": str(e)}, status=500)
+
+
+# ─────────────────────────────────────────────
+# ARCHIVE / RESTORE SITE (is_active=False means archived)
+# ─────────────────────────────────────────────
+# A site's own child records; they belong to the site, so they don't block archiving it
+SITE_OWNED_MODELS = (
+    'SiteMetaDataVerification', 'PermitDocument', 'Site_data',
+    'Site_species_recommendation', 'Site_images', 'Field_assessment', 'Potential_sites',
+)
+
+
+@csrf_exempt
+def archive_site(request, site_id):
+    if request.method != "PUT":
+        return JsonResponse({"error": "Only PUT allowed"}, status=405)
+
+    site = get_object_or_404(Sites, site_id=site_id)
+    if not site.is_active:
+        return JsonResponse({"error": "Site is already archived."}, status=400)
+
+    if is_site_locked(site):
+        return JsonResponse({"error": "Cannot archive an official/active site. It is currently locked."}, status=403)
+
+    # Block while tree planting applications, progress reports, etc. still use this site
+    blocked = linked_records_error(site, site.name, ignore=SITE_OWNED_MODELS)
+    if blocked:
+        return JsonResponse(blocked, status=400)
+
+    site.is_active = False
+    site.save(update_fields=['is_active', 'updated_at'])
+    return JsonResponse({"message": "Successfully archived!"}, status=200)
+
+
+@csrf_exempt
+def restore_site(request, site_id):
+    if request.method != "PUT":
+        return JsonResponse({"error": "Only PUT allowed"}, status=405)
+
+    site = get_object_or_404(Sites, site_id=site_id)
+    if site.is_active:
+        return JsonResponse({"error": "Site is not archived."}, status=400)
+
+    if site.reforestation_area.deleted_at is not None:
+        return JsonResponse({
+            "error": f'Cannot restore "{site.name}" because its reforestation area '
+                     f'"{site.reforestation_area.name}" is archived. Restore the area first.'
+        }, status=400)
+
+    site.is_active = True
+    site.save(update_fields=['is_active', 'updated_at'])
+    return JsonResponse({"message": "Successfully restored!"}, status=200)
 
 
 # ─────────────────────────────────────────────

@@ -7,5 +7,7 @@ urlpatterns = [
     path('create_animal/', views.create_animal, name="create_animal"),
     path('update_animal/<int:animal_id>', views.update_animal, name="update_animal"),
     path('delete_animal/<int:animal_id>', views.delete_animal, name="delete_animal"),
+    path('archive_animal/<int:animal_id>', views.archive_animal, name="archive_animal"),
+    path('restore_animal/<int:animal_id>', views.restore_animal, name="restore_animal"),
     path('get_animals_list/', views.get_animals_list, name='get_animals_list'),
 ]

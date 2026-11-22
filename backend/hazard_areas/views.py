@@ -4,6 +4,8 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import HazardArea
 from barangay.models import Barangay
 from django.conf import settings
+from django.utils import timezone
+from backend.archiving import linked_records_error
 from security.views import log_activity
 import json
 import math
@@ -66,7 +68,7 @@ def get_hazard_areas_list(request):
     hazard_type = request.GET.get('hazard_type', '').strip()
     barangay_id = request.GET.get('barangay_id', '').strip()
     
-    queryset = HazardArea.objects.all().order_by('name')
+    queryset = HazardArea.objects.filter(is_archived=False).order_by('name')
     
     # Filter by hazard type if provided
     if hazard_type:
@@ -116,7 +118,9 @@ def get_hazard_areas(request):
     sort_field = sortable_fields.get(request.GET.get('sort_by', ''), 'created_at')
     prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
 
-    queryset = HazardArea.objects.all().order_by(f'{prefix}{sort_field}', f'{prefix}pk')
+    # ?archived=1 lists the archive instead of the active records
+    archived = request.GET.get('archived', '0').lower() in ('1', 'true')
+    queryset = HazardArea.objects.filter(is_archived=archived).order_by(f'{prefix}{sort_field}', f'{prefix}pk')
 
     # Apply filters
     if search:
@@ -141,6 +145,7 @@ def get_hazard_areas(request):
             "description": h.description,
             "created_at": h.created_at.strftime("%Y-%m-%d") if h.created_at else None,
             "updated_at": h.updated_at.strftime("%Y-%m-%d") if h.updated_at else None,
+            "archived_at": h.archived_at.strftime("%Y-%m-%d") if h.archived_at else None,
         })
 
     return JsonResponse({
@@ -346,7 +351,7 @@ def get_hazard_areas_by_barangay(request, barangay_id):
     get_object_or_404(Barangay, pk=barangay_id)
     
     # Filter strictly by this barangay
-    areas = HazardArea.objects.filter(barangay_id=barangay_id).order_by('-created_at').values()
+    areas = HazardArea.objects.filter(barangay_id=barangay_id, is_archived=False).order_by('-created_at').values()
     
     return JsonResponse({'data': list(areas)}, status=200)
 
@@ -364,7 +369,7 @@ def get_all_hazard_polygons(request):
 
     try:
         # Get all hazard areas without pagination
-        all_hazards = HazardArea.objects.all().order_by('name')
+        all_hazards = HazardArea.objects.filter(is_archived=False).order_by('name')
         
         data = []
         for h in all_hazards:
@@ -394,3 +399,65 @@ def get_all_hazard_polygons(request):
             'error': str(e),
             'success': False
         }, status=500)
+
+
+# -------------------- Archive / Restore Hazard area --------------------
+
+@csrf_exempt
+def archive_hazard_area(request, hazard_area_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(HazardArea, pk=hazard_area_id)
+    if obj.is_archived:
+        return JsonResponse({'error': 'Hazard area is already archived.'}, status=400)
+
+    # Block archiving while other records still point at this one
+    blocked = linked_records_error(obj, obj.name)
+    if blocked:
+        return JsonResponse(blocked, status=400)
+
+    obj.is_archived = True
+    obj.archived_at = timezone.now()
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='HazardArea',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Hazard area "{obj.name}" archived.',
+    )
+    return JsonResponse({'message': 'Successfully archived!'}, status=200)
+
+
+@csrf_exempt
+def restore_hazard_area(request, hazard_area_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(HazardArea, pk=hazard_area_id)
+    if not obj.is_archived:
+        return JsonResponse({'error': 'Hazard area is not archived.'}, status=400)
+
+    # Don't bring this back while the record it belongs to is still archived
+    if obj.barangay and obj.barangay.is_archived:
+        return JsonResponse({
+            'error': f'Cannot restore "{obj.name}" because its barangay '
+                     f'"{obj.barangay.name}" is archived. Restore the barangay first.'
+        }, status=400)
+
+    obj.is_archived = False
+    obj.archived_at = None
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='HazardArea',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Hazard area "{obj.name}" restored from archive.',
+    )
+    return JsonResponse({'message': 'Successfully restored!'}, status=200)

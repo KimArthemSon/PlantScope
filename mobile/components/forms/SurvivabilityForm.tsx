@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as SecureStore from "expo-secure-store";
 import { useFieldAssessment, LocalImage } from "@/hooks/useFieldAssessment";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
 import {
@@ -28,6 +29,7 @@ import {
 } from "@/hooks/useOfflineFieldAssessment";
 import { api } from "@/constants/url_fixed";
 import { useNetworkStatus } from "@/utils/networkStatus";
+import { cacheTreeSpecies, getCachedTreeSpecies } from "@/utils/offlineMonitoring";
 import FloatingMapButton, { MapPoint } from "@/components/FloatingMapButton";
 import { useAlert, ToastHost } from "@/components/AlertContext";
 
@@ -72,6 +74,12 @@ interface SurvivabilityImage {
 }
 
 type GPSReadiness = "ready" | "aging" | "cold" | "checking";
+
+// Tree species the inspector recommends planting, stored in field_assessment_data.survivability
+interface RecommendedSpecies {
+  tree_specie_id: number;
+  name: string;
+}
 
 // ─────────────────────────────────────────────
 // GPS CAMERA COMPONENT (SimpleGeocam)
@@ -878,6 +886,10 @@ export default function SurvivabilityForm() {
   const [slopeNote, setSlopeNote] = useState("");
   const [overallNote, setOverallNote] = useState("");
 
+  const [allSpecies, setAllSpecies] = useState<RecommendedSpecies[]>([]);
+  const [recommendedSpecies, setRecommendedSpecies] = useState<RecommendedSpecies[]>([]);
+  const [speciesSearch, setSpeciesSearch] = useState("");
+
   const [locationLat, setLocationLat] = useState("");
   const [locationLng, setLocationLng] = useState("");
   const [locationAccuracy, setLocationAccuracy] = useState("");
@@ -971,6 +983,33 @@ export default function SurvivabilityForm() {
     }
   }, [loading]);
 
+  // Species picker options; cached so the picker still works offline in the field
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!isOnline) throw new Error("offline");
+        const token = await SecureStore.getItemAsync("token");
+        const res = await fetch(`${API_BASE}/get_tree_species_list/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Failed to load species");
+        const list = await res.json();
+        setAllSpecies(Array.isArray(list) ? list : []);
+        cacheTreeSpecies(list);
+      } catch {
+        setAllSpecies(await getCachedTreeSpecies());
+      }
+    })();
+  }, [isOnline]);
+
+  const toggleSpecies = (s: RecommendedSpecies) => {
+    setRecommendedSpecies((prev) =>
+      prev.some((p) => p.tree_specie_id === s.tree_specie_id)
+        ? prev.filter((p) => p.tree_specie_id !== s.tree_specie_id)
+        : [...prev, { tree_specie_id: s.tree_specie_id, name: s.name }],
+    );
+  };
+
   const checkGPSReadiness = async () => {
     try {
       const { status } = await Location.getForegroundPermissionsAsync();
@@ -1049,6 +1088,9 @@ export default function SurvivabilityForm() {
     setWaterNote(surv.water?.overall_note || "");
     setSlopeNote(surv.slope?.overall_note || "");
     setOverallNote(surv.overall_notes || "");
+    setRecommendedSpecies(
+      Array.isArray(surv.recommended_species) ? surv.recommended_species : [],
+    );
   };
 
   const handleGetCurrentLocation = async () => {
@@ -1276,6 +1318,7 @@ export default function SurvivabilityForm() {
       water: { overall_note: waterNote || null },
       slope: { overall_note: slopeNote || null },
       overall_notes: overallNote || null,
+      recommended_species: recommendedSpecies,
     };
     return {
       title: title.trim() || null, // ✅ NEW: Include title in payload
@@ -1965,6 +2008,89 @@ export default function SurvivabilityForm() {
           {renderLocalImages("slope")}
         </SectionCard>
 
+        {/* ✅ RECOMMENDED TREE SPECIES */}
+        <SectionCard
+          title="Recommended Tree Species"
+          subtitle={`${recommendedSpecies.length} selected`}
+          iconName="tree-outline"
+          iconLib="mci"
+          accentColor="#15803D"
+          step={5}
+        >
+          {recommendedSpecies.length > 0 ? (
+            <View style={styles.speciesChipWrap}>
+              {recommendedSpecies.map((s) => (
+                <TouchableOpacity
+                  key={s.tree_specie_id}
+                  style={[styles.speciesChip, styles.speciesChipSelected]}
+                  onPress={() => !isViewMode && toggleSpecies(s)}
+                  disabled={isViewMode}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="checkmark-circle" size={14} color="#fff" />
+                  <Text style={[styles.speciesChipText, { color: "#fff" }]}>
+                    {s.name}
+                  </Text>
+                  {!isViewMode && (
+                    <Ionicons name="close" size={13} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.speciesEmpty}>
+              {isViewMode
+                ? "No tree species recommended."
+                : "Tap the species below that are suitable for this site."}
+            </Text>
+          )}
+
+          {!isViewMode && (
+            <>
+              <FieldLabel label="Choose species" />
+              <View style={styles.inputRow}>
+                <Ionicons name="search-outline" size={14} color="#94A3B8" />
+                <TextInput
+                  style={styles.inputField}
+                  value={speciesSearch}
+                  onChangeText={setSpeciesSearch}
+                  placeholder="Search tree species..."
+                  placeholderTextColor="#94A3B8"
+                />
+              </View>
+              {allSpecies.length === 0 ? (
+                <Text style={styles.speciesEmpty}>
+                  {isOnline
+                    ? "Loading tree species…"
+                    : "No species saved offline. Connect once to download the list."}
+                </Text>
+              ) : (
+                <View style={[styles.speciesChipWrap, { marginTop: 10 }]}>
+                  {allSpecies
+                    .filter(
+                      (s) =>
+                        !recommendedSpecies.some(
+                          (p) => p.tree_specie_id === s.tree_specie_id,
+                        ) &&
+                        s.name.toLowerCase().includes(speciesSearch.trim().toLowerCase()),
+                    )
+                    .map((s) => (
+                      <TouchableOpacity
+                        key={s.tree_specie_id}
+                        style={styles.speciesChip}
+                        onPress={() => toggleSpecies(s)}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons name="add" size={14} color="#15803D" />
+                        <Text style={styles.speciesChipText}>{s.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                </View>
+              )}
+            </>
+          )}
+        </SectionCard>
+
         {/* ✅ ASSESSMENT LOCATION (NO GUIDE) */}
         <SectionCard
           title="Assessment Location"
@@ -1972,7 +2098,7 @@ export default function SurvivabilityForm() {
           iconName="locate-outline"
           iconLib="ion"
           accentColor="#0F4A2F"
-          step={5}
+          step={6}
         >
           <View style={styles.coordRow}>
             <View style={styles.coordHalf}>
@@ -2071,7 +2197,7 @@ export default function SurvivabilityForm() {
           iconName="document-text-outline"
           iconLib="ion"
           accentColor="#0F766E"
-          step={6}
+          step={7}
         >
           <FieldLabel label="Overall Notes" />
           <TextInput
@@ -2354,6 +2480,26 @@ const modalStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F1F5F9" },
+  speciesChipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  speciesChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#86EFAC",
+    backgroundColor: "#F0FDF4",
+  },
+  speciesChipSelected: { backgroundColor: "#15803D", borderColor: "#15803D" },
+  speciesChipText: { fontSize: 12, fontWeight: "600", color: "#15803D" },
+  speciesEmpty: {
+    fontSize: 12,
+    color: "#94A3B8",
+    fontStyle: "italic",
+    marginBottom: 10,
+  },
   centerContent: {
     flex: 1,
     justifyContent: "center",

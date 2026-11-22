@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
   Edit,
   Plus,
   ChevronRight,
@@ -19,6 +18,12 @@ import LoaderPending from "@/components/layout/loaderSmall";
 import { useNavigate } from "react-router-dom";
 import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api.ts";
+import {
+  useArchive,
+  ArchiveToggleButton,
+  ArchiveRowButton,
+  RestoreRowButton,
+} from "@/components/archive/useArchive";
 // ─────────────────────────────────────────────────────────────
 // Types & Interfaces (UPDATED to new backend structure)
 // ─────────────────────────────────────────────────────────────
@@ -38,6 +43,7 @@ interface ReforestationArea {
     name: string;
   } | null;
   created_at: string;
+  archived_at?: string | null;
   site_stats?: {
     total: number;
     accepted_verified: number;
@@ -77,13 +83,19 @@ export default function Reforestation_areas() {
   });
 
   const [loading, setLoading] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
     title: string;
     message: string;
   } | null>(null);
+
+  const { showArchived, toggleArchived, openConfirm, confirmModalProps } = useArchive({
+    resource: "reforestation_area",
+    label: "reforestation area",
+    trailingSlash: true,
+    setAlert: setPSAlert,
+    onDone: () => fetchAreas(),
+  });
 
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
@@ -133,6 +145,7 @@ export default function Reforestation_areas() {
         entries: filter.entries.toString(),
         sort_by: filter.sort_by,
         order: filter.order,
+        archived: showArchived ? "1" : "0",
         ...(filter.barangay_id !== "All" && {
           barangay_id: filter.barangay_id,
         }),
@@ -158,7 +171,7 @@ export default function Reforestation_areas() {
 
   useEffect(() => {
     fetchAreas();
-  }, [filter.page, filter.entries, filter.barangay_id, filter.sort_by, filter.order]);
+  }, [filter.page, filter.entries, filter.barangay_id, filter.sort_by, filter.order, showArchived]);
 
   // Clicking the active column flips the order; a new column starts ascending
   const handleSort = (key: SortKey) => {
@@ -189,44 +202,6 @@ export default function Reforestation_areas() {
     </th>
   );
 
-  // ── Delete ─────────────────────────────────────────────────
-  const setDelete = (id: number) => {
-    setDeleteId(id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      const response = await fetch(
-        api + `api/delete_reforestation_areas/${deleteId}/`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
-      );
-      const data = await response.json();
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Deleted",
-          message: data.message,
-        });
-        fetchAreas();
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.message || "Delete failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong.",
-      });
-    }
-    setIsDeleteModalOpen(false);
-  };
-
   // ── Render ─────────────────────────────────────────────────
   return (
     <div className="flex min-h-dvh bg-gray-50 justify-center items-center flex-col">
@@ -239,11 +214,7 @@ export default function Reforestation_areas() {
         />
       )}
 
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
+      <Delete_modal {...confirmModalProps} />
 
       <main className="flex-1 p-8 w-full max-w-609">
         {/* ── TOOLBAR ───────────────────────────────────────── */}
@@ -288,10 +259,19 @@ export default function Reforestation_areas() {
             ))}
           </select>
 
+          <ArchiveToggleButton
+            showArchived={showArchived}
+            onClick={() => {
+              toggleArchived();
+              setFilter((prev) => ({ ...prev, page: 1 }));
+            }}
+            className="ml-auto"
+          />
+
           {/* Search */}
           <input
             type="text"
-            placeholder="Search reforestation areas..."
+            placeholder={showArchived ? "Search archived reforestation areas..." : "Search reforestation areas..."}
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -303,10 +283,10 @@ export default function Reforestation_areas() {
             onKeyDown={(e) => {
               if (e.key === "Enter") fetchAreas();
             }}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem]"
           />
 
-          {userRole !== "DataManager" && (
+          {userRole !== "DataManager" && !showArchived && (
             <button
               onClick={() => navigate(`${useruserRole}/map`)}
               className="flex items-center gap-2 bg-[#0f4a2f] text-white h-10 px-3 py-2 rounded-lg text-[.8rem] cursor-pointer hover:bg-[#0a3321] transition-colors"
@@ -328,6 +308,7 @@ export default function Reforestation_areas() {
                 <SortableHeader label="Description" sortKey="description" />
                 <SortableHeader label="Sites" sortKey="sites" />
                 <SortableHeader label="Created At" sortKey="created_at" />
+                {showArchived && <th className="py-3 px-5 text-left">Archived At</th>}
                 <th className="py-3 px-5 text-left">Actions</th>
               </tr>
             </thead>
@@ -384,6 +365,9 @@ export default function Reforestation_areas() {
                     </td>
 
                     <td className="py-3 px-5 text-sm">{area.created_at}</td>
+                    {showArchived && (
+                      <td className="py-3 px-5 text-sm">{area.archived_at ?? "—"}</td>
+                    )}
 
                     {/* ✅ ACTIONS COLUMN - LOGIC KEPT THE SAME */}
                     <td className="py-3 px-5">
@@ -399,7 +383,7 @@ export default function Reforestation_areas() {
                         >
                           <Eye size={18} />
                         </button>
-                        {userRole !== "DataManager" && (
+                        {userRole !== "DataManager" && !showArchived && (
                           <button
                             onClick={() =>
                               navigate(
@@ -412,7 +396,7 @@ export default function Reforestation_areas() {
                             <User size={18} />
                           </button>
                         )}
-                        {userRole !== "DataManager" && (
+                        {userRole !== "DataManager" && !showArchived && (
                           <button
                             onClick={() =>
                               navigate(
@@ -425,17 +409,16 @@ export default function Reforestation_areas() {
                             <Edit size={18} />
                           </button>
                         )}
-                        {userRole !== "DataManager" && (
-                          <button
-                            onClick={() =>
-                              setDelete(area.reforestation_area_id)
-                            }
-                            className="text-red-500 cursor-pointer"
-                            title="Delete Area"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
+                        {userRole !== "DataManager" &&
+                          (showArchived ? (
+                            <RestoreRowButton
+                              onClick={() => openConfirm(area.reforestation_area_id, "restore")}
+                            />
+                          ) : (
+                            <ArchiveRowButton
+                              onClick={() => openConfirm(area.reforestation_area_id, "archive")}
+                            />
+                          ))}
                       </div>
                     </td>
                   </tr>
@@ -443,10 +426,10 @@ export default function Reforestation_areas() {
               ) : (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={showArchived ? 8 : 7}
                     className="text-center py-5 text-gray-500 italic"
                   >
-                    No areas found
+                    {showArchived ? "No archived areas" : "No areas found"}
                   </td>
                 </tr>
               )}

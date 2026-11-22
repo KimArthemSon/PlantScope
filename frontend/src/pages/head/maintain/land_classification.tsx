@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Trash2,
   Edit,
   Plus,
   ChevronRight,
@@ -14,6 +13,12 @@ import PlantScopeAlert from "@/components/alert/PlantScopeAlert";
 import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { api } from "@/constant/api";
+import {
+  useArchive,
+  ArchiveToggleButton,
+  ArchiveRowButton,
+  RestoreRowButton,
+} from "@/components/archive/useArchive";
 
 // ✅ UPDATED: Replaced for_reforestation with ownership_type
 interface Land_classifications {
@@ -22,6 +27,7 @@ interface Land_classifications {
   description: string;
   ownership_type: "public" | "private";
   created_at: string;
+  archived_at?: string | null;
 }
 
 interface Land_classification {
@@ -70,7 +76,6 @@ export default function Land_classifications() {
   const [form_loading, setForm_loading] = useState(false);
   const [editLand_classification_id, setEditLand_classification_id] =
     useState<number>(0);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [action, setAction] = useState<"Add" | "Edit">("Add");
   const [PSalert, setPSAlert] = useState<{
     type: "success" | "failed" | "error";
@@ -78,8 +83,12 @@ export default function Land_classifications() {
     message: string;
   } | null>(null);
 
-  const [Land_classification_idDelete, setLand_classification_idDelete] =
-    useState<number | null>(null);
+  const { showArchived, toggleArchived, openConfirm, confirmModalProps } = useArchive({
+    resource: "land_classification",
+    label: "land classification",
+    setAlert: setPSAlert,
+    onDone: () => fetchLand_classifications(),
+  });
 
   const token = localStorage.getItem("token");
 
@@ -100,6 +109,7 @@ export default function Land_classifications() {
         entries: filter.entries.toString(),
         sort_by: filter.sort_by,
         order: filter.order,
+        archived: showArchived ? "1" : "0",
       });
 
       // ✅ UPDATED: Append ownership_type instead of for_reforestation
@@ -133,7 +143,7 @@ export default function Land_classifications() {
   // ✅ UPDATED: Dependency array uses ownership_type
   useEffect(() => {
     fetchLand_classifications();
-  }, [filter.page, filter.entries, filter.ownership_type, filter.sort_by, filter.order]);
+  }, [filter.page, filter.entries, filter.ownership_type, filter.sort_by, filter.order, showArchived]);
 
   // Clicking the active column flips the order; a new column starts ascending
   const handleSort = (key: SortKey) => {
@@ -163,39 +173,6 @@ export default function Land_classifications() {
       </button>
     </th>
   );
-
-  const setDelete = (Land_classification_id: number) => {
-    setLand_classification_idDelete(Land_classification_id);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!Land_classification_idDelete) return;
-    const response = await fetch(
-      api + `api/delete_land_classification/${Land_classification_idDelete}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-    const data = await response.json();
-    if (response.ok) {
-      setPSAlert({
-        type: "success",
-        title: "Deleted",
-        message: data.message,
-      });
-      setIsDeleteModalOpen(false);
-      fetchLand_classifications();
-    } else {
-      setPSAlert({
-        type: "failed",
-        title: "Failed",
-        message: "Failed to delete Land_classification.",
-      });
-      setIsDeleteModalOpen(false);
-    }
-  };
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -303,11 +280,7 @@ export default function Land_classifications() {
           onClose={() => setPSAlert(null)}
         />
       )}
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
+      <Delete_modal {...confirmModalProps} />
       <main className="flex-1 p-8 w-full max-w-450">
         {/* Filters */}
         <div className="flex items-center mb-7 gap-4 flex-wrap">
@@ -346,9 +319,18 @@ export default function Land_classifications() {
             <option value="private">Private</option>
           </select>
 
+          <ArchiveToggleButton
+            showArchived={showArchived}
+            onClick={() => {
+              toggleArchived();
+              setFilter((prev) => ({ ...prev, page: 1 }));
+            }}
+            className="ml-auto"
+          />
+
           <input
             type="text"
-            placeholder="Search Land classifications..."
+            placeholder={showArchived ? "Search archived land classifications..." : "Search Land classifications..."}
             value={filter.search}
             onChange={(e) =>
               setFilter((prev) => ({
@@ -362,8 +344,9 @@ export default function Land_classifications() {
                 fetchLand_classifications();
               }
             }}
-            className="border border-black rounded-md p-2 w-80 text-[.8rem] ml-auto"
+            className="border border-black rounded-md p-2 w-80 text-[.8rem]"
           />
+          {!showArchived && (
           <button
             onClick={() => {
               setIsOpenAddEditModal(true);
@@ -378,6 +361,7 @@ export default function Land_classifications() {
           >
             <Plus size={20} /> Add new land classification
           </button>
+          )}
         </div>
 
         {/* Table */}
@@ -391,6 +375,9 @@ export default function Land_classifications() {
                 <SortableHeader label="Description" sortKey="description" />
                 <SortableHeader label="Ownership Type" sortKey="ownership_type" />
                 <SortableHeader label="Created At" sortKey="created_at" />
+                {showArchived && (
+                  <th className="py-3 px-5 text-left text-[.9rem]">Archived At</th>
+                )}
                 <th className="py-3 px-5 text-left text-[.9rem]">Actions</th>
               </tr>
             </thead>
@@ -423,7 +410,15 @@ export default function Land_classifications() {
                     <td className="py-3 px-5 text-[.9rem]">
                       {item.created_at}
                     </td>
+                    {showArchived && (
+                      <td className="py-3 px-5 text-[.9rem]">{item.archived_at ?? "—"}</td>
+                    )}
                     <td className="py-3 px-5">
+                      {showArchived ? (
+                        <RestoreRowButton
+                          onClick={() => openConfirm(item.land_classification_id, "restore")}
+                        />
+                      ) : (
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
@@ -440,20 +435,18 @@ export default function Land_classifications() {
                         >
                           <Edit size={18} />
                         </button>
-                        <button
-                          onClick={() => setDelete(item.land_classification_id)}
-                          className="text-red-500 px-3 py-1 rounded-md flex items-center gap-1 cursor-pointer hover:bg-red-50"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        <ArchiveRowButton
+                          onClick={() => openConfirm(item.land_classification_id, "archive")}
+                        />
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="text-center py-5 text-gray-500 italic">
-                    No Land classifications found.
+                  <td colSpan={showArchived ? 7 : 6} className="text-center py-5 text-gray-500 italic">
+                    {showArchived ? "No archived land classifications." : "No Land classifications found."}
                   </td>
                 </tr>
               )}

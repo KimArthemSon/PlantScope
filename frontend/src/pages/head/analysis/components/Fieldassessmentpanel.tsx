@@ -37,11 +37,15 @@ const LayerDataRenderer = ({ data, level = 0 }: { data: LayerData; level?: numbe
 
   // ✅ Extract specific fields to render side-by-side at the top level
   const sideBySideKeys = ['overall_note', 'location_context'];
+  // Rendered in their own section by AssessmentDetail
+  const hiddenKeys = level === 0 ? ['recommended_species'] : [];
   // Only split at the top level — nested objects (e.g. safety.flood.overall_note)
   // must render their notes inline, otherwise they'd be dropped entirely.
   const isSideBySide = (key: string) => level === 0 && sideBySideKeys.includes(key.toLowerCase());
   const sideBySideEntries = entries.filter(([key]) => isSideBySide(key));
-  const otherEntries = entries.filter(([key]) => !isSideBySide(key));
+  const otherEntries = entries.filter(
+    ([key]) => !isSideBySide(key) && !hiddenKeys.includes(key),
+  );
 
   return (
     <div className={`space-y-4 ${level > 0 ? 'ml-3 border-l-2 border-gray-200 pl-3' : ''}`}>
@@ -235,6 +239,11 @@ const AssessmentDetail = ({
   const loc = entry.location;
   const layerMeta = LAYERS.find((l) => l.id === layer)!;
   const hasLocation = !!loc?.latitude;
+  // Tree species the inspector picked in the mobile Survivability form
+  const recommendedSpecies: { tree_specie_id: number; name: string }[] =
+    layer === "survivability" && Array.isArray(entry.layer_data?.recommended_species)
+      ? (entry.layer_data.recommended_species as any[])
+      : [];
 
   const handleImageClick = (img: any) => {
     const imgUrl = getImageUrl(img.url);
@@ -326,6 +335,35 @@ const AssessmentDetail = ({
             <LayerDataRenderer data={entry.layer_data} />
           </div>
         </div>
+
+        {/* ✅ Recommended Tree Species (Survivability only) */}
+        {layer === "survivability" && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 border-b-2 border-gray-200 pb-2">
+              <Leaf size={18} className="text-emerald-600" />
+              <p className="text-sm font-bold uppercase tracking-wider text-gray-700">
+                Recommended Tree Species ({recommendedSpecies.length})
+              </p>
+            </div>
+            {recommendedSpecies.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {recommendedSpecies.map((s) => (
+                  <span
+                    key={s.tree_specie_id}
+                    className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold px-3 py-1.5 rounded-full"
+                  >
+                    <CheckCircle size={12} className="text-emerald-600" />
+                    {s.name}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic bg-gray-50 p-3 rounded-lg">
+                No tree species recommended by the inspector.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* ✅ Smaller Images with Better Grid */}
         {entry.images?.length > 0 && (

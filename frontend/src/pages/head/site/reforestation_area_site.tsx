@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  Trash2,
+  Archive,
+  ArchiveRestore,
   Plus,
   ChevronRight,
   ChevronLeft,
@@ -41,6 +42,7 @@ import Delete_modal from "@/components/layout/delete_modal";
 import LoaderPending from "@/components/layout/loaderSmall";
 import { useUserRole } from "@/hooks/authorization";
 import { api } from "@/constant/api";
+import { useArchive, ArchiveToggleButton } from "@/components/archive/useArchive";
 
 import {
   LineChart,
@@ -100,6 +102,7 @@ interface Site {
   status: string;
   is_pinned: boolean;
   created_at: string;
+  archived_at?: string | null;
   validation: ValidationStatus;
   verification: VerificationInfo;
   metrics: SiteMetrics;
@@ -250,9 +253,6 @@ export default function ReforestationAreaSiteCombined() {
   const [loadingAreas, setLoadingAreas] = useState(false);
   const [loadingSites, setLoadingSites] = useState(false);
 
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [deleteType, setDeleteType] = useState<"area" | "site" | null>(null);
 
   // View Details Modal
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -267,6 +267,25 @@ export default function ReforestationAreaSiteCombined() {
   } | null>(null);
 
   const [userPath, setUserPath] = useState("");
+
+  // Areas and sites each have their own archive view
+  const areaArchive = useArchive({
+    resource: "reforestation_area",
+    label: "reforestation area",
+    trailingSlash: true,
+    setAlert: setPSAlert,
+    onDone: () => fetchAreas(),
+  });
+  const siteArchive = useArchive({
+    resource: "site",
+    label: "site",
+    trailingSlash: true,
+    setAlert: setPSAlert,
+    onDone: () => {
+      fetchSites();
+      fetchAreas(); // site counts on the area cards change too
+    },
+  });
 
   // User role path setup
   useEffect(() => {
@@ -321,6 +340,7 @@ export default function ReforestationAreaSiteCombined() {
         entries: areaFilter.entries.toString(),
         sort_by: areaFilter.sort.split(":")[0],
         order: areaFilter.sort.split(":")[1],
+        archived: areaArchive.showArchived ? "1" : "0",
       });
       if (areaFilter.barangay_id && areaFilter.barangay_id !== "all") {
         params.append("barangay_id", areaFilter.barangay_id);
@@ -358,6 +378,7 @@ export default function ReforestationAreaSiteCombined() {
         verification_status: siteFilter.verification_status,
         sort_by: siteFilter.sort_by,
         order: siteFilter.order,
+        archived: siteArchive.showArchived ? "1" : "0",
       });
 
       if (siteFilter.land_classification_id) {
@@ -407,6 +428,7 @@ export default function ReforestationAreaSiteCombined() {
     areaFilter.barangay_id,
     areaFilter.search,
     areaFilter.sort,
+    areaArchive.showArchived,
   ]);
 
   // Triggers for Child (Sites) with Debounce
@@ -426,6 +448,7 @@ export default function ReforestationAreaSiteCombined() {
     siteFilter.search,
     siteFilter.sort_by,
     siteFilter.order,
+    siteArchive.showArchived,
   ]);
 
   const handleSelectArea = (area: ReforestationArea | null) => {
@@ -480,57 +503,6 @@ export default function ReforestationAreaSiteCombined() {
         );
       }
     } catch {}
-  };
-
-  const setDelete = (id: number, type: "area" | "site") => {
-    setDeleteId(id);
-    setDeleteType(type);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId || !deleteType) return;
-    try {
-      const endpoint =
-        deleteType === "area"
-          ? `api/delete_reforestation_areas/${deleteId}/`
-          : `api/delete_site/${deleteId}/`;
-      const response = await fetch(api + endpoint, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-
-      if (response.ok) {
-        setPSAlert({
-          type: "success",
-          title: "Deleted",
-          message: data.message,
-        });
-        if (deleteType === "area") {
-          fetchAreas();
-          if (selectedArea?.reforestation_area_id === deleteId) {
-            setSelectedArea(null);
-            setSites([]);
-          }
-        } else {
-          fetchSites();
-        }
-      } else {
-        setPSAlert({
-          type: "failed",
-          title: "Failed",
-          message: data.message || "Delete failed",
-        });
-      }
-    } catch {
-      setPSAlert({
-        type: "error",
-        title: "Error",
-        message: "Something went wrong",
-      });
-    }
-    setIsDeleteModalOpen(false);
   };
 
   const fetchAreaDetails = async (areaId: number) => {
@@ -687,11 +659,8 @@ export default function ReforestationAreaSiteCombined() {
           onClose={() => setPSAlert(null)}
         />
       )}
-      <Delete_modal
-        setIsDeleteModalOpen={setIsDeleteModalOpen}
-        isDeleteModalOpen={isDeleteModalOpen}
-        onDelete={handleDelete}
-      />
+      <Delete_modal {...areaArchive.confirmModalProps} />
+      <Delete_modal {...siteArchive.confirmModalProps} />
 
       {/* View Details Modal */}
       {isViewModalOpen && viewArea && (
@@ -885,14 +854,24 @@ export default function ReforestationAreaSiteCombined() {
                 </span>
               </div>
 
-              <div className="relative mb-2">
+              <div className="flex items-center gap-2 mb-2">
+              <ArchiveToggleButton
+                size="sm"
+                showArchived={areaArchive.showArchived}
+                onClick={() => {
+                  areaArchive.toggleArchived();
+                  setAreaFilter((prev) => ({ ...prev, page: 1 }));
+                  handleSelectArea(null);
+                }}
+              />
+              <div className="relative flex-1">
                 <Search
                   size={14}
                   className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
                 />
                 <input
                   type="text"
-                  placeholder="Search areas..."
+                  placeholder={areaArchive.showArchived ? "Search archived areas..." : "Search areas..."}
                   value={areaFilter.search}
                   onChange={(e) =>
                     setAreaFilter((prev) => ({
@@ -903,6 +882,7 @@ export default function ReforestationAreaSiteCombined() {
                   }
                   className="w-full border border-slate-300 rounded-lg pl-8 pr-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 />
+              </div>
               </div>
 
               <select
@@ -1046,19 +1026,32 @@ export default function ReforestationAreaSiteCombined() {
                           ></div>
                         </div>
                         
-                        {/* Keep Delete button accessible (DataManager restricted) */}
+                        {/* Archive / Restore (DataManager restricted) */}
                         {userRole !== "DataManager" && (
                           <div className="flex justify-end">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDelete(area.reforestation_area_id, "area");
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                              title="Delete Area"
-                            >
-                              <Trash2 size={12} />
-                            </button>
+                            {areaArchive.showArchived ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  areaArchive.openConfirm(area.reforestation_area_id, "restore");
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 rounded-md transition-colors"
+                                title="Restore Area"
+                              >
+                                <ArchiveRestore size={12} /> Restore
+                              </button>
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  areaArchive.openConfirm(area.reforestation_area_id, "archive");
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
+                                title="Archive Area"
+                              >
+                                <Archive size={12} />
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1068,7 +1061,9 @@ export default function ReforestationAreaSiteCombined() {
               ) : (
                 <div className="text-center py-8 text-slate-400">
                   <Trees size={32} className="mx-auto mb-2 opacity-50" />
-                  <p className="text-xs">No areas found</p>
+                  <p className="text-xs">
+                    {areaArchive.showArchived ? "No archived areas" : "No areas found"}
+                  </p>
                 </div>
               )}
             </div>
@@ -1113,7 +1108,7 @@ export default function ReforestationAreaSiteCombined() {
                   </h2>
                 </div>
                 {/* Add New Site ONLY shows if a specific area is selected */}
-                {userRole !== "DataManager" && selectedArea && (
+                {userRole !== "DataManager" && selectedArea && !siteArchive.showArchived && !areaArchive.showArchived && (
                   <button
                     onClick={() =>
                       navigate(
@@ -1158,6 +1153,15 @@ export default function ReforestationAreaSiteCombined() {
                 </select>
               </div>
 
+              <ArchiveToggleButton
+                size="sm"
+                showArchived={siteArchive.showArchived}
+                onClick={() => {
+                  siteArchive.toggleArchived();
+                  setSiteFilter((prev) => ({ ...prev, page: 1 }));
+                }}
+              />
+
               <div className="relative flex-1 max-w-md">
                 <Search
                   size={14}
@@ -1165,7 +1169,7 @@ export default function ReforestationAreaSiteCombined() {
                 />
                 <input
                   type="text"
-                  placeholder="Search sites..."
+                  placeholder={siteArchive.showArchived ? "Search archived sites..." : "Search sites..."}
                   value={siteFilter.search}
                   onChange={(e) =>
                     setSiteFilter((prev) => ({
@@ -1357,6 +1361,11 @@ export default function ReforestationAreaSiteCombined() {
                         Created <SiteSortIcon sortKey="created_at" />
                       </button>
                     </th>
+                    {siteArchive.showArchived && (
+                      <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
+                        Archived
+                      </th>
+                    )}
                     <th className="py-2.5 px-3 text-left text-[11px] font-semibold uppercase tracking-wider">
                       Actions
                     </th>
@@ -1370,8 +1379,8 @@ export default function ReforestationAreaSiteCombined() {
                       );
                       const VerificationIcon = verificationBadge.icon;
 
-                      // ✅ Restrict Delete: DataManager cannot delete. GISSpecialist can ONLY delete if both status and verification are rejected.
-                      const canDeleteSite =
+                      // ✅ Restrict Archive: DataManager cannot archive. GISSpecialist can ONLY archive if both status and verification are rejected.
+                      const canArchiveSite =
                         userRole !== "DataManager" &&
                         (userRole !== "GISSpecialist" ||
                           (site.verification.status === "rejected" &&
@@ -1424,6 +1433,11 @@ export default function ReforestationAreaSiteCombined() {
                           <td className="py-2.5 px-3 text-xs text-slate-600">
                             {new Date(site.created_at).toLocaleDateString()}
                           </td>
+                          {siteArchive.showArchived && (
+                            <td className="py-2.5 px-3 text-xs text-slate-600">
+                              {site.archived_at ?? "—"}
+                            </td>
+                          )}
                           <td className="py-2.5 px-3">
                             <div className="flex gap-1">
                               <button
@@ -1439,7 +1453,7 @@ export default function ReforestationAreaSiteCombined() {
                               </button>
 
                               {/* Analysis Button - ONLY shows in "All Areas" global view */}
-                              {!selectedArea && userRole !== "DataManager" && (
+                              {!selectedArea && userRole !== "DataManager" && !siteArchive.showArchived && (
                                 <button
                                   onClick={() =>
                                     navigate(
@@ -1453,7 +1467,7 @@ export default function ReforestationAreaSiteCombined() {
                                 </button>
                               )}
 
-                              {userRole !== "GISSpecialist" && (
+                              {userRole !== "GISSpecialist" && !siteArchive.showArchived && (
                                 <button
                                   onClick={() =>
                                     navigate(
@@ -1467,18 +1481,29 @@ export default function ReforestationAreaSiteCombined() {
                                 </button>
                               )}
                               
-                              {/* ✅ Conditional Delete Button */}
-                              {canDeleteSite && (
-                                <button
-                                  onClick={() =>
-                                    setDelete(site.site_id, "site")
-                                  }
-                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors border border-red-600"
-                                  title="Delete Site"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              )}
+                              {/* ✅ Conditional Archive / Restore Button */}
+                              {canArchiveSite &&
+                                (siteArchive.showArchived ? (
+                                  <button
+                                    onClick={() =>
+                                      siteArchive.openConfirm(site.site_id, "restore")
+                                    }
+                                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 rounded-md transition-colors border border-emerald-600"
+                                    title="Restore Site"
+                                  >
+                                    <ArchiveRestore size={12} /> Restore
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() =>
+                                      siteArchive.openConfirm(site.site_id, "archive")
+                                    }
+                                    className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md transition-colors border border-amber-600"
+                                    title="Archive Site"
+                                  >
+                                    <Archive size={12} />
+                                  </button>
+                                ))}
                             </div>
                           </td>
                         </tr>
@@ -1487,13 +1512,13 @@ export default function ReforestationAreaSiteCombined() {
                   ) : (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={siteArchive.showArchived ? 7 : 6}
                         className="text-center py-12 text-slate-400"
                       >
                         <div className="flex flex-col items-center gap-2">
                           <Leaf size={32} className="opacity-50" />
                           <p className="text-sm font-medium text-slate-600">
-                            No sites found
+                            {siteArchive.showArchived ? "No archived sites" : "No sites found"}
                           </p>
                           <p className="text-xs">
                             Try adjusting your filters or add a new site

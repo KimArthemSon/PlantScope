@@ -8,5 +8,7 @@ urlpatterns = [
     path('get_barangay/<int:barangay_id>',views.get_barangay, name="get_barangay"),
     path('create_barangay/',views.create_barangay, name="create_barangay"),
     path('update_barangay/<int:barangay_id>', views.update_barangay, name="update_barangay"),
-    path('delete_barangay/<int:barangay_id>', views.delete_barangay, name="delete_barangay")
+    path('delete_barangay/<int:barangay_id>', views.delete_barangay, name="delete_barangay"),
+    path('archive_barangay/<int:barangay_id>', views.archive_barangay, name="archive_barangay"),
+    path('restore_barangay/<int:barangay_id>', views.restore_barangay, name="restore_barangay"),
 ]

@@ -15,6 +15,7 @@ import jwt
 from datetime import datetime, timedelta
 import re
 from django.conf import settings
+from django.utils import timezone
 from django.db import DatabaseError, connection, transaction
 from accounts.helper import get_cloudinary_url, delete_cloudinary_resource
 import traceback
@@ -213,7 +214,7 @@ def login_user(request):
                 'attempts_left': attempts_left,
             }, status=401)
 
-        if not user.is_active:
+        if not user.is_active or user.is_archived:
             return JsonResponse({'error': 'Your account is deactivated!'}, status=401)
 
         # Hash the input password and compare
@@ -631,8 +632,11 @@ def list_tree_growers(request):
         'WHERE a.user_id = u.id AND a.site_id IS NOT NULL '
         'AND a.status IN (' + ', '.join(['%s'] * len(ongoing_statuses)) + '))'
     )
-    where_sql = 'u.user_role = %s AND (u.email LIKE %s OR g.group_name LIKE %s)'
-    where_params = ["treeGrowers", f"%{search}%", f"%{search}%"]
+    # ?archived=1 lists archived accounts instead of active ones
+    archived = request.GET.get('archived', '0').strip().lower() in ('1', 'true')
+
+    where_sql = 'u.user_role = %s AND u.is_archived = %s AND (u.email LIKE %s OR g.group_name LIKE %s)'
+    where_params = ["treeGrowers", archived, f"%{search}%", f"%{search}%"]
     if site_filter == 'with_site':
         where_sql += ' AND ' + has_site_sql
         where_params += ongoing_statuses
@@ -681,7 +685,7 @@ def list_tree_growers(request):
         offset = (page - 1) * entries
         cursor.execute(
             f'''
-            SELECT u.id, u.email, u.is_active, u.created_at,
+            SELECT u.id, u.email, u.is_active, u.created_at, u.archived_at,
                    g.group_name, g.group_type,
                    CASE g.group_type
                        WHEN 'formal_org'      THEN 'Formal Organization'
@@ -728,6 +732,7 @@ def list_tree_growers(request):
                 'email':              row['email'],
                 'is_active':          bool(row['is_active']),
                 'created_at':         str(row['created_at']) if row['created_at'] else None,
+                'archived_at':        row['archived_at'].strftime('%Y-%m-%d') if row['archived_at'] else None,
                 'group_name':         row['group_name'] or '',
                 'group_type':         row['group_type'] or '',
                 'group_type_display': row['group_type_display'] or '',
@@ -809,3 +814,68 @@ def get_tree_grower_detail(request, user_id):
             'profile_img':        group_img_url,
         } if group else None,
     })
+
+
+
+# ─────────────────────────────────────────────
+# ARCHIVE / RESTORE TREE GROWER ACCOUNT
+# ─────────────────────────────────────────────
+# Applications in these statuses mean the grower is currently working a site
+ONGOING_APPLICATION_STATUSES = ['for_evaluation', 'for_head', 'accepted', 'under_monitoring']
+
+
+@csrf_exempt
+def archive_user(request, user_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    user = get_object_or_404(User, id=user_id)
+    if user.is_archived:
+        return JsonResponse({'error': 'Account is already archived.'}, status=400)
+
+    # Block while the grower still has an ongoing application (i.e. has taken a site)
+    from tree_planting_programs.models import Application
+    ongoing = Application.objects.filter(user=user, status__in=ONGOING_APPLICATION_STATUSES).count()
+    if ongoing:
+        return JsonResponse({
+            'error': f'Cannot archive "{user.email}" because it still has {ongoing} ongoing '
+                     f'application(s). Complete, close or reject them first.',
+        }, status=400)
+
+    user.is_archived = True
+    user.archived_at = timezone.now()
+    user.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='User',
+        entity_id=user_id,
+        entity_label=user.email,
+        description=f'{user.user_role} account archived.',
+    )
+    return JsonResponse({'message': 'Account archived successfully.'}, status=200)
+
+
+@csrf_exempt
+def restore_user(request, user_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    user = get_object_or_404(User, id=user_id)
+    if not user.is_archived:
+        return JsonResponse({'error': 'Account is not archived.'}, status=400)
+
+    user.is_archived = False
+    user.archived_at = None
+    user.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='User',
+        entity_id=user_id,
+        entity_label=user.email,
+        description=f'{user.user_role} account restored from archive.',
+    )
+    return JsonResponse({'message': 'Account restored successfully.'}, status=200)

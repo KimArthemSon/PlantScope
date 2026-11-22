@@ -7,5 +7,7 @@ urlpatterns = [
     path('create_tree_specie/',views.create_tree_specie, name="create_tree_specie"),
     path('update_tree_specie/<int:tree_specie_id>', views.update_tree_specie, name="update_tree_specie"),
     path('delete_tree_specie/<int:tree_specie_id>', views.delete_tree_specie, name="delete_tree_specie"),
+    path('archive_tree_specie/<int:tree_specie_id>', views.archive_tree_specie, name="archive_tree_specie"),
+    path('restore_tree_specie/<int:tree_specie_id>', views.restore_tree_specie, name="restore_tree_specie"),
     path('get_tree_species_list/', views.get_tree_species_list, name='get_tree_species_list'),
 ]

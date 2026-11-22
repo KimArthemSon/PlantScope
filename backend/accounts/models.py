@@ -18,6 +18,9 @@ class User(models.Model):
     password = models.CharField(max_length=128)
     user_role = models.CharField(max_length=30, choices=USER_ROLES, default='OnsiteInspector')
     is_active = models.BooleanField(default=True)
+    # Archived accounts are hidden from account lists and cannot log in; kept so they can be restored
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     USERNAME_FIELD = 'email'

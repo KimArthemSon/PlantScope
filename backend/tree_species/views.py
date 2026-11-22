@@ -1,4 +1,6 @@
 import json
+from django.utils import timezone
+from backend.archiving import linked_records_error
 import math
 import jwt
 from django.shortcuts import get_object_or_404
@@ -79,7 +81,9 @@ def get_tree_species(request):
         sort_by = 'created_at'
     prefix = '' if request.GET.get('order', 'desc').lower() == 'asc' else '-'
 
-    tree_species = Tree_species.objects.all().order_by(f'{prefix}{sort_by}', f'{prefix}pk')
+    # ?archived=1 lists the archive instead of the active records
+    archived = request.GET.get('archived', '0').lower() in ('1', 'true')
+    tree_species = Tree_species.objects.filter(is_archived=archived).order_by(f'{prefix}{sort_by}', f'{prefix}pk')
 
     if search:
         tree_species = tree_species.filter(name__icontains=search)
@@ -93,7 +97,8 @@ def get_tree_species(request):
             'tree_specie_id': ts.tree_specie_id,
             'name': ts.name,
             'description': ts.description,
-            'created_at': ts.created_at.strftime('%Y-%m-%d') if ts.created_at else None
+            'created_at': ts.created_at.strftime('%Y-%m-%d') if ts.created_at else None,
+            'archived_at': ts.archived_at.strftime('%Y-%m-%d') if ts.archived_at else None,
         })
 
     return JsonResponse({
@@ -282,7 +287,7 @@ def get_tree_species_list(request):
     try:
         # Return all tree species, ordered by name
         # Tree_species model has: tree_species_id, name, scientific_name, description, created_at
-        species = Tree_species.objects.all().order_by('name').values(
+        species = Tree_species.objects.filter(is_archived=False).order_by('name').values(
             'tree_specie_id', 
             'name', 
             'description'
@@ -304,3 +309,60 @@ def get_tree_species_list(request):
         import logging
         logging.error(f"Error fetching tree species list: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# -------------------- Archive / Restore Tree species --------------------
+
+@csrf_exempt
+def archive_tree_specie(request, tree_specie_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(Tree_species, pk=tree_specie_id)
+    if obj.is_archived:
+        return JsonResponse({'error': 'Tree species is already archived.'}, status=400)
+
+    # Block archiving while other records still point at this one
+    blocked = linked_records_error(obj, obj.name)
+    if blocked:
+        return JsonResponse(blocked, status=400)
+
+    obj.is_archived = True
+    obj.archived_at = timezone.now()
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='TreeSpecies',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Tree species "{obj.name}" archived.',
+    )
+
+    return JsonResponse({'message': 'Successfully archived!'}, status=200)
+
+
+@csrf_exempt
+def restore_tree_specie(request, tree_specie_id):
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Only PUT allowed'}, status=405)
+
+    obj = get_object_or_404(Tree_species, pk=tree_specie_id)
+    if not (obj.is_archived):
+        return JsonResponse({'error': 'Tree species is not archived.'}, status=400)
+
+    obj.is_archived = False
+    obj.archived_at = None
+    obj.save(update_fields=['is_archived', 'archived_at'])
+
+    record_activity(
+        request,
+        action_type='STATE_CHANGE',
+        entity_type='TreeSpecies',
+        entity_id=obj.pk,
+        entity_label=obj.name,
+        description=f'Tree species "{obj.name}" restored from archive.',
+    )
+
+    return JsonResponse({'message': 'Successfully restored!'}, status=200)

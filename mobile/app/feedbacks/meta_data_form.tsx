@@ -140,6 +140,8 @@ export default function MetaDataForm() {
 
   const [vehicleAccess, setVehicleAccess] = useState<AccessibilityType[]>([]);
   const [accessNotes, setAccessNotes] = useState("");
+  // Anything else the inspector noticed that doesn't fit the sections above
+  const [otherObservations, setOtherObservations] = useState("");
 
   const [landClassifications, setLandClassifications] = useState<
     LandClassificationOption[]
@@ -308,6 +310,7 @@ export default function MetaDataForm() {
         setVehicleAccess([accessData]);
       }
       setAccessNotes(meta.accessibility?.notes || "");
+      setOtherObservations(meta.other_observations?.notes || "");
 
       if (Array.isArray(draft.images)) {
         const loadedImages: LocalDocImage[] = draft.images.map((img) => {
@@ -393,6 +396,7 @@ export default function MetaDataForm() {
         setVehicleAccess([accessData]);
       }
       setAccessNotes(meta.accessibility?.notes || "");
+      setOtherObservations(meta.other_observations?.notes || "");
 
       if (Array.isArray(data.images)) setExistingImages(data.images);
     } catch (e: any) {
@@ -636,6 +640,9 @@ export default function MetaDataForm() {
           accessibility: {
             vehicle_access: vehicleAccess,
             notes: accessNotes,
+          },
+          other_observations: {
+            notes: otherObservations.trim(),
           },
         },
       },
@@ -1303,7 +1310,29 @@ export default function MetaDataForm() {
           ) : null}
         </SectionCard>
 
-        {/* 5. Assessment Location */}
+        {/* 5. Other Observations */}
+        <SectionCard
+          icon="notebook-edit-outline"
+          title="Other Observations"
+          sub="Anything else you noticed on site (optional)"
+        >
+          {isReadOnly ? (
+            <Text style={styles.readonlyNote}>
+              {otherObservations || "None reported"}
+            </Text>
+          ) : (
+            <TextInput
+              style={styles.textArea}
+              placeholder="e.g., Signs of recent clearing, nearby settlements, landmarks, community concerns..."
+              placeholderTextColor="#9CA3AF"
+              value={otherObservations}
+              onChangeText={setOtherObservations}
+              multiline
+            />
+          )}
+        </SectionCard>
+
+        {/* 6. Assessment Location */}
         <SectionCard
           icon="location-outline"
           title="Assessment Location"
@@ -1399,7 +1428,7 @@ export default function MetaDataForm() {
           )}
         </SectionCard>
 
-        {/* 6. Photos & Attachments */}
+        {/* 7. Photos & Attachments */}
         <SectionCard
           icon="image-multiple-outline"
           title="Field Photos"
